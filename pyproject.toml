@@ -46,6 +46,9 @@ select = [
     "SIM",
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"backend/migrations/versions/*.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.11"
 plugins = ["pydantic.mypy"]

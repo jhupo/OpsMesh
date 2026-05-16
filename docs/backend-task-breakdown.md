@@ -104,16 +104,16 @@ Goal: represent agents, teams, tasks, runs, and events.
 
 Tasks:
 
-- [ ] Add `agent_profiles` table.
-- [ ] Add `agent_teams` table.
-- [ ] Add `agent_team_members` table.
-- [ ] Add `tasks` table.
-- [ ] Add `task_steps` table.
-- [ ] Add `agent_runs` table.
-- [ ] Add `run_events` table.
-- [ ] Add `audit_events` table.
-- [ ] Add domain model validation.
-- [ ] Add status transition helpers.
+- [x] Add `agent_profiles` table.
+- [x] Add `agent_teams` table.
+- [x] Add `agent_team_members` table.
+- [x] Add `tasks` table.
+- [x] Add `task_steps` table.
+- [x] Add `agent_runs` table.
+- [x] Add `run_events` table.
+- [x] Add `audit_events` table.
+- [x] Add domain model validation.
+- [x] Add status transition helpers.
 
 Deliverables:
 
