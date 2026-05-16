@@ -12,17 +12,17 @@ Goal: create a clean backend skeleton that can run locally.
 
 Tasks:
 
-- [ ] Choose backend framework and project layout.
-- [ ] Create backend application entrypoint.
-- [ ] Add configuration management.
-- [ ] Add environment variable loading.
-- [ ] Add structured logging.
-- [ ] Add request ID / correlation ID middleware.
-- [ ] Add health check endpoint.
-- [ ] Add local development settings.
-- [ ] Add dependency management.
-- [ ] Add test runner.
-- [ ] Add lint/format/type-check commands.
+- [x] Choose backend framework and project layout.
+- [x] Create backend application entrypoint.
+- [x] Add configuration management.
+- [x] Add environment variable loading.
+- [x] Add structured logging.
+- [x] Add request ID / correlation ID middleware.
+- [x] Add health check endpoint.
+- [x] Add local development settings.
+- [x] Add dependency management.
+- [x] Add test runner.
+- [x] Add lint/format/type-check commands.
 
 Deliverables:
 
