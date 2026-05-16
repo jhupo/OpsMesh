@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0")
     redis_key_prefix: str = Field(default="chaincloud")
     worker_queue_name: str = Field(default="agent_runs")
+    internal_api_token: str = Field(default="change-me-in-production")
 
 
 @lru_cache(maxsize=1)

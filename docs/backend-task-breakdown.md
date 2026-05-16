@@ -83,15 +83,15 @@ Goal: enforce multi-user workspace isolation.
 
 Tasks:
 
-- [ ] Implement authentication strategy.
-- [ ] Implement current user resolution.
-- [ ] Implement workspace membership checks.
-- [ ] Implement role constants.
-- [ ] Implement permission helper.
-- [ ] Scope all workspace APIs by `workspace_id`.
-- [ ] Add tests for cross-workspace reads.
-- [ ] Add tests for cross-workspace writes.
-- [ ] Add tests for worker workspace mismatch rejection.
+- [x] Implement authentication strategy.
+- [x] Implement current user resolution.
+- [x] Implement workspace membership checks.
+- [x] Implement role constants.
+- [x] Implement permission helper.
+- [x] Scope all workspace APIs by `workspace_id`.
+- [x] Add tests for cross-workspace reads.
+- [x] Add tests for cross-workspace writes.
+- [x] Add tests for worker workspace mismatch rejection.
 
 Deliverables:
 
