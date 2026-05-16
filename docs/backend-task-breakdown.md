@@ -37,16 +37,16 @@ Goal: establish durable state.
 
 Tasks:
 
-- [ ] Add Postgres connection.
-- [ ] Add database session lifecycle.
-- [ ] Add migration tool.
-- [ ] Create base migration.
-- [ ] Add `users` table.
-- [ ] Add `workspaces` table.
-- [ ] Add `workspace_members` table.
-- [ ] Add common timestamp fields.
-- [ ] Add soft-delete/status conventions.
-- [ ] Add database test setup.
+- [x] Add Postgres connection.
+- [x] Add database session lifecycle.
+- [x] Add migration tool.
+- [x] Create base migration.
+- [x] Add `users` table.
+- [x] Add `workspaces` table.
+- [x] Add `workspace_members` table.
+- [x] Add common timestamp fields.
+- [x] Add soft-delete/status conventions.
+- [x] Add database test setup.
 
 Deliverables:
 

@@ -30,3 +30,8 @@ uv run mypy
 uv run pytest
 ```
 
+Run database migrations:
+
+```bash
+uv run alembic upgrade head
+```

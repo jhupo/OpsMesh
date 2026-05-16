@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     log_format: LogFormat = Field(default="json")
     enable_api_docs: bool = Field(default=True)
     cors_origins: list[str] = Field(default_factory=list)
+    database_url: str = Field(
+        default="postgresql+psycopg://chaincloud:chaincloud@localhost:5432/chaincloud"
+    )
 
 
 @lru_cache(maxsize=1)
