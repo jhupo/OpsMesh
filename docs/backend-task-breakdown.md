@@ -60,16 +60,16 @@ Goal: support async worker execution.
 
 Tasks:
 
-- [ ] Add Redis connection.
-- [ ] Define Redis key naming convention.
-- [ ] Implement queue abstraction.
-- [ ] Implement job payload schema.
-- [ ] Implement enqueue function.
-- [ ] Implement worker consume loop.
-- [ ] Implement run lock.
-- [ ] Implement job idempotency key.
-- [ ] Implement retry policy.
-- [ ] Implement dead-letter handling.
+- [x] Add Redis connection.
+- [x] Define Redis key naming convention.
+- [x] Implement queue abstraction.
+- [x] Implement job payload schema.
+- [x] Implement enqueue function.
+- [x] Implement worker consume loop.
+- [x] Implement run lock.
+- [x] Implement job idempotency key.
+- [x] Implement retry policy.
+- [x] Implement dead-letter handling.
 
 Deliverables:
 

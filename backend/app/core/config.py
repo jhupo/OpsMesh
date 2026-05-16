@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+psycopg://chaincloud:chaincloud@localhost:5432/chaincloud"
     )
+    redis_url: str = Field(default="redis://localhost:6379/0")
+    redis_key_prefix: str = Field(default="chaincloud")
+    worker_queue_name: str = Field(default="agent_runs")
 
 
 @lru_cache(maxsize=1)

@@ -35,3 +35,9 @@ Run database migrations:
 ```bash
 uv run alembic upgrade head
 ```
+
+Run the worker queue tests:
+
+```bash
+uv run pytest backend/tests/test_redis_queue.py
+```
