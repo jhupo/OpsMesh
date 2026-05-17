@@ -16,7 +16,13 @@ from backend.app.runtime_manager.contracts import (
     RuntimeLimits,
 )
 from backend.app.runtime_manager.manager import RuntimeManager
-from backend.app.runtimes.models import RuntimeCommand, RuntimeEvent, RuntimeTemplate
+from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
+from backend.app.runtimes.models import (
+    RuntimeCommand,
+    RuntimeEvent,
+    RuntimeTemplate,
+    WorkspaceRuntime,
+)
 from backend.app.workspaces.models import Workspace
 
 
@@ -164,6 +170,127 @@ def test_cleanup_stale_runtime_removes_only_recorded_container() -> None:
 
     assert docker.removed == ["container-123"]
     assert runtime.status == "deleted"
+
+
+def test_runtime_manager_rejects_single_runtime_over_workspace_quota() -> None:
+    session = _session()
+    workspace = Workspace(
+        owner_user_id=uuid4(),
+        name="Acme",
+        slug="acme",
+        settings={"runtime_quota": {"max_runtime_memory_mb": 512}},
+    )
+    template = RuntimeTemplate(
+        name="python",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.commit()
+    docker = FakeDockerClient()
+
+    try:
+        RuntimeManager(session, docker).create_runtime(
+            workspace_id=workspace.id,
+            template=template,
+            name="oversized",
+            limits=RuntimeLimits(cpu_count=1, memory_mb=1024, disk_mb=512, timeout_seconds=10),
+        )
+    except RuntimeQuotaExceededError as exc:
+        assert exc.code == "runtime_memory_quota_exceeded"
+    else:
+        raise AssertionError("Expected runtime memory quota to fail")
+
+    assert docker.created_requests == []
+    assert session.query(WorkspaceRuntime).count() == 0
+
+
+def test_runtime_quota_policy_counts_active_workspace_usage() -> None:
+    session = _session()
+    workspace = Workspace(
+        owner_user_id=uuid4(),
+        name="Acme",
+        slug="acme",
+        settings={
+            "runtime_quota": {
+                "max_active_runtimes": 2,
+                "max_total_cpu": 2,
+                "max_total_memory_mb": 1024,
+                "max_total_disk_mb": 2048,
+            }
+        },
+    )
+    session.add(workspace)
+    session.flush()
+    session.add_all(
+        [
+            WorkspaceRuntime(
+                workspace_id=workspace.id,
+                name="active",
+                status="running",
+                limits={"cpu_count": 1, "memory_mb": 512, "disk_mb": 512},
+            ),
+            WorkspaceRuntime(
+                workspace_id=workspace.id,
+                name="deleted",
+                status="deleted",
+                limits={"cpu_count": 8, "memory_mb": 8192, "disk_mb": 8192},
+            ),
+        ]
+    )
+    session.commit()
+
+    usage = RuntimeQuotaPolicy(session).usage_for_workspace(workspace.id)
+
+    assert usage.active_runtimes == 1
+    assert usage.total_cpu == 1
+    assert usage.total_memory_mb == 512
+    assert usage.total_disk_mb == 512
+
+
+def test_runtime_manager_rejects_total_cpu_over_workspace_quota() -> None:
+    session = _session()
+    workspace = Workspace(
+        owner_user_id=uuid4(),
+        name="Acme",
+        slug="acme",
+        settings={"runtime_quota": {"max_total_cpu": 1.5}},
+    )
+    template = RuntimeTemplate(
+        name="python",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.flush()
+    session.add(
+        WorkspaceRuntime(
+            workspace_id=workspace.id,
+            name="existing",
+            status="running",
+            limits={"cpu_count": 1, "memory_mb": 256, "disk_mb": 512},
+        )
+    )
+    session.commit()
+    docker = FakeDockerClient()
+
+    try:
+        RuntimeManager(session, docker).create_runtime(
+            workspace_id=workspace.id,
+            template=template,
+            name="too-much-cpu",
+            limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
+        )
+    except RuntimeQuotaExceededError as exc:
+        assert exc.code == "runtime_total_cpu_quota_exceeded"
+    else:
+        raise AssertionError("Expected total CPU quota to fail")
+
+    assert docker.created_requests == []
 
 
 def _session() -> Session:

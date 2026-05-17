@@ -9,6 +9,7 @@ from backend.app.runtime_manager.contracts import (
     RuntimeCreateRequest,
     RuntimeLimits,
 )
+from backend.app.runtime_manager.quotas import RuntimeQuotaPolicy
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeEvent,
@@ -31,6 +32,7 @@ class RuntimeManager:
         limits: RuntimeLimits,
         network_disabled: bool = True,
     ) -> WorkspaceRuntime:
+        RuntimeQuotaPolicy(self._session).assert_can_create_runtime(workspace_id, limits)
         runtime = WorkspaceRuntime(
             workspace_id=workspace_id,
             runtime_template_id=template.id,
