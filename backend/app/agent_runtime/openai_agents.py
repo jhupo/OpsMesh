@@ -16,7 +16,7 @@ class OpenAIAgentsRunner:
         )
         return AgentRunResult(
             final_output=str(result.final_output),
-            raw_output=result,
+            raw_output=self._safe_raw_output(result),
         )
 
     def _build_agent(self, request: AgentRunRequest) -> Agent[Any]:
@@ -82,3 +82,27 @@ class OpenAIAgentsRunner:
         if isinstance(value, bool):
             return value
         return None
+
+    def _safe_raw_output(self, result: Any) -> dict[str, object]:
+        payload: dict[str, object] = {"final_output": str(getattr(result, "final_output", ""))}
+        last_agent = getattr(result, "last_agent", None)
+        if last_agent is not None:
+            payload["last_agent"] = str(getattr(last_agent, "name", last_agent))
+        usage = getattr(result, "usage", None)
+        if usage is not None:
+            payload["usage"] = self._jsonable(usage)
+        return payload
+
+    def _jsonable(self, value: Any) -> object:
+        if value is None or isinstance(value, str | int | float | bool):
+            return value
+        if isinstance(value, dict):
+            return {str(key): self._jsonable(item) for key, item in value.items()}
+        if isinstance(value, list | tuple):
+            return [self._jsonable(item) for item in value]
+        model_dump = getattr(value, "model_dump", None)
+        if callable(model_dump):
+            dumped = model_dump(mode="json")
+            if isinstance(dumped, dict):
+                return self._jsonable(dumped)
+        return str(value)

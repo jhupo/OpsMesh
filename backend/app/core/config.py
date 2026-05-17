@@ -5,6 +5,7 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogFormat = Literal["json", "text"]
+AgentRunnerBackend = Literal["fake", "openai"]
 
 
 class Settings(BaseSettings):
@@ -31,6 +32,7 @@ class Settings(BaseSettings):
     token_hash_pepper: str = Field(default="change-me-token-pepper")
     storage_root: str = Field(default=".chaincloud-storage")
     max_upload_bytes: int = Field(default=10 * 1024 * 1024)
+    agent_runner_backend: AgentRunnerBackend = Field(default="fake")
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.agents.models import AgentProfile
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
@@ -155,6 +156,46 @@ def test_worker_persists_failed_run_event() -> None:
         "retryable": True,
     }
     assert failed_event is not None
+
+
+def test_agent_request_includes_profile_tool_policy_context() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Designer",
+        role="designer",
+        instructions="Design assets.",
+        tool_policy={"mcp_tools": ["generate_image", 42, "write_artifact"]},
+    )
+    session.add_all([task, agent])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        requested_by_user_id=user.id,
+        idempotency_key="tool-policy-context",
+    )
+    request = RunOrchestrationService(session)._build_agent_request(run, job)
+
+    assert request.context.allowed_tools == ("generate_image", "write_artifact")
+    assert request.context.metadata == {
+        "agent_profile_id": str(agent.id),
+        "agent_role": "designer",
+        "run_model": agent.model,
+    }
 
 
 def test_stale_running_runs_are_recovered_as_failed() -> None:

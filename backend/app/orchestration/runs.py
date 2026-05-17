@@ -366,6 +366,7 @@ class RunOrchestrationService:
                 model=run.model or "gpt-4.1",
             )
 
+        allowed_tools = self._allowed_tools_for_profile(profile)
         return AgentRunRequest(
             agent_profile=profile,
             input_text=self._input_text_for_run(run),
@@ -374,6 +375,12 @@ class RunOrchestrationService:
                 task_id=run.task_id,
                 run_id=run.id,
                 user_id=job.requested_by_user_id,
+                allowed_tools=allowed_tools,
+                metadata={
+                    "agent_profile_id": str(profile.id) if profile.id is not None else None,
+                    "agent_role": profile.role,
+                    "run_model": run.model or profile.model,
+                },
             ),
         )
 
@@ -382,6 +389,15 @@ class RunOrchestrationService:
         if task is None:
             return str(run.input)
         return f"{task.title}\n\n{task.description}".strip()
+
+    def _allowed_tools_for_profile(self, profile: AgentProfile) -> tuple[str, ...]:
+        tool_policy = profile.tool_policy if isinstance(profile.tool_policy, dict) else {}
+        raw_tools = tool_policy.get("allowed_tools")
+        if raw_tools is None:
+            raw_tools = tool_policy.get("mcp_tools")
+        if not isinstance(raw_tools, list):
+            return ()
+        return tuple(tool for tool in raw_tools if isinstance(tool, str))
 
     def _lock_for_run(self, run: AgentRun) -> AbstractContextManager[bool]:
         if self._queue is not None:
