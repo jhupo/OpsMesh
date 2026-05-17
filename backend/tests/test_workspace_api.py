@@ -128,6 +128,48 @@ def test_create_task_is_idempotent_within_workspace() -> None:
     assert len(task_created_events) == 1
 
 
+def test_create_agent_and_team_are_idempotent_within_workspace() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    agent_headers = _headers(owner.id) | {"Idempotency-Key": "create-researcher"}
+    team_headers = _headers(owner.id) | {"Idempotency-Key": "create-team"}
+
+    first_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=agent_headers,
+        json={"name": "Researcher", "role": "researcher", "instructions": "Research well"},
+    )
+    second_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=agent_headers,
+        json={"name": "Researcher", "role": "researcher", "instructions": "Research well"},
+    )
+    first_team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=team_headers,
+        json={"name": "Research Team", "team_type": "research"},
+    )
+    second_team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=team_headers,
+        json={"name": "Research Team", "team_type": "research"},
+    )
+
+    audit = client.get(
+        f"/api/v1/workspaces/{workspace.id}/audit-events",
+        headers=_headers(owner.id),
+    )
+    actions = [item["action"] for item in audit.json()["items"]]
+    assert first_agent.status_code == 201
+    assert second_agent.status_code == 201
+    assert first_agent.json()["id"] == second_agent.json()["id"]
+    assert first_team.status_code == 201
+    assert second_team.status_code == 201
+    assert first_team.json()["id"] == second_team.json()["id"]
+    assert actions.count("agent.created") == 1
+    assert actions.count("team.created") == 1
+
+
 def test_task_idempotency_key_is_scoped_by_workspace() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner", email="owner@example.com", slug="one")
@@ -153,6 +195,37 @@ def test_task_idempotency_key_is_scoped_by_workspace() -> None:
     assert first.status_code == 201
     assert second.status_code == 201
     assert first.json()["id"] != second.json()["id"]
+
+
+def test_workspace_create_is_idempotent_per_user() -> None:
+    client, session = _client()
+    user = User(email="workspace-owner@example.com", display_name="Owner")
+    other = User(email="other-owner@example.com", display_name="Other")
+    session.add_all([user, other])
+    session.commit()
+    headers = _headers(user.id) | {"Idempotency-Key": "create-workspace"}
+
+    first = client.post(
+        "/api/v1/workspaces",
+        headers=headers,
+        json={"name": "Acme", "slug": "acme"},
+    )
+    second = client.post(
+        "/api/v1/workspaces",
+        headers=headers,
+        json={"name": "Acme", "slug": "acme"},
+    )
+    other_user = client.post(
+        "/api/v1/workspaces",
+        headers=_headers(other.id) | {"Idempotency-Key": "create-workspace"},
+        json={"name": "Other Acme", "slug": "other-acme"},
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.json()["id"] == first.json()["id"]
+    assert other_user.status_code == 201
+    assert other_user.json()["id"] != first.json()["id"]
 
 
 def test_cancel_task_marks_task_and_active_run_cancelled() -> None:

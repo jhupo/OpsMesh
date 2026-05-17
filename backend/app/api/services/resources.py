@@ -56,6 +56,14 @@ class WorkspaceResourceService:
         self._session.refresh(agent)
         return agent
 
+    def get_agent(self, workspace_id: UUID, agent_id: UUID) -> AgentProfile | None:
+        return self._session.scalar(
+            select(AgentProfile).where(
+                AgentProfile.workspace_id == workspace_id,
+                AgentProfile.id == agent_id,
+            )
+        )
+
     def list_teams(self, workspace_id: UUID, page: PageParams) -> tuple[list[AgentTeam], int]:
         statement = (
             select(AgentTeam)
@@ -85,6 +93,11 @@ class WorkspaceResourceService:
         self._session.commit()
         self._session.refresh(team)
         return team
+
+    def get_team(self, workspace_id: UUID, team_id: UUID) -> AgentTeam | None:
+        return self._session.scalar(
+            select(AgentTeam).where(AgentTeam.workspace_id == workspace_id, AgentTeam.id == team_id)
+        )
 
     def list_tasks(
         self,

@@ -46,6 +46,14 @@ class WorkspaceService:
     def get_scoped(self, workspace_id: UUID) -> Workspace | None:
         return self._session.get(Workspace, workspace_id)
 
+    def get_owned(self, owner_user_id: UUID, workspace_id: UUID) -> Workspace | None:
+        return self._session.scalar(
+            select(Workspace).where(
+                Workspace.owner_user_id == owner_user_id,
+                Workspace.id == workspace_id,
+            )
+        )
+
     def update(self, workspace: Workspace, data: WorkspaceUpdateRequest) -> Workspace:
         updates = data.model_dump(exclude_unset=True)
         for field, value in updates.items():
