@@ -80,6 +80,14 @@ def test_workspace_and_resource_api_enforces_scope_and_roles() -> None:
     assert tasks.status_code == 200
     assert tasks.json()["total"] == 1
 
+    audit = client.get(
+        f"/api/v1/workspaces/{workspace.id}/audit-events",
+        headers=_headers(owner.id),
+    )
+    assert audit.status_code == 200
+    actions = {item["action"] for item in audit.json()["items"]}
+    assert {"agent.created", "team.created", "task.created"} <= actions
+
 
 def test_create_task_is_idempotent_within_workspace() -> None:
     client, session = _client()
@@ -99,11 +107,19 @@ def test_create_task_is_idempotent_within_workspace() -> None:
 
     tasks = session.scalars(select(Task).where(Task.workspace_id == workspace.id)).all()
     runs = session.scalars(select(AgentRun).where(AgentRun.workspace_id == workspace.id)).all()
+    audit = client.get(
+        f"/api/v1/workspaces/{workspace.id}/audit-events",
+        headers=_headers(owner.id),
+    )
+    task_created_events = [
+        item for item in audit.json()["items"] if item["action"] == "task.created"
+    ]
     assert first.status_code == 201
     assert second.status_code == 201
     assert second.json()["id"] == first.json()["id"]
     assert len(tasks) == 1
     assert len(runs) == 1
+    assert len(task_created_events) == 1
 
 
 def test_task_idempotency_key_is_scoped_by_workspace() -> None:

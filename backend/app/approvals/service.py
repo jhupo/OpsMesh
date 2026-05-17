@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
 from backend.app.approvals.models import Approval
-from backend.app.audit.models import AuditEvent
+from backend.app.audit.service import AuditService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task
@@ -115,17 +115,12 @@ class ApprovalService:
                 task.completed_at = datetime.now(UTC)
 
     def _append_audit_event(self, approval: Approval, user_id: UUID, action: str) -> None:
-        self._session.add(
-            AuditEvent(
-                workspace_id=approval.workspace_id,
-                actor_type="user",
-                actor_id=str(user_id),
-                user_id=user_id,
-                action=action,
-                target_type="approval",
-                target_id=str(approval.id),
-                created_at=datetime.now(UTC),
-            )
+        AuditService(self._session).record_user_action(
+            workspace_id=approval.workspace_id,
+            user_id=user_id,
+            action=action,
+            target_type="approval",
+            target_id=approval.id,
         )
 
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:

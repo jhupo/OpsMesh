@@ -50,7 +50,11 @@ async def create_agent(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> AgentProfileResponse:
-    agent = WorkspaceResourceService(session).create_agent(context.workspace.id, request)
+    agent = WorkspaceResourceService(session).create_agent(
+        context.workspace.id,
+        request,
+        context.user.user_id,
+    )
     return AgentProfileResponse.model_validate(agent)
 
 
@@ -70,7 +74,11 @@ async def create_team(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> AgentTeamResponse:
-    team = WorkspaceResourceService(session).create_team(context.workspace.id, request)
+    team = WorkspaceResourceService(session).create_team(
+        context.workspace.id,
+        request,
+        context.user.user_id,
+    )
     return AgentTeamResponse.model_validate(team)
 
 

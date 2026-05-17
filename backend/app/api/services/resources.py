@@ -10,6 +10,7 @@ from backend.app.api.schemas.agents import AgentProfileCreateRequest
 from backend.app.api.schemas.tasks import TaskCreateRequest
 from backend.app.api.schemas.teams import AgentTeamCreateRequest
 from backend.app.audit.models import AuditEvent
+from backend.app.audit.service import AuditService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task
@@ -33,9 +34,24 @@ class WorkspaceResourceService:
             statement = statement.where(AgentProfile.status == status)
         return self._page(statement.order_by(AgentProfile.created_at.desc()), page)
 
-    def create_agent(self, workspace_id: UUID, data: AgentProfileCreateRequest) -> AgentProfile:
+    def create_agent(
+        self,
+        workspace_id: UUID,
+        data: AgentProfileCreateRequest,
+        actor_user_id: UUID | None = None,
+    ) -> AgentProfile:
         agent = AgentProfile(workspace_id=workspace_id, **data.model_dump())
         self._session.add(agent)
+        self._session.flush()
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="agent.created",
+                target_type="agent_profile",
+                target_id=agent.id,
+                metadata={"name": agent.name, "role": agent.role},
+            )
         self._session.commit()
         self._session.refresh(agent)
         return agent
@@ -48,9 +64,24 @@ class WorkspaceResourceService:
         )
         return self._page(statement, page)
 
-    def create_team(self, workspace_id: UUID, data: AgentTeamCreateRequest) -> AgentTeam:
+    def create_team(
+        self,
+        workspace_id: UUID,
+        data: AgentTeamCreateRequest,
+        actor_user_id: UUID | None = None,
+    ) -> AgentTeam:
         team = AgentTeam(workspace_id=workspace_id, **data.model_dump())
         self._session.add(team)
+        self._session.flush()
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="team.created",
+                target_type="agent_team",
+                target_id=team.id,
+                metadata={"name": team.name, "team_type": team.team_type},
+            )
         self._session.commit()
         self._session.refresh(team)
         return team
@@ -80,6 +111,14 @@ class WorkspaceResourceService:
         self._session.add(task)
         self._session.flush()
         RunOrchestrationService(self._session).create_queued_run_for_task(task)
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=created_by_user_id,
+            action="task.created",
+            target_type="task",
+            target_id=task.id,
+            metadata={"title": task.title, "domain_type": task.domain_type},
+        )
         self._session.commit()
         self._session.refresh(task)
         return task
