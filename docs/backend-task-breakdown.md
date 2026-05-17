@@ -197,15 +197,15 @@ Goal: expose safe backend tools to agents.
 
 Tasks:
 
-- [ ] Define product tool interface.
-- [ ] Implement tool permission checks.
-- [ ] Implement `list_workspace_files`.
-- [ ] Implement `read_workspace_file`.
-- [ ] Implement `write_artifact`.
-- [ ] Implement `search_workspace_memory` placeholder.
-- [ ] Add tool event logging.
-- [ ] Add tool error formatter.
-- [ ] Add tests for tool workspace isolation.
+- [x] Define product tool interface.
+- [x] Implement tool permission checks.
+- [x] Implement `list_workspace_files`.
+- [x] Implement `read_workspace_file`.
+- [x] Implement `write_artifact`.
+- [x] Implement `search_workspace_memory` placeholder.
+- [x] Add tool event logging.
+- [x] Add tool error formatter.
+- [x] Add tests for tool workspace isolation.
 
 Deliverables:
 
