@@ -103,6 +103,7 @@ def _seed_run(session: Session) -> tuple[User, Workspace, Task, AgentRun]:
     session.add_all([user, workspace, membership])
     session.flush()
     task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Task")
+    task.status = TaskStatus.WAITING_APPROVAL.value
     session.add(task)
     session.flush()
     run = AgentRun(

@@ -17,7 +17,8 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus, require_run_transition
 from backend.app.tasks.models import Task
-from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus, require_task_transition
+from backend.app.tasks.service import TaskStateService
+from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
 
@@ -45,7 +46,7 @@ class RunOrchestrationService:
             status=RunStatus.QUEUED.value,
             input={"task_id": str(task.id), "title": task.title},
         )
-        task.status = TaskStatus.QUEUED.value
+        TaskStateService().transition(task, TaskStatus.QUEUED)
         self._session.add(run)
         self._session.flush()
         return run
@@ -75,11 +76,11 @@ class RunOrchestrationService:
         )
         if task is None:
             return None
+        if TaskStatus(task.status) == TaskStatus.CANCELLED:
+            raise ValueError("Task is already cancelled")
 
-        require_task_transition(TaskStatus(task.status), TaskStatus.CANCELLED)
         completed_at = datetime.now(UTC)
-        task.status = TaskStatus.CANCELLED.value
-        task.completed_at = completed_at
+        TaskStateService().transition(task, TaskStatus.CANCELLED, completed_at=completed_at)
 
         active_runs = self._session.scalars(
             select(AgentRun).where(
@@ -127,9 +128,11 @@ class RunOrchestrationService:
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
             if task is not None and TaskStatus(task.status) not in TERMINAL_TASK_STATUSES:
-                require_task_transition(TaskStatus(task.status), TaskStatus.CANCELLED)
-                task.status = TaskStatus.CANCELLED.value
-                task.completed_at = completed_at
+                TaskStateService().transition(
+                    task,
+                    TaskStatus.CANCELLED,
+                    completed_at=completed_at,
+                )
 
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
@@ -164,9 +167,7 @@ class RunOrchestrationService:
             else None
         )
         if task is not None:
-            require_task_transition(TaskStatus(task.status), TaskStatus.QUEUED)
-            task.status = TaskStatus.QUEUED.value
-            task.completed_at = None
+            TaskStateService().transition(task, TaskStatus.QUEUED)
 
         retry_run = AgentRun(
             workspace_id=failed_run.workspace_id,
@@ -261,8 +262,7 @@ class RunOrchestrationService:
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
             if task is not None:
-                require_task_transition(TaskStatus(task.status), TaskStatus.RUNNING)
-                task.status = TaskStatus.RUNNING.value
+                TaskStateService().transition(task, TaskStatus.RUNNING)
 
     def _mark_run_completed(self, run: AgentRun, final_output: str) -> None:
         require_run_transition(RunStatus(run.status), RunStatus.COMPLETED)
@@ -274,10 +274,12 @@ class RunOrchestrationService:
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
             if task is not None:
-                require_task_transition(TaskStatus(task.status), TaskStatus.COMPLETED)
-                task.status = TaskStatus.COMPLETED.value
-                task.final_output = run.output
-                task.completed_at = run.completed_at
+                TaskStateService().transition(
+                    task,
+                    TaskStatus.COMPLETED,
+                    completed_at=run.completed_at,
+                    final_output=run.output,
+                )
 
     def _mark_run_failed(self, run: AgentRun, exc: Exception) -> None:
         require_run_transition(RunStatus(run.status), RunStatus.FAILED)
@@ -290,8 +292,11 @@ class RunOrchestrationService:
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
             if task is not None:
-                task.status = TaskStatus.FAILED.value
-                task.completed_at = run.completed_at
+                TaskStateService().transition(
+                    task,
+                    TaskStatus.FAILED,
+                    completed_at=run.completed_at,
+                )
 
     def _mark_run_recovered_failed(self, run: AgentRun) -> None:
         require_run_transition(RunStatus(run.status), RunStatus.FAILED)
@@ -313,9 +318,7 @@ class RunOrchestrationService:
         task = self._session.get(Task, run.task_id)
         if task is None or TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
             return
-        require_task_transition(TaskStatus(task.status), TaskStatus.FAILED)
-        task.status = TaskStatus.FAILED.value
-        task.completed_at = run.completed_at
+        TaskStateService().transition(task, TaskStatus.FAILED, completed_at=run.completed_at)
 
     def _mark_run_cancelled(self, run: AgentRun, *, completed_at: datetime) -> None:
         require_run_transition(RunStatus(run.status), RunStatus.CANCELLED)

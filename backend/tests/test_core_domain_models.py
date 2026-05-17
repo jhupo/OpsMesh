@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
@@ -13,6 +14,7 @@ from backend.app.identity.models import User
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus, can_transition_run, require_run_transition
 from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus, can_transition_task, require_task_transition
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -132,6 +134,39 @@ def test_invalid_status_transition_raises() -> None:
         assert "Invalid task transition" in str(exc)
     else:
         raise AssertionError("Expected invalid task transition to raise")
+
+
+def test_task_state_service_updates_completion_metadata() -> None:
+    task = Task(workspace_id=uuid4(), title="Task")
+    task.status = TaskStatus.RUNNING.value
+    completed_at = datetime.now(UTC)
+
+    transition = TaskStateService().transition(
+        task,
+        TaskStatus.COMPLETED,
+        completed_at=completed_at,
+        final_output={"result": "done"},
+    )
+
+    assert transition.previous_status == TaskStatus.RUNNING
+    assert transition.next_status == TaskStatus.COMPLETED
+    assert transition.changed is True
+    assert task.status == TaskStatus.COMPLETED.value
+    assert task.completed_at == completed_at
+    assert task.final_output == {"result": "done"}
+
+
+def test_task_state_service_reopens_failed_task_for_retry() -> None:
+    task = Task(workspace_id=uuid4(), title="Task")
+    task.status = TaskStatus.FAILED.value
+    task.completed_at = datetime.now(UTC)
+    task.final_output = {"error": "old"}
+
+    TaskStateService().transition(task, TaskStatus.QUEUED)
+
+    assert task.status == TaskStatus.QUEUED.value
+    assert task.completed_at is None
+    assert task.final_output is None
 
 
 def _session() -> Session:

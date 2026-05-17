@@ -10,6 +10,7 @@ from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import RuntimeCommand, WorkspaceRuntime
 from backend.app.tasks.models import Task
+from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
 from backend.app.tools.context import ToolContext
 
@@ -120,4 +121,4 @@ class RuntimeToolService:
         if context.task_id is not None:
             task = self._session.get(Task, context.task_id)
             if task is not None:
-                task.status = TaskStatus.WAITING_APPROVAL.value
+                TaskStateService().transition(task, TaskStatus.WAITING_APPROVAL)

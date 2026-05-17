@@ -11,6 +11,7 @@ from backend.app.audit.service import AuditService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task
+from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
@@ -111,8 +112,11 @@ class ApprovalService:
         if approval.task_id is not None:
             task = self._session.get(Task, approval.task_id)
             if task is not None:
-                task.status = TaskStatus.FAILED.value
-                task.completed_at = datetime.now(UTC)
+                TaskStateService().transition(
+                    task,
+                    TaskStatus.FAILED,
+                    completed_at=datetime.now(UTC),
+                )
 
     def _append_audit_event(self, approval: Approval, user_id: UUID, action: str) -> None:
         AuditService(self._session).record_user_action(

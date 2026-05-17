@@ -28,6 +28,7 @@ from backend.app.self_hosted.models import (
     SelfHostedWorker,
 )
 from backend.app.tasks.models import Task
+from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
 
 
@@ -186,7 +187,7 @@ class SelfHostedRuntimeService:
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
             if task is not None:
-                task.status = TaskStatus.RUNNING.value
+                TaskStateService().transition(task, TaskStatus.RUNNING)
         claim = SelfHostedJobClaim(
             workspace_id=run.workspace_id,
             worker_id=auth.worker.id,

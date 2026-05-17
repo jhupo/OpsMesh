@@ -18,6 +18,7 @@ from backend.app.main import create_app
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.self_hosted.models import RuntimeCredential
 from backend.app.tasks.models import Task
+from backend.app.tasks.status import TaskStatus
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -56,7 +57,12 @@ def test_self_hosted_runtime_registration_and_job_flow() -> None:
     )
     assert heartbeat.status_code == 200
 
-    task = Task(workspace_id=workspace.id, created_by_user_id=owner.id, title="Private render")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Private render",
+        status=TaskStatus.QUEUED.value,
+    )
     session.add(task)
     session.flush()
     run = AgentRun(

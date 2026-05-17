@@ -65,8 +65,12 @@ def test_runtime_tool_executes_inside_runtime_manager() -> None:
         name="runtime",
         limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
     )
-    task = Task(workspace_id=workspace.id, title="Task")
-    run = AgentRun(workspace_id=workspace.id, task_id=task.id)
+    task = Task(workspace_id=workspace.id, title="Task", status=TaskStatus.RUNNING.value)
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        status=RunStatus.RUNNING.value,
+    )
     session.add_all([task, run])
     session.commit()
     context = ToolContext(
@@ -102,8 +106,12 @@ def test_runtime_tool_blocks_risky_command_for_approval() -> None:
         name="runtime",
         limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
     )
-    task = Task(workspace_id=workspace.id, title="Task")
-    run = AgentRun(workspace_id=workspace.id, task_id=task.id)
+    task = Task(workspace_id=workspace.id, title="Task", status=TaskStatus.RUNNING.value)
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        status=RunStatus.RUNNING.value,
+    )
     session.add_all([task, run])
     session.commit()
     context = ToolContext(
