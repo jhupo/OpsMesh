@@ -1,8 +1,11 @@
+from typing import TYPE_CHECKING
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from redis import Redis
 from sqlalchemy.orm import Session
 
+from backend.app.api.idempotency import IdempotencyInProgressError, IdempotencyService
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
 from backend.app.api.schemas.agents import AgentProfileCreateRequest, AgentProfileResponse
 from backend.app.api.schemas.audit import AuditEventResponse
@@ -13,7 +16,15 @@ from backend.app.api.services.resources import WorkspaceResourceService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
+from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
+from backend.app.redis.dependencies import get_redis_client
+from backend.app.redis.keys import RedisKeyBuilder
+
+if TYPE_CHECKING:
+    RedisClient = Redis[str]
+else:
+    RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 
@@ -81,15 +92,47 @@ async def list_tasks(
 @router.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
     request: TaskCreateRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
 ) -> TaskResponse:
-    task = WorkspaceResourceService(session).create_task(
-        workspace_id=context.workspace.id,
-        created_by_user_id=context.user.user_id,
-        data=request,
+    resource_service = WorkspaceResourceService(session)
+    idempotency = IdempotencyService(
+        redis,
+        RedisKeyBuilder(settings.redis_key_prefix),
     )
-    return TaskResponse.model_validate(task)
+    try:
+        reservation = idempotency.reserve(
+            workspace_id=context.workspace.id,
+            operation="tasks.create",
+            idempotency_key=idempotency_key,
+        )
+    except IdempotencyInProgressError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Request with this Idempotency-Key is still processing",
+        ) from exc
+
+    if reservation is not None and reservation.existing_resource_id is not None:
+        task = resource_service.get_task(context.workspace.id, reservation.existing_resource_id)
+        if task is not None:
+            return TaskResponse.model_validate(task)
+        idempotency.forget(reservation)
+        reservation = None
+
+    try:
+        task = resource_service.create_task(
+            workspace_id=context.workspace.id,
+            created_by_user_id=context.user.user_id,
+            data=request,
+        )
+        idempotency.complete(reservation, task.id)
+        return TaskResponse.model_validate(task)
+    except Exception:
+        idempotency.release(reservation)
+        raise
 
 
 @router.get("/runs", response_model=PageResponse[AgentRunResponse])

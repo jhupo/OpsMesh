@@ -1,7 +1,8 @@
 from collections.abc import Generator
 
+import fakeredis
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
@@ -13,6 +14,9 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.redis.dependencies import get_redis_client
+from backend.app.runs.models import AgentRun
+from backend.app.tasks.models import Task
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -77,6 +81,58 @@ def test_workspace_and_resource_api_enforces_scope_and_roles() -> None:
     assert tasks.json()["total"] == 1
 
 
+def test_create_task_is_idempotent_within_workspace() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    headers = _headers(owner.id) | {"Idempotency-Key": "create-q2-task"}
+
+    first = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=headers,
+        json={"title": "Q2 Market Analysis"},
+    )
+    second = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=headers,
+        json={"title": "Q2 Market Analysis"},
+    )
+
+    tasks = session.scalars(select(Task).where(Task.workspace_id == workspace.id)).all()
+    runs = session.scalars(select(AgentRun).where(AgentRun.workspace_id == workspace.id)).all()
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.json()["id"] == first.json()["id"]
+    assert len(tasks) == 1
+    assert len(runs) == 1
+
+
+def test_task_idempotency_key_is_scoped_by_workspace() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner", email="owner@example.com", slug="one")
+    other, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other@example.com",
+        slug="two",
+    )
+    key = "same-client-key"
+
+    first = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id) | {"Idempotency-Key": key},
+        json={"title": "Owner task"},
+    )
+    second = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks",
+        headers=_headers(other.id) | {"Idempotency-Key": key},
+        json={"title": "Other task"},
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] != second.json()["id"]
+
+
 def test_create_workspace_assigns_owner_membership() -> None:
     client, session = _client()
     user = User(email="new-owner@example.com", display_name="New Owner")
@@ -134,6 +190,7 @@ def _client() -> tuple[TestClient, Session]:
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
+    redis = fakeredis.FakeRedis(decode_responses=True)
 
     app = create_app(
         Settings(
@@ -153,6 +210,7 @@ def _client() -> tuple[TestClient, Session]:
 
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
+    app.dependency_overrides[get_redis_client] = lambda: redis
     return TestClient(app), session
 
 

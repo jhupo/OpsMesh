@@ -84,6 +84,11 @@ class WorkspaceResourceService:
         self._session.refresh(task)
         return task
 
+    def get_task(self, workspace_id: UUID, task_id: UUID) -> Task | None:
+        return self._session.scalar(
+            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+        )
+
     def list_runs(
         self,
         workspace_id: UUID,
