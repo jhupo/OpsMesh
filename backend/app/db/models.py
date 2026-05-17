@@ -17,6 +17,7 @@ from backend.app.capabilities.models import (
 from backend.app.domains.models import DomainItem, DomainProject, ReviewComment, RevisionRequest
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.identity.models import User
+from backend.app.operations.models import WorkerHeartbeat
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtimes.models import (
     RuntimeCommand,
@@ -74,4 +75,5 @@ __all__ = [
     "WorkspaceMember",
     "WorkspaceRuntime",
     "WorkspaceSkillInstall",
+    "WorkerHeartbeat",
 ]

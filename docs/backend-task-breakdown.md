@@ -393,15 +393,15 @@ Goal: make backend runs inspectable and operable.
 
 Tasks:
 
-- [ ] Add structured logs.
-- [ ] Add run event viewer endpoint.
-- [ ] Add runtime event endpoint.
-- [ ] Add worker heartbeat.
-- [ ] Add queue metrics endpoint.
-- [ ] Add runtime cleanup scheduler.
-- [ ] Add orphan container cleanup.
-- [ ] Add failed job inspection.
-- [ ] Add audit event filters.
+- [x] Add structured logs.
+- [x] Add run event viewer endpoint.
+- [x] Add runtime event endpoint.
+- [x] Add worker heartbeat.
+- [x] Add queue metrics endpoint.
+- [x] Add runtime cleanup scheduler.
+- [x] Add orphan container cleanup.
+- [x] Add failed job inspection.
+- [x] Add audit event filters.
 
 Deliverables:
 
