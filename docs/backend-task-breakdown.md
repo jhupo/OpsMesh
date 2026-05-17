@@ -344,17 +344,17 @@ Goal: manage what agents are allowed to do.
 
 Tasks:
 
-- [ ] Add capability catalog.
-- [ ] Add skill registry.
-- [ ] Add workspace skill install table.
-- [ ] Add tool group catalog.
-- [ ] Add MCP server registry.
-- [ ] Add MCP tool allowlist.
-- [ ] Add MCP credential reference model.
-- [ ] Add MCP health status.
-- [ ] Map allowed MCP tools to SDK tools.
-- [ ] Log MCP tool calls.
-- [ ] Add approval policy for write-capable MCP tools.
+- [x] Add capability catalog.
+- [x] Add skill registry.
+- [x] Add workspace skill install table.
+- [x] Add tool group catalog.
+- [x] Add MCP server registry.
+- [x] Add MCP tool allowlist.
+- [x] Add MCP credential reference model.
+- [x] Add MCP health status.
+- [x] Map allowed MCP tools to SDK tools.
+- [x] Log MCP tool calls.
+- [x] Add approval policy for write-capable MCP tools.
 
 Deliverables:
 

@@ -4,6 +4,16 @@ from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
+from backend.app.capabilities.models import (
+    Capability,
+    McpCredentialReference,
+    McpServer,
+    McpToolAllowlist,
+    McpToolCallLog,
+    Skill,
+    ToolGroup,
+    WorkspaceSkillInstall,
+)
 from backend.app.domains.models import DomainItem, DomainProject, ReviewComment, RevisionRequest
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.identity.models import User
@@ -26,20 +36,28 @@ __all__ = [
     "Approval",
     "Artifact",
     "AuditEvent",
+    "Capability",
     "DomainItem",
     "DomainProject",
     "FileAccessEvent",
+    "McpCredentialReference",
+    "McpServer",
+    "McpToolAllowlist",
+    "McpToolCallLog",
     "ReviewComment",
     "RevisionRequest",
     "RunEvent",
     "RuntimeCommand",
     "RuntimeEvent",
     "RuntimeTemplate",
+    "Skill",
     "Task",
     "TaskStep",
+    "ToolGroup",
     "User",
     "Workspace",
     "WorkspaceFile",
     "WorkspaceMember",
     "WorkspaceRuntime",
+    "WorkspaceSkillInstall",
 ]
