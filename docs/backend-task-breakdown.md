@@ -295,16 +295,16 @@ Goal: pause sensitive actions and resume after human decision.
 
 Tasks:
 
-- [ ] Add `approvals` table.
-- [ ] Implement approval creation.
-- [ ] Implement approval list endpoint.
-- [ ] Implement approve endpoint.
-- [ ] Implement reject endpoint.
-- [ ] Add approval policy to agent profile.
-- [ ] Pause run on approval.
-- [ ] Enqueue resume job after approval.
-- [ ] Resume or fail run based on decision.
-- [ ] Add audit events.
+- [x] Add `approvals` table.
+- [x] Implement approval creation.
+- [x] Implement approval list endpoint.
+- [x] Implement approve endpoint.
+- [x] Implement reject endpoint.
+- [x] Add approval policy for risky runtime shell commands.
+- [x] Pause run on approval.
+- [x] Enqueue resume job after approval.
+- [x] Resume or fail run based on decision.
+- [x] Add audit events.
 
 Deliverables:
 

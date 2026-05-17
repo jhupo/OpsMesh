@@ -16,6 +16,10 @@ dependencies = [
     "uvicorn[standard]>=0.35.0,<1.0.0",
 ]
 
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
 [dependency-groups]
 dev = [
     "fakeredis>=2.35.1",
@@ -27,6 +31,9 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]

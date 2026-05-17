@@ -4,9 +4,13 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.approvals.service import ApprovalService
 from backend.app.runs.models import RunEvent
+from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import RuntimeCommand, WorkspaceRuntime
+from backend.app.tasks.models import Task
+from backend.app.tasks.status import TaskStatus
 from backend.app.tools.context import ToolContext
 
 
@@ -48,6 +52,16 @@ class RuntimeToolService:
         context.require_tool("runtime_shell")
         self._append_tool_event(context, "tool.called", "runtime_shell")
         if self._policy.requires_approval(command):
+            ApprovalService(self._session).create_approval(
+                workspace_id=context.workspace_id,
+                task_id=context.task_id,
+                agent_run_id=context.agent_run_id,
+                requested_by_agent_profile_id=None,
+                approval_type="runtime.command",
+                risk_level="high",
+                payload={"command": command, "runtime_id": str(runtime.id)},
+            )
+            self._mark_waiting_approval(context)
             self._append_tool_event(context, "approval.requested", "runtime_shell")
             self._session.flush()
             return RuntimeToolResult(
@@ -95,3 +109,15 @@ class RuntimeToolService:
                 created_at=datetime.now(UTC),
             )
         )
+
+    def _mark_waiting_approval(self, context: ToolContext) -> None:
+        if context.agent_run_id is not None:
+            from backend.app.runs.models import AgentRun
+
+            run = self._session.get(AgentRun, context.agent_run_id)
+            if run is not None:
+                run.status = RunStatus.WAITING_APPROVAL.value
+        if context.task_id is not None:
+            task = self._session.get(Task, context.task_id)
+            if task is not None:
+                task.status = TaskStatus.WAITING_APPROVAL.value

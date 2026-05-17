@@ -1,6 +1,7 @@
 """Import all SQLAlchemy models so relationship targets are registered."""
 
 from backend.app.agents.models import AgentProfile
+from backend.app.approvals.models import Approval
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
@@ -21,6 +22,7 @@ __all__ = [
     "AgentRun",
     "AgentTeam",
     "AgentTeamMember",
+    "Approval",
     "Artifact",
     "AuditEvent",
     "FileAccessEvent",
