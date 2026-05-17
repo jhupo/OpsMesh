@@ -9,12 +9,14 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
-from backend.app.api.schemas.operations import QueueMetricsResponse
+from backend.app.api.schemas.operations import DeadLetterJobsResponse, QueueMetricsResponse
 from backend.app.audit.models import AuditEvent
 from backend.app.operations.models import WorkerHeartbeat
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.workers.jobs import JobPayload
+from backend.app.workers.queue import RedisQueue
 
 T = TypeVar("T")
 
@@ -68,7 +70,11 @@ class OperationsService:
         self._session.refresh(heartbeat)
         return heartbeat
 
-    def queue_metrics(self, queue_name: str) -> QueueMetricsResponse:
+    def queue_metrics(
+        self,
+        queue_name: str,
+        workspace_id: UUID | None = None,
+    ) -> QueueMetricsResponse:
         if self._redis is None:
             return QueueMetricsResponse(
                 queue_name=queue_name,
@@ -76,15 +82,45 @@ class OperationsService:
                 dead_letter=0,
                 idempotency_keys=0,
             )
-        queued = self._redis_count(self._redis.llen(self._keys.queue(queue_name)))
-        dead = self._redis_count(self._redis.llen(self._keys.dead_letter_queue(queue_name)))
-        idempotency_keys = int(self._count_keys(self._keys.idempotency_key("*", "*")))
+        queue = RedisQueue(self._redis, self._keys, queue_name)
+        queued = queue.count_queued(workspace_id=workspace_id)
+        dead = queue.count_dead_letters(workspace_id=workspace_id)
+        idempotency_pattern = (
+            self._keys.idempotency_key(str(workspace_id), "*")
+            if workspace_id is not None
+            else self._keys.idempotency_key("*", "*")
+        )
+        idempotency_keys = int(self._count_keys(idempotency_pattern))
         return QueueMetricsResponse(
             queue_name=queue_name,
             queued=queued,
             dead_letter=dead,
             idempotency_keys=idempotency_keys,
         )
+
+    def list_dead_letters(
+        self,
+        workspace_id: UUID,
+        queue_name: str,
+        limit: int,
+    ) -> DeadLetterJobsResponse:
+        if self._redis is None:
+            return DeadLetterJobsResponse(items=[], total=0)
+        queue = RedisQueue(self._redis, self._keys, queue_name)
+        items = queue.list_dead_letters(limit, workspace_id=workspace_id)
+        total = queue.count_dead_letters(workspace_id=workspace_id)
+        return DeadLetterJobsResponse(items=items, total=total)
+
+    def requeue_dead_letter(
+        self,
+        workspace_id: UUID,
+        queue_name: str,
+        job_id: UUID,
+    ) -> JobPayload | None:
+        if self._redis is None:
+            return None
+        queue = RedisQueue(self._redis, self._keys, queue_name)
+        return queue.requeue_dead_letter(job_id, workspace_id=workspace_id)
 
     def list_run_events(
         self,
@@ -178,7 +214,7 @@ class OperationsService:
             )
         )
         return {
-            "queue": self.queue_metrics(queue_name),
+            "queue": self.queue_metrics(queue_name, workspace_id),
             "failed_runs": int(failed_runs or 0),
             "offline_runtimes": int(offline_runtimes or 0),
             "workers_online": int(workers_online or 0),

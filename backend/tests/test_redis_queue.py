@@ -66,6 +66,24 @@ def test_consume_once_requeues_failed_job_then_dead_letters() -> None:
     assert JobPayload.model_validate_json(raw_dead_letter).attempt == 2
 
 
+def test_dead_letter_jobs_can_be_listed_and_requeued() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    keys = RedisKeyBuilder("chaincloud")
+    queue = RedisQueue(redis=redis, keys=keys, queue_name="agent_runs")
+    job = _job(max_attempts=1)
+    queue.retry_or_dead_letter(job)
+
+    dead_letters = queue.list_dead_letters()
+    requeued = queue.requeue_dead_letter(dead_letters[0].job_id)
+
+    assert len(dead_letters) == 1
+    assert requeued is not None
+    assert requeued.job_id != job.job_id
+    assert requeued.attempt == 0
+    assert queue.list_dead_letters() == []
+    assert queue.dequeue() == requeued
+
+
 def _job(max_attempts: int = 3) -> JobPayload:
     workspace_id = uuid4()
     return JobPayload(

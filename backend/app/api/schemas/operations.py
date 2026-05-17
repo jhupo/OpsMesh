@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.common import TimestampedModel
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
+from backend.app.workers.jobs import JobPayload
 
 
 class RuntimeEventResponse(BaseModel):
@@ -42,6 +43,16 @@ class QueueMetricsResponse(BaseModel):
     queued: int
     dead_letter: int
     idempotency_keys: int
+
+
+class DeadLetterJobsResponse(BaseModel):
+    items: list[JobPayload]
+    total: int
+
+
+class RequeueDeadLetterResponse(BaseModel):
+    requeued: bool
+    job: JobPayload | None = None
 
 
 class RuntimeCleanupResponse(BaseModel):

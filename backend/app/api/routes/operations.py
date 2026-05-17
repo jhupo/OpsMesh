@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from redis import Redis
 from sqlalchemy.orm import Session
 
@@ -11,9 +11,11 @@ from backend.app.api.pagination import PageParams, PageResponse, pagination_para
 from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.operations import (
     AuditEventFilterResponse,
+    DeadLetterJobsResponse,
     FailedJobInspectionResponse,
     OperationsOverviewResponse,
     QueueMetricsResponse,
+    RequeueDeadLetterResponse,
     RunEventFilterResponse,
     RuntimeCleanupResponse,
     RuntimeEventResponse,
@@ -58,7 +60,7 @@ async def record_worker_heartbeat(
 @router.get("/queue-metrics", response_model=QueueMetricsResponse)
 async def queue_metrics(
     queue_name: str = Query(default="agent_runs"),
-    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
@@ -67,7 +69,42 @@ async def queue_metrics(
         session,
         redis,
         RedisKeyBuilder(settings.redis_key_prefix),
-    ).queue_metrics(queue_name)
+    ).queue_metrics(queue_name, context.workspace.id)
+
+
+@router.get("/dead-letter-jobs", response_model=DeadLetterJobsResponse)
+async def list_dead_letter_jobs(
+    queue_name: str = Query(default="agent_runs"),
+    limit: int = Query(default=50, ge=1, le=200),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> DeadLetterJobsResponse:
+    return OperationsService(
+        session,
+        redis,
+        RedisKeyBuilder(settings.redis_key_prefix),
+    ).list_dead_letters(context.workspace.id, queue_name, limit)
+
+
+@router.post("/dead-letter-jobs/{job_id}/requeue", response_model=RequeueDeadLetterResponse)
+async def requeue_dead_letter_job(
+    job_id: UUID,
+    queue_name: str = Query(default="agent_runs"),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> RequeueDeadLetterResponse:
+    job = OperationsService(
+        session,
+        redis,
+        RedisKeyBuilder(settings.redis_key_prefix),
+    ).requeue_dead_letter(context.workspace.id, queue_name, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Dead-letter job not found")
+    return RequeueDeadLetterResponse(requeued=True, job=job)
 
 
 @router.get("/run-events", response_model=RunEventFilterResponse)

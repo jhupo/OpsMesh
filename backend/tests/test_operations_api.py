@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import fakeredis
 from fastapi.testclient import TestClient
@@ -21,6 +22,7 @@ from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -31,9 +33,41 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     client, session = _client(redis)
     owner, workspace = _seed_workspace(session)
     keys = RedisKeyBuilder("chaincloud")
-    redis.rpush(keys.queue("agent_runs"), "job-1")
-    redis.rpush(keys.dead_letter_queue("agent_runs"), "job-dead")
+    failed_run_id = uuid4()
+    queued_job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=failed_run_id,
+        idempotency_key=f"agent.run:{workspace.id}:queued",
+    )
+    other_workspace_queued_job = JobPayload(
+        workspace_id=uuid4(),
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="agent.run:other:queued",
+    )
+    dead_letter_job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=failed_run_id,
+        idempotency_key=f"agent.run:{workspace.id}:dead-letter",
+        attempt=3,
+        max_attempts=3,
+    )
+    other_workspace_job = JobPayload(
+        workspace_id=uuid4(),
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="agent.run:other:dead-letter",
+        attempt=3,
+        max_attempts=3,
+    )
+    redis.rpush(keys.queue("agent_runs"), queued_job.model_dump_json())
+    redis.rpush(keys.queue("agent_runs"), other_workspace_queued_job.model_dump_json())
+    redis.rpush(keys.dead_letter_queue("agent_runs"), dead_letter_job.model_dump_json())
+    redis.rpush(keys.dead_letter_queue("agent_runs"), other_workspace_job.model_dump_json())
     redis.set(keys.idempotency_key(str(workspace.id), "job-1"), "1")
+    redis.set(keys.idempotency_key(str(other_workspace_queued_job.workspace_id), "job-2"), "1")
 
     runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
@@ -42,7 +76,12 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
         connection_status="online",
         last_heartbeat_at=datetime.now(UTC) - timedelta(seconds=1_000),
     )
-    failed_run = AgentRun(workspace_id=workspace.id, status="failed", error={"message": "bad"})
+    failed_run = AgentRun(
+        id=failed_run_id,
+        workspace_id=workspace.id,
+        status="failed",
+        error={"message": "bad"},
+    )
     session.add_all([runtime, failed_run])
     session.flush()
     session.add_all(
@@ -90,6 +129,40 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert metrics.status_code == 200
     assert metrics.json()["queued"] == 1
     assert metrics.json()["dead_letter"] == 1
+    assert metrics.json()["idempotency_keys"] == 1
+
+    dead_letters = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/dead-letter-jobs",
+        headers=_headers(owner.id),
+    )
+    assert dead_letters.status_code == 200
+    assert dead_letters.json()["total"] == 1
+    assert dead_letters.json()["items"][0]["job_id"] == str(dead_letter_job.job_id)
+
+    cross_workspace_requeue = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/dead-letter-jobs/"
+        f"{other_workspace_job.job_id}/requeue",
+        headers=_headers(owner.id),
+    )
+    assert cross_workspace_requeue.status_code == 404
+
+    requeued = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/dead-letter-jobs/"
+        f"{dead_letter_job.job_id}/requeue",
+        headers=_headers(owner.id),
+    )
+    assert requeued.status_code == 200
+    assert requeued.json()["requeued"] is True
+    assert requeued.json()["job"]["attempt"] == 0
+    assert redis.llen(keys.dead_letter_queue("agent_runs")) == 1
+    assert redis.llen(keys.queue("agent_runs")) == 3
+
+    missing_requeue = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/dead-letter-jobs/"
+        f"{dead_letter_job.job_id}/requeue",
+        headers=_headers(owner.id),
+    )
+    assert missing_requeue.status_code == 404
 
     failed = client.get(
         f"/api/v1/workspaces/{workspace.id}/operations/failed-runs",
