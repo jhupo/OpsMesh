@@ -432,6 +432,31 @@ Deliverables:
 - core backend safety has automated tests
 - regressions are caught early
 
+## Phase 19: Talent Marketplace And Hiring
+
+Goal: let each user act as a boss who hires public agents into their own AI company.
+
+Tasks:
+
+- [x] Add public talent listing model.
+- [x] Add workspace agent install model.
+- [x] Publish a workspace agent profile to the talent market.
+- [x] Search public agents by role, skill, and query.
+- [x] Hire a public agent into another workspace as an isolated copy.
+- [x] Optionally place the hired agent into a team role.
+- [x] Record hiring and publishing audit events.
+- [x] Prevent duplicate hires of the same listing into a workspace.
+- [ ] Add HR agent recommendation workflow.
+- [ ] Add listing version upgrades and pinned versions.
+- [ ] Add public rating, usage, and review metrics.
+
+Deliverables:
+
+- boss can publish an agent as public talent
+- another boss can hire that agent into their own workspace
+- hired agents do not inherit source workspace data or credentials
+- hired agents can be assigned to a department/team role
+
 ## Suggested MVP Cut
 
 Minimum backend demo:
