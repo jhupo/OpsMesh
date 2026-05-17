@@ -3,15 +3,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from backend.app.agents import models as agent_models  # noqa: F401
-from backend.app.audit import models as audit_models  # noqa: F401
 from backend.app.core.config import get_settings
+from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
-from backend.app.identity import models as identity_models  # noqa: F401
-from backend.app.runs import models as run_models  # noqa: F401
-from backend.app.tasks import models as task_models  # noqa: F401
-from backend.app.teams import models as team_models  # noqa: F401
-from backend.app.workspaces import models as workspace_models  # noqa: F401
 
 config = context.config
 

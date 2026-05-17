@@ -4,6 +4,7 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings, get_settings
+from backend.app.db import models as registered_models  # noqa: F401
 
 
 def create_database_engine(settings: Settings) -> Engine:
@@ -24,4 +25,3 @@ def get_db_session() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
-

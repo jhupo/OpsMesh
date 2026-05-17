@@ -129,17 +129,17 @@ Goal: expose the basic backend API.
 
 Tasks:
 
-- [ ] Implement workspace CRUD endpoints.
-- [ ] Implement workspace member endpoints.
-- [ ] Implement agent profile endpoints.
-- [ ] Implement team endpoints.
-- [ ] Implement task endpoints.
-- [ ] Implement run read endpoints.
-- [ ] Implement run event endpoint.
-- [ ] Implement audit event endpoint.
-- [ ] Add pagination.
-- [ ] Add filtering by status.
-- [ ] Add API error format.
+- [x] Implement workspace CRUD endpoints.
+- [x] Implement workspace member endpoints.
+- [x] Implement agent profile endpoints.
+- [x] Implement team endpoints.
+- [x] Implement task endpoints.
+- [x] Implement run read endpoints.
+- [x] Implement run event endpoint.
+- [x] Implement audit event endpoint.
+- [x] Add pagination.
+- [x] Add filtering by status.
+- [x] Add API error format.
 
 Deliverables:
 
