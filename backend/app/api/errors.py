@@ -78,5 +78,7 @@ def _code_for_status(status_code: int) -> str:
             return "conflict"
         case status.HTTP_413_CONTENT_TOO_LARGE:
             return "payload_too_large"
+        case status.HTTP_503_SERVICE_UNAVAILABLE:
+            return "service_unavailable"
         case _:
             return "http_error"

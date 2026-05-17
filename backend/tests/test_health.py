@@ -1,12 +1,17 @@
 import asyncio
 
+import fakeredis
 import pytest
-from fastapi import HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.auth.dependencies import require_internal_token
 from backend.app.core.config import Settings
+from backend.app.db.session import get_db_session
 from backend.app.main import create_app
+from backend.app.redis.dependencies import get_redis_client
 
 
 def test_health_endpoint_returns_service_status() -> None:
@@ -17,6 +22,9 @@ def test_health_endpoint_returns_service_status() -> None:
 
     assert response.status_code == 200
     assert response.headers["X-Request-ID"] == "test-request-id"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
     assert response.json() == {
         "status": "ok",
         "service": "chaincloud-backend",
@@ -34,6 +42,51 @@ def test_health_endpoint_generates_request_id_when_missing() -> None:
     assert response.status_code == 200
     assert response.headers["X-Request-ID"]
     assert response.json()["request_id"] == response.headers["X-Request-ID"]
+
+
+def test_cors_middleware_uses_configured_origins() -> None:
+    app = create_app(
+        Settings(
+            environment="test",
+            log_format="text",
+            cors_origins=["https://console.chaincloud.example"],
+        )
+    )
+    client = TestClient(app)
+
+    response = client.options(
+        "/api/v1/health",
+        headers={
+            "Origin": "https://console.chaincloud.example",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Allow-Origin"] == "https://console.chaincloud.example"
+
+
+def test_readiness_endpoint_checks_dependencies() -> None:
+    app, session = _health_client_app()
+    client = TestClient(app)
+
+    response = client.get("/api/v1/health/ready")
+
+    assert response.status_code == 200
+    assert response.json()["dependencies"] == {"database": "ok", "redis": "ok"}
+    session.close()
+
+
+def test_readiness_endpoint_returns_503_when_dependency_fails() -> None:
+    app, session = _health_client_app(redis=BrokenRedis())
+    client = TestClient(app)
+
+    response = client.get("/api/v1/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "service_unavailable"
+    assert response.json()["error"]["request_id"] == response.headers["X-Request-ID"]
+    session.close()
 
 
 def test_http_errors_use_consistent_error_envelope() -> None:
@@ -69,3 +122,26 @@ def test_validation_errors_use_consistent_error_envelope() -> None:
     assert body["error"]["code"] == "validation_error"
     assert body["error"]["request_id"] == response.headers["X-Request-ID"]
     assert body["error"]["details"]
+
+
+class BrokenRedis:
+    def ping(self) -> bool:
+        raise ConnectionError("redis unavailable")
+
+
+def _health_client_app(redis: object | None = None) -> tuple[FastAPI, Session]:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        future=True,
+    )
+    session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    session = session_factory()
+    app = create_app(Settings(environment="test", log_format="text"))
+
+    def override_db_session() -> object:
+        yield session
+
+    app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_redis_client] = lambda: redis or fakeredis.FakeRedis()
+    return app, session

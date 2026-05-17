@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -16,7 +18,7 @@ class JobHandler(Protocol):
 
 @dataclass(frozen=True)
 class RedisQueue:
-    redis: Redis
+    redis: Redis[str]
     keys: RedisKeyBuilder
     queue_name: str
     blocking_timeout_seconds: int = 1

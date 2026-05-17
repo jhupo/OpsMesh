@@ -12,6 +12,13 @@ logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "X-Permitted-Cross-Domain-Policies": "none",
+}
+
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(
@@ -34,3 +41,14 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         response.headers[REQUEST_ID_HEADER] = request_id
         return response
 
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        response = await call_next(request)
+        for header_name, header_value in SECURITY_HEADERS.items():
+            response.headers.setdefault(header_name, header_value)
+        return response

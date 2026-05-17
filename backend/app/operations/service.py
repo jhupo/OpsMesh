@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar, cast
 from uuid import UUID
@@ -21,7 +23,7 @@ class OperationsService:
     def __init__(
         self,
         session: Session,
-        redis: Redis | None = None,
+        redis: Redis[str] | None = None,
         key_builder: RedisKeyBuilder | None = None,
     ) -> None:
         self._session = session

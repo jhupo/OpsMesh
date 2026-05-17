@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 from redis import Redis
 
 from backend.app.core.config import Settings, get_settings
 
 
-def create_redis_client(settings: Settings) -> Redis:
+def create_redis_client(settings: Settings) -> Redis[str]:
     return Redis.from_url(
         settings.redis_url,
         decode_responses=True,
@@ -12,4 +14,3 @@ def create_redis_client(settings: Settings) -> Redis:
 
 
 redis_client = create_redis_client(get_settings())
-

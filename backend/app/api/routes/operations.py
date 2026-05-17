@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -27,6 +30,11 @@ from backend.app.operations.service import OperationsService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 
+if TYPE_CHECKING:
+    RedisClient = Redis[str]
+else:
+    RedisClient = Redis
+
 router = APIRouter(prefix="/workspaces/{workspace_id}/operations", tags=["operations"])
 
 
@@ -52,7 +60,7 @@ async def queue_metrics(
     queue_name: str = Query(default="agent_runs"),
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
-    redis: Redis = Depends(get_redis_client),
+    redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> QueueMetricsResponse:
     return OperationsService(
@@ -152,7 +160,7 @@ async def operations_overview(
     queue_name: str = Query(default="agent_runs"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
-    redis: Redis = Depends(get_redis_client),
+    redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> OperationsOverviewResponse:
     data = OperationsService(
