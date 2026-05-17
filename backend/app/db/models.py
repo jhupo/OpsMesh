@@ -24,6 +24,14 @@ from backend.app.runtimes.models import (
     RuntimeTemplate,
     WorkspaceRuntime,
 )
+from backend.app.self_hosted.models import (
+    LocalFileReference,
+    RuntimeCredential,
+    RuntimeEnrollmentToken,
+    SelfHostedArtifactUpload,
+    SelfHostedJobClaim,
+    SelfHostedWorker,
+)
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -40,6 +48,7 @@ __all__ = [
     "DomainItem",
     "DomainProject",
     "FileAccessEvent",
+    "LocalFileReference",
     "McpCredentialReference",
     "McpServer",
     "McpToolAllowlist",
@@ -48,9 +57,14 @@ __all__ = [
     "RevisionRequest",
     "RunEvent",
     "RuntimeCommand",
+    "RuntimeCredential",
+    "RuntimeEnrollmentToken",
     "RuntimeEvent",
     "RuntimeTemplate",
     "Skill",
+    "SelfHostedArtifactUpload",
+    "SelfHostedJobClaim",
+    "SelfHostedWorker",
     "Task",
     "TaskStep",
     "ToolGroup",

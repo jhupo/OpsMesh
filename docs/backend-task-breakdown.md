@@ -368,17 +368,17 @@ Goal: allow user-owned machines to execute tasks.
 
 Tasks:
 
-- [ ] Add runtime provider field.
-- [ ] Add runtime enrollment token.
-- [ ] Add runtime credential model.
-- [ ] Add self-hosted worker registration endpoint.
-- [ ] Add heartbeat endpoint.
-- [ ] Add job polling endpoint.
-- [ ] Add job claim endpoint.
-- [ ] Add progress event upload.
-- [ ] Add selected artifact upload.
-- [ ] Add local file reference model.
-- [ ] Add credential revocation.
+- [x] Add runtime provider field.
+- [x] Add runtime enrollment token.
+- [x] Add runtime credential model.
+- [x] Add self-hosted worker registration endpoint.
+- [x] Add heartbeat endpoint.
+- [x] Add job polling endpoint.
+- [x] Add job claim endpoint.
+- [x] Add progress event upload.
+- [x] Add selected artifact upload.
+- [x] Add local file reference model.
+- [x] Add credential revocation.
 
 Deliverables:
 

@@ -5,6 +5,7 @@ from backend.app.api.routes.capabilities import router as capabilities_router
 from backend.app.api.routes.domains import router as domains_router
 from backend.app.api.routes.files import router as files_router
 from backend.app.api.routes.health import router as health_router
+from backend.app.api.routes.self_hosted import router as self_hosted_router
 from backend.app.api.routes.workspace_resources import router as workspace_resources_router
 from backend.app.api.routes.workspaces import router as workspaces_router
 
@@ -16,3 +17,4 @@ api_router.include_router(files_router)
 api_router.include_router(approvals_router)
 api_router.include_router(domains_router)
 api_router.include_router(capabilities_router)
+api_router.include_router(self_hosted_router)
