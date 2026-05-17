@@ -455,7 +455,7 @@ Tasks:
 - [x] Prevent duplicate hires of the same listing into a workspace.
 - [x] Add HR agent recommendation workflow.
 - [x] Add listing version upgrades and pinned versions.
-- [ ] Add public rating, usage, and review metrics.
+- [x] Add public rating, usage, and review metrics.
 
 Deliverables:
 

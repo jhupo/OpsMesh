@@ -9,7 +9,10 @@ from backend.app.api.schemas.marketplace import (
     TalentInstallPinRequest,
     TalentInstallUpgradeRequest,
     TalentListingCreateRequest,
+    TalentListingMetricsResponse,
     TalentListingResponse,
+    TalentListingReviewCreateRequest,
+    TalentListingReviewResponse,
     TalentRecommendationRequest,
     TalentRecommendationResponse,
     TalentUpgradeStatusResponse,
@@ -20,7 +23,11 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
-from backend.app.marketplace.service import TalentMarketplaceService, _install_response
+from backend.app.marketplace.service import (
+    TalentMarketplaceService,
+    _install_response,
+    review_response,
+)
 
 router = APIRouter(tags=["talent-marketplace"])
 
@@ -40,6 +47,47 @@ async def list_talent_market(
         skill=skill,
     )
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get(
+    "/talent-market/{listing_id}/metrics",
+    response_model=TalentListingMetricsResponse,
+)
+async def get_talent_listing_metrics(
+    listing_id: UUID,
+    session: Session = Depends(get_db_session),
+) -> TalentListingMetricsResponse:
+    response = TalentMarketplaceService(session).listing_metrics(listing_id)
+    if response is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Talent listing not found",
+        )
+    return response
+
+
+@router.get(
+    "/talent-market/{listing_id}/reviews",
+    response_model=PageResponse[TalentListingReviewResponse],
+)
+async def list_talent_listing_reviews(
+    listing_id: UUID,
+    page: PageParams = Depends(pagination_params),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[TalentListingReviewResponse]:
+    result = TalentMarketplaceService(session).list_reviews(listing_id, page)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Talent listing not found",
+        )
+    items, total = result
+    return PageResponse(
+        items=[review_response(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 @router.post(
@@ -196,3 +244,28 @@ async def upgrade_talent_install(
             detail="Talent install not found",
         )
     return _install_response(install)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/talent-market/{listing_id}/reviews",
+    response_model=TalentListingReviewResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def review_talent_listing(
+    listing_id: UUID,
+    request: TalentListingReviewCreateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> TalentListingReviewResponse:
+    try:
+        review = TalentMarketplaceService(session).upsert_review(
+            workspace_id=context.workspace.id,
+            user_id=context.user.user_id,
+            listing_id=listing_id,
+            data=request,
+        )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return review_response(review)

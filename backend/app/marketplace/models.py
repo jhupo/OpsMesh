@@ -46,7 +46,17 @@ class TalentListing(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=dict,
     )
     version: Mapped[int] = mapped_column(nullable=False, default=1)
+    install_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    upgrade_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    review_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    rating_sum: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="public")
+
+    @property
+    def average_rating(self) -> float:
+        if self.review_count == 0:
+            return 0.0
+        return round(self.rating_sum / self.review_count, 2)
 
 
 class WorkspaceAgentInstall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -91,6 +101,39 @@ class WorkspaceAgentInstall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     installed_agent_profile: Mapped["AgentProfile"] = relationship(
         foreign_keys=[installed_agent_profile_id],
     )
+
+
+class TalentListingReview(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "talent_listing_reviews"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "talent_listing_id",
+            name="uq_talent_listing_reviews_workspace_listing",
+        ),
+        Index("ix_talent_listing_reviews_listing_status", "talent_listing_id", "status"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    talent_listing_id: Mapped[UUID] = mapped_column(
+        ForeignKey("talent_listings.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    workspace_agent_install_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("workspace_agent_installs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False, default="")
+    body: Mapped[str] = mapped_column(String(2_000), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
 
 
 from backend.app.agents.models import AgentProfile  # noqa: E402

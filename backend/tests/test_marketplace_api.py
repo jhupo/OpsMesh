@@ -223,6 +223,86 @@ def test_talent_install_can_be_pinned_checked_and_upgraded_to_new_listing_versio
     assert list_response.json()["items"][0]["installed_version"] == 2
 
 
+def test_talent_listing_metrics_and_reviews_are_public_and_workspace_scoped() -> None:
+    client, session = _client()
+    publisher, publisher_workspace = _seed_workspace(
+        session,
+        email="publisher@example.com",
+        slug="publisher",
+    )
+    buyer, buyer_workspace = _seed_workspace(session, email="buyer@example.com", slug="buyer")
+    non_buyer, non_buyer_workspace = _seed_workspace(
+        session,
+        email="nonbuyer@example.com",
+        slug="nonbuyer",
+    )
+    source_agent = AgentProfile(
+        workspace_id=publisher_workspace.id,
+        name="Research Pro",
+        role="researcher",
+        description="v1 research",
+    )
+    session.add(source_agent)
+    session.commit()
+    listing = _publish_listing(
+        client,
+        publisher,
+        publisher_workspace,
+        source_agent,
+        title="Research Pro",
+        skill_tags=["research"],
+        capability_tags=[],
+    )
+
+    blocked_review = client.post(
+        f"/api/v1/workspaces/{non_buyer_workspace.id}/talent-market/{listing['id']}/reviews",
+        headers=_headers(non_buyer.id),
+        json={"rating": 5, "title": "Cannot review before hire"},
+    )
+    hired = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/talent-market/{listing['id']}/hire",
+        headers=_headers(buyer.id),
+        json={},
+    )
+    first_review = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/talent-market/{listing['id']}/reviews",
+        headers=_headers(buyer.id),
+        json={
+            "workspace_agent_install_id": hired.json()["id"],
+            "rating": 4,
+            "title": "Useful researcher",
+            "body": "Good at evidence gathering.",
+        },
+    )
+    updated_review = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/talent-market/{listing['id']}/reviews",
+        headers=_headers(buyer.id),
+        json={
+            "workspace_agent_install_id": hired.json()["id"],
+            "rating": 5,
+            "title": "Great researcher",
+            "body": "Improved after more usage.",
+        },
+    )
+    metrics = client.get(f"/api/v1/talent-market/{listing['id']}/metrics")
+    reviews = client.get(f"/api/v1/talent-market/{listing['id']}/reviews")
+
+    assert blocked_review.status_code == 404
+    assert hired.status_code == 201
+    assert first_review.status_code == 201
+    assert first_review.json()["rating"] == 4
+    assert updated_review.status_code == 201
+    assert updated_review.json()["rating"] == 5
+    assert updated_review.json()["id"] == first_review.json()["id"]
+    assert metrics.status_code == 200
+    assert metrics.json()["install_count"] == 1
+    assert metrics.json()["review_count"] == 1
+    assert metrics.json()["average_rating"] == 5.0
+    assert reviews.status_code == 200
+    assert reviews.json()["total"] == 1
+    assert reviews.json()["items"][0]["title"] == "Great researcher"
+
+
 def test_talent_install_upgrade_rejects_foreign_workspace_install() -> None:
     client, session = _client()
     publisher, publisher_workspace = _seed_workspace(

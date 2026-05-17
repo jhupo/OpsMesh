@@ -32,6 +32,11 @@ class TalentListingResponse(TimestampedModel):
     risk_level: str
     listing_metadata: dict[str, object]
     version: int
+    install_count: int
+    upgrade_count: int
+    review_count: int
+    rating_sum: int
+    average_rating: float
     status: str
 
 
@@ -102,3 +107,29 @@ class TalentInstallPinRequest(BaseModel):
 class TalentInstallUpgradeRequest(BaseModel):
     target_listing_id: UUID | None = None
     keep_pinned: bool = True
+
+
+class TalentListingReviewCreateRequest(BaseModel):
+    workspace_agent_install_id: UUID | None = None
+    rating: int = Field(ge=1, le=5)
+    title: str = Field(default="", max_length=160)
+    body: str = Field(default="", max_length=2_000)
+
+
+class TalentListingReviewResponse(TimestampedModel):
+    workspace_id: UUID
+    talent_listing_id: UUID
+    workspace_agent_install_id: UUID | None
+    user_id: UUID | None
+    rating: int
+    title: str
+    body: str
+    status: str
+
+
+class TalentListingMetricsResponse(BaseModel):
+    talent_listing_id: UUID
+    install_count: int
+    upgrade_count: int
+    review_count: int
+    average_rating: float

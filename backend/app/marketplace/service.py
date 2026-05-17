@@ -15,7 +15,10 @@ from backend.app.api.schemas.marketplace import (
     TalentInstallPinRequest,
     TalentInstallUpgradeRequest,
     TalentListingCreateRequest,
+    TalentListingMetricsResponse,
     TalentListingResponse,
+    TalentListingReviewCreateRequest,
+    TalentListingReviewResponse,
     TalentRecommendationRequest,
     TalentRecommendationResponse,
     TalentUpgradeStatusResponse,
@@ -23,7 +26,11 @@ from backend.app.api.schemas.marketplace import (
 )
 from backend.app.audit.service import AuditService
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.marketplace.models import TalentListing, WorkspaceAgentInstall
+from backend.app.marketplace.models import (
+    TalentListing,
+    TalentListingReview,
+    WorkspaceAgentInstall,
+)
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 
@@ -194,6 +201,7 @@ class TalentMarketplaceService:
             pinned_version=True,
         )
         self._session.add(install)
+        listing.install_count += 1
         if data.team_id is not None:
             self._add_to_team(
                 workspace_id=workspace_id,
@@ -218,6 +226,12 @@ class TalentMarketplaceService:
         commit_or_raise_conflict(self._session, "Talent listing is already hired in workspace")
         self._session.refresh(install)
         return install
+
+    def get_listing(self, listing_id: UUID) -> TalentListing | None:
+        listing = self._session.get(TalentListing, listing_id)
+        if listing is None or listing.status != "public":
+            return None
+        return listing
 
     def get_install(self, workspace_id: UUID, install_id: UUID) -> WorkspaceAgentInstall | None:
         return self._session.scalar(
@@ -313,6 +327,7 @@ class TalentMarketplaceService:
         install.source_agent_profile_id = source.id
         install.installed_version = target.version
         install.pinned_version = data.keep_pinned
+        target.upgrade_count += 1
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -328,6 +343,91 @@ class TalentMarketplaceService:
         self._session.commit()
         self._session.refresh(install)
         return install
+
+    def upsert_review(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        listing_id: UUID,
+        data: TalentListingReviewCreateRequest,
+    ) -> TalentListingReview:
+        listing = self.get_listing(listing_id)
+        if listing is None:
+            raise ValueError("Talent listing not found")
+        install = self._review_install(workspace_id, listing_id, data.workspace_agent_install_id)
+        existing = self._session.scalar(
+            select(TalentListingReview).where(
+                TalentListingReview.workspace_id == workspace_id,
+                TalentListingReview.talent_listing_id == listing_id,
+                TalentListingReview.status == "active",
+            )
+        )
+        if existing is None:
+            review = TalentListingReview(
+                workspace_id=workspace_id,
+                talent_listing_id=listing_id,
+                workspace_agent_install_id=install.id,
+                user_id=user_id,
+                rating=data.rating,
+                title=data.title,
+                body=data.body,
+            )
+            self._session.add(review)
+            listing.review_count += 1
+            listing.rating_sum += data.rating
+        else:
+            listing.rating_sum += data.rating - existing.rating
+            existing.workspace_agent_install_id = install.id
+            existing.user_id = user_id
+            existing.rating = data.rating
+            existing.title = data.title
+            existing.body = data.body
+            review = existing
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action="talent_listing.reviewed",
+            target_type="talent_listing_review",
+            target_id=review.id,
+            metadata={"talent_listing_id": str(listing_id), "rating": data.rating},
+        )
+        commit_or_raise_conflict(self._session, "Talent listing already reviewed in workspace")
+        self._session.refresh(review)
+        return review
+
+    def list_reviews(
+        self,
+        listing_id: UUID,
+        page: PageParams,
+    ) -> tuple[list[TalentListingReview], int] | None:
+        if self.get_listing(listing_id) is None:
+            return None
+        statement = (
+            select(TalentListingReview)
+            .where(
+                TalentListingReview.talent_listing_id == listing_id,
+                TalentListingReview.status == "active",
+            )
+            .order_by(TalentListingReview.created_at.desc())
+        )
+        total = self._session.scalar(
+            select(func.count()).select_from(statement.order_by(None).subquery())
+        )
+        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
+        return list(rows), int(total or 0)
+
+    def listing_metrics(self, listing_id: UUID) -> TalentListingMetricsResponse | None:
+        listing = self.get_listing(listing_id)
+        if listing is None:
+            return None
+        return TalentListingMetricsResponse(
+            talent_listing_id=listing.id,
+            install_count=listing.install_count,
+            upgrade_count=listing.upgrade_count,
+            review_count=listing.review_count,
+            average_rating=listing.average_rating,
+        )
 
     def _add_to_team(
         self,
@@ -396,6 +496,29 @@ class TalentMarketplaceService:
         if target is None:
             raise ValueError("Talent listing upgrade target not found")
         return target
+
+    def _review_install(
+        self,
+        workspace_id: UUID,
+        listing_id: UUID,
+        install_id: UUID | None,
+    ) -> WorkspaceAgentInstall:
+        statement = select(WorkspaceAgentInstall).where(
+            WorkspaceAgentInstall.workspace_id == workspace_id,
+            WorkspaceAgentInstall.status == "active",
+        )
+        if install_id is not None:
+            statement = statement.where(WorkspaceAgentInstall.id == install_id)
+        statement = statement.where(
+            or_(
+                WorkspaceAgentInstall.talent_listing_id == listing_id,
+                WorkspaceAgentInstall.current_talent_listing_id == listing_id,
+            )
+        )
+        install = self._session.scalar(statement.order_by(WorkspaceAgentInstall.created_at.desc()))
+        if install is None:
+            raise ValueError("Talent listing must be hired before review")
+        return install
 
     def _copy_agent_definition(self, source: AgentProfile, target: AgentProfile) -> None:
         target.role = source.role
@@ -671,3 +794,7 @@ def _install_response(install: WorkspaceAgentInstall) -> WorkspaceAgentInstallRe
             "agent": install.installed_agent_profile,
         }
     )
+
+
+def review_response(review: TalentListingReview) -> TalentListingReviewResponse:
+    return TalentListingReviewResponse.model_validate(review)

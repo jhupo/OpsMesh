@@ -17,7 +17,11 @@ from backend.app.capabilities.models import (
 from backend.app.domains.models import DomainItem, DomainProject, ReviewComment, RevisionRequest
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.identity.models import User
-from backend.app.marketplace.models import TalentListing, WorkspaceAgentInstall
+from backend.app.marketplace.models import (
+    TalentListing,
+    TalentListingReview,
+    WorkspaceAgentInstall,
+)
 from backend.app.operations.models import WorkerHeartbeat
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtimes.models import (
@@ -72,6 +76,7 @@ __all__ = [
     "Task",
     "TaskStep",
     "TalentListing",
+    "TalentListingReview",
     "ToolGroup",
     "User",
     "Workspace",
