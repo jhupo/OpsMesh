@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunner
 from backend.app.operations.service import OperationsService
+from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.queue import RedisQueue, consume_once
 
@@ -29,6 +30,9 @@ class WorkerRunnerConfig:
     queue_name: str = "agent_runs"
     heartbeat_interval_seconds: float = 30.0
     idle_sleep_seconds: float = 1.0
+    maintenance_interval_seconds: float = 60.0
+    run_lease_seconds: int = 900
+    recovery_batch_size: int = 100
 
 
 @dataclass(frozen=True)
@@ -70,12 +74,16 @@ class WorkerRunner:
         processed = 0
         idle_polls = 0
         next_heartbeat_at = 0.0
+        next_maintenance_at = 0.0
 
         while not self._is_stopped(stop_event):
             now = self._monotonic()
             if now >= next_heartbeat_at:
                 self.record_heartbeat("online", {"processed": processed, "idle_polls": idle_polls})
                 next_heartbeat_at = now + self._config.heartbeat_interval_seconds
+            if now >= next_maintenance_at:
+                self.run_maintenance()
+                next_maintenance_at = now + self._config.maintenance_interval_seconds
 
             handled = self.run_once()
             if handled:
@@ -121,3 +129,15 @@ class WorkerRunner:
 
     def _is_stopped(self, stop_event: Event | None) -> bool:
         return stop_event is not None and stop_event.is_set()
+
+    def run_maintenance(self) -> int:
+        try:
+            with self._session_scope() as session:
+                summary = RunOrchestrationService(session).recover_stale_running_runs(
+                    stale_after_seconds=self._config.run_lease_seconds,
+                    limit=self._config.recovery_batch_size,
+                )
+                return summary.recovered_runs
+        except Exception:
+            logger.exception("Failed to run worker maintenance")
+            return 0

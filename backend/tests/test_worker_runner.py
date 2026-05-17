@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import fakeredis
 import pytest
@@ -109,6 +109,37 @@ def test_worker_runner_rolls_back_failed_session() -> None:
         assert heartbeat is None
 
 
+def test_worker_runner_maintenance_recovers_stale_runs() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, run_id, _ = _seed_run(
+        session_factory,
+        status=RunStatus.RUNNING,
+        task_status=TaskStatus.RUNNING,
+        started_at=datetime.now(UTC) - timedelta(seconds=3_600),
+    )
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(
+            worker_id="worker-maintenance",
+            queue_name="agent_runs",
+            run_lease_seconds=60,
+        ),
+    )
+
+    recovered = runner.run_maintenance()
+
+    assert recovered == 1
+    with session_factory() as session:
+        run = session.get(AgentRun, run_id)
+        task = session.scalar(select(Task).where(Task.workspace_id == workspace_id))
+        assert run is not None
+        assert task is not None
+        assert run.status == RunStatus.FAILED.value
+        assert task.status == TaskStatus.FAILED.value
+
+
 def _queue() -> RedisQueue:
     return RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
@@ -124,7 +155,13 @@ def _session_factory() -> sessionmaker[Session]:
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
-def _seed_run(session_factory: sessionmaker[Session]) -> tuple[object, object, object]:
+def _seed_run(
+    session_factory: sessionmaker[Session],
+    *,
+    status: RunStatus = RunStatus.QUEUED,
+    task_status: TaskStatus = TaskStatus.QUEUED,
+    started_at: datetime | None = None,
+) -> tuple[object, object, object]:
     with session_factory() as session:
         user = User(email="owner@example.com", display_name="Owner")
         session.add(user)
@@ -137,7 +174,7 @@ def _seed_run(session_factory: sessionmaker[Session]) -> tuple[object, object, o
             workspace_id=workspace.id,
             title="Do work",
             description="Finish this task",
-            status=TaskStatus.QUEUED.value,
+            status=task_status.value,
             created_by_user_id=user.id,
         )
         agent = AgentProfile(
@@ -153,8 +190,9 @@ def _seed_run(session_factory: sessionmaker[Session]) -> tuple[object, object, o
             workspace_id=workspace.id,
             task_id=task.id,
             agent_profile_id=agent.id,
-            status=RunStatus.QUEUED.value,
+            status=status.value,
             input={"task_id": str(task.id)},
+            started_at=started_at,
             created_at=datetime.now(UTC),
         )
         session.add(run)

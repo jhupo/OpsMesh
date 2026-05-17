@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import fakeredis
@@ -154,6 +155,48 @@ def test_worker_persists_failed_run_event() -> None:
         "retryable": True,
     }
     assert failed_event is not None
+
+
+def test_stale_running_runs_are_recovered_as_failed() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.RUNNING.value,
+    )
+    session.add(task)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        status=RunStatus.RUNNING.value,
+        input={},
+        started_at=datetime.now(UTC) - timedelta(seconds=3_600),
+    )
+    session.add(run)
+    session.commit()
+
+    summary = RunOrchestrationService(session).recover_stale_running_runs(
+        stale_after_seconds=900,
+    )
+
+    event = session.scalar(
+        select(RunEvent).where(
+            RunEvent.agent_run_id == run.id,
+            RunEvent.event_type == "run.recovered_failed",
+        )
+    )
+    assert summary.recovered_runs == 1
+    assert run.status == RunStatus.FAILED.value
+    assert run.error == {
+        "code": "stale_worker_run",
+        "message": "Worker stopped reporting before the run completed",
+        "retryable": True,
+    }
+    assert task.status == TaskStatus.FAILED.value
+    assert event is not None
 
 
 def _session() -> Session:

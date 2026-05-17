@@ -30,6 +30,8 @@ def main(argv: list[str] | None = None) -> int:
         queue_name=args.queue_name or settings.worker_queue_name,
         heartbeat_interval_seconds=args.heartbeat_interval_seconds,
         idle_sleep_seconds=args.idle_sleep_seconds,
+        maintenance_interval_seconds=args.maintenance_interval_seconds,
+        run_lease_seconds=args.run_lease_seconds,
     )
     runner = _build_runner(settings, config)
 
@@ -93,6 +95,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--heartbeat-interval-seconds", type=float, default=30.0)
     parser.add_argument("--idle-sleep-seconds", type=float, default=1.0)
+    parser.add_argument("--maintenance-interval-seconds", type=float, default=60.0)
+    parser.add_argument("--run-lease-seconds", type=int, default=900)
     return parser.parse_args(argv)
 
 

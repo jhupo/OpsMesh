@@ -1,5 +1,6 @@
 from contextlib import AbstractContextManager
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from types import TracebackType
 from typing import Any
 from uuid import UUID
@@ -15,9 +16,14 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus, require_run_transition
 from backend.app.tasks.models import Task
-from backend.app.tasks.status import TaskStatus, require_task_transition
+from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus, require_task_transition
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
+
+
+@dataclass(frozen=True)
+class StaleRunRecoverySummary:
+    recovered_runs: int
 
 
 class RunOrchestrationService:
@@ -55,6 +61,28 @@ class RunOrchestrationService:
             idempotency_key=f"agent.run:{run.workspace_id}:{run.id}",
         )
         return self._queue.enqueue(job)
+
+    def recover_stale_running_runs(
+        self,
+        *,
+        stale_after_seconds: int,
+        limit: int = 100,
+    ) -> StaleRunRecoverySummary:
+        cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
+        stale_runs = self._session.scalars(
+            select(AgentRun)
+            .where(
+                AgentRun.status == RunStatus.RUNNING.value,
+                AgentRun.started_at.is_not(None),
+                AgentRun.started_at < cutoff,
+            )
+            .order_by(AgentRun.started_at.asc())
+            .limit(limit)
+        ).all()
+        for run in stale_runs:
+            self._mark_run_recovered_failed(run)
+        self._session.commit()
+        return StaleRunRecoverySummary(recovered_runs=len(stale_runs))
 
     async def run_agent(self, job: JobPayload) -> AgentRun:
         run = self._session.get(AgentRun, job.resource_id)
@@ -125,6 +153,30 @@ class RunOrchestrationService:
             if task is not None:
                 task.status = TaskStatus.FAILED.value
                 task.completed_at = run.completed_at
+
+    def _mark_run_recovered_failed(self, run: AgentRun) -> None:
+        require_run_transition(RunStatus(run.status), RunStatus.FAILED)
+        run.status = RunStatus.FAILED.value
+        run.error = {
+            "code": "stale_worker_run",
+            "message": "Worker stopped reporting before the run completed",
+            "retryable": True,
+        }
+        run.completed_at = datetime.now(UTC)
+        self._append_event(
+            run,
+            "run.recovered_failed",
+            "Marked failed after worker lease expired",
+        )
+
+        if run.task_id is None:
+            return
+        task = self._session.get(Task, run.task_id)
+        if task is None or TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
+            return
+        require_task_transition(TaskStatus(task.status), TaskStatus.FAILED)
+        task.status = TaskStatus.FAILED.value
+        task.completed_at = run.completed_at
 
     def _append_event(self, run: AgentRun, event_type: str, message: str) -> RunEvent:
         next_sequence = (
