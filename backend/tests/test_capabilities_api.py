@@ -78,6 +78,18 @@ def test_capability_skill_and_mcp_control_plane() -> None:
         },
     )
     assert allowed.status_code == 201
+    credential = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "name": "image-api-key",
+            "provider": "vault",
+            "external_ref": "secret/image-api-key",
+            "scopes": ["images.write"],
+        },
+    )
+    assert credential.status_code == 201
     blocked_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
@@ -127,6 +139,20 @@ def test_capability_skill_and_mcp_control_plane() -> None:
     )
     assert logged.status_code == 201
     assert session.query(McpToolCallLog).count() == 1
+
+    audit = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/audit-events",
+        headers=_headers(owner.id),
+    )
+    assert audit.status_code == 200
+    actions = {item["action"] for item in audit.json()["items"]}
+    assert {
+        "skill.installed",
+        "mcp_server.created",
+        "mcp_tool.allowed",
+        "mcp_credential.created",
+        "agent.created",
+    } <= actions
 
 
 def test_mcp_server_scope_is_enforced() -> None:

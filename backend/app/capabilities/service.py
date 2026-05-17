@@ -17,6 +17,7 @@ from backend.app.api.schemas.capabilities import (
     ToolGroupCreateRequest,
     WorkspaceSkillInstallRequest,
 )
+from backend.app.audit.service import AuditService
 from backend.app.capabilities.models import (
     Capability,
     McpCredentialReference,
@@ -27,7 +28,7 @@ from backend.app.capabilities.models import (
     ToolGroup,
     WorkspaceSkillInstall,
 )
-from backend.app.db.errors import commit_or_raise_conflict
+from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 
 T = TypeVar("T")
 
@@ -80,6 +81,15 @@ class CapabilityService:
             config=data.config,
         )
         self._session.add(install)
+        flush_or_raise_conflict(self._session, "Skill is already installed in workspace")
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action="skill.installed",
+            target_type="workspace_skill_install",
+            target_id=install.id,
+            metadata={"skill_id": str(data.skill_id)},
+        )
         commit_or_raise_conflict(self._session, "Skill is already installed in workspace")
         self._session.refresh(install)
         return install
@@ -114,9 +124,24 @@ class CapabilityService:
         )
         return self._page(statement, page)
 
-    def create_mcp_server(self, workspace_id: UUID, data: McpServerCreateRequest) -> McpServer:
+    def create_mcp_server(
+        self,
+        workspace_id: UUID,
+        data: McpServerCreateRequest,
+        actor_user_id: UUID | None = None,
+    ) -> McpServer:
         server = McpServer(workspace_id=workspace_id, **data.model_dump())
         self._session.add(server)
+        flush_or_raise_conflict(self._session, "MCP server name already exists")
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="mcp_server.created",
+                target_type="mcp_server",
+                target_id=server.id,
+                metadata={"name": server.name, "server_type": server.server_type},
+            )
         commit_or_raise_conflict(self._session, "MCP server name already exists")
         self._session.refresh(server)
         return server
@@ -134,6 +159,7 @@ class CapabilityService:
         workspace_id: UUID,
         mcp_server_id: UUID,
         data: McpToolAllowRequest,
+        actor_user_id: UUID | None = None,
     ) -> McpToolAllowlist:
         self._require_server(workspace_id, mcp_server_id)
         allow = McpToolAllowlist(
@@ -142,6 +168,20 @@ class CapabilityService:
             **data.model_dump(),
         )
         self._session.add(allow)
+        flush_or_raise_conflict(self._session, "MCP tool is already allowed for this server")
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="mcp_tool.allowed",
+                target_type="mcp_tool_allowlist",
+                target_id=allow.id,
+                metadata={
+                    "mcp_server_id": str(mcp_server_id),
+                    "tool_name": allow.tool_name,
+                    "risk_level": allow.risk_level,
+                },
+            )
         commit_or_raise_conflict(self._session, "MCP tool is already allowed for this server")
         self._session.refresh(allow)
         return allow
@@ -180,11 +220,27 @@ class CapabilityService:
         self,
         workspace_id: UUID,
         data: McpCredentialReferenceCreateRequest,
+        actor_user_id: UUID | None = None,
     ) -> McpCredentialReference:
         if data.mcp_server_id is not None:
             self._require_server(workspace_id, data.mcp_server_id)
         credential = McpCredentialReference(workspace_id=workspace_id, **data.model_dump())
         self._session.add(credential)
+        flush_or_raise_conflict(self._session, "MCP credential name already exists")
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="mcp_credential.created",
+                target_type="mcp_credential_reference",
+                target_id=credential.id,
+                metadata={
+                    "name": credential.name,
+                    "mcp_server_id": str(credential.mcp_server_id)
+                    if credential.mcp_server_id is not None
+                    else None,
+                },
+            )
         commit_or_raise_conflict(self._session, "MCP credential name already exists")
         self._session.refresh(credential)
         return credential

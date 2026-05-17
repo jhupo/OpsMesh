@@ -14,3 +14,11 @@ def commit_or_raise_conflict(session: Session, message: str) -> None:
     except IntegrityError as exc:
         session.rollback()
         raise DatabaseConflictError(message) from exc
+
+
+def flush_or_raise_conflict(session: Session, message: str) -> None:
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        session.rollback()
+        raise DatabaseConflictError(message) from exc

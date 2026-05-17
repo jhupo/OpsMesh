@@ -153,7 +153,11 @@ async def create_mcp_server(
     session: Session = Depends(get_db_session),
 ) -> McpServerResponse:
     try:
-        server = CapabilityService(session).create_mcp_server(context.workspace.id, request)
+        server = CapabilityService(session).create_mcp_server(
+            context.workspace.id,
+            request,
+            context.user.user_id,
+        )
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     return McpServerResponse.model_validate(server)
@@ -175,6 +179,7 @@ async def allow_mcp_tool(
             context.workspace.id,
             mcp_server_id,
             request,
+            context.user.user_id,
         )
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
@@ -226,6 +231,7 @@ async def create_mcp_credential_reference(
         credential = CapabilityService(session).create_credential_reference(
             context.workspace.id,
             request,
+            context.user.user_id,
         )
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
