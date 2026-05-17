@@ -295,6 +295,15 @@ Implemented archive export:
 - writes `skipped-objects.json` when storage objects are missing or too large
 - records `workspace.archive_export.created`
 
+Implemented async archive export jobs:
+
+- `POST /api/v1/workspaces/{workspace_id}/exports/archive/jobs`
+- creates a durable `workspace_export_jobs` record and enqueues `workspace.archive_export`
+- worker generates the archive zip and stores it under workspace-scoped storage
+- `GET /api/v1/workspaces/{workspace_id}/exports/archive/jobs/{job_id}` returns job status
+- `GET /api/v1/workspaces/{workspace_id}/exports/archive/jobs/{job_id}/download` downloads completed archives
+- prevents unfinished jobs from being downloaded
+
 Implemented archive import:
 
 - `POST /api/v1/workspaces/{workspace_id}/exports/archive/import`
@@ -314,7 +323,7 @@ Workspace metadata archive export can include:
 - run summaries
 - audit metadata
 
-Large full workspace exports with file bytes should be moved to async jobs because they may be large.
+Large full workspace exports with file bytes should use async jobs because they may be large.
 
 ## Data Deletion
 

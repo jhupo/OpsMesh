@@ -9,6 +9,7 @@ class JobType(StrEnum):
     AGENT_RUN = "agent.run"
     TASK_PLAN = "task.plan"
     RUNTIME_CLEANUP = "runtime.cleanup"
+    WORKSPACE_ARCHIVE_EXPORT = "workspace.archive_export"
 
 
 class JobPayload(BaseModel):
@@ -31,4 +32,3 @@ class JobPayload(BaseModel):
     @property
     def can_retry(self) -> bool:
         return self.attempt + 1 < self.max_attempts
-

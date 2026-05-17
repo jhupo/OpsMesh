@@ -1,4 +1,5 @@
 import json
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.schemas.exports import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveImportRequest,
+    WorkspaceExportJobResponse,
     WorkspaceExportRequest,
     WorkspaceImportRequest,
     WorkspaceImportResponse,
@@ -19,6 +21,8 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.files.security import content_disposition_attachment
 from backend.app.files.storage import LocalStorage
+from backend.app.workers.dependencies import get_worker_queue
+from backend.app.workers.queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/exports", tags=["exports"])
 
@@ -72,6 +76,69 @@ async def export_workspace_archive(
         content=result.content,
         media_type=result.content_type,
         headers={"Content-Disposition": content_disposition_attachment(result.filename)},
+    )
+
+
+@router.post(
+    "/archive/jobs",
+    response_model=WorkspaceExportJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_workspace_archive_export_job(
+    request: WorkspaceArchiveExportRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> WorkspaceExportJobResponse:
+    export_job = WorkspaceExportService(session).create_archive_export_job(
+        workspace=context.workspace,
+        user_id=context.user.user_id,
+        request=request,
+        queue=queue,
+    )
+    return WorkspaceExportJobResponse.model_validate(export_job)
+
+
+@router.get("/archive/jobs/{job_id}", response_model=WorkspaceExportJobResponse)
+async def get_workspace_archive_export_job(
+    job_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceExportJobResponse:
+    export_job = WorkspaceExportService(session).get_export_job(
+        workspace_id=context.workspace.id,
+        job_id=job_id,
+    )
+    if export_job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Export job not found")
+    return WorkspaceExportJobResponse.model_validate(export_job)
+
+
+@router.get("/archive/jobs/{job_id}/download")
+async def download_workspace_archive_export_job(
+    job_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    try:
+        export_job, content = WorkspaceExportService(session).read_export_job_content(
+            workspace_id=context.workspace.id,
+            job_id=job_id,
+            storage=LocalStorage(settings.storage_root),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return Response(
+        content=content,
+        media_type=export_job.content_type or "application/zip",
+        headers={
+            "Content-Disposition": content_disposition_attachment(
+                export_job.filename or "workspace-archive.zip"
+            )
+        },
     )
 
 

@@ -27,8 +27,12 @@ from backend.app.files.storage import LocalStorage
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.redis.dependencies import get_redis_client
+from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workers.dependencies import get_worker_queue
+from backend.app.workers.queue import RedisQueue
+from backend.app.workers.runner import WorkerRunner, WorkerRunnerConfig
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -403,7 +407,88 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
     assert downloaded.content == artifact_bytes
 
 
+def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
+    tmp_path: Path,
+) -> None:
+    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
+    uploaded = client.post(
+        f"/api/v1/workspaces/{workspace.id}/files",
+        headers=_headers(owner.id),
+        files={"file": ("brief.txt", b"async archive", "text/plain")},
+    )
+    assert uploaded.status_code == 201
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
+        headers=_headers(owner.id),
+        json={"include_audit_events": False},
+    )
+
+    assert created.status_code == 202
+    job_id = created.json()["id"]
+    assert created.json()["status"] == "queued"
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="export-worker", queue_name="agent_runs"),
+        settings=Settings(
+            environment="test",
+            log_format="text",
+            internal_api_token=TOKEN,
+            storage_root=str(tmp_path),
+        ),
+    )
+    assert runner.run_once() is True
+    status_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}",
+        headers=_headers(owner.id),
+    )
+    download = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/download",
+        headers=_headers(owner.id),
+    )
+
+    assert status_response.status_code == 200
+    status_body = status_response.json()
+    assert status_body["status"] == "completed"
+    assert status_body["size_bytes"] > 0
+    assert status_body["checksum_sha256"]
+    assert download.status_code == 200
+    with ZipFile(BytesIO(download.content)) as archive:
+        names = set(archive.namelist())
+        file_name = f"files/{uploaded.json()['id']}/brief.txt"
+        assert "metadata.json" in names
+        assert archive.read(file_name) == b"async archive"
+
+
+def test_workspace_archive_export_job_download_requires_completion(tmp_path: Path) -> None:
+    client, session, _, _ = _client_with_worker_queue(tmp_path)
+    owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
+        headers=_headers(owner.id),
+        json={"include_file_bytes": False, "include_artifact_bytes": False},
+    )
+    assert created.status_code == 202
+
+    download = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/"
+        f"{created.json()['id']}/download",
+        headers=_headers(owner.id),
+    )
+
+    assert download.status_code == 409
+
+
 def _client(tmp_path: Path) -> tuple[TestClient, Session]:
+    client, session, _, _ = _client_with_worker_queue(tmp_path)
+    return client, session
+
+
+def _client_with_worker_queue(
+    tmp_path: Path,
+) -> tuple[TestClient, Session, sessionmaker[Session], RedisQueue]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -412,9 +497,10 @@ def _client(tmp_path: Path) -> tuple[TestClient, Session]:
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
-    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
     session = session_factory()
     redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
     app = create_app(
         Settings(
             environment="test",
@@ -435,7 +521,8 @@ def _client(tmp_path: Path) -> tuple[TestClient, Session]:
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.dependency_overrides[get_redis_client] = lambda: redis
-    return TestClient(app), session
+    app.dependency_overrides[get_worker_queue] = lambda: queue
+    return TestClient(app), session, session_factory, queue
 
 
 def _seed_workspace(session: Session, *, email: str, slug: str) -> tuple[User, Workspace]:

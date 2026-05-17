@@ -67,6 +67,7 @@ def _build_runner(settings: Settings, config: WorkerRunnerConfig) -> WorkerRunne
         session_factory=SessionLocal,
         config=config,
         agent_runner=build_agent_runner(settings),
+        settings=settings,
     )
 
 

@@ -11,6 +11,7 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunner
+from backend.app.core.config import Settings
 from backend.app.operations.service import OperationsService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.workers.handlers import WorkerJobHandler
@@ -52,6 +53,7 @@ class WorkerRunner:
         session_factory: SessionFactory,
         config: WorkerRunnerConfig,
         agent_runner: AgentRunner | None = None,
+        settings: Settings | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -59,12 +61,18 @@ class WorkerRunner:
         self._session_factory = session_factory
         self._config = config
         self._agent_runner = agent_runner
+        self._settings = settings
         self._monotonic = monotonic
         self._sleep = sleep
 
     def run_once(self) -> bool:
         with self._session_scope() as session:
-            handler = WorkerJobHandler(session, self._queue, self._agent_runner)
+            handler = WorkerJobHandler(
+                session,
+                self._queue,
+                self._agent_runner,
+                self._settings,
+            )
             return consume_once(self._queue, handler.handle)
 
     def run(

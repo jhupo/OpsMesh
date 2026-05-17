@@ -15,6 +15,7 @@ from backend.app.capabilities.models import (
     WorkspaceSkillInstall,
 )
 from backend.app.domains.models import DomainItem, DomainProject, ReviewComment, RevisionRequest
+from backend.app.exports.models import WorkspaceExportJob
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.marketplace.models import (
@@ -81,6 +82,7 @@ __all__ = [
     "User",
     "Workspace",
     "WorkspaceAgentInstall",
+    "WorkspaceExportJob",
     "WorkspaceFile",
     "WorkspaceMember",
     "WorkspaceRuntime",

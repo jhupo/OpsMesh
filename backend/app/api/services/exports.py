@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from sqlalchemy import select
@@ -23,12 +23,16 @@ from backend.app.api.schemas.exports import (
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
+from backend.app.exports.models import WorkspaceExportJob
+from backend.app.exports.status import WorkspaceExportJobStatus
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.security import safe_filename
 from backend.app.files.storage import LocalStorage
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workers.jobs import JobPayload, JobType
+from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace
 
 
@@ -222,6 +226,158 @@ class WorkspaceExportService:
             content=buffer.getvalue(),
             skipped_objects=skipped,
         )
+
+    def create_archive_export_job(
+        self,
+        *,
+        workspace: Workspace,
+        user_id: UUID,
+        request: WorkspaceArchiveExportRequest,
+        queue: RedisQueue,
+    ) -> WorkspaceExportJob:
+        export_job = WorkspaceExportJob(
+            workspace_id=workspace.id,
+            created_by_user_id=user_id,
+            export_type="workspace_archive",
+            status=WorkspaceExportJobStatus.QUEUED.value,
+            request=request.model_dump(mode="json"),
+            job_metadata={},
+        )
+        self._session.add(export_job)
+        self._session.flush()
+        enqueued = queue.enqueue(
+            JobPayload(
+                workspace_id=workspace.id,
+                job_type=JobType.WORKSPACE_ARCHIVE_EXPORT,
+                resource_id=export_job.id,
+                requested_by_user_id=user_id,
+                idempotency_key=f"workspace.archive_export:{workspace.id}:{export_job.id}",
+                max_attempts=2,
+            )
+        )
+        if not enqueued:
+            export_job.status = WorkspaceExportJobStatus.FAILED.value
+            export_job.error = "Failed to enqueue archive export job"
+            export_job.completed_at = datetime.now(UTC)
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace.id,
+            user_id=user_id,
+            action="workspace.archive_export_job.created",
+            target_type="workspace_export_job",
+            target_id=export_job.id,
+            metadata={"enqueued": enqueued},
+        )
+        self._session.commit()
+        self._session.refresh(export_job)
+        return export_job
+
+    def get_export_job(self, *, workspace_id: UUID, job_id: UUID) -> WorkspaceExportJob | None:
+        return self._session.scalar(
+            select(WorkspaceExportJob).where(
+                WorkspaceExportJob.workspace_id == workspace_id,
+                WorkspaceExportJob.id == job_id,
+            )
+        )
+
+    def read_export_job_content(
+        self,
+        *,
+        workspace_id: UUID,
+        job_id: UUID,
+        storage: LocalStorage,
+    ) -> tuple[WorkspaceExportJob, bytes]:
+        export_job = self.get_export_job(workspace_id=workspace_id, job_id=job_id)
+        if export_job is None:
+            raise FileNotFoundError("Export job not found")
+        if export_job.status != WorkspaceExportJobStatus.COMPLETED.value:
+            raise ValueError("Export job is not completed")
+        if export_job.storage_key is None:
+            raise FileNotFoundError("Export artifact is missing")
+        return export_job, storage.read(export_job.storage_key)
+
+    def run_archive_export_job(
+        self,
+        *,
+        job: JobPayload,
+        storage: LocalStorage,
+    ) -> WorkspaceExportJob:
+        export_job = self.get_export_job(workspace_id=job.workspace_id, job_id=job.resource_id)
+        if export_job is None:
+            raise ValueError("Export job not found")
+        if export_job.status == WorkspaceExportJobStatus.COMPLETED.value:
+            return export_job
+
+        workspace = self._session.get(Workspace, job.workspace_id)
+        if workspace is None:
+            raise ValueError("Workspace not found")
+        if export_job.workspace_id != workspace.id:
+            raise ValueError("Export job workspace mismatch")
+
+        export_job.status = WorkspaceExportJobStatus.RUNNING.value
+        export_job.started_at = datetime.now(UTC)
+        export_job.error = None
+        self._session.commit()
+
+        try:
+            request = WorkspaceArchiveExportRequest.model_validate(export_job.request)
+            actor_user_id = job.requested_by_user_id or workspace.owner_user_id
+            result = self.build_archive_export(
+                workspace=workspace,
+                user_id=actor_user_id,
+                request=request,
+                storage=storage,
+            )
+            checksum = sha256(result.content).hexdigest()
+            storage_key = (
+                f"workspaces/{workspace.id}/exports/{export_job.id}/"
+                f"{uuid4()}-{safe_filename(result.filename)}"
+            )
+            storage.write(storage_key, result.content)
+            export_job.status = WorkspaceExportJobStatus.COMPLETED.value
+            export_job.storage_key = storage_key
+            export_job.filename = result.filename
+            export_job.content_type = result.content_type
+            export_job.size_bytes = len(result.content)
+            export_job.checksum_sha256 = checksum
+            export_job.completed_at = datetime.now(UTC)
+            export_job.job_metadata = {
+                **export_job.job_metadata,
+                "skipped_objects": result.skipped_objects,
+            }
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace.id,
+                user_id=actor_user_id,
+                action="workspace.archive_export_job.completed",
+                target_type="workspace_export_job",
+                target_id=export_job.id,
+                metadata={
+                    "filename": result.filename,
+                    "size_bytes": len(result.content),
+                    "skipped_objects": result.skipped_objects,
+                },
+            )
+            self._session.commit()
+            self._session.refresh(export_job)
+            return export_job
+        except Exception as exc:
+            self._session.rollback()
+            failed_job = self.get_export_job(workspace_id=job.workspace_id, job_id=job.resource_id)
+            if failed_job is None:
+                raise
+            failed_job.status = WorkspaceExportJobStatus.FAILED.value
+            failed_job.error = str(exc)[:1000]
+            failed_job.completed_at = datetime.now(UTC)
+            actor_user_id = job.requested_by_user_id or workspace.owner_user_id
+            AuditService(self._session).record_user_action(
+                workspace_id=job.workspace_id,
+                user_id=actor_user_id,
+                action="workspace.archive_export_job.failed",
+                target_type="workspace_export_job",
+                target_id=failed_job.id,
+                metadata={"error": failed_job.error},
+            )
+            self._session.commit()
+            raise
 
     def import_metadata(
         self,

@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from backend.app.api.schemas.common import ORMModel
+
 
 class WorkspaceExportRequest(BaseModel):
     include_agents: bool = True
@@ -49,6 +51,26 @@ class WorkspaceArchiveExportResult(BaseModel):
     content_type: str = "application/zip"
     content: bytes
     skipped_objects: list[str] = Field(default_factory=list)
+
+
+class WorkspaceExportJobResponse(ORMModel):
+    id: UUID
+    workspace_id: UUID
+    created_by_user_id: UUID | None
+    export_type: str
+    status: str
+    request: dict[str, object]
+    storage_key: str | None
+    filename: str | None
+    content_type: str | None
+    size_bytes: int | None
+    checksum_sha256: str | None
+    error: str | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    job_metadata: dict[str, object]
+    created_at: datetime
+    updated_at: datetime
 
 
 class WorkspaceImportRequest(BaseModel):
