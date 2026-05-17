@@ -70,7 +70,7 @@ def test_workspace_and_resource_api_enforces_scope_and_roles() -> None:
     assert viewer_create.status_code == 403
 
     tasks = client.get(
-        f"/api/v1/workspaces/{workspace.id}/tasks?status=draft",
+        f"/api/v1/workspaces/{workspace.id}/tasks?status=queued",
         headers=_headers(owner.id),
     )
     assert tasks.status_code == 200

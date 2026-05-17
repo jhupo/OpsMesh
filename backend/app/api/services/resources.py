@@ -10,6 +10,7 @@ from backend.app.api.schemas.agents import AgentProfileCreateRequest
 from backend.app.api.schemas.tasks import TaskCreateRequest
 from backend.app.api.schemas.teams import AgentTeamCreateRequest
 from backend.app.audit.models import AuditEvent
+from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
@@ -77,6 +78,8 @@ class WorkspaceResourceService:
             **data.model_dump(),
         )
         self._session.add(task)
+        self._session.flush()
+        RunOrchestrationService(self._session).create_queued_run_for_task(task)
         self._session.commit()
         self._session.refresh(task)
         return task

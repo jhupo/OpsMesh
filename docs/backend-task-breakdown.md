@@ -152,16 +152,16 @@ Goal: move run execution out of API.
 
 Tasks:
 
-- [ ] Add `agent.run` job type.
-- [ ] Create run when task starts.
-- [ ] Enqueue `agent.run`.
-- [ ] Worker loads workspace, task, team, agent, and policy.
-- [ ] Worker marks run `running`.
-- [ ] Worker writes `run.started`.
-- [ ] Worker handles success.
-- [ ] Worker handles failure.
-- [ ] Worker writes terminal run event.
-- [ ] Worker releases lock.
+- [x] Add `agent.run` job type.
+- [x] Create run when task starts.
+- [x] Enqueue `agent.run`.
+- [x] Worker loads workspace, task, team, agent, and policy.
+- [x] Worker marks run `running`.
+- [x] Worker writes `run.started`.
+- [x] Worker handles success.
+- [x] Worker handles failure.
+- [x] Worker writes terminal run event.
+- [x] Worker releases lock.
 
 Deliverables:
 
