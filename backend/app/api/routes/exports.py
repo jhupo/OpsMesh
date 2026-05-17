@@ -1,11 +1,12 @@
 import json
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.exports import (
     WorkspaceArchiveExportRequest,
+    WorkspaceArchiveImportRequest,
     WorkspaceExportRequest,
     WorkspaceImportRequest,
     WorkspaceImportResponse,
@@ -72,3 +73,43 @@ async def export_workspace_archive(
         media_type=result.content_type,
         headers={"Content-Disposition": content_disposition_attachment(result.filename)},
     )
+
+
+@router.post("/archive/import", response_model=WorkspaceImportResponse)
+async def import_workspace_archive(
+    file: UploadFile = File(...),
+    dry_run: bool = Form(default=True),
+    import_agents: bool = Form(default=True),
+    import_teams: bool = Form(default=True),
+    import_tasks: bool = Form(default=True),
+    import_file_bytes: bool = Form(default=True),
+    name_prefix: str = Form(default="Imported "),
+    max_items_per_collection: int = Form(default=500),
+    max_bytes_per_object: int = Form(default=25 * 1024 * 1024),
+    max_total_bytes: int = Form(default=100 * 1024 * 1024),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> WorkspaceImportResponse:
+    content = await file.read()
+    request = WorkspaceArchiveImportRequest(
+        dry_run=dry_run,
+        import_agents=import_agents,
+        import_teams=import_teams,
+        import_tasks=import_tasks,
+        import_file_bytes=import_file_bytes,
+        name_prefix=name_prefix,
+        max_items_per_collection=max_items_per_collection,
+        max_bytes_per_object=max_bytes_per_object,
+        max_total_bytes=max_total_bytes,
+    )
+    try:
+        return WorkspaceExportService(session).import_archive(
+            workspace=context.workspace,
+            user_id=context.user.user_id,
+            archive_bytes=content,
+            request=request,
+            storage=LocalStorage(settings.storage_root),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

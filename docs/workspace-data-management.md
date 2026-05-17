@@ -295,6 +295,15 @@ Implemented archive export:
 - writes `skipped-objects.json` when storage objects are missing or too large
 - records `workspace.archive_export.created`
 
+Implemented archive import:
+
+- `POST /api/v1/workspaces/{workspace_id}/exports/archive/import`
+- accepts a workspace archive zip upload
+- reads `metadata.json` and reuses metadata import
+- can restore workspace file bytes into the target workspace
+- supports dry-run, per-object byte limits, and total restored byte limits
+- records `workspace.archive_import.created` on committed imports
+
 Workspace metadata archive export can include:
 
 - tasks

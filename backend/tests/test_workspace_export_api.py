@@ -19,6 +19,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
+from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.redis.dependencies import get_redis_client
@@ -245,6 +246,71 @@ def test_workspace_archive_export_skips_large_objects(tmp_path: Path) -> None:
         assert "skipped-objects.json" in names
         skipped = json.loads(archive.read("skipped-objects.json"))
         assert any("exceeds max_bytes_per_object" in item for item in skipped)
+
+
+def test_workspace_archive_import_restores_metadata_and_file_bytes(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source@example.com",
+        slug="source",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target@example.com",
+        slug="target",
+    )
+    uploaded = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/files",
+        headers=_headers(source_user.id),
+        files={"file": ("brief.txt", b"portable data", "text/plain")},
+    )
+    assert uploaded.status_code == 201
+    archive_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
+        headers=_headers(source_user.id),
+        json={"include_audit_events": False},
+    )
+
+    dry_run = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import",
+        headers=_headers(target_user.id),
+        files={"file": ("archive.zip", archive_response.content, "application/zip")},
+        data={"dry_run": "true"},
+    )
+    assert dry_run.status_code == 200
+    assert dry_run.json()["created_counts"]["files"] == 1
+    assert session.scalars(
+        select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
+    ).all() == []
+
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import",
+        headers=_headers(target_user.id),
+        files={"file": ("archive.zip", archive_response.content, "application/zip")},
+        data={"dry_run": "false"},
+    )
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["created_counts"]["files"] == 1
+    imported_file = session.scalar(
+        select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
+    )
+    assert imported_file is not None
+    assert imported_file.filename == "Imported brief.txt"
+    downloaded = client.get(
+        f"/api/v1/workspaces/{target_workspace.id}/files/{imported_file.id}/download",
+        headers=_headers(target_user.id),
+    )
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == target_workspace.id,
+            AuditEvent.action == "workspace.archive_import.created",
+        )
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"portable data"
+    assert audit is not None
 
 
 def _client(tmp_path: Path) -> tuple[TestClient, Session]:

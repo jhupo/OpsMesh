@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
 from uuid import UUID
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.exports import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveExportResult,
+    WorkspaceArchiveImportRequest,
     WorkspaceExportManifest,
     WorkspaceExportRequest,
     WorkspaceExportResponse,
@@ -393,6 +394,106 @@ class WorkspaceExportService:
         )
         self._session.commit()
         return response
+
+    def import_archive(
+        self,
+        *,
+        workspace: Workspace,
+        user_id: UUID,
+        archive_bytes: bytes,
+        request: WorkspaceArchiveImportRequest,
+        storage: LocalStorage,
+    ) -> WorkspaceImportResponse:
+        try:
+            archive = ZipFile(BytesIO(archive_bytes))
+        except BadZipFile as exc:
+            raise ValueError("Archive is not a valid zip file") from exc
+        with archive:
+            if "metadata.json" not in archive.namelist():
+                raise ValueError("Archive is missing metadata.json")
+            metadata = WorkspaceExportResponse.model_validate_json(archive.read("metadata.json"))
+            response = self.import_metadata(
+                workspace=workspace,
+                user_id=user_id,
+                request=WorkspaceImportRequest(
+                    export=metadata,
+                    dry_run=request.dry_run,
+                    import_agents=request.import_agents,
+                    import_teams=request.import_teams,
+                    import_tasks=request.import_tasks,
+                    name_prefix=request.name_prefix,
+                    max_items_per_collection=request.max_items_per_collection,
+                ),
+            )
+            response.created_counts.setdefault("files", 0)
+            response.skipped_counts.setdefault("files", 0)
+            response.id_map.setdefault("files", {})
+            if not request.import_file_bytes:
+                return response
+            total_bytes = 0
+            for item in metadata.files[: request.max_items_per_collection]:
+                source_id = _string_field(item, "id")
+                filename = safe_filename(_string_field(item, "filename", "file.bin"))
+                archive_name = f"files/{source_id}/{filename}"
+                if archive_name not in archive.namelist():
+                    response.skipped_counts["files"] += 1
+                    response.warnings.append(f"Skipped file {source_id}: bytes not found")
+                    continue
+                content = archive.read(archive_name)
+                if len(content) > request.max_bytes_per_object:
+                    response.skipped_counts["files"] += 1
+                    response.warnings.append(f"Skipped file {source_id}: object too large")
+                    continue
+                if total_bytes + len(content) > request.max_total_bytes:
+                    response.skipped_counts["files"] += 1
+                    response.warnings.append(
+                        f"Skipped file {source_id}: archive byte limit reached"
+                    )
+                    continue
+                response.created_counts["files"] += 1
+                total_bytes += len(content)
+                if request.dry_run:
+                    continue
+                checksum = _string_field(item, "checksum_sha256")
+                imported_filename = safe_filename(f"{request.name_prefix}{filename}")
+                file = WorkspaceFile(
+                    workspace_id=workspace.id,
+                    uploaded_by_user_id=user_id,
+                    filename=imported_filename,
+                    content_type=_string_field(item, "content_type", "application/octet-stream"),
+                    size_bytes=len(content),
+                    checksum_sha256=checksum,
+                    storage_key=(
+                        f"workspaces/{workspace.id}/files/imported/{source_id}/"
+                        f"{imported_filename}"
+                    ),
+                    status="active",
+                    file_metadata={
+                        **_dict_field(item, "metadata"),
+                        "imported_from_file_id": source_id,
+                    },
+                )
+                self._session.add(file)
+                self._session.flush()
+                storage.write(file.storage_key, content)
+                response.id_map["files"][source_id] = str(file.id)
+            if request.dry_run:
+                self._session.rollback()
+                return response
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace.id,
+                user_id=user_id,
+                action="workspace.archive_import.created",
+                target_type="workspace",
+                target_id=workspace.id,
+                metadata={
+                    "source_workspace_id": str(metadata.manifest.workspace_id),
+                    "created_counts": response.created_counts,
+                    "skipped_counts": response.skipped_counts,
+                },
+            )
+            self._session.commit()
+            return response
 
     def _rows(
         self,
