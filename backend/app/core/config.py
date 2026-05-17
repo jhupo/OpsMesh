@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     redis_key_prefix: str = Field(default="chaincloud")
     worker_queue_name: str = Field(default="agent_runs")
     internal_api_token: str = Field(default="change-me-in-production")
+    token_hash_pepper: str = Field(default="change-me-token-pepper")
     storage_root: str = Field(default=".chaincloud-storage")
     max_upload_bytes: int = Field(default=10 * 1024 * 1024)
 
@@ -36,9 +37,19 @@ class Settings(BaseSettings):
         if self.environment.lower() in {"production", "prod"}:
             if self.internal_api_token == "change-me-in-production":
                 raise ValueError("CHAINCLOUD_INTERNAL_API_TOKEN must be set in production")
+            if self.token_hash_pepper == "change-me-token-pepper":
+                raise ValueError("CHAINCLOUD_TOKEN_HASH_PEPPER must be set in production")
             if self.enable_api_docs:
                 raise ValueError("CHAINCLOUD_ENABLE_API_DOCS must be false in production")
         return self
+
+    @property
+    def internal_api_tokens(self) -> tuple[str, ...]:
+        return tuple(
+            token.strip()
+            for token in self.internal_api_token.split(",")
+            if token.strip()
+        )
 
 
 @lru_cache(maxsize=1)

@@ -1,6 +1,10 @@
-from fastapi import Query
+import asyncio
+
+import pytest
+from fastapi import HTTPException, Query
 from fastapi.testclient import TestClient
 
+from backend.app.auth.dependencies import require_internal_token
 from backend.app.core.config import Settings
 from backend.app.main import create_app
 
@@ -33,7 +37,7 @@ def test_health_endpoint_generates_request_id_when_missing() -> None:
 
 
 def test_http_errors_use_consistent_error_envelope() -> None:
-    app = create_app(Settings(environment="test", log_format="text", internal_api_token="token"))
+    app = create_app(Settings(environment="test", log_format="text", internal_api_token="old,new"))
     client = TestClient(app)
 
     response = client.get("/api/v1/workspaces")
@@ -42,6 +46,11 @@ def test_http_errors_use_consistent_error_envelope() -> None:
     assert response.json()["error"]["code"] == "unauthorized"
     assert response.json()["error"]["message"] == "Invalid or missing authorization token"
     assert response.json()["error"]["request_id"] == response.headers["X-Request-ID"]
+
+    asyncio.run(require_internal_token("Bearer new", app.state.settings))
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(require_internal_token("Bearer missing", app.state.settings))
+    assert exc_info.value.status_code == 401
 
 
 def test_validation_errors_use_consistent_error_envelope() -> None:

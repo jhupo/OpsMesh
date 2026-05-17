@@ -15,6 +15,7 @@ from backend.app.api.schemas.self_hosted import (
     RuntimeRegistrationRequest,
     WorkerHeartbeatRequest,
 )
+from backend.app.core.config import Settings
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
@@ -52,8 +53,9 @@ class AuthenticatedWorker:
 
 
 class SelfHostedRuntimeService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, settings: Settings) -> None:
         self._session = session
+        self._settings = settings
 
     def create_enrollment_token(
         self,
@@ -329,4 +331,5 @@ class SelfHostedRuntimeService:
         return event
 
     def _hash(self, token: str) -> str:
-        return sha256(token.encode("utf-8")).hexdigest()
+        material = f"{self._settings.token_hash_pepper}:{token}"
+        return sha256(material.encode("utf-8")).hexdigest()

@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from hmac import compare_digest
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, status
@@ -21,8 +22,9 @@ async def require_internal_token(
     authorization: str | None = AUTHORIZATION_HEADER,
     settings: Settings = SETTINGS_DEPENDENCY,
 ) -> None:
-    expected = f"Bearer {settings.internal_api_token}"
-    if authorization != expected:
+    token = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    valid = any(compare_digest(token, candidate) for candidate in settings.internal_api_tokens)
+    if not valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing authorization token",

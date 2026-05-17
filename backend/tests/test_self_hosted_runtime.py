@@ -122,7 +122,47 @@ def test_self_hosted_runtime_registration_and_job_flow() -> None:
     assert denied.status_code == 401
 
 
-def _client() -> tuple[TestClient, Session]:
+def test_runtime_credentials_are_bound_to_token_hash_pepper() -> None:
+    client, session = _client(
+        Settings(environment="test", log_format="text", internal_api_token=TOKEN)
+    )
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-2",
+        },
+    )
+    credential = registered.json()["credential_token"]
+
+    wrong_settings = Settings(
+        environment="test",
+        log_format="text",
+        internal_api_token=TOKEN,
+        token_hash_pepper="different-pepper",
+    )
+    app = create_app(wrong_settings)
+
+    def override_db_session() -> Generator[Session, None, None]:
+        yield session
+
+    app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_settings] = lambda: wrong_settings
+    wrong_client = TestClient(app)
+
+    denied = wrong_client.get("/api/v1/self-hosted/jobs/next", headers=_runtime_headers(credential))
+
+    assert denied.status_code == 401
+
+
+def _client(settings: Settings | None = None) -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -133,7 +173,12 @@ def _client() -> tuple[TestClient, Session]:
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
-    app = create_app(Settings(environment="test", log_format="text", internal_api_token=TOKEN))
+    app_settings = settings or Settings(
+        environment="test",
+        log_format="text",
+        internal_api_token=TOKEN,
+    )
+    app = create_app(app_settings)
 
     def override_db_session() -> Generator[Session, None, None]:
         request_session = session_factory()
