@@ -3,7 +3,7 @@
 from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
-from backend.app.files.models import WorkspaceFile
+from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtimes.models import (
@@ -23,6 +23,7 @@ __all__ = [
     "AgentTeamMember",
     "Artifact",
     "AuditEvent",
+    "FileAccessEvent",
     "RunEvent",
     "RuntimeCommand",
     "RuntimeEvent",

@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     redis_key_prefix: str = Field(default="chaincloud")
     worker_queue_name: str = Field(default="agent_runs")
     internal_api_token: str = Field(default="change-me-in-production")
+    storage_root: str = Field(default=".chaincloud-storage")
+    max_upload_bytes: int = Field(default=10 * 1024 * 1024)
 
 
 @lru_cache(maxsize=1)

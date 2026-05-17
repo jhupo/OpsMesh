@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import BigInteger, ForeignKey, Index, String
@@ -38,3 +39,27 @@ class WorkspaceFile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         default=dict,
     )
+
+
+class FileAccessEvent(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "file_access_events"
+    __table_args__ = (
+        Index("ix_file_access_events_workspace_file", "workspace_id", "workspace_file_id"),
+        Index("ix_file_access_events_workspace_user", "workspace_id", "user_id"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    workspace_file_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("workspace_files.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    artifact_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("artifacts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    action: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(nullable=False)

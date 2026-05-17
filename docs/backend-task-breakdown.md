@@ -269,18 +269,18 @@ Goal: support user data and generated outputs.
 
 Tasks:
 
-- [ ] Add `workspace_files` table.
-- [ ] Add `artifacts` table.
-- [ ] Add `file_access_events` table.
-- [ ] Implement local storage adapter.
-- [ ] Implement file upload endpoint.
-- [ ] Implement file download endpoint.
-- [ ] Implement artifact download endpoint.
-- [ ] Implement runtime file staging.
-- [ ] Implement artifact collection from runtime.
-- [ ] Add checksum calculation.
-- [ ] Add file size limits.
-- [ ] Add tests for file authorization.
+- [x] Add `workspace_files` table.
+- [x] Add `artifacts` table.
+- [x] Add `file_access_events` table.
+- [x] Implement local storage adapter.
+- [x] Implement file upload endpoint.
+- [x] Implement file download endpoint.
+- [x] Implement artifact download endpoint.
+- [x] Implement runtime file staging.
+- [x] Implement artifact collection from runtime.
+- [x] Add checksum calculation.
+- [x] Add file size limits.
+- [x] Add tests for file authorization.
 
 Deliverables:
 
