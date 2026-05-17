@@ -37,6 +37,16 @@ Before running with `CHAINCLOUD_ENVIRONMENT=production`, set strong values for:
 
 The application refuses to boot in production when default internal secrets are used or API docs are still enabled.
 
+API rate limiting is disabled by default for local development. Enable it in shared or production environments:
+
+```bash
+CHAINCLOUD_API_RATE_LIMIT_ENABLED=true
+CHAINCLOUD_API_RATE_LIMIT_REQUESTS=600
+CHAINCLOUD_API_RATE_LIMIT_WINDOW_SECONDS=60
+```
+
+Rate limits use Redis fixed windows and fail open if Redis is temporarily unavailable, so cache instability does not take down the API.
+
 ## Process Commands
 
 API:

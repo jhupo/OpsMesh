@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     storage_root: str = Field(default=".chaincloud-storage")
     max_upload_bytes: int = Field(default=10 * 1024 * 1024)
     agent_runner_backend: AgentRunnerBackend = Field(default="fake")
+    api_rate_limit_enabled: bool = Field(default=False)
+    api_rate_limit_requests: int = Field(default=600, ge=1)
+    api_rate_limit_window_seconds: int = Field(default=60, ge=1)
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
