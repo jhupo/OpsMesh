@@ -453,7 +453,7 @@ Tasks:
 - [x] Optionally place the hired agent into a team role.
 - [x] Record hiring and publishing audit events.
 - [x] Prevent duplicate hires of the same listing into a workspace.
-- [ ] Add HR agent recommendation workflow.
+- [x] Add HR agent recommendation workflow.
 - [ ] Add listing version upgrades and pinned versions.
 - [ ] Add public rating, usage, and review metrics.
 

@@ -50,3 +50,36 @@ class WorkspaceAgentInstallResponse(TimestampedModel):
     hired_by_user_id: UUID | None
     status: str
     agent: AgentProfileResponse
+
+
+class TalentRecommendationRequest(BaseModel):
+    objective: str = Field(min_length=1, max_length=2_000)
+    team_type: str = Field(default="general", max_length=80)
+    required_roles: list[str] = Field(default_factory=list, max_length=12)
+    skill_tags: list[str] = Field(default_factory=list, max_length=24)
+    capability_tags: list[str] = Field(default_factory=list, max_length=24)
+    team_id: UUID | None = None
+    max_candidates_per_role: int = Field(default=3, ge=1, le=10)
+
+
+class TalentCandidateRecommendation(BaseModel):
+    listing: TalentListingResponse
+    score: float
+    matched_reasons: list[str]
+    missing_tags: list[str]
+
+
+class RoleRecommendation(BaseModel):
+    role: str
+    team_role: str
+    priority: int = Field(ge=1)
+    reason: str
+    candidates: list[TalentCandidateRecommendation]
+
+
+class TalentRecommendationResponse(BaseModel):
+    objective: str
+    team_type: str
+    recommended_roles: list[RoleRecommendation]
+    existing_team_roles: list[str]
+    uncovered_roles: list[str]

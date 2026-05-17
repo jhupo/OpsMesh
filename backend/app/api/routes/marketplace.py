@@ -8,6 +8,8 @@ from backend.app.api.schemas.marketplace import (
     HireTalentRequest,
     TalentListingCreateRequest,
     TalentListingResponse,
+    TalentRecommendationRequest,
+    TalentRecommendationResponse,
     WorkspaceAgentInstallResponse,
 )
 from backend.app.auth.context import WorkspaceContext
@@ -96,3 +98,21 @@ async def hire_agent_from_talent_market(
             "agent": install.installed_agent_profile,
         }
     )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/talent-market/recommendations",
+    response_model=TalentRecommendationResponse,
+)
+async def recommend_talent_for_team(
+    request: TalentRecommendationRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TalentRecommendationResponse:
+    try:
+        return TalentMarketplaceService(session).recommend_team(
+            workspace_id=context.workspace.id,
+            data=request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

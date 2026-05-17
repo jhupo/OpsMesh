@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import Select, func, or_, select
@@ -7,7 +8,15 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.api.pagination import PageParams
-from backend.app.api.schemas.marketplace import HireTalentRequest, TalentListingCreateRequest
+from backend.app.api.schemas.marketplace import (
+    HireTalentRequest,
+    RoleRecommendation,
+    TalentCandidateRecommendation,
+    TalentListingCreateRequest,
+    TalentListingResponse,
+    TalentRecommendationRequest,
+    TalentRecommendationResponse,
+)
 from backend.app.audit.service import AuditService
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.marketplace.models import TalentListing, WorkspaceAgentInstall
@@ -76,6 +85,65 @@ class TalentMarketplaceService:
             filtered = [row for row in rows if skill in row.skill_tags]
             return filtered[page.offset : page.offset + page.limit], len(filtered)
         return self._page(statement.order_by(TalentListing.created_at.desc()), page)
+
+    def recommend_team(
+        self,
+        *,
+        workspace_id: UUID,
+        data: TalentRecommendationRequest,
+    ) -> TalentRecommendationResponse:
+        existing_roles = self._existing_team_roles(workspace_id, data.team_id)
+        role_specs = _role_specs_for_request(data)
+        listings = list(
+            self._session.scalars(
+                select(TalentListing)
+                .where(TalentListing.status == "public")
+                .order_by(TalentListing.created_at.desc())
+            )
+        )
+        recommended_roles: list[RoleRecommendation] = []
+        uncovered_roles: list[str] = []
+
+        for index, spec in enumerate(role_specs, start=1):
+            scored = [
+                _score_listing(
+                    listing,
+                    role=spec.role,
+                    skill_tags=spec.skill_tags,
+                    capability_tags=spec.capability_tags,
+                )
+                for listing in listings
+            ]
+            viable = [item for item in scored if item.score > 0]
+            viable.sort(key=lambda item: (-item.score, item.listing.created_at), reverse=False)
+            candidates = [
+                TalentCandidateRecommendation(
+                    listing=TalentListingResponse.model_validate(item.listing),
+                    score=round(item.score, 2),
+                    matched_reasons=item.reasons,
+                    missing_tags=item.missing_tags,
+                )
+                for item in viable[: data.max_candidates_per_role]
+            ]
+            if spec.role not in existing_roles:
+                uncovered_roles.append(spec.role)
+            recommended_roles.append(
+                RoleRecommendation(
+                    role=spec.role,
+                    team_role=spec.team_role,
+                    priority=index,
+                    reason=spec.reason,
+                    candidates=candidates,
+                )
+            )
+
+        return TalentRecommendationResponse(
+            objective=data.objective,
+            team_type=data.team_type,
+            recommended_roles=recommended_roles,
+            existing_team_roles=sorted(existing_roles),
+            uncovered_roles=uncovered_roles,
+        )
 
     def hire_agent(
         self,
@@ -166,6 +234,20 @@ class TalentMarketplaceService:
             )
         )
 
+    def _existing_team_roles(self, workspace_id: UUID, team_id: UUID | None) -> set[str]:
+        if team_id is None:
+            return set()
+        team = self._session.get(AgentTeam, team_id)
+        if team is None or team.workspace_id != workspace_id:
+            raise ValueError("Team not found")
+        rows = self._session.scalars(
+            select(AgentTeamMember).where(
+                AgentTeamMember.workspace_id == workspace_id,
+                AgentTeamMember.agent_team_id == team_id,
+            )
+        )
+        return {row.team_role for row in rows}
+
     def _require_agent(self, workspace_id: UUID, agent_id: UUID) -> AgentProfile:
         agent = self._session.get(AgentProfile, agent_id)
         if agent is None or agent.workspace_id != workspace_id:
@@ -182,3 +264,228 @@ class TalentMarketplaceService:
         )
         rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
         return list(rows), int(total or 0)
+
+
+@dataclass(frozen=True)
+class _RoleSpec:
+    role: str
+    team_role: str
+    reason: str
+    skill_tags: tuple[str, ...]
+    capability_tags: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _ScoredListing:
+    listing: TalentListing
+    score: float
+    reasons: list[str]
+    missing_tags: list[str]
+
+
+_TEAM_ROLE_PRESETS: dict[str, tuple[_RoleSpec, ...]] = {
+    "research": (
+        _RoleSpec(
+            "project_manager",
+            "manager",
+            "拆解目标、协调专家、控制交付节奏。",
+            ("planning", "coordination"),
+            (),
+        ),
+        _RoleSpec(
+            "researcher",
+            "research_specialist",
+            "收集资料、验证来源、沉淀研究证据。",
+            ("research", "market"),
+            ("web.search",),
+        ),
+        _RoleSpec(
+            "analyst",
+            "data_analyst",
+            "整理数据、发现趋势、输出可执行结论。",
+            ("analysis", "data"),
+            ("data.analysis",),
+        ),
+    ),
+    "novel": (
+        _RoleSpec(
+            "editor",
+            "chief_editor",
+            "维护世界观、节奏和章节质量。",
+            ("writing", "editing"),
+            (),
+        ),
+        _RoleSpec(
+            "writer",
+            "chapter_writer",
+            "按大纲生成章节内容并保持角色一致。",
+            ("writing", "story"),
+            ("longform.write",),
+        ),
+        _RoleSpec(
+            "reviewer",
+            "continuity_reviewer",
+            "检查设定冲突、伏笔和人物动机。",
+            ("review", "continuity"),
+            (),
+        ),
+    ),
+    "software": (
+        _RoleSpec(
+            "project_manager",
+            "tech_lead",
+            "拆分需求、安排实现顺序、验收交付。",
+            ("planning", "architecture"),
+            (),
+        ),
+        _RoleSpec(
+            "software_engineer",
+            "backend_engineer",
+            "实现后端服务、工具调用和任务编排。",
+            ("backend", "python"),
+            ("code.execute",),
+        ),
+        _RoleSpec(
+            "qa_engineer",
+            "qa_specialist",
+            "设计测试、复现问题、验证回归。",
+            ("testing", "quality"),
+            (),
+        ),
+    ),
+    "design": (
+        _RoleSpec(
+            "product_manager",
+            "product_manager",
+            "明确用户目标、定义范围和验收标准。",
+            ("product", "planning"),
+            (),
+        ),
+        _RoleSpec(
+            "designer",
+            "visual_designer",
+            "产出界面视觉、素材和交互稿。",
+            ("design", "ui"),
+            ("image.generate",),
+        ),
+        _RoleSpec(
+            "reviewer",
+            "design_reviewer",
+            "检查一致性、可用性和交付质量。",
+            ("review", "ux"),
+            (),
+        ),
+    ),
+    "general": (
+        _RoleSpec(
+            "project_manager",
+            "manager",
+            "拆解目标、安排人员、跟踪进度。",
+            ("planning", "coordination"),
+            (),
+        ),
+        _RoleSpec(
+            "researcher",
+            "research_specialist",
+            "补齐信息、收集资料、形成判断依据。",
+            ("research",),
+            ("web.search",),
+        ),
+        _RoleSpec(
+            "operator",
+            "operator",
+            "执行工具调用、整理产物、推动任务完成。",
+            ("operations",),
+            (),
+        ),
+    ),
+}
+
+
+def _role_specs_for_request(data: TalentRecommendationRequest) -> list[_RoleSpec]:
+    preset = list(_TEAM_ROLE_PRESETS.get(data.team_type, _TEAM_ROLE_PRESETS["general"]))
+    role_tags = tuple(_normalize_tag(tag) for tag in data.skill_tags if tag)
+    capability_tags = tuple(_normalize_tag(tag) for tag in data.capability_tags if tag)
+    if not data.required_roles:
+        return [
+            _RoleSpec(
+                role=spec.role,
+                team_role=spec.team_role,
+                reason=spec.reason,
+                skill_tags=tuple(dict.fromkeys((*spec.skill_tags, *role_tags))),
+                capability_tags=tuple(dict.fromkeys((*spec.capability_tags, *capability_tags))),
+            )
+            for spec in preset
+        ]
+    preset_by_role = {spec.role: spec for spec in preset}
+    specs: list[_RoleSpec] = []
+    for role in data.required_roles:
+        normalized_role = _normalize_role(role)
+        default = preset_by_role.get(normalized_role)
+        default_skills = default.skill_tags if default is not None else ()
+        default_capabilities = default.capability_tags if default is not None else ()
+        specs.append(
+            _RoleSpec(
+                role=normalized_role,
+                team_role=default.team_role if default is not None else normalized_role,
+                reason=default.reason if default is not None else "老板需求中明确要求该岗位。",
+                skill_tags=tuple(dict.fromkeys((*default_skills, *role_tags))),
+                capability_tags=tuple(dict.fromkeys((*default_capabilities, *capability_tags))),
+            )
+        )
+    return specs
+
+
+def _score_listing(
+    listing: TalentListing,
+    *,
+    role: str,
+    skill_tags: tuple[str, ...],
+    capability_tags: tuple[str, ...],
+) -> _ScoredListing:
+    score = 0.0
+    reasons: list[str] = []
+    missing_tags: list[str] = []
+    listing_skills = {_normalize_tag(tag) for tag in listing.skill_tags}
+    listing_capabilities = {_normalize_tag(tag) for tag in listing.capability_tags}
+    normalized_role = _normalize_role(listing.role)
+
+    if normalized_role == role:
+        score += 5
+        reasons.append("岗位匹配")
+    elif role in normalized_role or normalized_role in role:
+        score += 2
+        reasons.append("岗位相近")
+
+    for tag in skill_tags:
+        if tag in listing_skills:
+            score += 1.5
+            reasons.append(f"技能匹配: {tag}")
+        else:
+            missing_tags.append(tag)
+
+    for tag in capability_tags:
+        if tag in listing_capabilities:
+            score += 1
+            reasons.append(f"能力匹配: {tag}")
+        else:
+            missing_tags.append(tag)
+
+    if listing.risk_level == "low":
+        score += 0.25
+        reasons.append("低风险")
+
+    return _ScoredListing(
+        listing=listing,
+        score=score,
+        reasons=reasons,
+        missing_tags=list(dict.fromkeys(missing_tags)),
+    )
+
+
+def _normalize_role(value: str) -> str:
+    return value.strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _normalize_tag(value: str) -> str:
+    return value.strip().lower()

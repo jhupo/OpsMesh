@@ -134,6 +134,112 @@ def test_hiring_same_listing_twice_returns_conflict() -> None:
     assert duplicate.json()["error"]["message"] == "Talent listing is already hired in workspace"
 
 
+def test_hr_recommendations_rank_market_candidates_and_detect_team_gaps() -> None:
+    client, session = _client()
+    publisher, publisher_workspace = _seed_workspace(
+        session,
+        email="publisher@example.com",
+        slug="publisher",
+    )
+    buyer, buyer_workspace = _seed_workspace(session, email="buyer@example.com", slug="buyer")
+    team = AgentTeam(
+        workspace_id=buyer_workspace.id,
+        name="Research Team",
+        team_type="research",
+    )
+    manager = AgentProfile(
+        workspace_id=buyer_workspace.id,
+        name="Existing PM",
+        role="project_manager",
+    )
+    session.add_all([team, manager])
+    session.flush()
+    session.add(
+        AgentTeamMember(
+            workspace_id=buyer_workspace.id,
+            agent_team_id=team.id,
+            agent_profile_id=manager.id,
+            team_role="manager",
+        )
+    )
+    research_agent = AgentProfile(
+        workspace_id=publisher_workspace.id,
+        name="Market Researcher",
+        role="researcher",
+        description="Researches market and competitors",
+    )
+    weak_agent = AgentProfile(
+        workspace_id=publisher_workspace.id,
+        name="General Writer",
+        role="writer",
+        description="Writes summaries",
+    )
+    session.add_all([research_agent, weak_agent])
+    session.commit()
+
+    research_listing = _publish_listing(
+        client,
+        publisher,
+        publisher_workspace,
+        research_agent,
+        title="Market Research Specialist",
+        skill_tags=["research", "market"],
+        capability_tags=["web.search"],
+    )
+    _publish_listing(
+        client,
+        publisher,
+        publisher_workspace,
+        weak_agent,
+        title="General Writer",
+        skill_tags=["writing"],
+        capability_tags=[],
+    )
+
+    response = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/talent-market/recommendations",
+        headers=_headers(buyer.id),
+        json={
+            "objective": "完成 Q2 市场分析，包含竞品、趋势、数据结论",
+            "team_type": "research",
+            "team_id": str(team.id),
+            "skill_tags": ["research", "market"],
+            "capability_tags": ["web.search"],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["team_type"] == "research"
+    assert body["existing_team_roles"] == ["manager"]
+    assert "researcher" in body["uncovered_roles"]
+    research_role = next(item for item in body["recommended_roles"] if item["role"] == "researcher")
+    assert research_role["candidates"][0]["listing"]["id"] == research_listing["id"]
+    assert research_role["candidates"][0]["score"] > 0
+    assert "岗位匹配" in research_role["candidates"][0]["matched_reasons"]
+
+
+def test_hr_recommendations_reject_foreign_team() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
+    _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+    other_team = AgentTeam(workspace_id=other_workspace.id, name="Other Team", team_type="research")
+    session.add(other_team)
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/talent-market/recommendations",
+        headers=_headers(owner.id),
+        json={
+            "objective": "找人做市场分析",
+            "team_type": "research",
+            "team_id": str(other_team.id),
+        },
+    )
+
+    assert response.status_code == 404
+
+
 def _client() -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
@@ -169,6 +275,30 @@ def _seed_workspace(session: Session, *, email: str, slug: str) -> tuple[User, W
     session.add_all([user, workspace, membership])
     session.commit()
     return user, workspace
+
+
+def _publish_listing(
+    client: TestClient,
+    publisher: User,
+    workspace: Workspace,
+    agent: AgentProfile,
+    *,
+    title: str,
+    skill_tags: list[str],
+    capability_tags: list[str],
+) -> dict[str, object]:
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/talent-listings",
+        headers=_headers(publisher.id),
+        json={
+            "agent_profile_id": str(agent.id),
+            "title": title,
+            "skill_tags": skill_tags,
+            "capability_tags": capability_tags,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
 
 
 def _headers(user_id: object) -> dict[str, str]:
