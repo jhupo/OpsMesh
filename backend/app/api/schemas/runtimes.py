@@ -1,0 +1,72 @@
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, Field
+
+from backend.app.api.schemas.common import ORMModel, TimestampedModel
+
+
+class RuntimeTemplateResponse(ORMModel):
+    id: UUID
+    name: str
+    image: str
+    default_limits: dict[str, object]
+    default_network_policy: dict[str, object]
+    status: str
+    created_at: datetime
+
+
+class RuntimeLimitsRequest(BaseModel):
+    cpu_count: float = Field(gt=0, le=8)
+    memory_mb: int = Field(ge=128, le=32_768)
+    disk_mb: int = Field(ge=256, le=102_400)
+    timeout_seconds: int = Field(ge=1, le=3_600)
+
+
+class RuntimeCreateRequest(BaseModel):
+    template_id: UUID
+    name: str = Field(min_length=1, max_length=160)
+    limits: RuntimeLimitsRequest | None = None
+    network_disabled: bool = True
+
+
+class WorkspaceRuntimeResponse(TimestampedModel):
+    workspace_id: UUID
+    runtime_template_id: UUID | None
+    runtime_provider: str
+    runtime_type: str
+    name: str
+    status: str
+    connection_status: str
+    docker_container_id: str | None
+    limits: dict[str, object]
+    network_policy: dict[str, object]
+    capabilities: dict[str, object]
+    last_heartbeat_at: datetime | None
+
+
+class RuntimeCommandRequest(BaseModel):
+    command: list[str] = Field(min_length=1, max_length=32)
+
+
+class RuntimeCommandResponse(ORMModel):
+    id: UUID
+    workspace_id: UUID
+    workspace_runtime_id: UUID
+    command: list[str]
+    status: str
+    exit_code: int | None
+    stdout: str
+    stderr: str
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+class RuntimeEventResponse(ORMModel):
+    id: UUID
+    workspace_id: UUID
+    workspace_runtime_id: UUID
+    event_type: str
+    message: str
+    event_metadata: dict[str, object]
+    created_at: datetime

@@ -1,0 +1,293 @@
+from collections.abc import Generator
+from datetime import UTC, datetime
+from uuid import uuid4
+
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from backend.app.core.config import Settings, get_settings
+from backend.app.db import models as registered_models  # noqa: F401
+from backend.app.db.base import Base
+from backend.app.db.session import get_db_session
+from backend.app.identity.models import User
+from backend.app.main import create_app
+from backend.app.runtime_manager.contracts import (
+    DockerRuntimeClient,
+    RuntimeCommandResult,
+    RuntimeCreateRequest,
+)
+from backend.app.runtime_manager.dependencies import get_docker_runtime_client
+from backend.app.runtimes.models import RuntimeTemplate
+from backend.app.workspaces.models import Workspace, WorkspaceMember
+
+TOKEN = "test-token"
+
+
+class FakeDockerClient(DockerRuntimeClient):
+    def __init__(self) -> None:
+        self.created_requests: list[RuntimeCreateRequest] = []
+        self.started: list[str] = []
+        self.stopped: list[str] = []
+        self.removed: list[str] = []
+        self.executed: list[tuple[str, list[str], int]] = []
+
+    def create_container(self, request: RuntimeCreateRequest) -> str:
+        self.created_requests.append(request)
+        return "container-123"
+
+    def start_container(self, container_id: str) -> None:
+        self.started.append(container_id)
+
+    def stop_container(self, container_id: str) -> None:
+        self.stopped.append(container_id)
+
+    def remove_container(self, container_id: str) -> None:
+        self.removed.append(container_id)
+
+    def exec_command(
+        self,
+        container_id: str,
+        command: list[str],
+        timeout_seconds: int,
+    ) -> RuntimeCommandResult:
+        self.executed.append((container_id, command, timeout_seconds))
+        return RuntimeCommandResult(exit_code=0, stdout="ok\n", stderr="")
+
+
+def test_runtime_api_lifecycle_and_workspace_scope() -> None:
+    client, session, docker = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other@example.com",
+        slug="other-space",
+    )
+    template = _seed_template(session)
+
+    templates = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runtime-templates",
+        headers=_headers(owner.id),
+    )
+    assert templates.status_code == 200
+    assert templates.json()[0]["id"] == str(template.id)
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtimes",
+        headers=_headers(owner.id),
+        json={
+            "template_id": str(template.id),
+            "name": "personal-python",
+            "limits": {
+                "cpu_count": 1,
+                "memory_mb": 512,
+                "disk_mb": 1024,
+                "timeout_seconds": 20,
+            },
+        },
+    )
+    assert created.status_code == 201
+    runtime_id = created.json()["id"]
+    assert created.json()["network_policy"] == {"disabled": True}
+    assert docker.created_requests[0].image == "python:3.12-slim"
+    assert docker.created_requests[0].network_disabled is True
+
+    forbidden = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/runtimes/{runtime_id}/start",
+        headers=_headers(other.id),
+    )
+    assert forbidden.status_code == 404
+
+    started = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtimes/{runtime_id}/start",
+        headers=_headers(owner.id),
+    )
+    command = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtimes/{runtime_id}/commands",
+        headers=_headers(owner.id),
+        json={"command": ["python", "--version"]},
+    )
+    commands = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runtimes/{runtime_id}/commands",
+        headers=_headers(owner.id),
+    )
+    events = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runtimes/{runtime_id}/events",
+        headers=_headers(owner.id),
+    )
+    stopped = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtimes/{runtime_id}/stop",
+        headers=_headers(owner.id),
+    )
+    deleted = client.delete(
+        f"/api/v1/workspaces/{workspace.id}/runtimes/{runtime_id}",
+        headers=_headers(owner.id),
+    )
+
+    assert started.status_code == 200
+    assert started.json()["status"] == "running"
+    assert command.status_code == 201
+    assert command.json()["stdout"] == "ok\n"
+    assert commands.status_code == 200
+    assert commands.json()["total"] == 1
+    assert events.status_code == 200
+    assert events.json()["total"] >= 2
+    assert stopped.status_code == 200
+    assert stopped.json()["status"] == "stopped"
+    assert deleted.status_code == 204
+    assert docker.started == ["container-123"]
+    assert docker.executed == [("container-123", ["python", "--version"], 20)]
+    assert docker.stopped == ["container-123"]
+    assert docker.removed == ["container-123"]
+
+
+def test_runtime_api_rejects_disallowed_image_and_network() -> None:
+    client, session, docker = _client(allowed_images=["python:3.12-slim"])
+    owner, workspace = _seed_workspace(session, role="owner")
+    allowed_template = _seed_template(session)
+    blocked_template = _seed_template(
+        session,
+        name="unsafe",
+        image="ubuntu:24.04",
+        network_policy={"disabled": True},
+    )
+
+    blocked_image = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtimes",
+        headers=_headers(owner.id),
+        json={"template_id": str(blocked_template.id), "name": "unsafe"},
+    )
+    blocked_network = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtimes",
+        headers=_headers(owner.id),
+        json={
+            "template_id": str(allowed_template.id),
+            "name": "networked",
+            "network_disabled": False,
+        },
+    )
+
+    assert blocked_image.status_code == 400
+    assert blocked_image.json()["error"]["code"] == "bad_request"
+    assert "image is not allowed" in blocked_image.json()["error"]["message"]
+    assert blocked_network.status_code == 400
+    assert blocked_network.json()["error"]["code"] == "bad_request"
+    assert "network access is disabled" in blocked_network.json()["error"]["message"]
+    assert docker.created_requests == []
+
+
+def test_runtime_api_allows_network_when_template_allows_it() -> None:
+    client, session, docker = _client(allowed_images=["python:3.12-slim"])
+    owner, workspace = _seed_workspace(session, role="owner")
+    template = _seed_template(session, network_policy={"allow_network": True})
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtimes",
+        headers=_headers(owner.id),
+        json={
+            "template_id": str(template.id),
+            "name": "networked",
+            "network_disabled": False,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["network_policy"] == {"disabled": False}
+    assert docker.created_requests[0].network_disabled is False
+
+
+def _client(
+    *,
+    allowed_images: list[str] | None = None,
+) -> tuple[TestClient, Session, FakeDockerClient]:
+    _patch_portable_types_for_sqlite()
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    seed_session = session_factory()
+    docker = FakeDockerClient()
+    settings = Settings(
+        environment="test",
+        log_format="text",
+        internal_api_token=TOKEN,
+        database_url="sqlite+pysqlite:///:memory:",
+        runtime_allowed_images=allowed_images or ["python:3.12-slim"],
+    )
+    app = create_app(settings)
+
+    def override_db_session() -> Generator[Session, None, None]:
+        request_session = session_factory()
+        try:
+            yield request_session
+        finally:
+            request_session.close()
+
+    app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_settings] = lambda: app.state.settings
+    app.dependency_overrides[get_docker_runtime_client] = lambda: docker
+    return TestClient(app), seed_session, docker
+
+
+def _seed_workspace(
+    session: Session,
+    *,
+    role: str,
+    email: str = "owner@example.com",
+    slug: str = "owner-space",
+) -> tuple[User, Workspace]:
+    user = User(email=email, display_name=email.split("@")[0])
+    workspace = Workspace(owner=user, name=slug.title(), slug=slug, settings={})
+    membership = WorkspaceMember(workspace=workspace, user=user, role=role)
+    session.add_all([user, workspace, membership])
+    session.commit()
+    return user, workspace
+
+
+def _seed_template(
+    session: Session,
+    *,
+    name: str = "python",
+    image: str = "python:3.12-slim",
+    network_policy: dict[str, object] | None = None,
+) -> RuntimeTemplate:
+    template = RuntimeTemplate(
+        name=f"{name}-{uuid4()}",
+        image=image,
+        default_limits={
+            "cpu_count": 1,
+            "memory_mb": 512,
+            "disk_mb": 1024,
+            "timeout_seconds": 60,
+        },
+        default_network_policy=network_policy or {"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add(template)
+    session.commit()
+    return template
+
+
+def _headers(user_id: object) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {TOKEN}",
+        "X-User-ID": str(user_id),
+    }
+
+
+def _patch_portable_types_for_sqlite() -> None:
+    for table in Base.metadata.tables.values():
+        for column in table.columns:
+            if isinstance(column.type, PostgresUUID):
+                column.type = column.type.as_generic()
+            if isinstance(column.type, JSONB):
+                column.type = SqliteJSON()

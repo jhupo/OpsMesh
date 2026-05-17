@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     api_rate_limit_window_seconds: int = Field(default=60, ge=1)
     credential_encryption_secret: str = Field(default="change-me-credential-encryption-secret")
     credential_encryption_key_id: str = Field(default="local")
+    runtime_allowed_images: list[str] = Field(default_factory=lambda: ["python:3.12-slim"])
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

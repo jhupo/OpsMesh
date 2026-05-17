@@ -235,12 +235,19 @@ Tasks:
 - [x] Add container labels.
 - [x] Add cleanup job.
 - [x] Add tests that host execution is never used.
+- [x] Expose workspace runtime template list API.
+- [x] Expose workspace runtime lifecycle APIs.
+- [x] Expose runtime command and event APIs.
+- [x] Enforce personal image allowlist.
+- [x] Keep Docker network disabled by default.
 
 Deliverables:
 
 - worker can execute a command inside Docker
 - command output is stored
 - runtime is workspace-scoped
+- user-managed Docker runtimes are controlled through backend APIs
+- personal safety defaults prevent arbitrary images and accidental networking
 
 ## Phase 11: Runtime Tool Integration
 
