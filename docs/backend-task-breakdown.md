@@ -174,16 +174,16 @@ Goal: run a real SDK agent.
 
 Tasks:
 
-- [ ] Add OpenAI Agents SDK dependency.
-- [ ] Implement agent factory from `agent_profiles`.
+- [x] Add OpenAI Agents SDK dependency.
+- [x] Implement agent factory from `agent_profiles`.
 - [ ] Map model settings.
-- [ ] Map instructions.
-- [ ] Add Runner wrapper.
-- [ ] Add runtime context object.
-- [ ] Capture final output.
-- [ ] Capture basic events.
-- [ ] Persist model/tool/run events.
-- [ ] Add safe error normalization.
+- [x] Map instructions.
+- [x] Add Runner wrapper.
+- [x] Add runtime context object.
+- [x] Capture final output.
+- [x] Capture basic events.
+- [x] Persist model/tool/run events.
+- [x] Add safe error normalization.
 
 Deliverables:
 

@@ -54,7 +54,7 @@ def test_task_start_creates_queued_run_and_worker_completes_fake_run() -> None:
     assert handled is True
     assert stored_run is not None
     assert stored_run.status == RunStatus.COMPLETED.value
-    assert stored_run.output == {"result": "fake_run_completed"}
+    assert stored_run.output == {"final_output": "fake_run_completed"}
     assert stored_task is not None
     assert stored_task.status == TaskStatus.COMPLETED.value
     assert [event.event_type for event in events] == ["run.started", "run.completed"]
@@ -109,6 +109,51 @@ def test_failed_worker_job_is_retried_by_queue() -> None:
     retried = queue.dequeue()
     assert retried is not None
     assert retried.attempt == 1
+
+
+def test_worker_persists_failed_run_event() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    session.add(task)
+    session.flush()
+    run = RunOrchestrationService(session).create_queued_run_for_task(task)
+    session.commit()
+
+    class FailingRunner:
+        async def run(self, request):
+            raise RuntimeError("model failed")
+
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        idempotency_key="fail-run",
+    )
+
+    try:
+        WorkerJobHandler(session, agent_runner=FailingRunner()).handle(job)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Expected failing runner to raise")
+
+    stored_run = session.get(AgentRun, run.id)
+    failed_event = session.scalar(
+        select(RunEvent).where(
+            RunEvent.agent_run_id == run.id,
+            RunEvent.event_type == "run.failed",
+        )
+    )
+
+    assert stored_run is not None
+    assert stored_run.status == RunStatus.FAILED.value
+    assert stored_run.error == {
+        "code": "RuntimeError",
+        "message": "model failed",
+        "retryable": True,
+    }
+    assert failed_event is not None
 
 
 def _session() -> Session:
