@@ -1,5 +1,7 @@
 import json
 from collections.abc import Generator
+from datetime import UTC, datetime
+from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
@@ -14,12 +16,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.models import AgentProfile
+from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.files.models import WorkspaceFile
+from backend.app.files.storage import LocalStorage
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.redis.dependencies import get_redis_client
@@ -311,6 +315,92 @@ def test_workspace_archive_import_restores_metadata_and_file_bytes(tmp_path: Pat
     assert downloaded.status_code == 200
     assert downloaded.content == b"portable data"
     assert audit is not None
+
+
+def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source@example.com",
+        slug="source",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target@example.com",
+        slug="target",
+    )
+    source_task = Task(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        title="Novel Draft",
+        domain_type="writing",
+    )
+    session.add(source_task)
+    session.flush()
+    artifact_bytes = b"chapter one artifact"
+    storage_key = f"workspaces/{source_workspace.id}/artifacts/{source_task.id}/chapter.txt"
+    LocalStorage(str(tmp_path)).write(storage_key, artifact_bytes)
+    source_artifact = Artifact(
+        workspace_id=source_workspace.id,
+        task_id=source_task.id,
+        agent_run_id=None,
+        artifact_type="document",
+        filename="chapter.txt",
+        content_type="text/plain",
+        size_bytes=len(artifact_bytes),
+        checksum_sha256=sha256(artifact_bytes).hexdigest(),
+        storage_key=storage_key,
+        artifact_metadata={"stage": "draft"},
+        created_at=datetime.now(UTC),
+    )
+    session.add(source_artifact)
+    session.commit()
+    archive_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
+        headers=_headers(source_user.id),
+        json={"include_audit_events": False},
+    )
+
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import",
+        headers=_headers(target_user.id),
+        files={"file": ("archive.zip", archive_response.content, "application/zip")},
+        data={"dry_run": "false"},
+    )
+
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["created_counts"]["tasks"] == 1
+    assert body["created_counts"]["artifacts"] == 1
+    imported_task = session.scalar(
+        select(Task).where(
+            Task.workspace_id == target_workspace.id,
+            Task.title == "Imported Novel Draft",
+        )
+    )
+    imported_artifact = session.scalar(
+        select(Artifact).where(
+            Artifact.workspace_id == target_workspace.id,
+            Artifact.filename == "Imported chapter.txt",
+        )
+    )
+    assert imported_task is not None
+    assert imported_artifact is not None
+    assert imported_artifact.task_id == imported_task.id
+    assert imported_artifact.agent_run_id is None
+    assert imported_artifact.checksum_sha256 == sha256(artifact_bytes).hexdigest()
+    assert imported_artifact.artifact_metadata["imported_from_artifact_id"] == str(
+        source_artifact.id
+    )
+    downloaded = client.get(
+        f"/api/v1/workspaces/{target_workspace.id}/artifacts/"
+        f"{imported_artifact.id}/download",
+        headers=_headers(target_user.id),
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content == artifact_bytes
 
 
 def _client(tmp_path: Path) -> tuple[TestClient, Session]:

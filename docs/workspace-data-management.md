@@ -301,6 +301,7 @@ Implemented archive import:
 - accepts a workspace archive zip upload
 - reads `metadata.json` and reuses metadata import
 - can restore workspace file bytes into the target workspace
+- can restore artifact bytes into the target workspace and remap artifacts to imported tasks when available
 - supports dry-run, per-object byte limits, and total restored byte limits
 - records `workspace.archive_import.created` on committed imports
 

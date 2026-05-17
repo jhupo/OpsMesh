@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from hashlib import sha256
 from io import BytesIO
 from typing import Any
 from uuid import UUID
@@ -412,6 +413,7 @@ class WorkspaceExportService:
             if "metadata.json" not in archive.namelist():
                 raise ValueError("Archive is missing metadata.json")
             metadata = WorkspaceExportResponse.model_validate_json(archive.read("metadata.json"))
+            archive_names = set(archive.namelist())
             response = self.import_metadata(
                 workspace=workspace,
                 user_id=user_id,
@@ -428,55 +430,35 @@ class WorkspaceExportService:
             response.created_counts.setdefault("files", 0)
             response.skipped_counts.setdefault("files", 0)
             response.id_map.setdefault("files", {})
-            if not request.import_file_bytes:
-                return response
+            response.created_counts.setdefault("artifacts", 0)
+            response.skipped_counts.setdefault("artifacts", 0)
+            response.id_map.setdefault("artifacts", {})
             total_bytes = 0
-            for item in metadata.files[: request.max_items_per_collection]:
-                source_id = _string_field(item, "id")
-                filename = safe_filename(_string_field(item, "filename", "file.bin"))
-                archive_name = f"files/{source_id}/{filename}"
-                if archive_name not in archive.namelist():
-                    response.skipped_counts["files"] += 1
-                    response.warnings.append(f"Skipped file {source_id}: bytes not found")
-                    continue
-                content = archive.read(archive_name)
-                if len(content) > request.max_bytes_per_object:
-                    response.skipped_counts["files"] += 1
-                    response.warnings.append(f"Skipped file {source_id}: object too large")
-                    continue
-                if total_bytes + len(content) > request.max_total_bytes:
-                    response.skipped_counts["files"] += 1
-                    response.warnings.append(
-                        f"Skipped file {source_id}: archive byte limit reached"
+            if request.import_file_bytes:
+                for item in metadata.files[: request.max_items_per_collection]:
+                    total_bytes = self._import_workspace_file_blob(
+                        workspace=workspace,
+                        user_id=user_id,
+                        request=request,
+                        archive=archive,
+                        archive_names=archive_names,
+                        item=item,
+                        response=response,
+                        storage=storage,
+                        total_bytes=total_bytes,
                     )
-                    continue
-                response.created_counts["files"] += 1
-                total_bytes += len(content)
-                if request.dry_run:
-                    continue
-                checksum = _string_field(item, "checksum_sha256")
-                imported_filename = safe_filename(f"{request.name_prefix}{filename}")
-                file = WorkspaceFile(
-                    workspace_id=workspace.id,
-                    uploaded_by_user_id=user_id,
-                    filename=imported_filename,
-                    content_type=_string_field(item, "content_type", "application/octet-stream"),
-                    size_bytes=len(content),
-                    checksum_sha256=checksum,
-                    storage_key=(
-                        f"workspaces/{workspace.id}/files/imported/{source_id}/"
-                        f"{imported_filename}"
-                    ),
-                    status="active",
-                    file_metadata={
-                        **_dict_field(item, "metadata"),
-                        "imported_from_file_id": source_id,
-                    },
-                )
-                self._session.add(file)
-                self._session.flush()
-                storage.write(file.storage_key, content)
-                response.id_map["files"][source_id] = str(file.id)
+            if request.import_artifact_bytes:
+                for item in metadata.artifacts[: request.max_items_per_collection]:
+                    total_bytes = self._import_artifact_blob(
+                        workspace=workspace,
+                        request=request,
+                        archive=archive,
+                        archive_names=archive_names,
+                        item=item,
+                        response=response,
+                        storage=storage,
+                        total_bytes=total_bytes,
+                    )
             if request.dry_run:
                 self._session.rollback()
                 return response
@@ -494,6 +476,168 @@ class WorkspaceExportService:
             )
             self._session.commit()
             return response
+
+    def _import_workspace_file_blob(
+        self,
+        *,
+        workspace: Workspace,
+        user_id: UUID,
+        request: WorkspaceArchiveImportRequest,
+        archive: ZipFile,
+        archive_names: set[str],
+        item: dict[str, object],
+        response: WorkspaceImportResponse,
+        storage: LocalStorage,
+        total_bytes: int,
+    ) -> int:
+        source_id = _string_field(item, "id")
+        filename = safe_filename(_string_field(item, "filename", "file.bin"))
+        archive_name = f"files/{source_id}/{filename}"
+        content = self._read_import_blob(
+            archive=archive,
+            archive_names=archive_names,
+            archive_name=archive_name,
+            source_id=source_id,
+            collection="files",
+            response=response,
+            request=request,
+            total_bytes=total_bytes,
+        )
+        if content is None:
+            return total_bytes
+        response.created_counts["files"] += 1
+        total_bytes += len(content)
+        if request.dry_run:
+            return total_bytes
+        checksum = _validated_checksum(
+            content=content,
+            source_checksum=_string_field(item, "checksum_sha256"),
+            source_id=source_id,
+            collection="file",
+            warnings=response.warnings,
+        )
+        imported_filename = safe_filename(f"{request.name_prefix}{filename}")
+        file = WorkspaceFile(
+            workspace_id=workspace.id,
+            uploaded_by_user_id=user_id,
+            filename=imported_filename,
+            content_type=_string_field(item, "content_type", "application/octet-stream"),
+            size_bytes=len(content),
+            checksum_sha256=checksum,
+            storage_key=(
+                f"workspaces/{workspace.id}/files/imported/{source_id}/{imported_filename}"
+            ),
+            status="active",
+            file_metadata={
+                **_dict_field(item, "metadata"),
+                "imported_from_file_id": source_id,
+            },
+        )
+        self._session.add(file)
+        self._session.flush()
+        storage.write(file.storage_key, content)
+        response.id_map["files"][source_id] = str(file.id)
+        return total_bytes
+
+    def _import_artifact_blob(
+        self,
+        *,
+        workspace: Workspace,
+        request: WorkspaceArchiveImportRequest,
+        archive: ZipFile,
+        archive_names: set[str],
+        item: dict[str, object],
+        response: WorkspaceImportResponse,
+        storage: LocalStorage,
+        total_bytes: int,
+    ) -> int:
+        source_id = _string_field(item, "id")
+        filename = safe_filename(_string_field(item, "filename", "artifact.bin"))
+        archive_name = f"artifacts/{source_id}/{filename}"
+        content = self._read_import_blob(
+            archive=archive,
+            archive_names=archive_names,
+            archive_name=archive_name,
+            source_id=source_id,
+            collection="artifacts",
+            response=response,
+            request=request,
+            total_bytes=total_bytes,
+        )
+        if content is None:
+            return total_bytes
+        response.created_counts["artifacts"] += 1
+        total_bytes += len(content)
+        if request.dry_run:
+            return total_bytes
+        source_task_id = _string_field(item, "task_id")
+        imported_task_id = response.id_map["tasks"].get(source_task_id)
+        if source_task_id and imported_task_id is None:
+            response.warnings.append(
+                f"Imported artifact {source_id} without a mapped task"
+            )
+        checksum = _validated_checksum(
+            content=content,
+            source_checksum=_string_field(item, "checksum_sha256"),
+            source_id=source_id,
+            collection="artifact",
+            warnings=response.warnings,
+        )
+        imported_filename = safe_filename(f"{request.name_prefix}{filename}")
+        artifact = Artifact(
+            workspace_id=workspace.id,
+            task_id=_uuid_or_none(imported_task_id),
+            agent_run_id=None,
+            artifact_type=_string_field(item, "artifact_type", "file"),
+            filename=imported_filename,
+            content_type=_string_field(item, "content_type", "application/octet-stream"),
+            size_bytes=len(content),
+            checksum_sha256=checksum,
+            storage_key=(
+                f"workspaces/{workspace.id}/artifacts/imported/{source_id}/"
+                f"{imported_filename}"
+            ),
+            artifact_metadata={
+                **_dict_field(item, "metadata"),
+                "imported_from_artifact_id": source_id,
+                "source_task_id": source_task_id or None,
+            },
+            created_at=datetime.now(UTC),
+        )
+        self._session.add(artifact)
+        self._session.flush()
+        storage.write(artifact.storage_key, content)
+        response.id_map["artifacts"][source_id] = str(artifact.id)
+        return total_bytes
+
+    def _read_import_blob(
+        self,
+        *,
+        archive: ZipFile,
+        archive_names: set[str],
+        archive_name: str,
+        source_id: str,
+        collection: str,
+        response: WorkspaceImportResponse,
+        request: WorkspaceArchiveImportRequest,
+        total_bytes: int,
+    ) -> bytes | None:
+        if archive_name not in archive_names:
+            response.skipped_counts[collection] += 1
+            response.warnings.append(f"Skipped {collection[:-1]} {source_id}: bytes not found")
+            return None
+        content = archive.read(archive_name)
+        if len(content) > request.max_bytes_per_object:
+            response.skipped_counts[collection] += 1
+            response.warnings.append(f"Skipped {collection[:-1]} {source_id}: object too large")
+            return None
+        if total_bytes + len(content) > request.max_total_bytes:
+            response.skipped_counts[collection] += 1
+            response.warnings.append(
+                f"Skipped {collection[:-1]} {source_id}: archive byte limit reached"
+            )
+            return None
+        return content
 
     def _rows(
         self,
@@ -804,3 +948,17 @@ def _uuid_or_none(value: str | None) -> UUID | None:
     if not value:
         return None
     return UUID(value)
+
+
+def _validated_checksum(
+    *,
+    content: bytes,
+    source_checksum: str,
+    source_id: str,
+    collection: str,
+    warnings: list[str],
+) -> str:
+    actual_checksum = sha256(content).hexdigest()
+    if source_checksum and source_checksum != actual_checksum:
+        warnings.append(f"Imported {collection} {source_id} with checksum mismatch")
+    return actual_checksum

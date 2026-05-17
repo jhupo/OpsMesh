@@ -67,6 +67,7 @@ class WorkspaceArchiveImportRequest(BaseModel):
     import_teams: bool = True
     import_tasks: bool = True
     import_file_bytes: bool = True
+    import_artifact_bytes: bool = True
     name_prefix: str = Field(default="Imported ", max_length=80)
     max_items_per_collection: int = Field(default=500, ge=1, le=5_000)
     max_bytes_per_object: int = Field(default=25 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
