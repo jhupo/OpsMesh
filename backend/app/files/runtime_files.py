@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.artifacts.models import Artifact
+from backend.app.files.security import validate_runtime_relative_path
 from backend.app.files.storage import LocalStorage
 from backend.app.tools.context import ToolContext
 from backend.app.tools.product_tools import ProductToolService
@@ -46,8 +47,7 @@ class RuntimeFileService:
         return artifact
 
     def _safe_runtime_path(self, relative_path: str) -> Path:
-        path = (self._runtime_root / relative_path).resolve()
+        path = (self._runtime_root / validate_runtime_relative_path(relative_path)).resolve()
         if not path.is_relative_to(self._runtime_root):
             raise ValueError("Runtime staging path escapes runtime root")
         return path
-

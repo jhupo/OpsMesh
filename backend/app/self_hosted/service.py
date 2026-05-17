@@ -16,6 +16,7 @@ from backend.app.api.schemas.self_hosted import (
     WorkerHeartbeatRequest,
 )
 from backend.app.core.config import Settings
+from backend.app.files.security import safe_filename, validate_storage_key
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
@@ -236,12 +237,21 @@ class SelfHostedRuntimeService:
     ) -> SelfHostedArtifactUpload:
         if data.agent_run_id is not None:
             self._require_worker_run(auth, data.agent_run_id)
+        filename = safe_filename(data.filename, default="artifact.bin")
+        storage_key = (
+            validate_storage_key(
+                data.storage_key,
+                expected_prefix=f"workspaces/{auth.worker.workspace_id}/self-hosted",
+            )
+            if data.storage_key is not None
+            else None
+        )
         upload = SelfHostedArtifactUpload(
             workspace_id=auth.worker.workspace_id,
             worker_id=auth.worker.id,
             agent_run_id=data.agent_run_id,
-            filename=data.filename,
-            storage_key=data.storage_key,
+            filename=filename,
+            storage_key=storage_key,
             checksum_sha256=data.checksum_sha256,
             artifact_metadata=data.metadata,
         )

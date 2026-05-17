@@ -12,6 +12,7 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
+from backend.app.files.security import content_disposition_attachment
 from backend.app.files.storage import LocalStorage
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["files"])
@@ -74,7 +75,7 @@ async def download_file(
     return Response(
         content=content,
         media_type=file.content_type,
-        headers={"Content-Disposition": f'attachment; filename="{file.filename}"'},
+        headers={"Content-Disposition": content_disposition_attachment(file.filename)},
     )
 
 
@@ -105,5 +106,5 @@ async def download_artifact(
     return Response(
         content=content,
         media_type=artifact.content_type,
-        headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"'},
+        headers={"Content-Disposition": content_disposition_attachment(artifact.filename)},
     )

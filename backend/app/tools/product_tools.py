@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.artifacts.models import Artifact
 from backend.app.files.models import WorkspaceFile
+from backend.app.files.security import safe_filename
 from backend.app.runs.models import RunEvent
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
@@ -50,16 +51,17 @@ class ProductToolService:
         context.require_tool("write_artifact")
         self._append_tool_event(context, "tool.called", "write_artifact")
         checksum = sha256(content).hexdigest()
+        sanitized_filename = safe_filename(filename, default="artifact.bin")
         artifact = Artifact(
             workspace_id=context.workspace_id,
             task_id=context.task_id,
             agent_run_id=context.agent_run_id,
             artifact_type=artifact_type,
-            filename=filename,
+            filename=sanitized_filename,
             content_type=content_type,
             size_bytes=len(content),
             checksum_sha256=checksum,
-            storage_key=f"workspaces/{context.workspace_id}/artifacts/{checksum}/{filename}",
+            storage_key=f"workspaces/{context.workspace_id}/artifacts/{checksum}/{sanitized_filename}",
             created_at=datetime.now(UTC),
         )
         self._session.add(artifact)

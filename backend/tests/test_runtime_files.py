@@ -90,6 +90,18 @@ def test_runtime_staging_rejects_path_escape(tmp_path: Path) -> None:
         raise AssertionError("Expected path escape to fail")
 
 
+def test_local_storage_rejects_unsafe_keys(tmp_path: Path) -> None:
+    storage = LocalStorage(str(tmp_path / "storage"))
+
+    for key in ["../escape.txt", "/absolute.txt", "workspaces\\bad\\file.txt"]:
+        try:
+            storage.write(key, b"bad")
+        except ValueError as exc:
+            assert "Storage key" in str(exc)
+        else:
+            raise AssertionError("Expected unsafe storage key to fail")
+
+
 def _session() -> Session:
     _patch_portable_types_for_sqlite()
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)

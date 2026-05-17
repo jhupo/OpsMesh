@@ -71,7 +71,7 @@ def test_product_tools_enforce_permissions_and_workspace_scope() -> None:
 
     artifact = service.write_artifact(
         context,
-        filename="report.txt",
+        filename="../report\r\n.txt",
         content=b"hello",
         content_type="text/plain",
     )
@@ -83,6 +83,8 @@ def test_product_tools_enforce_permissions_and_workspace_scope() -> None:
     ).all()
 
     assert artifact.workspace_id == workspace.id
+    assert artifact.filename == "report__.txt"
+    assert artifact.storage_key.endswith("/report__.txt")
     assert session.query(Artifact).count() == 1
     assert [event.event_type for event in events] == [
         "tool.called",

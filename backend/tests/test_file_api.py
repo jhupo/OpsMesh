@@ -69,6 +69,28 @@ def test_upload_size_limit(tmp_path: Path) -> None:
     assert response.status_code == 413
 
 
+def test_upload_sanitizes_filename_and_download_header(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(session)
+
+    uploaded = client.post(
+        f"/api/v1/workspaces/{workspace.id}/files",
+        headers=_headers(owner.id),
+        files={"file": ("../evil\r\n.txt", b"hello", "text/plain")},
+    )
+    file_id = uploaded.json()["id"]
+    downloaded = client.get(
+        f"/api/v1/workspaces/{workspace.id}/files/{file_id}/download",
+        headers=_headers(owner.id),
+    )
+
+    assert uploaded.status_code == 201
+    assert uploaded.json()["filename"] == "evil__.txt"
+    assert "filename=\"evil__.txt\"" in downloaded.headers["content-disposition"]
+    assert "\r" not in downloaded.headers["content-disposition"]
+    assert "\n" not in downloaded.headers["content-disposition"]
+
+
 def _client(tmp_path: Path, max_upload_bytes: int = 1024) -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(

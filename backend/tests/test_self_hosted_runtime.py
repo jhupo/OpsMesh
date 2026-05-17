@@ -111,7 +111,7 @@ def test_self_hosted_runtime_registration_and_job_flow() -> None:
         json={
             "agent_run_id": str(run.id),
             "filename": "result.png",
-            "storage_key": "self-hosted/result.png",
+            "storage_key": f"workspaces/{workspace.id}/self-hosted/result.png",
             "checksum_sha256": "a" * 64,
         },
     )
@@ -126,6 +126,36 @@ def test_self_hosted_runtime_registration_and_job_flow() -> None:
     assert revoked.status_code == 204
     denied = client.get("/api/v1/self-hosted/jobs/next", headers=_runtime_headers(credential))
     assert denied.status_code == 401
+
+
+def test_self_hosted_artifact_upload_rejects_cross_workspace_storage_key() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-3",
+        },
+    )
+    credential = registered.json()["credential_token"]
+
+    rejected = client.post(
+        "/api/v1/self-hosted/artifact-uploads",
+        headers=_runtime_headers(credential),
+        json={
+            "filename": "../result.png",
+            "storage_key": "workspaces/other/self-hosted/result.png",
+        },
+    )
+
+    assert rejected.status_code == 404
 
 
 def test_runtime_credentials_are_bound_to_token_hash_pepper() -> None:

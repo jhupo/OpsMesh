@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.pagination import PageParams
 from backend.app.artifacts.models import Artifact
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
+from backend.app.files.security import safe_filename
 from backend.app.files.storage import LocalStorage
 
 T = TypeVar("T")
@@ -41,14 +42,15 @@ class WorkspaceFileService:
             raise ValueError("File exceeds maximum upload size")
 
         checksum = sha256(content).hexdigest()
+        sanitized_filename = safe_filename(filename)
         file = WorkspaceFile(
             workspace_id=workspace_id,
             uploaded_by_user_id=uploaded_by_user_id,
-            filename=filename,
+            filename=sanitized_filename,
             content_type=content_type,
             size_bytes=len(content),
             checksum_sha256=checksum,
-            storage_key=f"workspaces/{workspace_id}/files/{checksum}/{filename}",
+            storage_key=f"workspaces/{workspace_id}/files/{checksum}/{sanitized_filename}",
         )
         self._session.add(file)
         self._session.flush()

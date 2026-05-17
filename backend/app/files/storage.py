@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from backend.app.files.security import validate_storage_key
+
 
 class LocalStorage:
     def __init__(self, root: str) -> None:
@@ -17,8 +19,7 @@ class LocalStorage:
         return self._path_for_key(storage_key).exists()
 
     def _path_for_key(self, storage_key: str) -> Path:
-        path = (self._root / storage_key).resolve()
+        path = (self._root / validate_storage_key(storage_key)).resolve()
         if not path.is_relative_to(self._root):
             raise ValueError("Storage key escapes storage root")
         return path
-
