@@ -12,6 +12,7 @@ from backend.app.agent_runtime.contracts import AgentRunner, AgentRunRequest, Ag
 from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.fake import FakeAgentRunner
 from backend.app.agents.models import AgentProfile
+from backend.app.audit.service import AuditService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus, require_run_transition
@@ -61,6 +62,144 @@ class RunOrchestrationService:
             idempotency_key=f"agent.run:{run.workspace_id}:{run.id}",
         )
         return self._queue.enqueue(job)
+
+    def cancel_task(
+        self,
+        *,
+        workspace_id: UUID,
+        task_id: UUID,
+        actor_user_id: UUID,
+    ) -> Task | None:
+        task = self._session.scalar(
+            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+        )
+        if task is None:
+            return None
+
+        require_task_transition(TaskStatus(task.status), TaskStatus.CANCELLED)
+        completed_at = datetime.now(UTC)
+        task.status = TaskStatus.CANCELLED.value
+        task.completed_at = completed_at
+
+        active_runs = self._session.scalars(
+            select(AgentRun).where(
+                AgentRun.workspace_id == workspace_id,
+                AgentRun.task_id == task.id,
+                AgentRun.status.in_(
+                    [
+                        RunStatus.QUEUED.value,
+                        RunStatus.RUNNING.value,
+                        RunStatus.WAITING_APPROVAL.value,
+                    ]
+                ),
+            )
+        ).all()
+        for run in active_runs:
+            self._mark_run_cancelled(run, completed_at=completed_at)
+
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=actor_user_id,
+            action="task.cancelled",
+            target_type="task",
+            target_id=task.id,
+            metadata={"title": task.title, "cancelled_runs": len(active_runs)},
+        )
+        self._session.commit()
+        self._session.refresh(task)
+        return task
+
+    def cancel_run(
+        self,
+        *,
+        workspace_id: UUID,
+        run_id: UUID,
+        actor_user_id: UUID,
+    ) -> AgentRun | None:
+        run = self._session.scalar(
+            select(AgentRun).where(AgentRun.workspace_id == workspace_id, AgentRun.id == run_id)
+        )
+        if run is None:
+            return None
+
+        completed_at = datetime.now(UTC)
+        self._mark_run_cancelled(run, completed_at=completed_at)
+        if run.task_id is not None:
+            task = self._session.get(Task, run.task_id)
+            if task is not None and TaskStatus(task.status) not in TERMINAL_TASK_STATUSES:
+                require_task_transition(TaskStatus(task.status), TaskStatus.CANCELLED)
+                task.status = TaskStatus.CANCELLED.value
+                task.completed_at = completed_at
+
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=actor_user_id,
+            action="run.cancelled",
+            target_type="agent_run",
+            target_id=run.id,
+            metadata={"task_id": str(run.task_id) if run.task_id is not None else None},
+        )
+        self._session.commit()
+        self._session.refresh(run)
+        return run
+
+    def retry_failed_run(
+        self,
+        *,
+        workspace_id: UUID,
+        run_id: UUID,
+        actor_user_id: UUID,
+    ) -> AgentRun | None:
+        failed_run = self._session.scalar(
+            select(AgentRun).where(AgentRun.workspace_id == workspace_id, AgentRun.id == run_id)
+        )
+        if failed_run is None:
+            return None
+        if RunStatus(failed_run.status) != RunStatus.FAILED:
+            raise ValueError("Only failed runs can be retried")
+
+        task = (
+            self._session.get(Task, failed_run.task_id)
+            if failed_run.task_id is not None
+            else None
+        )
+        if task is not None:
+            require_task_transition(TaskStatus(task.status), TaskStatus.QUEUED)
+            task.status = TaskStatus.QUEUED.value
+            task.completed_at = None
+
+        retry_run = AgentRun(
+            workspace_id=failed_run.workspace_id,
+            task_id=failed_run.task_id,
+            task_step_id=failed_run.task_step_id,
+            agent_profile_id=failed_run.agent_profile_id,
+            runtime_id=failed_run.runtime_id,
+            status=RunStatus.QUEUED.value,
+            input=failed_run.input,
+            model=failed_run.model,
+        )
+        self._session.add(retry_run)
+        self._session.flush()
+        self._append_event(
+            retry_run,
+            "run.retry_queued",
+            f"Retry queued from failed run {failed_run.id}",
+        )
+        self.enqueue_run(retry_run, actor_user_id)
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=actor_user_id,
+            action="run.retried",
+            target_type="agent_run",
+            target_id=retry_run.id,
+            metadata={
+                "failed_run_id": str(failed_run.id),
+                "task_id": str(failed_run.task_id) if failed_run.task_id is not None else None,
+            },
+        )
+        self._session.commit()
+        self._session.refresh(retry_run)
+        return retry_run
 
     def recover_stale_running_runs(
         self,
@@ -177,6 +316,17 @@ class RunOrchestrationService:
         require_task_transition(TaskStatus(task.status), TaskStatus.FAILED)
         task.status = TaskStatus.FAILED.value
         task.completed_at = run.completed_at
+
+    def _mark_run_cancelled(self, run: AgentRun, *, completed_at: datetime) -> None:
+        require_run_transition(RunStatus(run.status), RunStatus.CANCELLED)
+        run.status = RunStatus.CANCELLED.value
+        run.error = {
+            "code": "cancelled_by_user",
+            "message": "Run was cancelled by a workspace user",
+            "retryable": False,
+        }
+        run.completed_at = completed_at
+        self._append_event(run, "run.cancelled", "Run was cancelled by a workspace user")
 
     def _append_event(self, run: AgentRun, event_type: str, message: str) -> RunEvent:
         next_sequence = (

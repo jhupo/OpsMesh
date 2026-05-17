@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from uuid import UUID
 
 import fakeredis
 from fastapi.testclient import TestClient
@@ -15,8 +16,13 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.redis.dependencies import get_redis_client
+from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
+from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task
+from backend.app.tasks.status import TaskStatus
+from backend.app.workers.dependencies import get_worker_queue
+from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -149,6 +155,112 @@ def test_task_idempotency_key_is_scoped_by_workspace() -> None:
     assert first.json()["id"] != second.json()["id"]
 
 
+def test_cancel_task_marks_task_and_active_run_cancelled() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    task_response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={"title": "Cancel me"},
+    )
+    task_id = UUID(task_response.json()["id"])
+
+    cancelled = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/cancel",
+        headers=_headers(owner.id),
+    )
+    repeat_cancel = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/cancel",
+        headers=_headers(owner.id),
+    )
+
+    session.expire_all()
+    task = session.get(Task, task_id)
+    run = session.scalar(select(AgentRun).where(AgentRun.task_id == task_id))
+    audit = client.get(
+        f"/api/v1/workspaces/{workspace.id}/audit-events",
+        headers=_headers(owner.id),
+    )
+    actions = {item["action"] for item in audit.json()["items"]}
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == TaskStatus.CANCELLED.value
+    assert repeat_cancel.status_code == 409
+    assert task is not None
+    assert task.status == TaskStatus.CANCELLED.value
+    assert run is not None
+    assert run.status == RunStatus.CANCELLED.value
+    assert "task.cancelled" in actions
+
+
+def test_cancel_run_marks_linked_task_cancelled() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    task_response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={"title": "Cancel run"},
+    )
+    task_id = UUID(task_response.json()["id"])
+    run = session.scalar(select(AgentRun).where(AgentRun.task_id == task_id))
+    assert run is not None
+
+    cancelled = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runs/{run.id}/cancel",
+        headers=_headers(owner.id),
+    )
+
+    task = session.get(Task, task_id)
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == RunStatus.CANCELLED.value
+    assert task is not None
+    assert task.status == TaskStatus.CANCELLED.value
+
+
+def test_retry_failed_run_creates_new_queued_run_and_enqueues_job() -> None:
+    queue_redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(queue_redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    client, session = _client(queue=queue)
+    owner, workspace = _seed_workspace(session, role="owner")
+    task_response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={"title": "Retry failed"},
+    )
+    task_id = UUID(task_response.json()["id"])
+    failed_run = session.scalar(select(AgentRun).where(AgentRun.task_id == task_id))
+    task = session.get(Task, task_id)
+    assert failed_run is not None
+    assert task is not None
+    failed_run.status = RunStatus.FAILED.value
+    task.status = TaskStatus.FAILED.value
+    session.commit()
+
+    retry_response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runs/{failed_run.id}/retry",
+        headers=_headers(owner.id),
+    )
+
+    retried_run_id = UUID(retry_response.json()["id"])
+    session.expire_all()
+    retried_run = session.get(AgentRun, retried_run_id)
+    task = session.get(Task, task_id)
+    queued_job = queue.dequeue()
+    audit = client.get(
+        f"/api/v1/workspaces/{workspace.id}/audit-events",
+        headers=_headers(owner.id),
+    )
+    actions = {item["action"] for item in audit.json()["items"]}
+    assert retry_response.status_code == 201
+    assert retried_run_id != failed_run.id
+    assert retried_run is not None
+    assert retried_run.status == RunStatus.QUEUED.value
+    assert task is not None
+    assert task.status == TaskStatus.QUEUED.value
+    assert queued_job is not None
+    assert queued_job.resource_id == retried_run.id
+    assert "run.retried" in actions
+
+
 def test_create_workspace_assigns_owner_membership() -> None:
     client, session = _client()
     user = User(email="new-owner@example.com", display_name="New Owner")
@@ -195,7 +307,7 @@ def test_duplicate_workspace_slug_returns_conflict_error() -> None:
     assert after_conflict.json()["total"] == 1
 
 
-def _client() -> tuple[TestClient, Session]:
+def _client(queue: RedisQueue | None = None) -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -227,6 +339,8 @@ def _client() -> tuple[TestClient, Session]:
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.dependency_overrides[get_redis_client] = lambda: redis
+    if queue is not None:
+        app.dependency_overrides[get_worker_queue] = lambda: queue
     return TestClient(app), session
 
 

@@ -18,8 +18,11 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
+from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.workers.dependencies import get_worker_queue
+from backend.app.workers.queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]
@@ -143,6 +146,25 @@ async def create_task(
         raise
 
 
+@router.post("/tasks/{task_id}/cancel", response_model=TaskResponse)
+async def cancel_task(
+    task_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> TaskResponse:
+    try:
+        task = RunOrchestrationService(session).cancel_task(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            actor_user_id=context.user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskResponse.model_validate(task)
+
+
 @router.get("/runs", response_model=PageResponse[AgentRunResponse])
 async def list_runs(
     page: PageParams = Depends(pagination_params),
@@ -171,6 +193,49 @@ async def list_run_events(
         page,
     )
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.post("/runs/{agent_run_id}/cancel", response_model=AgentRunResponse)
+async def cancel_run(
+    agent_run_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> AgentRunResponse:
+    try:
+        run = RunOrchestrationService(session).cancel_run(
+            workspace_id=context.workspace.id,
+            run_id=agent_run_id,
+            actor_user_id=context.user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent run not found")
+    return AgentRunResponse.model_validate(run)
+
+
+@router.post(
+    "/runs/{agent_run_id}/retry",
+    response_model=AgentRunResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def retry_run(
+    agent_run_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> AgentRunResponse:
+    try:
+        run = RunOrchestrationService(session, queue=queue).retry_failed_run(
+            workspace_id=context.workspace.id,
+            run_id=agent_run_id,
+            actor_user_id=context.user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent run not found")
+    return AgentRunResponse.model_validate(run)
 
 
 @router.get("/audit-events", response_model=PageResponse[AuditEventResponse])

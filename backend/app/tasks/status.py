@@ -33,7 +33,7 @@ ALLOWED_TASK_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.WAITING_APPROVAL: {TaskStatus.RUNNING, TaskStatus.FAILED, TaskStatus.CANCELLED},
     TaskStatus.BLOCKED: {TaskStatus.RUNNING, TaskStatus.FAILED, TaskStatus.CANCELLED},
     TaskStatus.COMPLETED: set(),
-    TaskStatus.FAILED: set(),
+    TaskStatus.FAILED: {TaskStatus.QUEUED},
     TaskStatus.CANCELLED: set(),
 }
 
@@ -45,4 +45,3 @@ def can_transition_task(current: TaskStatus, next_status: TaskStatus) -> bool:
 def require_task_transition(current: TaskStatus, next_status: TaskStatus) -> None:
     if not can_transition_task(current, next_status):
         raise ValueError(f"Invalid task transition: {current.value} -> {next_status.value}")
-
