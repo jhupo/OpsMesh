@@ -27,6 +27,7 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.capabilities.service import CapabilityService
+from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capabilities"])
@@ -49,7 +50,10 @@ async def create_capability(
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> CapabilityResponse:
-    capability = CapabilityService(session).create_capability(request)
+    try:
+        capability = CapabilityService(session).create_capability(request)
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     return CapabilityResponse.model_validate(capability)
 
 
@@ -69,7 +73,10 @@ async def create_skill(
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> SkillResponse:
-    skill = CapabilityService(session).create_skill(request)
+    try:
+        skill = CapabilityService(session).create_skill(request)
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     return SkillResponse.model_validate(skill)
 
 
@@ -99,6 +106,8 @@ async def install_workspace_skill(
             context.user.user_id,
             request,
         )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return WorkspaceSkillInstallResponse.model_validate(install)
@@ -120,7 +129,10 @@ async def create_tool_group(
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> ToolGroupResponse:
-    group = CapabilityService(session).create_tool_group(request)
+    try:
+        group = CapabilityService(session).create_tool_group(request)
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     return ToolGroupResponse.model_validate(group)
 
 
@@ -140,7 +152,10 @@ async def create_mcp_server(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> McpServerResponse:
-    server = CapabilityService(session).create_mcp_server(context.workspace.id, request)
+    try:
+        server = CapabilityService(session).create_mcp_server(context.workspace.id, request)
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     return McpServerResponse.model_validate(server)
 
 
@@ -161,6 +176,8 @@ async def allow_mcp_tool(
             mcp_server_id,
             request,
         )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return McpToolAllowResponse.model_validate(allow)
@@ -210,6 +227,8 @@ async def create_mcp_credential_reference(
             context.workspace.id,
             request,
         )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return McpCredentialReferenceResponse.model_validate(credential)

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.workspaces import WorkspaceCreateRequest, WorkspaceUpdateRequest
 from backend.app.auth.permissions import WorkspaceRole
+from backend.app.db.errors import commit_or_raise_conflict
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 T = TypeVar("T")
@@ -38,7 +39,7 @@ class WorkspaceService:
             role=WorkspaceRole.OWNER.value,
         )
         self._session.add_all([workspace, membership])
-        self._session.commit()
+        commit_or_raise_conflict(self._session, "Workspace slug already exists")
         self._session.refresh(workspace)
         return workspace
 

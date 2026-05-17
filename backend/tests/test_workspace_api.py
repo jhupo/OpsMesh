@@ -96,6 +96,33 @@ def test_create_workspace_assigns_owner_membership() -> None:
     assert members.json()["items"][0]["role"] == "owner"
 
 
+def test_duplicate_workspace_slug_returns_conflict_error() -> None:
+    client, session = _client()
+    user = User(email="owner@example.com", display_name="Owner")
+    session.add(user)
+    session.commit()
+    headers = _headers(user.id)
+
+    first = client.post(
+        "/api/v1/workspaces",
+        headers=headers,
+        json={"name": "Acme", "slug": "acme"},
+    )
+    duplicate = client.post(
+        "/api/v1/workspaces",
+        headers=headers,
+        json={"name": "Acme Again", "slug": "acme"},
+    )
+    after_conflict = client.get("/api/v1/workspaces", headers=headers)
+
+    assert first.status_code == 201
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "conflict"
+    assert duplicate.json()["error"]["message"] == "Workspace slug already exists"
+    assert after_conflict.status_code == 200
+    assert after_conflict.json()["total"] == 1
+
+
 def _client() -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(

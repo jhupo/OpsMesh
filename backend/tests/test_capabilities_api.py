@@ -150,6 +150,50 @@ def test_mcp_server_scope_is_enforced() -> None:
     assert denied.status_code == 404
 
 
+def test_capability_conflicts_return_409_and_keep_session_usable() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+
+    first_server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={"name": "image-tools"},
+    )
+    duplicate_server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={"name": "image-tools"},
+    )
+    allowed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{first_server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "generate_image"},
+    )
+    duplicate_tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{first_server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "generate_image"},
+    )
+    mapped = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tools",
+        headers=_headers(owner.id),
+    )
+
+    assert first_server.status_code == 201
+    assert duplicate_server.status_code == 409
+    assert duplicate_server.json()["error"]["code"] == "conflict"
+    assert duplicate_server.json()["error"]["message"] == "MCP server name already exists"
+    assert allowed.status_code == 201
+    assert duplicate_tool.status_code == 409
+    assert duplicate_tool.json()["error"]["message"] == (
+        "MCP tool is already allowed for this server"
+    )
+    assert mapped.status_code == 200
+    assert len(mapped.json()) == 1
+
+
 def _client() -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(

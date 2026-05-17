@@ -27,6 +27,7 @@ from backend.app.capabilities.models import (
     ToolGroup,
     WorkspaceSkillInstall,
 )
+from backend.app.db.errors import commit_or_raise_conflict
 
 T = TypeVar("T")
 
@@ -48,7 +49,7 @@ class CapabilityService:
     def create_capability(self, data: CapabilityCreateRequest) -> Capability:
         capability = Capability(**data.model_dump())
         self._session.add(capability)
-        self._session.commit()
+        commit_or_raise_conflict(self._session, "Capability key already exists")
         self._session.refresh(capability)
         return capability
 
@@ -59,7 +60,7 @@ class CapabilityService:
     def create_skill(self, data: SkillCreateRequest) -> Skill:
         skill = Skill(**data.model_dump())
         self._session.add(skill)
-        self._session.commit()
+        commit_or_raise_conflict(self._session, "Skill version already exists")
         self._session.refresh(skill)
         return skill
 
@@ -79,7 +80,7 @@ class CapabilityService:
             config=data.config,
         )
         self._session.add(install)
-        self._session.commit()
+        commit_or_raise_conflict(self._session, "Skill is already installed in workspace")
         self._session.refresh(install)
         return install
 
@@ -101,7 +102,7 @@ class CapabilityService:
     def create_tool_group(self, data: ToolGroupCreateRequest) -> ToolGroup:
         group = ToolGroup(**data.model_dump())
         self._session.add(group)
-        self._session.commit()
+        commit_or_raise_conflict(self._session, "Tool group key already exists")
         self._session.refresh(group)
         return group
 
@@ -116,7 +117,7 @@ class CapabilityService:
     def create_mcp_server(self, workspace_id: UUID, data: McpServerCreateRequest) -> McpServer:
         server = McpServer(workspace_id=workspace_id, **data.model_dump())
         self._session.add(server)
-        self._session.commit()
+        commit_or_raise_conflict(self._session, "MCP server name already exists")
         self._session.refresh(server)
         return server
 
@@ -141,7 +142,7 @@ class CapabilityService:
             **data.model_dump(),
         )
         self._session.add(allow)
-        self._session.commit()
+        commit_or_raise_conflict(self._session, "MCP tool is already allowed for this server")
         self._session.refresh(allow)
         return allow
 
@@ -184,7 +185,7 @@ class CapabilityService:
             self._require_server(workspace_id, data.mcp_server_id)
         credential = McpCredentialReference(workspace_id=workspace_id, **data.model_dump())
         self._session.add(credential)
-        self._session.commit()
+        commit_or_raise_conflict(self._session, "MCP credential name already exists")
         self._session.refresh(credential)
         return credential
 

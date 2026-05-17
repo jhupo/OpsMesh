@@ -14,6 +14,7 @@ from backend.app.api.services.workspaces import WorkspaceService
 from backend.app.auth.context import AuthenticatedUser, WorkspaceContext
 from backend.app.auth.dependencies import get_current_user, workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
+from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
@@ -35,7 +36,10 @@ async def create_workspace(
     current_user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceResponse:
-    workspace = WorkspaceService(session).create_for_owner(current_user.user_id, request)
+    try:
+        workspace = WorkspaceService(session).create_for_owner(current_user.user_id, request)
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     return WorkspaceResponse.model_validate(workspace)
 
 
