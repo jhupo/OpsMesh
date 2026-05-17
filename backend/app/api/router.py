@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from backend.app.api.routes.approvals import router as approvals_router
 from backend.app.api.routes.capabilities import router as capabilities_router
 from backend.app.api.routes.domains import router as domains_router
+from backend.app.api.routes.exports import router as exports_router
 from backend.app.api.routes.files import router as files_router
 from backend.app.api.routes.health import router as health_router
 from backend.app.api.routes.marketplace import router as marketplace_router
@@ -24,3 +25,4 @@ api_router.include_router(capabilities_router)
 api_router.include_router(runtimes_router)
 api_router.include_router(self_hosted_router)
 api_router.include_router(operations_router)
+api_router.include_router(exports_router)

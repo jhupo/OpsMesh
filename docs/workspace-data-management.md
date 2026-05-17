@@ -268,9 +268,16 @@ Initial export types:
 - artifact download
 - selected files download
 - run log export
-- workspace archive export
+- workspace metadata archive export
 
-Workspace archive export can include:
+Implemented metadata export:
+
+- `POST /api/v1/workspaces/{workspace_id}/exports/metadata`
+- exports workspace, agents, teams, tasks, runs, file/artifact metadata, and audit metadata as JSON
+- enforces workspace authorization
+- records `workspace.export.created`
+
+Workspace metadata archive export can include:
 
 - tasks
 - task steps
@@ -279,7 +286,7 @@ Workspace archive export can include:
 - run summaries
 - audit metadata
 
-Full workspace export should be an async job because it may be large.
+Full workspace export with file bytes should be an async job because it may be large.
 
 ## Data Deletion
 
