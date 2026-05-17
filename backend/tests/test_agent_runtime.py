@@ -15,6 +15,13 @@ def test_openai_agents_runner_builds_agent_from_profile() -> None:
         role="researcher",
         instructions="Research carefully.",
         model="gpt-4.1",
+        model_settings={
+            "temperature": 0.2,
+            "max_tokens": 500,
+            "verbosity": "low",
+            "metadata": {"team": "research"},
+            "unsupported": {"nested": True},
+        },
     )
     request = AgentRunRequest(
         agent_profile=profile,
@@ -31,6 +38,11 @@ def test_openai_agents_runner_builds_agent_from_profile() -> None:
     assert agent.name == "Researcher"
     assert agent.instructions == "Research carefully."
     assert agent.model == "gpt-4.1"
+    assert agent.model_settings.temperature == 0.2
+    assert agent.model_settings.max_tokens == 500
+    assert agent.model_settings.verbosity == "low"
+    assert agent.model_settings.metadata == {"team": "research"}
+    assert not hasattr(agent.model_settings, "unsupported")
 
 
 def test_fake_agent_runner_returns_deterministic_output() -> None:

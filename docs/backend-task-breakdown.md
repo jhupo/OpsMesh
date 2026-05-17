@@ -176,7 +176,7 @@ Tasks:
 
 - [x] Add OpenAI Agents SDK dependency.
 - [x] Implement agent factory from `agent_profiles`.
-- [ ] Map model settings.
+- [x] Map model settings.
 - [x] Map instructions.
 - [x] Add Runner wrapper.
 - [x] Add runtime context object.
@@ -415,17 +415,17 @@ Goal: protect critical safety and orchestration paths.
 
 Tasks:
 
-- [ ] Test workspace isolation.
-- [ ] Test role permissions.
-- [ ] Test worker job workspace mismatch.
-- [ ] Test run lock behavior.
-- [ ] Test file download authorization.
-- [ ] Test runtime command path.
-- [ ] Test approval pause/resume.
-- [ ] Test tool allowlist.
-- [ ] Test MCP tool allowlist.
-- [ ] Test artifact collection.
-- [ ] Test domain revision flow.
+- [x] Test workspace isolation.
+- [x] Test role permissions.
+- [x] Test worker job workspace mismatch.
+- [x] Test run lock behavior.
+- [x] Test file download authorization.
+- [x] Test runtime command path.
+- [x] Test approval pause/resume.
+- [x] Test tool allowlist.
+- [x] Test MCP tool allowlist.
+- [x] Test artifact collection.
+- [x] Test domain revision flow.
 
 Deliverables:
 
