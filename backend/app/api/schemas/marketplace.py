@@ -45,9 +45,12 @@ class HireTalentRequest(BaseModel):
 class WorkspaceAgentInstallResponse(TimestampedModel):
     workspace_id: UUID
     talent_listing_id: UUID
+    current_talent_listing_id: UUID | None
     source_agent_profile_id: UUID | None
     installed_agent_profile_id: UUID
     hired_by_user_id: UUID | None
+    installed_version: int
+    pinned_version: bool
     status: str
     agent: AgentProfileResponse
 
@@ -83,3 +86,19 @@ class TalentRecommendationResponse(BaseModel):
     recommended_roles: list[RoleRecommendation]
     existing_team_roles: list[str]
     uncovered_roles: list[str]
+
+
+class TalentUpgradeStatusResponse(BaseModel):
+    install: WorkspaceAgentInstallResponse
+    latest_listing: TalentListingResponse | None
+    has_update: bool
+    pinned_version: bool
+
+
+class TalentInstallPinRequest(BaseModel):
+    pinned_version: bool
+
+
+class TalentInstallUpgradeRequest(BaseModel):
+    target_listing_id: UUID | None = None
+    keep_pinned: bool = True

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -72,6 +72,12 @@ class WorkspaceAgentInstall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("agent_profiles.id", ondelete="SET NULL"),
         nullable=True,
     )
+    current_talent_listing_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("talent_listings.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    installed_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    pinned_version: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     installed_agent_profile_id: Mapped[UUID] = mapped_column(
         ForeignKey("agent_profiles.id", ondelete="CASCADE"),
         nullable=False,

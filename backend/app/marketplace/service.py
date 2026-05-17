@@ -12,10 +12,14 @@ from backend.app.api.schemas.marketplace import (
     HireTalentRequest,
     RoleRecommendation,
     TalentCandidateRecommendation,
+    TalentInstallPinRequest,
+    TalentInstallUpgradeRequest,
     TalentListingCreateRequest,
     TalentListingResponse,
     TalentRecommendationRequest,
     TalentRecommendationResponse,
+    TalentUpgradeStatusResponse,
+    WorkspaceAgentInstallResponse,
 )
 from backend.app.audit.service import AuditService
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
@@ -182,9 +186,12 @@ class TalentMarketplaceService:
         install = WorkspaceAgentInstall(
             workspace_id=workspace_id,
             talent_listing_id=listing.id,
+            current_talent_listing_id=listing.id,
             source_agent_profile_id=source.id,
             installed_agent_profile_id=installed_agent.id,
             hired_by_user_id=user_id,
+            installed_version=listing.version,
+            pinned_version=True,
         )
         self._session.add(install)
         if data.team_id is not None:
@@ -209,6 +216,116 @@ class TalentMarketplaceService:
             },
         )
         commit_or_raise_conflict(self._session, "Talent listing is already hired in workspace")
+        self._session.refresh(install)
+        return install
+
+    def get_install(self, workspace_id: UUID, install_id: UUID) -> WorkspaceAgentInstall | None:
+        return self._session.scalar(
+            select(WorkspaceAgentInstall).where(
+                WorkspaceAgentInstall.id == install_id,
+                WorkspaceAgentInstall.workspace_id == workspace_id,
+                WorkspaceAgentInstall.status == "active",
+            )
+        )
+
+    def list_installs(
+        self,
+        workspace_id: UUID,
+        page: PageParams,
+    ) -> tuple[list[WorkspaceAgentInstall], int]:
+        statement = (
+            select(WorkspaceAgentInstall)
+            .where(
+                WorkspaceAgentInstall.workspace_id == workspace_id,
+                WorkspaceAgentInstall.status == "active",
+            )
+            .order_by(WorkspaceAgentInstall.created_at.desc())
+        )
+        total = self._session.scalar(
+            select(func.count()).select_from(statement.order_by(None).subquery())
+        )
+        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
+        return list(rows), int(total or 0)
+
+    def get_upgrade_status(
+        self,
+        *,
+        workspace_id: UUID,
+        install_id: UUID,
+    ) -> TalentUpgradeStatusResponse | None:
+        install = self.get_install(workspace_id, install_id)
+        if install is None:
+            return None
+        latest = self._latest_listing_for_install(install)
+        return TalentUpgradeStatusResponse(
+            install=_install_response(install),
+            latest_listing=TalentListingResponse.model_validate(latest) if latest else None,
+            has_update=latest is not None and latest.version > install.installed_version,
+            pinned_version=install.pinned_version,
+        )
+
+    def set_install_pin(
+        self,
+        *,
+        workspace_id: UUID,
+        install_id: UUID,
+        data: TalentInstallPinRequest,
+        user_id: UUID,
+    ) -> WorkspaceAgentInstall | None:
+        install = self.get_install(workspace_id, install_id)
+        if install is None:
+            return None
+        install.pinned_version = data.pinned_version
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action="talent_install.pin_updated",
+            target_type="workspace_agent_install",
+            target_id=install.id,
+            metadata={"pinned_version": data.pinned_version},
+        )
+        self._session.commit()
+        self._session.refresh(install)
+        return install
+
+    def upgrade_install(
+        self,
+        *,
+        workspace_id: UUID,
+        install_id: UUID,
+        data: TalentInstallUpgradeRequest,
+        user_id: UUID,
+    ) -> WorkspaceAgentInstall | None:
+        install = self.get_install(workspace_id, install_id)
+        if install is None:
+            return None
+        target = self._resolve_upgrade_target(install, data.target_listing_id)
+        if target.version <= install.installed_version:
+            raise ValueError("Talent install is already at this version or newer")
+        agent = self._session.get(AgentProfile, install.installed_agent_profile_id)
+        source = self._session.get(AgentProfile, target.source_agent_profile_id)
+        if agent is None or source is None or source.status != "active":
+            raise ValueError("Published agent profile is not available")
+
+        self._copy_agent_definition(source, agent)
+        agent.version = target.version
+        install.current_talent_listing_id = target.id
+        install.source_agent_profile_id = source.id
+        install.installed_version = target.version
+        install.pinned_version = data.keep_pinned
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action="talent_install.upgraded",
+            target_type="workspace_agent_install",
+            target_id=install.id,
+            metadata={
+                "target_listing_id": str(target.id),
+                "installed_agent_profile_id": str(agent.id),
+                "version": target.version,
+            },
+        )
+        self._session.commit()
         self._session.refresh(install)
         return install
 
@@ -247,6 +364,51 @@ class TalentMarketplaceService:
             )
         )
         return {row.team_role for row in rows}
+
+    def _latest_listing_for_install(self, install: WorkspaceAgentInstall) -> TalentListing | None:
+        if install.source_agent_profile_id is None:
+            return None
+        return self._session.scalar(
+            select(TalentListing)
+            .where(
+                TalentListing.source_agent_profile_id == install.source_agent_profile_id,
+                TalentListing.status == "public",
+            )
+            .order_by(TalentListing.version.desc(), TalentListing.created_at.desc())
+            .limit(1)
+        )
+
+    def _resolve_upgrade_target(
+        self,
+        install: WorkspaceAgentInstall,
+        target_listing_id: UUID | None,
+    ) -> TalentListing:
+        if target_listing_id is not None:
+            target = self._session.get(TalentListing, target_listing_id)
+            if (
+                target is None
+                or target.status != "public"
+                or target.source_agent_profile_id != install.source_agent_profile_id
+            ):
+                raise ValueError("Talent listing upgrade target not found")
+            return target
+        target = self._latest_listing_for_install(install)
+        if target is None:
+            raise ValueError("Talent listing upgrade target not found")
+        return target
+
+    def _copy_agent_definition(self, source: AgentProfile, target: AgentProfile) -> None:
+        target.role = source.role
+        target.description = source.description
+        target.instructions = source.instructions
+        target.model = source.model
+        target.model_settings = dict(source.model_settings)
+        target.capabilities = dict(source.capabilities)
+        target.skills = dict(source.skills)
+        target.tool_policy = dict(source.tool_policy)
+        target.runtime_policy = dict(source.runtime_policy)
+        target.memory_policy = dict(source.memory_policy)
+        target.approval_policy = dict(source.approval_policy)
 
     def _require_agent(self, workspace_id: UUID, agent_id: UUID) -> AgentProfile:
         agent = self._session.get(AgentProfile, agent_id)
@@ -489,3 +651,23 @@ def _normalize_role(value: str) -> str:
 
 def _normalize_tag(value: str) -> str:
     return value.strip().lower()
+
+
+def _install_response(install: WorkspaceAgentInstall) -> WorkspaceAgentInstallResponse:
+    return WorkspaceAgentInstallResponse.model_validate(
+        {
+            "id": install.id,
+            "created_at": install.created_at,
+            "updated_at": install.updated_at,
+            "workspace_id": install.workspace_id,
+            "talent_listing_id": install.talent_listing_id,
+            "current_talent_listing_id": install.current_talent_listing_id,
+            "source_agent_profile_id": install.source_agent_profile_id,
+            "installed_agent_profile_id": install.installed_agent_profile_id,
+            "hired_by_user_id": install.hired_by_user_id,
+            "installed_version": install.installed_version,
+            "pinned_version": install.pinned_version,
+            "status": install.status,
+            "agent": install.installed_agent_profile,
+        }
+    )

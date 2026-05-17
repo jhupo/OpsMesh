@@ -134,6 +134,134 @@ def test_hiring_same_listing_twice_returns_conflict() -> None:
     assert duplicate.json()["error"]["message"] == "Talent listing is already hired in workspace"
 
 
+def test_talent_install_can_be_pinned_checked_and_upgraded_to_new_listing_version() -> None:
+    client, session = _client()
+    publisher, publisher_workspace = _seed_workspace(
+        session,
+        email="publisher@example.com",
+        slug="publisher",
+    )
+    buyer, buyer_workspace = _seed_workspace(session, email="buyer@example.com", slug="buyer")
+    source_agent = AgentProfile(
+        workspace_id=publisher_workspace.id,
+        name="Research Pro",
+        role="researcher",
+        description="v1 research",
+        instructions="Research v1.",
+        version=1,
+        tool_policy={"mcp_tools": ["search"]},
+    )
+    session.add(source_agent)
+    session.commit()
+    v1_listing = _publish_listing(
+        client,
+        publisher,
+        publisher_workspace,
+        source_agent,
+        title="Research Pro",
+        skill_tags=["research"],
+        capability_tags=["web.search"],
+    )
+    hired = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/talent-market/{v1_listing['id']}/hire",
+        headers=_headers(buyer.id),
+        json={"agent_name": "Research Pro Copy"},
+    )
+    assert hired.status_code == 201
+    install_id = hired.json()["id"]
+    assert hired.json()["installed_version"] == 1
+    assert hired.json()["pinned_version"] is True
+
+    source_agent.description = "v2 research"
+    source_agent.instructions = "Research v2."
+    source_agent.version = 2
+    session.commit()
+    v2_listing = _publish_listing(
+        client,
+        publisher,
+        publisher_workspace,
+        source_agent,
+        title="Research Pro v2",
+        skill_tags=["research", "market"],
+        capability_tags=["web.search"],
+    )
+
+    status_response = client.get(
+        f"/api/v1/workspaces/{buyer_workspace.id}/talent-installs/{install_id}/upgrade-status",
+        headers=_headers(buyer.id),
+    )
+    unpinned = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/talent-installs/{install_id}/pin",
+        headers=_headers(buyer.id),
+        json={"pinned_version": False},
+    )
+    upgraded = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/talent-installs/{install_id}/upgrade",
+        headers=_headers(buyer.id),
+        json={"target_listing_id": v2_listing["id"], "keep_pinned": True},
+    )
+
+    assert status_response.status_code == 200
+    assert status_response.json()["has_update"] is True
+    assert status_response.json()["latest_listing"]["id"] == v2_listing["id"]
+    assert unpinned.status_code == 200
+    assert unpinned.json()["pinned_version"] is False
+    assert upgraded.status_code == 200
+    upgraded_body = upgraded.json()
+    assert upgraded_body["installed_version"] == 2
+    assert upgraded_body["current_talent_listing_id"] == v2_listing["id"]
+    assert upgraded_body["pinned_version"] is True
+    assert upgraded_body["agent"]["description"] == "v2 research"
+    assert upgraded_body["agent"]["instructions"] == "Research v2."
+
+    list_response = client.get(
+        f"/api/v1/workspaces/{buyer_workspace.id}/talent-installs",
+        headers=_headers(buyer.id),
+    )
+    assert list_response.status_code == 200
+    assert list_response.json()["total"] == 1
+    assert list_response.json()["items"][0]["installed_version"] == 2
+
+
+def test_talent_install_upgrade_rejects_foreign_workspace_install() -> None:
+    client, session = _client()
+    publisher, publisher_workspace = _seed_workspace(
+        session,
+        email="publisher@example.com",
+        slug="publisher",
+    )
+    buyer, buyer_workspace = _seed_workspace(session, email="buyer@example.com", slug="buyer")
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+    source_agent = AgentProfile(
+        workspace_id=publisher_workspace.id,
+        name="Designer",
+        role="designer",
+    )
+    session.add(source_agent)
+    session.commit()
+    listing = _publish_listing(
+        client,
+        publisher,
+        publisher_workspace,
+        source_agent,
+        title="Designer",
+        skill_tags=["design"],
+        capability_tags=[],
+    )
+    hired = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/talent-market/{listing['id']}/hire",
+        headers=_headers(buyer.id),
+        json={},
+    )
+
+    response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/talent-installs/{hired.json()['id']}/upgrade-status",
+        headers=_headers(other.id),
+    )
+
+    assert response.status_code == 404
+
+
 def test_hr_recommendations_rank_market_candidates_and_detect_team_gaps() -> None:
     client, session = _client()
     publisher, publisher_workspace = _seed_workspace(
