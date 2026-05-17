@@ -37,7 +37,7 @@ router = APIRouter(tags=["self-hosted-runtime"])
 )
 async def create_enrollment_token(
     request: EnrollmentTokenCreateRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> EnrollmentTokenCreateResponse:
@@ -198,7 +198,7 @@ async def register_artifact_upload(
 )
 async def revoke_runtime_credential(
     credential_id: UUID,
-    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> None:

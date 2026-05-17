@@ -19,8 +19,14 @@ def test_role_permissions_are_hierarchical() -> None:
     assert role_allows("owner", WorkspaceAction.OWNER)
     assert role_allows("admin", WorkspaceAction.ADMIN)
     assert role_allows("operator", WorkspaceAction.WRITE)
+    assert role_allows("operator", WorkspaceAction.APPROVE)
+    assert role_allows("operator", WorkspaceAction.OPERATE)
+    assert role_allows("operator", WorkspaceAction.MANAGE_RUNTIME)
+    assert not role_allows("operator", WorkspaceAction.MANAGE_CAPABILITY)
+    assert not role_allows("operator", WorkspaceAction.MANAGE_MEMBERS)
     assert role_allows("viewer", WorkspaceAction.READ)
     assert not role_allows("viewer", WorkspaceAction.WRITE)
+    assert not role_allows("viewer", WorkspaceAction.APPROVE)
     assert not role_allows("unknown", WorkspaceAction.READ)
 
 

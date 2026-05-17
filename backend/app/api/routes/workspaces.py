@@ -102,7 +102,7 @@ async def update_workspace(
 async def list_workspace_members(
     workspace_id: UUID,
     page: PageParams = Depends(pagination_params),
-    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_MEMBERS)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[WorkspaceMemberResponse]:
     items, total = WorkspaceService(session).list_members(workspace_id, page)

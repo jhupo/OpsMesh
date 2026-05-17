@@ -18,7 +18,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/approvals", tags=["approva
 async def list_approvals(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[ApprovalResponse]:
     items, total = ApprovalService(session).list_approvals(
@@ -33,7 +33,7 @@ async def list_approvals(
 async def approve(
     approval_id: UUID,
     request: ApprovalDecisionRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
     session: Session = Depends(get_db_session),
 ) -> ApprovalResponse:
     service = ApprovalService(session)
@@ -49,7 +49,7 @@ async def approve(
 async def reject(
     approval_id: UUID,
     request: ApprovalDecisionRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
     session: Session = Depends(get_db_session),
 ) -> ApprovalResponse:
     service = ApprovalService(session)

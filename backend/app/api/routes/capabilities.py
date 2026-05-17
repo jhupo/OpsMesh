@@ -47,7 +47,7 @@ async def list_capabilities(
 @router.post("", response_model=CapabilityResponse, status_code=status.HTTP_201_CREATED)
 async def create_capability(
     request: CapabilityCreateRequest,
-    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
 ) -> CapabilityResponse:
     try:
@@ -70,7 +70,7 @@ async def list_skills(
 @router.post("/skills", response_model=SkillResponse, status_code=status.HTTP_201_CREATED)
 async def create_skill(
     request: SkillCreateRequest,
-    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
 ) -> SkillResponse:
     try:
@@ -97,7 +97,7 @@ async def list_workspace_skills(
 )
 async def install_workspace_skill(
     request: WorkspaceSkillInstallRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceSkillInstallResponse:
     try:
@@ -126,7 +126,7 @@ async def list_tool_groups(
 @router.post("/tool-groups", response_model=ToolGroupResponse, status_code=status.HTTP_201_CREATED)
 async def create_tool_group(
     request: ToolGroupCreateRequest,
-    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
 ) -> ToolGroupResponse:
     try:
@@ -149,7 +149,7 @@ async def list_mcp_servers(
 @router.post("/mcp-servers", response_model=McpServerResponse, status_code=status.HTTP_201_CREATED)
 async def create_mcp_server(
     request: McpServerCreateRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
 ) -> McpServerResponse:
     try:
@@ -171,7 +171,7 @@ async def create_mcp_server(
 async def allow_mcp_tool(
     mcp_server_id: UUID,
     request: McpToolAllowRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
 ) -> McpToolAllowResponse:
     try:
@@ -224,7 +224,7 @@ async def list_mapped_mcp_tools(
 )
 async def create_mcp_credential_reference(
     request: McpCredentialReferenceCreateRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
 ) -> McpCredentialReferenceResponse:
     try:

@@ -202,6 +202,34 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert runtime.connection_status == "offline"
 
 
+def test_operator_can_use_operations_but_viewer_cannot() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    operator, workspace = _seed_workspace_with_role(
+        session,
+        email="operator@example.com",
+        slug="operator-space",
+        role="operator",
+    )
+    viewer = User(email="viewer@example.com", display_name="viewer")
+    session.add(viewer)
+    session.flush()
+    session.add(WorkspaceMember(workspace=workspace, user=viewer, role="viewer"))
+    session.commit()
+
+    operator_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/queue-metrics",
+        headers=_headers(operator.id),
+    )
+    viewer_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/queue-metrics",
+        headers=_headers(viewer.id),
+    )
+
+    assert operator_response.status_code == 200
+    assert viewer_response.status_code == 403
+
+
 def _client(redis: fakeredis.FakeRedis) -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
@@ -229,9 +257,19 @@ def _client(redis: fakeredis.FakeRedis) -> tuple[TestClient, Session]:
 
 
 def _seed_workspace(session: Session) -> tuple[User, Workspace]:
-    user = User(email="owner@example.com", display_name="owner")
-    workspace = Workspace(owner=user, name="Owner", slug="owner", settings={})
-    membership = WorkspaceMember(workspace=workspace, user=user, role="owner")
+    return _seed_workspace_with_role(session)
+
+
+def _seed_workspace_with_role(
+    session: Session,
+    *,
+    email: str = "owner@example.com",
+    slug: str = "owner",
+    role: str = "owner",
+) -> tuple[User, Workspace]:
+    user = User(email=email, display_name=email.split("@")[0])
+    workspace = Workspace(owner=user, name=slug.title(), slug=slug, settings={})
+    membership = WorkspaceMember(workspace=workspace, user=user, role=role)
     session.add_all([user, workspace, membership])
     session.commit()
     return user, workspace

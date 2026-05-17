@@ -43,7 +43,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/operations", tags=["operat
 @router.post("/worker-heartbeats", response_model=WorkerHeartbeatResponse)
 async def record_worker_heartbeat(
     request: WorkerHeartbeatRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> WorkerHeartbeatResponse:
     heartbeat = OperationsService(session).record_worker_heartbeat(
@@ -60,7 +60,7 @@ async def record_worker_heartbeat(
 @router.get("/queue-metrics", response_model=QueueMetricsResponse)
 async def queue_metrics(
     queue_name: str = Query(default="agent_runs"),
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
@@ -76,7 +76,7 @@ async def queue_metrics(
 async def list_dead_letter_jobs(
     queue_name: str = Query(default="agent_runs"),
     limit: int = Query(default=50, ge=1, le=200),
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
@@ -92,7 +92,7 @@ async def list_dead_letter_jobs(
 async def requeue_dead_letter_job(
     job_id: UUID,
     queue_name: str = Query(default="agent_runs"),
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
@@ -147,7 +147,7 @@ async def list_runtime_events(
 @router.post("/runtime-cleanup", response_model=RuntimeCleanupResponse)
 async def cleanup_runtimes(
     stale_after_seconds: int = Query(default=600, ge=60, le=86_400),
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> RuntimeCleanupResponse:
     stale, deleted = OperationsService(session).cleanup_stale_runtimes(
@@ -160,7 +160,7 @@ async def cleanup_runtimes(
 @router.get("/failed-runs", response_model=FailedJobInspectionResponse)
 async def inspect_failed_runs(
     page: PageParams = Depends(pagination_params),
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> FailedJobInspectionResponse:
     runs, total = OperationsService(session).inspect_failed_runs(context.workspace.id, page)
@@ -175,7 +175,7 @@ async def filter_audit_events(
     page: PageParams = Depends(pagination_params),
     action: str | None = Query(default=None),
     target_type: str | None = Query(default=None),
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> AuditEventFilterResponse:
     items, total = OperationsService(session).filter_audit_events(

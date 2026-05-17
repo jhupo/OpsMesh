@@ -176,6 +176,24 @@ def test_mcp_server_scope_is_enforced() -> None:
     assert denied.status_code == 404
 
 
+def test_operator_cannot_manage_capabilities() -> None:
+    client, session = _client()
+    operator, workspace = _seed_workspace(session, role="operator")
+
+    denied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(operator.id),
+        json={"name": "operator-tools"},
+    )
+    listed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(operator.id),
+    )
+
+    assert denied.status_code == 403
+    assert listed.status_code == 200
+
+
 def test_capability_conflicts_return_409_and_keep_session_usable() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
@@ -250,10 +268,11 @@ def _seed_workspace(
     *,
     email: str = "owner@example.com",
     slug: str = "owner",
+    role: str = "owner",
 ) -> tuple[User, Workspace]:
     user = User(email=email, display_name=email.split("@")[0])
     workspace = Workspace(owner=user, name=slug.title(), slug=slug, settings={})
-    membership = WorkspaceMember(workspace=workspace, user=user, role="owner")
+    membership = WorkspaceMember(workspace=workspace, user=user, role=role)
     session.add_all([user, workspace, membership])
     session.commit()
     return user, workspace
