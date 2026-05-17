@@ -285,6 +285,16 @@ Implemented metadata import:
 - keeps imported tasks as drafts and does not enqueue runs automatically
 - records `workspace.import.created` on committed imports
 
+Implemented archive export:
+
+- `POST /api/v1/workspaces/{workspace_id}/exports/archive`
+- returns a zip with `metadata.json`
+- can include workspace file bytes under `files/{file_id}/{filename}`
+- can include artifact bytes under `artifacts/{artifact_id}/{filename}`
+- enforces per-object and total archive byte limits
+- writes `skipped-objects.json` when storage objects are missing or too large
+- records `workspace.archive_export.created`
+
 Workspace metadata archive export can include:
 
 - tasks
@@ -294,7 +304,7 @@ Workspace metadata archive export can include:
 - run summaries
 - audit metadata
 
-Full workspace export with file bytes should be an async job because it may be large.
+Large full workspace exports with file bytes should be moved to async jobs because they may be large.
 
 ## Data Deletion
 

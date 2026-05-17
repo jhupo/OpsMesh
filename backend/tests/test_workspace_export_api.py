@@ -1,5 +1,8 @@
 import json
 from collections.abc import Generator
+from io import BytesIO
+from pathlib import Path
+from zipfile import ZipFile
 
 import fakeredis
 from fastapi.testclient import TestClient
@@ -26,8 +29,8 @@ from backend.app.workspaces.models import Workspace, WorkspaceMember
 TOKEN = "test-token"
 
 
-def test_workspace_metadata_export_is_scoped_and_audited() -> None:
-    client, session = _client()
+def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
     owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner-space")
     _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other-space")
     agent = AgentProfile(workspace_id=workspace.id, name="Researcher", role="researcher")
@@ -78,8 +81,8 @@ def test_workspace_metadata_export_is_scoped_and_audited() -> None:
     assert audit.user_id == owner.id
 
 
-def test_workspace_metadata_export_denies_cross_workspace_access() -> None:
-    client, session = _client()
+def test_workspace_metadata_export_denies_cross_workspace_access(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
     owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
     _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
 
@@ -93,8 +96,8 @@ def test_workspace_metadata_export_denies_cross_workspace_access() -> None:
     assert workspace.id != other_workspace.id
 
 
-def test_workspace_metadata_import_supports_dry_run_and_committed_import() -> None:
-    client, session = _client()
+def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
     source_user, source_workspace = _seed_workspace(
         session,
         email="source@example.com",
@@ -189,7 +192,62 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import() -> No
     assert audit.user_id == target_user.id
 
 
-def _client() -> tuple[TestClient, Session]:
+def test_workspace_archive_export_includes_metadata_and_file_bytes(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
+    uploaded = client.post(
+        f"/api/v1/workspaces/{workspace.id}/files",
+        headers=_headers(owner.id),
+        files={"file": ("brief.txt", b"hello archive", "text/plain")},
+    )
+    assert uploaded.status_code == 201
+    file_id = uploaded.json()["id"]
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive",
+        headers=_headers(owner.id),
+        json={"include_audit_events": False},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+    with ZipFile(BytesIO(response.content)) as archive:
+        names = set(archive.namelist())
+        assert "metadata.json" in names
+        file_name = f"files/{file_id}/brief.txt"
+        assert file_name in names
+        assert archive.read(file_name) == b"hello archive"
+        metadata = json.loads(archive.read("metadata.json"))
+        assert metadata["manifest"]["counts"]["files"] == 1
+
+
+def test_workspace_archive_export_skips_large_objects(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
+    uploaded = client.post(
+        f"/api/v1/workspaces/{workspace.id}/files",
+        headers=_headers(owner.id),
+        files={"file": ("large.txt", b"1234567890", "text/plain")},
+    )
+    assert uploaded.status_code == 201
+    file_id = uploaded.json()["id"]
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive",
+        headers=_headers(owner.id),
+        json={"max_bytes_per_object": 3},
+    )
+
+    assert response.status_code == 200
+    with ZipFile(BytesIO(response.content)) as archive:
+        names = set(archive.namelist())
+        assert f"files/{file_id}/large.txt" not in names
+        assert "skipped-objects.json" in names
+        skipped = json.loads(archive.read("skipped-objects.json"))
+        assert any("exceeds max_bytes_per_object" in item for item in skipped)
+
+
+def _client(tmp_path: Path) -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -201,7 +259,15 @@ def _client() -> tuple[TestClient, Session]:
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
     redis = fakeredis.FakeRedis(decode_responses=True)
-    app = create_app(Settings(environment="test", log_format="text", internal_api_token=TOKEN))
+    app = create_app(
+        Settings(
+            environment="test",
+            log_format="text",
+            internal_api_token=TOKEN,
+            storage_root=str(tmp_path),
+            max_upload_bytes=1024,
+        )
+    )
 
     def override_db_session() -> Generator[Session, None, None]:
         request_session = session_factory()
