@@ -34,8 +34,10 @@ Before running with `CHAINCLOUD_ENVIRONMENT=production`, set strong values for:
 - `CHAINCLOUD_TOKEN_HASH_PEPPER`
 - `CHAINCLOUD_POSTGRES_PASSWORD`
 - `CHAINCLOUD_ENABLE_API_DOCS=false`
+- `CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET`
 
 The application refuses to boot in production when default internal secrets are used or API docs are still enabled.
+The credential encryption secret protects hosted MCP credentials stored by the platform. Rotate it by introducing a new `CHAINCLOUD_CREDENTIAL_ENCRYPTION_KEY_ID` and re-encrypting existing hosted secrets before retiring the old key.
 
 API rate limiting is disabled by default for local development. Enable it in shared or production environments:
 

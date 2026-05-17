@@ -36,6 +36,8 @@ def test_env_template_lists_required_runtime_settings() -> None:
         "CHAINCLOUD_INTERNAL_API_TOKEN",
         "CHAINCLOUD_TOKEN_HASH_PEPPER",
         "CHAINCLOUD_AGENT_RUNNER_BACKEND",
+        "CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET",
+        "CHAINCLOUD_CREDENTIAL_ENCRYPTION_KEY_ID",
         "CHAINCLOUD_POSTGRES_PASSWORD",
     ):
         assert setting in env_example
@@ -47,4 +49,5 @@ def test_deployment_docs_cover_processes_and_production_guards() -> None:
     assert "API process" in docs
     assert "Worker process" in docs
     assert "CHAINCLOUD_ENABLE_API_DOCS=false" in docs
+    assert "CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET" in docs
     assert "CHAINCLOUD_RUN_MIGRATIONS=false" in docs

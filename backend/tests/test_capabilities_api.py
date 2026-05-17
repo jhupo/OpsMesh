@@ -8,7 +8,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.capabilities.models import McpToolCallLog
+from backend.app.capabilities.models import McpCredentialReference, McpToolCallLog
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -90,6 +90,8 @@ def test_capability_skill_and_mcp_control_plane() -> None:
         },
     )
     assert credential.status_code == 201
+    assert credential.json()["secret_fingerprint"] is None
+    assert credential.json()["encryption_key_id"] is None
     blocked_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
@@ -153,6 +155,43 @@ def test_capability_skill_and_mcp_control_plane() -> None:
         "mcp_credential.created",
         "agent.created",
     } <= actions
+
+
+def test_hosted_mcp_credentials_are_encrypted_and_not_returned() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={"name": "hosted-tools"},
+    )
+    assert server.status_code == 201
+
+    credential = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "name": "hosted-key",
+            "provider": "hosted",
+            "secret_payload": {"api_key": "sk-secret", "base_url": "https://example.test"},
+            "scopes": ["images.write"],
+        },
+    )
+
+    assert credential.status_code == 201
+    body = credential.json()
+    assert body["provider"] == "hosted"
+    assert body["external_ref"] == ""
+    assert body["secret_fingerprint"].startswith("sha256:")
+    assert body["encryption_key_id"] == "test"
+    assert "secret_payload" not in body
+    assert "encrypted_secret_payload" not in body
+
+    stored = session.query(McpCredentialReference).filter_by(name="hosted-key").one()
+    assert stored.encrypted_secret_payload is not None
+    assert "sk-secret" not in stored.encrypted_secret_payload
+    assert stored.secret_fingerprint == body["secret_fingerprint"]
 
 
 def test_mcp_server_scope_is_enforced() -> None:
@@ -249,7 +288,15 @@ def _client() -> tuple[TestClient, Session]:
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
-    app = create_app(Settings(environment="test", log_format="text", internal_api_token=TOKEN))
+    app = create_app(
+        Settings(
+            environment="test",
+            log_format="text",
+            internal_api_token=TOKEN,
+            credential_encryption_secret="test-credential-secret",
+            credential_encryption_key_id="test",
+        )
+    )
 
     def override_db_session() -> Generator[Session, None, None]:
         request_session = session_factory()

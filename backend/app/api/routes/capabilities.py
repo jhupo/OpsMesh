@@ -27,8 +27,10 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.capabilities.service import CapabilityService
+from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
+from backend.app.secrets.service import SecretEncryptionService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capabilities"])
 
@@ -226,9 +228,16 @@ async def create_mcp_credential_reference(
     request: McpCredentialReferenceCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
 ) -> McpCredentialReferenceResponse:
     try:
-        credential = CapabilityService(session).create_credential_reference(
+        credential = CapabilityService(
+            session,
+            SecretEncryptionService(
+                secret=settings.credential_encryption_secret,
+                key_id=settings.credential_encryption_key_id,
+            ),
+        ).create_credential_reference(
             context.workspace.id,
             request,
             context.user.user_id,

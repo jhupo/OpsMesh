@@ -26,11 +26,20 @@ def test_production_requires_real_token_and_disabled_docs() -> None:
             token_hash_pepper="pepper",
         )
 
+    with pytest.raises(ValueError, match="CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET"):
+        Settings(
+            environment="production",
+            internal_api_token="secret",
+            token_hash_pepper="pepper",
+            enable_api_docs=False,
+        )
+
     settings = Settings(
         environment="production",
         internal_api_token="secret",
         token_hash_pepper="pepper",
         enable_api_docs=False,
+        credential_encryption_secret="credential-secret",
     )
     assert settings.environment == "production"
 

@@ -29,13 +29,19 @@ from backend.app.capabilities.models import (
     WorkspaceSkillInstall,
 )
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.secrets.service import SecretEncryptionService
 
 T = TypeVar("T")
 
 
 class CapabilityService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        secret_service: SecretEncryptionService | None = None,
+    ) -> None:
         self._session = session
+        self._secret_service = secret_service
 
     def list_capabilities(
         self,
@@ -224,7 +230,19 @@ class CapabilityService:
     ) -> McpCredentialReference:
         if data.mcp_server_id is not None:
             self._require_server(workspace_id, data.mcp_server_id)
-        credential = McpCredentialReference(workspace_id=workspace_id, **data.model_dump())
+        credential = McpCredentialReference(
+            workspace_id=workspace_id,
+            **data.model_dump(exclude={"secret_payload"}),
+        )
+        if data.secret_payload is not None:
+            if self._secret_service is None:
+                raise ValueError("Hosted credential encryption is not configured")
+            encrypted = self._secret_service.encrypt_payload(data.secret_payload)
+            credential.provider = "hosted"
+            credential.external_ref = ""
+            credential.encrypted_secret_payload = encrypted.ciphertext
+            credential.secret_fingerprint = encrypted.fingerprint
+            credential.encryption_key_id = encrypted.key_id
         self._session.add(credential)
         flush_or_raise_conflict(self._session, "MCP credential name already exists")
         if actor_user_id is not None:
@@ -239,6 +257,8 @@ class CapabilityService:
                     "mcp_server_id": str(credential.mcp_server_id)
                     if credential.mcp_server_id is not None
                     else None,
+                    "provider": credential.provider,
+                    "has_hosted_secret": credential.encrypted_secret_payload is not None,
                 },
             )
         commit_or_raise_conflict(self._session, "MCP credential name already exists")

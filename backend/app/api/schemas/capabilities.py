@@ -110,7 +110,8 @@ class McpCredentialReferenceCreateRequest(BaseModel):
     mcp_server_id: UUID | None = None
     name: str = Field(min_length=1, max_length=160)
     provider: str = Field(min_length=1, max_length=80)
-    external_ref: str = Field(min_length=1, max_length=512)
+    external_ref: str = Field(default="", max_length=512)
+    secret_payload: dict[str, object] | None = None
     scopes: list[str] = Field(default_factory=list)
 
 
@@ -120,6 +121,8 @@ class McpCredentialReferenceResponse(TimestampedModel):
     name: str
     provider: str
     external_ref: str
+    secret_fingerprint: str | None
+    encryption_key_id: str | None
     scopes: list[str]
     status: str
 

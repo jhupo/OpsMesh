@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     api_rate_limit_enabled: bool = Field(default=False)
     api_rate_limit_requests: int = Field(default=600, ge=1)
     api_rate_limit_window_seconds: int = Field(default=60, ge=1)
+    credential_encryption_secret: str = Field(default="change-me-credential-encryption-secret")
+    credential_encryption_key_id: str = Field(default="local")
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
@@ -46,6 +48,10 @@ class Settings(BaseSettings):
                 raise ValueError("CHAINCLOUD_TOKEN_HASH_PEPPER must be set in production")
             if self.enable_api_docs:
                 raise ValueError("CHAINCLOUD_ENABLE_API_DOCS must be false in production")
+            if self.credential_encryption_secret == "change-me-credential-encryption-secret":
+                raise ValueError(
+                    "CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET must be set in production"
+                )
         return self
 
     @property

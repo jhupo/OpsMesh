@@ -137,6 +137,9 @@ class McpCredentialReference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     provider: Mapped[str] = mapped_column(String(80), nullable=False)
     external_ref: Mapped[str] = mapped_column(String(512), nullable=False)
+    encrypted_secret_payload: Mapped[str | None] = mapped_column(String, nullable=True)
+    secret_fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    encryption_key_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     scopes: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
 
