@@ -218,23 +218,23 @@ Goal: execute risky work in isolated containers.
 
 Tasks:
 
-- [ ] Add Docker client wrapper.
-- [ ] Add `runtime_templates` table.
-- [ ] Add `workspace_runtimes` table.
-- [ ] Add `runtime_events` table.
-- [ ] Add `runtime_commands` table.
-- [ ] Implement create runtime.
-- [ ] Implement start runtime.
-- [ ] Implement stop runtime.
-- [ ] Implement delete runtime.
-- [ ] Implement command execution inside container.
-- [ ] Add CPU limit.
-- [ ] Add memory limit.
-- [ ] Add disk/workdir policy.
-- [ ] Add network policy.
-- [ ] Add container labels.
-- [ ] Add cleanup job.
-- [ ] Add tests that host execution is never used.
+- [x] Add Docker client wrapper.
+- [x] Add `runtime_templates` table.
+- [x] Add `workspace_runtimes` table.
+- [x] Add `runtime_events` table.
+- [x] Add `runtime_commands` table.
+- [x] Implement create runtime.
+- [x] Implement start runtime.
+- [x] Implement stop runtime.
+- [x] Implement delete runtime.
+- [x] Implement command execution inside container.
+- [x] Add CPU limit.
+- [x] Add memory limit.
+- [x] Add disk/workdir policy.
+- [x] Add network policy.
+- [x] Add container labels.
+- [x] Add cleanup job.
+- [x] Add tests that host execution is never used.
 
 Deliverables:
 

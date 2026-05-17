@@ -6,6 +6,12 @@ from backend.app.audit.models import AuditEvent
 from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.runtimes.models import (
+    RuntimeCommand,
+    RuntimeEvent,
+    RuntimeTemplate,
+    WorkspaceRuntime,
+)
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -18,10 +24,14 @@ __all__ = [
     "Artifact",
     "AuditEvent",
     "RunEvent",
+    "RuntimeCommand",
+    "RuntimeEvent",
+    "RuntimeTemplate",
     "Task",
     "TaskStep",
     "User",
     "Workspace",
     "WorkspaceFile",
     "WorkspaceMember",
+    "WorkspaceRuntime",
 ]
