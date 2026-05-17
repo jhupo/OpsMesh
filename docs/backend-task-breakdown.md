@@ -318,19 +318,19 @@ Goal: support team-specific task data and correction flows.
 
 Tasks:
 
-- [ ] Add `team_type` to agent teams.
-- [ ] Add `domain_type` to tasks.
-- [ ] Add `generic_state` to tasks.
-- [ ] Add `domain_state` to tasks.
-- [ ] Add `domain_projects` table.
-- [ ] Add `domain_items` table.
-- [ ] Add `review_comments` table.
-- [ ] Add `revision_requests` table.
-- [ ] Implement task view endpoint.
-- [ ] Implement review comment endpoint.
-- [ ] Implement revision request endpoint.
-- [ ] Route revision request to worker.
-- [ ] Add tests for domain item workspace isolation.
+- [x] Add `team_type` to agent teams.
+- [x] Add `domain_type` to tasks.
+- [x] Add `generic_state` to tasks.
+- [x] Add `domain_state` to tasks.
+- [x] Add `domain_projects` table.
+- [x] Add `domain_items` table.
+- [x] Add `review_comments` table.
+- [x] Add `revision_requests` table.
+- [x] Implement task view endpoint.
+- [x] Implement review comment endpoint.
+- [x] Implement revision request endpoint.
+- [x] Route revision request to worker.
+- [x] Add tests for domain item workspace isolation.
 
 Deliverables:
 

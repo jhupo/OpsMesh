@@ -4,6 +4,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
+from backend.app.domains.models import DomainItem, DomainProject, ReviewComment, RevisionRequest
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.runs.models import AgentRun, RunEvent
@@ -25,7 +26,11 @@ __all__ = [
     "Approval",
     "Artifact",
     "AuditEvent",
+    "DomainItem",
+    "DomainProject",
     "FileAccessEvent",
+    "ReviewComment",
+    "RevisionRequest",
     "RunEvent",
     "RuntimeCommand",
     "RuntimeEvent",
