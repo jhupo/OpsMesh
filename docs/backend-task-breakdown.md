@@ -248,14 +248,14 @@ Goal: let agents use Docker-backed tools safely.
 
 Tasks:
 
-- [ ] Implement shell/runtime tool wrapper.
-- [ ] Route shell calls to Runtime Manager.
-- [ ] Enforce runtime policy.
-- [ ] Enforce command timeout.
-- [ ] Capture stdout/stderr.
-- [ ] Persist `tool.called` and `tool.completed`.
-- [ ] Support command failure.
-- [ ] Add approval hook for risky commands.
+- [x] Implement shell/runtime tool wrapper.
+- [x] Route shell calls to Runtime Manager.
+- [x] Enforce runtime policy.
+- [x] Enforce command timeout.
+- [x] Capture stdout/stderr.
+- [x] Persist `tool.called` and `tool.completed`.
+- [x] Support command failure.
+- [x] Add approval hook for risky commands.
 
 Deliverables:
 
