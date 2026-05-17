@@ -22,6 +22,7 @@ from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.security.models import SecurityEvent
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
@@ -228,6 +229,55 @@ def test_operator_can_use_operations_but_viewer_cannot() -> None:
 
     assert operator_response.status_code == 200
     assert viewer_response.status_code == 403
+
+
+def test_security_events_are_recorded_and_queryable_for_workspace_denials() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    outsider, _ = _seed_workspace_with_role(
+        session,
+        email="outsider@example.com",
+        slug="outsider-space",
+        role="owner",
+    )
+
+    denied = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/queue-metrics",
+        headers=_headers(outsider.id),
+    )
+    assert denied.status_code == 403
+
+    events = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/security-events"
+        "?action=auth.workspace.rejected",
+        headers=_headers(owner.id),
+    )
+    assert events.status_code == 200
+    payload = events.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["workspace_id"] == str(workspace.id)
+    assert payload["items"][0]["user_id"] == str(outsider.id)
+    assert payload["items"][0]["severity"] == "warning"
+    assert payload["items"][0]["event_metadata"]["required_action"] == "operate"
+
+
+def test_invalid_internal_token_records_security_event() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, seed_session = _client(redis)
+    user, _ = _seed_workspace(seed_session)
+
+    response = client.get(
+        "/api/v1/workspaces",
+        headers={"Authorization": "Bearer wrong-token", "X-User-ID": str(user.id)},
+    )
+
+    assert response.status_code == 401
+    event = seed_session.query(SecurityEvent).filter_by(action="auth.internal_token.rejected").one()
+    assert event.workspace_id is None
+    assert event.outcome == "denied"
+    assert event.severity == "warning"
+    assert event.path == "/api/v1/workspaces"
 
 
 def _client(redis: fakeredis.FakeRedis) -> tuple[TestClient, Session]:

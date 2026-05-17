@@ -1,14 +1,16 @@
-import asyncio
-
 import fakeredis
-import pytest
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Query
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from backend.app.auth.dependencies import require_internal_token
 from backend.app.core.config import Settings
+from backend.app.db import models as registered_models  # noqa: F401
+from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.main import create_app
 from backend.app.redis.dependencies import get_redis_client
@@ -90,7 +92,9 @@ def test_readiness_endpoint_returns_503_when_dependency_fails() -> None:
 
 
 def test_http_errors_use_consistent_error_envelope() -> None:
-    app = create_app(Settings(environment="test", log_format="text", internal_api_token="old,new"))
+    app, session = _health_client_app(
+        Settings(environment="test", log_format="text", internal_api_token="old,new")
+    )
     client = TestClient(app)
 
     response = client.get("/api/v1/workspaces")
@@ -100,10 +104,9 @@ def test_http_errors_use_consistent_error_envelope() -> None:
     assert response.json()["error"]["message"] == "Invalid or missing authorization token"
     assert response.json()["error"]["request_id"] == response.headers["X-Request-ID"]
 
-    asyncio.run(require_internal_token("Bearer new", app.state.settings))
-    with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(require_internal_token("Bearer missing", app.state.settings))
-    assert exc_info.value.status_code == 401
+    rotated = client.get("/api/v1/workspaces", headers={"Authorization": "Bearer new"})
+    assert rotated.status_code == 422
+    session.close()
 
 
 def test_validation_errors_use_consistent_error_envelope() -> None:
@@ -129,15 +132,21 @@ class BrokenRedis:
         raise ConnectionError("redis unavailable")
 
 
-def _health_client_app(redis: object | None = None) -> tuple[FastAPI, Session]:
+def _health_client_app(
+    settings: Settings | None = None,
+    redis: object | None = None,
+) -> tuple[FastAPI, Session]:
+    _patch_portable_types_for_sqlite()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
         future=True,
+        poolclass=StaticPool,
     )
+    Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     session = session_factory()
-    app = create_app(Settings(environment="test", log_format="text"))
+    app = create_app(settings or Settings(environment="test", log_format="text"))
 
     def override_db_session() -> object:
         yield session
@@ -145,3 +154,12 @@ def _health_client_app(redis: object | None = None) -> tuple[FastAPI, Session]:
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_redis_client] = lambda: redis or fakeredis.FakeRedis()
     return app, session
+
+
+def _patch_portable_types_for_sqlite() -> None:
+    for table in Base.metadata.tables.values():
+        for column in table.columns:
+            if isinstance(column.type, PostgresUUID):
+                column.type = column.type.as_generic()
+            if isinstance(column.type, JSONB):
+                column.type = SqliteJSON()

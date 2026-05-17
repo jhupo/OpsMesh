@@ -2,7 +2,7 @@ from collections.abc import Callable
 from hmac import compare_digest
 from uuid import UUID
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from backend.app.auth.context import AuthenticatedUser, WorkspaceContext
@@ -11,6 +11,7 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.auth.service import AuthorizationService
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
+from backend.app.security.service import SecurityAuditService
 
 AUTHORIZATION_HEADER = Header(default=None)
 SETTINGS_DEPENDENCY = Depends(get_settings)
@@ -19,12 +20,23 @@ DB_SESSION_DEPENDENCY = Depends(get_db_session)
 
 
 async def require_internal_token(
+    request: Request,
     authorization: str | None = AUTHORIZATION_HEADER,
     settings: Settings = SETTINGS_DEPENDENCY,
+    session: Session = DB_SESSION_DEPENDENCY,
 ) -> None:
     token = authorization.removeprefix("Bearer ").strip() if authorization else ""
     valid = any(compare_digest(token, candidate) for candidate in settings.internal_api_tokens)
     if not valid:
+        SecurityAuditService(session).record_request_event(
+            request=request,
+            action="auth.internal_token.rejected",
+            outcome="denied",
+            severity="warning",
+            reason="Invalid or missing authorization token",
+            metadata={"has_authorization_header": bool(authorization)},
+        )
+        session.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing authorization token",
@@ -32,6 +44,7 @@ async def require_internal_token(
 
 
 async def get_current_user(
+    request: Request,
     x_user_id: UUID = USER_ID_HEADER,
     session: Session = DB_SESSION_DEPENDENCY,
     _: None = Depends(require_internal_token),  # noqa: B008
@@ -39,6 +52,15 @@ async def get_current_user(
     try:
         return AuthorizationService(session).authenticate_user(x_user_id)
     except AuthenticationError as exc:
+        SecurityAuditService(session).record_request_event(
+            request=request,
+            action="auth.user.rejected",
+            outcome="denied",
+            severity="warning",
+            reason=exc.message,
+            user_id=x_user_id,
+        )
+        session.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message) from exc
 
 
@@ -47,6 +69,7 @@ CURRENT_USER_DEPENDENCY = Depends(get_current_user)
 
 def workspace_dependency(action: WorkspaceAction) -> Callable[..., object]:
     async def require_workspace_context(
+        request: Request,
         workspace_id: UUID,
         current_user: AuthenticatedUser = CURRENT_USER_DEPENDENCY,
         session: Session = DB_SESSION_DEPENDENCY,
@@ -58,6 +81,17 @@ def workspace_dependency(action: WorkspaceAction) -> Callable[..., object]:
                 action=action,
             )
         except PermissionDeniedError as exc:
+            SecurityAuditService(session).record_request_event(
+                request=request,
+                action="auth.workspace.rejected",
+                outcome="denied",
+                severity="warning",
+                reason=exc.message,
+                workspace_id=workspace_id,
+                user_id=current_user.user_id,
+                metadata={"required_action": action.value},
+            )
+            session.commit()
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.message) from exc
 
     return require_workspace_context

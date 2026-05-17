@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from backend.app.api.schemas.audit import AuditEventResponse
-from backend.app.api.schemas.common import TimestampedModel
+from backend.app.api.schemas.common import ORMModel, TimestampedModel
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
 from backend.app.workers.jobs import JobPayload
 
@@ -15,6 +15,23 @@ class RuntimeEventResponse(BaseModel):
     workspace_runtime_id: UUID
     event_type: str
     message: str
+    event_metadata: dict[str, object]
+    created_at: datetime
+
+
+class SecurityEventResponse(ORMModel):
+    id: UUID
+    workspace_id: UUID | None
+    user_id: UUID | None
+    action: str
+    outcome: str
+    severity: str
+    source_ip: str | None
+    user_agent: str | None
+    request_id: str | None
+    path: str
+    method: str
+    reason: str
     event_metadata: dict[str, object]
     created_at: datetime
 
@@ -70,6 +87,7 @@ class OperationsOverviewResponse(BaseModel):
     failed_runs: int
     offline_runtimes: int
     workers_online: int
+    security_warnings: int
 
 
 class AuditEventFilterResponse(BaseModel):
@@ -81,6 +99,13 @@ class AuditEventFilterResponse(BaseModel):
 
 class RunEventFilterResponse(BaseModel):
     items: list[RunEventResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class SecurityEventFilterResponse(BaseModel):
+    items: list[SecurityEventResponse]
     total: int
     limit: int
     offset: int

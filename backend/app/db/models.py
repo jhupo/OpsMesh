@@ -25,6 +25,7 @@ from backend.app.runtimes.models import (
     RuntimeTemplate,
     WorkspaceRuntime,
 )
+from backend.app.security.models import SecurityEvent
 from backend.app.self_hosted.models import (
     LocalFileReference,
     RuntimeCredential,
@@ -57,6 +58,7 @@ __all__ = [
     "ReviewComment",
     "RevisionRequest",
     "RunEvent",
+    "SecurityEvent",
     "RuntimeCommand",
     "RuntimeCredential",
     "RuntimeEnrollmentToken",

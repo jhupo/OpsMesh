@@ -19,6 +19,8 @@ from backend.app.api.schemas.operations import (
     RunEventFilterResponse,
     RuntimeCleanupResponse,
     RuntimeEventResponse,
+    SecurityEventFilterResponse,
+    SecurityEventResponse,
     WorkerHeartbeatRequest,
     WorkerHeartbeatResponse,
 )
@@ -186,6 +188,30 @@ async def filter_audit_events(
     )
     return AuditEventFilterResponse(
         items=[AuditEventResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.get("/security-events", response_model=SecurityEventFilterResponse)
+async def filter_security_events(
+    page: PageParams = Depends(pagination_params),
+    action: str | None = Query(default=None),
+    severity: str | None = Query(default=None),
+    user_id: UUID | None = Query(default=None),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
+    session: Session = Depends(get_db_session),
+) -> SecurityEventFilterResponse:
+    items, total = OperationsService(session).filter_security_events(
+        context.workspace.id,
+        page,
+        action,
+        severity,
+        user_id,
+    )
+    return SecurityEventFilterResponse(
+        items=[SecurityEventResponse.model_validate(item) for item in items],
         total=total,
         limit=page.limit,
         offset=page.offset,

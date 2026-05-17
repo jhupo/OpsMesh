@@ -15,6 +15,7 @@ from backend.app.operations.models import WorkerHeartbeat
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.security.models import SecurityEvent
 from backend.app.workers.jobs import JobPayload
 from backend.app.workers.queue import RedisQueue
 
@@ -173,6 +174,23 @@ class OperationsService:
             statement = statement.where(AuditEvent.target_type == target_type)
         return self._page(statement.order_by(AuditEvent.created_at.desc()), page)
 
+    def filter_security_events(
+        self,
+        workspace_id: UUID,
+        page: PageParams,
+        action: str | None = None,
+        severity: str | None = None,
+        user_id: UUID | None = None,
+    ) -> tuple[list[SecurityEvent], int]:
+        statement = select(SecurityEvent).where(SecurityEvent.workspace_id == workspace_id)
+        if action is not None:
+            statement = statement.where(SecurityEvent.action == action)
+        if severity is not None:
+            statement = statement.where(SecurityEvent.severity == severity)
+        if user_id is not None:
+            statement = statement.where(SecurityEvent.user_id == user_id)
+        return self._page(statement.order_by(SecurityEvent.created_at.desc()), page)
+
     def cleanup_stale_runtimes(
         self,
         workspace_id: UUID,
@@ -213,11 +231,18 @@ class OperationsService:
                 WorkerHeartbeat.status == "online",
             )
         )
+        recent_security_events = self._session.scalar(
+            select(func.count()).select_from(SecurityEvent).where(
+                SecurityEvent.workspace_id == workspace_id,
+                SecurityEvent.severity.in_(["warning", "critical"]),
+            )
+        )
         return {
             "queue": self.queue_metrics(queue_name, workspace_id),
             "failed_runs": int(failed_runs or 0),
             "offline_runtimes": int(offline_runtimes or 0),
             "workers_online": int(workers_online or 0),
+            "security_warnings": int(recent_security_events or 0),
         }
 
     def _mark_deleted_terminal_runtimes(self, workspace_id: UUID) -> int:
