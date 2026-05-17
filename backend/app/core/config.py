@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogFormat = Literal["json", "text"]
@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     internal_api_token: str = Field(default="change-me-in-production")
     storage_root: str = Field(default=".chaincloud-storage")
     max_upload_bytes: int = Field(default=10 * 1024 * 1024)
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        if self.environment.lower() in {"production", "prod"}:
+            if self.internal_api_token == "change-me-in-production":
+                raise ValueError("CHAINCLOUD_INTERNAL_API_TOKEN must be set in production")
+            if self.enable_api_docs:
+                raise ValueError("CHAINCLOUD_ENABLE_API_DOCS must be false in production")
+        return self
 
 
 @lru_cache(maxsize=1)
