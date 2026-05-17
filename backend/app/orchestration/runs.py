@@ -145,6 +145,7 @@ class RunOrchestrationService:
             created_at=datetime.now(UTC),
         )
         self._session.add(event)
+        self._session.flush([event])
         return event
 
     def _build_agent_request(self, run: AgentRun, job: JobPayload) -> AgentRunRequest:
