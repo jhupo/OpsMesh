@@ -10,6 +10,8 @@ from backend.app.api.schemas.exports import (
     WorkspaceExportManifest,
     WorkspaceExportRequest,
     WorkspaceExportResponse,
+    WorkspaceImportRequest,
+    WorkspaceImportResponse,
 )
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
@@ -146,6 +148,179 @@ class WorkspaceExportService:
         self._session.commit()
         return export
 
+    def import_metadata(
+        self,
+        *,
+        workspace: Workspace,
+        user_id: UUID,
+        request: WorkspaceImportRequest,
+    ) -> WorkspaceImportResponse:
+        id_map: dict[str, dict[str, str]] = {
+            "agents": {},
+            "teams": {},
+            "tasks": {},
+        }
+        created_counts = {"agents": 0, "teams": 0, "team_members": 0, "tasks": 0, "task_steps": 0}
+        skipped_counts = {"agents": 0, "teams": 0, "team_members": 0, "tasks": 0, "task_steps": 0}
+        warnings: list[str] = []
+
+        if request.import_agents:
+            for item in request.export.agents[: request.max_items_per_collection]:
+                source_id = _string_field(item, "id")
+                imported_name = f"{request.name_prefix}{_string_field(item, 'name')}"
+                if self._agent_exists(workspace.id, imported_name):
+                    skipped_counts["agents"] += 1
+                    continue
+                created_counts["agents"] += 1
+                if request.dry_run:
+                    continue
+                agent = AgentProfile(
+                    workspace_id=workspace.id,
+                    name=imported_name,
+                    role=_string_field(item, "role"),
+                    description=_string_field(item, "description"),
+                    instructions=_string_field(item, "instructions"),
+                    model=_string_field(item, "model", "gpt-4.1"),
+                    model_settings=_dict_field(item, "model_settings"),
+                    capabilities=_dict_field(item, "capabilities"),
+                    skills=_dict_field(item, "skills"),
+                    tool_policy=_dict_field(item, "tool_policy"),
+                    runtime_policy=_dict_field(item, "runtime_policy"),
+                    memory_policy=_dict_field(item, "memory_policy"),
+                    approval_policy=_dict_field(item, "approval_policy"),
+                    version=_int_field(item, "version", 1),
+                    status="active",
+                )
+                self._session.add(agent)
+                self._session.flush()
+                id_map["agents"][source_id] = str(agent.id)
+
+        if request.import_teams:
+            for item in request.export.teams[: request.max_items_per_collection]:
+                source_id = _string_field(item, "id")
+                imported_name = f"{request.name_prefix}{_string_field(item, 'name')}"
+                if self._team_exists(workspace.id, imported_name):
+                    skipped_counts["teams"] += 1
+                    continue
+                created_counts["teams"] += 1
+                if request.dry_run:
+                    continue
+                manager_id = id_map["agents"].get(_string_field(item, "manager_agent_profile_id"))
+                team = AgentTeam(
+                    workspace_id=workspace.id,
+                    name=imported_name,
+                    team_type=_string_field(item, "team_type", "general"),
+                    description=_string_field(item, "description"),
+                    manager_agent_profile_id=_uuid_or_none(manager_id),
+                    coordination_rules=_dict_field(item, "coordination_rules"),
+                    default_task_policy=_dict_field(item, "default_task_policy"),
+                    status="active",
+                )
+                self._session.add(team)
+                self._session.flush()
+                id_map["teams"][source_id] = str(team.id)
+
+            for item in request.export.team_members[: request.max_items_per_collection]:
+                team_id = id_map["teams"].get(_string_field(item, "agent_team_id"))
+                agent_id = id_map["agents"].get(_string_field(item, "agent_profile_id"))
+                if team_id is None or agent_id is None:
+                    skipped_counts["team_members"] += 1
+                    warnings.append("Skipped team member with missing imported team or agent")
+                    continue
+                created_counts["team_members"] += 1
+                if request.dry_run:
+                    continue
+                self._session.add(
+                    AgentTeamMember(
+                        workspace_id=workspace.id,
+                        agent_team_id=UUID(team_id),
+                        agent_profile_id=UUID(agent_id),
+                        team_role=_string_field(item, "team_role"),
+                        is_required=_bool_field(item, "is_required", True),
+                        order_index=_int_field(item, "order_index", 0),
+                    )
+                )
+
+        if request.import_tasks:
+            for item in request.export.tasks[: request.max_items_per_collection]:
+                source_id = _string_field(item, "id")
+                imported_title = f"{request.name_prefix}{_string_field(item, 'title')}"
+                if self._task_exists(workspace.id, imported_title):
+                    skipped_counts["tasks"] += 1
+                    continue
+                created_counts["tasks"] += 1
+                if request.dry_run:
+                    continue
+                team_id = id_map["teams"].get(_string_field(item, "agent_team_id"))
+                task = Task(
+                    workspace_id=workspace.id,
+                    created_by_user_id=user_id,
+                    agent_team_id=_uuid_or_none(team_id),
+                    domain_type=_string_field(item, "domain_type", "general"),
+                    title=imported_title,
+                    description=_string_field(item, "description"),
+                    status="draft",
+                    priority=_int_field(item, "priority", 0),
+                    input=_dict_field(item, "input"),
+                    generic_state=_dict_field(item, "generic_state"),
+                    domain_state=_dict_field(item, "domain_state"),
+                    final_output=_optional_dict_field(item, "final_output"),
+                )
+                self._session.add(task)
+                self._session.flush()
+                id_map["tasks"][source_id] = str(task.id)
+
+            for item in request.export.task_steps[: request.max_items_per_collection]:
+                task_id = id_map["tasks"].get(_string_field(item, "task_id"))
+                if task_id is None:
+                    skipped_counts["task_steps"] += 1
+                    warnings.append("Skipped task step with missing imported task")
+                    continue
+                created_counts["task_steps"] += 1
+                if request.dry_run:
+                    continue
+                agent_id = id_map["agents"].get(_string_field(item, "assigned_agent_profile_id"))
+                self._session.add(
+                    TaskStep(
+                        workspace_id=workspace.id,
+                        task_id=UUID(task_id),
+                        assigned_agent_profile_id=_uuid_or_none(agent_id),
+                        title=_string_field(item, "title"),
+                        description=_string_field(item, "description"),
+                        status="queued",
+                        order_index=_int_field(item, "order_index", 0),
+                        dependencies=_dict_field(item, "dependencies"),
+                        result_summary=_optional_string_field(item, "result_summary"),
+                    )
+                )
+
+        response = WorkspaceImportResponse(
+            dry_run=request.dry_run,
+            source_workspace_id=request.export.manifest.workspace_id,
+            target_workspace_id=workspace.id,
+            created_counts=created_counts,
+            skipped_counts=skipped_counts,
+            id_map=id_map,
+            warnings=warnings,
+        )
+        if request.dry_run:
+            self._session.rollback()
+            return response
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace.id,
+            user_id=user_id,
+            action="workspace.import.created",
+            target_type="workspace",
+            target_id=workspace.id,
+            metadata={
+                "source_workspace_id": str(request.export.manifest.workspace_id),
+                "created_counts": created_counts,
+                "skipped_counts": skipped_counts,
+            },
+        )
+        self._session.commit()
+        return response
+
     def _rows(
         self,
         model: type[Any],
@@ -157,6 +332,27 @@ class WorkspaceExportService:
             select(model).where(model.workspace_id == workspace_id).limit(limit)
         ).all()
         return [serializer(row) for row in rows]
+
+    def _agent_exists(self, workspace_id: UUID, name: str) -> bool:
+        return self._session.scalar(
+            select(AgentProfile.id).where(
+                AgentProfile.workspace_id == workspace_id,
+                AgentProfile.name == name,
+            )
+        ) is not None
+
+    def _team_exists(self, workspace_id: UUID, name: str) -> bool:
+        return self._session.scalar(
+            select(AgentTeam.id).where(
+                AgentTeam.workspace_id == workspace_id,
+                AgentTeam.name == name,
+            )
+        ) is not None
+
+    def _task_exists(self, workspace_id: UUID, title: str) -> bool:
+        return self._session.scalar(
+            select(Task.id).where(Task.workspace_id == workspace_id, Task.title == title)
+        ) is not None
 
 
 def _workspace_payload(workspace: Workspace) -> dict[str, object]:
@@ -355,3 +551,39 @@ def _dt_or_none(value: datetime | None) -> str | None:
 
 def _str_or_none(value: object | None) -> str | None:
     return str(value) if value is not None else None
+
+
+def _string_field(item: dict[str, object], key: str, default: str = "") -> str:
+    value = item.get(key, default)
+    return value if isinstance(value, str) else default
+
+
+def _optional_string_field(item: dict[str, object], key: str) -> str | None:
+    value = item.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _dict_field(item: dict[str, object], key: str) -> dict[str, object]:
+    value = item.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _optional_dict_field(item: dict[str, object], key: str) -> dict[str, object] | None:
+    value = item.get(key)
+    return value if isinstance(value, dict) else None
+
+
+def _int_field(item: dict[str, object], key: str, default: int) -> int:
+    value = item.get(key, default)
+    return value if isinstance(value, int) else default
+
+
+def _bool_field(item: dict[str, object], key: str, default: bool) -> bool:
+    value = item.get(key, default)
+    return value if isinstance(value, bool) else default
+
+
+def _uuid_or_none(value: str | None) -> UUID | None:
+    if not value:
+        return None
+    return UUID(value)

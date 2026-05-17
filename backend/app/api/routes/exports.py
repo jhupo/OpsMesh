@@ -4,7 +4,11 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.exports import WorkspaceExportRequest
+from backend.app.api.schemas.exports import (
+    WorkspaceExportRequest,
+    WorkspaceImportRequest,
+    WorkspaceImportResponse,
+)
 from backend.app.api.services.exports import WorkspaceExportService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
@@ -31,4 +35,17 @@ async def export_workspace_metadata(
         content=json.dumps(export.model_dump(mode="json"), ensure_ascii=False, indent=2),
         media_type="application/json",
         headers={"Content-Disposition": content_disposition_attachment(filename)},
+    )
+
+
+@router.post("/metadata/import", response_model=WorkspaceImportResponse)
+async def import_workspace_metadata(
+    request: WorkspaceImportRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceImportResponse:
+    return WorkspaceExportService(session).import_metadata(
+        workspace=context.workspace,
+        user_id=context.user.user_id,
+        request=request,
     )

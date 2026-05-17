@@ -35,3 +35,23 @@ class WorkspaceExportResponse(BaseModel):
     files: list[dict[str, object]] = Field(default_factory=list)
     artifacts: list[dict[str, object]] = Field(default_factory=list)
     audit_events: list[dict[str, object]] = Field(default_factory=list)
+
+
+class WorkspaceImportRequest(BaseModel):
+    export: WorkspaceExportResponse
+    dry_run: bool = True
+    import_agents: bool = True
+    import_teams: bool = True
+    import_tasks: bool = True
+    name_prefix: str = Field(default="Imported ", max_length=80)
+    max_items_per_collection: int = Field(default=500, ge=1, le=5_000)
+
+
+class WorkspaceImportResponse(BaseModel):
+    dry_run: bool
+    source_workspace_id: UUID
+    target_workspace_id: UUID
+    created_counts: dict[str, int]
+    skipped_counts: dict[str, int]
+    id_map: dict[str, dict[str, str]]
+    warnings: list[str] = Field(default_factory=list)

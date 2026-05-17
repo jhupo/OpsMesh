@@ -277,6 +277,14 @@ Implemented metadata export:
 - enforces workspace authorization
 - records `workspace.export.created`
 
+Implemented metadata import:
+
+- `POST /api/v1/workspaces/{workspace_id}/exports/metadata/import`
+- supports dry-run by default
+- imports agents, teams, team members, tasks, and task steps into the target workspace
+- keeps imported tasks as drafts and does not enqueue runs automatically
+- records `workspace.import.created` on committed imports
+
 Workspace metadata archive export can include:
 
 - tasks

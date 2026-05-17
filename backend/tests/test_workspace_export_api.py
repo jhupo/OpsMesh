@@ -93,6 +93,102 @@ def test_workspace_metadata_export_denies_cross_workspace_access() -> None:
     assert workspace.id != other_workspace.id
 
 
+def test_workspace_metadata_import_supports_dry_run_and_committed_import() -> None:
+    client, session = _client()
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source@example.com",
+        slug="source",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target@example.com",
+        slug="target",
+    )
+    agent = AgentProfile(workspace_id=source_workspace.id, name="Researcher", role="researcher")
+    team = AgentTeam(workspace_id=source_workspace.id, name="Research Team", team_type="research")
+    task = Task(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        title="Q2 Research",
+        domain_type="research",
+    )
+    session.add_all([agent, team, task])
+    session.flush()
+    session.add(
+        AgentTeamMember(
+            workspace_id=source_workspace.id,
+            agent_team_id=team.id,
+            agent_profile_id=agent.id,
+            team_role="researcher",
+        )
+    )
+    session.commit()
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={"include_audit_events": False, "include_runs": False, "include_files": False},
+    )
+    export_payload = json.loads(export_response.content)
+
+    dry_run = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": True},
+    )
+    after_dry_run_agents = session.scalars(
+        select(AgentProfile).where(AgentProfile.workspace_id == target_workspace.id)
+    ).all()
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": False},
+    )
+
+    assert dry_run.status_code == 200
+    assert dry_run.json()["created_counts"]["agents"] == 1
+    assert after_dry_run_agents == []
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["dry_run"] is False
+    assert body["created_counts"]["agents"] == 1
+    assert body["created_counts"]["teams"] == 1
+    assert body["created_counts"]["team_members"] == 1
+    assert body["created_counts"]["tasks"] == 1
+    assert len(body["id_map"]["agents"]) == 1
+
+    imported_agent = session.scalar(
+        select(AgentProfile).where(
+            AgentProfile.workspace_id == target_workspace.id,
+            AgentProfile.name == "Imported Researcher",
+        )
+    )
+    imported_team = session.scalar(
+        select(AgentTeam).where(
+            AgentTeam.workspace_id == target_workspace.id,
+            AgentTeam.name == "Imported Research Team",
+        )
+    )
+    imported_task = session.scalar(
+        select(Task).where(
+            Task.workspace_id == target_workspace.id,
+            Task.title == "Imported Q2 Research",
+        )
+    )
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == target_workspace.id,
+            AuditEvent.action == "workspace.import.created",
+        )
+    )
+    assert imported_agent is not None
+    assert imported_team is not None
+    assert imported_task is not None
+    assert imported_task.status == "draft"
+    assert audit is not None
+    assert audit.user_id == target_user.id
+
+
 def _client() -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
