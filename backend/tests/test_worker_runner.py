@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from threading import Event
 
 import fakeredis
 import pytest
 from sqlalchemy import create_engine, select
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agents.models import AgentProfile
@@ -79,6 +83,7 @@ def test_worker_runner_loop_records_heartbeat_and_summary() -> None:
     summary = runner.run(max_jobs=1)
 
     assert summary.processed == 1
+    assert summary.failed == 0
     assert summary.stopped is False
     with session_factory() as session:
         heartbeat = session.scalar(
@@ -87,6 +92,60 @@ def test_worker_runner_loop_records_heartbeat_and_summary() -> None:
         assert heartbeat is not None
         assert heartbeat.status == "online"
         assert heartbeat.details["processed"] == 1
+        assert heartbeat.details["failed"] == 0
+
+
+def test_worker_runner_continues_after_job_failure() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    missing_workspace_id, _, user_id = _seed_run(session_factory, slug="missing-run")
+    workspace_id, run_id, _ = _seed_run(session_factory, slug="valid-run")
+    queue.enqueue(
+        JobPayload(
+            workspace_id=missing_workspace_id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run_id,
+            requested_by_user_id=user_id,
+            idempotency_key=f"agent.run:{missing_workspace_id}:bad",
+            max_attempts=1,
+        )
+    )
+    queue.enqueue(
+        JobPayload(
+            workspace_id=workspace_id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run_id,
+            requested_by_user_id=user_id,
+            idempotency_key=f"agent.run:{workspace_id}:{run_id}",
+        )
+    )
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(
+            worker_id="worker-degraded",
+            queue_name="agent_runs",
+            heartbeat_interval_seconds=0,
+            idle_sleep_seconds=0,
+        ),
+        sleep=lambda _: None,
+    )
+
+    summary = runner.run(max_jobs=2)
+
+    assert summary.processed == 1
+    assert summary.failed == 1
+    with session_factory() as session:
+        run = session.get(AgentRun, run_id)
+        heartbeat = session.scalar(
+            select(WorkerHeartbeat).where(WorkerHeartbeat.worker_id == "worker-degraded")
+        )
+        assert run is not None
+        assert run.status == RunStatus.COMPLETED.value
+        assert heartbeat is not None
+        assert heartbeat.status == "degraded"
+        assert heartbeat.details["failed"] == 1
+        assert "workspace mismatch" in str(heartbeat.details["last_error"])
 
 
 def test_worker_runner_rolls_back_failed_session() -> None:
@@ -140,6 +199,49 @@ def test_worker_runner_maintenance_recovers_stale_runs() -> None:
         assert task.status == TaskStatus.FAILED.value
 
 
+def test_worker_runner_summary_includes_maintenance_recovery() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    _, run_id, _ = _seed_run(
+        session_factory,
+        status=RunStatus.RUNNING,
+        task_status=TaskStatus.RUNNING,
+        started_at=datetime.now(UTC) - timedelta(seconds=3_600),
+        slug="maintenance-loop",
+    )
+    stop_event = Event()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(
+            worker_id="worker-maintenance-summary",
+            queue_name="agent_runs",
+            heartbeat_interval_seconds=0,
+            maintenance_interval_seconds=0,
+            run_lease_seconds=60,
+            idle_sleep_seconds=0,
+        ),
+        sleep=lambda _: stop_event.set(),
+    )
+
+    summary = runner.run(stop_event=stop_event)
+
+    assert summary.processed == 0
+    assert summary.failed == 0
+    assert summary.recovered_runs == 1
+    with session_factory() as session:
+        run = session.get(AgentRun, run_id)
+        heartbeat = session.scalar(
+            select(WorkerHeartbeat).where(
+                WorkerHeartbeat.worker_id == "worker-maintenance-summary"
+            )
+        )
+        assert run is not None
+        assert run.status == RunStatus.FAILED.value
+        assert heartbeat is not None
+        assert heartbeat.details["recovered_runs"] == 1
+
+
 def _queue() -> RedisQueue:
     return RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
@@ -150,6 +252,7 @@ def _queue() -> RedisQueue:
 
 
 def _session_factory() -> sessionmaker[Session]:
+    _patch_portable_types_for_sqlite()
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
@@ -161,12 +264,13 @@ def _seed_run(
     status: RunStatus = RunStatus.QUEUED,
     task_status: TaskStatus = TaskStatus.QUEUED,
     started_at: datetime | None = None,
+    slug: str = "workspace",
 ) -> tuple[object, object, object]:
     with session_factory() as session:
-        user = User(email="owner@example.com", display_name="Owner")
+        user = User(email=f"{slug}@example.com", display_name="Owner")
         session.add(user)
         session.flush()
-        workspace = Workspace(name="Workspace", slug="workspace", owner_user_id=user.id)
+        workspace = Workspace(name=slug.title(), slug=slug, owner_user_id=user.id)
         session.add(workspace)
         session.flush()
         member = WorkspaceMember(user_id=user.id, workspace_id=workspace.id, role="owner")
@@ -198,3 +302,12 @@ def _seed_run(
         session.add(run)
         session.commit()
         return workspace.id, run.id, user.id
+
+
+def _patch_portable_types_for_sqlite() -> None:
+    for table in Base.metadata.tables.values():
+        for column in table.columns:
+            if isinstance(column.type, PostgresUUID):
+                column.type = column.type.as_generic()
+            if isinstance(column.type, JSONB):
+                column.type = SqliteJSON()

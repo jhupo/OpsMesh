@@ -38,7 +38,9 @@ class WorkerRunnerConfig:
 @dataclass(frozen=True)
 class WorkerRunSummary:
     processed: int
+    failed: int
     idle_polls: int
+    recovered_runs: int
     stopped: bool
 
 
@@ -72,34 +74,75 @@ class WorkerRunner:
         stop_event: Event | None = None,
     ) -> WorkerRunSummary:
         processed = 0
+        failed = 0
         idle_polls = 0
+        recovered_runs = 0
+        last_error: str | None = None
         next_heartbeat_at = 0.0
         next_maintenance_at = 0.0
 
         while not self._is_stopped(stop_event):
             now = self._monotonic()
             if now >= next_heartbeat_at:
-                self.record_heartbeat("online", {"processed": processed, "idle_polls": idle_polls})
+                self.record_heartbeat(
+                    self._status_for(failed),
+                    self._heartbeat_details(
+                        processed=processed,
+                        failed=failed,
+                        idle_polls=idle_polls,
+                        recovered_runs=recovered_runs,
+                        last_error=last_error,
+                    ),
+                )
                 next_heartbeat_at = now + self._config.heartbeat_interval_seconds
             if now >= next_maintenance_at:
-                self.run_maintenance()
+                recovered_runs += self.run_maintenance()
                 next_maintenance_at = now + self._config.maintenance_interval_seconds
 
-            handled = self.run_once()
+            try:
+                handled = self.run_once()
+            except Exception as exc:
+                failed += 1
+                last_error = str(exc)
+                logger.exception("Worker job failed")
+                self.record_heartbeat(
+                    "degraded",
+                    self._heartbeat_details(
+                        processed=processed,
+                        failed=failed,
+                        idle_polls=idle_polls,
+                        recovered_runs=recovered_runs,
+                        last_error=last_error,
+                    ),
+                )
+                if max_jobs is not None and processed + failed >= max_jobs:
+                    break
+                continue
             if handled:
                 processed += 1
-                if max_jobs is not None and processed >= max_jobs:
+                if max_jobs is not None and processed + failed >= max_jobs:
                     break
                 continue
 
             idle_polls += 1
             self._sleep(self._config.idle_sleep_seconds)
 
-        status = "stopping" if self._is_stopped(stop_event) else "online"
-        self.record_heartbeat(status, {"processed": processed, "idle_polls": idle_polls})
+        status = "stopping" if self._is_stopped(stop_event) else self._status_for(failed)
+        self.record_heartbeat(
+            status,
+            self._heartbeat_details(
+                processed=processed,
+                failed=failed,
+                idle_polls=idle_polls,
+                recovered_runs=recovered_runs,
+                last_error=last_error,
+            ),
+        )
         return WorkerRunSummary(
             processed=processed,
+            failed=failed,
             idle_polls=idle_polls,
+            recovered_runs=recovered_runs,
             stopped=self._is_stopped(stop_event),
         )
 
@@ -141,3 +184,25 @@ class WorkerRunner:
         except Exception:
             logger.exception("Failed to run worker maintenance")
             return 0
+
+    def _status_for(self, failed: int) -> str:
+        return "degraded" if failed > 0 else "online"
+
+    def _heartbeat_details(
+        self,
+        *,
+        processed: int,
+        failed: int,
+        idle_polls: int,
+        recovered_runs: int,
+        last_error: str | None,
+    ) -> dict[str, object]:
+        details: dict[str, object] = {
+            "processed": processed,
+            "failed": failed,
+            "idle_polls": idle_polls,
+            "recovered_runs": recovered_runs,
+        }
+        if last_error is not None:
+            details["last_error"] = last_error
+        return details

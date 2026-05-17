@@ -34,6 +34,12 @@ class RedisQueue:
         return True
 
     def dequeue(self) -> JobPayload | None:
+        if self.blocking_timeout_seconds <= 0:
+            raw_payload = self.redis.lpop(self.keys.queue(self.queue_name))
+            if raw_payload is None:
+                return None
+            return self._deserialize(raw_payload)
+
         result = self.redis.blpop(
             [self.keys.queue(self.queue_name)],
             timeout=self.blocking_timeout_seconds,
