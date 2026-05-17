@@ -41,3 +41,4 @@ Frontend work is intentionally not the current focus. The project is currently p
 - [MVP Spec](docs/mvp-spec.md)
 - [Roadmap](docs/roadmap.md)
 - [Decisions](docs/decisions.md)
+- [Backend Deployment](docs/backend-deployment.md)

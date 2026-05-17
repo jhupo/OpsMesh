@@ -87,6 +87,10 @@ The backend must provide:
 
    Actionable engineering task list from backend framework setup to complete backend capabilities.
 
+17. [Backend Deployment](backend-deployment.md)
+
+   Production-oriented backend process, Docker, Compose, and environment guidance.
+
 ## Non-Negotiable Backend Rules
 
 - Workspace isolation is mandatory.

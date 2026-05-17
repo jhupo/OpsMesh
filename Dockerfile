@@ -1,0 +1,27 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN addgroup --system chaincloud \
+    && adduser --system --ingroup chaincloud chaincloud
+
+COPY pyproject.toml README.md alembic.ini ./
+COPY backend ./backend
+COPY scripts ./scripts
+
+RUN pip install --upgrade pip \
+    && pip install . \
+    && chmod +x /app/scripts/docker-entrypoint.sh \
+    && mkdir -p /app/.chaincloud-storage \
+    && chown -R chaincloud:chaincloud /app
+
+USER chaincloud
+
+EXPOSE 8000
+
+ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
+CMD ["uvicorn", "backend.app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
