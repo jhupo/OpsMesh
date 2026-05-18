@@ -1,5 +1,6 @@
+import json
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import fakeredis
 from sqlalchemy import create_engine, select
@@ -311,6 +312,97 @@ def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
     assert consume_once(queue, handler.handle) is True
     session.refresh(task)
     assert task.status == TaskStatus.COMPLETED.value
+
+
+def test_pm_summary_acceptance_completes_task_with_structured_decision() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task, summary_step, manager = _seed_summary_ready_task(session, user.id, workspace.id)
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=summary_step.id,
+        agent_profile_id=manager.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    output = json.dumps(
+        {
+            "decision": "approved",
+            "summary": "Final package is ready.",
+            "reasons": ["All criteria passed."],
+        }
+    )
+    orchestration = RunOrchestrationService(session)
+    orchestration._mark_run_started(run)
+    orchestration._mark_run_completed(run, output, requested_by_user_id=user.id)
+    session.flush()
+
+    session.refresh(task)
+    session.refresh(summary_step)
+
+    assert task.status == TaskStatus.COMPLETED.value
+    assert task.final_output is not None
+    assert task.final_output["final_output"] == "Final package is ready."
+    assert task.final_output["pm_acceptance"] == {
+        "decision": "approved",
+        "summary": "Final package is ready.",
+        "reasons": ["All criteria passed."],
+        "revision_requests": [],
+        "missing_work_packages": [],
+        "review_policy": {"reviewer": "user", "mode": "final_acceptance"},
+        "raw_output": {
+            "decision": "approved",
+            "summary": "Final package is ready.",
+            "reasons": ["All criteria passed."],
+        },
+    }
+    assert summary_step.result_summary == "Final package is ready."
+
+
+def test_pm_summary_revision_decision_waits_for_user_approval() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task, summary_step, manager = _seed_summary_ready_task(session, user.id, workspace.id)
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=summary_step.id,
+        agent_profile_id=manager.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    output = json.dumps(
+        {
+            "decision": "request_revision",
+            "summary": "Needs one more research pass.",
+            "reasons": ["Market size evidence is thin."],
+            "revision_requests": [
+                {"work_package_id": "Research-1", "instruction": "Add TAM/SAM/SOM sources."}
+            ],
+        }
+    )
+    orchestration = RunOrchestrationService(session)
+    orchestration._mark_run_started(run)
+    orchestration._mark_run_completed(run, output, requested_by_user_id=user.id)
+    session.flush()
+
+    session.refresh(task)
+
+    assert task.status == TaskStatus.WAITING_APPROVAL.value
+    assert task.completed_at is None
+    assert task.final_output is not None
+    assert task.final_output["final_output"] == "Needs one more research pass."
+    assert task.final_output["pm_acceptance"]["decision"] == "request_revision"
+    assert task.final_output["pm_acceptance"]["revision_requests"] == [
+        {"work_package_id": "Research-1", "instruction": "Add TAM/SAM/SOM sources."}
+    ]
 
 
 def test_create_queued_run_for_task_reuses_active_team_run() -> None:
@@ -788,6 +880,72 @@ def _seed_workspace(session: Session) -> tuple[User, Workspace]:
     session.add_all([user, workspace, membership])
     session.commit()
     return user, workspace
+
+
+def _seed_summary_ready_task(
+    session: Session,
+    user_id: UUID,
+    workspace_id: UUID,
+) -> tuple[Task, TaskStep, AgentProfile]:
+    manager = AgentProfile(
+        workspace_id=workspace_id,
+        name="Manager",
+        role="manager",
+        instructions="Review and summarize.",
+        model="manager-model",
+    )
+    researcher = AgentProfile(
+        workspace_id=workspace_id,
+        name="Researcher",
+        role="researcher",
+        instructions="Research.",
+        model="researcher-model",
+    )
+    task = Task(
+        workspace_id=workspace_id,
+        created_by_user_id=user_id,
+        title="Q2 market analysis",
+        description="Produce a concise market analysis.",
+        status=TaskStatus.RUNNING.value,
+    )
+    session.add_all([manager, researcher, task])
+    session.flush()
+    research_step = TaskStep(
+        workspace_id=workspace_id,
+        task_id=task.id,
+        assigned_agent_profile_id=researcher.id,
+        work_package_id="Research-1",
+        required_role="Research",
+        required_skills=[],
+        expected_artifacts=["work_summary"],
+        acceptance_criteria=["Research is complete."],
+        review_policy={"reviewer": "manager", "mode": "manager_review"},
+        title="Research execution",
+        description="Collect market facts.",
+        status="completed",
+        order_index=100,
+        dependencies={},
+        result_summary="Research completed.",
+    )
+    summary_step = TaskStep(
+        workspace_id=workspace_id,
+        task_id=task.id,
+        assigned_agent_profile_id=manager.id,
+        work_package_id="manager-summary",
+        required_role="project_manager",
+        required_skills=["review", "synthesis"],
+        expected_artifacts=["final_delivery"],
+        acceptance_criteria=["The final answer integrates all completed work packages."],
+        review_policy={"reviewer": "user", "mode": "final_acceptance"},
+        title="Manager summary",
+        description="Review specialist outputs and produce final answer.",
+        status="queued",
+        order_index=1_000,
+        dependencies={"after_step_ids": [str(research_step.id)]},
+    )
+    session.add_all([research_step, summary_step])
+    session.flush()
+    return task, summary_step, manager
 
 
 def _patch_portable_types_for_sqlite() -> None:

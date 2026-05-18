@@ -540,10 +540,12 @@ Tasks:
   - [x] Restrict each agent runtime request to the current task step context and the profile's allowed tools.
   - [x] Persist step outputs back to `TaskStep` summaries and final team orchestration output.
   - [ ] Bind generated files/artifacts to the producing work package with version metadata.
-- [ ] PM summary and acceptance.
-  - [ ] PM reviews completed packages.
-  - [ ] PM reconciles conflicts and integrates final delivery.
-  - [ ] PM decides whether to complete, request revisions, or add missing work.
+- [x] PM summary and acceptance.
+  - [x] PM reviews completed packages through the final acceptance work package.
+  - [x] PM reconciles completed package summaries into `Task.final_output`.
+  - [x] PM returns a structured decision: `approved`, `request_revision`, or `add_missing_work`.
+  - [x] Approved decisions complete the task; revision or missing-work decisions move the task to `waiting_approval`.
+  - [ ] Automatically materialize revision steps or missing work packages from the PM decision.
 - [ ] Revision and correction flow.
   - [ ] Let the user correct a task, step, or specific employee output.
   - [ ] Create revision steps instead of rerunning the whole task by default.

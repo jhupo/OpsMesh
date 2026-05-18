@@ -1,3 +1,4 @@
+import json
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -319,11 +320,25 @@ class RunOrchestrationService:
                     if self._task_has_open_team_work(task):
                         return
 
+                pm_acceptance = self._pm_acceptance_for_completed_run(run, final_output)
+                task_output = self._final_output_for_task(
+                    task,
+                    fallback=run.output,
+                    pm_acceptance=pm_acceptance,
+                )
+                if pm_acceptance is not None and pm_acceptance["decision"] != "approved":
+                    TaskStateService().transition(
+                        task,
+                        TaskStatus.WAITING_APPROVAL,
+                        final_output=task_output,
+                    )
+                    return
+
                 TaskStateService().transition(
                     task,
                     TaskStatus.COMPLETED,
                     completed_at=run.completed_at,
-                    final_output=self._final_output_for_task(task, fallback=run.output),
+                    final_output=task_output,
                 )
 
     def _mark_run_failed(self, run: AgentRun, exc: Exception) -> None:
@@ -488,6 +503,13 @@ class RunOrchestrationService:
             step = self._session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
                 parts.append(f"Current step: {step.title}\n{step.description}".strip())
+                if self._is_pm_summary_step(step):
+                    parts.append(
+                        "PM acceptance output: return JSON with decision "
+                        "`approved`, `request_revision`, or `add_missing_work`; include "
+                        "`summary`, optional `reasons`, `revision_requests`, and "
+                        "`missing_work_packages`."
+                    )
                 previous_summaries = self._completed_step_summaries(
                     task.id,
                     before=step.order_index,
@@ -883,7 +905,7 @@ class RunOrchestrationService:
         if step is None or step.workspace_id != run.workspace_id:
             return
         step.status = STEP_STATUS_COMPLETED
-        step.result_summary = final_output
+        step.result_summary = self._step_result_summary(step, final_output)
         self._append_event(run, "task_step.completed", step.title)
 
     def _create_and_enqueue_next_step_runs(
@@ -996,11 +1018,78 @@ class RunOrchestrationService:
             if step.result_summary
         ]
 
+    def _step_result_summary(self, step: TaskStep, final_output: str) -> str:
+        if not self._is_pm_summary_step(step):
+            return final_output
+        pm_acceptance = self._pm_acceptance_from_output(step, final_output)
+        summary = pm_acceptance.get("summary")
+        return str(summary) if isinstance(summary, str) and summary else final_output
+
+    def _pm_acceptance_for_completed_run(
+        self,
+        run: AgentRun,
+        final_output: str,
+    ) -> dict[str, object] | None:
+        if run.task_step_id is None:
+            return None
+        step = self._session.get(TaskStep, run.task_step_id)
+        if step is None or step.workspace_id != run.workspace_id:
+            return None
+        if not self._is_pm_summary_step(step):
+            return None
+        return self._pm_acceptance_from_output(step, final_output)
+
+    def _pm_acceptance_from_output(
+        self,
+        step: TaskStep,
+        final_output: str,
+    ) -> dict[str, object]:
+        raw_output = _json_object_from_text(final_output)
+        if raw_output is None:
+            return {
+                "decision": "approved",
+                "summary": final_output,
+                "reasons": [],
+                "revision_requests": [],
+                "missing_work_packages": [],
+                "raw_output": final_output,
+            }
+
+        decision = _normalize_pm_decision(raw_output.get("decision"))
+        if decision is None:
+            decision = _normalize_pm_decision(raw_output.get("acceptance_decision"))
+        if decision is None:
+            decision = _normalize_pm_decision(raw_output.get("status"))
+        summary = raw_output.get("summary")
+        if not isinstance(summary, str) or not summary:
+            summary = raw_output.get("final_output")
+        if not isinstance(summary, str) or not summary:
+            summary = final_output
+
+        return {
+            "decision": decision or "approved",
+            "summary": summary,
+            "reasons": _string_list_or_single(
+                raw_output.get("reasons") or raw_output.get("reason")
+            ),
+            "revision_requests": _dict_list(raw_output.get("revision_requests")),
+            "missing_work_packages": _dict_list(raw_output.get("missing_work_packages")),
+            "review_policy": step.review_policy,
+            "raw_output": raw_output,
+        }
+
+    def _is_pm_summary_step(self, step: TaskStep) -> bool:
+        review_policy = step.review_policy if isinstance(step.review_policy, dict) else {}
+        return step.work_package_id == "manager-summary" or review_policy.get(
+            "mode"
+        ) == "final_acceptance"
+
     def _final_output_for_task(
         self,
         task: Task,
         *,
         fallback: dict[str, object] | None,
+        pm_acceptance: dict[str, object] | None = None,
     ) -> dict[str, object] | None:
         completed_steps = self._session.scalars(
             select(TaskStep)
@@ -1022,6 +1111,8 @@ class RunOrchestrationService:
             ),
             None,
         )
+        if pm_acceptance is not None and isinstance(pm_acceptance.get("summary"), str):
+            final_summary = str(pm_acceptance["summary"])
         return {
             "final_output": final_summary,
             "team_orchestration": {
@@ -1040,6 +1131,7 @@ class RunOrchestrationService:
                     for step in completed_steps
                 ],
             },
+            "pm_acceptance": pm_acceptance,
         }
 
 
@@ -1097,3 +1189,44 @@ def _string_list_from_mapping_keys(value: object) -> list[str]:
 
 def _dict_or_empty(value: object) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
+
+
+def _json_object_from_text(value: str) -> dict[str, object] | None:
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _normalize_pm_decision(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower().replace("-", "_")
+    aliases = {
+        "approve": "approved",
+        "approved": "approved",
+        "complete": "approved",
+        "completed": "approved",
+        "pass": "approved",
+        "request_revision": "request_revision",
+        "needs_revision": "request_revision",
+        "revision": "request_revision",
+        "revise": "request_revision",
+        "add_missing_work": "add_missing_work",
+        "missing_work": "add_missing_work",
+        "add_work": "add_missing_work",
+    }
+    return aliases.get(normalized)
+
+
+def _string_list_or_single(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    return _string_list(value)
+
+
+def _dict_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
