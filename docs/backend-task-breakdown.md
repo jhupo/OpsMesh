@@ -544,12 +544,13 @@ Tasks:
   - [x] PM reviews completed packages through the final acceptance work package.
   - [x] PM reconciles completed package summaries into `Task.final_output`.
   - [x] PM returns a structured decision: `approved`, `request_revision`, or `add_missing_work`.
-  - [x] Approved decisions complete the task; revision or missing-work decisions move the task to `waiting_approval`.
-  - [ ] Automatically materialize revision steps or missing work packages from the PM decision.
-- [ ] Revision and correction flow.
-  - [ ] Let the user correct a task, step, or specific employee output.
-  - [ ] Create revision steps instead of rerunning the whole task by default.
-  - [ ] Keep revision history and versions.
+  - [x] Approved decisions complete the task; revision or missing-work decisions create follow-up work.
+  - [x] Automatically materialize revision steps or missing work packages from the PM decision.
+- [x] Revision and correction flow.
+  - [x] PM can correct a task, step, or specific employee output through structured revision requests.
+  - [x] Create revision steps instead of rerunning the whole task by default.
+  - [x] Keep historical steps and create versioned follow-up work packages plus a PM re-review step.
+  - [ ] Add a user-facing generic revision endpoint outside domain-specific APIs.
 - [ ] Team communication records.
   - [ ] Add structured agent messages, decisions, handoffs, review comments, and revision requests.
   - [ ] Bind communication to task, step, run, and agent.

@@ -363,7 +363,7 @@ def test_pm_summary_acceptance_completes_task_with_structured_decision() -> None
     assert summary_step.result_summary == "Final package is ready."
 
 
-def test_pm_summary_revision_decision_waits_for_user_approval() -> None:
+def test_pm_summary_revision_decision_materializes_follow_up_steps() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task, summary_step, manager = _seed_summary_ready_task(session, user.id, workspace.id)
@@ -395,7 +395,7 @@ def test_pm_summary_revision_decision_waits_for_user_approval() -> None:
 
     session.refresh(task)
 
-    assert task.status == TaskStatus.WAITING_APPROVAL.value
+    assert task.status == TaskStatus.RUNNING.value
     assert task.completed_at is None
     assert task.final_output is not None
     assert task.final_output["final_output"] == "Needs one more research pass."
@@ -403,6 +403,23 @@ def test_pm_summary_revision_decision_waits_for_user_approval() -> None:
     assert task.final_output["pm_acceptance"]["revision_requests"] == [
         {"work_package_id": "Research-1", "instruction": "Add TAM/SAM/SOM sources."}
     ]
+    follow_up_steps = session.scalars(
+        select(TaskStep).where(TaskStep.task_id == task.id).order_by(TaskStep.order_index)
+    ).all()
+    assert [step.work_package_id for step in follow_up_steps] == [
+        "Research-1",
+        "manager-summary",
+        "revision-Research-1-1-1",
+        "manager-summary-revision-1",
+    ]
+    revision_step = follow_up_steps[2]
+    review_step = follow_up_steps[3]
+    assert revision_step.status == "queued"
+    assert revision_step.description == "Add TAM/SAM/SOM sources."
+    assert revision_step.assigned_agent_profile_id is not None
+    assert revision_step.dependencies["revision_of_work_package_id"] == "Research-1"
+    assert review_step.dependencies["after_step_ids"] == [str(revision_step.id)]
+    assert review_step.review_policy == {"reviewer": "user", "mode": "final_acceptance"}
 
 
 def test_create_queued_run_for_task_reuses_active_team_run() -> None:

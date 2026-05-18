@@ -327,11 +327,21 @@ class RunOrchestrationService:
                     pm_acceptance=pm_acceptance,
                 )
                 if pm_acceptance is not None and pm_acceptance["decision"] != "approved":
-                    TaskStateService().transition(
+                    follow_up_runs = self._materialize_pm_follow_up_work(
                         task,
-                        TaskStatus.WAITING_APPROVAL,
-                        final_output=task_output,
+                        pm_acceptance=pm_acceptance,
+                        requested_by_user_id=requested_by_user_id,
                     )
+                    if follow_up_runs:
+                        if task_output is not None:
+                            task.final_output = task_output
+                        TaskStateService().transition(task, TaskStatus.RUNNING)
+                    else:
+                        TaskStateService().transition(
+                            task,
+                            TaskStatus.WAITING_APPROVAL,
+                            final_output=task_output,
+                        )
                     return
 
                 TaskStateService().transition(
@@ -1078,6 +1088,242 @@ class RunOrchestrationService:
             "raw_output": raw_output,
         }
 
+    def _materialize_pm_follow_up_work(
+        self,
+        task: Task,
+        *,
+        pm_acceptance: dict[str, object],
+        requested_by_user_id: UUID | None,
+    ) -> list[AgentRun]:
+        summary_step = self._latest_completed_pm_summary_step(task)
+        if summary_step is None:
+            return []
+
+        revision_cycle = self._next_revision_cycle(task)
+        follow_up_steps: list[TaskStep] = []
+        follow_up_steps.extend(
+            self._create_revision_steps(
+                task,
+                summary_step=summary_step,
+                pm_acceptance=pm_acceptance,
+                revision_cycle=revision_cycle,
+            )
+        )
+        follow_up_steps.extend(
+            self._create_missing_work_steps(
+                task,
+                summary_step=summary_step,
+                pm_acceptance=pm_acceptance,
+                revision_cycle=revision_cycle,
+            )
+        )
+        if not follow_up_steps:
+            return []
+
+        self._session.flush(follow_up_steps)
+        self._create_follow_up_pm_review_step(
+            task,
+            summary_step=summary_step,
+            follow_up_steps=follow_up_steps,
+            pm_acceptance=pm_acceptance,
+            revision_cycle=revision_cycle,
+        )
+        return self._create_and_enqueue_next_step_runs(
+            task,
+            requested_by_user_id=requested_by_user_id,
+        )
+
+    def _create_revision_steps(
+        self,
+        task: Task,
+        *,
+        summary_step: TaskStep,
+        pm_acceptance: dict[str, object],
+        revision_cycle: int,
+    ) -> list[TaskStep]:
+        revision_requests = _dict_list(pm_acceptance.get("revision_requests"))
+        steps: list[TaskStep] = []
+        for index, request in enumerate(revision_requests, start=1):
+            source_step = self._step_for_work_package(
+                task,
+                _optional_string(request.get("work_package_id")),
+            )
+            assigned_agent_profile_id = _uuid_or_none(
+                request.get("assigned_agent_profile_id")
+            ) or (
+                source_step.assigned_agent_profile_id if source_step is not None else None
+            )
+            instruction = _string_or_default(
+                request.get("instruction") or request.get("description"),
+                "Revise the referenced work package according to the PM review.",
+            )
+            source_work_package_id = (
+                source_step.work_package_id if source_step is not None else "unknown"
+            )
+            dependency_ids = [str(summary_step.id)]
+            if source_step is not None:
+                dependency_ids.append(str(source_step.id))
+            step = TaskStep(
+                workspace_id=task.workspace_id,
+                task_id=task.id,
+                assigned_agent_profile_id=assigned_agent_profile_id,
+                work_package_id=f"revision-{source_work_package_id}-{revision_cycle}-{index}",
+                required_role=_optional_string(request.get("required_role"))
+                or (source_step.required_role if source_step is not None else "specialist"),
+                required_skills=_string_list(request.get("required_skills"))
+                or (source_step.required_skills if source_step is not None else []),
+                expected_artifacts=_string_list(request.get("expected_artifacts"))
+                or (source_step.expected_artifacts if source_step is not None else ["revision"]),
+                acceptance_criteria=_string_list(request.get("acceptance_criteria"))
+                or ["The requested revision is addressed without losing prior work."],
+                review_policy={"reviewer": "manager", "mode": "revision_review"},
+                title=_string_or_default(
+                    request.get("title"),
+                    f"Revision for {source_work_package_id}",
+                ),
+                description=instruction,
+                status=STEP_STATUS_QUEUED,
+                order_index=self._next_follow_up_order_index(task),
+                dependencies={
+                    "after_step_ids": dependency_ids,
+                    "revision_of_work_package_id": source_work_package_id,
+                    "pm_acceptance_decision": pm_acceptance.get("decision"),
+                    "revision_request": request,
+                },
+            )
+            self._session.add(step)
+            steps.append(step)
+        return steps
+
+    def _create_missing_work_steps(
+        self,
+        task: Task,
+        *,
+        summary_step: TaskStep,
+        pm_acceptance: dict[str, object],
+        revision_cycle: int,
+    ) -> list[TaskStep]:
+        missing_packages = _dict_list(pm_acceptance.get("missing_work_packages"))
+        steps: list[TaskStep] = []
+        for index, package in enumerate(missing_packages, start=1):
+            assigned_agent_profile_id = _uuid_or_none(package.get("assigned_agent_profile_id"))
+            package_id = _string_or_default(
+                package.get("package_id"),
+                f"missing-work-{revision_cycle}-{index}",
+            )
+            step = TaskStep(
+                workspace_id=task.workspace_id,
+                task_id=task.id,
+                assigned_agent_profile_id=assigned_agent_profile_id,
+                work_package_id=package_id,
+                required_role=_optional_string(package.get("required_role")) or "specialist",
+                required_skills=_string_list(package.get("required_skills")),
+                expected_artifacts=_string_list(package.get("expected_artifacts"))
+                or ["work_summary"],
+                acceptance_criteria=_string_list(package.get("acceptance_criteria"))
+                or ["The missing work is completed and ready for review."],
+                review_policy={"reviewer": "manager", "mode": "missing_work_review"},
+                title=_string_or_default(package.get("title"), "Missing work package"),
+                description=_string_or_default(
+                    package.get("description") or package.get("instruction"),
+                    "Complete the missing work identified by PM review.",
+                ),
+                status=STEP_STATUS_QUEUED,
+                order_index=self._next_follow_up_order_index(task),
+                dependencies={
+                    "after_step_ids": [str(summary_step.id)],
+                    "pm_acceptance_decision": pm_acceptance.get("decision"),
+                    "missing_work_package": package,
+                },
+            )
+            self._session.add(step)
+            steps.append(step)
+        return steps
+
+    def _create_follow_up_pm_review_step(
+        self,
+        task: Task,
+        *,
+        summary_step: TaskStep,
+        follow_up_steps: list[TaskStep],
+        pm_acceptance: dict[str, object],
+        revision_cycle: int,
+    ) -> TaskStep:
+        step = TaskStep(
+            workspace_id=task.workspace_id,
+            task_id=task.id,
+            assigned_agent_profile_id=summary_step.assigned_agent_profile_id,
+            work_package_id=f"manager-summary-revision-{revision_cycle}",
+            required_role=summary_step.required_role or "project_manager",
+            required_skills=summary_step.required_skills or ["review", "synthesis"],
+            expected_artifacts=summary_step.expected_artifacts or ["final_delivery"],
+            acceptance_criteria=summary_step.acceptance_criteria
+            or ["The final answer integrates all completed work packages."],
+            review_policy=summary_step.review_policy or {
+                "reviewer": "user",
+                "mode": "final_acceptance",
+            },
+            title=f"{summary_step.title} revision review",
+            description=(
+                "Review the completed revision and missing-work outputs, then return a "
+                "final PM acceptance decision."
+            ),
+            status=STEP_STATUS_QUEUED,
+            order_index=self._next_follow_up_order_index(task),
+            dependencies={
+                "after_step_ids": [str(step.id) for step in follow_up_steps],
+                "previous_pm_summary_step_id": str(summary_step.id),
+                "pm_acceptance_decision": pm_acceptance.get("decision"),
+            },
+        )
+        self._session.add(step)
+        self._session.flush([step])
+        return step
+
+    def _latest_completed_pm_summary_step(self, task: Task) -> TaskStep | None:
+        steps = self._session.scalars(
+            select(TaskStep)
+            .where(
+                TaskStep.workspace_id == task.workspace_id,
+                TaskStep.task_id == task.id,
+                TaskStep.status == STEP_STATUS_COMPLETED,
+            )
+            .order_by(TaskStep.order_index.desc())
+        ).all()
+        return next((step for step in steps if self._is_pm_summary_step(step)), None)
+
+    def _step_for_work_package(self, task: Task, work_package_id: str | None) -> TaskStep | None:
+        if work_package_id is None:
+            return None
+        return self._session.scalar(
+            select(TaskStep)
+            .where(
+                TaskStep.workspace_id == task.workspace_id,
+                TaskStep.task_id == task.id,
+                TaskStep.work_package_id == work_package_id,
+            )
+            .order_by(TaskStep.order_index.desc())
+        )
+
+    def _next_follow_up_order_index(self, task: Task) -> int:
+        max_order = self._session.scalar(
+            select(func.max(TaskStep.order_index)).where(
+                TaskStep.workspace_id == task.workspace_id,
+                TaskStep.task_id == task.id,
+            )
+        )
+        return int(max_order or 0) + 100
+
+    def _next_revision_cycle(self, task: Task) -> int:
+        revision_count = self._session.scalar(
+            select(func.count(TaskStep.id)).where(
+                TaskStep.workspace_id == task.workspace_id,
+                TaskStep.task_id == task.id,
+                TaskStep.work_package_id.like("manager-summary-revision-%"),
+            )
+        )
+        return int(revision_count or 0) + 1
+
     def _is_pm_summary_step(self, step: TaskStep) -> bool:
         review_policy = step.review_policy if isinstance(step.review_policy, dict) else {}
         return step.work_package_id == "manager-summary" or review_policy.get(
@@ -1173,6 +1419,10 @@ def _int_or_default(value: object, default: int) -> int:
 
 def _optional_string(value: object) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def _string_or_default(value: object, default: str) -> str:
+    return value if isinstance(value, str) and value else default
 
 
 def _string_list(value: object) -> list[str]:
