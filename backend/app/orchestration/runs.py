@@ -16,6 +16,7 @@ from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.models import AgentProfile
 from backend.app.audit.service import AuditService
 from backend.app.capabilities.adapters import McpAdapterResolver
+from backend.app.capabilities.models import WorkspaceSkillInstall
 from backend.app.core.config import Settings
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.planning.member_matching import MemberMatchingService
@@ -1046,6 +1047,7 @@ class RunOrchestrationService:
         runtime_policy = profile.runtime_policy if profile is not None else {}
         memory_policy = profile.memory_policy if profile is not None else {}
         approval_policy = profile.approval_policy if profile is not None else {}
+        installed_skills = self._installed_skill_snapshots(task.workspace_id, profile)
         return {
             "version": 1,
             "workspace_id": str(task.workspace_id),
@@ -1056,6 +1058,7 @@ class RunOrchestrationService:
             else None,
             "allowed_tools": list(allowed_tools),
             "tool_policy": _dict_copy(tool_policy),
+            "installed_skills": installed_skills,
             "runtime_policy": _dict_copy(runtime_policy),
             "memory_policy": _dict_copy(memory_policy),
             "approval_policy": _dict_copy(approval_policy),
@@ -1074,6 +1077,52 @@ class RunOrchestrationService:
                 "task_step_id": str(step.id),
             },
         }
+
+    def _installed_skill_snapshots(
+        self,
+        workspace_id: UUID,
+        profile: AgentProfile | None,
+    ) -> list[dict[str, object]]:
+        if profile is None or not isinstance(profile.skills, dict):
+            return []
+        install_ids = _string_list(profile.skills.get("installed_skill_ids")) or _string_list(
+            profile.skills.get("skill_install_ids")
+        )
+        if not install_ids:
+            return []
+        valid_install_ids = [
+            _uuid
+            for install_id in install_ids
+            if (_uuid := _uuid_or_none(install_id))
+        ]
+        if not valid_install_ids:
+            return []
+        installs = self._session.scalars(
+            select(WorkspaceSkillInstall).where(
+                WorkspaceSkillInstall.workspace_id == workspace_id,
+                WorkspaceSkillInstall.status == "active",
+                WorkspaceSkillInstall.id.in_(valid_install_ids),
+            )
+        ).all()
+        by_id = {str(install.id): install for install in installs}
+        snapshots: list[dict[str, object]] = []
+        for install_id in install_ids:
+            install = by_id.get(install_id)
+            if install is None:
+                continue
+            snapshots.append(
+                {
+                    "install_id": str(install.id),
+                    "source_skill_id": str(install.skill_id),
+                    "installed_key": install.installed_key,
+                    "installed_name": install.installed_name,
+                    "installed_version": install.installed_version,
+                    "installed_capability_keys": install.installed_capability_keys,
+                    "source_checksum": install.source_checksum,
+                    "source_visibility": install.source_visibility,
+                }
+            )
+        return snapshots
 
     def _mark_step_completed(self, run: AgentRun, final_output: str) -> None:
         if run.task_step_id is None:

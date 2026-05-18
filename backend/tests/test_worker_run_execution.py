@@ -10,6 +10,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agents.models import AgentProfile
+from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
 from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -532,6 +533,32 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     team = AgentTeam(workspace_id=workspace.id, name="Design Team", team_type="design")
     session.add_all([agent, team])
     session.flush()
+    skill = Skill(
+        key="poster-maker",
+        name="Poster Maker",
+        version="1.0.0",
+        capability_keys=["image.generate"],
+        manifest={"tools": ["generate_image"]},
+        visibility="public",
+    )
+    session.add(skill)
+    session.flush()
+    install = WorkspaceSkillInstall(
+        workspace_id=workspace.id,
+        skill_id=skill.id,
+        installed_by_user_id=user.id,
+        installed_key=skill.key,
+        installed_name=skill.name,
+        installed_version=skill.version,
+        installed_description=skill.description,
+        installed_capability_keys=skill.capability_keys,
+        installed_manifest=skill.manifest,
+        source_visibility=skill.visibility,
+        source_checksum="sha256:installed",
+    )
+    session.add(install)
+    session.flush()
+    agent.skills = {"installed_skill_ids": [str(install.id), "not-a-uuid"]}
     member = AgentTeamMember(
         workspace_id=workspace.id,
         agent_team_id=team.id,
@@ -591,6 +618,18 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     )
 
     assert snapshot["allowed_tools"] == ["generate_image"]
+    assert snapshot["installed_skills"] == [
+        {
+            "install_id": str(install.id),
+            "source_skill_id": str(skill.id),
+            "installed_key": "poster-maker",
+            "installed_name": "Poster Maker",
+            "installed_version": "1.0.0",
+            "installed_capability_keys": ["image.generate"],
+            "source_checksum": "sha256:installed",
+            "source_visibility": "public",
+        }
+    ]
     assert snapshot["runtime_policy"] == {"provider": "docker", "network": "disabled"}
     assert snapshot["approval_policy"] == {"required_tools": ["write_artifact"]}
     assert request.context.allowed_tools == ("generate_image",)

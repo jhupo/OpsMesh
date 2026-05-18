@@ -54,6 +54,15 @@ class WorkspaceSkillInstallResponse(TimestampedModel):
     workspace_id: UUID
     skill_id: UUID
     installed_by_user_id: UUID | None
+    installed_key: str
+    installed_name: str
+    installed_version: str
+    installed_description: str
+    installed_capability_keys: list[str]
+    installed_manifest: dict[str, object]
+    source_owner_workspace_id: UUID | None
+    source_visibility: str
+    source_checksum: str
     config: dict[str, object]
     status: str
 

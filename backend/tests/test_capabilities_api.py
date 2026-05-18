@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -8,7 +9,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.capabilities.models import McpCredentialReference, McpToolCallLog
+from backend.app.capabilities.models import McpCredentialReference, McpToolCallLog, Skill
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -277,6 +278,58 @@ def test_private_skills_are_only_visible_to_owner_workspace() -> None:
     assert {item["key"] for item in other_skills.json()["items"]} == {"public-writer"}
     assert private_install_denied.status_code == 404
     assert public_install.status_code == 201
+
+
+def test_workspace_skill_install_snapshots_public_skill_source() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+        json={
+            "key": "poster-maker",
+            "name": "Poster Maker",
+            "version": "1.2.0",
+            "description": "Create posters",
+            "capability_keys": ["image.generate"],
+            "manifest": {"tools": ["generate_image"], "prompt": "v1"},
+            "visibility": "public",
+        },
+    )
+    assert created.status_code == 201
+
+    installed = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills",
+        headers=_headers(other.id),
+        json={"skill_id": created.json()["id"], "config": {"quality": "high"}},
+    )
+    source_skill = session.get(Skill, UUID(created.json()["id"]))
+    assert source_skill is not None
+    source_skill.name = "Poster Maker Changed"
+    source_skill.manifest = {"tools": ["generate_image"], "prompt": "v2"}
+    session.commit()
+
+    listed = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills",
+        headers=_headers(other.id),
+    )
+    body = listed.json()["items"][0]
+
+    assert installed.status_code == 201
+    assert installed.json()["installed_key"] == "poster-maker"
+    assert installed.json()["installed_name"] == "Poster Maker"
+    assert installed.json()["installed_version"] == "1.2.0"
+    assert installed.json()["installed_capability_keys"] == ["image.generate"]
+    assert installed.json()["installed_manifest"] == {
+        "tools": ["generate_image"],
+        "prompt": "v1",
+    }
+    assert installed.json()["source_checksum"].startswith("sha256:")
+    assert body["installed_name"] == "Poster Maker"
+    assert body["installed_manifest"] == {"tools": ["generate_image"], "prompt": "v1"}
+    assert body["config"] == {"quality": "high"}
 
 
 def test_capability_conflicts_return_409_and_keep_session_usable() -> None:

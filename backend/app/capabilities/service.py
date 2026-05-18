@@ -1,3 +1,5 @@
+import hashlib
+import json
 from datetime import UTC, datetime
 from typing import TypeVar
 from uuid import UUID
@@ -103,6 +105,15 @@ class CapabilityService:
             workspace_id=workspace_id,
             skill_id=data.skill_id,
             installed_by_user_id=user_id,
+            installed_key=skill.key,
+            installed_name=skill.name,
+            installed_version=skill.version,
+            installed_description=skill.description,
+            installed_capability_keys=list(skill.capability_keys),
+            installed_manifest=dict(skill.manifest),
+            source_owner_workspace_id=skill.owner_workspace_id,
+            source_visibility=skill.visibility,
+            source_checksum=_skill_checksum(skill),
             config=data.config,
         )
         self._session.add(install)
@@ -110,11 +121,16 @@ class CapabilityService:
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
             user_id=user_id,
-            action="skill.installed",
-            target_type="workspace_skill_install",
-            target_id=install.id,
-            metadata={"skill_id": str(data.skill_id)},
-        )
+                action="skill.installed",
+                target_type="workspace_skill_install",
+                target_id=install.id,
+                metadata={
+                    "skill_id": str(data.skill_id),
+                    "installed_key": install.installed_key,
+                    "installed_version": install.installed_version,
+                    "source_checksum": install.source_checksum,
+                },
+            )
         commit_or_raise_conflict(self._session, "Skill is already installed in workspace")
         self._session.refresh(install)
         return install
@@ -339,3 +355,20 @@ class CapabilityService:
         )
         rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
         return list(rows), int(total or 0)
+
+
+def _skill_checksum(skill: Skill) -> str:
+    payload = {
+        "key": skill.key,
+        "name": skill.name,
+        "version": skill.version,
+        "description": skill.description,
+        "capability_keys": skill.capability_keys,
+        "manifest": skill.manifest,
+        "owner_workspace_id": str(skill.owner_workspace_id)
+        if skill.owner_workspace_id is not None
+        else None,
+        "visibility": skill.visibility,
+    }
+    normalized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"sha256:{hashlib.sha256(normalized.encode('utf-8')).hexdigest()}"

@@ -63,6 +63,26 @@ class WorkspaceSkillInstall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    installed_key: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    installed_name: Mapped[str] = mapped_column(String(160), nullable=False, default="")
+    installed_version: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    installed_description: Mapped[str] = mapped_column(String, nullable=False, default="")
+    installed_capability_keys: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+    installed_manifest: Mapped[dict[str, object]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+    source_owner_workspace_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="public")
+    source_checksum: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     config: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
 

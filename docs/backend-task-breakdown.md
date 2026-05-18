@@ -503,6 +503,9 @@ Tasks:
     - [ ] Add stdio adapter through Docker/self-hosted runtime safety boundary.
   - [x] Wire MCP execution into worker/OpenAI tool invocation through runtime tool executor and OpenAI function-tool bridge.
 - [ ] Add private/public skill marketplace workflows beyond catalog visibility.
+  - [x] Persist workspace-local skill install snapshots with installed metadata and source checksum.
+  - [x] Include installed skill provenance in run authorization snapshots.
+  - [ ] Add skill upgrade and disable workflows.
 - [ ] Add task observation APIs for different team domains such as AIGC, novels, research, and software.
 - [ ] Add structured correction flows that can target one step, one agent, or the whole task.
 - [ ] Improve self-hosted machine policy controls, quotas, and revocation audit trails.
