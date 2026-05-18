@@ -15,7 +15,12 @@ from backend.app.api.schemas.agents import AgentProfileCreateRequest, AgentProfi
 from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
 from backend.app.api.schemas.tasks import TaskCreateRequest, TaskResponse
-from backend.app.api.schemas.teams import AgentTeamCreateRequest, AgentTeamResponse
+from backend.app.api.schemas.teams import (
+    AgentTeamCreateRequest,
+    AgentTeamMemberCreateRequest,
+    AgentTeamMemberResponse,
+    AgentTeamResponse,
+)
 from backend.app.api.services.resources import WorkspaceResourceService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
@@ -130,6 +135,75 @@ async def create_team(
             detail="Request with this Idempotency-Key is still processing",
         ) from exc
     return AgentTeamResponse.model_validate(team)
+
+
+@router.get("/teams/{team_id}/members", response_model=PageResponse[AgentTeamMemberResponse])
+async def list_team_members(
+    team_id: UUID,
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[AgentTeamMemberResponse]:
+    try:
+        items, total = WorkspaceResourceService(session).list_team_members(
+            context.workspace.id,
+            team_id,
+            page,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.post(
+    "/teams/{team_id}/members",
+    response_model=AgentTeamMemberResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_team_member(
+    team_id: UUID,
+    request: AgentTeamMemberCreateRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> AgentTeamMemberResponse:
+    resource_service = WorkspaceResourceService(session)
+    idempotency = IdempotencyService(redis, RedisKeyBuilder(settings.redis_key_prefix))
+    try:
+        member = run_idempotent_create(
+            idempotency=idempotency,
+            scope_id=context.workspace.id,
+            operation=f"teams.{team_id}.members.create",
+            idempotency_key=idempotency_key,
+            get_existing=lambda member_id: resource_service.get_team_member(
+                context.workspace.id,
+                team_id,
+                member_id,
+            ),
+            create=lambda: resource_service.create_team_member(
+                context.workspace.id,
+                team_id,
+                request,
+                context.user.user_id,
+            ),
+            resource_id=lambda created_member: created_member.id,
+        )
+    except IdempotencyInProgressError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Request with this Idempotency-Key is still processing",
+        ) from exc
+    except ValueError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
+    return AgentTeamMemberResponse.model_validate(member)
 
 
 @router.get("/tasks", response_model=PageResponse[TaskResponse])

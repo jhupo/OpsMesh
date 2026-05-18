@@ -41,6 +41,12 @@ def test_core_domain_round_trip() -> None:
         agent_team=team,
         agent_profile=agent,
         team_role="specialist",
+        department="Research",
+        position_title="Market Research Specialist",
+        responsibilities=["collect sources", "summarize findings"],
+        skill_weights={"research": 0.9},
+        availability={"timezone": "UTC"},
+        max_concurrent_tasks=2,
     )
     task = Task(
         workspace_id=workspace.id,
@@ -89,6 +95,9 @@ def test_core_domain_round_trip() -> None:
 
     assert session.query(AgentProfile).count() == 1
     assert session.query(AgentTeam).count() == 1
+    assert team_member.department == "Research"
+    assert team_member.max_concurrent_tasks == 2
+    assert team_member.accepts_tasks is True
     assert session.query(Task).count() == 1
     assert session.query(AgentRun).count() == 1
     assert session.query(RunEvent).count() == 1

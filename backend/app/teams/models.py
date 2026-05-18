@@ -53,6 +53,8 @@ class AgentTeamMember(UUIDPrimaryKeyMixin, Base):
             name="uq_agent_team_members_team_agent",
         ),
         Index("ix_agent_team_members_workspace_team", "workspace_id", "agent_team_id"),
+        Index("ix_agent_team_members_workspace_status", "workspace_id", "status"),
+        Index("ix_agent_team_members_workspace_department", "workspace_id", "department"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -67,15 +69,31 @@ class AgentTeamMember(UUIDPrimaryKeyMixin, Base):
         ForeignKey("agent_profiles.id", ondelete="CASCADE"),
         nullable=False,
     )
+    reports_to_member_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_team_members.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     team_role: Mapped[str] = mapped_column(String(80), nullable=False)
+    department: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    position_title: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    responsibilities: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    skill_weights: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    availability: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    max_concurrent_tasks: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    accepts_tasks: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
 
     agent_team: Mapped[AgentTeam] = relationship(
         back_populates="members",
         foreign_keys=[agent_team_id],
     )
     agent_profile: Mapped["AgentProfile"] = relationship(back_populates="team_memberships")
+    reports_to_member: Mapped["AgentTeamMember | None"] = relationship(
+        remote_side="AgentTeamMember.id",
+        foreign_keys=[reports_to_member_id],
+    )
 
 
 from backend.app.agents.models import AgentProfile  # noqa: E402

@@ -54,6 +54,12 @@ def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None
             agent_team_id=team.id,
             agent_profile_id=agent.id,
             team_role="researcher",
+            department="Research",
+            position_title="Research Specialist",
+            responsibilities=["collect sources"],
+            skill_weights={"research": 0.9},
+            availability={"timezone": "UTC"},
+            max_concurrent_tasks=2,
         )
     )
     session.commit()
@@ -77,6 +83,14 @@ def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None
     assert payload["manifest"]["counts"]["team_members"] == 1
     assert payload["manifest"]["counts"]["tasks"] == 1
     assert payload["agents"][0]["id"] == str(agent.id)
+    assert payload["team_members"][0]["department"] == "Research"
+    assert payload["team_members"][0]["position_title"] == "Research Specialist"
+    assert payload["team_members"][0]["responsibilities"] == ["collect sources"]
+    assert payload["team_members"][0]["skill_weights"] == {"research": 0.9}
+    assert payload["team_members"][0]["availability"] == {"timezone": "UTC"}
+    assert payload["team_members"][0]["max_concurrent_tasks"] == 2
+    assert payload["team_members"][0]["accepts_tasks"] is True
+    assert payload["team_members"][0]["status"] == "active"
     assert all(item["workspace_id"] == str(workspace.id) for item in payload["agents"])
     assert other_agent.id not in {item["id"] for item in payload["agents"]}
 
@@ -133,6 +147,10 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
             agent_team_id=team.id,
             agent_profile_id=agent.id,
             team_role="researcher",
+            department="Research",
+            responsibilities=["collect sources"],
+            skill_weights={"research": 0.9},
+            max_concurrent_tasks=2,
         )
     )
     session.commit()
@@ -187,6 +205,12 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
             Task.title == "Imported Q2 Research",
         )
     )
+    imported_member = session.scalar(
+        select(AgentTeamMember).where(
+            AgentTeamMember.workspace_id == target_workspace.id,
+            AgentTeamMember.team_role == "researcher",
+        )
+    )
     audit = session.scalar(
         select(AuditEvent).where(
             AuditEvent.workspace_id == target_workspace.id,
@@ -195,6 +219,11 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
     )
     assert imported_agent is not None
     assert imported_team is not None
+    assert imported_member is not None
+    assert imported_member.department == "Research"
+    assert imported_member.responsibilities == ["collect sources"]
+    assert imported_member.skill_weights == {"research": 0.9}
+    assert imported_member.max_concurrent_tasks == 2
     assert imported_task is not None
     assert imported_task.status == "draft"
     assert audit is not None

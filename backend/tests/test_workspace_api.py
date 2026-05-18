@@ -21,6 +21,7 @@ from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
+from backend.app.teams.models import AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -168,6 +169,139 @@ def test_create_agent_and_team_are_idempotent_within_workspace() -> None:
     assert first_team.json()["id"] == second_team.json()["id"]
     assert actions.count("agent.created") == 1
     assert actions.count("team.created") == 1
+
+
+def test_team_member_api_stores_persistent_org_metadata_and_reporting_line() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    manager_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "PM", "role": "project_manager"},
+    )
+    developer_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Frontend Dev", "role": "frontend_engineer"},
+    )
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={"name": "Product Team", "team_type": "software"},
+    )
+    manager_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": manager_agent.json()["id"],
+            "team_role": "project_manager",
+            "department": "Management",
+            "position_title": "Project Manager",
+            "responsibilities": ["拆解需求", "验收交付"],
+            "skill_weights": {"planning": 1.0, "review": 0.9},
+            "max_concurrent_tasks": 3,
+            "order_index": 0,
+        },
+    )
+    developer_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": developer_agent.json()["id"],
+            "reports_to_member_id": manager_member.json()["id"],
+            "team_role": "frontend_engineer",
+            "department": "Engineering",
+            "position_title": "Senior Frontend Engineer",
+            "responsibilities": ["实现 UI", "修复前端缺陷"],
+            "skill_weights": {"react": 0.95, "typescript": 0.9},
+            "availability": {"timezone": "Asia/Shanghai"},
+            "max_concurrent_tasks": 2,
+            "accepts_tasks": True,
+            "order_index": 1,
+        },
+    )
+    listed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+    )
+
+    assert manager_member.status_code == 201
+    assert developer_member.status_code == 201
+    developer_body = developer_member.json()
+    assert developer_body["reports_to_member_id"] == manager_member.json()["id"]
+    assert developer_body["department"] == "Engineering"
+    assert developer_body["position_title"] == "Senior Frontend Engineer"
+    assert developer_body["responsibilities"] == ["实现 UI", "修复前端缺陷"]
+    assert developer_body["skill_weights"] == {"react": 0.95, "typescript": 0.9}
+    assert developer_body["availability"] == {"timezone": "Asia/Shanghai"}
+    assert developer_body["max_concurrent_tasks"] == 2
+    assert developer_body["status"] == "active"
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 2
+
+    stored = session.get(AgentTeamMember, UUID(developer_body["id"]))
+    assert stored is not None
+    assert stored.reports_to_member_id == UUID(manager_member.json()["id"])
+
+
+def test_team_member_api_rejects_foreign_agent_and_reporting_member() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other@example.com",
+        slug="other-space",
+    )
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={"name": "Team"},
+    )
+    local_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Local", "role": "manager"},
+    )
+    local_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={"agent_profile_id": local_agent.json()["id"], "team_role": "manager"},
+    )
+    foreign_agent = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/agents",
+        headers=_headers(other_owner.id),
+        json={"name": "Foreign", "role": "developer"},
+    )
+    foreign_team = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/teams",
+        headers=_headers(other_owner.id),
+        json={"name": "Other Team"},
+    )
+    foreign_member = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/teams/{foreign_team.json()['id']}/members",
+        headers=_headers(other_owner.id),
+        json={"agent_profile_id": foreign_agent.json()["id"], "team_role": "developer"},
+    )
+
+    bad_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={"agent_profile_id": foreign_agent.json()["id"], "team_role": "developer"},
+    )
+    bad_report = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": local_agent.json()["id"],
+            "team_role": "developer",
+            "reports_to_member_id": foreign_member.json()["id"],
+        },
+    )
+
+    assert local_member.status_code == 201
+    assert bad_agent.status_code == 404
+    assert bad_report.status_code == 404
 
 
 def test_model_provider_credentials_are_created_without_returning_secret() -> None:

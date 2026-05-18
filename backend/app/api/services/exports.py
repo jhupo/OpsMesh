@@ -389,6 +389,7 @@ class WorkspaceExportService:
         id_map: dict[str, dict[str, str]] = {
             "agents": {},
             "teams": {},
+            "team_members": {},
             "tasks": {},
         }
         created_counts = {"agents": 0, "teams": 0, "team_members": 0, "tasks": 0, "task_steps": 0}
@@ -454,6 +455,9 @@ class WorkspaceExportService:
             for item in request.export.team_members[: request.max_items_per_collection]:
                 team_id = id_map["teams"].get(_string_field(item, "agent_team_id"))
                 agent_id = id_map["agents"].get(_string_field(item, "agent_profile_id"))
+                reports_to_id = id_map["team_members"].get(
+                    _string_field(item, "reports_to_member_id")
+                )
                 if team_id is None or agent_id is None:
                     skipped_counts["team_members"] += 1
                     warnings.append("Skipped team member with missing imported team or agent")
@@ -461,16 +465,26 @@ class WorkspaceExportService:
                 created_counts["team_members"] += 1
                 if request.dry_run:
                     continue
-                self._session.add(
-                    AgentTeamMember(
-                        workspace_id=workspace.id,
-                        agent_team_id=UUID(team_id),
-                        agent_profile_id=UUID(agent_id),
-                        team_role=_string_field(item, "team_role"),
-                        is_required=_bool_field(item, "is_required", True),
-                        order_index=_int_field(item, "order_index", 0),
-                    )
+                member = AgentTeamMember(
+                    workspace_id=workspace.id,
+                    agent_team_id=UUID(team_id),
+                    agent_profile_id=UUID(agent_id),
+                    reports_to_member_id=_uuid_or_none(reports_to_id),
+                    team_role=_string_field(item, "team_role"),
+                    department=_optional_string_field(item, "department"),
+                    position_title=_optional_string_field(item, "position_title"),
+                    responsibilities=_string_list_field(item, "responsibilities"),
+                    skill_weights=_dict_field(item, "skill_weights"),
+                    availability=_dict_field(item, "availability"),
+                    max_concurrent_tasks=_int_field(item, "max_concurrent_tasks", 1),
+                    accepts_tasks=_bool_field(item, "accepts_tasks", True),
+                    is_required=_bool_field(item, "is_required", True),
+                    order_index=_int_field(item, "order_index", 0),
+                    status=_string_field(item, "status", "active"),
                 )
+                self._session.add(member)
+                self._session.flush()
+                id_map["team_members"][_string_field(item, "id")] = str(member.id)
 
         if request.import_tasks:
             for item in request.export.tasks[: request.max_items_per_collection]:
@@ -930,9 +944,18 @@ def _team_member_payload(member: AgentTeamMember) -> dict[str, object]:
         "workspace_id": str(member.workspace_id),
         "agent_team_id": str(member.agent_team_id),
         "agent_profile_id": str(member.agent_profile_id),
+        "reports_to_member_id": _str_or_none(member.reports_to_member_id),
         "team_role": member.team_role,
+        "department": member.department,
+        "position_title": member.position_title,
+        "responsibilities": member.responsibilities,
+        "skill_weights": member.skill_weights,
+        "availability": member.availability,
+        "max_concurrent_tasks": member.max_concurrent_tasks,
+        "accepts_tasks": member.accepts_tasks,
         "is_required": member.is_required,
         "order_index": member.order_index,
+        "status": member.status,
     }
 
 
@@ -1088,6 +1111,13 @@ def _dict_field(item: dict[str, object], key: str) -> dict[str, object]:
 def _optional_dict_field(item: dict[str, object], key: str) -> dict[str, object] | None:
     value = item.get(key)
     return value if isinstance(value, dict) else None
+
+
+def _string_list_field(item: dict[str, object], key: str) -> list[str]:
+    value = item.get(key)
+    if not isinstance(value, list):
+        return []
+    return [entry for entry in value if isinstance(entry, str)]
 
 
 def _int_field(item: dict[str, object], key: str, default: int) -> int:

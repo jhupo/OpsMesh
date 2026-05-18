@@ -504,6 +504,76 @@ Tasks:
 - [ ] Add operations dashboards APIs for worker capacity, queue latency, and runtime saturation.
 - [ ] Add security review tests around account-scoped skill/tool invocation.
 
+## Phase 22: Persistent AI Organization Architecture
+
+Goal: make the user-created team a reusable organization, and make tasks flow through that organization like projects in a real company.
+
+Tasks:
+
+- [x] Fixed team organization model.
+  - [x] Treat `AgentTeam` as a long-lived organization asset, not a per-task team.
+  - [x] Enhance `AgentTeamMember` with role, department, position, responsibilities, skill weights, availability, max concurrency, and reporting line.
+  - [ ] Support adding or upgrading member skills over time.
+  - [x] Support hiring public talent into an existing team.
+- [ ] Task intake into existing teams.
+  - [ ] Require team-backed tasks to reference an existing `agent_team_id`.
+  - [ ] Save a `team_snapshot` when task execution starts.
+  - [ ] Keep historical tasks stable when the organization changes later.
+  - [ ] Enforce workspace-scoped team and member access.
+- [ ] Project manager planning.
+  - [ ] Let the PM agent inspect the task and team roster.
+  - [ ] Generate a structured project plan.
+  - [ ] Validate generated plans before execution.
+  - [ ] Handle failed planning with retry or human review.
+- [ ] Work package model.
+  - [ ] Extend `TaskStep` with required role, required skills, expected artifacts, acceptance criteria, and review policy.
+  - [ ] Represent task execution as a dependency DAG.
+  - [ ] Allow multiple developers or specialists to work on separate packages.
+- [ ] Member matching and scheduling.
+  - [ ] Match work packages by role, skill, availability, load, priority, and runtime capacity.
+  - [ ] Enforce per-member max concurrency.
+  - [ ] Enforce workspace-level task/run/runtime limits.
+  - [ ] Support priority scheduling across multiple tasks.
+- [ ] Multi-agent collaborative execution.
+  - [ ] Create `AgentRun` records from assigned work packages.
+  - [ ] Run dependency-free packages in parallel.
+  - [ ] Restrict each agent to authorized task context, files, and tools.
+  - [ ] Persist outputs to task steps and artifacts.
+- [ ] PM summary and acceptance.
+  - [ ] PM reviews completed packages.
+  - [ ] PM reconciles conflicts and integrates final delivery.
+  - [ ] PM decides whether to complete, request revisions, or add missing work.
+- [ ] Revision and correction flow.
+  - [ ] Let the user correct a task, step, or specific employee output.
+  - [ ] Create revision steps instead of rerunning the whole task by default.
+  - [ ] Keep revision history and versions.
+- [ ] Team communication records.
+  - [ ] Add structured agent messages, decisions, handoffs, review comments, and revision requests.
+  - [ ] Bind communication to task, step, run, and agent.
+  - [ ] Make the collaboration stream auditable and replayable.
+- [ ] HR and marketplace loop.
+  - [ ] HR detects missing roles or skills from a project plan.
+  - [ ] HR recommends public agents from the talent market.
+  - [ ] User-confirmed hires join the persistent team.
+  - [ ] New hires affect future tasks without rewriting historical snapshots.
+- [ ] Security and isolation.
+  - [ ] Scope teams, members, skills, files, tools, Docker runtimes, and self-hosted machines by workspace.
+  - [ ] Copy public agents and skills into the user's workspace before use.
+  - [ ] Build every run with an isolated authorization context.
+- [ ] Local tests.
+  - [ ] Test fixed team task intake.
+  - [ ] Test PM plan generation and validation.
+  - [ ] Test role/skill matching and parallel execution.
+  - [ ] Test dependency waiting and PM final summary.
+  - [ ] Test revision targeting.
+  - [ ] Test cross-workspace denial for team, member, skill, file, and tool access.
+
+Deliverables:
+
+- users can build a persistent AI company/team
+- tasks are planned and executed through the existing organization
+- team changes affect future tasks without corrupting running or historical work
+
 ## Suggested MVP Cut
 
 Minimum backend demo:

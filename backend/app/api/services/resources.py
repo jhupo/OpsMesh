@@ -8,14 +8,14 @@ from backend.app.agents.models import AgentProfile
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.agents import AgentProfileCreateRequest
 from backend.app.api.schemas.tasks import TaskCreateRequest
-from backend.app.api.schemas.teams import AgentTeamCreateRequest
+from backend.app.api.schemas.teams import AgentTeamCreateRequest, AgentTeamMemberCreateRequest
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task
-from backend.app.teams.models import AgentTeam
+from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 T = TypeVar("T")
 
@@ -120,6 +120,74 @@ class WorkspaceResourceService:
             select(AgentTeam).where(AgentTeam.workspace_id == workspace_id, AgentTeam.id == team_id)
         )
 
+    def list_team_members(
+        self,
+        workspace_id: UUID,
+        team_id: UUID,
+        page: PageParams,
+    ) -> tuple[list[AgentTeamMember], int]:
+        self._require_team(workspace_id, team_id)
+        statement = (
+            select(AgentTeamMember)
+            .where(
+                AgentTeamMember.workspace_id == workspace_id,
+                AgentTeamMember.agent_team_id == team_id,
+            )
+            .order_by(AgentTeamMember.order_index.asc(), AgentTeamMember.id.asc())
+        )
+        return self._page(statement, page)
+
+    def get_team_member(
+        self,
+        workspace_id: UUID,
+        team_id: UUID,
+        member_id: UUID,
+    ) -> AgentTeamMember | None:
+        return self._session.scalar(
+            select(AgentTeamMember).where(
+                AgentTeamMember.workspace_id == workspace_id,
+                AgentTeamMember.agent_team_id == team_id,
+                AgentTeamMember.id == member_id,
+            )
+        )
+
+    def create_team_member(
+        self,
+        workspace_id: UUID,
+        team_id: UUID,
+        data: AgentTeamMemberCreateRequest,
+        actor_user_id: UUID | None = None,
+    ) -> AgentTeamMember:
+        self._require_team(workspace_id, team_id)
+        self._require_agent(workspace_id, data.agent_profile_id)
+        if data.reports_to_member_id is not None:
+            self._require_team_member(workspace_id, team_id, data.reports_to_member_id)
+
+        member = AgentTeamMember(
+            workspace_id=workspace_id,
+            agent_team_id=team_id,
+            **data.model_dump(),
+        )
+        self._session.add(member)
+        self._session.flush()
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="team_member.created",
+                target_type="agent_team_member",
+                target_id=member.id,
+                metadata={
+                    "agent_team_id": str(team_id),
+                    "agent_profile_id": str(member.agent_profile_id),
+                    "team_role": member.team_role,
+                    "department": member.department,
+                },
+            )
+        self._session.commit()
+        self._session.refresh(member)
+        return member
+
     def list_tasks(
         self,
         workspace_id: UUID,
@@ -204,3 +272,27 @@ class WorkspaceResourceService:
         )
         rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
         return list(rows), int(total or 0)
+
+    def _require_team(self, workspace_id: UUID, team_id: UUID) -> None:
+        if self.get_team(workspace_id, team_id) is None:
+            raise ValueError("Team not found")
+
+    def _require_agent(self, workspace_id: UUID, agent_id: UUID) -> None:
+        if self.get_agent(workspace_id, agent_id) is None:
+            raise ValueError("Agent not found")
+
+    def _require_team_member(
+        self,
+        workspace_id: UUID,
+        team_id: UUID,
+        team_member_id: UUID,
+    ) -> None:
+        member = self._session.scalar(
+            select(AgentTeamMember.id).where(
+                AgentTeamMember.workspace_id == workspace_id,
+                AgentTeamMember.agent_team_id == team_id,
+                AgentTeamMember.id == team_member_id,
+            )
+        )
+        if member is None:
+            raise ValueError("Reporting manager team member not found")
