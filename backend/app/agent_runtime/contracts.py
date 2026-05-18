@@ -21,6 +21,10 @@ class AgentRunRequest:
     input_text: str
     context: AgentRuntimeContext
     max_turns: int = 10
+    model: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model_provider_credential_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -31,4 +35,3 @@ class AgentRunResult:
 
 class AgentRunner(Protocol):
     async def run(self, request: AgentRunRequest) -> AgentRunResult: ...
-

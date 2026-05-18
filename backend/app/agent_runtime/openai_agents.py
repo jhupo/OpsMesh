@@ -1,6 +1,8 @@
 from typing import Any, Literal
 
 from agents import Agent, ModelSettings, Runner
+from agents.models.interface import Model
+from agents.models.openai_provider import OpenAIProvider
 
 from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
 
@@ -21,10 +23,17 @@ class OpenAIAgentsRunner:
 
     def _build_agent(self, request: AgentRunRequest) -> Agent[Any]:
         profile = request.agent_profile
+        model_name = request.model or profile.model
+        model: str | Model = model_name
+        if request.api_key is not None or request.base_url is not None:
+            model = OpenAIProvider(
+                api_key=request.api_key,
+                base_url=request.base_url,
+            ).get_model(model_name)
         return Agent(
             name=profile.name,
             instructions=profile.instructions,
-            model=profile.model,
+            model=model,
             model_settings=self._model_settings(profile.model_settings),
         )
 

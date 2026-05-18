@@ -57,6 +57,7 @@ Mapping:
 AgentProfile.name           -> Agent.name
 AgentProfile.instructions   -> Agent.instructions
 AgentProfile.model          -> Agent.model
+AgentProfile.model_provider_credential_id -> request-scoped OpenAIProvider
 AgentProfile.model_settings -> Agent.model_settings
 AgentProfile.tools          -> Agent.tools
 AgentProfile.handoffs       -> Agent.handoffs
@@ -71,6 +72,8 @@ Rules:
 - runtime-only tools are wrapped with product permission checks
 - dangerous tools use approval-aware wrappers
 - skills may augment instructions or runtime files, but cannot bypass permissions
+- provider API keys are resolved by the worker from encrypted workspace credentials
+- provider secrets are not placed in prompts, run events, or API responses
 
 ## Tool Mapping
 

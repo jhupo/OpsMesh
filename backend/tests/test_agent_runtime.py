@@ -47,6 +47,34 @@ def test_openai_agents_runner_builds_agent_from_profile() -> None:
     assert not hasattr(agent.model_settings, "unsupported")
 
 
+def test_openai_agents_runner_uses_request_provider_override() -> None:
+    profile = AgentProfile(
+        workspace_id=uuid4(),
+        name="Researcher",
+        role="researcher",
+        instructions="Research carefully.",
+        model="workspace-default",
+        model_settings={},
+    )
+    request = AgentRunRequest(
+        agent_profile=profile,
+        input_text="Find market trends",
+        context=AgentRuntimeContext(
+            workspace_id=profile.workspace_id,
+            task_id=None,
+            run_id=uuid4(),
+        ),
+        model="gpt-4.1-mini",
+        base_url="https://llm.example.test/v1",
+        api_key="sk-test",
+    )
+
+    agent = OpenAIAgentsRunner()._build_agent(request)
+
+    assert agent.model != profile.model
+    assert agent.model.model == "gpt-4.1-mini"
+
+
 def test_fake_agent_runner_returns_deterministic_output() -> None:
     profile = AgentProfile(
         workspace_id=uuid4(),

@@ -11,6 +11,7 @@ from backend.app.api.schemas.tasks import TaskCreateRequest
 from backend.app.api.schemas.teams import AgentTeamCreateRequest
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
+from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task
@@ -40,6 +41,11 @@ class WorkspaceResourceService:
         data: AgentProfileCreateRequest,
         actor_user_id: UUID | None = None,
     ) -> AgentProfile:
+        if data.model_provider_credential_id is not None:
+            self._require_model_provider_credential(
+                workspace_id,
+                data.model_provider_credential_id,
+            )
         agent = AgentProfile(workspace_id=workspace_id, **data.model_dump())
         self._session.add(agent)
         self._session.flush()
@@ -63,6 +69,21 @@ class WorkspaceResourceService:
                 AgentProfile.id == agent_id,
             )
         )
+
+    def _require_model_provider_credential(
+        self,
+        workspace_id: UUID,
+        credential_id: UUID,
+    ) -> None:
+        credential = self._session.scalar(
+            select(ModelProviderCredential.id).where(
+                ModelProviderCredential.workspace_id == workspace_id,
+                ModelProviderCredential.id == credential_id,
+                ModelProviderCredential.status == "active",
+            )
+        )
+        if credential is None:
+            raise ValueError("Model provider credential not found")
 
     def list_teams(self, workspace_id: UUID, page: PageParams) -> tuple[list[AgentTeam], int]:
         statement = (

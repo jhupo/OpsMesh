@@ -29,6 +29,7 @@ class WorkerJobHandler:
                     self._session,
                     self._queue,
                     self._agent_runner,
+                    self._settings,
                 ).run_fake_agent(job)
             case JobType.WORKSPACE_ARCHIVE_EXPORT:
                 if self._settings is None:

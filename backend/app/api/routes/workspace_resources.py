@@ -79,6 +79,8 @@ async def create_agent(
             ),
             resource_id=lambda created_agent: created_agent.id,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except IdempotencyInProgressError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

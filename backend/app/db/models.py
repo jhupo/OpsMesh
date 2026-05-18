@@ -23,6 +23,7 @@ from backend.app.marketplace.models import (
     TalentListingReview,
     WorkspaceAgentInstall,
 )
+from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.operations.models import WorkerHeartbeat
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtimes.models import (
@@ -61,6 +62,7 @@ __all__ = [
     "McpServer",
     "McpToolAllowlist",
     "McpToolCallLog",
+    "ModelProviderCredential",
     "ReviewComment",
     "RevisionRequest",
     "RunEvent",

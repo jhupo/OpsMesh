@@ -11,6 +11,7 @@ class AgentProfileCreateRequest(BaseModel):
     description: str = Field(default="", max_length=2_000)
     instructions: str = ""
     model: str = Field(default="gpt-4.1", max_length=120)
+    model_provider_credential_id: UUID | None = None
     model_settings: dict[str, object] = Field(default_factory=dict)
     capabilities: dict[str, object] = Field(default_factory=dict)
     skills: dict[str, object] = Field(default_factory=dict)
@@ -27,6 +28,7 @@ class AgentProfileResponse(TimestampedModel):
     description: str
     instructions: str
     model: str
+    model_provider_credential_id: UUID | None
     model_settings: dict[str, object]
     capabilities: dict[str, object]
     skills: dict[str, object]
@@ -36,4 +38,3 @@ class AgentProfileResponse(TimestampedModel):
     approval_policy: dict[str, object]
     version: int
     status: str
-

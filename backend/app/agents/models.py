@@ -23,6 +23,10 @@ class AgentProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(String(2_000), nullable=False, default="")
     instructions: Mapped[str] = mapped_column(String, nullable=False, default="")
     model: Mapped[str] = mapped_column(String(120), nullable=False, default="gpt-4.1")
+    model_provider_credential_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("model_provider_credentials.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     model_settings: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     capabilities: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     skills: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
@@ -40,4 +44,3 @@ class AgentProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 from backend.app.teams.models import AgentTeamMember  # noqa: E402
-

@@ -83,7 +83,18 @@ Use the OpenAI Agents SDK runner after configuring provider credentials:
 
 ```bash
 CHAINCLOUD_AGENT_RUNNER_BACKEND=openai
-OPENAI_API_KEY=...
 ```
+
+Model provider keys should be stored through the workspace API, not raw environment
+variables:
+
+- `POST /api/v1/workspaces/{workspace_id}/model-provider-credentials`
+- stores encrypted `api_key`, optional `base_url`, and a `default_model`
+- returns only a fingerprint and never returns the secret
+- agents can reference a credential through `model_provider_credential_id`
+- agents can set `model` to a concrete model or `workspace-default` to use the credential default
+
+If an agent has no credential reference, the worker resolves the workspace default model provider
+credential when one exists.
 
 The product orchestration layer should continue to talk through the internal agent runtime contract rather than importing provider-specific SDK behavior into API routes.

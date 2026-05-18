@@ -13,9 +13,12 @@ from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.fake import FakeAgentRunner
 from backend.app.agents.models import AgentProfile
 from backend.app.audit.service import AuditService
+from backend.app.core.config import Settings
+from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus, require_run_transition
+from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
@@ -34,10 +37,12 @@ class RunOrchestrationService:
         session: Session,
         queue: RedisQueue | None = None,
         agent_runner: AgentRunner | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self._session = session
         self._queue = queue
         self._agent_runner = agent_runner or FakeAgentRunner()
+        self._settings = settings
 
     def create_queued_run_for_task(self, task: Task) -> AgentRun:
         run = AgentRun(
@@ -367,6 +372,7 @@ class RunOrchestrationService:
             )
 
         allowed_tools = self._allowed_tools_for_profile(profile)
+        model_provider = self._model_provider_for_profile(profile)
         return AgentRunRequest(
             agent_profile=profile,
             input_text=self._input_text_for_run(run),
@@ -379,10 +385,45 @@ class RunOrchestrationService:
                 metadata={
                     "agent_profile_id": str(profile.id) if profile.id is not None else None,
                     "agent_role": profile.role,
-                    "run_model": run.model or profile.model,
+                    "run_model": model_provider["model"],
+                    "model_provider_credential_id": str(
+                        model_provider["model_provider_credential_id"]
+                    )
+                    if model_provider["model_provider_credential_id"] is not None
+                    else None,
                 },
             ),
+            model=model_provider["model"],
+            base_url=model_provider["base_url"],
+            api_key=model_provider["api_key"],
+            model_provider_credential_id=model_provider["model_provider_credential_id"],
         )
+
+    def _model_provider_for_profile(self, profile: AgentProfile) -> dict[str, Any]:
+        if self._settings is None:
+            return {
+                "model": profile.model,
+                "base_url": None,
+                "api_key": None,
+                "model_provider_credential_id": None,
+            }
+        resolved = ModelProviderCredentialService(
+            self._session,
+            SecretEncryptionService(
+                secret=self._settings.credential_encryption_secret,
+                key_id=self._settings.credential_encryption_key_id,
+            ),
+        ).resolve_for_agent(
+            workspace_id=profile.workspace_id,
+            agent_credential_id=profile.model_provider_credential_id,
+            agent_model=profile.model,
+        )
+        return {
+            "model": resolved.model,
+            "base_url": resolved.base_url,
+            "api_key": resolved.api_key,
+            "model_provider_credential_id": resolved.credential_id,
+        }
 
     def _input_text_for_run(self, run: AgentRun) -> str:
         task = self._session.get(Task, run.task_id) if run.task_id is not None else None

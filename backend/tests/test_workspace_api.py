@@ -170,6 +170,85 @@ def test_create_agent_and_team_are_idempotent_within_workspace() -> None:
     assert actions.count("team.created") == 1
 
 
+def test_model_provider_credentials_are_created_without_returning_secret() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials",
+        headers=_headers(owner.id),
+        json={
+            "name": "OpenAI Prod",
+            "provider": "openai",
+            "api_key": "sk-secret",
+            "base_url": "https://api.openai.com/v1",
+            "default_model": "gpt-4.1-mini",
+            "is_default": True,
+        },
+    )
+    listed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials",
+        headers=_headers(owner.id),
+    )
+
+    assert created.status_code == 201
+    body = created.json()
+    assert body["name"] == "OpenAI Prod"
+    assert body["is_default"] is True
+    assert body["default_model"] == "gpt-4.1-mini"
+    assert body["api_key_fingerprint"].startswith("sha256:")
+    assert "api_key" not in body
+    assert "encrypted_api_key" not in body
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 1
+
+
+def test_create_agent_can_reference_workspace_model_provider_credential() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    credential = client.post(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials",
+        headers=_headers(owner.id),
+        json={
+            "name": "OpenRouter",
+            "provider": "openai-compatible",
+            "api_key": "sk-router",
+            "base_url": "https://openrouter.ai/api/v1",
+            "default_model": "openai/gpt-4.1-mini",
+        },
+    )
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other@example.com",
+        slug="other",
+    )
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Router Agent",
+            "role": "researcher",
+            "model": "workspace-default",
+            "model_provider_credential_id": credential.json()["id"],
+        },
+    )
+    cross_workspace = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/agents",
+        headers=_headers(other_owner.id),
+        json={
+            "name": "Bad Agent",
+            "role": "researcher",
+            "model_provider_credential_id": credential.json()["id"],
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["model_provider_credential_id"] == credential.json()["id"]
+    assert cross_workspace.status_code == 400
+
+
 def test_task_idempotency_key_is_scoped_by_workspace() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner", email="owner@example.com", slug="one")

@@ -9,13 +9,16 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agents.models import AgentProfile
+from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
+from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
 from backend.app.workers.handlers import WorkerJobHandler
@@ -195,7 +198,71 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         "agent_profile_id": str(agent.id),
         "agent_role": "designer",
         "run_model": agent.model,
+        "model_provider_credential_id": None,
     }
+
+
+def test_agent_request_resolves_agent_model_provider_override() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    settings = Settings(
+        environment="test",
+        credential_encryption_secret="test-secret",
+        credential_encryption_key_id="test-key",
+    )
+    credential = ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(
+            secret=settings.credential_encryption_secret,
+            key_id=settings.credential_encryption_key_id,
+        ),
+    ).create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Custom Provider",
+        provider="openai-compatible",
+        api_key="sk-custom",
+        default_model="provider-default-model",
+        base_url="https://llm.example.test/v1",
+        is_default=True,
+    )
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Custom",
+        role="writer",
+        instructions="Write.",
+        model="workspace-default",
+        model_provider_credential_id=credential.id,
+    )
+    session.add_all([task, agent])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    request = RunOrchestrationService(session, settings=settings)._build_agent_request(
+        run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="provider-context",
+        ),
+    )
+
+    assert request.model == "provider-default-model"
+    assert request.base_url == "https://llm.example.test/v1"
+    assert request.api_key == "sk-custom"
+    assert request.model_provider_credential_id == credential.id
+    assert request.context.metadata["model_provider_credential_id"] == str(credential.id)
 
 
 def test_stale_running_runs_are_recovered_as_failed() -> None:
