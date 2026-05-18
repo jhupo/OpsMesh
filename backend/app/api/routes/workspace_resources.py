@@ -14,7 +14,7 @@ from backend.app.api.pagination import PageParams, PageResponse, pagination_para
 from backend.app.api.schemas.agents import AgentProfileCreateRequest, AgentProfileResponse
 from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
-from backend.app.api.schemas.tasks import TaskCreateRequest, TaskResponse
+from backend.app.api.schemas.tasks import TaskCreateRequest, TaskMessageResponse, TaskResponse
 from backend.app.api.schemas.teams import (
     AgentTeamCreateRequest,
     AgentTeamMemberCreateRequest,
@@ -282,6 +282,26 @@ async def cancel_task(
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskResponse.model_validate(task)
+
+
+@router.get("/tasks/{task_id}/messages", response_model=PageResponse[TaskMessageResponse])
+async def list_task_messages(
+    task_id: UUID,
+    page: PageParams = Depends(pagination_params),
+    message_type: str | None = Query(default=None),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[TaskMessageResponse]:
+    try:
+        items, total = WorkspaceResourceService(session).list_task_messages(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            page=page,
+            message_type=message_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
 @router.get("/runs", response_model=PageResponse[AgentRunResponse])

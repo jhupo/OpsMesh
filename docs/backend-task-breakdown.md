@@ -555,7 +555,8 @@ Tasks:
   - [x] Add structured task messages for step start, step completion, PM decisions, and follow-up work.
   - [x] Bind communication to task, step, run, and agent.
   - [x] Make the collaboration stream auditable and replayable with per-task sequence numbers.
-  - [ ] Add task message listing APIs and include messages in workspace export/import.
+  - [x] Add task message listing APIs.
+  - [ ] Include task messages in workspace export/import.
   - [ ] Map OpenAI Agents handoff/tool events into task messages when runtime integrations expose them.
 - [x] HR and marketplace loop.
   - [x] HR detects missing roles or skills from a project plan.
@@ -572,13 +573,13 @@ Tasks:
   - [x] Add policy snapshots for tools, files, and runtime scope on each new run.
   - [ ] Copy public skills into the user's workspace before use.
   - [ ] Enforce copied skill provenance inside the run policy snapshot.
-- [ ] Local tests.
-  - [ ] Test fixed team task intake.
-  - [ ] Test PM plan generation and validation.
-  - [ ] Test role/skill matching and parallel execution.
-  - [ ] Test dependency waiting and PM final summary.
-  - [ ] Test revision targeting.
-  - [ ] Test cross-workspace denial for team, member, skill, file, and tool access.
+- [x] Local tests.
+  - [x] Test fixed team task intake.
+  - [x] Test PM plan generation and validation.
+  - [x] Test role/skill matching and parallel execution.
+  - [x] Test dependency waiting and PM final summary.
+  - [x] Test revision targeting.
+  - [x] Test cross-workspace denial for team, member, task messages, skill, file, tool, run, and marketplace access.
 
 Deliverables:
 

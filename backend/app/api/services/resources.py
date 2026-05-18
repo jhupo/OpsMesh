@@ -16,7 +16,7 @@ from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.planning.project_plans import ProjectPlanningService
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.tasks.models import Task
+from backend.app.tasks.models import Task, TaskMessage
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.snapshots import build_team_snapshot
 
@@ -243,6 +243,22 @@ class WorkspaceResourceService:
             select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
         )
 
+    def list_task_messages(
+        self,
+        workspace_id: UUID,
+        task_id: UUID,
+        page: PageParams,
+        message_type: str | None = None,
+    ) -> tuple[list[TaskMessage], int]:
+        self._require_task(workspace_id, task_id)
+        statement = select(TaskMessage).where(
+            TaskMessage.workspace_id == workspace_id,
+            TaskMessage.task_id == task_id,
+        )
+        if message_type is not None:
+            statement = statement.where(TaskMessage.message_type == message_type)
+        return self._page(statement.order_by(TaskMessage.sequence.asc()), page)
+
     def list_runs(
         self,
         workspace_id: UUID,
@@ -293,6 +309,10 @@ class WorkspaceResourceService:
     def _require_agent(self, workspace_id: UUID, agent_id: UUID) -> None:
         if self.get_agent(workspace_id, agent_id) is None:
             raise ValueError("Agent not found")
+
+    def _require_task(self, workspace_id: UUID, task_id: UUID) -> None:
+        if self.get_task(workspace_id, task_id) is None:
+            raise ValueError("Task not found")
 
     def _require_team_member(
         self,

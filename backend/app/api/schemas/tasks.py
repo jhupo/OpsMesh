@@ -34,3 +34,15 @@ class TaskResponse(TimestampedModel):
     project_plan: dict[str, object] | None
     final_output: dict[str, object] | None
     completed_at: datetime | None
+
+
+class TaskMessageResponse(TimestampedModel):
+    workspace_id: UUID
+    task_id: UUID
+    task_step_id: UUID | None
+    agent_run_id: UUID | None
+    agent_profile_id: UUID | None
+    message_type: str
+    sequence: int
+    body: str
+    payload: dict[str, object]

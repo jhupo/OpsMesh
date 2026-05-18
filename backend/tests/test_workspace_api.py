@@ -19,7 +19,7 @@ from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.tasks.models import Task
+from backend.app.tasks.models import Task, TaskMessage
 from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue
@@ -730,6 +730,63 @@ def test_cancel_run_marks_linked_task_cancelled() -> None:
     assert cancelled.json()["status"] == RunStatus.CANCELLED.value
     assert task is not None
     assert task.status == TaskStatus.CANCELLED.value
+
+
+def test_task_messages_api_lists_filters_and_enforces_workspace_scope() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other@example.com",
+        slug="other-space",
+    )
+    task = Task(workspace_id=workspace.id, created_by_user_id=owner.id, title="Task")
+    session.add(task)
+    session.flush()
+    session.add_all(
+        [
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                message_type="step.started",
+                sequence=1,
+                body="Started",
+                payload={"work_package_id": "research"},
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                message_type="step.completed",
+                sequence=2,
+                body="Completed",
+                payload={"work_package_id": "research"},
+            ),
+        ]
+    )
+    session.commit()
+
+    listed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/messages",
+        headers=_headers(owner.id),
+    )
+    filtered = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/messages"
+        "?message_type=step.completed",
+        headers=_headers(owner.id),
+    )
+    foreign = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks/{task.id}/messages",
+        headers=_headers(other_owner.id),
+    )
+
+    assert listed.status_code == 200
+    assert [item["sequence"] for item in listed.json()["items"]] == [1, 2]
+    assert listed.json()["items"][0]["payload"] == {"work_package_id": "research"}
+    assert filtered.status_code == 200
+    assert filtered.json()["total"] == 1
+    assert filtered.json()["items"][0]["message_type"] == "step.completed"
+    assert foreign.status_code == 404
 
 
 def test_retry_failed_run_creates_new_queued_run_and_enqueues_job() -> None:
