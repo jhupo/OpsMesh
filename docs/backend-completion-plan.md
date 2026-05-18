@@ -37,16 +37,17 @@ Current state:
 
 - MCP servers, tools, credentials, visibility, and account-scoped authorization are represented in the backend.
 - Tool call logging exists, and hosted credentials can be encrypted or referenced through an external vault.
-- The execution path does not yet run real MCP tool calls through the same hardened worker/runtime policy as other agent work.
+- The execution service now resolves an MCP server/tool from the run authorization snapshot, injects workspace-owned credential references into an adapter, enforces payload policy, and records call logs, run events, task messages, and security events.
+- Real stdio, HTTP/SSE, and hosted MCP protocol adapters still need to be plugged into the service.
 
 Build:
 
-- Add an MCP execution service that resolves a requested server/tool from the run authorization snapshot.
-- Support stdio, HTTP/SSE, and hosted MCP adapters behind one internal interface.
-- Inject only the credentials that belong to the current workspace and selected tool.
-- Enforce timeout, payload size, response size, allowlisted tool names, and network policy.
-- Persist `tool.called`, `tool.completed`, `tool.failed`, and `tool.blocked` run events and task messages.
-- Normalize MCP errors without leaking secrets.
+- [x] Add an MCP execution service that resolves a requested server/tool from the run authorization snapshot.
+- [ ] Support stdio, HTTP/SSE, and hosted MCP adapters behind one internal interface.
+- [x] Inject only the credentials that belong to the current workspace and selected tool.
+- [x] Enforce timeout, payload size, response size, allowlisted tool names, and network policy.
+- [x] Persist `tool.called`, `tool.completed`, `tool.failed`, and `tool.blocked` run events and task messages.
+- [x] Normalize MCP errors without leaking secrets.
 - Add optional approval hooks for high-risk MCP tools.
 
 API/data changes:

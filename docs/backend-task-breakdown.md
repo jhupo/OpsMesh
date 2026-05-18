@@ -496,6 +496,9 @@ Goal: close the gaps needed before this can feel like a mature commercial backen
 Tasks:
 
 - [ ] Connect MCP skills to the real runtime execution path.
+  - [x] Add internal MCP execution service with run snapshot authorization, adapter boundary, payload limits, logs, events, task messages, and blocked-call security evidence.
+  - [ ] Add real stdio, HTTP/SSE, and hosted MCP protocol adapters.
+  - [ ] Wire MCP execution into worker/OpenAI tool invocation.
 - [ ] Add private/public skill marketplace workflows beyond catalog visibility.
 - [ ] Add task observation APIs for different team domains such as AIGC, novels, research, and software.
 - [ ] Add structured correction flows that can target one step, one agent, or the whole task.
