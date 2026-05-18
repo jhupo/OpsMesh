@@ -107,6 +107,104 @@ class ModelProviderCredentialService:
             )
         )
 
+    def update(
+        self,
+        *,
+        workspace_id: UUID,
+        credential_id: UUID,
+        actor_user_id: UUID,
+        name: str | None = None,
+        provider: str | None = None,
+        default_model: str | None = None,
+        base_url: str | None = None,
+        is_default: bool | None = None,
+    ) -> ModelProviderCredential:
+        credential = self._require(workspace_id=workspace_id, credential_id=credential_id)
+        if name is not None:
+            credential.name = name
+        if provider is not None:
+            credential.provider = provider
+        if default_model is not None:
+            credential.default_model = default_model
+        if base_url is not None:
+            credential.base_url = base_url
+        if is_default is not None:
+            credential.is_default = is_default
+            if is_default:
+                self._unset_other_defaults(workspace_id, credential.id)
+        self._audit(
+            workspace_id=workspace_id,
+            user_id=actor_user_id,
+            credential=credential,
+            action="model_provider_credential.updated",
+        )
+        self._session.commit()
+        self._session.refresh(credential)
+        return credential
+
+    def rotate_key(
+        self,
+        *,
+        workspace_id: UUID,
+        credential_id: UUID,
+        actor_user_id: UUID,
+        api_key: str,
+    ) -> ModelProviderCredential:
+        credential = self._require(workspace_id=workspace_id, credential_id=credential_id)
+        encrypted = self._secret_service.encrypt_payload({"api_key": api_key})
+        credential.encrypted_api_key = encrypted.ciphertext
+        credential.api_key_fingerprint = encrypted.fingerprint
+        credential.encryption_key_id = encrypted.key_id
+        self._audit(
+            workspace_id=workspace_id,
+            user_id=actor_user_id,
+            credential=credential,
+            action="model_provider_credential.rotated",
+        )
+        self._session.commit()
+        self._session.refresh(credential)
+        return credential
+
+    def set_default(
+        self,
+        *,
+        workspace_id: UUID,
+        credential_id: UUID,
+        actor_user_id: UUID,
+    ) -> ModelProviderCredential:
+        credential = self._require(workspace_id=workspace_id, credential_id=credential_id)
+        credential.is_default = True
+        self._unset_other_defaults(workspace_id, credential.id)
+        self._audit(
+            workspace_id=workspace_id,
+            user_id=actor_user_id,
+            credential=credential,
+            action="model_provider_credential.default_set",
+        )
+        self._session.commit()
+        self._session.refresh(credential)
+        return credential
+
+    def disable(
+        self,
+        *,
+        workspace_id: UUID,
+        credential_id: UUID,
+        actor_user_id: UUID,
+    ) -> ModelProviderCredential:
+        credential = self._require(workspace_id=workspace_id, credential_id=credential_id)
+        credential.status = "disabled"
+        credential.is_default = False
+        self._audit(
+            workspace_id=workspace_id,
+            user_id=actor_user_id,
+            credential=credential,
+            action="model_provider_credential.disabled",
+        )
+        self._session.commit()
+        self._session.refresh(credential)
+        return credential
+
     def resolve_for_agent(
         self,
         *,
@@ -149,6 +247,36 @@ class ModelProviderCredentialService:
                 ModelProviderCredential.is_default.is_(True),
                 ModelProviderCredential.status == "active",
             )
+        )
+
+    def _require(self, *, workspace_id: UUID, credential_id: UUID) -> ModelProviderCredential:
+        credential = self.get(workspace_id=workspace_id, credential_id=credential_id)
+        if credential is None:
+            raise ValueError("Model provider credential not found")
+        return credential
+
+    def _audit(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        credential: ModelProviderCredential,
+        action: str,
+    ) -> None:
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action=action,
+            target_type="model_provider_credential",
+            target_id=credential.id,
+            metadata={
+                "name": credential.name,
+                "provider": credential.provider,
+                "base_url": credential.base_url,
+                "default_model": credential.default_model,
+                "is_default": credential.is_default,
+                "status": credential.status,
+            },
         )
 
     def _unset_other_defaults(self, workspace_id: UUID, credential_id: UUID) -> None:

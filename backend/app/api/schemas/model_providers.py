@@ -15,6 +15,18 @@ class ModelProviderCredentialCreateRequest(BaseModel):
     is_default: bool = False
 
 
+class ModelProviderCredentialUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    provider: str | None = Field(default=None, min_length=1, max_length=80)
+    default_model: str | None = Field(default=None, min_length=1, max_length=120)
+    base_url: HttpUrl | None = None
+    is_default: bool | None = None
+
+
+class ModelProviderCredentialRotateKeyRequest(BaseModel):
+    api_key: str = Field(min_length=1, max_length=4096)
+
+
 class ModelProviderCredentialResponse(ORMModel):
     id: UUID
     workspace_id: UUID

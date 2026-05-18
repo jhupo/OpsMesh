@@ -176,6 +176,71 @@ def test_resolve_without_default_falls_back_to_agent_model() -> None:
     assert resolved.model == "gpt-4.1"
 
 
+def test_rotate_key_updates_secret_material_without_changing_metadata() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Rotating",
+        provider="openai",
+        api_key="sk-old",
+        default_model="gpt-4.1",
+        base_url=None,
+        is_default=True,
+    )
+    old_fingerprint = credential.api_key_fingerprint
+
+    rotated = service.rotate_key(
+        workspace_id=workspace.id,
+        credential_id=credential.id,
+        actor_user_id=user.id,
+        api_key="sk-new",
+    )
+    resolved = service.resolve_for_agent(
+        workspace_id=workspace.id,
+        agent_credential_id=credential.id,
+        agent_model="workspace-default",
+    )
+
+    assert rotated.api_key_fingerprint != old_fingerprint
+    assert resolved.api_key == "sk-new"
+    assert resolved.model == "gpt-4.1"
+
+
+def test_disable_removes_credential_from_default_resolution() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Default",
+        provider="openai",
+        api_key="sk-default",
+        default_model="gpt-4.1-mini",
+        base_url=None,
+        is_default=True,
+    )
+
+    disabled = service.disable(
+        workspace_id=workspace.id,
+        credential_id=credential.id,
+        actor_user_id=user.id,
+    )
+    resolved = service.resolve_for_agent(
+        workspace_id=workspace.id,
+        agent_credential_id=None,
+        agent_model="gpt-4.1",
+    )
+
+    assert disabled.status == "disabled"
+    assert disabled.is_default is False
+    assert resolved.credential_id is None
+    assert resolved.model == "gpt-4.1"
+
+
 def _service(session: Session) -> ModelProviderCredentialService:
     return ModelProviderCredentialService(
         session,

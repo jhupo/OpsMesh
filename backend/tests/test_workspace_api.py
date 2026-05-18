@@ -249,6 +249,75 @@ def test_create_agent_can_reference_workspace_model_provider_credential() -> Non
     assert cross_workspace.status_code == 400
 
 
+def test_model_provider_credentials_can_be_updated_rotated_defaulted_and_disabled() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    first = client.post(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials",
+        headers=_headers(owner.id),
+        json={
+            "name": "First",
+            "provider": "openai",
+            "api_key": "sk-first",
+            "default_model": "gpt-4.1",
+            "is_default": True,
+        },
+    )
+    second = client.post(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials",
+        headers=_headers(owner.id),
+        json={
+            "name": "Second",
+            "provider": "openai-compatible",
+            "api_key": "sk-second",
+            "base_url": "https://llm.example.test/v1",
+            "default_model": "provider/default",
+        },
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    updated = client.patch(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials/{second.json()['id']}",
+        headers=_headers(owner.id),
+        json={"name": "Second Updated", "default_model": "provider/new-default"},
+    )
+    rotated = client.post(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials/"
+        f"{second.json()['id']}/rotate-key",
+        headers=_headers(owner.id),
+        json={"api_key": "sk-second-rotated"},
+    )
+    defaulted = client.post(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials/"
+        f"{second.json()['id']}/set-default",
+        headers=_headers(owner.id),
+    )
+    disabled = client.post(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials/"
+        f"{first.json()['id']}/disable",
+        headers=_headers(owner.id),
+    )
+    listed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials",
+        headers=_headers(owner.id),
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "Second Updated"
+    assert rotated.status_code == 200
+    assert rotated.json()["api_key_fingerprint"] != second.json()["api_key_fingerprint"]
+    assert "api_key" not in rotated.json()
+    assert defaulted.status_code == 200
+    assert defaulted.json()["is_default"] is True
+    assert disabled.status_code == 200
+    assert disabled.json()["status"] == "disabled"
+    by_id = {item["id"]: item for item in listed.json()["items"]}
+    assert by_id[first.json()["id"]]["is_default"] is False
+    assert by_id[first.json()["id"]]["status"] == "disabled"
+    assert by_id[second.json()["id"]]["is_default"] is True
+
+
 def test_task_idempotency_key_is_scoped_by_workspace() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner", email="owner@example.com", slug="one")
