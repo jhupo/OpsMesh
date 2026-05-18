@@ -233,6 +233,52 @@ def test_operator_cannot_manage_capabilities() -> None:
     assert listed.status_code == 200
 
 
+def test_private_skills_are_only_visible_to_owner_workspace() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    private_skill = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+        json={"key": "private-writer", "name": "Private Writer", "visibility": "private"},
+    )
+    public_skill = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+        json={"key": "public-writer", "name": "Public Writer", "visibility": "public"},
+    )
+    assert private_skill.status_code == 201
+    assert public_skill.status_code == 201
+
+    owner_skills = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+    )
+    other_skills = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/skills",
+        headers=_headers(other.id),
+    )
+    private_install_denied = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills",
+        headers=_headers(other.id),
+        json={"skill_id": private_skill.json()["id"]},
+    )
+    public_install = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills",
+        headers=_headers(other.id),
+        json={"skill_id": public_skill.json()["id"]},
+    )
+
+    assert {item["key"] for item in owner_skills.json()["items"]} >= {
+        "private-writer",
+        "public-writer",
+    }
+    assert {item["key"] for item in other_skills.json()["items"]} == {"public-writer"}
+    assert private_install_denied.status_code == 404
+    assert public_install.status_code == 201
+
+
 def test_capability_conflicts_return_409_and_keep_session_usable() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

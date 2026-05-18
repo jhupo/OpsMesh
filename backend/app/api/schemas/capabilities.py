@@ -30,6 +30,7 @@ class SkillCreateRequest(BaseModel):
     description: str = ""
     capability_keys: list[str] = Field(default_factory=list)
     manifest: dict[str, object] = Field(default_factory=dict)
+    visibility: str = Field(default="public", pattern="^(private|public)$")
 
 
 class SkillResponse(TimestampedModel):
@@ -39,6 +40,8 @@ class SkillResponse(TimestampedModel):
     description: str
     capability_keys: list[str]
     manifest: dict[str, object]
+    owner_workspace_id: UUID | None
+    visibility: str
     status: str
 
 
@@ -74,6 +77,7 @@ class McpServerCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     server_type: str = Field(default="stdio", max_length=80)
     connection: dict[str, object] = Field(default_factory=dict)
+    visibility: str = Field(default="private", pattern="^(private|public)$")
 
 
 class McpServerResponse(TimestampedModel):
@@ -81,6 +85,7 @@ class McpServerResponse(TimestampedModel):
     name: str
     server_type: str
     connection: dict[str, object]
+    visibility: str
     status: str
     health_status: str
     last_health_check_at: datetime | None

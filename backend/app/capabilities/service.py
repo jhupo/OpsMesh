@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import TypeVar
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
@@ -60,12 +60,27 @@ class CapabilityService:
         self._session.refresh(capability)
         return capability
 
-    def list_skills(self, page: PageParams) -> tuple[list[Skill], int]:
-        statement = select(Skill).where(Skill.status == "active").order_by(Skill.key.asc())
+    def list_skills(
+        self,
+        page: PageParams,
+        workspace_id: UUID | None = None,
+    ) -> tuple[list[Skill], int]:
+        statement = select(Skill).where(Skill.status == "active")
+        if workspace_id is not None:
+            statement = statement.where(
+                or_(
+                    Skill.visibility == "public",
+                    Skill.owner_workspace_id == workspace_id,
+                )
+            )
+        else:
+            statement = statement.where(Skill.visibility == "public")
+        statement = statement.order_by(Skill.key.asc())
         return self._page(statement, page)
 
-    def create_skill(self, data: SkillCreateRequest) -> Skill:
-        skill = Skill(**data.model_dump())
+    def create_skill(self, data: SkillCreateRequest, workspace_id: UUID | None = None) -> Skill:
+        owner_workspace_id = workspace_id if data.visibility == "private" else None
+        skill = Skill(owner_workspace_id=owner_workspace_id, **data.model_dump())
         self._session.add(skill)
         commit_or_raise_conflict(self._session, "Skill version already exists")
         self._session.refresh(skill)
@@ -78,7 +93,11 @@ class CapabilityService:
         data: WorkspaceSkillInstallRequest,
     ) -> WorkspaceSkillInstall:
         skill = self._session.get(Skill, data.skill_id)
-        if skill is None or skill.status != "active":
+        if (
+            skill is None
+            or skill.status != "active"
+            or not self._can_use_skill(workspace_id, skill)
+        ):
             raise ValueError("Skill not found")
         install = WorkspaceSkillInstall(
             workspace_id=workspace_id,
@@ -272,6 +291,9 @@ class CapabilityService:
     ) -> McpToolCallLog:
         if data.mcp_server_id is not None:
             self._require_server(workspace_id, data.mcp_server_id)
+        allow = self._allowed_tool_by_name(workspace_id, data.tool_name)
+        if allow is None:
+            raise ValueError("MCP tool is not allowed for this workspace")
         log = McpToolCallLog(
             workspace_id=workspace_id,
             created_at=datetime.now(UTC),
@@ -281,6 +303,21 @@ class CapabilityService:
         self._session.commit()
         self._session.refresh(log)
         return log
+
+    def _can_use_skill(self, workspace_id: UUID, skill: Skill) -> bool:
+        return skill.visibility == "public" or skill.owner_workspace_id == workspace_id
+
+    def _allowed_tool_by_name(self, workspace_id: UUID, tool_name: str) -> McpToolAllowlist | None:
+        return self._session.scalar(
+            select(McpToolAllowlist)
+            .join(McpServer, McpServer.id == McpToolAllowlist.mcp_server_id)
+            .where(
+                McpToolAllowlist.workspace_id == workspace_id,
+                McpToolAllowlist.tool_name == tool_name,
+                McpToolAllowlist.status == "active",
+                McpServer.status == "active",
+            )
+        )
 
     def _require_server(self, workspace_id: UUID, server_id: UUID) -> McpServer:
         server = self._session.get(McpServer, server_id)

@@ -62,21 +62,21 @@ async def create_capability(
 @router.get("/skills", response_model=PageResponse[SkillResponse])
 async def list_skills(
     page: PageParams = Depends(pagination_params),
-    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[SkillResponse]:
-    items, total = CapabilityService(session).list_skills(page)
+    items, total = CapabilityService(session).list_skills(page, context.workspace.id)
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
 @router.post("/skills", response_model=SkillResponse, status_code=status.HTTP_201_CREATED)
 async def create_skill(
     request: SkillCreateRequest,
-    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
 ) -> SkillResponse:
     try:
-        skill = CapabilityService(session).create_skill(request)
+        skill = CapabilityService(session).create_skill(request, context.workspace.id)
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     return SkillResponse.model_validate(skill)
@@ -111,7 +111,7 @@ async def install_workspace_skill(
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return WorkspaceSkillInstallResponse.model_validate(install)
 
 

@@ -36,6 +36,11 @@ class Skill(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(String, nullable=False, default="")
     capability_keys: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     manifest: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    owner_workspace_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="public")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
 
 
@@ -90,6 +95,7 @@ class McpServer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     server_type: Mapped[str] = mapped_column(String(80), nullable=False, default="stdio")
     connection: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="private")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     health_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     last_health_check_at: Mapped[datetime | None] = mapped_column(nullable=True)
