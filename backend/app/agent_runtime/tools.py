@@ -9,6 +9,7 @@ from backend.app.agent_runtime.contracts import (
 from backend.app.capabilities.execution import (
     McpExecutionRequest,
     McpToolAdapter,
+    McpToolAdapterResolver,
     McpToolExecutionService,
 )
 
@@ -18,7 +19,11 @@ class BackendToolExecutor:
         self._mcp_execution_service = mcp_execution_service
 
     @classmethod
-    def for_mcp_adapter(cls, session: Session, adapter: McpToolAdapter) -> BackendToolExecutor:
+    def for_mcp_adapter(
+        cls,
+        session: Session,
+        adapter: McpToolAdapter | McpToolAdapterResolver,
+    ) -> BackendToolExecutor:
         return cls(McpToolExecutionService(session, adapter))
 
     def execute_tool(

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from time import monotonic
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 from sqlalchemy import func, or_, select
@@ -39,6 +39,11 @@ class McpToolAdapter(Protocol):
         timeout_seconds: int,
     ) -> dict[str, object]:
         """Execute an MCP tool and return a JSON-serializable response."""
+
+
+@runtime_checkable
+class McpToolAdapterResolver(Protocol):
+    def resolve(self, server: McpServer) -> McpToolAdapter: ...
 
 
 class UnconfiguredMcpToolAdapter:
@@ -76,9 +81,13 @@ class McpExecutionResult:
 
 
 class McpToolExecutionService:
-    def __init__(self, session: Session, adapter: McpToolAdapter) -> None:
+    def __init__(
+        self,
+        session: Session,
+        adapter: McpToolAdapter | McpToolAdapterResolver,
+    ) -> None:
         self._session = session
-        self._adapter = adapter
+        self._adapter_or_resolver = adapter
 
     def execute(self, request: McpExecutionRequest) -> McpExecutionResult:
         run = self._require_run(request.workspace_id, request.agent_run_id)
@@ -103,7 +112,7 @@ class McpToolExecutionService:
         try:
             self._enforce_payload_size(request.arguments, policy.max_input_bytes)
             credential_refs = self._credential_refs(request.workspace_id, server.id)
-            response = self._adapter.call(
+            response = self._adapter_for(server).call(
                 server=server,
                 tool_name=request.tool_name,
                 arguments=request.arguments,
@@ -411,6 +420,17 @@ class McpToolExecutionService:
         )
         self._session.flush()
         raise ToolPermissionError(f"MCP tool blocked: {reason}")
+
+    def _adapter_for(self, server: McpServer) -> McpToolAdapter:
+        if isinstance(self._adapter_or_resolver, McpToolAdapterResolver):
+            adapter = self._adapter_or_resolver.resolve(server)
+            if not hasattr(adapter, "call"):
+                raise McpExecutionError(
+                    "MCP adapter resolver returned an invalid adapter",
+                    code="mcp_adapter_invalid",
+                )
+            return adapter
+        return self._adapter_or_resolver
 
 
 @dataclass(frozen=True)
