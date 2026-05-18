@@ -54,7 +54,17 @@ def test_core_domain_round_trip() -> None:
         agent_team_id=team.id,
         title="Q2 Market Analysis",
     )
-    step = TaskStep(workspace_id=workspace.id, task=task, title="Collect sources")
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task=task,
+        title="Collect sources",
+        work_package_id="research-1",
+        required_role="researcher",
+        required_skills=["research"],
+        expected_artifacts=["work_summary"],
+        acceptance_criteria=["Sources are collected."],
+        review_policy={"reviewer": "manager"},
+    )
     run = AgentRun(
         workspace_id=workspace.id,
         task_id=task.id,
@@ -98,6 +108,8 @@ def test_core_domain_round_trip() -> None:
     assert team_member.department == "Research"
     assert team_member.max_concurrent_tasks == 2
     assert team_member.accepts_tasks is True
+    assert step.work_package_id == "research-1"
+    assert step.required_skills == ["research"]
     assert session.query(Task).count() == 1
     assert session.query(AgentRun).count() == 1
     assert session.query(RunEvent).count() == 1

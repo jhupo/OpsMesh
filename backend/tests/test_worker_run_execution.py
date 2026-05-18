@@ -157,10 +157,12 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
         "Analysis execution",
         "Manager summary",
     ]
-    assert steps[1].dependencies["work_package_id"] == "Research-1"
-    assert steps[1].dependencies["required_role"] == "Research"
-    assert steps[2].dependencies["work_package_id"] == "Analysis-2"
-    assert steps[3].dependencies["work_package_id"] == "manager-summary"
+    assert steps[1].work_package_id == "Research-1"
+    assert steps[1].required_role == "Research"
+    assert steps[2].work_package_id == "Analysis-2"
+    assert steps[3].work_package_id == "manager-summary"
+    assert steps[3].expected_artifacts == ["final_delivery"]
+    assert steps[3].review_policy == {"reviewer": "user", "mode": "final_acceptance"}
     assert [step.status for step in steps] == ["completed"] * 4
     assert [step.result_summary for step in steps] == ["fake_run_completed"] * 4
     assert [run.agent_profile_id for run in ordered_runs] == [
@@ -181,13 +183,15 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
     assert task.final_output["final_output"] == "fake_run_completed"
     assert task.final_output["team_orchestration"] == {
         "steps": [
-            {
-                "task_step_id": str(step.id),
-                "title": step.title,
-                "status": "completed",
-                "agent_profile_id": str(step.assigned_agent_profile_id),
-                "result_summary": "fake_run_completed",
-            }
+                {
+                    "task_step_id": str(step.id),
+                    "title": step.title,
+                    "status": "completed",
+                    "work_package_id": step.work_package_id,
+                    "required_role": step.required_role,
+                    "agent_profile_id": str(step.assigned_agent_profile_id),
+                    "result_summary": "fake_run_completed",
+                }
             for step in steps
         ]
     }
@@ -334,11 +338,12 @@ def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
         original_developer.id,
         manager.id,
     ]
-    assert [step.dependencies["work_package_id"] for step in steps] == [
+    assert [step.work_package_id for step in steps] == [
         "manager-planning",
         "frontend_engineer-1",
         "manager-summary",
     ]
+    assert steps[1].required_role == "frontend_engineer"
     assert new_developer.id not in {run.agent_profile_id for run in runs}
     assert task.status == TaskStatus.COMPLETED.value
 

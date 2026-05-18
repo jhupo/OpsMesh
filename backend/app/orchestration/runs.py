@@ -564,6 +564,12 @@ class RunOrchestrationService:
                 workspace_id=task.workspace_id,
                 task_id=task.id,
                 assigned_agent_profile_id=team.manager_agent_profile_id,
+                work_package_id="manager-planning",
+                required_role="project_manager",
+                required_skills=["planning", "coordination"],
+                expected_artifacts=["project_plan"],
+                acceptance_criteria=["The team has a clear execution plan."],
+                review_policy={"reviewer": "manager", "mode": "self_review"},
                 title="Manager planning",
                 description="Clarify the goal, split responsibilities, and prepare the team plan.",
                 status=STEP_STATUS_QUEUED,
@@ -583,6 +589,14 @@ class RunOrchestrationService:
                 workspace_id=task.workspace_id,
                 task_id=task.id,
                 assigned_agent_profile_id=member.agent_profile_id,
+                work_package_id=f"{member.team_role}-{index}",
+                required_role=member.team_role,
+                required_skills=[
+                    str(skill) for skill in member.skill_weights if isinstance(skill, str)
+                ],
+                expected_artifacts=["work_summary"],
+                acceptance_criteria=["The work package produces a clear result summary."],
+                review_policy={"reviewer": "manager", "mode": "manager_review"},
                 title=f"{member.team_role} execution",
                 description=f"Complete the assigned team role work for {team.name}.",
                 status=STEP_STATUS_QUEUED,
@@ -600,6 +614,14 @@ class RunOrchestrationService:
                 workspace_id=task.workspace_id,
                 task_id=task.id,
                 assigned_agent_profile_id=team.manager_agent_profile_id,
+                work_package_id="manager-summary",
+                required_role="project_manager",
+                required_skills=["review", "synthesis"],
+                expected_artifacts=["final_delivery"],
+                acceptance_criteria=[
+                    "The final answer integrates all completed work packages."
+                ],
+                review_policy={"reviewer": "user", "mode": "final_acceptance"},
                 title="Manager summary",
                 description=(
                     "Review specialist outputs, reconcile issues, and produce the final answer."
@@ -645,6 +667,12 @@ class RunOrchestrationService:
                 workspace_id=task.workspace_id,
                 task_id=task.id,
                 assigned_agent_profile_id=manager_agent_profile_id,
+                work_package_id="manager-planning",
+                required_role="project_manager",
+                required_skills=["planning", "coordination"],
+                expected_artifacts=["project_plan"],
+                acceptance_criteria=["The team has a clear execution plan."],
+                review_policy={"reviewer": "manager", "mode": "self_review"},
                 title="Manager planning",
                 description="Clarify the goal, split responsibilities, and prepare the team plan.",
                 status=STEP_STATUS_QUEUED,
@@ -675,6 +703,12 @@ class RunOrchestrationService:
                 workspace_id=task.workspace_id,
                 task_id=task.id,
                 assigned_agent_profile_id=agent_profile_id,
+                work_package_id=f"{team_role}-{index}",
+                required_role=team_role,
+                required_skills=_string_list_from_mapping_keys(member.get("skill_weights")),
+                expected_artifacts=["work_summary"],
+                acceptance_criteria=["The work package produces a clear result summary."],
+                review_policy={"reviewer": "manager", "mode": "manager_review"},
                 title=f"{team_role} execution",
                 description=f"Complete the assigned team role work for {team_name}.",
                 status=STEP_STATUS_QUEUED,
@@ -692,6 +726,14 @@ class RunOrchestrationService:
                 workspace_id=task.workspace_id,
                 task_id=task.id,
                 assigned_agent_profile_id=manager_agent_profile_id,
+                work_package_id="manager-summary",
+                required_role="project_manager",
+                required_skills=["review", "synthesis"],
+                expected_artifacts=["final_delivery"],
+                acceptance_criteria=[
+                    "The final answer integrates all completed work packages."
+                ],
+                review_policy={"reviewer": "user", "mode": "final_acceptance"},
                 title="Manager summary",
                 description=(
                     "Review specialist outputs, reconcile issues, and produce the final answer."
@@ -739,6 +781,12 @@ class RunOrchestrationService:
                 workspace_id=task.workspace_id,
                 task_id=task.id,
                 assigned_agent_profile_id=_uuid_or_none(package.get("assigned_agent_profile_id")),
+                work_package_id=package_id,
+                required_role=_optional_string(package.get("required_role")),
+                required_skills=_string_list(package.get("required_skills")),
+                expected_artifacts=_string_list(package.get("expected_artifacts")),
+                acceptance_criteria=_string_list(package.get("acceptance_criteria")),
+                review_policy=_dict_or_empty(package.get("review_policy")),
                 title=str(package.get("title") or "Work package"),
                 description=str(package.get("description") or ""),
                 status=STEP_STATUS_QUEUED,
@@ -916,6 +964,8 @@ class RunOrchestrationService:
                         "task_step_id": str(step.id),
                         "title": step.title,
                         "status": step.status,
+                        "work_package_id": step.work_package_id,
+                        "required_role": step.required_role,
                         "agent_profile_id": str(step.assigned_agent_profile_id)
                         if step.assigned_agent_profile_id is not None
                         else None,
@@ -961,3 +1011,23 @@ def _int_or_default(value: object, default: int) -> int:
     if isinstance(value, int):
         return value
     return default
+
+
+def _optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _string_list_from_mapping_keys(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    return [key for key in value if isinstance(key, str)]
+
+
+def _dict_or_empty(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}

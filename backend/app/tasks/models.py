@@ -70,6 +70,12 @@ class TaskStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("agent_profiles.id", ondelete="SET NULL"),
         nullable=True,
     )
+    work_package_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    required_role: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    required_skills: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    expected_artifacts: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    acceptance_criteria: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    review_policy: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     title: Mapped[str] = mapped_column(String(240), nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False, default="")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")

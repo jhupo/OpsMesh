@@ -28,7 +28,7 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.tasks.models import Task
+from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
@@ -68,6 +68,20 @@ def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None
             max_concurrent_tasks=2,
         )
     )
+    session.add(
+        TaskStep(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            assigned_agent_profile_id=agent.id,
+            work_package_id="research-1",
+            required_role="researcher",
+            required_skills=["research"],
+            expected_artifacts=["work_summary"],
+            acceptance_criteria=["Summary is complete."],
+            review_policy={"reviewer": "manager"},
+            title="Research",
+        )
+    )
     session.commit()
 
     response = client.post(
@@ -92,6 +106,12 @@ def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None
     assert payload["tasks"][0]["project_plan"] == {
         "work_packages": [{"package_id": "research"}]
     }
+    assert payload["task_steps"][0]["work_package_id"] == "research-1"
+    assert payload["task_steps"][0]["required_role"] == "researcher"
+    assert payload["task_steps"][0]["required_skills"] == ["research"]
+    assert payload["task_steps"][0]["expected_artifacts"] == ["work_summary"]
+    assert payload["task_steps"][0]["acceptance_criteria"] == ["Summary is complete."]
+    assert payload["task_steps"][0]["review_policy"] == {"reviewer": "manager"}
     assert payload["agents"][0]["id"] == str(agent.id)
     assert payload["team_members"][0]["department"] == "Research"
     assert payload["team_members"][0]["position_title"] == "Research Specialist"
@@ -165,6 +185,20 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
             max_concurrent_tasks=2,
         )
     )
+    session.add(
+        TaskStep(
+            workspace_id=source_workspace.id,
+            task_id=task.id,
+            assigned_agent_profile_id=agent.id,
+            work_package_id="research-1",
+            required_role="researcher",
+            required_skills=["research"],
+            expected_artifacts=["work_summary"],
+            acceptance_criteria=["Summary is complete."],
+            review_policy={"reviewer": "manager"},
+            title="Research",
+        )
+    )
     session.commit()
     export_response = client.post(
         f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
@@ -217,6 +251,12 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
             Task.title == "Imported Q2 Research",
         )
     )
+    imported_step = session.scalar(
+        select(TaskStep).where(
+            TaskStep.workspace_id == target_workspace.id,
+            TaskStep.work_package_id == "research-1",
+        )
+    )
     imported_member = session.scalar(
         select(AgentTeamMember).where(
             AgentTeamMember.workspace_id == target_workspace.id,
@@ -239,6 +279,12 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
     assert imported_task is not None
     assert imported_task.team_snapshot == {"team": {"name": "Research Team"}}
     assert imported_task.project_plan == {"work_packages": [{"package_id": "research"}]}
+    assert imported_step is not None
+    assert imported_step.required_role == "researcher"
+    assert imported_step.required_skills == ["research"]
+    assert imported_step.expected_artifacts == ["work_summary"]
+    assert imported_step.acceptance_criteria == ["Summary is complete."]
+    assert imported_step.review_policy == {"reviewer": "manager"}
     assert imported_task.status == "draft"
     assert audit is not None
     assert audit.user_id == target_user.id
