@@ -464,6 +464,46 @@ Deliverables:
 - hired agents do not inherit source workspace data or credentials
 - hired agents can be assigned to a department/team role
 
+## Phase 20: Durable Multi-Agent Orchestration
+
+Goal: turn a user task into a traceable team workflow instead of a single opaque agent run.
+
+Tasks:
+
+- [x] Expand team tasks into ordered `task_steps`.
+- [x] Assign each step to the manager or specialist agent profile.
+- [x] Create the first queued `agent_run` from the step plan.
+- [x] Advance to the next eligible step when a run completes.
+- [x] Keep the task running until all team steps finish.
+- [x] Store each step result for task observation and correction.
+- [x] Build final task output from completed step summaries.
+- [x] Add local unit tests for manager -> specialists -> manager summary orchestration.
+- [ ] Add later support for parallel specialist branches.
+- [ ] Add later support for manager-generated dynamic plans.
+
+Deliverables:
+
+- a team task can execute across multiple agents
+- each agent contribution is visible as a task step and run
+- worker recovery, retry, and task status remain consistent
+
+## Phase 21: Remaining Backend Hardening
+
+Goal: close the gaps needed before this can feel like a mature commercial backend.
+
+Tasks:
+
+- [ ] Connect MCP skills to the real runtime execution path.
+- [ ] Add private/public skill marketplace workflows beyond catalog visibility.
+- [ ] Add task observation APIs for different team domains such as AIGC, novels, research, and software.
+- [ ] Add structured correction flows that can target one step, one agent, or the whole task.
+- [ ] Improve self-hosted machine policy controls, quotas, and revocation audit trails.
+- [ ] Add import conflict previews for workspace archives.
+- [ ] Add stricter Docker runtime quota enforcement and cleanup verification.
+- [ ] Add per-agent model provider audit events and fallback handling.
+- [ ] Add operations dashboards APIs for worker capacity, queue latency, and runtime saturation.
+- [ ] Add security review tests around account-scoped skill/tool invocation.
+
 ## Suggested MVP Cut
 
 Minimum backend demo:

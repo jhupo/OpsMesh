@@ -19,8 +19,9 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.secrets.service import SecretEncryptionService
-from backend.app.tasks.models import Task
+from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.status import TaskStatus
+from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue, consume_once
@@ -63,6 +64,169 @@ def test_task_start_creates_queued_run_and_worker_completes_fake_run() -> None:
     assert stored_task is not None
     assert stored_task.status == TaskStatus.COMPLETED.value
     assert [event.event_type for event in events] == ["run.started", "run.completed"]
+
+
+def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="Manager",
+        role="manager",
+        instructions="Plan and review the team work.",
+        model="manager-model",
+    )
+    researcher = AgentProfile(
+        workspace_id=workspace.id,
+        name="Researcher",
+        role="researcher",
+        instructions="Collect market facts.",
+        model="researcher-model",
+    )
+    analyst = AgentProfile(
+        workspace_id=workspace.id,
+        name="Analyst",
+        role="analyst",
+        instructions="Analyze the collected facts.",
+        model="analyst-model",
+    )
+    session.add_all([manager, researcher, analyst])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Market Team",
+        team_type="research",
+        manager_agent_profile_id=manager.id,
+    )
+    session.add(team)
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=researcher.id,
+                team_role="Research",
+                order_index=0,
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=analyst.id,
+                team_role="Analysis",
+                order_index=1,
+            ),
+        ]
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Q2 market analysis",
+        description="Produce a concise market analysis.",
+    )
+    session.add(task)
+    session.flush()
+
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+    orchestration = RunOrchestrationService(session, queue)
+    first_run = orchestration.create_queued_run_for_task(task)
+    orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
+    session.commit()
+
+    handler = WorkerJobHandler(session, queue)
+    handled_jobs = 0
+    while consume_once(queue, handler.handle):
+        handled_jobs += 1
+
+    steps = session.scalars(
+        select(TaskStep).where(TaskStep.task_id == task.id).order_by(TaskStep.order_index)
+    ).all()
+    runs = session.scalars(select(AgentRun).where(AgentRun.task_id == task.id)).all()
+    runs_by_step_id = {run.task_step_id: run for run in runs}
+    ordered_runs = [runs_by_step_id[step.id] for step in steps]
+
+    assert handled_jobs == 4
+    assert [step.title for step in steps] == [
+        "Manager planning",
+        "Research execution",
+        "Analysis execution",
+        "Manager summary",
+    ]
+    assert [step.status for step in steps] == ["completed"] * 4
+    assert [step.result_summary for step in steps] == ["fake_run_completed"] * 4
+    assert [run.agent_profile_id for run in ordered_runs] == [
+        manager.id,
+        researcher.id,
+        analyst.id,
+        manager.id,
+    ]
+    assert [run.model for run in ordered_runs] == [
+        "manager-model",
+        "researcher-model",
+        "analyst-model",
+        "manager-model",
+    ]
+    assert [run.status for run in ordered_runs] == [RunStatus.COMPLETED.value] * 4
+    assert task.status == TaskStatus.COMPLETED.value
+    assert task.final_output is not None
+    assert task.final_output["final_output"] == "fake_run_completed"
+    assert task.final_output["team_orchestration"] == {
+        "steps": [
+            {
+                "task_step_id": str(step.id),
+                "title": step.title,
+                "status": "completed",
+                "agent_profile_id": str(step.assigned_agent_profile_id),
+                "result_summary": "fake_run_completed",
+            }
+            for step in steps
+        ]
+    }
+
+
+def test_create_queued_run_for_task_reuses_active_team_run() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="Manager",
+        role="manager",
+        instructions="Plan and review.",
+    )
+    session.add(manager)
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Solo Managed Team",
+        team_type="general",
+        manager_agent_profile_id=manager.id,
+    )
+    session.add(team)
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Prepare plan",
+    )
+    session.add(task)
+    session.flush()
+
+    orchestration = RunOrchestrationService(session)
+    first_run = orchestration.create_queued_run_for_task(task)
+    second_run = orchestration.create_queued_run_for_task(task)
+
+    runs = session.scalars(select(AgentRun).where(AgentRun.task_id == task.id)).all()
+    steps = session.scalars(select(TaskStep).where(TaskStep.task_id == task.id)).all()
+
+    assert second_run.id == first_run.id
+    assert len(runs) == 1
+    assert len(steps) == 1
 
 
 def test_worker_rejects_workspace_mismatch() -> None:

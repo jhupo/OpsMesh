@@ -19,11 +19,18 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus, require_run_transition
 from backend.app.secrets.service import SecretEncryptionService
-from backend.app.tasks.models import Task
+from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
+from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
+
+STEP_STATUS_QUEUED = "queued"
+STEP_STATUS_RUNNING = "running"
+STEP_STATUS_COMPLETED = "completed"
+STEP_STATUS_FAILED = "failed"
+STEP_STATUS_CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True)
@@ -45,14 +52,23 @@ class RunOrchestrationService:
         self._settings = settings
 
     def create_queued_run_for_task(self, task: Task) -> AgentRun:
-        run = AgentRun(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
-            status=RunStatus.QUEUED.value,
-            input={"task_id": str(task.id), "title": task.title},
-        )
+        existing_run = self._existing_active_task_run(task)
+        if existing_run is not None:
+            return existing_run
+
+        first_team_step = self._create_team_step_plan(task)
+        if first_team_step is None:
+            run = AgentRun(
+                workspace_id=task.workspace_id,
+                task_id=task.id,
+                status=RunStatus.QUEUED.value,
+                input={"task_id": str(task.id), "title": task.title},
+            )
+            self._session.add(run)
+        else:
+            run = self._create_run_for_step(task, first_team_step)
+
         TaskStateService().transition(task, TaskStatus.QUEUED)
-        self._session.add(run)
         self._session.flush()
         return run
 
@@ -248,7 +264,7 @@ class RunOrchestrationService:
                 self._session.commit()
                 raise
 
-            self._mark_run_completed(run, result.final_output)
+            self._mark_run_completed(run, result.final_output, job.requested_by_user_id)
             self._session.commit()
             self._session.refresh(run)
             return run
@@ -268,8 +284,18 @@ class RunOrchestrationService:
             task = self._session.get(Task, run.task_id)
             if task is not None:
                 TaskStateService().transition(task, TaskStatus.RUNNING)
+        if run.task_step_id is not None:
+            step = self._session.get(TaskStep, run.task_step_id)
+            if step is not None and step.workspace_id == run.workspace_id:
+                step.status = STEP_STATUS_RUNNING
+                self._append_event(run, "task_step.started", step.title)
 
-    def _mark_run_completed(self, run: AgentRun, final_output: str) -> None:
+    def _mark_run_completed(
+        self,
+        run: AgentRun,
+        final_output: str,
+        requested_by_user_id: UUID | None,
+    ) -> None:
         require_run_transition(RunStatus(run.status), RunStatus.COMPLETED)
         run.status = RunStatus.COMPLETED.value
         run.output = {"final_output": final_output}
@@ -279,11 +305,20 @@ class RunOrchestrationService:
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
             if task is not None:
+                if run.task_step_id is not None:
+                    self._mark_step_completed(run, final_output)
+                    next_run = self._create_and_enqueue_next_step_run(
+                        task,
+                        requested_by_user_id=requested_by_user_id,
+                    )
+                    if next_run is not None:
+                        return
+
                 TaskStateService().transition(
                     task,
                     TaskStatus.COMPLETED,
                     completed_at=run.completed_at,
-                    final_output=run.output,
+                    final_output=self._final_output_for_task(task, fallback=run.output),
                 )
 
     def _mark_run_failed(self, run: AgentRun, exc: Exception) -> None:
@@ -302,6 +337,10 @@ class RunOrchestrationService:
                     TaskStatus.FAILED,
                     completed_at=run.completed_at,
                 )
+        if run.task_step_id is not None:
+            step = self._session.get(TaskStep, run.task_step_id)
+            if step is not None and step.workspace_id == run.workspace_id:
+                step.status = STEP_STATUS_FAILED
 
     def _mark_run_recovered_failed(self, run: AgentRun) -> None:
         require_run_transition(RunStatus(run.status), RunStatus.FAILED)
@@ -324,6 +363,10 @@ class RunOrchestrationService:
         if task is None or TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
             return
         TaskStateService().transition(task, TaskStatus.FAILED, completed_at=run.completed_at)
+        if run.task_step_id is not None:
+            step = self._session.get(TaskStep, run.task_step_id)
+            if step is not None and step.workspace_id == run.workspace_id:
+                step.status = STEP_STATUS_FAILED
 
     def _mark_run_cancelled(self, run: AgentRun, *, completed_at: datetime) -> None:
         require_run_transition(RunStatus(run.status), RunStatus.CANCELLED)
@@ -335,6 +378,10 @@ class RunOrchestrationService:
         }
         run.completed_at = completed_at
         self._append_event(run, "run.cancelled", "Run was cancelled by a workspace user")
+        if run.task_step_id is not None:
+            step = self._session.get(TaskStep, run.task_step_id)
+            if step is not None and step.workspace_id == run.workspace_id:
+                step.status = STEP_STATUS_CANCELLED
 
     def _append_event(self, run: AgentRun, event_type: str, message: str) -> RunEvent:
         next_sequence = (
@@ -429,7 +476,19 @@ class RunOrchestrationService:
         task = self._session.get(Task, run.task_id) if run.task_id is not None else None
         if task is None:
             return str(run.input)
-        return f"{task.title}\n\n{task.description}".strip()
+
+        parts = [task.title, task.description]
+        if run.task_step_id is not None:
+            step = self._session.get(TaskStep, run.task_step_id)
+            if step is not None and step.workspace_id == run.workspace_id:
+                parts.append(f"Current step: {step.title}\n{step.description}".strip())
+                previous_summaries = self._completed_step_summaries(
+                    task.id,
+                    before=step.order_index,
+                )
+                if previous_summaries:
+                    parts.append("Completed step summaries:\n" + "\n".join(previous_summaries))
+        return "\n\n".join(part for part in parts if part).strip()
 
     def _allowed_tools_for_profile(self, profile: AgentProfile) -> tuple[str, ...]:
         tool_policy = profile.tool_policy if isinstance(profile.tool_policy, dict) else {}
@@ -444,6 +503,258 @@ class RunOrchestrationService:
         if self._queue is not None:
             return self._queue.run_lock(str(run.workspace_id), str(run.id))
         return _NoopLock()
+
+    def _create_team_step_plan(self, task: Task) -> TaskStep | None:
+        if task.agent_team_id is None:
+            return None
+        if self._session.scalar(
+            select(func.count(TaskStep.id)).where(
+                TaskStep.workspace_id == task.workspace_id,
+                TaskStep.task_id == task.id,
+            )
+        ):
+            return self._next_eligible_step(task.id, task.workspace_id)
+
+        team = self._session.scalar(
+            select(AgentTeam).where(
+                AgentTeam.workspace_id == task.workspace_id,
+                AgentTeam.id == task.agent_team_id,
+                AgentTeam.status == "active",
+            )
+        )
+        if team is None:
+            return None
+
+        members = self._session.scalars(
+            select(AgentTeamMember)
+            .where(
+                AgentTeamMember.workspace_id == task.workspace_id,
+                AgentTeamMember.agent_team_id == team.id,
+            )
+            .order_by(AgentTeamMember.order_index.asc(), AgentTeamMember.team_role.asc())
+        ).all()
+        if team.manager_agent_profile_id is None and not members:
+            return None
+
+        first_step: TaskStep | None = None
+        manager_step: TaskStep | None = None
+        if team.manager_agent_profile_id is not None:
+            manager_step = TaskStep(
+                workspace_id=task.workspace_id,
+                task_id=task.id,
+                assigned_agent_profile_id=team.manager_agent_profile_id,
+                title="Manager planning",
+                description="Clarify the goal, split responsibilities, and prepare the team plan.",
+                status=STEP_STATUS_QUEUED,
+                order_index=0,
+                dependencies={},
+            )
+            self._session.add(manager_step)
+            self._session.flush([manager_step])
+            first_step = manager_step
+
+        specialist_steps: list[TaskStep] = []
+        manager_dependency = (
+            {"after_step_ids": [str(manager_step.id)]} if manager_step is not None else {}
+        )
+        for index, member in enumerate(members, start=1):
+            step = TaskStep(
+                workspace_id=task.workspace_id,
+                task_id=task.id,
+                assigned_agent_profile_id=member.agent_profile_id,
+                title=f"{member.team_role} execution",
+                description=f"Complete the assigned team role work for {team.name}.",
+                status=STEP_STATUS_QUEUED,
+                order_index=100 + index,
+                dependencies=manager_dependency,
+            )
+            self._session.add(step)
+            specialist_steps.append(step)
+            if first_step is None:
+                first_step = step
+        self._session.flush(specialist_steps)
+
+        if team.manager_agent_profile_id is not None and specialist_steps:
+            summary_step = TaskStep(
+                workspace_id=task.workspace_id,
+                task_id=task.id,
+                assigned_agent_profile_id=team.manager_agent_profile_id,
+                title="Manager summary",
+                description=(
+                    "Review specialist outputs, reconcile issues, and produce the final answer."
+                ),
+                status=STEP_STATUS_QUEUED,
+                order_index=1_000,
+                dependencies={"after_step_ids": [str(step.id) for step in specialist_steps]},
+            )
+            self._session.add(summary_step)
+
+        self._session.flush()
+        return first_step
+
+    def _existing_active_task_run(self, task: Task) -> AgentRun | None:
+        return self._session.scalar(
+            select(AgentRun)
+            .where(
+                AgentRun.workspace_id == task.workspace_id,
+                AgentRun.task_id == task.id,
+                AgentRun.status.in_(
+                    [
+                        RunStatus.QUEUED.value,
+                        RunStatus.RUNNING.value,
+                        RunStatus.WAITING_APPROVAL.value,
+                    ]
+                ),
+            )
+            .order_by(AgentRun.created_at.asc())
+        )
+
+    def _create_run_for_step(self, task: Task, step: TaskStep) -> AgentRun:
+        profile = (
+            self._session.get(AgentProfile, step.assigned_agent_profile_id)
+            if step.assigned_agent_profile_id is not None
+            else None
+        )
+        run = AgentRun(
+            workspace_id=task.workspace_id,
+            task_id=task.id,
+            task_step_id=step.id,
+            agent_profile_id=step.assigned_agent_profile_id,
+            status=RunStatus.QUEUED.value,
+            input={
+                "task_id": str(task.id),
+                "task_step_id": str(step.id),
+                "title": task.title,
+                "step_title": step.title,
+                "team_orchestration": True,
+            },
+            model=profile.model if profile is not None else None,
+        )
+        self._session.add(run)
+        self._session.flush([run])
+        return run
+
+    def _mark_step_completed(self, run: AgentRun, final_output: str) -> None:
+        if run.task_step_id is None:
+            return
+        step = self._session.get(TaskStep, run.task_step_id)
+        if step is None or step.workspace_id != run.workspace_id:
+            return
+        step.status = STEP_STATUS_COMPLETED
+        step.result_summary = final_output
+        self._append_event(run, "task_step.completed", step.title)
+
+    def _create_and_enqueue_next_step_run(
+        self,
+        task: Task,
+        *,
+        requested_by_user_id: UUID | None,
+    ) -> AgentRun | None:
+        next_step = self._next_eligible_step(task.id, task.workspace_id)
+        if next_step is None:
+            return None
+
+        next_run = self._create_run_for_step(task, next_step)
+        self.enqueue_run(next_run, requested_by_user_id)
+        return next_run
+
+    def _next_eligible_step(self, task_id: UUID, workspace_id: UUID) -> TaskStep | None:
+        queued_steps = self._session.scalars(
+            select(TaskStep)
+            .where(
+                TaskStep.workspace_id == workspace_id,
+                TaskStep.task_id == task_id,
+                TaskStep.status == STEP_STATUS_QUEUED,
+            )
+            .order_by(TaskStep.order_index.asc())
+        ).all()
+        for step in queued_steps:
+            if self._dependencies_satisfied(step):
+                return step
+        return None
+
+    def _dependencies_satisfied(self, step: TaskStep) -> bool:
+        dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
+        raw_step_ids = dependencies.get("after_step_ids", [])
+        if not isinstance(raw_step_ids, list) or not raw_step_ids:
+            return True
+
+        dependency_ids: list[UUID] = []
+        for raw_step_id in raw_step_ids:
+            try:
+                dependency_ids.append(UUID(str(raw_step_id)))
+            except ValueError:
+                return False
+
+        incomplete_count = self._session.scalar(
+            select(func.count(TaskStep.id)).where(
+                TaskStep.workspace_id == step.workspace_id,
+                TaskStep.id.in_(dependency_ids),
+                TaskStep.status != STEP_STATUS_COMPLETED,
+            )
+        )
+        return int(incomplete_count or 0) == 0
+
+    def _completed_step_summaries(self, task_id: UUID, *, before: int) -> list[str]:
+        completed_steps = self._session.scalars(
+            select(TaskStep)
+            .where(
+                TaskStep.task_id == task_id,
+                TaskStep.status == STEP_STATUS_COMPLETED,
+                TaskStep.order_index < before,
+                TaskStep.result_summary.is_not(None),
+            )
+            .order_by(TaskStep.order_index.asc())
+        ).all()
+        return [
+            f"- {step.title}: {step.result_summary}"
+            for step in completed_steps
+            if step.result_summary
+        ]
+
+    def _final_output_for_task(
+        self,
+        task: Task,
+        *,
+        fallback: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        completed_steps = self._session.scalars(
+            select(TaskStep)
+            .where(
+                TaskStep.workspace_id == task.workspace_id,
+                TaskStep.task_id == task.id,
+                TaskStep.status == STEP_STATUS_COMPLETED,
+            )
+            .order_by(TaskStep.order_index.asc())
+        ).all()
+        if not completed_steps:
+            return fallback
+
+        final_summary = next(
+            (
+                step.result_summary
+                for step in reversed(completed_steps)
+                if step.result_summary is not None
+            ),
+            None,
+        )
+        return {
+            "final_output": final_summary,
+            "team_orchestration": {
+                "steps": [
+                    {
+                        "task_step_id": str(step.id),
+                        "title": step.title,
+                        "status": step.status,
+                        "agent_profile_id": str(step.assigned_agent_profile_id)
+                        if step.assigned_agent_profile_id is not None
+                        else None,
+                        "result_summary": step.result_summary,
+                    }
+                    for step in completed_steps
+                ],
+            },
+        }
 
 
 class _NoopLock:
