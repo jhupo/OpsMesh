@@ -6,6 +6,8 @@ This document breaks the backend roadmap into actionable engineering tasks, from
 
 Use it as the implementation checklist after the planning phase.
 
+For gaps that are still incomplete or only implemented as a basic foundation, see [Backend Completion Plan](backend-completion-plan.md). That companion document expands each remaining item into implementation scope, API/data changes, tests, and acceptance criteria.
+
 ## Phase 1: Backend Project Foundation
 
 Goal: create a clean backend skeleton that can run locally.

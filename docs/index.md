@@ -91,6 +91,10 @@ The backend must provide:
 
    Production-oriented backend process, Docker, Compose, and environment guidance.
 
+18. [Backend Completion Plan](backend-completion-plan.md)
+
+   Detailed list of backend areas that are incomplete or only implemented as a basic foundation, with implementation tasks and acceptance criteria.
+
 ## Non-Negotiable Backend Rules
 
 - Workspace isolation is mandatory.

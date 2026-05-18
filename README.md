@@ -65,6 +65,7 @@ Frontend work is intentionally not the current focus. The current priority is a 
 - [Self-Hosted Runtimes](docs/self-hosted-runtimes.md)
 - [MVP Spec](docs/mvp-spec.md)
 - [Roadmap](docs/roadmap.md)
+- [Backend Completion Plan](docs/backend-completion-plan.md)
 - [Decisions](docs/decisions.md)
 - [Backend Deployment](docs/backend-deployment.md)
 
