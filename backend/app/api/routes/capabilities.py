@@ -22,6 +22,7 @@ from backend.app.api.schemas.capabilities import (
     ToolGroupResponse,
     WorkspaceSkillInstallRequest,
     WorkspaceSkillInstallResponse,
+    WorkspaceSkillUpgradeRequest,
 )
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
@@ -110,6 +111,48 @@ async def install_workspace_skill(
         )
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return WorkspaceSkillInstallResponse.model_validate(install)
+
+
+@router.post(
+    "/workspace-skills/{install_id}/upgrade",
+    response_model=WorkspaceSkillInstallResponse,
+)
+async def upgrade_workspace_skill(
+    install_id: UUID,
+    request: WorkspaceSkillUpgradeRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceSkillInstallResponse:
+    try:
+        install = CapabilityService(session).upgrade_skill_install(
+            context.workspace.id,
+            context.user.user_id,
+            install_id,
+            request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return WorkspaceSkillInstallResponse.model_validate(install)
+
+
+@router.post(
+    "/workspace-skills/{install_id}/disable",
+    response_model=WorkspaceSkillInstallResponse,
+)
+async def disable_workspace_skill(
+    install_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceSkillInstallResponse:
+    try:
+        install = CapabilityService(session).disable_skill_install(
+            context.workspace.id,
+            context.user.user_id,
+            install_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return WorkspaceSkillInstallResponse.model_validate(install)

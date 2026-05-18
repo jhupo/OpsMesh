@@ -505,7 +505,7 @@ Tasks:
 - [ ] Add private/public skill marketplace workflows beyond catalog visibility.
   - [x] Persist workspace-local skill install snapshots with installed metadata and source checksum.
   - [x] Include installed skill provenance in run authorization snapshots.
-  - [ ] Add skill upgrade and disable workflows.
+  - [x] Add skill upgrade and disable workflows.
 - [ ] Add task observation APIs for different team domains such as AIGC, novels, research, and software.
 - [ ] Add structured correction flows that can target one step, one agent, or the whole task.
 - [ ] Improve self-hosted machine policy controls, quotas, and revocation audit trails.

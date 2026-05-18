@@ -332,6 +332,79 @@ def test_workspace_skill_install_snapshots_public_skill_source() -> None:
     assert body["config"] == {"quality": "high"}
 
 
+def test_workspace_skill_install_can_upgrade_and_disable_without_source_access() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    v1 = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+        json={
+            "key": "writer",
+            "name": "Writer",
+            "version": "1.0.0",
+            "manifest": {"prompt": "v1"},
+            "visibility": "public",
+        },
+    )
+    v2 = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+        json={
+            "key": "writer",
+            "name": "Writer Pro",
+            "version": "2.0.0",
+            "manifest": {"prompt": "v2"},
+            "visibility": "public",
+        },
+    )
+    installed = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills",
+        headers=_headers(other.id),
+        json={"skill_id": v1.json()["id"], "config": {"tone": "clear"}},
+    )
+
+    upgraded = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills/"
+        f"{installed.json()['id']}/upgrade",
+        headers=_headers(other.id),
+        json={"skill_id": v2.json()["id"], "config": {"tone": "bold"}},
+    )
+    disabled = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills/"
+        f"{installed.json()['id']}/disable",
+        headers=_headers(other.id),
+    )
+    listed = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills",
+        headers=_headers(other.id),
+    )
+    foreign_disable = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/workspace-skills/"
+        f"{installed.json()['id']}/disable",
+        headers=_headers(owner.id),
+    )
+
+    assert upgraded.status_code == 200
+    assert upgraded.json()["installed_name"] == "Writer Pro"
+    assert upgraded.json()["installed_version"] == "2.0.0"
+    assert upgraded.json()["installed_manifest"] == {"prompt": "v2"}
+    assert upgraded.json()["config"] == {"tone": "bold"}
+    assert disabled.status_code == 200
+    assert disabled.json()["status"] == "disabled"
+    assert listed.status_code == 200
+    assert listed.json()["items"] == []
+    assert foreign_disable.status_code == 404
+
+    audit = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/operations/audit-events",
+        headers=_headers(other.id),
+    )
+    actions = {item["action"] for item in audit.json()["items"]}
+    assert {"skill_install.upgraded", "skill_install.disabled"} <= actions
+
+
 def test_capability_conflicts_return_409_and_keep_session_usable() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

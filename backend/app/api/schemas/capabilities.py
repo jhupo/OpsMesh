@@ -50,6 +50,11 @@ class WorkspaceSkillInstallRequest(BaseModel):
     config: dict[str, object] = Field(default_factory=dict)
 
 
+class WorkspaceSkillUpgradeRequest(BaseModel):
+    skill_id: UUID
+    config: dict[str, object] | None = None
+
+
 class WorkspaceSkillInstallResponse(TimestampedModel):
     workspace_id: UUID
     skill_id: UUID

@@ -84,21 +84,21 @@ Current state:
 - Public agents can be hired into a workspace as isolated copies.
 - Public skill installs now persist a workspace-local install snapshot with installed key, name, version, capability keys, manifest, source visibility, and source checksum.
 - Run authorization snapshots include installed skill provenance for active workspace-local skill installs referenced by the agent profile.
-- Skill upgrade and disable workflows still need to be completed.
+- Installed skills can now be upgraded to a newer installable source skill and disabled for future runs without mutating historical run snapshots.
 
 Build:
 
 - [x] Add a skill install flow that copies a public skill into the target workspace.
 - [x] Preserve immutable source metadata: source skill ID, source owner, source version, source checksum, install time, installed by user.
-- Let users upgrade an installed skill to a newer public version without rewriting historical runs.
+- [x] Let users upgrade an installed skill to a newer public version without rewriting historical runs.
 - [x] Make agents reference installed workspace-local skills, not remote public source rows.
-- Add uninstall/disable behavior that blocks future runs while keeping historical run snapshots intact.
+- [x] Add uninstall/disable behavior that blocks future runs while keeping historical run snapshots intact.
 
 API/data changes:
 
 - `POST /api/v1/workspaces/{workspace_id}/skills/{public_skill_id}/install`
-- `POST /api/v1/workspaces/{workspace_id}/skills/{installed_skill_id}/upgrade`
-- `POST /api/v1/workspaces/{workspace_id}/skills/{installed_skill_id}/disable`
+- [x] `POST /api/v1/workspaces/{workspace_id}/capabilities/workspace-skills/{installed_skill_id}/upgrade`
+- [x] `POST /api/v1/workspaces/{workspace_id}/capabilities/workspace-skills/{installed_skill_id}/disable`
 - Add `installed_from_skill_id`, `installed_version`, `source_checksum`, `installed_by_user_id`, and `disabled_at` fields if not already represented.
 - [x] Extend run authorization snapshots with installed skill IDs, versions, and source checksums.
 - [ ] Extend run authorization snapshots with installed skill MCP tool allowlists and credential references.

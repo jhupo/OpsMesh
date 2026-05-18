@@ -18,6 +18,7 @@ from backend.app.api.schemas.capabilities import (
     SkillCreateRequest,
     ToolGroupCreateRequest,
     WorkspaceSkillInstallRequest,
+    WorkspaceSkillUpgradeRequest,
 )
 from backend.app.audit.service import AuditService
 from backend.app.capabilities.models import (
@@ -105,17 +106,9 @@ class CapabilityService:
             workspace_id=workspace_id,
             skill_id=data.skill_id,
             installed_by_user_id=user_id,
-            installed_key=skill.key,
-            installed_name=skill.name,
-            installed_version=skill.version,
-            installed_description=skill.description,
-            installed_capability_keys=list(skill.capability_keys),
-            installed_manifest=dict(skill.manifest),
-            source_owner_workspace_id=skill.owner_workspace_id,
-            source_visibility=skill.visibility,
-            source_checksum=_skill_checksum(skill),
             config=data.config,
         )
+        self._copy_skill_snapshot(install, skill)
         self._session.add(install)
         flush_or_raise_conflict(self._session, "Skill is already installed in workspace")
         AuditService(self._session).record_user_action(
@@ -135,6 +128,62 @@ class CapabilityService:
         self._session.refresh(install)
         return install
 
+    def upgrade_skill_install(
+        self,
+        workspace_id: UUID,
+        user_id: UUID,
+        install_id: UUID,
+        data: WorkspaceSkillUpgradeRequest,
+    ) -> WorkspaceSkillInstall:
+        install = self._require_workspace_install(workspace_id, install_id)
+        skill = self._require_installable_skill(workspace_id, data.skill_id)
+        install.skill_id = skill.id
+        self._copy_skill_snapshot(install, skill)
+        if data.config is not None:
+            install.config = data.config
+        install.status = "active"
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action="skill_install.upgraded",
+            target_type="workspace_skill_install",
+            target_id=install.id,
+            metadata={
+                "skill_id": str(skill.id),
+                "installed_key": install.installed_key,
+                "installed_version": install.installed_version,
+                "source_checksum": install.source_checksum,
+            },
+        )
+        self._session.commit()
+        self._session.refresh(install)
+        return install
+
+    def disable_skill_install(
+        self,
+        workspace_id: UUID,
+        user_id: UUID,
+        install_id: UUID,
+    ) -> WorkspaceSkillInstall:
+        install = self._require_workspace_install(workspace_id, install_id)
+        install.status = "disabled"
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action="skill_install.disabled",
+            target_type="workspace_skill_install",
+            target_id=install.id,
+            metadata={
+                "skill_id": str(install.skill_id),
+                "installed_key": install.installed_key,
+                "installed_version": install.installed_version,
+                "source_checksum": install.source_checksum,
+            },
+        )
+        self._session.commit()
+        self._session.refresh(install)
+        return install
+
     def list_workspace_skills(
         self,
         workspace_id: UUID,
@@ -149,6 +198,37 @@ class CapabilityService:
             .order_by(WorkspaceSkillInstall.created_at.desc())
         )
         return self._page(statement, page)
+
+    def _require_workspace_install(
+        self,
+        workspace_id: UUID,
+        install_id: UUID,
+    ) -> WorkspaceSkillInstall:
+        install = self._session.get(WorkspaceSkillInstall, install_id)
+        if install is None or install.workspace_id != workspace_id:
+            raise ValueError("Workspace skill install not found")
+        return install
+
+    def _require_installable_skill(self, workspace_id: UUID, skill_id: UUID) -> Skill:
+        skill = self._session.get(Skill, skill_id)
+        if (
+            skill is None
+            or skill.status != "active"
+            or not self._can_use_skill(workspace_id, skill)
+        ):
+            raise ValueError("Skill not found")
+        return skill
+
+    def _copy_skill_snapshot(self, install: WorkspaceSkillInstall, skill: Skill) -> None:
+        install.installed_key = skill.key
+        install.installed_name = skill.name
+        install.installed_version = skill.version
+        install.installed_description = skill.description
+        install.installed_capability_keys = list(skill.capability_keys)
+        install.installed_manifest = dict(skill.manifest)
+        install.source_owner_workspace_id = skill.owner_workspace_id
+        install.source_visibility = skill.visibility
+        install.source_checksum = _skill_checksum(skill)
 
     def create_tool_group(self, data: ToolGroupCreateRequest) -> ToolGroup:
         group = ToolGroup(**data.model_dump())

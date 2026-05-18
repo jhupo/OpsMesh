@@ -637,6 +637,87 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     assert request.context.metadata["authorization_snapshot_version"] == 1
 
 
+def test_disabled_skill_install_is_not_in_future_run_snapshot() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        skills={},
+    )
+    team = AgentTeam(workspace_id=workspace.id, name="Writing Team", team_type="writing")
+    skill = Skill(
+        key="writer",
+        name="Writer",
+        version="1.0.0",
+        manifest={"prompt": "v1"},
+        visibility="public",
+    )
+    session.add_all([agent, team, skill])
+    session.flush()
+    install = WorkspaceSkillInstall(
+        workspace_id=workspace.id,
+        skill_id=skill.id,
+        installed_by_user_id=user.id,
+        installed_key=skill.key,
+        installed_name=skill.name,
+        installed_version=skill.version,
+        installed_description=skill.description,
+        installed_capability_keys=skill.capability_keys,
+        installed_manifest=skill.manifest,
+        source_visibility=skill.visibility,
+        source_checksum="sha256:v1",
+    )
+    session.add(install)
+    session.flush()
+    agent.skills = {"installed_skill_ids": [str(install.id)]}
+    member = AgentTeamMember(
+        workspace_id=workspace.id,
+        agent_team_id=team.id,
+        agent_profile_id=agent.id,
+        team_role="writer",
+    )
+    session.add(member)
+    session.flush()
+
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        team_snapshot={
+            "team": {"id": str(team.id), "name": team.name},
+            "members": [
+                {
+                    "id": str(member.id),
+                    "agent_profile_id": str(agent.id),
+                    "team_role": "writer",
+                    "accepts_tasks": True,
+                }
+            ],
+            "agents": [],
+        },
+        input={"work_packages": [{"package_id": "draft", "title": "Draft"}]},
+        title="Draft chapter",
+    )
+    session.add(task)
+    session.flush()
+
+    service = RunOrchestrationService(session)
+    first_run = service.create_queued_run_for_task(task)
+    first_snapshot = first_run.input["authorization_snapshot"]
+    first_run.status = RunStatus.COMPLETED.value
+    install.status = "disabled"
+    session.flush()
+    step = session.get(TaskStep, first_run.task_step_id)
+    assert step is not None
+    second_run = service._create_run_for_step(task, step)
+    second_snapshot = second_run.input["authorization_snapshot"]
+
+    assert first_snapshot["installed_skills"][0]["source_checksum"] == "sha256:v1"
+    assert second_snapshot["installed_skills"] == []
+
+
 def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
