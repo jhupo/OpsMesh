@@ -47,6 +47,14 @@ class HireTalentRequest(BaseModel):
     order_index: int = Field(default=0, ge=0)
 
 
+class HireTaskTalentRequest(BaseModel):
+    listing_id: UUID
+    work_package_id: str = Field(min_length=1, max_length=120)
+    agent_name: str | None = Field(default=None, max_length=160)
+    team_role: str | None = Field(default=None, max_length=80)
+    order_index: int = Field(default=0, ge=0)
+
+
 class WorkspaceAgentInstallResponse(TimestampedModel):
     workspace_id: UUID
     talent_listing_id: UUID

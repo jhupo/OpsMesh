@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
 from backend.app.api.schemas.marketplace import (
     HireTalentRequest,
+    HireTaskTalentRequest,
     TalentInstallPinRequest,
     TalentInstallUpgradeRequest,
     TalentListingCreateRequest,
@@ -175,6 +176,33 @@ async def recommend_talent_for_task_staffing(
     if response is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return response
+
+
+@router.post(
+    "/workspaces/{workspace_id}/tasks/{task_id}/talent-market/hire",
+    response_model=WorkspaceAgentInstallResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def hire_talent_for_task_staffing_gap(
+    task_id: UUID,
+    request: HireTaskTalentRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceAgentInstallResponse:
+    try:
+        install = TalentMarketplaceService(session).hire_for_task_staffing_gap(
+            workspace_id=context.workspace.id,
+            user_id=context.user.user_id,
+            task_id=task_id,
+            data=request,
+        )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if install is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return _install_response(install)
 
 
 @router.get(

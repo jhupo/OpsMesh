@@ -10,6 +10,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.marketplace import (
     HireTalentRequest,
+    HireTaskTalentRequest,
     RoleRecommendation,
     TalentCandidateRecommendation,
     TalentInstallPinRequest,
@@ -210,6 +211,40 @@ class TalentMarketplaceService:
             self._append_hr_recommendation_message(task, task_response)
             self._session.commit()
         return task_response
+
+    def hire_for_task_staffing_gap(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        task_id: UUID,
+        data: HireTaskTalentRequest,
+    ) -> WorkspaceAgentInstall | None:
+        task = self._session.get(Task, task_id)
+        if task is None or task.workspace_id != workspace_id:
+            return None
+        if task.agent_team_id is None:
+            raise ValueError("Task is not assigned to a persistent team")
+        package = _missing_work_package_by_id(task, data.work_package_id)
+        if package is None:
+            raise ValueError("Task work package does not have a staffing gap")
+
+        install = self.hire_agent(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            listing_id=data.listing_id,
+            data=HireTalentRequest(
+                agent_name=data.agent_name,
+                team_id=task.agent_team_id,
+                team_role=data.team_role
+                or _string_or_default(package.get("required_role"), "specialist"),
+                order_index=data.order_index,
+            ),
+        )
+        self._append_task_hire_message(task, install=install, package=package)
+        self._session.commit()
+        self._session.refresh(install)
+        return install
 
     def hire_agent(
         self,
@@ -627,6 +662,42 @@ class TalentMarketplaceService:
         self._session.flush([message])
         return message
 
+    def _append_task_hire_message(
+        self,
+        task: Task,
+        *,
+        install: WorkspaceAgentInstall,
+        package: dict[str, object],
+    ) -> TaskMessage:
+        next_sequence = (
+            self._session.scalar(
+                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
+                    TaskMessage.workspace_id == task.workspace_id,
+                    TaskMessage.task_id == task.id,
+                )
+            )
+            or 0
+        ) + 1
+        message = TaskMessage(
+            workspace_id=task.workspace_id,
+            task_id=task.id,
+            agent_profile_id=install.installed_agent_profile_id,
+            message_type="hr.hire_confirmed",
+            sequence=next_sequence,
+            body=f"Hired agent for work package {package.get('package_id', 'unknown')}.",
+            payload={
+                "work_package_id": package.get("package_id"),
+                "required_role": package.get("required_role"),
+                "required_skills": package.get("required_skills", []),
+                "workspace_agent_install_id": str(install.id),
+                "talent_listing_id": str(install.talent_listing_id),
+                "installed_agent_profile_id": str(install.installed_agent_profile_id),
+            },
+        )
+        self._session.add(message)
+        self._session.flush([message])
+        return message
+
     def _page(
         self,
         statement: Select[tuple[TalentListing]],
@@ -836,6 +907,17 @@ def _missing_work_packages_from_task(task: Task) -> list[dict[str, object]]:
             }
         )
     return missing
+
+
+def _missing_work_package_by_id(task: Task, work_package_id: str) -> dict[str, object] | None:
+    return next(
+        (
+            package
+            for package in _missing_work_packages_from_task(task)
+            if package.get("package_id") == work_package_id
+        ),
+        None,
+    )
 
 
 def _role_spec_for_missing_package(package: dict[str, object]) -> _RoleSpec:

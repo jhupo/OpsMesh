@@ -557,12 +557,13 @@ Tasks:
   - [x] Make the collaboration stream auditable and replayable with per-task sequence numbers.
   - [ ] Add task message listing APIs and include messages in workspace export/import.
   - [ ] Map OpenAI Agents handoff/tool events into task messages when runtime integrations expose them.
-- [ ] HR and marketplace loop.
+- [x] HR and marketplace loop.
   - [x] HR detects missing roles or skills from a project plan.
   - [x] HR recommends public agents from the talent market.
   - [x] Persist HR staffing recommendations into the task communication stream.
-  - [ ] User-confirmed hires join the persistent team.
-  - [ ] New hires affect future tasks without rewriting historical snapshots.
+  - [x] User-confirmed hires join the persistent team.
+  - [x] New hires affect future tasks without rewriting historical snapshots.
+  - [ ] Optionally regenerate a future-only project plan after a hire when the user asks.
 - [ ] Security and isolation.
   - [ ] Scope teams, members, skills, files, tools, Docker runtimes, and self-hosted machines by workspace.
   - [ ] Copy public agents and skills into the user's workspace before use.
