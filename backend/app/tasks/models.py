@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Integer, String
+from sqlalchemy import ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -84,3 +84,38 @@ class TaskStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     result_summary: Mapped[str | None] = mapped_column(String, nullable=True)
 
     task: Mapped[Task] = relationship(back_populates="steps")
+
+
+class TaskMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "task_messages"
+    __table_args__ = (
+        UniqueConstraint("task_id", "sequence", name="uq_task_messages_task_sequence"),
+        Index("ix_task_messages_workspace_task", "workspace_id", "task_id"),
+        Index("ix_task_messages_workspace_type", "workspace_id", "message_type"),
+        Index("ix_task_messages_workspace_agent", "workspace_id", "agent_profile_id"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    task_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    task_step_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("task_steps.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    agent_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    agent_profile_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    message_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    body: Mapped[str] = mapped_column(String, nullable=False, default="")
+    payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)

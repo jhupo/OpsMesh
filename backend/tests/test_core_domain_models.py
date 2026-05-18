@@ -13,7 +13,7 @@ from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus, can_transition_run, require_run_transition
-from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus, can_transition_task, require_task_transition
 from backend.app.teams.models import AgentTeam, AgentTeamMember
@@ -100,7 +100,18 @@ def test_core_domain_round_trip() -> None:
         target_id=str(task.id),
         created_at=datetime.now(UTC),
     )
-    session.add_all([event, audit])
+    message = TaskMessage(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_run_id=run.id,
+        agent_profile_id=agent.id,
+        message_type="step.completed",
+        sequence=1,
+        body="Collect sources completed",
+        payload={"work_package_id": "research-1"},
+    )
+    session.add_all([event, audit, message])
     session.commit()
 
     assert session.query(AgentProfile).count() == 1
@@ -114,6 +125,7 @@ def test_core_domain_round_trip() -> None:
     assert session.query(AgentRun).count() == 1
     assert session.query(RunEvent).count() == 1
     assert session.query(AuditEvent).count() == 1
+    assert session.query(TaskMessage).count() == 1
 
 
 def test_workspace_owned_tables_have_workspace_id() -> None:
@@ -123,6 +135,7 @@ def test_workspace_owned_tables_have_workspace_id() -> None:
         AgentTeamMember,
         Task,
         TaskStep,
+        TaskMessage,
         AgentRun,
         RunEvent,
         AuditEvent,

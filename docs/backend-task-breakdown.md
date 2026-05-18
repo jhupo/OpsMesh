@@ -551,10 +551,12 @@ Tasks:
   - [x] Create revision steps instead of rerunning the whole task by default.
   - [x] Keep historical steps and create versioned follow-up work packages plus a PM re-review step.
   - [ ] Add a user-facing generic revision endpoint outside domain-specific APIs.
-- [ ] Team communication records.
-  - [ ] Add structured agent messages, decisions, handoffs, review comments, and revision requests.
-  - [ ] Bind communication to task, step, run, and agent.
-  - [ ] Make the collaboration stream auditable and replayable.
+- [x] Team communication records.
+  - [x] Add structured task messages for step start, step completion, PM decisions, and follow-up work.
+  - [x] Bind communication to task, step, run, and agent.
+  - [x] Make the collaboration stream auditable and replayable with per-task sequence numbers.
+  - [ ] Add task message listing APIs and include messages in workspace export/import.
+  - [ ] Map OpenAI Agents handoff/tool events into task messages when runtime integrations expose them.
 - [ ] HR and marketplace loop.
   - [ ] HR detects missing roles or skills from a project plan.
   - [ ] HR recommends public agents from the talent market.

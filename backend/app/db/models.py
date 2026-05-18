@@ -41,7 +41,7 @@ from backend.app.self_hosted.models import (
     SelfHostedJobClaim,
     SelfHostedWorker,
 )
-from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
@@ -77,6 +77,7 @@ __all__ = [
     "SelfHostedJobClaim",
     "SelfHostedWorker",
     "Task",
+    "TaskMessage",
     "TaskStep",
     "TalentListing",
     "TalentListingReview",

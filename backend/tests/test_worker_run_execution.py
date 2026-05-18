@@ -20,7 +20,7 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.secrets.service import SecretEncryptionService
-from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.handlers import WorkerJobHandler
@@ -420,6 +420,61 @@ def test_pm_summary_revision_decision_materializes_follow_up_steps() -> None:
     assert revision_step.dependencies["revision_of_work_package_id"] == "Research-1"
     assert review_step.dependencies["after_step_ids"] == [str(revision_step.id)]
     assert review_step.review_policy == {"reviewer": "user", "mode": "final_acceptance"}
+
+
+def test_team_task_persists_auditable_task_messages() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task, summary_step, manager = _seed_summary_ready_task(session, user.id, workspace.id)
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=summary_step.id,
+        agent_profile_id=manager.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    output = json.dumps(
+        {
+            "decision": "request_revision",
+            "summary": "Needs one more research pass.",
+            "reasons": ["Market size evidence is thin."],
+            "revision_requests": [
+                {"work_package_id": "Research-1", "instruction": "Add TAM/SAM/SOM sources."}
+            ],
+        }
+    )
+    orchestration = RunOrchestrationService(session)
+    orchestration._mark_run_started(run)
+    orchestration._mark_run_completed(run, output, requested_by_user_id=user.id)
+    session.flush()
+
+    messages = session.scalars(
+        select(TaskMessage).where(TaskMessage.task_id == task.id).order_by(TaskMessage.sequence)
+    ).all()
+
+    assert [message.sequence for message in messages] == [1, 2, 3, 4]
+    assert [message.message_type for message in messages] == [
+        "step.started",
+        "step.completed",
+        "pm.acceptance_decision",
+        "pm.follow_up_created",
+    ]
+    assert messages[0].task_step_id == summary_step.id
+    assert messages[0].agent_run_id == run.id
+    assert messages[0].agent_profile_id == manager.id
+    assert messages[1].payload["work_package_id"] == "manager-summary"
+    assert messages[2].payload["decision"] == "request_revision"
+    assert messages[2].payload["revision_requests"] == [
+        {"work_package_id": "Research-1", "instruction": "Add TAM/SAM/SOM sources."}
+    ]
+    assert messages[3].payload["revision_cycle"] == 1
+    assert messages[3].payload["follow_up_work_package_ids"] == [
+        "revision-Research-1-1-1"
+    ]
 
 
 def test_create_queued_run_for_task_reuses_active_team_run() -> None:

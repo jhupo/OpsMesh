@@ -22,7 +22,7 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus, require_run_transition
 from backend.app.secrets.service import SecretEncryptionService
-from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.teams.models import AgentTeam, AgentTeamMember
@@ -293,6 +293,16 @@ class RunOrchestrationService:
             if step is not None and step.workspace_id == run.workspace_id:
                 step.status = STEP_STATUS_RUNNING
                 self._append_event(run, "task_step.started", step.title)
+                self._append_task_message(
+                    task_id=step.task_id,
+                    workspace_id=step.workspace_id,
+                    message_type="step.started",
+                    body=step.title,
+                    task_step_id=step.id,
+                    agent_run_id=run.id,
+                    agent_profile_id=run.agent_profile_id,
+                    payload=self._step_message_payload(step),
+                )
 
     def _mark_run_completed(
         self,
@@ -327,6 +337,11 @@ class RunOrchestrationService:
                     pm_acceptance=pm_acceptance,
                 )
                 if pm_acceptance is not None and pm_acceptance["decision"] != "approved":
+                    self._append_pm_decision_message(
+                        task,
+                        run=run,
+                        pm_acceptance=pm_acceptance,
+                    )
                     follow_up_runs = self._materialize_pm_follow_up_work(
                         task,
                         pm_acceptance=pm_acceptance,
@@ -350,6 +365,12 @@ class RunOrchestrationService:
                     completed_at=run.completed_at,
                     final_output=task_output,
                 )
+                if pm_acceptance is not None:
+                    self._append_pm_decision_message(
+                        task,
+                        run=run,
+                        pm_acceptance=pm_acceptance,
+                    )
 
     def _mark_run_failed(self, run: AgentRun, exc: Exception) -> None:
         require_run_transition(RunStatus(run.status), RunStatus.FAILED)
@@ -434,6 +455,42 @@ class RunOrchestrationService:
         self._session.add(event)
         self._session.flush([event])
         return event
+
+    def _append_task_message(
+        self,
+        *,
+        task_id: UUID,
+        workspace_id: UUID,
+        message_type: str,
+        body: str,
+        task_step_id: UUID | None = None,
+        agent_run_id: UUID | None = None,
+        agent_profile_id: UUID | None = None,
+        payload: dict[str, object] | None = None,
+    ) -> TaskMessage:
+        next_sequence = (
+            self._session.scalar(
+                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
+                    TaskMessage.workspace_id == workspace_id,
+                    TaskMessage.task_id == task_id,
+                )
+            )
+            or 0
+        ) + 1
+        message = TaskMessage(
+            workspace_id=workspace_id,
+            task_id=task_id,
+            task_step_id=task_step_id,
+            agent_run_id=agent_run_id,
+            agent_profile_id=agent_profile_id,
+            message_type=message_type,
+            sequence=next_sequence,
+            body=body,
+            payload=payload or {},
+        )
+        self._session.add(message)
+        self._session.flush([message])
+        return message
 
     def _build_agent_request(self, run: AgentRun, job: JobPayload) -> AgentRunRequest:
         profile = None
@@ -917,6 +974,19 @@ class RunOrchestrationService:
         step.status = STEP_STATUS_COMPLETED
         step.result_summary = self._step_result_summary(step, final_output)
         self._append_event(run, "task_step.completed", step.title)
+        self._append_task_message(
+            task_id=step.task_id,
+            workspace_id=step.workspace_id,
+            message_type="step.completed",
+            body=step.result_summary or step.title,
+            task_step_id=step.id,
+            agent_run_id=run.id,
+            agent_profile_id=run.agent_profile_id,
+            payload={
+                **self._step_message_payload(step),
+                "result_summary": step.result_summary,
+            },
+        )
 
     def _create_and_enqueue_next_step_runs(
         self,
@@ -1128,6 +1198,20 @@ class RunOrchestrationService:
             pm_acceptance=pm_acceptance,
             revision_cycle=revision_cycle,
         )
+        self._append_task_message(
+            task_id=task.id,
+            workspace_id=task.workspace_id,
+            message_type="pm.follow_up_created",
+            body=f"PM created {len(follow_up_steps)} follow-up work package(s).",
+            task_step_id=summary_step.id,
+            agent_profile_id=summary_step.assigned_agent_profile_id,
+            payload={
+                "decision": pm_acceptance.get("decision"),
+                "revision_cycle": revision_cycle,
+                "follow_up_step_ids": [str(step.id) for step in follow_up_steps],
+                "follow_up_work_package_ids": [step.work_package_id for step in follow_up_steps],
+            },
+        )
         return self._create_and_enqueue_next_step_runs(
             task,
             requested_by_user_id=requested_by_user_id,
@@ -1329,6 +1413,43 @@ class RunOrchestrationService:
         return step.work_package_id == "manager-summary" or review_policy.get(
             "mode"
         ) == "final_acceptance"
+
+    def _append_pm_decision_message(
+        self,
+        task: Task,
+        *,
+        run: AgentRun,
+        pm_acceptance: dict[str, object],
+    ) -> None:
+        if run.task_step_id is None:
+            return
+        decision = str(pm_acceptance.get("decision") or "approved")
+        summary = _string_or_default(pm_acceptance.get("summary"), decision)
+        self._append_task_message(
+            task_id=task.id,
+            workspace_id=task.workspace_id,
+            message_type="pm.acceptance_decision",
+            body=summary,
+            task_step_id=run.task_step_id,
+            agent_run_id=run.id,
+            agent_profile_id=run.agent_profile_id,
+            payload={
+                "decision": decision,
+                "reasons": _string_list(pm_acceptance.get("reasons")),
+                "revision_requests": _dict_list(pm_acceptance.get("revision_requests")),
+                "missing_work_packages": _dict_list(pm_acceptance.get("missing_work_packages")),
+            },
+        )
+
+    def _step_message_payload(self, step: TaskStep) -> dict[str, object]:
+        return {
+            "work_package_id": step.work_package_id,
+            "required_role": step.required_role,
+            "required_skills": step.required_skills,
+            "expected_artifacts": step.expected_artifacts,
+            "acceptance_criteria": step.acceptance_criteria,
+            "review_policy": step.review_policy,
+        }
 
     def _final_output_for_task(
         self,
