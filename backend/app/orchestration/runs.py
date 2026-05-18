@@ -493,9 +493,8 @@ class RunOrchestrationService:
         return message
 
     def _build_agent_request(self, run: AgentRun, job: JobPayload) -> AgentRunRequest:
-        profile = None
-        if run.agent_profile_id is not None:
-            profile = self._session.get(AgentProfile, run.agent_profile_id)
+        task = self._authorized_task_for_run(run)
+        profile = self._authorized_profile_for_run(run)
         if profile is None:
             profile = AgentProfile(
                 workspace_id=run.workspace_id,
@@ -515,6 +514,10 @@ class RunOrchestrationService:
             "model_provider_credential_id": str(model_provider["model_provider_credential_id"])
             if model_provider["model_provider_credential_id"] is not None
             else None,
+            "authorization_scope": "workspace",
+            "authorized_workspace_id": str(run.workspace_id),
+            "authorized_task_id": str(task.id) if task is not None else None,
+            "tool_policy_source": "agent_profile",
         }
         metadata.update(step_context)
         return AgentRunRequest(
@@ -533,6 +536,26 @@ class RunOrchestrationService:
             api_key=model_provider["api_key"],
             model_provider_credential_id=model_provider["model_provider_credential_id"],
         )
+
+    def _authorized_task_for_run(self, run: AgentRun) -> Task | None:
+        if run.task_id is None:
+            return None
+        task = self._session.get(Task, run.task_id)
+        if task is None:
+            raise ValueError("Run task not found")
+        if task.workspace_id != run.workspace_id:
+            raise ValueError("Run task workspace mismatch")
+        return task
+
+    def _authorized_profile_for_run(self, run: AgentRun) -> AgentProfile | None:
+        if run.agent_profile_id is None:
+            return None
+        profile = self._session.get(AgentProfile, run.agent_profile_id)
+        if profile is None:
+            raise ValueError("Run agent profile not found")
+        if profile.workspace_id != run.workspace_id:
+            raise ValueError("Run agent profile workspace mismatch")
+        return profile
 
     def _model_provider_for_profile(self, profile: AgentProfile) -> dict[str, Any]:
         if self._settings is None:
@@ -599,7 +622,15 @@ class RunOrchestrationService:
             return {}
         step = self._session.get(TaskStep, run.task_step_id)
         if step is None or step.workspace_id != run.workspace_id:
-            return {}
+            raise ValueError("Run task step workspace mismatch")
+        if run.task_id is not None and step.task_id != run.task_id:
+            raise ValueError("Run task step does not belong to run task")
+        if (
+            run.agent_profile_id is not None
+            and step.assigned_agent_profile_id is not None
+            and step.assigned_agent_profile_id != run.agent_profile_id
+        ):
+            raise ValueError("Run agent profile is not assigned to task step")
         return {
             "context_scope": "task_step",
             "task_step_id": str(step.id),

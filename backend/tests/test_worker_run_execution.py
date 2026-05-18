@@ -762,6 +762,10 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         "agent_role": "designer",
         "run_model": agent.model,
         "model_provider_credential_id": None,
+        "authorization_scope": "workspace",
+        "authorized_workspace_id": str(workspace.id),
+        "authorized_task_id": str(task.id),
+        "tool_policy_source": "agent_profile",
     }
 
 
@@ -822,6 +826,10 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
         "agent_role": "designer",
         "run_model": agent.model,
         "model_provider_credential_id": None,
+        "authorization_scope": "workspace",
+        "authorized_workspace_id": str(workspace.id),
+        "authorized_task_id": str(task.id),
+        "tool_policy_source": "agent_profile",
         "context_scope": "task_step",
         "task_step_id": str(step.id),
         "work_package_id": "visual-design",
@@ -894,6 +902,104 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
     assert request.api_key == "sk-custom"
     assert request.model_provider_credential_id == credential.id
     assert request.context.metadata["model_provider_credential_id"] == str(credential.id)
+
+
+def test_agent_request_rejects_foreign_workspace_agent_profile() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    foreign_user = User(email="foreign@example.com", display_name="Foreign")
+    other_workspace = Workspace(owner=foreign_user, name="Other", slug="other", settings={})
+    foreign_membership = WorkspaceMember(
+        workspace=other_workspace,
+        user=foreign_user,
+        role="owner",
+    )
+    session.add_all([foreign_user, other_workspace, foreign_membership])
+    session.flush()
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    foreign_agent = AgentProfile(
+        workspace_id=other_workspace.id,
+        name="Foreign",
+        role="writer",
+    )
+    session.add_all([task, foreign_agent])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=foreign_agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    try:
+        RunOrchestrationService(session)._build_agent_request(
+            run,
+            JobPayload(
+                workspace_id=workspace.id,
+                job_type=JobType.AGENT_RUN,
+                resource_id=run.id,
+                requested_by_user_id=user.id,
+                idempotency_key="foreign-agent-context",
+            ),
+        )
+    except ValueError as exc:
+        assert "agent profile workspace mismatch" in str(exc)
+    else:
+        raise AssertionError("Expected foreign agent profile to be rejected")
+
+
+def test_agent_request_rejects_task_step_from_another_task() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    other_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Other task",
+    )
+    agent = AgentProfile(workspace_id=workspace.id, name="Writer", role="writer")
+    session.add_all([task, other_task, agent])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=other_task.id,
+        assigned_agent_profile_id=agent.id,
+        title="Other step",
+        status="queued",
+        order_index=1,
+        dependencies={},
+    )
+    session.add(step)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    try:
+        RunOrchestrationService(session)._build_agent_request(
+            run,
+            JobPayload(
+                workspace_id=workspace.id,
+                job_type=JobType.AGENT_RUN,
+                resource_id=run.id,
+                requested_by_user_id=user.id,
+                idempotency_key="foreign-step-context",
+            ),
+        )
+    except ValueError as exc:
+        assert "task step does not belong" in str(exc)
+    else:
+        raise AssertionError("Expected foreign task step to be rejected")
 
 
 def test_stale_running_runs_are_recovered_as_failed() -> None:

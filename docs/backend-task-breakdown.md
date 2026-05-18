@@ -565,9 +565,12 @@ Tasks:
   - [x] New hires affect future tasks without rewriting historical snapshots.
   - [ ] Optionally regenerate a future-only project plan after a hire when the user asks.
 - [ ] Security and isolation.
-  - [ ] Scope teams, members, skills, files, tools, Docker runtimes, and self-hosted machines by workspace.
-  - [ ] Copy public agents and skills into the user's workspace before use.
-  - [ ] Build every run with an isolated authorization context.
+  - [x] Scope teams, members, skills, files, tools, Docker runtimes, and self-hosted machines by workspace.
+  - [x] Copy public agents into the user's workspace before use.
+  - [x] Build every run with an isolated authorization context.
+  - [x] Reject cross-workspace agent profiles and mismatched task steps at run request build time.
+  - [ ] Copy public skills into the user's workspace before use.
+  - [ ] Add policy snapshots for files, MCP tools, and runtime mounts on each run.
 - [ ] Local tests.
   - [ ] Test fixed team task intake.
   - [ ] Test PM plan generation and validation.

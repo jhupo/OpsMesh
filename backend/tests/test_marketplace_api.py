@@ -624,6 +624,75 @@ def test_owner_can_hire_recommended_talent_for_task_gap_without_rewriting_snapsh
     ]
 
 
+def test_task_gap_hire_rejects_already_assigned_work_package() -> None:
+    client, session = _client()
+    publisher, publisher_workspace = _seed_workspace(
+        session,
+        email="publisher@example.com",
+        slug="publisher",
+    )
+    buyer, buyer_workspace = _seed_workspace(session, email="buyer@example.com", slug="buyer")
+    source_agent = AgentProfile(
+        workspace_id=publisher_workspace.id,
+        name="Frontend Pro",
+        role="frontend_engineer",
+    )
+    assigned_agent = AgentProfile(
+        workspace_id=buyer_workspace.id,
+        name="Existing Frontend",
+        role="frontend_engineer",
+    )
+    team = AgentTeam(
+        workspace_id=buyer_workspace.id,
+        name="Product Team",
+        team_type="software",
+    )
+    session.add_all([source_agent, assigned_agent, team])
+    session.flush()
+    task = Task(
+        workspace_id=buyer_workspace.id,
+        created_by_user_id=buyer.id,
+        agent_team_id=team.id,
+        title="Build dashboard",
+        team_snapshot={"team": {"id": str(team.id), "team_type": "software"}},
+        project_plan={
+            "work_packages": [
+                {
+                    "package_id": "frontend-ui",
+                    "title": "Frontend UI",
+                    "required_role": "frontend_engineer",
+                    "required_skills": ["react", "ui"],
+                    "assigned_agent_profile_id": str(assigned_agent.id),
+                    "expected_artifacts": ["pull_request"],
+                }
+            ]
+        },
+    )
+    session.add(task)
+    session.commit()
+    listing = _publish_listing(
+        client,
+        publisher,
+        publisher_workspace,
+        source_agent,
+        title="Frontend Engineer",
+        skill_tags=["react", "ui"],
+        capability_tags=["code.execute"],
+    )
+
+    response = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/tasks/{task.id}/talent-market/hire",
+        headers=_headers(buyer.id),
+        json={"listing_id": listing["id"], "work_package_id": "frontend-ui"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == (
+        "Task work package does not have a staffing gap"
+    )
+    assert session.query(AgentTeamMember).count() == 0
+
+
 def _client() -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
