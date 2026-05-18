@@ -28,7 +28,7 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
@@ -68,18 +68,30 @@ def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None
             max_concurrent_tasks=2,
         )
     )
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        work_package_id="research-1",
+        required_role="researcher",
+        required_skills=["research"],
+        expected_artifacts=["work_summary"],
+        acceptance_criteria=["Summary is complete."],
+        review_policy={"reviewer": "manager"},
+        title="Research",
+    )
+    session.add(step)
+    session.flush()
     session.add(
-        TaskStep(
+        TaskMessage(
             workspace_id=workspace.id,
             task_id=task.id,
-            assigned_agent_profile_id=agent.id,
-            work_package_id="research-1",
-            required_role="researcher",
-            required_skills=["research"],
-            expected_artifacts=["work_summary"],
-            acceptance_criteria=["Summary is complete."],
-            review_policy={"reviewer": "manager"},
-            title="Research",
+            task_step_id=step.id,
+            agent_profile_id=agent.id,
+            message_type="step.completed",
+            sequence=1,
+            body="Research summary is ready.",
+            payload={"work_package_id": "research-1", "quality_score": 0.92},
         )
     )
     session.commit()
@@ -102,6 +114,7 @@ def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None
     assert payload["manifest"]["counts"]["teams"] == 1
     assert payload["manifest"]["counts"]["team_members"] == 1
     assert payload["manifest"]["counts"]["tasks"] == 1
+    assert payload["manifest"]["counts"]["task_messages"] == 1
     assert payload["tasks"][0]["team_snapshot"] == {"team": {"name": "Research Team"}}
     assert payload["tasks"][0]["project_plan"] == {
         "work_packages": [{"package_id": "research"}]
@@ -112,6 +125,16 @@ def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None
     assert payload["task_steps"][0]["expected_artifacts"] == ["work_summary"]
     assert payload["task_steps"][0]["acceptance_criteria"] == ["Summary is complete."]
     assert payload["task_steps"][0]["review_policy"] == {"reviewer": "manager"}
+    assert payload["task_messages"][0]["task_id"] == str(task.id)
+    assert payload["task_messages"][0]["task_step_id"] == str(step.id)
+    assert payload["task_messages"][0]["agent_profile_id"] == str(agent.id)
+    assert payload["task_messages"][0]["message_type"] == "step.completed"
+    assert payload["task_messages"][0]["sequence"] == 1
+    assert payload["task_messages"][0]["body"] == "Research summary is ready."
+    assert payload["task_messages"][0]["payload"] == {
+        "work_package_id": "research-1",
+        "quality_score": 0.92,
+    }
     assert payload["agents"][0]["id"] == str(agent.id)
     assert payload["team_members"][0]["department"] == "Research"
     assert payload["team_members"][0]["position_title"] == "Research Specialist"
@@ -185,18 +208,30 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
             max_concurrent_tasks=2,
         )
     )
+    step = TaskStep(
+        workspace_id=source_workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        work_package_id="research-1",
+        required_role="researcher",
+        required_skills=["research"],
+        expected_artifacts=["work_summary"],
+        acceptance_criteria=["Summary is complete."],
+        review_policy={"reviewer": "manager"},
+        title="Research",
+    )
+    session.add(step)
+    session.flush()
     session.add(
-        TaskStep(
+        TaskMessage(
             workspace_id=source_workspace.id,
             task_id=task.id,
-            assigned_agent_profile_id=agent.id,
-            work_package_id="research-1",
-            required_role="researcher",
-            required_skills=["research"],
-            expected_artifacts=["work_summary"],
-            acceptance_criteria=["Summary is complete."],
-            review_policy={"reviewer": "manager"},
-            title="Research",
+            task_step_id=step.id,
+            agent_profile_id=agent.id,
+            message_type="step.completed",
+            sequence=1,
+            body="Research package completed.",
+            payload={"work_package_id": "research-1"},
         )
     )
     session.commit()
@@ -223,6 +258,7 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
 
     assert dry_run.status_code == 200
     assert dry_run.json()["created_counts"]["agents"] == 1
+    assert dry_run.json()["created_counts"]["task_messages"] == 1
     assert after_dry_run_agents == []
     assert committed.status_code == 200
     body = committed.json()
@@ -231,6 +267,8 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
     assert body["created_counts"]["teams"] == 1
     assert body["created_counts"]["team_members"] == 1
     assert body["created_counts"]["tasks"] == 1
+    assert body["created_counts"]["task_steps"] == 1
+    assert body["created_counts"]["task_messages"] == 1
     assert len(body["id_map"]["agents"]) == 1
 
     imported_agent = session.scalar(
@@ -263,6 +301,12 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
             AgentTeamMember.team_role == "researcher",
         )
     )
+    imported_message = session.scalar(
+        select(TaskMessage).where(
+            TaskMessage.workspace_id == target_workspace.id,
+            TaskMessage.message_type == "step.completed",
+        )
+    )
     audit = session.scalar(
         select(AuditEvent).where(
             AuditEvent.workspace_id == target_workspace.id,
@@ -285,6 +329,14 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
     assert imported_step.expected_artifacts == ["work_summary"]
     assert imported_step.acceptance_criteria == ["Summary is complete."]
     assert imported_step.review_policy == {"reviewer": "manager"}
+    assert imported_message is not None
+    assert imported_message.task_id == imported_task.id
+    assert imported_message.task_step_id == imported_step.id
+    assert imported_message.agent_profile_id == imported_agent.id
+    assert imported_message.agent_run_id is None
+    assert imported_message.sequence == 1
+    assert imported_message.body == "Research package completed."
+    assert imported_message.payload == {"work_package_id": "research-1"}
     assert imported_task.status == "draft"
     assert audit is not None
     assert audit.user_id == target_user.id

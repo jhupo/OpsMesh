@@ -29,7 +29,7 @@ from backend.app.files.models import WorkspaceFile
 from backend.app.files.security import safe_filename
 from backend.app.files.storage import LocalStorage
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
@@ -54,6 +54,7 @@ class WorkspaceExportService:
             "team_members": [],
             "tasks": [],
             "task_steps": [],
+            "task_messages": [],
             "runs": [],
             "run_events": [],
             "files": [],
@@ -96,6 +97,12 @@ class WorkspaceExportService:
                 workspace.id,
                 request.max_items_per_collection,
                 _task_step_payload,
+            )
+            payload["task_messages"] = self._rows(
+                TaskMessage,
+                workspace.id,
+                request.max_items_per_collection,
+                _task_message_payload,
             )
         if request.include_runs:
             included.append("runs")
@@ -391,9 +398,25 @@ class WorkspaceExportService:
             "teams": {},
             "team_members": {},
             "tasks": {},
+            "task_steps": {},
+            "task_messages": {},
         }
-        created_counts = {"agents": 0, "teams": 0, "team_members": 0, "tasks": 0, "task_steps": 0}
-        skipped_counts = {"agents": 0, "teams": 0, "team_members": 0, "tasks": 0, "task_steps": 0}
+        created_counts = {
+            "agents": 0,
+            "teams": 0,
+            "team_members": 0,
+            "tasks": 0,
+            "task_steps": 0,
+            "task_messages": 0,
+        }
+        skipped_counts = {
+            "agents": 0,
+            "teams": 0,
+            "team_members": 0,
+            "tasks": 0,
+            "task_steps": 0,
+            "task_messages": 0,
+        }
         warnings: list[str] = []
 
         if request.import_agents:
@@ -405,6 +428,7 @@ class WorkspaceExportService:
                     continue
                 created_counts["agents"] += 1
                 if request.dry_run:
+                    id_map["agents"][source_id] = source_id
                     continue
                 agent = AgentProfile(
                     workspace_id=workspace.id,
@@ -436,6 +460,7 @@ class WorkspaceExportService:
                     continue
                 created_counts["teams"] += 1
                 if request.dry_run:
+                    id_map["teams"][source_id] = source_id
                     continue
                 manager_id = id_map["agents"].get(_string_field(item, "manager_agent_profile_id"))
                 team = AgentTeam(
@@ -453,6 +478,7 @@ class WorkspaceExportService:
                 id_map["teams"][source_id] = str(team.id)
 
             for item in request.export.team_members[: request.max_items_per_collection]:
+                source_id = _string_field(item, "id")
                 team_id = id_map["teams"].get(_string_field(item, "agent_team_id"))
                 agent_id = id_map["agents"].get(_string_field(item, "agent_profile_id"))
                 reports_to_id = id_map["team_members"].get(
@@ -464,6 +490,7 @@ class WorkspaceExportService:
                     continue
                 created_counts["team_members"] += 1
                 if request.dry_run:
+                    id_map["team_members"][source_id] = source_id
                     continue
                 member = AgentTeamMember(
                     workspace_id=workspace.id,
@@ -484,7 +511,7 @@ class WorkspaceExportService:
                 )
                 self._session.add(member)
                 self._session.flush()
-                id_map["team_members"][_string_field(item, "id")] = str(member.id)
+                id_map["team_members"][source_id] = str(member.id)
 
         if request.import_tasks:
             for item in request.export.tasks[: request.max_items_per_collection]:
@@ -495,6 +522,7 @@ class WorkspaceExportService:
                     continue
                 created_counts["tasks"] += 1
                 if request.dry_run:
+                    id_map["tasks"][source_id] = source_id
                     continue
                 team_id = id_map["teams"].get(_string_field(item, "agent_team_id"))
                 task = Task(
@@ -518,6 +546,7 @@ class WorkspaceExportService:
                 id_map["tasks"][source_id] = str(task.id)
 
             for item in request.export.task_steps[: request.max_items_per_collection]:
+                source_id = _string_field(item, "id")
                 task_id = id_map["tasks"].get(_string_field(item, "task_id"))
                 if task_id is None:
                     skipped_counts["task_steps"] += 1
@@ -525,27 +554,57 @@ class WorkspaceExportService:
                     continue
                 created_counts["task_steps"] += 1
                 if request.dry_run:
+                    id_map["task_steps"][source_id] = source_id
                     continue
                 agent_id = id_map["agents"].get(_string_field(item, "assigned_agent_profile_id"))
-                self._session.add(
-                    TaskStep(
-                        workspace_id=workspace.id,
-                        task_id=UUID(task_id),
-                        assigned_agent_profile_id=_uuid_or_none(agent_id),
-                        work_package_id=_optional_string_field(item, "work_package_id"),
-                        required_role=_optional_string_field(item, "required_role"),
-                        required_skills=_string_list_field(item, "required_skills"),
-                        expected_artifacts=_string_list_field(item, "expected_artifacts"),
-                        acceptance_criteria=_string_list_field(item, "acceptance_criteria"),
-                        review_policy=_dict_field(item, "review_policy"),
-                        title=_string_field(item, "title"),
-                        description=_string_field(item, "description"),
-                        status="queued",
-                        order_index=_int_field(item, "order_index", 0),
-                        dependencies=_dict_field(item, "dependencies"),
-                        result_summary=_optional_string_field(item, "result_summary"),
-                    )
+                step = TaskStep(
+                    workspace_id=workspace.id,
+                    task_id=UUID(task_id),
+                    assigned_agent_profile_id=_uuid_or_none(agent_id),
+                    work_package_id=_optional_string_field(item, "work_package_id"),
+                    required_role=_optional_string_field(item, "required_role"),
+                    required_skills=_string_list_field(item, "required_skills"),
+                    expected_artifacts=_string_list_field(item, "expected_artifacts"),
+                    acceptance_criteria=_string_list_field(item, "acceptance_criteria"),
+                    review_policy=_dict_field(item, "review_policy"),
+                    title=_string_field(item, "title"),
+                    description=_string_field(item, "description"),
+                    status="queued",
+                    order_index=_int_field(item, "order_index", 0),
+                    dependencies=_dict_field(item, "dependencies"),
+                    result_summary=_optional_string_field(item, "result_summary"),
                 )
+                self._session.add(step)
+                self._session.flush()
+                id_map["task_steps"][source_id] = str(step.id)
+
+            for item in request.export.task_messages[: request.max_items_per_collection]:
+                source_id = _string_field(item, "id")
+                task_id = id_map["tasks"].get(_string_field(item, "task_id"))
+                if task_id is None:
+                    skipped_counts["task_messages"] += 1
+                    warnings.append("Skipped task message with missing imported task")
+                    continue
+                created_counts["task_messages"] += 1
+                if request.dry_run:
+                    id_map["task_messages"][source_id] = source_id
+                    continue
+                source_step_id = _string_field(item, "task_step_id")
+                source_agent_id = _string_field(item, "agent_profile_id")
+                message = TaskMessage(
+                    workspace_id=workspace.id,
+                    task_id=UUID(task_id),
+                    task_step_id=_uuid_or_none(id_map["task_steps"].get(source_step_id)),
+                    agent_run_id=None,
+                    agent_profile_id=_uuid_or_none(id_map["agents"].get(source_agent_id)),
+                    message_type=_string_field(item, "message_type", "note"),
+                    sequence=_int_field(item, "sequence", 1),
+                    body=_string_field(item, "body"),
+                    payload=_dict_field(item, "payload"),
+                )
+                self._session.add(message)
+                self._session.flush()
+                id_map["task_messages"][source_id] = str(message.id)
 
         response = WorkspaceImportResponse(
             dry_run=request.dry_run,
@@ -1011,6 +1070,23 @@ def _task_step_payload(step: TaskStep) -> dict[str, object]:
         "result_summary": step.result_summary,
         "created_at": _dt(step.created_at),
         "updated_at": _dt(step.updated_at),
+    }
+
+
+def _task_message_payload(message: TaskMessage) -> dict[str, object]:
+    return {
+        "id": str(message.id),
+        "workspace_id": str(message.workspace_id),
+        "task_id": str(message.task_id),
+        "task_step_id": _str_or_none(message.task_step_id),
+        "agent_run_id": _str_or_none(message.agent_run_id),
+        "agent_profile_id": _str_or_none(message.agent_profile_id),
+        "message_type": message.message_type,
+        "sequence": message.sequence,
+        "body": message.body,
+        "payload": message.payload,
+        "created_at": _dt(message.created_at),
+        "updated_at": _dt(message.updated_at),
     }
 
 

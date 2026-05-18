@@ -39,6 +39,7 @@ class WorkspaceExportResponse(BaseModel):
     team_members: list[dict[str, object]] = Field(default_factory=list)
     tasks: list[dict[str, object]] = Field(default_factory=list)
     task_steps: list[dict[str, object]] = Field(default_factory=list)
+    task_messages: list[dict[str, object]] = Field(default_factory=list)
     runs: list[dict[str, object]] = Field(default_factory=list)
     run_events: list[dict[str, object]] = Field(default_factory=list)
     files: list[dict[str, object]] = Field(default_factory=list)

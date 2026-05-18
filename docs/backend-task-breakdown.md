@@ -556,7 +556,7 @@ Tasks:
   - [x] Bind communication to task, step, run, and agent.
   - [x] Make the collaboration stream auditable and replayable with per-task sequence numbers.
   - [x] Add task message listing APIs.
-  - [ ] Include task messages in workspace export/import.
+  - [x] Include task messages in workspace export/import.
   - [ ] Map OpenAI Agents handoff/tool events into task messages when runtime integrations expose them.
 - [x] HR and marketplace loop.
   - [x] HR detects missing roles or skills from a project plan.
