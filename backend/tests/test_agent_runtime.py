@@ -1,7 +1,11 @@
 import asyncio
 from uuid import uuid4
 
-from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRuntimeContext
+from backend.app.agent_runtime.contracts import (
+    AgentRunRequest,
+    AgentRuntimeContext,
+    AgentRuntimeToolResult,
+)
 from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.factory import build_agent_runner
 from backend.app.agent_runtime.fake import FakeAgentRunner
@@ -75,6 +79,32 @@ def test_openai_agents_runner_uses_request_provider_override() -> None:
     assert agent.model.model == "gpt-4.1-mini"
 
 
+def test_openai_agents_runner_registers_allowed_mcp_tools() -> None:
+    profile = AgentProfile(
+        workspace_id=uuid4(),
+        name="Designer",
+        role="designer",
+        instructions="Design carefully.",
+        model="gpt-4.1",
+        model_settings={},
+    )
+    request = AgentRunRequest(
+        agent_profile=profile,
+        input_text="Create a poster",
+        context=AgentRuntimeContext(
+            workspace_id=profile.workspace_id,
+            task_id=None,
+            run_id=uuid4(),
+            allowed_tools=("generate_image", "search.web"),
+        ),
+        tool_executor=RecordingToolExecutor(),
+    )
+
+    agent = OpenAIAgentsRunner()._build_agent(request)
+
+    assert [tool.name for tool in agent.tools] == ["generate_image", "search.web"]
+
+
 def test_fake_agent_runner_returns_deterministic_output() -> None:
     profile = AgentProfile(
         workspace_id=uuid4(),
@@ -138,3 +168,14 @@ def test_agent_error_normalization_is_safe_for_persistence() -> None:
         "message": "network unavailable",
         "retryable": True,
     }
+
+
+class RecordingToolExecutor:
+    def execute_tool(
+        self,
+        *,
+        context: AgentRuntimeContext,
+        tool_name: str,
+        arguments: dict[str, object],
+    ) -> AgentRuntimeToolResult:
+        return AgentRuntimeToolResult(status="completed", output={"ok": True})

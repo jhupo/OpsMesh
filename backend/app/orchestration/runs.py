@@ -12,8 +12,10 @@ from sqlalchemy.orm import Session
 from backend.app.agent_runtime.contracts import AgentRunner, AgentRunRequest, AgentRuntimeContext
 from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.fake import FakeAgentRunner
+from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.models import AgentProfile
 from backend.app.audit.service import AuditService
+from backend.app.capabilities.execution import UnconfiguredMcpToolAdapter
 from backend.app.core.config import Settings
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.planning.member_matching import MemberMatchingService
@@ -537,6 +539,12 @@ class RunOrchestrationService:
             base_url=model_provider["base_url"],
             api_key=model_provider["api_key"],
             model_provider_credential_id=model_provider["model_provider_credential_id"],
+            tool_executor=BackendToolExecutor.for_mcp_adapter(
+                self._session,
+                UnconfiguredMcpToolAdapter(),
+            )
+            if allowed_tools
+            else None,
         )
 
     def _authorized_task_for_run(self, run: AgentRun) -> Task | None:

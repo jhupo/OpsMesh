@@ -594,6 +594,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     assert snapshot["runtime_policy"] == {"provider": "docker", "network": "disabled"}
     assert snapshot["approval_policy"] == {"required_tools": ["write_artifact"]}
     assert request.context.allowed_tools == ("generate_image",)
+    assert request.tool_executor is not None
     assert request.context.metadata["authorization_snapshot_version"] == 1
 
 

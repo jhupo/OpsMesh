@@ -1,10 +1,14 @@
 from typing import Any, Literal
 
-from agents import Agent, ModelSettings, Runner
+from agents import Agent, ModelSettings, Runner, function_tool
 from agents.models.interface import Model
 from agents.models.openai_provider import OpenAIProvider
 
-from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
+from backend.app.agent_runtime.contracts import (
+    AgentRunRequest,
+    AgentRunResult,
+    AgentRuntimeToolExecutor,
+)
 
 
 class OpenAIAgentsRunner:
@@ -35,6 +39,48 @@ class OpenAIAgentsRunner:
             instructions=profile.instructions,
             model=model,
             model_settings=self._model_settings(profile.model_settings),
+            tools=self._tools(request),
+        )
+
+    def _tools(self, request: AgentRunRequest) -> list[Any]:
+        if request.tool_executor is None:
+            return []
+        return [
+            self._mcp_function_tool(tool_name, request.tool_executor)
+            for tool_name in request.context.allowed_tools
+        ]
+
+    def _mcp_function_tool(
+        self,
+        tool_name: str,
+        executor: AgentRuntimeToolExecutor,
+    ) -> Any:
+        async def call_mcp_tool(ctx: Any, arguments: dict[str, object]) -> dict[str, object]:
+            result = executor.execute_tool(
+                context=ctx.context,
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+            if result.status == "completed":
+                return result.output or {}
+            return {
+                "error": result.error
+                or {
+                    "code": "mcp_tool_failed",
+                    "message": "MCP tool failed",
+                }
+            }
+
+        call_mcp_tool.__name__ = f"mcp_{_safe_tool_function_name(tool_name)}"
+        call_mcp_tool.__doc__ = (
+            "Execute an approved MCP tool. "
+            "Pass a JSON object with the arguments required by the tool."
+        )
+        return function_tool(
+            call_mcp_tool,
+            name_override=tool_name,
+            description_override=f"Execute the approved MCP tool `{tool_name}`.",
+            strict_mode=False,
         )
 
     def _model_settings(self, settings: dict[str, object]) -> ModelSettings:
@@ -115,3 +161,8 @@ class OpenAIAgentsRunner:
             if isinstance(dumped, dict):
                 return self._jsonable(dumped)
         return str(value)
+
+
+def _safe_tool_function_name(tool_name: str) -> str:
+    safe = "".join(char if char.isalnum() else "_" for char in tool_name)
+    return safe or "tool"

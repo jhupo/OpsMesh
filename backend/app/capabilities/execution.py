@@ -41,6 +41,22 @@ class McpToolAdapter(Protocol):
         """Execute an MCP tool and return a JSON-serializable response."""
 
 
+class UnconfiguredMcpToolAdapter:
+    def call(
+        self,
+        *,
+        server: McpServer,
+        tool_name: str,
+        arguments: dict[str, object],
+        credential_refs: list[McpCredentialReference],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        raise McpExecutionError(
+            "MCP protocol adapter is not configured",
+            code="mcp_adapter_unconfigured",
+        )
+
+
 @dataclass(frozen=True)
 class McpExecutionRequest:
     workspace_id: UUID

@@ -16,6 +16,23 @@ class AgentRuntimeContext:
 
 
 @dataclass(frozen=True)
+class AgentRuntimeToolResult:
+    status: str
+    output: dict[str, object] | None = None
+    error: dict[str, object] | None = None
+
+
+class AgentRuntimeToolExecutor(Protocol):
+    def execute_tool(
+        self,
+        *,
+        context: AgentRuntimeContext,
+        tool_name: str,
+        arguments: dict[str, object],
+    ) -> AgentRuntimeToolResult: ...
+
+
+@dataclass(frozen=True)
 class AgentRunRequest:
     agent_profile: AgentProfile
     input_text: str
@@ -25,6 +42,7 @@ class AgentRunRequest:
     base_url: str | None = None
     api_key: str | None = None
     model_provider_credential_id: UUID | None = None
+    tool_executor: AgentRuntimeToolExecutor | None = None
 
 
 @dataclass(frozen=True)
