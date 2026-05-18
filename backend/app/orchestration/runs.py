@@ -310,11 +310,13 @@ class RunOrchestrationService:
             if task is not None:
                 if run.task_step_id is not None:
                     self._mark_step_completed(run, final_output)
-                    next_run = self._create_and_enqueue_next_step_run(
+                    next_runs = self._create_and_enqueue_next_step_runs(
                         task,
                         requested_by_user_id=requested_by_user_id,
                     )
-                    if next_run is not None:
+                    if next_runs:
+                        return
+                    if self._task_has_open_team_work(task):
                         return
 
                 TaskStateService().transition(
@@ -423,6 +425,16 @@ class RunOrchestrationService:
 
         allowed_tools = self._allowed_tools_for_profile(profile)
         model_provider = self._model_provider_for_profile(profile)
+        step_context = self._step_context_for_run(run)
+        metadata: dict[str, object] = {
+            "agent_profile_id": str(profile.id) if profile.id is not None else None,
+            "agent_role": profile.role,
+            "run_model": model_provider["model"],
+            "model_provider_credential_id": str(model_provider["model_provider_credential_id"])
+            if model_provider["model_provider_credential_id"] is not None
+            else None,
+        }
+        metadata.update(step_context)
         return AgentRunRequest(
             agent_profile=profile,
             input_text=self._input_text_for_run(run),
@@ -432,16 +444,7 @@ class RunOrchestrationService:
                 run_id=run.id,
                 user_id=job.requested_by_user_id,
                 allowed_tools=allowed_tools,
-                metadata={
-                    "agent_profile_id": str(profile.id) if profile.id is not None else None,
-                    "agent_role": profile.role,
-                    "run_model": model_provider["model"],
-                    "model_provider_credential_id": str(
-                        model_provider["model_provider_credential_id"]
-                    )
-                    if model_provider["model_provider_credential_id"] is not None
-                    else None,
-                },
+                metadata=metadata,
             ),
             model=model_provider["model"],
             base_url=model_provider["base_url"],
@@ -502,6 +505,23 @@ class RunOrchestrationService:
             return ()
         return tuple(tool for tool in raw_tools if isinstance(tool, str))
 
+    def _step_context_for_run(self, run: AgentRun) -> dict[str, object]:
+        if run.task_step_id is None:
+            return {}
+        step = self._session.get(TaskStep, run.task_step_id)
+        if step is None or step.workspace_id != run.workspace_id:
+            return {}
+        return {
+            "context_scope": "task_step",
+            "task_step_id": str(step.id),
+            "work_package_id": step.work_package_id,
+            "required_role": step.required_role,
+            "required_skills": step.required_skills,
+            "expected_artifacts": step.expected_artifacts,
+            "acceptance_criteria": step.acceptance_criteria,
+            "review_policy": step.review_policy,
+        }
+
     def _lock_for_run(self, run: AgentRun) -> AbstractContextManager[bool]:
         if self._queue is not None:
             return self._queue.run_lock(str(run.workspace_id), str(run.id))
@@ -516,7 +536,8 @@ class RunOrchestrationService:
                 TaskStep.task_id == task.id,
             )
         ):
-            return self._next_eligible_step(task.id, task.workspace_id)
+            next_steps = self._next_eligible_steps(task.id, task.workspace_id)
+            return next_steps[0] if next_steps else None
 
         snapshot = task.team_snapshot if isinstance(task.team_snapshot, dict) else None
         if snapshot is None:
@@ -865,21 +886,20 @@ class RunOrchestrationService:
         step.result_summary = final_output
         self._append_event(run, "task_step.completed", step.title)
 
-    def _create_and_enqueue_next_step_run(
+    def _create_and_enqueue_next_step_runs(
         self,
         task: Task,
         *,
         requested_by_user_id: UUID | None,
-    ) -> AgentRun | None:
-        next_step = self._next_eligible_step(task.id, task.workspace_id)
-        if next_step is None:
-            return None
+    ) -> list[AgentRun]:
+        next_runs: list[AgentRun] = []
+        for next_step in self._next_eligible_steps(task.id, task.workspace_id):
+            next_run = self._create_run_for_step(task, next_step)
+            self.enqueue_run(next_run, requested_by_user_id)
+            next_runs.append(next_run)
+        return next_runs
 
-        next_run = self._create_run_for_step(task, next_step)
-        self.enqueue_run(next_run, requested_by_user_id)
-        return next_run
-
-    def _next_eligible_step(self, task_id: UUID, workspace_id: UUID) -> TaskStep | None:
+    def _next_eligible_steps(self, task_id: UUID, workspace_id: UUID) -> list[TaskStep]:
         queued_steps = self._session.scalars(
             select(TaskStep)
             .where(
@@ -889,10 +909,53 @@ class RunOrchestrationService:
             )
             .order_by(TaskStep.order_index.asc())
         ).all()
-        for step in queued_steps:
-            if self._dependencies_satisfied(step):
-                return step
-        return None
+        return [
+            step
+            for step in queued_steps
+            if self._dependencies_satisfied(step) and not self._step_has_active_run(step)
+        ]
+
+    def _step_has_active_run(self, step: TaskStep) -> bool:
+        active_count = self._session.scalar(
+            select(func.count(AgentRun.id)).where(
+                AgentRun.workspace_id == step.workspace_id,
+                AgentRun.task_step_id == step.id,
+                AgentRun.status.in_(
+                    [
+                        RunStatus.QUEUED.value,
+                        RunStatus.RUNNING.value,
+                        RunStatus.WAITING_APPROVAL.value,
+                    ]
+                ),
+            )
+        )
+        return int(active_count or 0) > 0
+
+    def _task_has_open_team_work(self, task: Task) -> bool:
+        incomplete_steps = self._session.scalar(
+            select(func.count(TaskStep.id)).where(
+                TaskStep.workspace_id == task.workspace_id,
+                TaskStep.task_id == task.id,
+                TaskStep.status.in_([STEP_STATUS_QUEUED, STEP_STATUS_RUNNING]),
+            )
+        )
+        if int(incomplete_steps or 0) > 0:
+            return True
+
+        active_runs = self._session.scalar(
+            select(func.count(AgentRun.id)).where(
+                AgentRun.workspace_id == task.workspace_id,
+                AgentRun.task_id == task.id,
+                AgentRun.status.in_(
+                    [
+                        RunStatus.QUEUED.value,
+                        RunStatus.RUNNING.value,
+                        RunStatus.WAITING_APPROVAL.value,
+                    ]
+                ),
+            )
+        )
+        return int(active_runs or 0) > 0
 
     def _dependencies_satisfied(self, step: TaskStep) -> bool:
         dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}

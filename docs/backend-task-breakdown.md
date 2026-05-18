@@ -534,11 +534,12 @@ Tasks:
   - [x] Enforce per-member max concurrency.
   - [ ] Enforce workspace-level task/run/runtime limits.
   - [ ] Support priority scheduling across multiple tasks.
-- [ ] Multi-agent collaborative execution.
-  - [ ] Create `AgentRun` records from assigned work packages.
-  - [ ] Run dependency-free packages in parallel.
-  - [ ] Restrict each agent to authorized task context, files, and tools.
-  - [ ] Persist outputs to task steps and artifacts.
+- [x] Multi-agent collaborative execution.
+  - [x] Create `AgentRun` records from assigned work packages.
+  - [x] Run dependency-free packages in parallel after their prerequisites complete.
+  - [x] Restrict each agent runtime request to the current task step context and the profile's allowed tools.
+  - [x] Persist step outputs back to `TaskStep` summaries and final team orchestration output.
+  - [ ] Bind generated files/artifacts to the producing work package with version metadata.
 - [ ] PM summary and acceptance.
   - [ ] PM reviews completed packages.
   - [ ] PM reconciles conflicts and integrates final delivery.

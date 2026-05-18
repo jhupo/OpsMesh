@@ -197,6 +197,122 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
     }
 
 
+def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="Manager",
+        role="manager",
+        instructions="Plan and review the team work.",
+        model="manager-model",
+    )
+    researcher = AgentProfile(
+        workspace_id=workspace.id,
+        name="Researcher",
+        role="researcher",
+        instructions="Collect market facts.",
+        model="researcher-model",
+    )
+    analyst = AgentProfile(
+        workspace_id=workspace.id,
+        name="Analyst",
+        role="analyst",
+        instructions="Analyze the collected facts.",
+        model="analyst-model",
+    )
+    session.add_all([manager, researcher, analyst])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Market Team",
+        team_type="research",
+        manager_agent_profile_id=manager.id,
+    )
+    session.add(team)
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=researcher.id,
+                team_role="Research",
+                order_index=0,
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=analyst.id,
+                team_role="Analysis",
+                order_index=1,
+            ),
+        ]
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Q2 market analysis",
+        description="Produce a concise market analysis.",
+    )
+    session.add(task)
+    session.flush()
+
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+    orchestration = RunOrchestrationService(session, queue)
+    first_run = orchestration.create_queued_run_for_task(task)
+    orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
+    session.commit()
+
+    handler = WorkerJobHandler(session, queue)
+    assert consume_once(queue, handler.handle) is True
+    assert queue.count_queued(workspace_id=workspace.id) == 2
+
+    active_specialist_runs = session.scalars(
+        select(AgentRun).where(
+            AgentRun.task_id == task.id,
+            AgentRun.status == RunStatus.QUEUED.value,
+        )
+    ).all()
+    active_specialist_steps = [
+        session.get(TaskStep, run.task_step_id) for run in active_specialist_runs
+    ]
+    assert {step.work_package_id for step in active_specialist_steps if step is not None} == {
+        "Research-1",
+        "Analysis-2",
+    }
+
+    assert consume_once(queue, handler.handle) is True
+    session.refresh(task)
+    assert task.status == TaskStatus.RUNNING.value
+    assert queue.count_queued(workspace_id=workspace.id) == 1
+    summary_run_before_ready = session.scalar(
+        select(AgentRun)
+        .join(TaskStep, AgentRun.task_step_id == TaskStep.id)
+        .where(TaskStep.task_id == task.id, TaskStep.work_package_id == "manager-summary")
+    )
+    assert summary_run_before_ready is None
+
+    assert consume_once(queue, handler.handle) is True
+    assert queue.count_queued(workspace_id=workspace.id) == 1
+    summary_run = session.scalar(
+        select(AgentRun)
+        .join(TaskStep, AgentRun.task_step_id == TaskStep.id)
+        .where(TaskStep.task_id == task.id, TaskStep.work_package_id == "manager-summary")
+    )
+    assert summary_run is not None
+    assert summary_run.status == RunStatus.QUEUED.value
+
+    assert consume_once(queue, handler.handle) is True
+    session.refresh(task)
+    assert task.status == TaskStatus.COMPLETED.value
+
+
 def test_create_queued_run_for_task_reuses_active_team_run() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
@@ -482,6 +598,74 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         "agent_role": "designer",
         "run_model": agent.model,
         "model_provider_credential_id": None,
+    }
+
+
+def test_agent_request_includes_authorized_task_step_context() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Build pitch deck")
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Designer",
+        role="designer",
+        instructions="Design assets.",
+        tool_policy={"allowed_tools": ["generate_image", "write_artifact"]},
+    )
+    session.add_all([task, agent])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        work_package_id="visual-design",
+        required_role="designer",
+        required_skills=["brand_design", "deck_layout"],
+        expected_artifacts=["pitch_deck"],
+        acceptance_criteria=["Deck follows the brand system."],
+        review_policy={"reviewer": "manager", "mode": "manager_review"},
+        title="Visual design",
+        description="Create the visual system for the pitch deck.",
+        status="queued",
+        order_index=100,
+        dependencies={},
+    )
+    session.add(step)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        requested_by_user_id=user.id,
+        idempotency_key="step-context",
+    )
+    request = RunOrchestrationService(session)._build_agent_request(run, job)
+
+    assert request.context.allowed_tools == ("generate_image", "write_artifact")
+    assert request.context.metadata == {
+        "agent_profile_id": str(agent.id),
+        "agent_role": "designer",
+        "run_model": agent.model,
+        "model_provider_credential_id": None,
+        "context_scope": "task_step",
+        "task_step_id": str(step.id),
+        "work_package_id": "visual-design",
+        "required_role": "designer",
+        "required_skills": ["brand_design", "deck_layout"],
+        "expected_artifacts": ["pitch_deck"],
+        "acceptance_criteria": ["Deck follows the brand system."],
+        "review_policy": {"reviewer": "manager", "mode": "manager_review"},
     }
 
 
