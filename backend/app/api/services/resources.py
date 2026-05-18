@@ -13,6 +13,7 @@ from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.planning.project_plans import ProjectPlanningService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task
@@ -221,7 +222,9 @@ class WorkspaceResourceService:
         )
         self._session.add(task)
         self._session.flush()
-        task.project_plan = ProjectPlanningService().create_initial_plan(task)
+        task.project_plan = ProjectPlanningService(
+            MemberMatchingService(self._session)
+        ).create_initial_plan(task)
         RunOrchestrationService(self._session).create_queued_run_for_task(task)
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,

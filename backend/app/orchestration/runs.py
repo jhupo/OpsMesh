@@ -15,6 +15,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.audit.service import AuditService
 from backend.app.core.config import Settings
 from backend.app.model_providers.service import ModelProviderCredentialService
+from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.planning.project_plans import ProjectPlanningService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
@@ -532,7 +533,9 @@ class RunOrchestrationService:
                 self._session.flush([task])
         if snapshot is not None:
             if task.project_plan is None:
-                task.project_plan = ProjectPlanningService().create_initial_plan(task)
+                task.project_plan = ProjectPlanningService(
+                    MemberMatchingService(self._session)
+                ).create_initial_plan(task)
                 self._session.flush([task])
             return self._create_team_step_plan_from_snapshot(task, snapshot)
 

@@ -363,6 +363,84 @@ def test_create_task_with_team_captures_workspace_team_snapshot() -> None:
     assert project_plan["work_packages"][1]["required_skills"] == ["react"]
 
 
+def test_create_task_matches_requested_work_packages_to_team_members() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    manager = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "PM", "role": "project_manager"},
+    )
+    designer = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Designer", "role": "ui_designer"},
+    )
+    developer = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Developer", "role": "frontend_engineer"},
+    )
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={
+            "name": "Product Team",
+            "team_type": "software",
+            "manager_agent_profile_id": manager.json()["id"],
+        },
+    )
+    client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": designer.json()["id"],
+            "team_role": "ui_designer",
+            "skill_weights": {"figma": 1.0},
+        },
+    )
+    client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": developer.json()["id"],
+            "team_role": "frontend_engineer",
+            "skill_weights": {"react": 0.9},
+        },
+    )
+
+    created_task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={
+            "title": "Build landing page",
+            "agent_team_id": team.json()["id"],
+            "input": {
+                "work_packages": [
+                    {
+                        "package_id": "ui-design",
+                        "title": "UI Design",
+                        "required_role": "ui_designer",
+                        "required_skills": ["figma"],
+                    },
+                    {
+                        "package_id": "frontend-build",
+                        "title": "Frontend Build",
+                        "required_role": "frontend_engineer",
+                        "required_skills": ["react"],
+                    },
+                ]
+            },
+        },
+    )
+
+    assert created_task.status_code == 201
+    work_packages = created_task.json()["project_plan"]["work_packages"]
+    by_id = {package["package_id"]: package for package in work_packages}
+    assert by_id["ui-design"]["assigned_agent_profile_id"] == designer.json()["id"]
+    assert by_id["frontend-build"]["assigned_agent_profile_id"] == developer.json()["id"]
+
+
 def test_create_task_rejects_foreign_team_reference() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

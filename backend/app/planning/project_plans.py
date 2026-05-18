@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.tasks.models import Task
 
 
@@ -63,6 +64,9 @@ class ProjectPlan:
 
 
 class ProjectPlanningService:
+    def __init__(self, matcher: MemberMatchingService | None = None) -> None:
+        self._matcher = matcher or MemberMatchingService()
+
     def create_initial_plan(self, task: Task) -> dict[str, object] | None:
         if not isinstance(task.team_snapshot, dict):
             return None
@@ -97,31 +101,13 @@ class ProjectPlanningService:
                 )
             )
 
-        specialist_package_ids: list[str] = []
-        for index, member in enumerate(members, start=1):
-            agent_profile_id = _uuid_or_none(member.get("agent_profile_id"))
-            if agent_profile_id is None:
-                continue
-            role = str(member.get("team_role") or "specialist")
-            package_id = f"{role}-{index}"
-            specialist_package_ids.append(package_id)
-            work_packages.append(
-                ProjectWorkPackage(
-                    package_id=package_id,
-                    title=f"{role} execution",
-                    description=f"Complete the assigned {role} work package for the task.",
-                    required_role=role,
-                    required_skills=tuple(_skill_names(member.get("skill_weights"))),
-                    assigned_agent_profile_id=agent_profile_id,
-                    depends_on=(manager_package_id,) if manager_package_id is not None else (),
-                    expected_artifacts=tuple(_expected_artifacts_for_role(role)),
-                    acceptance_criteria=(
-                        "The work package produces a clear result summary.",
-                        "Any generated files or artifacts are attached to the task.",
-                    ),
-                    review_policy={"reviewer": "manager", "mode": "manager_review"},
-                )
-            )
+        specialist_package_ids = self._append_specialist_packages(
+            work_packages=work_packages,
+            task=task,
+            snapshot=snapshot,
+            members=members,
+            manager_package_id=manager_package_id,
+        )
 
         if manager_agent_profile_id is not None and specialist_package_ids:
             work_packages.append(
@@ -153,6 +139,102 @@ class ProjectPlanningService:
         ).as_dict()
         validate_project_plan(plan, task.team_snapshot)
         return plan
+
+    def _append_specialist_packages(
+        self,
+        *,
+        work_packages: list[ProjectWorkPackage],
+        task: Task,
+        snapshot: dict[str, object],
+        members: list[dict[str, object]],
+        manager_package_id: str | None,
+    ) -> list[str]:
+        requested_packages = _requested_work_packages(task.input)
+        if requested_packages:
+            return self._append_requested_packages(
+                work_packages=work_packages,
+                task=task,
+                snapshot=snapshot,
+                requested_packages=requested_packages,
+                manager_package_id=manager_package_id,
+            )
+
+        specialist_package_ids: list[str] = []
+        for index, member in enumerate(members, start=1):
+            agent_profile_id = _uuid_or_none(member.get("agent_profile_id"))
+            if agent_profile_id is None:
+                continue
+            role = str(member.get("team_role") or "specialist")
+            package_id = f"{role}-{index}"
+            specialist_package_ids.append(package_id)
+            work_packages.append(
+                ProjectWorkPackage(
+                    package_id=package_id,
+                    title=f"{role} execution",
+                    description=f"Complete the assigned {role} work package for the task.",
+                    required_role=role,
+                    required_skills=tuple(_skill_names(member.get("skill_weights"))),
+                    assigned_agent_profile_id=agent_profile_id,
+                    depends_on=(manager_package_id,) if manager_package_id is not None else (),
+                    expected_artifacts=tuple(_expected_artifacts_for_role(role)),
+                    acceptance_criteria=(
+                        "The work package produces a clear result summary.",
+                        "Any generated files or artifacts are attached to the task.",
+                    ),
+                    review_policy={"reviewer": "manager", "mode": "manager_review"},
+                )
+            )
+        return specialist_package_ids
+
+    def _append_requested_packages(
+        self,
+        *,
+        work_packages: list[ProjectWorkPackage],
+        task: Task,
+        snapshot: dict[str, object],
+        requested_packages: list[dict[str, object]],
+        manager_package_id: str | None,
+    ) -> list[str]:
+        specialist_package_ids: list[str] = []
+        for index, request in enumerate(requested_packages, start=1):
+            role = _string_or_default(request.get("required_role"), "specialist")
+            required_skills = _string_list(request.get("required_skills"))
+            match = self._matcher.match(
+                team_snapshot=snapshot,
+                required_role=role,
+                required_skills=required_skills,
+                workspace_id=task.workspace_id,
+            )
+            package_id = _string_or_default(request.get("package_id"), f"{role}-{index}")
+            specialist_package_ids.append(package_id)
+            work_packages.append(
+                ProjectWorkPackage(
+                    package_id=package_id,
+                    title=_string_or_default(request.get("title"), f"{role} execution"),
+                    description=_string_or_default(
+                        request.get("description"),
+                        f"Complete the assigned {role} work package for the task.",
+                    ),
+                    required_role=role,
+                    required_skills=tuple(required_skills),
+                    assigned_agent_profile_id=match.agent_profile_id if match is not None else None,
+                    depends_on=_string_tuple(request.get("depends_on"))
+                    or ((manager_package_id,) if manager_package_id is not None else ()),
+                    expected_artifacts=tuple(
+                        _string_list(request.get("expected_artifacts"))
+                        or _expected_artifacts_for_role(role)
+                    ),
+                    acceptance_criteria=tuple(
+                        _string_list(request.get("acceptance_criteria"))
+                        or ["The work package produces a clear result summary."]
+                    ),
+                    review_policy=_dict_or_default(
+                        request.get("review_policy"),
+                        {"reviewer": "manager", "mode": "manager_review"},
+                    ),
+                )
+            )
+        return specialist_package_ids
 
 
 def validate_project_plan(
@@ -235,6 +317,36 @@ def _expected_artifacts_for_role(role: str) -> list[str]:
     if "qa" in normalized or "test" in normalized:
         return ["test_report"]
     return ["work_summary"]
+
+
+def _requested_work_packages(task_input: dict[str, object]) -> list[dict[str, object]]:
+    raw_packages = task_input.get("work_packages")
+    if raw_packages is None:
+        raw_packages = task_input.get("required_work_packages")
+    if not isinstance(raw_packages, list):
+        return []
+    return [item for item in raw_packages if isinstance(item, dict)]
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _string_tuple(value: object) -> tuple[str, ...]:
+    return tuple(_string_list(value))
+
+
+def _string_or_default(value: object, default: str) -> str:
+    return value if isinstance(value, str) and value else default
+
+
+def _dict_or_default(
+    value: object,
+    default: dict[str, object],
+) -> dict[str, object]:
+    return value if isinstance(value, dict) else default
 
 
 def _required_string(value: dict[str, object], key: str) -> str:

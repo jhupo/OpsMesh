@@ -529,9 +529,9 @@ Tasks:
   - [x] Extend `TaskStep` with required role, required skills, expected artifacts, acceptance criteria, and review policy.
   - [x] Represent task execution as a dependency DAG.
   - [x] Allow multiple developers or specialists to work on separate packages.
-- [ ] Member matching and scheduling.
-  - [ ] Match work packages by role, skill, availability, load, priority, and runtime capacity.
-  - [ ] Enforce per-member max concurrency.
+- [x] Member matching and scheduling.
+  - [x] Match work packages by role, skill, availability, load, priority, and runtime capacity.
+  - [x] Enforce per-member max concurrency.
   - [ ] Enforce workspace-level task/run/runtime limits.
   - [ ] Support priority scheduling across multiple tasks.
 - [ ] Multi-agent collaborative execution.
