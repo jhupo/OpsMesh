@@ -45,7 +45,12 @@ def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None
     agent = AgentProfile(workspace_id=workspace.id, name="Researcher", role="researcher")
     other_agent = AgentProfile(workspace_id=other_workspace.id, name="Other", role="researcher")
     team = AgentTeam(workspace_id=workspace.id, name="Research Team", team_type="research")
-    task = Task(workspace_id=workspace.id, created_by_user_id=owner.id, title="Q2 Research")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Q2 Research",
+        team_snapshot={"team": {"name": "Research Team"}},
+    )
     session.add_all([agent, other_agent, team, task])
     session.flush()
     session.add(
@@ -82,6 +87,7 @@ def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None
     assert payload["manifest"]["counts"]["teams"] == 1
     assert payload["manifest"]["counts"]["team_members"] == 1
     assert payload["manifest"]["counts"]["tasks"] == 1
+    assert payload["tasks"][0]["team_snapshot"] == {"team": {"name": "Research Team"}}
     assert payload["agents"][0]["id"] == str(agent.id)
     assert payload["team_members"][0]["department"] == "Research"
     assert payload["team_members"][0]["position_title"] == "Research Specialist"
@@ -138,6 +144,7 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
         created_by_user_id=source_user.id,
         title="Q2 Research",
         domain_type="research",
+        team_snapshot={"team": {"name": "Research Team"}},
     )
     session.add_all([agent, team, task])
     session.flush()
@@ -225,6 +232,7 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
     assert imported_member.skill_weights == {"research": 0.9}
     assert imported_member.max_concurrent_tasks == 2
     assert imported_task is not None
+    assert imported_task.team_snapshot == {"team": {"name": "Research Team"}}
     assert imported_task.status == "draft"
     assert audit is not None
     assert audit.user_id == target_user.id

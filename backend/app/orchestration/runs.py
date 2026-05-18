@@ -515,6 +515,10 @@ class RunOrchestrationService:
         ):
             return self._next_eligible_step(task.id, task.workspace_id)
 
+        snapshot = task.team_snapshot if isinstance(task.team_snapshot, dict) else None
+        if snapshot is not None:
+            return self._create_team_step_plan_from_snapshot(task, snapshot)
+
         team = self._session.scalar(
             select(AgentTeam).where(
                 AgentTeam.workspace_id == task.workspace_id,
@@ -579,6 +583,92 @@ class RunOrchestrationService:
                 workspace_id=task.workspace_id,
                 task_id=task.id,
                 assigned_agent_profile_id=team.manager_agent_profile_id,
+                title="Manager summary",
+                description=(
+                    "Review specialist outputs, reconcile issues, and produce the final answer."
+                ),
+                status=STEP_STATUS_QUEUED,
+                order_index=1_000,
+                dependencies={"after_step_ids": [str(step.id) for step in specialist_steps]},
+            )
+            self._session.add(summary_step)
+
+        self._session.flush()
+        return first_step
+
+    def _create_team_step_plan_from_snapshot(
+        self,
+        task: Task,
+        snapshot: dict[str, object],
+    ) -> TaskStep | None:
+        team = snapshot.get("team")
+        if not isinstance(team, dict):
+            return None
+        raw_members = snapshot.get("members", [])
+        members = (
+            [member for member in raw_members if isinstance(member, dict)]
+            if isinstance(raw_members, list)
+            else []
+        )
+        manager_agent_profile_id = _uuid_or_none(team.get("manager_agent_profile_id"))
+        if manager_agent_profile_id is None and not members:
+            return None
+
+        team_name = str(team.get("name") or "team")
+        first_step: TaskStep | None = None
+        manager_step: TaskStep | None = None
+        if manager_agent_profile_id is not None:
+            manager_step = TaskStep(
+                workspace_id=task.workspace_id,
+                task_id=task.id,
+                assigned_agent_profile_id=manager_agent_profile_id,
+                title="Manager planning",
+                description="Clarify the goal, split responsibilities, and prepare the team plan.",
+                status=STEP_STATUS_QUEUED,
+                order_index=0,
+                dependencies={},
+            )
+            self._session.add(manager_step)
+            self._session.flush([manager_step])
+            first_step = manager_step
+
+        specialist_steps: list[TaskStep] = []
+        manager_dependency = (
+            {"after_step_ids": [str(manager_step.id)]} if manager_step is not None else {}
+        )
+        ordered_members = sorted(
+            members,
+            key=lambda member: (
+                _int_or_default(member.get("order_index"), 0),
+                str(member.get("team_role") or ""),
+            ),
+        )
+        for index, member in enumerate(ordered_members, start=1):
+            agent_profile_id = _uuid_or_none(member.get("agent_profile_id"))
+            if agent_profile_id is None:
+                continue
+            team_role = str(member.get("team_role") or "specialist")
+            step = TaskStep(
+                workspace_id=task.workspace_id,
+                task_id=task.id,
+                assigned_agent_profile_id=agent_profile_id,
+                title=f"{team_role} execution",
+                description=f"Complete the assigned team role work for {team_name}.",
+                status=STEP_STATUS_QUEUED,
+                order_index=100 + index,
+                dependencies=manager_dependency,
+            )
+            self._session.add(step)
+            specialist_steps.append(step)
+            if first_step is None:
+                first_step = step
+        self._session.flush(specialist_steps)
+
+        if manager_agent_profile_id is not None and specialist_steps:
+            summary_step = TaskStep(
+                workspace_id=task.workspace_id,
+                task_id=task.id,
+                assigned_agent_profile_id=manager_agent_profile_id,
                 title="Manager summary",
                 description=(
                     "Review specialist outputs, reconcile issues, and produce the final answer."
@@ -776,3 +866,18 @@ def build_default_queue(redis_client: Any, settings: Any) -> RedisQueue:
         keys=RedisKeyBuilder(settings.redis_key_prefix),
         queue_name=settings.worker_queue_name,
     )
+
+
+def _uuid_or_none(value: object | None) -> UUID | None:
+    if value is None:
+        return None
+    try:
+        return UUID(str(value))
+    except ValueError:
+        return None
+
+
+def _int_or_default(value: object, default: int) -> int:
+    if isinstance(value, int):
+        return value
+    return default

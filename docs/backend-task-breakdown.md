@@ -515,11 +515,11 @@ Tasks:
   - [x] Enhance `AgentTeamMember` with role, department, position, responsibilities, skill weights, availability, max concurrency, and reporting line.
   - [ ] Support adding or upgrading member skills over time.
   - [x] Support hiring public talent into an existing team.
-- [ ] Task intake into existing teams.
-  - [ ] Require team-backed tasks to reference an existing `agent_team_id`.
-  - [ ] Save a `team_snapshot` when task execution starts.
-  - [ ] Keep historical tasks stable when the organization changes later.
-  - [ ] Enforce workspace-scoped team and member access.
+- [x] Task intake into existing teams.
+  - [x] Require team-backed tasks to reference an existing `agent_team_id`.
+  - [x] Save a `team_snapshot` when task execution starts.
+  - [x] Keep historical tasks stable when the organization changes later.
+  - [x] Enforce workspace-scoped team and member access.
 - [ ] Project manager planning.
   - [ ] Let the PM agent inspect the task and team roster.
   - [ ] Generate a structured project plan.

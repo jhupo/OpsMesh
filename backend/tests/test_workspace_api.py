@@ -304,6 +304,80 @@ def test_team_member_api_rejects_foreign_agent_and_reporting_member() -> None:
     assert bad_report.status_code == 404
 
 
+def test_create_task_with_team_captures_workspace_team_snapshot() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    manager = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "PM", "role": "project_manager"},
+    )
+    developer = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Frontend Dev", "role": "frontend_engineer"},
+    )
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={
+            "name": "Product Team",
+            "team_type": "software",
+            "manager_agent_profile_id": manager.json()["id"],
+        },
+    )
+    member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": developer.json()["id"],
+            "team_role": "frontend_engineer",
+            "department": "Engineering",
+            "skill_weights": {"react": 0.9},
+        },
+    )
+
+    created_task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={"title": "Build dashboard", "agent_team_id": team.json()["id"]},
+    )
+
+    assert member.status_code == 201
+    assert created_task.status_code == 201
+    snapshot = created_task.json()["team_snapshot"]
+    assert snapshot["snapshot_version"] == 1
+    assert snapshot["team"]["id"] == team.json()["id"]
+    assert snapshot["team"]["manager_agent_profile_id"] == manager.json()["id"]
+    assert snapshot["members"][0]["agent_profile_id"] == developer.json()["id"]
+    assert snapshot["members"][0]["department"] == "Engineering"
+    assert snapshot["members"][0]["skill_weights"] == {"react": 0.9}
+
+
+def test_create_task_rejects_foreign_team_reference() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other@example.com",
+        slug="other-space",
+    )
+    foreign_team = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/teams",
+        headers=_headers(other_owner.id),
+        json={"name": "Foreign Team"},
+    )
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={"title": "Should fail", "agent_team_id": foreign_team.json()["id"]},
+    )
+
+    assert response.status_code == 404
+
+
 def test_model_provider_credentials_are_created_without_returning_secret() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

@@ -16,6 +16,7 @@ from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.teams.snapshots import build_team_snapshot
 
 T = TypeVar("T")
 
@@ -205,10 +206,17 @@ class WorkspaceResourceService:
         created_by_user_id: UUID,
         data: TaskCreateRequest,
     ) -> Task:
+        payload = data.model_dump()
+        if data.agent_team_id is not None:
+            payload["team_snapshot"] = build_team_snapshot(
+                self._session,
+                workspace_id=workspace_id,
+                team_id=data.agent_team_id,
+            )
         task = Task(
             workspace_id=workspace_id,
             created_by_user_id=created_by_user_id,
-            **data.model_dump(),
+            **payload,
         )
         self._session.add(task)
         self._session.flush()

@@ -254,6 +254,14 @@ async def create_task(
             status_code=status.HTTP_409_CONFLICT,
             detail="Request with this Idempotency-Key is still processing",
         ) from exc
+    except ValueError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
     return TaskResponse.model_validate(task)
 
 

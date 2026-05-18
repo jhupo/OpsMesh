@@ -229,6 +229,111 @@ def test_create_queued_run_for_task_reuses_active_team_run() -> None:
     assert len(steps) == 1
 
 
+def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="Manager",
+        role="manager",
+        model="manager-model",
+    )
+    original_developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Original Developer",
+        role="frontend_engineer",
+        model="original-model",
+    )
+    new_developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="New Developer",
+        role="frontend_engineer",
+        model="new-model",
+    )
+    session.add_all([manager, original_developer, new_developer])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Product Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+    )
+    session.add(team)
+    session.flush()
+    original_member = AgentTeamMember(
+        workspace_id=workspace.id,
+        agent_team_id=team.id,
+        agent_profile_id=original_developer.id,
+        team_role="frontend_engineer",
+        department="Engineering",
+        skill_weights={"react": 0.9},
+        order_index=0,
+    )
+    session.add(original_member)
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        team_snapshot={
+            "snapshot_version": 1,
+            "team": {
+                "id": str(team.id),
+                "name": team.name,
+                "manager_agent_profile_id": str(manager.id),
+            },
+            "members": [
+                {
+                    "id": str(original_member.id),
+                    "agent_profile_id": str(original_developer.id),
+                    "team_role": "frontend_engineer",
+                    "order_index": 0,
+                    "accepts_tasks": True,
+                }
+            ],
+            "agents": [],
+        },
+        title="Build dashboard",
+    )
+    original_member.status = "inactive"
+    replacement_member = AgentTeamMember(
+        workspace_id=workspace.id,
+        agent_team_id=team.id,
+        agent_profile_id=new_developer.id,
+        team_role="frontend_engineer",
+        order_index=0,
+    )
+    session.add_all([task, replacement_member])
+    session.flush()
+
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+    orchestration = RunOrchestrationService(session, queue)
+    first_run = orchestration.create_queued_run_for_task(task)
+    orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
+    session.commit()
+
+    handler = WorkerJobHandler(session, queue)
+    while consume_once(queue, handler.handle):
+        pass
+
+    steps = session.scalars(
+        select(TaskStep).where(TaskStep.task_id == task.id).order_by(TaskStep.order_index)
+    ).all()
+    runs = session.scalars(select(AgentRun).where(AgentRun.task_id == task.id)).all()
+
+    assert [step.assigned_agent_profile_id for step in steps] == [
+        manager.id,
+        original_developer.id,
+        manager.id,
+    ]
+    assert new_developer.id not in {run.agent_profile_id for run in runs}
+    assert task.status == TaskStatus.COMPLETED.value
+
+
 def test_worker_rejects_workspace_mismatch() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
