@@ -569,8 +569,9 @@ Tasks:
   - [x] Copy public agents into the user's workspace before use.
   - [x] Build every run with an isolated authorization context.
   - [x] Reject cross-workspace agent profiles and mismatched task steps at run request build time.
+  - [x] Add policy snapshots for tools, files, and runtime scope on each new run.
   - [ ] Copy public skills into the user's workspace before use.
-  - [ ] Add policy snapshots for files, MCP tools, and runtime mounts on each run.
+  - [ ] Enforce copied skill provenance inside the run policy snapshot.
 - [ ] Local tests.
   - [ ] Test fixed team task intake.
   - [ ] Test PM plan generation and validation.

@@ -517,6 +517,86 @@ def test_create_queued_run_for_task_reuses_active_team_run() -> None:
     assert len(steps) == 1
 
 
+def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Designer",
+        role="designer",
+        instructions="Design assets.",
+        tool_policy={"allowed_tools": ["generate_image"]},
+        runtime_policy={"provider": "docker", "network": "disabled"},
+        approval_policy={"required_tools": ["write_artifact"]},
+    )
+    team = AgentTeam(workspace_id=workspace.id, name="Design Team", team_type="design")
+    session.add_all([agent, team])
+    session.flush()
+    member = AgentTeamMember(
+        workspace_id=workspace.id,
+        agent_team_id=team.id,
+        agent_profile_id=agent.id,
+        team_role="designer",
+        skill_weights={"ui": 1.0},
+    )
+    session.add(member)
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        team_snapshot={
+            "team": {"id": str(team.id), "name": team.name},
+            "members": [
+                {
+                    "id": str(member.id),
+                    "agent_profile_id": str(agent.id),
+                    "team_role": "designer",
+                    "skill_weights": {"ui": 1.0},
+                    "accepts_tasks": True,
+                }
+            ],
+            "agents": [],
+        },
+        input={
+            "work_packages": [
+                {
+                    "package_id": "visual-design",
+                    "title": "Visual design",
+                    "required_role": "designer",
+                    "required_skills": ["ui"],
+                    "expected_artifacts": ["image"],
+                }
+            ]
+        },
+        title="Design launch image",
+    )
+    session.add(task)
+    session.flush()
+
+    run = RunOrchestrationService(session).create_queued_run_for_task(task)
+    snapshot = run.input["authorization_snapshot"]
+    agent.tool_policy = {"allowed_tools": ["delete_workspace_file"]}
+    session.commit()
+
+    request = RunOrchestrationService(session)._build_agent_request(
+        run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="snapshot-policy",
+        ),
+    )
+
+    assert snapshot["allowed_tools"] == ["generate_image"]
+    assert snapshot["runtime_policy"] == {"provider": "docker", "network": "disabled"}
+    assert snapshot["approval_policy"] == {"required_tools": ["write_artifact"]}
+    assert request.context.allowed_tools == ("generate_image",)
+    assert request.context.metadata["authorization_snapshot_version"] == 1
+
+
 def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
@@ -766,6 +846,7 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         "authorized_workspace_id": str(workspace.id),
         "authorized_task_id": str(task.id),
         "tool_policy_source": "agent_profile",
+        "authorization_snapshot_version": None,
     }
 
 
@@ -830,6 +911,7 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
         "authorized_workspace_id": str(workspace.id),
         "authorized_task_id": str(task.id),
         "tool_policy_source": "agent_profile",
+        "authorization_snapshot_version": None,
         "context_scope": "task_step",
         "task_step_id": str(step.id),
         "work_package_id": "visual-design",

@@ -504,7 +504,8 @@ class RunOrchestrationService:
                 model=run.model or "gpt-4.1",
             )
 
-        allowed_tools = self._allowed_tools_for_profile(profile)
+        authorization_snapshot = self._authorization_snapshot_for_run(run)
+        allowed_tools = self._allowed_tools_for_run(run, profile)
         model_provider = self._model_provider_for_profile(profile)
         step_context = self._step_context_for_run(run)
         metadata: dict[str, object] = {
@@ -518,6 +519,7 @@ class RunOrchestrationService:
             "authorized_workspace_id": str(run.workspace_id),
             "authorized_task_id": str(task.id) if task is not None else None,
             "tool_policy_source": "agent_profile",
+            "authorization_snapshot_version": authorization_snapshot.get("version"),
         }
         metadata.update(step_context)
         return AgentRunRequest(
@@ -616,6 +618,22 @@ class RunOrchestrationService:
         if not isinstance(raw_tools, list):
             return ()
         return tuple(tool for tool in raw_tools if isinstance(tool, str))
+
+    def _allowed_tools_for_run(
+        self,
+        run: AgentRun,
+        profile: AgentProfile,
+    ) -> tuple[str, ...]:
+        snapshot = self._authorization_snapshot_for_run(run)
+        raw_tools = snapshot.get("allowed_tools")
+        if isinstance(raw_tools, list):
+            return tuple(tool for tool in raw_tools if isinstance(tool, str))
+        return self._allowed_tools_for_profile(profile)
+
+    def _authorization_snapshot_for_run(self, run: AgentRun) -> dict[str, object]:
+        run_input = run.input if isinstance(run.input, dict) else {}
+        snapshot = run_input.get("authorization_snapshot")
+        return snapshot if isinstance(snapshot, dict) else {}
 
     def _step_context_for_run(self, run: AgentRun) -> dict[str, object]:
         if run.task_step_id is None:
@@ -989,12 +1007,57 @@ class RunOrchestrationService:
                 "title": task.title,
                 "step_title": step.title,
                 "team_orchestration": True,
+                "authorization_snapshot": self._build_authorization_snapshot(
+                    task,
+                    step,
+                    profile,
+                ),
             },
             model=profile.model if profile is not None else None,
         )
         self._session.add(run)
         self._session.flush([run])
         return run
+
+    def _build_authorization_snapshot(
+        self,
+        task: Task,
+        step: TaskStep,
+        profile: AgentProfile | None,
+    ) -> dict[str, object]:
+        allowed_tools = self._allowed_tools_for_profile(profile) if profile is not None else ()
+        tool_policy = profile.tool_policy if profile is not None else {}
+        runtime_policy = profile.runtime_policy if profile is not None else {}
+        memory_policy = profile.memory_policy if profile is not None else {}
+        approval_policy = profile.approval_policy if profile is not None else {}
+        return {
+            "version": 1,
+            "workspace_id": str(task.workspace_id),
+            "task_id": str(task.id),
+            "task_step_id": str(step.id),
+            "agent_profile_id": str(profile.id)
+            if profile is not None and profile.id is not None
+            else None,
+            "allowed_tools": list(allowed_tools),
+            "tool_policy": _dict_copy(tool_policy),
+            "runtime_policy": _dict_copy(runtime_policy),
+            "memory_policy": _dict_copy(memory_policy),
+            "approval_policy": _dict_copy(approval_policy),
+            "file_scope": {
+                "mode": "task_step",
+                "workspace_id": str(task.workspace_id),
+                "task_id": str(task.id),
+                "allowed_file_ids": _string_list(step.dependencies.get("allowed_file_ids"))
+                if isinstance(step.dependencies, dict)
+                else [],
+            },
+            "runtime_scope": {
+                "mode": "workspace_runtime_policy",
+                "workspace_id": str(task.workspace_id),
+                "task_id": str(task.id),
+                "task_step_id": str(step.id),
+            },
+        }
 
     def _mark_step_completed(self, run: AgentRun, final_output: str) -> None:
         if run.task_step_id is None:
@@ -1591,6 +1654,10 @@ def _string_list_from_mapping_keys(value: object) -> list[str]:
 
 def _dict_or_empty(value: object) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
+
+
+def _dict_copy(value: object) -> dict[str, object]:
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _json_object_from_text(value: str) -> dict[str, object] | None:
