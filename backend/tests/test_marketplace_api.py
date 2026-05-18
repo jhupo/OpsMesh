@@ -18,6 +18,7 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.marketplace.models import TalentListing, WorkspaceAgentInstall
 from backend.app.redis.dependencies import get_redis_client
+from backend.app.tasks.models import Task, TaskMessage
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
@@ -446,6 +447,88 @@ def test_hr_recommendations_reject_foreign_team() -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_hr_recommends_talent_for_unassigned_task_work_packages() -> None:
+    client, session = _client()
+    publisher, publisher_workspace = _seed_workspace(
+        session,
+        email="publisher@example.com",
+        slug="publisher",
+    )
+    buyer, buyer_workspace = _seed_workspace(session, email="buyer@example.com", slug="buyer")
+    source_agent = AgentProfile(
+        workspace_id=publisher_workspace.id,
+        name="Frontend Pro",
+        role="frontend_engineer",
+    )
+    team = AgentTeam(
+        workspace_id=buyer_workspace.id,
+        name="Product Team",
+        team_type="software",
+    )
+    task = Task(
+        workspace_id=buyer_workspace.id,
+        created_by_user_id=buyer.id,
+        agent_team_id=team.id,
+        title="Build dashboard",
+        team_snapshot={"team": {"id": str(team.id), "team_type": "software"}},
+        project_plan={
+            "work_packages": [
+                {
+                    "package_id": "frontend-ui",
+                    "title": "Frontend UI",
+                    "required_role": "frontend_engineer",
+                    "required_skills": ["react", "ui"],
+                    "assigned_agent_profile_id": None,
+                    "expected_artifacts": ["pull_request"],
+                }
+            ]
+        },
+    )
+    session.add_all([source_agent, team, task])
+    session.commit()
+    listing = _publish_listing(
+        client,
+        publisher,
+        publisher_workspace,
+        source_agent,
+        title="Frontend Engineer",
+        skill_tags=["react", "ui"],
+        capability_tags=["code.execute"],
+    )
+
+    response = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/tasks/{task.id}/talent-market/recommendations",
+        headers=_headers(buyer.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task_id"] == str(task.id)
+    assert body["missing_work_packages"] == [
+        {
+            "package_id": "frontend-ui",
+            "title": "Frontend UI",
+            "required_role": "frontend_engineer",
+            "required_skills": ["react", "ui"],
+            "expected_artifacts": ["pull_request"],
+        }
+    ]
+    assert body["uncovered_roles"] == ["frontend_engineer"]
+    recommendation = body["recommended_roles"][0]
+    assert recommendation["role"] == "frontend_engineer"
+    assert recommendation["candidates"][0]["listing"]["id"] == listing["id"]
+
+    messages = (
+        session.query(TaskMessage)
+        .filter(TaskMessage.task_id == task.id)
+        .order_by(TaskMessage.sequence)
+        .all()
+    )
+    assert [message.message_type for message in messages] == ["hr.staffing_recommendation"]
+    assert messages[0].payload["missing_work_packages"] == body["missing_work_packages"]
+    assert messages[0].payload["uncovered_roles"] == ["frontend_engineer"]
 
 
 def _client() -> tuple[TestClient, Session]:

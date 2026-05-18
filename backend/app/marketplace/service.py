@@ -22,6 +22,7 @@ from backend.app.api.schemas.marketplace import (
     TalentRecommendationRequest,
     TalentRecommendationResponse,
     TalentUpgradeStatusResponse,
+    TaskTalentRecommendationResponse,
     WorkspaceAgentInstallResponse,
 )
 from backend.app.audit.service import AuditService
@@ -31,6 +32,7 @@ from backend.app.marketplace.models import (
     TalentListingReview,
     WorkspaceAgentInstall,
 )
+from backend.app.tasks.models import Task, TaskMessage
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 
@@ -103,8 +105,26 @@ class TalentMarketplaceService:
         workspace_id: UUID,
         data: TalentRecommendationRequest,
     ) -> TalentRecommendationResponse:
-        existing_roles = self._existing_team_roles(workspace_id, data.team_id)
-        role_specs = _role_specs_for_request(data)
+        return self._recommend_for_role_specs(
+            workspace_id=workspace_id,
+            objective=data.objective,
+            team_type=data.team_type,
+            team_id=data.team_id,
+            role_specs=_role_specs_for_request(data),
+            max_candidates_per_role=data.max_candidates_per_role,
+        )
+
+    def _recommend_for_role_specs(
+        self,
+        *,
+        workspace_id: UUID,
+        objective: str,
+        team_type: str,
+        team_id: UUID | None,
+        role_specs: list[_RoleSpec],
+        max_candidates_per_role: int,
+    ) -> TalentRecommendationResponse:
+        existing_roles = self._existing_team_roles(workspace_id, team_id)
         listings = list(
             self._session.scalars(
                 select(TalentListing)
@@ -134,7 +154,7 @@ class TalentMarketplaceService:
                     matched_reasons=item.reasons,
                     missing_tags=item.missing_tags,
                 )
-                for item in viable[: data.max_candidates_per_role]
+                for item in viable[:max_candidates_per_role]
             ]
             if spec.role not in existing_roles:
                 uncovered_roles.append(spec.role)
@@ -149,12 +169,47 @@ class TalentMarketplaceService:
             )
 
         return TalentRecommendationResponse(
-            objective=data.objective,
-            team_type=data.team_type,
+            objective=objective,
+            team_type=team_type,
             recommended_roles=recommended_roles,
             existing_team_roles=sorted(existing_roles),
             uncovered_roles=uncovered_roles,
         )
+
+    def recommend_for_task_staffing(
+        self,
+        *,
+        workspace_id: UUID,
+        task_id: UUID,
+        max_candidates_per_role: int = 3,
+        persist_message: bool = True,
+    ) -> TaskTalentRecommendationResponse | None:
+        task = self._session.get(Task, task_id)
+        if task is None or task.workspace_id != workspace_id:
+            return None
+        missing_packages = _missing_work_packages_from_task(task)
+        role_specs = [_role_spec_for_missing_package(package) for package in missing_packages]
+        response = self._recommend_for_role_specs(
+            workspace_id=workspace_id,
+            objective=task.title,
+            team_type=_task_team_type(task),
+            team_id=task.agent_team_id,
+            role_specs=role_specs,
+            max_candidates_per_role=max_candidates_per_role,
+        )
+        task_response = TaskTalentRecommendationResponse(
+            task_id=task.id,
+            objective=response.objective,
+            team_type=response.team_type,
+            recommended_roles=response.recommended_roles,
+            existing_team_roles=response.existing_team_roles,
+            uncovered_roles=response.uncovered_roles,
+            missing_work_packages=missing_packages,
+        )
+        if persist_message:
+            self._append_hr_recommendation_message(task, task_response)
+            self._session.commit()
+        return task_response
 
     def hire_agent(
         self,
@@ -539,6 +594,39 @@ class TalentMarketplaceService:
             raise ValueError("Agent profile not found")
         return agent
 
+    def _append_hr_recommendation_message(
+        self,
+        task: Task,
+        response: TaskTalentRecommendationResponse,
+    ) -> TaskMessage:
+        next_sequence = (
+            self._session.scalar(
+                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
+                    TaskMessage.workspace_id == task.workspace_id,
+                    TaskMessage.task_id == task.id,
+                )
+            )
+            or 0
+        ) + 1
+        message = TaskMessage(
+            workspace_id=task.workspace_id,
+            task_id=task.id,
+            message_type="hr.staffing_recommendation",
+            sequence=next_sequence,
+            body=f"HR found {len(response.missing_work_packages)} staffing gap(s).",
+            payload={
+                "missing_work_packages": response.missing_work_packages,
+                "recommended_roles": [
+                    recommendation.model_dump(mode="json")
+                    for recommendation in response.recommended_roles
+                ],
+                "uncovered_roles": response.uncovered_roles,
+            },
+        )
+        self._session.add(message)
+        self._session.flush([message])
+        return message
+
     def _page(
         self,
         statement: Select[tuple[TalentListing]],
@@ -721,6 +809,58 @@ def _role_specs_for_request(data: TalentRecommendationRequest) -> list[_RoleSpec
     return specs
 
 
+def _missing_work_packages_from_task(task: Task) -> list[dict[str, object]]:
+    project_plan = task.project_plan if isinstance(task.project_plan, dict) else None
+    if project_plan is None:
+        return []
+    packages = project_plan.get("work_packages", [])
+    if not isinstance(packages, list):
+        return []
+
+    missing: list[dict[str, object]] = []
+    for raw_package in packages:
+        if not isinstance(raw_package, dict):
+            continue
+        if raw_package.get("assigned_agent_profile_id") is not None:
+            continue
+        role = _string_or_default(raw_package.get("required_role"), "specialist")
+        if role == "project_manager":
+            continue
+        missing.append(
+            {
+                "package_id": _string_or_default(raw_package.get("package_id"), "unknown"),
+                "title": _string_or_default(raw_package.get("title"), role),
+                "required_role": role,
+                "required_skills": _string_list(raw_package.get("required_skills")),
+                "expected_artifacts": _string_list(raw_package.get("expected_artifacts")),
+            }
+        )
+    return missing
+
+
+def _role_spec_for_missing_package(package: dict[str, object]) -> _RoleSpec:
+    role = _string_or_default(package.get("required_role"), "specialist")
+    return _RoleSpec(
+        role=_normalize_role(role),
+        team_role=role,
+        reason=f"Work package {package.get('package_id', 'unknown')} has no assigned agent.",
+        skill_tags=tuple(
+            _normalize_tag(skill) for skill in _string_list(package.get("required_skills"))
+        ),
+        capability_tags=(),
+    )
+
+
+def _task_team_type(task: Task) -> str:
+    snapshot = task.team_snapshot if isinstance(task.team_snapshot, dict) else None
+    if snapshot is None:
+        return "general"
+    team = snapshot.get("team")
+    if not isinstance(team, dict):
+        return "general"
+    return _string_or_default(team.get("team_type"), "general")
+
+
 def _score_listing(
     listing: TalentListing,
     *,
@@ -774,6 +914,16 @@ def _normalize_role(value: str) -> str:
 
 def _normalize_tag(value: str) -> str:
     return value.strip().lower()
+
+
+def _string_or_default(value: object, default: str) -> str:
+    return value if isinstance(value, str) and value else default
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
 
 
 def _install_response(install: WorkspaceAgentInstall) -> WorkspaceAgentInstallResponse:

@@ -558,8 +558,9 @@ Tasks:
   - [ ] Add task message listing APIs and include messages in workspace export/import.
   - [ ] Map OpenAI Agents handoff/tool events into task messages when runtime integrations expose them.
 - [ ] HR and marketplace loop.
-  - [ ] HR detects missing roles or skills from a project plan.
-  - [ ] HR recommends public agents from the talent market.
+  - [x] HR detects missing roles or skills from a project plan.
+  - [x] HR recommends public agents from the talent market.
+  - [x] Persist HR staffing recommendations into the task communication stream.
   - [ ] User-confirmed hires join the persistent team.
   - [ ] New hires affect future tasks without rewriting historical snapshots.
 - [ ] Security and isolation.

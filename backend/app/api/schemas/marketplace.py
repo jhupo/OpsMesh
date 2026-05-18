@@ -93,6 +93,11 @@ class TalentRecommendationResponse(BaseModel):
     uncovered_roles: list[str]
 
 
+class TaskTalentRecommendationResponse(TalentRecommendationResponse):
+    task_id: UUID
+    missing_work_packages: list[dict[str, object]]
+
+
 class TalentUpgradeStatusResponse(BaseModel):
     install: WorkspaceAgentInstallResponse
     latest_listing: TalentListingResponse | None
