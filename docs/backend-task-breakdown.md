@@ -520,10 +520,10 @@ Tasks:
   - [x] Save a `team_snapshot` when task execution starts.
   - [x] Keep historical tasks stable when the organization changes later.
   - [x] Enforce workspace-scoped team and member access.
-- [ ] Project manager planning.
-  - [ ] Let the PM agent inspect the task and team roster.
-  - [ ] Generate a structured project plan.
-  - [ ] Validate generated plans before execution.
+- [x] Project manager planning.
+  - [x] Let the PM agent inspect the task and team roster.
+  - [x] Generate a structured project plan.
+  - [x] Validate generated plans before execution.
   - [ ] Handle failed planning with retry or human review.
 - [ ] Work package model.
   - [ ] Extend `TaskStep` with required role, required skills, expected artifacts, acceptance criteria, and review policy.

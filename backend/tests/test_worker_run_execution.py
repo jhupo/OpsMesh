@@ -157,6 +157,10 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
         "Analysis execution",
         "Manager summary",
     ]
+    assert steps[1].dependencies["work_package_id"] == "Research-1"
+    assert steps[1].dependencies["required_role"] == "Research"
+    assert steps[2].dependencies["work_package_id"] == "Analysis-2"
+    assert steps[3].dependencies["work_package_id"] == "manager-summary"
     assert [step.status for step in steps] == ["completed"] * 4
     assert [step.result_summary for step in steps] == ["fake_run_completed"] * 4
     assert [run.agent_profile_id for run in ordered_runs] == [
@@ -329,6 +333,11 @@ def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
         manager.id,
         original_developer.id,
         manager.id,
+    ]
+    assert [step.dependencies["work_package_id"] for step in steps] == [
+        "manager-planning",
+        "frontend_engineer-1",
+        "manager-summary",
     ]
     assert new_developer.id not in {run.agent_profile_id for run in runs}
     assert task.status == TaskStatus.COMPLETED.value

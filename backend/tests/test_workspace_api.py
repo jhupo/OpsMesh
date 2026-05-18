@@ -346,12 +346,21 @@ def test_create_task_with_team_captures_workspace_team_snapshot() -> None:
     assert member.status_code == 201
     assert created_task.status_code == 201
     snapshot = created_task.json()["team_snapshot"]
+    project_plan = created_task.json()["project_plan"]
     assert snapshot["snapshot_version"] == 1
     assert snapshot["team"]["id"] == team.json()["id"]
     assert snapshot["team"]["manager_agent_profile_id"] == manager.json()["id"]
     assert snapshot["members"][0]["agent_profile_id"] == developer.json()["id"]
     assert snapshot["members"][0]["department"] == "Engineering"
     assert snapshot["members"][0]["skill_weights"] == {"react": 0.9}
+    assert project_plan["plan_version"] == 1
+    assert project_plan["planner_agent_profile_id"] == manager.json()["id"]
+    assert [package["package_id"] for package in project_plan["work_packages"]] == [
+        "manager-planning",
+        "frontend_engineer-1",
+        "manager-summary",
+    ]
+    assert project_plan["work_packages"][1]["required_skills"] == ["react"]
 
 
 def test_create_task_rejects_foreign_team_reference() -> None:

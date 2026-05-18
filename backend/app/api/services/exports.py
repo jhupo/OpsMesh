@@ -510,6 +510,7 @@ class WorkspaceExportService:
                     generic_state=_dict_field(item, "generic_state"),
                     domain_state=_dict_field(item, "domain_state"),
                     team_snapshot=_optional_dict_field(item, "team_snapshot"),
+                    project_plan=_optional_dict_field(item, "project_plan"),
                     final_output=_optional_dict_field(item, "final_output"),
                 )
                 self._session.add(task)
@@ -976,6 +977,7 @@ def _task_payload(task: Task) -> dict[str, object]:
         "generic_state": task.generic_state,
         "domain_state": task.domain_state,
         "team_snapshot": task.team_snapshot,
+        "project_plan": task.project_plan,
         "final_output": task.final_output,
         "completed_at": _dt_or_none(task.completed_at),
         "created_at": _dt(task.created_at),

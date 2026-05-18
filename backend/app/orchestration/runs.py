@@ -15,6 +15,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.audit.service import AuditService
 from backend.app.core.config import Settings
 from backend.app.model_providers.service import ModelProviderCredentialService
+from backend.app.planning.project_plans import ProjectPlanningService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus, require_run_transition
@@ -23,6 +24,7 @@ from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.teams.snapshots import build_team_snapshot
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
 
@@ -516,7 +518,22 @@ class RunOrchestrationService:
             return self._next_eligible_step(task.id, task.workspace_id)
 
         snapshot = task.team_snapshot if isinstance(task.team_snapshot, dict) else None
+        if snapshot is None:
+            try:
+                snapshot = build_team_snapshot(
+                    self._session,
+                    workspace_id=task.workspace_id,
+                    team_id=task.agent_team_id,
+                )
+            except ValueError:
+                snapshot = None
+            else:
+                task.team_snapshot = snapshot
+                self._session.flush([task])
         if snapshot is not None:
+            if task.project_plan is None:
+                task.project_plan = ProjectPlanningService().create_initial_plan(task)
+                self._session.flush([task])
             return self._create_team_step_plan_from_snapshot(task, snapshot)
 
         team = self._session.scalar(
@@ -601,6 +618,12 @@ class RunOrchestrationService:
         task: Task,
         snapshot: dict[str, object],
     ) -> TaskStep | None:
+        project_plan = task.project_plan if isinstance(task.project_plan, dict) else None
+        if project_plan is not None:
+            planned_step = self._create_team_step_plan_from_project_plan(task, project_plan)
+            if planned_step is not None:
+                return planned_step
+
         team = snapshot.get("team")
         if not isinstance(team, dict):
             return None
@@ -678,6 +701,63 @@ class RunOrchestrationService:
                 dependencies={"after_step_ids": [str(step.id) for step in specialist_steps]},
             )
             self._session.add(summary_step)
+
+        self._session.flush()
+        return first_step
+
+    def _create_team_step_plan_from_project_plan(
+        self,
+        task: Task,
+        project_plan: dict[str, object],
+    ) -> TaskStep | None:
+        raw_packages = project_plan.get("work_packages", [])
+        if not isinstance(raw_packages, list):
+            return None
+
+        created_steps_by_package_id: dict[str, TaskStep] = {}
+        first_step: TaskStep | None = None
+        for index, package in enumerate(raw_packages):
+            if not isinstance(package, dict):
+                continue
+            package_id = str(package.get("package_id") or f"package-{index}")
+            raw_dependencies = package.get("depends_on", [])
+            dependencies = (
+                [
+                    str(dependency)
+                    for dependency in raw_dependencies
+                    if isinstance(dependency, str)
+                ]
+                if isinstance(raw_dependencies, list)
+                else []
+            )
+            after_step_ids = [
+                str(created_steps_by_package_id[dependency].id)
+                for dependency in dependencies
+                if dependency in created_steps_by_package_id
+            ]
+            step = TaskStep(
+                workspace_id=task.workspace_id,
+                task_id=task.id,
+                assigned_agent_profile_id=_uuid_or_none(package.get("assigned_agent_profile_id")),
+                title=str(package.get("title") or "Work package"),
+                description=str(package.get("description") or ""),
+                status=STEP_STATUS_QUEUED,
+                order_index=index * 100,
+                dependencies={
+                    "after_step_ids": after_step_ids,
+                    "work_package_id": package_id,
+                    "required_role": package.get("required_role"),
+                    "required_skills": package.get("required_skills", []),
+                    "expected_artifacts": package.get("expected_artifacts", []),
+                    "acceptance_criteria": package.get("acceptance_criteria", []),
+                    "review_policy": package.get("review_policy", {}),
+                },
+            )
+            self._session.add(step)
+            self._session.flush([step])
+            created_steps_by_package_id[package_id] = step
+            if first_step is None and not after_step_ids:
+                first_step = step
 
         self._session.flush()
         return first_step

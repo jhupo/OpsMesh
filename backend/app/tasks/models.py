@@ -41,6 +41,7 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     generic_state: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     domain_state: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     team_snapshot: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    project_plan: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     final_output: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 

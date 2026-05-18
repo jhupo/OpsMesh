@@ -31,5 +31,6 @@ class TaskResponse(TimestampedModel):
     generic_state: dict[str, object]
     domain_state: dict[str, object]
     team_snapshot: dict[str, object] | None
+    project_plan: dict[str, object] | None
     final_output: dict[str, object] | None
     completed_at: datetime | None
