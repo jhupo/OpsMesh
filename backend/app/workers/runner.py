@@ -282,6 +282,7 @@ class WorkerRunner:
                     queue_name=self._config.queue_name,
                     job=job,
                     metadata={
+                        "priority": job.priority,
                         "requested_by_user_id": str(job.requested_by_user_id)
                         if job.requested_by_user_id is not None
                         else None,

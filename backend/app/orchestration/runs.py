@@ -95,6 +95,7 @@ class RunOrchestrationService:
             resource_id=run.id,
             requested_by_user_id=requested_by_user_id,
             idempotency_key=f"agent.run:{run.workspace_id}:{run.id}",
+            priority=self._run_job_priority(run),
             routing=self._run_job_routing(run),
         )
         return self._queue.enqueue(job)
@@ -1397,6 +1398,9 @@ class RunOrchestrationService:
 
     def _run_job_routing(self, run: AgentRun) -> dict[str, object]:
         routing: dict[str, object] = {}
+        priority = self._run_job_priority(run)
+        if priority:
+            routing["priority"] = priority
         if run.runtime_space_id is None:
             return routing
         routing["runtime_space_id"] = str(run.runtime_space_id)
@@ -1422,6 +1426,14 @@ class RunOrchestrationService:
         if resource_requirements:
             routing["resource_requirements"] = resource_requirements
         return routing
+
+    def _run_job_priority(self, run: AgentRun) -> int:
+        if run.task_id is None:
+            return 0
+        task = self._session.get(Task, run.task_id)
+        if task is None or task.workspace_id != run.workspace_id:
+            return 0
+        return int(task.priority or 0)
 
     def _scheduler(self) -> WorkspaceScheduler:
         return WorkspaceScheduler(self._session)

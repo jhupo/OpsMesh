@@ -446,6 +446,10 @@ def test_workspace_scheduler_starts_higher_priority_task_first() -> None:
 
     assert [run.task_id for run in runs] == [high_task.id]
     assert queue.count_queued(workspace_id=workspace.id) == 1
+    queued_job = queue.dequeue()
+    assert queued_job is not None
+    assert queued_job.priority == 10
+    assert queued_job.routing["priority"] == 10
     assert low_step.dependencies["blocked_reason"] == "workspace_run_quota_exceeded"
 
 

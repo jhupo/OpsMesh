@@ -23,6 +23,7 @@ class JobPayload(BaseModel):
     requested_by_user_id: UUID | None = None
     requested_by_agent_run_id: UUID | None = None
     routing: dict[str, object] = Field(default_factory=dict)
+    priority: int = 0
     attempt: int = 0
     max_attempts: int = 3
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

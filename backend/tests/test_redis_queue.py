@@ -48,6 +48,18 @@ def test_dequeue_matching_skips_unmatched_head_job_without_dropping_it() -> None
     assert queue.dequeue() is None
 
 
+def test_job_payload_round_trips_priority() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
+    job = _job(priority=42)
+
+    assert queue.enqueue(job) is True
+    stored = queue.dequeue()
+
+    assert stored is not None
+    assert stored.priority == 42
+
+
 def test_run_lock_allows_one_holder() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
@@ -101,7 +113,11 @@ def test_dead_letter_jobs_can_be_listed_and_requeued() -> None:
     assert queue.dequeue() == requeued
 
 
-def _job(max_attempts: int = 3, routing: dict[str, object] | None = None) -> JobPayload:
+def _job(
+    max_attempts: int = 3,
+    routing: dict[str, object] | None = None,
+    priority: int = 0,
+) -> JobPayload:
     workspace_id = uuid4()
     return JobPayload(
         workspace_id=workspace_id,
@@ -110,4 +126,5 @@ def _job(max_attempts: int = 3, routing: dict[str, object] | None = None) -> Job
         idempotency_key=f"agent.run:{workspace_id}:resource",
         max_attempts=max_attempts,
         routing=routing or {},
+        priority=priority,
     )

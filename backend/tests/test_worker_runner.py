@@ -40,6 +40,7 @@ def test_worker_runner_run_once_processes_agent_job() -> None:
             resource_id=run_id,
             requested_by_user_id=user_id,
             idempotency_key=f"agent.run:{workspace_id}:{run_id}",
+            priority=7,
         )
     )
     runner = WorkerRunner(
@@ -69,6 +70,7 @@ def test_worker_runner_loop_records_heartbeat_and_summary() -> None:
             resource_id=run_id,
             requested_by_user_id=user_id,
             idempotency_key=f"agent.run:{workspace_id}:{run_id}",
+            priority=7,
         )
     )
     runner = WorkerRunner(
@@ -100,6 +102,7 @@ def test_worker_runner_loop_records_heartbeat_and_summary() -> None:
         assert heartbeat.status == "online"
         assert node.status == "online"
         assert lease.status == "completed"
+        assert lease.lease_metadata["priority"] == 7
         assert heartbeat.details["processed"] == 1
         assert heartbeat.details["failed"] == 0
 
