@@ -20,6 +20,11 @@ from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
+from backend.app.runtime_spaces.models import (
+    RuntimeSpace,
+    RuntimeSpaceQuota,
+    RuntimeSpaceReservation,
+)
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.status import TaskStatus
@@ -197,6 +202,146 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
             for step in steps
         ]
     }
+
+
+def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    workspace.settings = {"scheduler": {"max_active_runs": 3}}
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Market Team Space",
+        scope="team",
+        policy={"runtime_modes": ["docker"], "resource_requirements": {"cpu": 1}},
+    )
+    session.add(runtime_space)
+    session.flush()
+    session.add(
+        RuntimeSpaceQuota(
+            workspace_id=workspace.id,
+            runtime_space_id=runtime_space.id,
+            quota_key="active_runs",
+            limit_value=3,
+            reserved_value=0,
+            unit="count",
+        )
+    )
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="Manager",
+        role="manager",
+        instructions="Plan and review the team work.",
+        model="manager-model",
+    )
+    researcher = AgentProfile(
+        workspace_id=workspace.id,
+        name="Researcher",
+        role="researcher",
+        instructions="Collect market facts.",
+        model="researcher-model",
+    )
+    analyst = AgentProfile(
+        workspace_id=workspace.id,
+        name="Analyst",
+        role="analyst",
+        instructions="Analyze the collected facts.",
+        model="analyst-model",
+    )
+    session.add_all([manager, researcher, analyst])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Market Team",
+        team_type="research",
+        manager_agent_profile_id=manager.id,
+        runtime_space_id=runtime_space.id,
+    )
+    session.add(team)
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=researcher.id,
+                team_role="Research",
+                order_index=0,
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=analyst.id,
+                team_role="Analysis",
+                order_index=1,
+            ),
+        ]
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        runtime_space_id=runtime_space.id,
+        title="Q2 market analysis",
+        description="Produce a concise market analysis.",
+    )
+    session.add(task)
+    session.flush()
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+    orchestration = RunOrchestrationService(session, queue)
+    first_run = orchestration.create_queued_run_for_task(task)
+    assert first_run is not None
+    orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
+    session.commit()
+
+    handler = WorkerJobHandler(session, queue)
+    handled = 0
+    while consume_once(queue, handler.handle):
+        handled += 1
+
+    session.refresh(task)
+    quota = session.scalar(
+        select(RuntimeSpaceQuota).where(RuntimeSpaceQuota.runtime_space_id == runtime_space.id)
+    )
+    reservations = session.scalars(
+        select(RuntimeSpaceReservation).where(
+            RuntimeSpaceReservation.runtime_space_id == runtime_space.id
+        )
+    ).all()
+    runs = session.scalars(
+        select(AgentRun).where(AgentRun.task_id == task.id).order_by(AgentRun.created_at.asc())
+    ).all()
+    messages = session.scalars(
+        select(TaskMessage).where(TaskMessage.task_id == task.id).order_by(TaskMessage.sequence)
+    ).all()
+
+    assert handled == 4
+    assert task.status == TaskStatus.COMPLETED.value
+    assert queue.count_queued(workspace_id=workspace.id) == 0
+    assert quota is not None
+    assert quota.reserved_value == 0
+    assert len(reservations) == 4
+    assert {reservation.status for reservation in reservations} == {"released"}
+    assert all(run.runtime_space_id == runtime_space.id for run in runs)
+    assert all(run.status == RunStatus.COMPLETED.value for run in runs)
+    assert task.final_output is not None
+    assert task.final_output["final_output"] == "fake_run_completed"
+    assert [message.message_type for message in messages[:-1]] == [
+        "step.started",
+        "step.completed",
+        "step.started",
+        "step.completed",
+        "step.started",
+        "step.completed",
+        "step.started",
+        "step.completed",
+    ]
+    assert messages[-1].message_type == "pm.acceptance_decision"
+    assert messages[-1].payload["decision"] == "approved"
 
 
 def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
