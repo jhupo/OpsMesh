@@ -25,6 +25,8 @@ from backend.app.planning.project_plans import ProjectPlanningService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus, require_run_transition
+from backend.app.runtime_spaces.models import RuntimeSpaceReservation
+from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
@@ -59,23 +61,25 @@ class RunOrchestrationService:
         self._agent_runner = agent_runner or FakeAgentRunner()
         self._settings = settings
 
-    def create_queued_run_for_task(self, task: Task) -> AgentRun:
+    def create_queued_run_for_task(self, task: Task) -> AgentRun | None:
         existing_run = self._existing_active_task_run(task)
         if existing_run is not None:
             return existing_run
 
         first_team_step = self._create_team_step_plan(task)
+        run: AgentRun | None
         if first_team_step is None:
-            run = AgentRun(
+            generic_run = AgentRun(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
                 runtime_space_id=task.runtime_space_id,
                 status=RunStatus.QUEUED.value,
                 input={"task_id": str(task.id), "title": task.title},
             )
-            self._session.add(run)
+            self._session.add(generic_run)
+            run = generic_run
         else:
-            run = self._create_run_for_step(task, first_team_step)
+            run = self._create_reserved_run_for_step(task, first_team_step)
 
         TaskStateService().transition(task, TaskStatus.QUEUED)
         self._session.flush()
@@ -114,7 +118,9 @@ class RunOrchestrationService:
             task = self._session.get(Task, step.task_id)
             if task is None or task.workspace_id != workspace_id:
                 continue
-            run = self._create_run_for_step(task, step)
+            run = self._create_reserved_run_for_step(task, step)
+            if run is None:
+                continue
             self.enqueue_run(run, requested_by_user_id)
             runs.append(run)
         self._session.flush()
@@ -347,6 +353,7 @@ class RunOrchestrationService:
         run.output = {"final_output": final_output}
         run.completed_at = datetime.now(UTC)
         self._append_event(run, "run.completed", "Fake run completed")
+        self._release_runtime_space_reservations(run, released_at=run.completed_at)
 
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
@@ -416,6 +423,7 @@ class RunOrchestrationService:
         run.error = error.as_dict()
         run.completed_at = datetime.now(UTC)
         self._append_event(run, "run.failed", error.message)
+        self._release_runtime_space_reservations(run, released_at=run.completed_at)
 
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
@@ -444,6 +452,7 @@ class RunOrchestrationService:
             "run.recovered_failed",
             "Marked failed after worker lease expired",
         )
+        self._release_runtime_space_reservations(run, released_at=run.completed_at)
 
         if run.task_id is None:
             return
@@ -466,6 +475,7 @@ class RunOrchestrationService:
         }
         run.completed_at = completed_at
         self._append_event(run, "run.cancelled", "Run was cancelled by a workspace user")
+        self._release_runtime_space_reservations(run, released_at=completed_at)
         if run.task_step_id is not None:
             step = self._session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
@@ -1078,6 +1088,40 @@ class RunOrchestrationService:
         self._session.flush([run])
         return run
 
+    def _create_reserved_run_for_step(self, task: Task, step: TaskStep) -> AgentRun | None:
+        reservation_available, reservation = self._reserve_runtime_space_for_step(task, step)
+        if not reservation_available:
+            return None
+        run = self._create_run_for_step(task, step)
+        if reservation is not None:
+            RuntimeSpaceService(self._session).attach_reservation_to_run(reservation, run.id)
+        return run
+
+    def _reserve_runtime_space_for_step(
+        self,
+        task: Task,
+        step: TaskStep,
+    ) -> tuple[bool, RuntimeSpaceReservation | None]:
+        runtime_space_id = step.runtime_space_id or task.runtime_space_id
+        if runtime_space_id is None:
+            self._mark_step_scheduling_runnable(step)
+            return True, None
+        result = RuntimeSpaceService(self._session).reserve_run_capacity(
+            workspace_id=task.workspace_id,
+            runtime_space_id=runtime_space_id,
+            task_id=task.id,
+            task_step_id=step.id,
+            reservation_key=f"task_step:{step.id}:run",
+        )
+        if result.reservation is None:
+            self._mark_step_scheduling_blocked(
+                step,
+                result.blocked_reason or "runtime_space_unavailable",
+            )
+            return False, None
+        self._mark_step_scheduling_runnable(step)
+        return True, result.reservation
+
     def _build_authorization_snapshot(
         self,
         task: Task,
@@ -1205,10 +1249,36 @@ class RunOrchestrationService:
             candidate_steps=eligible_steps,
         ).runnable_steps
         for next_step in scheduled_steps:
-            next_run = self._create_run_for_step(task, next_step)
+            next_run = self._create_reserved_run_for_step(task, next_step)
+            if next_run is None:
+                continue
             self.enqueue_run(next_run, requested_by_user_id)
             next_runs.append(next_run)
         return next_runs
+
+    def _mark_step_scheduling_runnable(self, step: TaskStep) -> None:
+        dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
+        dependencies.pop("scheduling_status", None)
+        dependencies.pop("blocked_reason", None)
+        step.dependencies = dependencies
+
+    def _mark_step_scheduling_blocked(self, step: TaskStep, reason: str) -> None:
+        dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
+        dependencies["scheduling_status"] = "blocked"
+        dependencies["blocked_reason"] = reason
+        step.dependencies = dependencies
+
+    def _release_runtime_space_reservations(
+        self,
+        run: AgentRun,
+        *,
+        released_at: datetime,
+    ) -> None:
+        RuntimeSpaceService(self._session).release_reservations_for_run(
+            workspace_id=run.workspace_id,
+            agent_run_id=run.id,
+            released_at=released_at,
+        )
 
     def _scheduler(self) -> WorkspaceScheduler:
         return WorkspaceScheduler(self._session)

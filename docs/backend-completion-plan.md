@@ -42,7 +42,8 @@ Current state:
 - Teams, tasks, task steps, runs, Docker runtimes, runtime commands, and runtime events now carry `runtime_space_id` where applicable.
 - Worker node tracking, worker leases, drain requests, and worker/lease operations APIs are now implemented.
 - Platform admin APIs now expose global overview, workspaces, workers, worker drain, runtime spaces, runtime-space quarantine, worker leases, and security events behind a separate platform admin token.
-- Runtime-space scheduler reservations, Docker lease admin actions, queue admin actions, and global risky-execution controls are not implemented yet.
+- Runtime-space scheduler reservations now enforce `active_runs` capacity for team task steps before run enqueue and release the reservation on run completion, failure, stale-run recovery, or cancellation.
+- Docker lease admin actions, queue admin actions, broader runtime-space reservations for CPU, memory, storage, logs, artifacts, and global risky-execution controls are not implemented yet.
 
 Build:
 
@@ -50,7 +51,8 @@ Build:
 - [x] Bind teams, tasks, task steps, runs, Docker runtimes, and runtime commands to a runtime space where applicable.
 - [x] Add runtime space quota records and reservation records for active runs, Docker runtimes, self-hosted jobs, CPU, memory, storage, logs, and artifacts.
 - [x] Add worker node records, worker leases, drain status, worker version, and capacity reporting.
-- Extend scheduler decisions to reserve runtime-space capacity atomically before enqueueing executable work.
+- [x] Extend scheduler decisions to reserve runtime-space `active_runs` capacity before enqueueing team task steps.
+- Extend runtime-space reservations to Docker runtimes, self-hosted jobs, CPU, memory, storage, logs, and artifacts.
 - Add cleanup evidence for Docker leases and runtime-space temporary storage.
 - [x] Add operator APIs for workers, runtime spaces, worker leases, workspaces, and security events.
 - Add operator APIs for queues, Docker leases, and global risky-execution controls.
@@ -70,8 +72,9 @@ Tests:
 
 - runtime space access is workspace-scoped
 - a team-bound runtime space cannot be used by another workspace
-- concurrent schedulers cannot reserve beyond runtime-space quota
-- cancellation, timeout, failure, and cleanup release reservations
+- team task scheduling cannot reserve beyond runtime-space `active_runs` quota
+- cancellation, completion, failure, and stale-run recovery release run-capacity reservations
+- timeout and cleanup paths release runtime-space reservations once Docker lease cleanup is implemented
 - worker drain prevents new leases but does not corrupt running leases
 - admin APIs redact secrets and file contents
 - Docker lease cleanup records success or failure evidence

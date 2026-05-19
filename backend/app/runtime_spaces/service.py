@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TypeVar
 from uuid import UUID
@@ -11,6 +12,7 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceBinding,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
+    RuntimeSpaceReservation,
 )
 from backend.app.runtimes.models import RuntimeTemplate
 from backend.app.tasks.models import Task
@@ -22,6 +24,13 @@ TARGET_TYPES_BY_SCOPE = {
     "task": "task",
 }
 T = TypeVar("T")
+RUN_CAPACITY_QUOTA_KEY = "active_runs"
+
+
+@dataclass(frozen=True)
+class RuntimeSpaceReservationResult:
+    reservation: RuntimeSpaceReservation | None
+    blocked_reason: str | None = None
 
 
 class RuntimeSpaceService:
@@ -202,6 +211,175 @@ class RuntimeSpaceService:
             raise ValueError("Runtime space not found")
         return runtime_space
 
+    def reserve_run_capacity(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime_space_id: UUID,
+        task_id: UUID | None,
+        task_step_id: UUID | None,
+        reservation_key: str,
+        resource_usage: dict[str, int] | None = None,
+    ) -> RuntimeSpaceReservationResult:
+        usage = self._normalize_reservation_usage(resource_usage)
+        runtime_space = self._session.scalar(
+            select(RuntimeSpace)
+            .where(
+                RuntimeSpace.workspace_id == workspace_id,
+                RuntimeSpace.id == runtime_space_id,
+            )
+            .with_for_update()
+        )
+        if runtime_space is None or runtime_space.status != "active":
+            return RuntimeSpaceReservationResult(
+                reservation=None,
+                blocked_reason="runtime_space_unavailable",
+            )
+
+        reservation = self._session.scalar(
+            select(RuntimeSpaceReservation)
+            .where(
+                RuntimeSpaceReservation.workspace_id == workspace_id,
+                RuntimeSpaceReservation.runtime_space_id == runtime_space_id,
+                RuntimeSpaceReservation.reservation_key == reservation_key,
+            )
+            .with_for_update()
+        )
+        if reservation is not None and reservation.status == "active":
+            return RuntimeSpaceReservationResult(reservation=reservation)
+
+        quotas = {
+            quota.quota_key: quota
+            for quota in self._session.scalars(
+                select(RuntimeSpaceQuota)
+                .where(
+                    RuntimeSpaceQuota.workspace_id == workspace_id,
+                    RuntimeSpaceQuota.runtime_space_id == runtime_space_id,
+                    RuntimeSpaceQuota.status == "active",
+                    RuntimeSpaceQuota.quota_key.in_(usage),
+                )
+                .with_for_update()
+            ).all()
+        }
+        exceeded_quota = self._first_exceeded_quota(quotas, usage)
+        if exceeded_quota is not None:
+            return RuntimeSpaceReservationResult(
+                reservation=None,
+                blocked_reason="runtime_space_quota_exceeded",
+            )
+
+        for quota_key, amount in usage.items():
+            quota = quotas.get(quota_key)
+            if quota is not None:
+                quota.reserved_value += amount
+
+        if reservation is None:
+            reservation = RuntimeSpaceReservation(
+                workspace_id=workspace_id,
+                runtime_space_id=runtime_space_id,
+                task_id=task_id,
+                task_step_id=task_step_id,
+                reservation_key=reservation_key,
+                resource_usage=dict(usage),
+            )
+            self._session.add(reservation)
+        else:
+            reservation.task_id = task_id
+            reservation.task_step_id = task_step_id
+            reservation.agent_run_id = None
+            reservation.resource_usage = dict(usage)
+            reservation.status = "active"
+            reservation.released_at = None
+            reservation.expires_at = None
+
+        self._append_event(
+            runtime_space,
+            "runtime_space.reserved",
+            f"Reserved runtime space capacity for {reservation_key}",
+            {
+                "reservation_key": reservation_key,
+                "resource_usage": dict(usage),
+            },
+        )
+        self._session.flush([reservation, *quotas.values()])
+        return RuntimeSpaceReservationResult(reservation=reservation)
+
+    def attach_reservation_to_run(
+        self,
+        reservation: RuntimeSpaceReservation,
+        agent_run_id: UUID,
+    ) -> None:
+        reservation.agent_run_id = agent_run_id
+        self._session.flush([reservation])
+
+    def release_reservations_for_run(
+        self,
+        *,
+        workspace_id: UUID,
+        agent_run_id: UUID,
+        released_at: datetime | None = None,
+    ) -> int:
+        release_time = released_at or datetime.now(UTC)
+        reservations = self._session.scalars(
+            select(RuntimeSpaceReservation)
+            .where(
+                RuntimeSpaceReservation.workspace_id == workspace_id,
+                RuntimeSpaceReservation.agent_run_id == agent_run_id,
+                RuntimeSpaceReservation.status == "active",
+            )
+            .with_for_update()
+        ).all()
+        if not reservations:
+            return 0
+
+        quota_keys = {
+            quota_key
+            for reservation in reservations
+            for quota_key in self._reservation_usage(reservation)
+        }
+        quotas = {
+            (quota.runtime_space_id, quota.quota_key): quota
+            for quota in self._session.scalars(
+                select(RuntimeSpaceQuota)
+                .where(
+                    RuntimeSpaceQuota.workspace_id == workspace_id,
+                    RuntimeSpaceQuota.runtime_space_id.in_(
+                        {reservation.runtime_space_id for reservation in reservations}
+                    ),
+                    RuntimeSpaceQuota.quota_key.in_(quota_keys),
+                )
+                .with_for_update()
+            ).all()
+        }
+
+        runtime_space_ids = {reservation.runtime_space_id for reservation in reservations}
+        runtime_spaces = {
+            runtime_space.id: runtime_space
+            for runtime_space in self._session.scalars(
+                select(RuntimeSpace).where(RuntimeSpace.id.in_(runtime_space_ids))
+            ).all()
+        }
+        for reservation in reservations:
+            for quota_key, amount in self._reservation_usage(reservation).items():
+                quota = quotas.get((reservation.runtime_space_id, quota_key))
+                if quota is not None:
+                    quota.reserved_value = max(0, quota.reserved_value - amount)
+            reservation.status = "released"
+            reservation.released_at = release_time
+            runtime_space = runtime_spaces.get(reservation.runtime_space_id)
+            if runtime_space is not None:
+                self._append_event(
+                    runtime_space,
+                    "runtime_space.reservation_released",
+                    f"Released runtime space capacity for run {agent_run_id}",
+                    {
+                        "agent_run_id": str(agent_run_id),
+                        "reservation_key": reservation.reservation_key,
+                    },
+                )
+        self._session.flush([*reservations, *quotas.values()])
+        return len(reservations)
+
     def _normalize_target_id(
         self,
         *,
@@ -317,6 +495,32 @@ class RuntimeSpaceService:
                 created_at=datetime.now(UTC),
             )
         )
+
+    def _normalize_reservation_usage(
+        self,
+        resource_usage: dict[str, int] | None,
+    ) -> dict[str, int]:
+        usage = resource_usage or {RUN_CAPACITY_QUOTA_KEY: 1}
+        normalized = {key: value for key, value in usage.items() if value > 0}
+        return normalized or {RUN_CAPACITY_QUOTA_KEY: 1}
+
+    def _reservation_usage(self, reservation: RuntimeSpaceReservation) -> dict[str, int]:
+        usage: dict[str, int] = {}
+        for quota_key, value in reservation.resource_usage.items():
+            if isinstance(value, int) and value > 0:
+                usage[quota_key] = value
+        return usage
+
+    def _first_exceeded_quota(
+        self,
+        quotas: dict[str, RuntimeSpaceQuota],
+        usage: dict[str, int],
+    ) -> RuntimeSpaceQuota | None:
+        for quota_key, amount in usage.items():
+            quota = quotas.get(quota_key)
+            if quota is not None and quota.reserved_value + amount > quota.limit_value:
+                return quota
+        return None
 
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
         total = self._session.scalar(
