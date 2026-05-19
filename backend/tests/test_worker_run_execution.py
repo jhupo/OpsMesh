@@ -1178,6 +1178,50 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
     }
 
 
+def test_agent_request_allows_snapshot_to_narrow_agent_tools() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Designer",
+        role="designer",
+        tool_policy={"allowed_tools": ["generate_image", "write_artifact"]},
+    )
+    session.add_all([task, agent])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={
+            "authorization_snapshot": {
+                "version": 1,
+                "workspace_id": str(workspace.id),
+                "task_id": str(task.id),
+                "agent_profile_id": str(agent.id),
+                "allowed_tools": ["write_artifact"],
+            }
+        },
+    )
+    session.add(run)
+    session.commit()
+
+    request = RunOrchestrationService(session)._build_agent_request(
+        run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="narrow-tools",
+        ),
+    )
+
+    assert request.context.allowed_tools == ("write_artifact",)
+
+
 def test_agent_request_resolves_agent_model_provider_override() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
@@ -1337,6 +1381,172 @@ def test_agent_request_rejects_task_step_from_another_task() -> None:
         assert "task step does not belong" in str(exc)
     else:
         raise AssertionError("Expected foreign task step to be rejected")
+
+
+def test_agent_request_rejects_worker_job_scope_mismatch() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    agent = AgentProfile(workspace_id=workspace.id, name="Writer", role="writer")
+    session.add_all([task, agent])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    try:
+        RunOrchestrationService(session)._build_agent_request(
+            run,
+            JobPayload(
+                workspace_id=workspace.id,
+                job_type=JobType.AGENT_RUN,
+                resource_id=uuid4(),
+                requested_by_user_id=user.id,
+                idempotency_key="wrong-resource",
+            ),
+        )
+    except ValueError as exc:
+        assert "resource does not match" in str(exc)
+    else:
+        raise AssertionError("Expected worker job resource mismatch to be rejected")
+
+
+def test_agent_request_rejects_authorization_snapshot_scope_mismatch() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    agent = AgentProfile(workspace_id=workspace.id, name="Writer", role="writer")
+    session.add_all([task, agent])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={
+            "authorization_snapshot": {
+                "workspace_id": str(uuid4()),
+                "task_id": str(task.id),
+                "agent_profile_id": str(agent.id),
+            }
+        },
+    )
+    session.add(run)
+    session.commit()
+
+    try:
+        RunOrchestrationService(session)._build_agent_request(
+            run,
+            JobPayload(
+                workspace_id=workspace.id,
+                job_type=JobType.AGENT_RUN,
+                resource_id=run.id,
+                requested_by_user_id=user.id,
+                idempotency_key="bad-snapshot-scope",
+            ),
+        )
+    except ValueError as exc:
+        assert "Authorization snapshot workspace_id mismatch" in str(exc)
+    else:
+        raise AssertionError("Expected authorization snapshot mismatch to be rejected")
+
+
+def test_agent_request_rejects_authorization_snapshot_tool_escalation() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        tool_policy={"allowed_tools": ["write_artifact"]},
+    )
+    session.add_all([task, agent])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={
+            "authorization_snapshot": {
+                "workspace_id": str(workspace.id),
+                "task_id": str(task.id),
+                "agent_profile_id": str(agent.id),
+                "allowed_tools": ["write_artifact", "delete_workspace_file"],
+            }
+        },
+    )
+    session.add(run)
+    session.commit()
+
+    try:
+        RunOrchestrationService(session)._build_agent_request(
+            run,
+            JobPayload(
+                workspace_id=workspace.id,
+                job_type=JobType.AGENT_RUN,
+                resource_id=run.id,
+                requested_by_user_id=user.id,
+                idempotency_key="bad-tool-snapshot",
+            ),
+        )
+    except ValueError as exc:
+        assert "outside agent policy" in str(exc)
+    else:
+        raise AssertionError("Expected tool escalation snapshot to be rejected")
+
+
+def test_agent_request_rejects_authorization_snapshot_unavailable_skill() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        skills={"installed_skill_ids": []},
+    )
+    session.add_all([task, agent])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={
+            "authorization_snapshot": {
+                "workspace_id": str(workspace.id),
+                "task_id": str(task.id),
+                "agent_profile_id": str(agent.id),
+                "installed_skills": [{"install_id": str(uuid4())}],
+            }
+        },
+    )
+    session.add(run)
+    session.commit()
+
+    try:
+        RunOrchestrationService(session)._build_agent_request(
+            run,
+            JobPayload(
+                workspace_id=workspace.id,
+                job_type=JobType.AGENT_RUN,
+                resource_id=run.id,
+                requested_by_user_id=user.id,
+                idempotency_key="bad-skill-snapshot",
+            ),
+        )
+    except ValueError as exc:
+        assert "unavailable workspace skill" in str(exc)
+    else:
+        raise AssertionError("Expected unavailable skill snapshot to be rejected")
 
 
 def test_stale_running_runs_are_recovered_as_failed() -> None:

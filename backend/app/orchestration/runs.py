@@ -541,6 +541,7 @@ class RunOrchestrationService:
         return message
 
     def _build_agent_request(self, run: AgentRun, job: JobPayload) -> AgentRunRequest:
+        self._validate_job_scope(run, job)
         task = self._authorized_task_for_run(run)
         profile = self._authorized_profile_for_run(run)
         if profile is None:
@@ -553,6 +554,7 @@ class RunOrchestrationService:
             )
 
         authorization_snapshot = self._authorization_snapshot_for_run(run)
+        self._validate_authorization_snapshot(run, task, profile, authorization_snapshot)
         allowed_tools = self._allowed_tools_for_run(run, profile)
         model_provider = self._model_provider_for_profile(profile)
         step_context = self._step_context_for_run(run)
@@ -592,6 +594,14 @@ class RunOrchestrationService:
             if allowed_tools
             else None,
         )
+
+    def _validate_job_scope(self, run: AgentRun, job: JobPayload) -> None:
+        if job.job_type != JobType.AGENT_RUN:
+            raise ValueError("Worker job type does not match agent run execution")
+        if job.workspace_id != run.workspace_id:
+            raise ValueError("Worker job workspace mismatch")
+        if job.resource_id != run.id:
+            raise ValueError("Worker job resource does not match agent run")
 
     def _mcp_secret_service(self) -> SecretEncryptionService | None:
         if self._settings is None:
@@ -674,12 +684,21 @@ class RunOrchestrationService:
 
     def _allowed_tools_for_profile(self, profile: AgentProfile) -> tuple[str, ...]:
         tool_policy = profile.tool_policy if isinstance(profile.tool_policy, dict) else {}
-        raw_tools = tool_policy.get("allowed_tools")
-        if raw_tools is None:
-            raw_tools = tool_policy.get("mcp_tools")
-        if not isinstance(raw_tools, list):
-            return ()
-        return tuple(tool for tool in raw_tools if isinstance(tool, str))
+        return _allowed_tools_from_policy(tool_policy)
+
+    def _allowed_tools_for_snapshot(self, snapshot: dict[str, object]) -> tuple[str, ...]:
+        tool_policy = snapshot.get("tool_policy")
+        return _allowed_tools_from_policy(tool_policy if isinstance(tool_policy, dict) else {})
+
+    def _allowed_tool_policy_for_run(
+        self,
+        snapshot: dict[str, object],
+        profile: AgentProfile,
+    ) -> tuple[str, ...]:
+        snapshot_policy_tools = self._allowed_tools_for_snapshot(snapshot)
+        if snapshot_policy_tools:
+            return snapshot_policy_tools
+        return self._allowed_tools_for_profile(profile)
 
     def _allowed_tools_for_run(
         self,
@@ -689,13 +708,54 @@ class RunOrchestrationService:
         snapshot = self._authorization_snapshot_for_run(run)
         raw_tools = snapshot.get("allowed_tools")
         if isinstance(raw_tools, list):
-            return tuple(tool for tool in raw_tools if isinstance(tool, str))
+            profile_tools = set(self._allowed_tool_policy_for_run(snapshot, profile))
+            snapshot_tools = tuple(tool for tool in raw_tools if isinstance(tool, str))
+            return tuple(tool for tool in snapshot_tools if tool in profile_tools)
         return self._allowed_tools_for_profile(profile)
 
     def _authorization_snapshot_for_run(self, run: AgentRun) -> dict[str, object]:
         run_input = run.input if isinstance(run.input, dict) else {}
         snapshot = run_input.get("authorization_snapshot")
         return snapshot if isinstance(snapshot, dict) else {}
+
+    def _validate_authorization_snapshot(
+        self,
+        run: AgentRun,
+        task: Task | None,
+        profile: AgentProfile,
+        snapshot: dict[str, object],
+    ) -> None:
+        if not snapshot:
+            return
+        _expect_optional_uuid(snapshot, "workspace_id", run.workspace_id)
+        _expect_optional_uuid(snapshot, "task_id", run.task_id)
+        _expect_optional_uuid(snapshot, "task_step_id", run.task_step_id)
+        _expect_optional_uuid(snapshot, "agent_profile_id", run.agent_profile_id)
+        _expect_optional_uuid(snapshot, "runtime_space_id", run.runtime_space_id)
+        if task is not None and task.workspace_id != run.workspace_id:
+            raise ValueError("Authorization snapshot task workspace mismatch")
+        raw_tools = snapshot.get("allowed_tools")
+        if isinstance(raw_tools, list):
+            profile_tools = set(self._allowed_tool_policy_for_run(snapshot, profile))
+            snapshot_tools = {tool for tool in raw_tools if isinstance(tool, str)}
+            extra_tools = snapshot_tools - profile_tools
+            if extra_tools:
+                raise ValueError("Authorization snapshot grants tools outside agent policy")
+        installed_skills = snapshot.get("installed_skills")
+        if isinstance(installed_skills, list):
+            valid_install_ids = {
+                str(item["install_id"])
+                for item in self._installed_skill_snapshots(run.workspace_id, profile)
+                if isinstance(item.get("install_id"), str)
+            }
+            for item in installed_skills:
+                if not isinstance(item, dict):
+                    continue
+                install_id = item.get("install_id")
+                if isinstance(install_id, str) and install_id not in valid_install_ids:
+                    raise ValueError(
+                        "Authorization snapshot references unavailable workspace skill",
+                    )
 
     def _step_context_for_run(self, run: AgentRun) -> dict[str, object]:
         if run.task_step_id is None:
@@ -1913,6 +1973,19 @@ def _uuid_or_none(value: object | None) -> UUID | None:
         return None
 
 
+def _expect_optional_uuid(
+    snapshot: dict[str, object],
+    key: str,
+    expected: UUID | None,
+) -> None:
+    raw_value = snapshot.get(key)
+    if raw_value is None:
+        return
+    parsed = _uuid_or_none(raw_value)
+    if parsed != expected:
+        raise ValueError(f"Authorization snapshot {key} mismatch")
+
+
 def _int_or_default(value: object, default: int) -> int:
     if isinstance(value, int):
         return value
@@ -1925,6 +1998,15 @@ def _optional_string(value: object) -> str | None:
 
 def _string_or_default(value: object, default: str) -> str:
     return value if isinstance(value, str) and value else default
+
+
+def _allowed_tools_from_policy(tool_policy: dict[str, object]) -> tuple[str, ...]:
+    raw_tools = tool_policy.get("allowed_tools")
+    if raw_tools is None:
+        raw_tools = tool_policy.get("mcp_tools")
+    if not isinstance(raw_tools, list):
+        return ()
+    return tuple(tool for tool in raw_tools if isinstance(tool, str))
 
 
 def _string_list(value: object) -> list[str]:
