@@ -15,6 +15,7 @@ from backend.app.audit.models import AuditEvent
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.runtime_spaces.models import RuntimeSpaceEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.workers.jobs import JobPayload
@@ -433,8 +434,16 @@ class OperationsService:
                 WorkspaceRuntime.last_heartbeat_at < cutoff,
             )
         ).all()
+        now = datetime.now(UTC)
         for runtime in stale_runtimes:
             runtime.connection_status = "offline"
+            self._append_runtime_space_event(
+                runtime,
+                "runtime.marked_offline",
+                "Runtime heartbeat is stale",
+                {"source": "operations.cleanup"},
+                created_at=now,
+            )
         deleted_records = self._mark_deleted_terminal_runtimes(workspace_id)
         self._session.commit()
         return len(stale_runtimes), deleted_records
@@ -479,10 +488,40 @@ class OperationsService:
                 WorkspaceRuntime.status.in_(["stopped", "failed"]),
             )
         ).all()
+        now = datetime.now(UTC)
         for runtime in terminal:
             runtime.status = "deleted"
             runtime.connection_status = "offline"
+            self._append_runtime_space_event(
+                runtime,
+                "runtime.record_deleted",
+                "Terminal runtime record marked deleted",
+                {"source": "operations.cleanup"},
+                created_at=now,
+            )
         return len(terminal)
+
+    def _append_runtime_space_event(
+        self,
+        runtime: WorkspaceRuntime,
+        event_type: str,
+        message: str,
+        metadata: dict[str, object],
+        *,
+        created_at: datetime,
+    ) -> None:
+        if runtime.runtime_space_id is None:
+            return
+        self._session.add(
+            RuntimeSpaceEvent(
+                workspace_id=runtime.workspace_id,
+                runtime_space_id=runtime.runtime_space_id,
+                event_type=event_type,
+                message=message,
+                event_metadata={"runtime_id": str(runtime.id), **metadata},
+                created_at=created_at,
+            )
+        )
 
     def _count_keys(self, pattern: str) -> int:
         if self._redis is None:

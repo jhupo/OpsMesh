@@ -17,6 +17,7 @@ from backend.app.runtime_manager.contracts import (
 )
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
+from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeEvent,
@@ -69,6 +70,9 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     )
     session.add_all([workspace, template])
     session.commit()
+    runtime_space = RuntimeSpace(workspace_id=workspace.id, name="Team Space", scope="workspace")
+    session.add(runtime_space)
+    session.commit()
     docker = FakeDockerClient()
     manager = RuntimeManager(session, docker)
     limits = RuntimeLimits(cpu_count=1.5, memory_mb=512, disk_mb=1024, timeout_seconds=30)
@@ -78,6 +82,7 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
         template=template,
         name="analysis",
         limits=limits,
+        runtime_space_id=runtime_space.id,
     )
     manager.start_runtime(runtime)
     command = manager.execute_command(
@@ -92,6 +97,11 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
         select(RuntimeEvent)
         .where(RuntimeEvent.workspace_runtime_id == runtime.id)
         .order_by(RuntimeEvent.created_at)
+    ).all()
+    space_events = session.scalars(
+        select(RuntimeSpaceEvent)
+        .where(RuntimeSpaceEvent.runtime_space_id == runtime_space.id)
+        .order_by(RuntimeSpaceEvent.created_at)
     ).all()
 
     assert docker.created_requests[0].limits == limits
@@ -111,6 +121,15 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
         "runtime.stopped",
         "runtime.deleted",
     ]
+    assert [event.event_type for event in space_events] == [
+        "runtime.created",
+        "runtime.started",
+        "runtime.command.completed",
+        "runtime.stopped",
+        "runtime.deleted",
+    ]
+    assert space_events[0].event_metadata["runtime_id"] == str(runtime.id)
+    assert space_events[0].event_metadata["runtime_status"] == "created"
 
 
 def test_runtime_manager_rejects_cross_workspace_command() -> None:

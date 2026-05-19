@@ -22,6 +22,7 @@ from backend.app.operations.models import WorkerLease
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.workers.jobs import JobPayload, JobType
@@ -71,8 +72,16 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     redis.set(keys.idempotency_key(str(workspace.id), "job-1"), "1")
     redis.set(keys.idempotency_key(str(other_workspace_queued_job.workspace_id), "job-2"), "1")
 
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Team Space",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.flush()
     runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
         name="runtime",
         status="running",
         connection_status="online",
@@ -136,7 +145,7 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert workers.status_code == 200
     assert workers.json()["total"] == 1
     assert workers.json()["items"][0]["worker_id"] == "worker-1"
-    assert workers.json()["items"][0]["capacity"] == {"max_jobs": 2}
+    assert workers.json()["items"][0]["capacity"] == {"max_jobs": 2, "worker_type": "cloud"}
 
     drain = client.post(
         f"/api/v1/workspaces/{workspace.id}/operations/workers/worker-1/drain",
@@ -223,6 +232,11 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert cleanup.json()["stale_marked_offline"] == 1
     session.refresh(runtime)
     assert runtime.connection_status == "offline"
+    space_event = session.query(RuntimeSpaceEvent).filter_by(
+        runtime_space_id=runtime_space.id,
+        event_type="runtime.marked_offline",
+    ).one()
+    assert space_event.event_metadata["runtime_id"] == str(runtime.id)
 
 
 def test_operations_lists_worker_leases_by_workspace() -> None:

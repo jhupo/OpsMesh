@@ -10,6 +10,7 @@ from backend.app.runtime_manager.contracts import (
     RuntimeLimits,
 )
 from backend.app.runtime_manager.quotas import RuntimeQuotaPolicy
+from backend.app.runtime_spaces.models import RuntimeSpaceEvent
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeEvent,
@@ -148,6 +149,7 @@ class RuntimeManager:
         record.completed_at = datetime.now(UTC)
 
     def _append_event(self, runtime: WorkspaceRuntime, event_type: str, message: str) -> None:
+        created_at = datetime.now(UTC)
         self._session.add(
             RuntimeEvent(
                 workspace_id=runtime.workspace_id,
@@ -155,9 +157,25 @@ class RuntimeManager:
                 runtime_space_id=runtime.runtime_space_id,
                 event_type=event_type,
                 message=message,
-                created_at=datetime.now(UTC),
+                event_metadata={"runtime_id": str(runtime.id)},
+                created_at=created_at,
             )
         )
+        if runtime.runtime_space_id is not None:
+            self._session.add(
+                RuntimeSpaceEvent(
+                    workspace_id=runtime.workspace_id,
+                    runtime_space_id=runtime.runtime_space_id,
+                    event_type=event_type,
+                    message=message,
+                    event_metadata={
+                        "runtime_id": str(runtime.id),
+                        "runtime_status": runtime.status,
+                        "connection_status": runtime.connection_status,
+                    },
+                    created_at=created_at,
+                )
+            )
 
     def _require_container(self, runtime: WorkspaceRuntime) -> None:
         if not runtime.docker_container_id:
