@@ -30,12 +30,14 @@ class RuntimeManager:
         template: RuntimeTemplate,
         name: str,
         limits: RuntimeLimits,
+        runtime_space_id: UUID | None = None,
         network_disabled: bool = True,
     ) -> WorkspaceRuntime:
         RuntimeQuotaPolicy(self._session).assert_can_create_runtime(workspace_id, limits)
         runtime = WorkspaceRuntime(
             workspace_id=workspace_id,
             runtime_template_id=template.id,
+            runtime_space_id=runtime_space_id,
             name=name,
             limits={
                 "cpu_count": limits.cpu_count,
@@ -119,6 +121,7 @@ class RuntimeManager:
         record = RuntimeCommand(
             workspace_id=workspace_id,
             workspace_runtime_id=runtime.id,
+            runtime_space_id=runtime.runtime_space_id,
             command=command,
             status="running",
             started_at=datetime.now(UTC),
@@ -149,6 +152,7 @@ class RuntimeManager:
             RuntimeEvent(
                 workspace_id=runtime.workspace_id,
                 workspace_runtime_id=runtime.id,
+                runtime_space_id=runtime.runtime_space_id,
                 event_type=event_type,
                 message=message,
                 created_at=datetime.now(UTC),

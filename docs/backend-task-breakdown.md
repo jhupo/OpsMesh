@@ -497,9 +497,9 @@ Tasks:
 
 - [ ] Add cloud control plane and runtime spaces.
   - [x] Document the managed control plane objects, runtime space model, worker fleet controls, quota reservations, operator APIs, and concurrency rules.
-  - [ ] Add runtime space data model for workspace, team, and task scopes.
-  - [ ] Bind teams, tasks, runs, Docker runtimes, runtime commands, and runtime-origin files to runtime spaces.
-  - [ ] Add runtime space quotas and durable reservations.
+  - [x] Add runtime space data model for workspace, team, and task scopes.
+  - [x] Bind teams, tasks, runs, Docker runtimes, and runtime commands to runtime spaces.
+  - [x] Add runtime space quotas and durable reservation tables.
   - [ ] Add worker node and worker lease tracking.
   - [ ] Add admin/operator APIs for workers, queues, runtime spaces, Docker leases, and security events.
   - [ ] Add concurrent scheduler tests that prove runtime-space quotas cannot be over-reserved.

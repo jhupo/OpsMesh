@@ -10,6 +10,7 @@ class AgentTeamCreateRequest(BaseModel):
     team_type: str = Field(default="general", max_length=80)
     description: str = Field(default="", max_length=2_000)
     manager_agent_profile_id: UUID | None = None
+    runtime_space_id: UUID | None = None
     coordination_rules: dict[str, object] = Field(default_factory=dict)
     default_task_policy: dict[str, object] = Field(default_factory=dict)
 
@@ -20,6 +21,7 @@ class AgentTeamResponse(TimestampedModel):
     team_type: str
     description: str
     manager_agent_profile_id: UUID | None
+    runtime_space_id: UUID | None
     coordination_rules: dict[str, object]
     default_task_policy: dict[str, object]
     status: str

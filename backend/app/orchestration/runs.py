@@ -69,6 +69,7 @@ class RunOrchestrationService:
             run = AgentRun(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                runtime_space_id=task.runtime_space_id,
                 status=RunStatus.QUEUED.value,
                 input={"task_id": str(task.id), "title": task.title},
             )
@@ -230,6 +231,7 @@ class RunOrchestrationService:
             task_step_id=failed_run.task_step_id,
             agent_profile_id=failed_run.agent_profile_id,
             runtime_id=failed_run.runtime_id,
+            runtime_space_id=failed_run.runtime_space_id,
             status=RunStatus.QUEUED.value,
             input=failed_run.input,
             model=failed_run.model,
@@ -774,6 +776,7 @@ class RunOrchestrationService:
             manager_step = TaskStep(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                runtime_space_id=task.runtime_space_id,
                 assigned_agent_profile_id=team.manager_agent_profile_id,
                 work_package_id="manager-planning",
                 required_role="project_manager",
@@ -799,6 +802,7 @@ class RunOrchestrationService:
             step = TaskStep(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                runtime_space_id=task.runtime_space_id,
                 assigned_agent_profile_id=member.agent_profile_id,
                 work_package_id=f"{member.team_role}-{index}",
                 required_role=member.team_role,
@@ -824,6 +828,7 @@ class RunOrchestrationService:
             summary_step = TaskStep(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                runtime_space_id=task.runtime_space_id,
                 assigned_agent_profile_id=team.manager_agent_profile_id,
                 work_package_id="manager-summary",
                 required_role="project_manager",
@@ -877,6 +882,7 @@ class RunOrchestrationService:
             manager_step = TaskStep(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                runtime_space_id=task.runtime_space_id,
                 assigned_agent_profile_id=manager_agent_profile_id,
                 work_package_id="manager-planning",
                 required_role="project_manager",
@@ -913,6 +919,7 @@ class RunOrchestrationService:
             step = TaskStep(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                runtime_space_id=task.runtime_space_id,
                 assigned_agent_profile_id=agent_profile_id,
                 work_package_id=f"{team_role}-{index}",
                 required_role=team_role,
@@ -936,6 +943,7 @@ class RunOrchestrationService:
             summary_step = TaskStep(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                runtime_space_id=task.runtime_space_id,
                 assigned_agent_profile_id=manager_agent_profile_id,
                 work_package_id="manager-summary",
                 required_role="project_manager",
@@ -991,6 +999,7 @@ class RunOrchestrationService:
             step = TaskStep(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                runtime_space_id=task.runtime_space_id,
                 assigned_agent_profile_id=_uuid_or_none(package.get("assigned_agent_profile_id")),
                 work_package_id=package_id,
                 required_role=_optional_string(package.get("required_role")),
@@ -1049,6 +1058,7 @@ class RunOrchestrationService:
             task_id=task.id,
             task_step_id=step.id,
             agent_profile_id=step.assigned_agent_profile_id,
+            runtime_space_id=step.runtime_space_id or task.runtime_space_id,
             status=RunStatus.QUEUED.value,
             input={
                 "task_id": str(task.id),
@@ -1085,6 +1095,9 @@ class RunOrchestrationService:
             "workspace_id": str(task.workspace_id),
             "task_id": str(task.id),
             "task_step_id": str(step.id),
+            "runtime_space_id": str(step.runtime_space_id or task.runtime_space_id)
+            if (step.runtime_space_id or task.runtime_space_id) is not None
+            else None,
             "agent_profile_id": str(profile.id)
             if profile is not None and profile.id is not None
             else None,
@@ -1469,6 +1482,7 @@ class RunOrchestrationService:
             step = TaskStep(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                runtime_space_id=task.runtime_space_id,
                 assigned_agent_profile_id=assigned_agent_profile_id,
                 work_package_id=f"revision-{source_work_package_id}-{revision_cycle}-{index}",
                 required_role=_optional_string(request.get("required_role"))
@@ -1517,6 +1531,7 @@ class RunOrchestrationService:
             step = TaskStep(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                runtime_space_id=task.runtime_space_id,
                 assigned_agent_profile_id=assigned_agent_profile_id,
                 work_package_id=package_id,
                 required_role=_optional_string(package.get("required_role")) or "specialist",
@@ -1555,6 +1570,7 @@ class RunOrchestrationService:
         step = TaskStep(
             workspace_id=task.workspace_id,
             task_id=task.id,
+            runtime_space_id=task.runtime_space_id,
             assigned_agent_profile_id=summary_step.assigned_agent_profile_id,
             work_package_id=f"manager-summary-revision-{revision_cycle}",
             required_role=summary_step.required_role or "project_manager",

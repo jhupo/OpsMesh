@@ -9,6 +9,7 @@ from backend.app.core.config import Settings
 from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeLimits
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtime_manager.safety import RuntimeSafetyPolicy
+from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeEvent,
@@ -45,10 +46,16 @@ class RuntimeControlService:
         name: str,
         limits: RuntimeLimits | None,
         network_disabled: bool,
+        runtime_space_id: UUID | None = None,
     ) -> WorkspaceRuntime | None:
         template = self._session.get(RuntimeTemplate, template_id)
         if template is None:
             return None
+        if runtime_space_id is not None:
+            RuntimeSpaceService(self._session).require_runtime_space(
+                workspace_id,
+                runtime_space_id,
+            )
         self._safety.assert_template_allowed(template)
         self._safety.assert_network_allowed(template, network_disabled=network_disabled)
         return self._manager.create_runtime(
@@ -56,6 +63,7 @@ class RuntimeControlService:
             template=template,
             name=name,
             limits=limits or self._limits_from_template(template),
+            runtime_space_id=runtime_space_id,
             network_disabled=network_disabled,
         )
 

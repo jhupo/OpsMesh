@@ -16,6 +16,7 @@ from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.planning.project_plans import ProjectPlanningService
 from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.tasks.models import Task, TaskMessage
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.snapshots import build_team_snapshot
@@ -102,6 +103,11 @@ class WorkspaceResourceService:
         data: AgentTeamCreateRequest,
         actor_user_id: UUID | None = None,
     ) -> AgentTeam:
+        if data.runtime_space_id is not None:
+            RuntimeSpaceService(self._session).require_runtime_space(
+                workspace_id,
+                data.runtime_space_id,
+            )
         team = AgentTeam(workspace_id=workspace_id, **data.model_dump())
         self._session.add(team)
         self._session.flush()
@@ -209,7 +215,15 @@ class WorkspaceResourceService:
         data: TaskCreateRequest,
     ) -> Task:
         payload = data.model_dump()
+        if data.runtime_space_id is not None:
+            RuntimeSpaceService(self._session).require_runtime_space(
+                workspace_id,
+                data.runtime_space_id,
+            )
         if data.agent_team_id is not None:
+            team = self._require_team(workspace_id, data.agent_team_id)
+            if payload.get("runtime_space_id") is None:
+                payload["runtime_space_id"] = team.runtime_space_id
             payload["team_snapshot"] = build_team_snapshot(
                 self._session,
                 workspace_id=workspace_id,
@@ -302,9 +316,11 @@ class WorkspaceResourceService:
         rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
         return list(rows), int(total or 0)
 
-    def _require_team(self, workspace_id: UUID, team_id: UUID) -> None:
-        if self.get_team(workspace_id, team_id) is None:
+    def _require_team(self, workspace_id: UUID, team_id: UUID) -> AgentTeam:
+        team = self.get_team(workspace_id, team_id)
+        if team is None:
             raise ValueError("Team not found")
+        return team
 
     def _require_agent(self, workspace_id: UUID, agent_id: UUID) -> None:
         if self.get_agent(workspace_id, agent_id) is None:

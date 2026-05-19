@@ -26,6 +26,7 @@ class RuntimeLimitsRequest(BaseModel):
 class RuntimeCreateRequest(BaseModel):
     template_id: UUID
     name: str = Field(min_length=1, max_length=160)
+    runtime_space_id: UUID | None = None
     limits: RuntimeLimitsRequest | None = None
     network_disabled: bool = True
 
@@ -33,6 +34,7 @@ class RuntimeCreateRequest(BaseModel):
 class WorkspaceRuntimeResponse(TimestampedModel):
     workspace_id: UUID
     runtime_template_id: UUID | None
+    runtime_space_id: UUID | None
     runtime_provider: str
     runtime_type: str
     name: str
@@ -53,6 +55,7 @@ class RuntimeCommandResponse(ORMModel):
     id: UUID
     workspace_id: UUID
     workspace_runtime_id: UUID
+    runtime_space_id: UUID | None
     command: list[str]
     status: str
     exit_code: int | None
@@ -66,6 +69,7 @@ class RuntimeEventResponse(ORMModel):
     id: UUID
     workspace_id: UUID
     workspace_runtime_id: UUID
+    runtime_space_id: UUID | None
     event_type: str
     message: str
     event_metadata: dict[str, object]

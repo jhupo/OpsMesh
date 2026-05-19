@@ -26,6 +26,13 @@ from backend.app.marketplace.models import (
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.operations.models import WorkerHeartbeat
 from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.runtime_spaces.models import (
+    RuntimeSpace,
+    RuntimeSpaceBinding,
+    RuntimeSpaceEvent,
+    RuntimeSpaceQuota,
+    RuntimeSpaceReservation,
+)
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeEvent,
@@ -66,6 +73,11 @@ __all__ = [
     "ReviewComment",
     "RevisionRequest",
     "RunEvent",
+    "RuntimeSpace",
+    "RuntimeSpaceBinding",
+    "RuntimeSpaceEvent",
+    "RuntimeSpaceQuota",
+    "RuntimeSpaceReservation",
     "SecurityEvent",
     "RuntimeCommand",
     "RuntimeCredential",

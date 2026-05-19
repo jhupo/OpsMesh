@@ -13,6 +13,7 @@ class AgentRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_agent_runs_workspace_task", "workspace_id", "task_id"),
         Index("ix_agent_runs_workspace_status", "workspace_id", "status"),
+        Index("ix_agent_runs_workspace_runtime_space", "workspace_id", "runtime_space_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -29,6 +30,10 @@ class AgentRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
     )
     runtime_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    runtime_space_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
     input: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     output: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)

@@ -38,13 +38,15 @@ Current state:
 
 - Docker runtimes, self-hosted runtimes, queue metrics, worker heartbeats, security events, and scheduler limits exist as separate foundations.
 - The platform control plane objects are now specified in [Cloud Control Plane And Runtime Spaces](cloud-control-plane-and-runtime-spaces.md).
-- Runtime spaces are not yet represented as first-class database records, so teams cannot yet own a persistent execution boundary that controls files, network, quotas, and runtime leases.
+- Runtime spaces are now represented as first-class records with workspace/team/task scopes, quota tables, reservation tables, event logs, and workspace-scoped APIs.
+- Teams, tasks, task steps, runs, Docker runtimes, runtime commands, and runtime events now carry `runtime_space_id` where applicable.
+- Worker node tracking, worker leases, runtime-space scheduler reservations, and admin/operator APIs are not implemented yet.
 
 Build:
 
-- Add runtime spaces with workspace, team, and task scopes.
-- Bind teams, tasks, task steps, runs, Docker runtimes, runtime commands, and staged files to a runtime space where applicable.
-- Add runtime space quota records and reservation records for active runs, Docker runtimes, self-hosted jobs, CPU, memory, storage, logs, and artifacts.
+- [x] Add runtime spaces with workspace, team, and task scopes.
+- [x] Bind teams, tasks, task steps, runs, Docker runtimes, and runtime commands to a runtime space where applicable.
+- [x] Add runtime space quota records and reservation records for active runs, Docker runtimes, self-hosted jobs, CPU, memory, storage, logs, and artifacts.
 - Add worker node records, worker leases, drain status, worker version, and capacity reporting.
 - Extend scheduler decisions to reserve runtime-space capacity atomically before enqueueing executable work.
 - Add cleanup evidence for Docker leases and runtime-space temporary storage.
@@ -53,9 +55,12 @@ Build:
 
 API/data changes:
 
-- Add `runtime_spaces`, `runtime_space_bindings`, `runtime_space_quotas`, `runtime_space_reservations`, `runtime_space_events`, `runtime_leases`, `worker_nodes`, `worker_leases`, `scheduler_decisions`, `egress_policy_rules`, and `egress_events` as needed.
-- Add `runtime_space_id` to teams, tasks, task steps, runs, workspace runtimes, runtime commands, and runtime-origin file metadata where applicable.
-- Add workspace APIs for runtime spaces and operations aggregates.
+- [x] Add `runtime_spaces`, `runtime_space_bindings`, `runtime_space_quotas`, `runtime_space_reservations`, and `runtime_space_events`.
+- Add `runtime_leases`, `worker_nodes`, `worker_leases`, `scheduler_decisions`, `egress_policy_rules`, and `egress_events` as needed.
+- [x] Add `runtime_space_id` to teams, tasks, task steps, runs, workspace runtimes, runtime commands, and runtime events.
+- Add `runtime_space_id` to runtime-origin file metadata where applicable.
+- [x] Add workspace APIs for runtime spaces.
+- Add workspace APIs for operations aggregates.
 - Add admin APIs under `/api/v1/admin/...` with platform-operator authentication.
 
 Tests:

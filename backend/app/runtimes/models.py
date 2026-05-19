@@ -28,6 +28,7 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "workspace_runtimes"
     __table_args__ = (
         Index("ix_workspace_runtimes_workspace_status", "workspace_id", "status"),
+        Index("ix_workspace_runtimes_workspace_runtime_space", "workspace_id", "runtime_space_id"),
         Index("ix_workspace_runtimes_container", "docker_container_id"),
     )
 
@@ -37,6 +38,10 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     runtime_template_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("runtime_templates.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    runtime_space_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
         nullable=True,
     )
     runtime_provider: Mapped[str] = mapped_column(
@@ -59,6 +64,7 @@ class RuntimeEvent(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "runtime_events"
     __table_args__ = (
         Index("ix_runtime_events_workspace_runtime", "workspace_id", "workspace_runtime_id"),
+        Index("ix_runtime_events_workspace_runtime_space", "workspace_id", "runtime_space_id"),
         Index("ix_runtime_events_workspace_type", "workspace_id", "event_type"),
     )
 
@@ -69,6 +75,10 @@ class RuntimeEvent(UUIDPrimaryKeyMixin, Base):
     workspace_runtime_id: Mapped[UUID] = mapped_column(
         ForeignKey("workspace_runtimes.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    runtime_space_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
+        nullable=True,
     )
     event_type: Mapped[str] = mapped_column(String(120), nullable=False)
     message: Mapped[str] = mapped_column(String, nullable=False, default="")
@@ -85,6 +95,7 @@ class RuntimeCommand(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "runtime_commands"
     __table_args__ = (
         Index("ix_runtime_commands_workspace_runtime", "workspace_id", "workspace_runtime_id"),
+        Index("ix_runtime_commands_workspace_runtime_space", "workspace_id", "runtime_space_id"),
         Index("ix_runtime_commands_workspace_status", "workspace_id", "status"),
     )
 
@@ -95,6 +106,10 @@ class RuntimeCommand(UUIDPrimaryKeyMixin, Base):
     workspace_runtime_id: Mapped[UUID] = mapped_column(
         ForeignKey("workspace_runtimes.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    runtime_space_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
+        nullable=True,
     )
     command: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="created")

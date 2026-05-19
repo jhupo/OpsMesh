@@ -22,6 +22,7 @@ from backend.app.runtime_manager.contracts import (
     RuntimeCreateRequest,
 )
 from backend.app.runtime_manager.dependencies import get_docker_runtime_client
+from backend.app.runtime_spaces.models import RuntimeSpace
 from backend.app.runtimes.models import RuntimeTemplate
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
@@ -69,6 +70,17 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
         slug="other-space",
     )
     template = _seed_template(session)
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Team Space",
+        scope="workspace",
+        policy={},
+        network_policy={"mode": "none"},
+        storage_policy={},
+        cleanup_policy={},
+    )
+    session.add(runtime_space)
+    session.commit()
 
     templates = client.get(
         f"/api/v1/workspaces/{workspace.id}/runtime-templates",
@@ -83,6 +95,7 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
         json={
             "template_id": str(template.id),
             "name": "personal-python",
+            "runtime_space_id": str(runtime_space.id),
             "limits": {
                 "cpu_count": 1,
                 "memory_mb": 512,
@@ -94,6 +107,7 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
     assert created.status_code == 201
     runtime_id = created.json()["id"]
     assert created.json()["network_policy"] == {"disabled": True}
+    assert created.json()["runtime_space_id"] == str(runtime_space.id)
     assert docker.created_requests[0].image == "python:3.12-slim"
     assert docker.created_requests[0].network_disabled is True
 
@@ -178,6 +192,43 @@ def test_runtime_api_rejects_disallowed_image_and_network() -> None:
     assert blocked_network.status_code == 400
     assert blocked_network.json()["error"]["code"] == "bad_request"
     assert "network access is disabled" in blocked_network.json()["error"]["message"]
+    assert docker.created_requests == []
+
+
+def test_runtime_api_rejects_cross_workspace_runtime_space() -> None:
+    client, session, docker = _client(allowed_images=["python:3.12-slim"])
+    owner, workspace = _seed_workspace(session, role="owner")
+    _, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other@example.com",
+        slug="other-space",
+    )
+    template = _seed_template(session)
+    runtime_space = RuntimeSpace(
+        workspace_id=other_workspace.id,
+        name="Other Space",
+        scope="workspace",
+        policy={},
+        network_policy={"mode": "none"},
+        storage_policy={},
+        cleanup_policy={},
+    )
+    session.add(runtime_space)
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtimes",
+        headers=_headers(owner.id),
+        json={
+            "template_id": str(template.id),
+            "name": "cross-space",
+            "runtime_space_id": str(runtime_space.id),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Runtime space not found" in response.json()["error"]["message"]
     assert docker.created_requests == []
 
 

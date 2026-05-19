@@ -10,6 +10,7 @@ class AgentRunResponse(TimestampedModel):
     task_step_id: UUID | None
     agent_profile_id: UUID | None
     runtime_id: UUID | None
+    runtime_space_id: UUID | None
     status: str
     input: dict[str, object]
     output: dict[str, object] | None
@@ -28,4 +29,3 @@ class RunEventResponse(ORMModel):
     message: str
     event_metadata: dict[str, object]
     created_at: datetime
-

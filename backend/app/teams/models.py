@@ -12,6 +12,7 @@ class AgentTeam(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_agent_teams_workspace_status", "workspace_id", "status"),
         Index("ix_agent_teams_workspace_type", "workspace_id", "team_type"),
+        Index("ix_agent_teams_workspace_runtime_space", "workspace_id", "runtime_space_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -23,6 +24,10 @@ class AgentTeam(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(String(2_000), nullable=False, default="")
     manager_agent_profile_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("agent_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    runtime_space_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
         nullable=True,
     )
     coordination_rules: Mapped[dict[str, object]] = mapped_column(

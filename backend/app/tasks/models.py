@@ -14,6 +14,7 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_tasks_workspace_status", "workspace_id", "status"),
         Index("ix_tasks_workspace_team", "workspace_id", "agent_team_id"),
         Index("ix_tasks_workspace_domain", "workspace_id", "domain_type"),
+        Index("ix_tasks_workspace_runtime_space", "workspace_id", "runtime_space_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -30,6 +31,10 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     agent_team_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("agent_teams.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    runtime_space_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
         nullable=True,
     )
     domain_type: Mapped[str] = mapped_column(String(80), nullable=False, default="general")
@@ -56,6 +61,7 @@ class TaskStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_task_steps_workspace_task", "workspace_id", "task_id"),
         Index("ix_task_steps_workspace_status", "workspace_id", "status"),
+        Index("ix_task_steps_workspace_runtime_space", "workspace_id", "runtime_space_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -68,6 +74,10 @@ class TaskStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     assigned_agent_profile_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("agent_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    runtime_space_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
         nullable=True,
     )
     work_package_id: Mapped[str | None] = mapped_column(String(120), nullable=True)

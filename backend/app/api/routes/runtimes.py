@@ -56,8 +56,11 @@ async def create_runtime(
             template_id=request.template_id,
             name=request.name,
             limits=_to_runtime_limits(request.limits),
+            runtime_space_id=request.runtime_space_id,
             network_disabled=request.network_disabled,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except RuntimeSafetyError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
