@@ -17,6 +17,7 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.marketplace.models import TalentListing, WorkspaceAgentInstall
+from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.tasks.models import Task, TaskMessage
 from backend.app.teams.models import AgentTeam, AgentTeamMember
@@ -133,6 +134,94 @@ def test_hiring_same_listing_twice_returns_conflict() -> None:
     assert first.status_code == 201
     assert duplicate.status_code == 409
     assert duplicate.json()["error"]["message"] == "Talent listing is already hired in workspace"
+
+
+def test_talent_install_uses_frozen_public_snapshot_without_private_workspace_refs() -> None:
+    client, session = _client()
+    publisher, publisher_workspace = _seed_workspace(
+        session,
+        email="publisher@example.com",
+        slug="publisher",
+    )
+    buyer, buyer_workspace = _seed_workspace(session, email="buyer@example.com", slug="buyer")
+    credential = ModelProviderCredential(
+        workspace_id=publisher_workspace.id,
+        created_by_user_id=publisher.id,
+        name="Publisher OpenAI",
+        provider="openai",
+        default_model="gpt-4.1",
+        encrypted_api_key="encrypted",
+        api_key_fingerprint="sha256:test",
+        encryption_key_id="test-key",
+    )
+    session.add(credential)
+    session.flush()
+    source_agent = AgentProfile(
+        workspace_id=publisher_workspace.id,
+        name="Image Pro",
+        role="designer",
+        description="Published version",
+        instructions="Use the public image workflow.",
+        model="gpt-4.1",
+        model_provider_credential_id=credential.id,
+        model_settings={"temperature": 0.2, "workspace_id": str(publisher_workspace.id)},
+        capabilities={"tools": ["image.generate"], "runtime_space_id": "source-runtime"},
+        skills={
+            "skills": ["image"],
+            "installed_skill_ids": ["source-private-install"],
+            "nested": {"skill_install_id": "source-private-install"},
+        },
+        tool_policy={
+            "mcp_tools": ["generate_image"],
+            "mcp_server_ids": ["source-server"],
+            "nested": {"credential_reference_id": "source-secret"},
+        },
+        runtime_policy={
+            "provider": "docker",
+            "runtime_space_id": "source-runtime",
+            "limits": {"cpu": 2},
+        },
+        memory_policy={"scope": "task", "workspace_runtime_id": "source-runtime"},
+        approval_policy={"mode": "default", "credential_id": "source-secret"},
+        version=1,
+    )
+    session.add(source_agent)
+    session.commit()
+
+    listing = _publish_listing(
+        client,
+        publisher,
+        publisher_workspace,
+        source_agent,
+        title="Image Pro",
+        skill_tags=["image"],
+        capability_tags=["image.generate"],
+    )
+    source_agent.instructions = "Private draft after publish."
+    source_agent.model = "private-provider/model"
+    source_agent.skills = {"installed_skill_ids": ["new-private-install"]}
+    source_agent.version = 2
+    session.commit()
+
+    hired = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/talent-market/{listing['id']}/hire",
+        headers=_headers(buyer.id),
+        json={},
+    )
+
+    assert hired.status_code == 201
+    agent = hired.json()["agent"]
+    assert agent["workspace_id"] == str(buyer_workspace.id)
+    assert agent["instructions"] == "Use the public image workflow."
+    assert agent["model"] == "gpt-4.1"
+    assert agent["model_provider_credential_id"] is None
+    assert agent["skills"] == {"skills": ["image"], "nested": {}}
+    assert agent["tool_policy"] == {"mcp_tools": ["generate_image"], "nested": {}}
+    assert agent["runtime_policy"] == {"provider": "docker", "limits": {"cpu": 2}}
+    assert agent["memory_policy"] == {"scope": "task"}
+    assert agent["approval_policy"] == {"mode": "default"}
+    assert agent["model_settings"] == {"temperature": 0.2}
+    assert agent["capabilities"] == {"tools": ["image.generate"]}
 
 
 def test_talent_install_can_be_pinned_checked_and_upgraded_to_new_listing_version() -> None:

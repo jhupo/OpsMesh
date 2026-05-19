@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from uuid import UUID
 
 from sqlalchemy import Select, func, or_, select
@@ -36,6 +36,34 @@ from backend.app.marketplace.models import (
 from backend.app.tasks.models import Task, TaskMessage
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 
+_AGENT_SNAPSHOT_METADATA_KEY = "agent_snapshot"
+_PRIVATE_DEFINITION_KEYS = frozenset(
+    {
+        "agent_profile_id",
+        "credential_id",
+        "credential_reference_id",
+        "credential_reference_ids",
+        "installed_skill_id",
+        "installed_skill_ids",
+        "mcp_credential_reference_id",
+        "mcp_credential_reference_ids",
+        "mcp_server_id",
+        "mcp_server_ids",
+        "model_provider_credential_id",
+        "runtime_id",
+        "runtime_space_id",
+        "self_hosted_runtime_id",
+        "skill_install_id",
+        "skill_install_ids",
+        "source_agent_profile_id",
+        "source_workspace_id",
+        "workspace_id",
+        "workspace_runtime_id",
+        "workspace_skill_install_id",
+        "workspace_skill_install_ids",
+    }
+)
+
 
 class TalentMarketplaceService:
     def __init__(self, session: Session) -> None:
@@ -49,6 +77,8 @@ class TalentMarketplaceService:
         data: TalentListingCreateRequest,
     ) -> TalentListing:
         agent = self._require_agent(workspace_id, data.agent_profile_id)
+        metadata = dict(data.metadata)
+        metadata[_AGENT_SNAPSHOT_METADATA_KEY] = asdict(_agent_marketplace_snapshot(agent))
         listing = TalentListing(
             owner_user_id=owner_user_id,
             source_workspace_id=workspace_id,
@@ -61,7 +91,7 @@ class TalentMarketplaceService:
             required_tools=data.required_tools,
             default_team_role=data.default_team_role,
             risk_level=data.risk_level,
-            listing_metadata=data.metadata,
+            listing_metadata=metadata,
             version=agent.version,
         )
         self._session.add(listing)
@@ -260,22 +290,23 @@ class TalentMarketplaceService:
         source = self._session.get(AgentProfile, listing.source_agent_profile_id)
         if source is None or source.status != "active":
             raise ValueError("Published agent profile is not available")
+        definition = _listing_agent_definition(listing, source)
 
         installed_agent = AgentProfile(
             workspace_id=workspace_id,
-            name=data.agent_name or source.name,
-            role=source.role,
-            description=source.description,
-            instructions=source.instructions,
-            model=source.model,
-            model_settings=dict(source.model_settings),
-            capabilities=dict(source.capabilities),
-            skills=dict(source.skills),
-            tool_policy=dict(source.tool_policy),
-            runtime_policy=dict(source.runtime_policy),
-            memory_policy=dict(source.memory_policy),
-            approval_policy=dict(source.approval_policy),
-            version=source.version,
+            name=data.agent_name or definition.name,
+            role=definition.role,
+            description=definition.description,
+            instructions=definition.instructions,
+            model=definition.model,
+            model_settings=dict(definition.model_settings),
+            capabilities=dict(definition.capabilities),
+            skills=dict(definition.skills),
+            tool_policy=dict(definition.tool_policy),
+            runtime_policy=dict(definition.runtime_policy),
+            memory_policy=dict(definition.memory_policy),
+            approval_policy=dict(definition.approval_policy),
+            version=listing.version,
         )
         self._session.add(installed_agent)
         self._session.flush()
@@ -297,7 +328,7 @@ class TalentMarketplaceService:
                 workspace_id=workspace_id,
                 team_id=data.team_id,
                 agent_id=installed_agent.id,
-                team_role=data.team_role or listing.default_team_role or source.role,
+                team_role=data.team_role or listing.default_team_role or definition.role,
                 order_index=data.order_index,
             )
         flush_or_raise_conflict(self._session, "Talent listing is already hired in workspace")
@@ -411,7 +442,8 @@ class TalentMarketplaceService:
         if agent is None or source is None or source.status != "active":
             raise ValueError("Published agent profile is not available")
 
-        self._copy_agent_definition(source, agent)
+        definition = _listing_agent_definition(target, source)
+        self._copy_agent_definition(definition, agent)
         agent.version = target.version
         install.current_talent_listing_id = target.id
         install.source_agent_profile_id = source.id
@@ -610,7 +642,11 @@ class TalentMarketplaceService:
             raise ValueError("Talent listing must be hired before review")
         return install
 
-    def _copy_agent_definition(self, source: AgentProfile, target: AgentProfile) -> None:
+    def _copy_agent_definition(
+        self,
+        source: AgentDefinitionSnapshot,
+        target: AgentProfile,
+    ) -> None:
         target.role = source.role
         target.description = source.description
         target.instructions = source.instructions
@@ -1026,6 +1062,94 @@ def _install_response(install: WorkspaceAgentInstall) -> WorkspaceAgentInstallRe
             "agent": install.installed_agent_profile,
         }
     )
+
+
+@dataclass(frozen=True)
+class AgentDefinitionSnapshot:
+    name: str
+    role: str
+    description: str
+    instructions: str
+    model: str
+    model_settings: dict[str, object]
+    capabilities: dict[str, object]
+    skills: dict[str, object]
+    tool_policy: dict[str, object]
+    runtime_policy: dict[str, object]
+    memory_policy: dict[str, object]
+    approval_policy: dict[str, object]
+
+
+def _listing_agent_definition(
+    listing: TalentListing,
+    source: AgentProfile,
+) -> AgentDefinitionSnapshot:
+    snapshot = listing.listing_metadata.get(_AGENT_SNAPSHOT_METADATA_KEY)
+    if isinstance(snapshot, dict):
+        return AgentDefinitionSnapshot(
+            name=_non_empty_string_or_default(snapshot.get("name"), source.name),
+            role=_non_empty_string_or_default(snapshot.get("role"), source.role),
+            description=_non_empty_string_or_default(
+                snapshot.get("description"),
+                source.description,
+            ),
+            instructions=_non_empty_string_or_default(
+                snapshot.get("instructions"),
+                source.instructions,
+            ),
+            model=_non_empty_string_or_default(snapshot.get("model"), source.model),
+            model_settings=_dict_or_empty(snapshot.get("model_settings")),
+            capabilities=_dict_or_empty(snapshot.get("capabilities")),
+            skills=_dict_or_empty(snapshot.get("skills")),
+            tool_policy=_dict_or_empty(snapshot.get("tool_policy")),
+            runtime_policy=_dict_or_empty(snapshot.get("runtime_policy")),
+            memory_policy=_dict_or_empty(snapshot.get("memory_policy")),
+            approval_policy=_dict_or_empty(snapshot.get("approval_policy")),
+        )
+    return _agent_marketplace_snapshot(source)
+
+
+def _agent_marketplace_snapshot(agent: AgentProfile) -> AgentDefinitionSnapshot:
+    return AgentDefinitionSnapshot(
+        name=agent.name,
+        role=agent.role,
+        description=agent.description,
+        instructions=agent.instructions,
+        model=agent.model,
+        model_settings=_safe_definition_dict(agent.model_settings),
+        capabilities=_safe_definition_dict(agent.capabilities),
+        skills=_safe_definition_dict(agent.skills),
+        tool_policy=_safe_definition_dict(agent.tool_policy),
+        runtime_policy=_safe_definition_dict(agent.runtime_policy),
+        memory_policy=_safe_definition_dict(agent.memory_policy),
+        approval_policy=_safe_definition_dict(agent.approval_policy),
+    )
+
+
+def _safe_definition_dict(value: object) -> dict[str, object]:
+    cleaned = _safe_definition_value(value)
+    return cleaned if isinstance(cleaned, dict) else {}
+
+
+def _safe_definition_value(value: object) -> object:
+    if isinstance(value, dict):
+        cleaned: dict[str, object] = {}
+        for key, child in value.items():
+            if key in _PRIVATE_DEFINITION_KEYS or key.endswith("_id") or key.endswith("_ids"):
+                continue
+            cleaned[key] = _safe_definition_value(child)
+        return cleaned
+    if isinstance(value, list):
+        return [_safe_definition_value(item) for item in value]
+    return value
+
+
+def _dict_or_empty(value: object) -> dict[str, object]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _non_empty_string_or_default(value: object, default: str) -> str:
+    return value if isinstance(value, str) else default
 
 
 def review_response(review: TalentListingReview) -> TalentListingReviewResponse:
