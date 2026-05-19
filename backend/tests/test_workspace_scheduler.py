@@ -46,6 +46,59 @@ def test_workspace_scheduler_orders_steps_by_task_priority_and_run_quota() -> No
     assert high_step.dependencies == {}
 
 
+def test_workspace_scheduler_round_robins_between_tasks_before_extra_parallel_steps() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(
+        session,
+        settings={"scheduler": {"max_active_runs": 3}},
+    )
+    first_task, first_step = _seed_task_step(session, workspace, title="First", priority=10)
+    _, first_extra_step = _seed_extra_step(session, first_task, title="First extra", order_index=1)
+    second_task, second_step = _seed_task_step(session, workspace, title="Second", priority=8)
+    third_task, third_step = _seed_task_step(session, workspace, title="Third", priority=7)
+
+    decision = WorkspaceScheduler(session).select_runnable_steps(
+        workspace_id=workspace.id,
+        candidate_steps=[first_step, first_extra_step, second_step, third_step],
+    )
+
+    assert [step.task_id for step in decision.runnable_steps] == [
+        first_task.id,
+        second_task.id,
+        third_task.id,
+    ]
+    assert decision.blocked_steps == (first_extra_step,)
+    assert first_extra_step.dependencies["blocked_reason"] == "workspace_run_quota_exceeded"
+
+
+def test_workspace_scheduler_can_allow_multiple_steps_per_task_per_tick() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(
+        session,
+        settings={
+            "scheduler": {
+                "max_active_runs": 3,
+                "max_steps_per_task_per_tick": 2,
+            }
+        },
+    )
+    first_task, first_step = _seed_task_step(session, workspace, title="First", priority=10)
+    _, first_extra_step = _seed_extra_step(session, first_task, title="First extra", order_index=1)
+    second_task, second_step = _seed_task_step(session, workspace, title="Second", priority=8)
+
+    decision = WorkspaceScheduler(session).select_runnable_steps(
+        workspace_id=workspace.id,
+        candidate_steps=[first_step, first_extra_step, second_step],
+    )
+
+    assert [step.id for step in decision.runnable_steps] == [
+        first_step.id,
+        first_extra_step.id,
+        second_step.id,
+    ]
+    assert decision.blocked_steps == ()
+
+
 def test_workspace_scheduler_blocks_when_active_run_quota_is_full() -> None:
     session = _session()
     _, workspace = _seed_workspace(
@@ -229,6 +282,28 @@ def _seed_task_step(
         order_index=0,
         runtime_space_id=runtime_space_id,
         assigned_agent_profile_id=assigned_agent_profile_id,
+        dependencies=dependencies or {},
+    )
+    session.add(step)
+    session.flush()
+    return task, step
+
+
+def _seed_extra_step(
+    session: Session,
+    task: Task,
+    *,
+    title: str,
+    order_index: int,
+    dependencies: dict[str, object] | None = None,
+) -> tuple[Task, TaskStep]:
+    step = TaskStep(
+        workspace_id=task.workspace_id,
+        task_id=task.id,
+        title=title,
+        status="queued",
+        order_index=order_index,
+        runtime_space_id=task.runtime_space_id,
         dependencies=dependencies or {},
     )
     session.add(step)

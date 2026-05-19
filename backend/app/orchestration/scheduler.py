@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections import defaultdict, deque
+from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -24,6 +27,7 @@ class WorkspaceSchedulerPolicy:
     max_active_runs: int | None = None
     max_running_tasks: int | None = None
     max_runs_to_start_per_tick: int | None = None
+    max_steps_per_task_per_tick: int = 1
 
 
 @dataclass(frozen=True)
@@ -110,6 +114,10 @@ class WorkspaceScheduler:
             max_runs_to_start_per_tick=_positive_int_or_none(
                 scheduler.get("max_runs_to_start_per_tick")
             ),
+            max_steps_per_task_per_tick=_positive_int_or_default(
+                scheduler.get("max_steps_per_task_per_tick"),
+                1,
+            ),
         )
 
     def _available_run_slots(
@@ -153,21 +161,55 @@ class WorkspaceScheduler:
 
     def _order_steps(self, steps: list[TaskStep]) -> list[TaskStep]:
         task_ids = {step.task_id for step in steps}
-        priorities = {
-            task_id: priority
-            for task_id, priority in self._session.execute(
-                select(Task.id, Task.priority).where(Task.id.in_(task_ids))
+        task_rank = {
+            task_id: _TaskRank(priority=int(priority or 0), created_at=created_at)
+            for task_id, priority, created_at in self._session.execute(
+                select(Task.id, Task.priority, Task.created_at).where(Task.id.in_(task_ids))
             ).all()
         }
-        return sorted(
+        ordered_by_task = sorted(
             steps,
             key=lambda step: (
-                -int(priorities.get(step.task_id, 0) or 0),
+                -task_rank.get(step.task_id, _TaskRank()).priority,
+                task_rank.get(step.task_id, _TaskRank()).created_at,
                 step.order_index,
                 step.created_at,
                 step.id,
             ),
         )
+        return self._round_robin_by_task(
+            ordered_by_task,
+            max_steps_per_task_per_round=self._policy_for(
+                steps[0].workspace_id,
+            ).max_steps_per_task_per_tick,
+        )
+
+    def _round_robin_by_task(
+        self,
+        steps: Iterable[TaskStep],
+        *,
+        max_steps_per_task_per_round: int,
+    ) -> list[TaskStep]:
+        max_per_round = max(1, max_steps_per_task_per_round)
+        task_queues: dict[UUID, deque[TaskStep]] = defaultdict(deque)
+        task_order: list[UUID] = []
+        for step in steps:
+            if step.task_id not in task_queues:
+                task_order.append(step.task_id)
+            task_queues[step.task_id].append(step)
+
+        ordered: list[TaskStep] = []
+        active_task_ids = deque(task_order)
+        while active_task_ids:
+            task_id = active_task_ids.popleft()
+            task_steps = task_queues[task_id]
+            for _ in range(max_per_round):
+                if not task_steps:
+                    break
+                ordered.append(task_steps.popleft())
+            if task_steps:
+                active_task_ids.append(task_id)
+        return ordered
 
     def _mark_runnable(self, steps: list[TaskStep]) -> None:
         for step in steps:
@@ -188,3 +230,14 @@ def _positive_int_or_none(value: object) -> int | None:
     if isinstance(value, int) and value > 0:
         return value
     return None
+
+
+def _positive_int_or_default(value: object, default: int) -> int:
+    parsed = _positive_int_or_none(value)
+    return parsed if parsed is not None else default
+
+
+@dataclass(frozen=True)
+class _TaskRank:
+    priority: int = 0
+    created_at: datetime = datetime.min.replace(tzinfo=UTC)
