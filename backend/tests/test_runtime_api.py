@@ -10,6 +10,8 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.admin.models import PlatformPolicy
+from backend.app.admin.policies import RISKY_EXECUTION_POLICY_KEY
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -236,6 +238,19 @@ def test_runtime_api_allows_network_when_template_allows_it() -> None:
     client, session, docker = _client(allowed_images=["python:3.12-slim"])
     owner, workspace = _seed_workspace(session, role="owner")
     template = _seed_template(session, network_policy={"allow_network": True})
+    session.add(
+        PlatformPolicy(
+            policy_key=RISKY_EXECUTION_POLICY_KEY,
+            value={
+                "allow_runtime_commands": True,
+                "allow_network_egress": True,
+                "allow_self_hosted_runtimes": True,
+                "require_approval_for_high_risk_tools": True,
+            },
+            description="test",
+        )
+    )
+    session.commit()
 
     response = client.post(
         f"/api/v1/workspaces/{workspace.id}/runtimes",
@@ -250,6 +265,39 @@ def test_runtime_api_allows_network_when_template_allows_it() -> None:
     assert response.status_code == 201
     assert response.json()["network_policy"] == {"disabled": False}
     assert docker.created_requests[0].network_disabled is False
+
+
+def test_runtime_api_rejects_network_when_platform_policy_disables_egress() -> None:
+    client, session, docker = _client(allowed_images=["python:3.12-slim"])
+    owner, workspace = _seed_workspace(session, role="owner")
+    template = _seed_template(session, network_policy={"allow_network": True})
+    session.add(
+        PlatformPolicy(
+            policy_key=RISKY_EXECUTION_POLICY_KEY,
+            value={
+                "allow_runtime_commands": True,
+                "allow_network_egress": False,
+                "allow_self_hosted_runtimes": True,
+                "require_approval_for_high_risk_tools": True,
+            },
+            description="test",
+        )
+    )
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtimes",
+        headers=_headers(owner.id),
+        json={
+            "template_id": str(template.id),
+            "name": "networked",
+            "network_disabled": False,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "platform safety policy" in response.json()["error"]["message"]
+    assert docker.created_requests == []
 
 
 def _client(

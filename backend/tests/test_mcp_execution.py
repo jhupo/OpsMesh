@@ -6,6 +6,9 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.admin.models import PlatformPolicy
+from backend.app.admin.policies import RISKY_EXECUTION_POLICY_KEY
+from backend.app.approvals.models import Approval
 from backend.app.capabilities.execution import (
     McpExecutionRequest,
     McpToolExecutionService,
@@ -174,6 +177,89 @@ def test_mcp_execution_normalizes_adapter_errors() -> None:
     assert "sk-secret" not in str(result.error)
 
 
+def test_mcp_execution_sends_high_risk_tool_to_approval_by_default() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace, risk_level="high")
+    adapter = RecordingAdapter({"deleted": True})
+
+    result = McpToolExecutionService(session, adapter).execute(
+        McpExecutionRequest(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            mcp_server_id=server.id,
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+        )
+    )
+
+    approval = session.scalar(select(Approval))
+    log = session.scalar(select(McpToolCallLog))
+    session.refresh(run)
+
+    assert result.status == "waiting_approval"
+    assert adapter.calls == []
+    assert approval is not None
+    assert approval.approval_type == "mcp.tool"
+    assert approval.risk_level == "high"
+    assert log is not None
+    assert log.status == "waiting_approval"
+    assert run.status == "waiting_approval"
+
+
+def test_mcp_execution_allows_high_risk_tool_when_platform_policy_allows_it() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    _seed_risky_policy(session, high_risk_tool_mode="allow")
+    run, server = _seed_run_with_mcp_tool(session, workspace, risk_level="high")
+    adapter = RecordingAdapter({"ok": True})
+
+    result = McpToolExecutionService(session, adapter).execute(
+        McpExecutionRequest(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            mcp_server_id=server.id,
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+        )
+    )
+
+    assert result.status == "completed"
+    assert adapter.calls
+
+
+def test_mcp_execution_blocks_high_risk_tool_when_platform_policy_blocks_it() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    _seed_risky_policy(session, high_risk_tool_mode="block")
+    run, server = _seed_run_with_mcp_tool(session, workspace, risk_level="high")
+
+    try:
+        McpToolExecutionService(session, RecordingAdapter({})).execute(
+            McpExecutionRequest(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                arguments={"prompt": "mountain"},
+            )
+        )
+    except ToolPermissionError as exc:
+        assert "blocked" in str(exc)
+    else:
+        raise AssertionError("Expected high-risk MCP tool to be blocked")
+
+    log = session.scalar(select(McpToolCallLog))
+    security_event = session.scalar(select(SecurityEvent))
+
+    assert log is not None
+    assert log.status == "blocked"
+    assert log.error is not None
+    assert log.error["code"] == "mcp_high_risk_tool_globally_disabled"
+    assert security_event is not None
+    assert security_event.reason == "mcp_high_risk_tool_globally_disabled"
+
+
 class RecordingAdapter:
     def __init__(self, response: dict[str, object]) -> None:
         self._response = response
@@ -222,6 +308,7 @@ def _seed_run_with_mcp_tool(
     *,
     snapshot_tools: list[str] | None = None,
     allow_policy: dict[str, object] | None = None,
+    risk_level: str = "medium",
 ) -> tuple[AgentRun, McpServer]:
     task = Task(workspace_id=workspace.id, title="Create poster")
     session.add(task)
@@ -242,6 +329,7 @@ def _seed_run_with_mcp_tool(
         mcp_server_id=server.id,
         tool_name="generate_image",
         capability_key="image.generate",
+        risk_level=risk_level,
         policy=allow_policy or {},
     )
     run = AgentRun(
@@ -287,6 +375,29 @@ def _seed_workspace(
     session.add_all([user, workspace, membership])
     session.commit()
     return user, workspace
+
+
+def _seed_risky_policy(
+    session: Session,
+    *,
+    high_risk_tool_mode: str,
+) -> PlatformPolicy:
+    policy = PlatformPolicy(
+        policy_key=RISKY_EXECUTION_POLICY_KEY,
+        value={
+            "allow_runtime_commands": True,
+            "allow_network_egress": False,
+            "allow_self_hosted_runtimes": True,
+            "require_approval_for_high_risk_tools": (
+                high_risk_tool_mode == "require_workspace_approval"
+            ),
+            "high_risk_tool_mode": high_risk_tool_mode,
+        },
+        description="test",
+    )
+    session.add(policy)
+    session.commit()
+    return policy
 
 
 def _patch_portable_types_for_sqlite() -> None:

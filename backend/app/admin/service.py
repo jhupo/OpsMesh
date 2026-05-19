@@ -9,6 +9,11 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.admin.models import PlatformPolicy, PlatformPolicyEvent
+from backend.app.admin.policies import (
+    RISKY_EXECUTION_POLICY_KEY,
+    default_risky_execution_policy_value,
+    normalize_risky_execution_policy_value,
+)
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.operations import QueueMetricsResponse
 from backend.app.operations.models import WorkerLease, WorkerNode
@@ -21,7 +26,6 @@ from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace
 
 T = TypeVar("T")
-RISKY_EXECUTION_POLICY_KEY = "global_risky_execution"
 
 
 class AdminControlPlaneService:
@@ -256,12 +260,7 @@ class AdminControlPlaneService:
         policy = PlatformPolicy(
             policy_key=RISKY_EXECUTION_POLICY_KEY,
             status="active",
-            value={
-                "allow_runtime_commands": False,
-                "allow_network_egress": False,
-                "allow_self_hosted_runtimes": True,
-                "require_approval_for_high_risk_tools": True,
-            },
+            value=default_risky_execution_policy_value(),
             description="Global personal-safety controls for risky execution capabilities.",
         )
         self._session.add(policy)
@@ -311,19 +310,10 @@ class AdminControlPlaneService:
         self,
         value: dict[str, object],
     ) -> dict[str, object]:
-        defaults = self.get_or_create_risky_execution_policy().value
-        merged = dict(defaults)
-        allowed_keys = {
-            "allow_runtime_commands",
-            "allow_network_egress",
-            "allow_self_hosted_runtimes",
-            "require_approval_for_high_risk_tools",
-        }
-        for key in allowed_keys:
-            raw_value = value.get(key)
-            if isinstance(raw_value, bool):
-                merged[key] = raw_value
-        return merged
+        return normalize_risky_execution_policy_value(
+            self.get_or_create_risky_execution_policy().value,
+            value,
+        )
 
     def _append_policy_event(
         self,

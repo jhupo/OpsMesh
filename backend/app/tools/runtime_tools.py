@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.admin.policies import PlatformPolicyService
 from backend.app.approvals.service import ApprovalService
 from backend.app.runs.models import RunEvent
 from backend.app.runs.status import RunStatus
@@ -52,7 +53,23 @@ class RuntimeToolService:
     ) -> RuntimeToolResult:
         context.require_tool("runtime_shell")
         self._append_tool_event(context, "tool.called", "runtime_shell")
-        if self._policy.requires_approval(command):
+        risky_policy = PlatformPolicyService(self._session).risky_execution_policy()
+        if not risky_policy.allow_runtime_commands:
+            self._append_tool_event(context, "tool.blocked", "runtime_shell")
+            self._session.flush()
+            return RuntimeToolResult(
+                status="blocked",
+                reason="Runtime commands are disabled by platform safety policy",
+            )
+        high_risk_command = self._policy.requires_approval(command)
+        if high_risk_command and risky_policy.high_risk_tool_mode == "block":
+            self._append_tool_event(context, "tool.blocked", "runtime_shell")
+            self._session.flush()
+            return RuntimeToolResult(
+                status="blocked",
+                reason="High-risk runtime commands are disabled by platform safety policy",
+            )
+        if high_risk_command and risky_policy.high_risk_tool_mode == "require_workspace_approval":
             ApprovalService(self._session).create_approval(
                 workspace_id=context.workspace_id,
                 task_id=context.task_id,

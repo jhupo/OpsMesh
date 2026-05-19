@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.admin.policies import PlatformPolicyService
 from backend.app.api.schemas.self_hosted import (
     ArtifactUploadRequest,
     EnrollmentTokenCreateRequest,
@@ -65,6 +66,7 @@ class SelfHostedRuntimeService:
         user_id: UUID,
         data: EnrollmentTokenCreateRequest,
     ) -> CreatedEnrollmentToken:
+        self._require_self_hosted_enabled()
         token = f"ccrt_{token_urlsafe(32)}"
         record = RuntimeEnrollmentToken(
             workspace_id=workspace_id,
@@ -79,6 +81,7 @@ class SelfHostedRuntimeService:
         return CreatedEnrollmentToken(record=record, token=token)
 
     def register_runtime(self, data: RuntimeRegistrationRequest) -> RegisteredRuntime:
+        self._require_self_hosted_enabled()
         token = self._consume_enrollment_token(data.enrollment_token)
         now = datetime.now(UTC)
         runtime = WorkspaceRuntime(
@@ -161,6 +164,7 @@ class SelfHostedRuntimeService:
         return auth.worker
 
     def poll_job(self, auth: AuthenticatedWorker) -> AgentRun | None:
+        self._require_self_hosted_enabled()
         return self._session.scalar(
             select(AgentRun)
             .where(
@@ -173,6 +177,7 @@ class SelfHostedRuntimeService:
         )
 
     def claim_job(self, auth: AuthenticatedWorker, agent_run_id: UUID) -> SelfHostedJobClaim:
+        self._require_self_hosted_enabled()
         run = self._session.get(AgentRun, agent_run_id)
         if (
             run is None
@@ -273,6 +278,11 @@ class SelfHostedRuntimeService:
         self._session.commit()
         self._session.refresh(credential)
         return credential
+
+    def _require_self_hosted_enabled(self) -> None:
+        policy = PlatformPolicyService(self._session).risky_execution_policy()
+        if not policy.allow_self_hosted_runtimes:
+            raise ValueError("Self-hosted runtimes are disabled by platform safety policy")
 
     def _consume_enrollment_token(self, raw_token: str) -> RuntimeEnrollmentToken:
         token = self._session.scalar(

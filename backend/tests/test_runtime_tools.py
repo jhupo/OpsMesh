@@ -7,6 +7,8 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.admin.models import PlatformPolicy
+from backend.app.admin.policies import RISKY_EXECUTION_POLICY_KEY
 from backend.app.approvals.models import Approval
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -174,6 +176,96 @@ def test_runtime_tool_surfaces_command_failure() -> None:
     assert result.stderr == "bad"
 
 
+def test_runtime_tool_blocks_when_platform_policy_disables_commands() -> None:
+    session = _session()
+    workspace, template = _seed_runtime_template(session)
+    _seed_risky_policy(session, allow_runtime_commands=False)
+    docker = FakeDockerClient()
+    manager = RuntimeManager(session, docker)
+    runtime = manager.create_runtime(
+        workspace_id=workspace.id,
+        template=template,
+        name="runtime",
+        limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
+    )
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=None,
+        agent_run_id=None,
+        allowed_tools=frozenset({"runtime_shell"}),
+    )
+
+    result = RuntimeToolService(session, manager).execute_shell(
+        context,
+        runtime=runtime,
+        command=["echo", "blocked"],
+    )
+
+    assert result.status == "blocked"
+    assert "disabled" in (result.reason or "")
+    assert docker.executed == []
+
+
+def test_runtime_tool_executes_high_risk_when_approval_gate_is_disabled() -> None:
+    session = _session()
+    workspace, template = _seed_runtime_template(session)
+    _seed_risky_policy(session, high_risk_tool_mode="allow")
+    docker = FakeDockerClient()
+    manager = RuntimeManager(session, docker)
+    runtime = manager.create_runtime(
+        workspace_id=workspace.id,
+        template=template,
+        name="runtime",
+        limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
+    )
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=None,
+        agent_run_id=None,
+        allowed_tools=frozenset({"runtime_shell"}),
+    )
+
+    result = RuntimeToolService(session, manager).execute_shell(
+        context,
+        runtime=runtime,
+        command=["rm", "-rf", "/workspace"],
+    )
+
+    assert result.status == "completed"
+    assert docker.executed == [["rm", "-rf", "/workspace"]]
+    assert session.scalars(select(Approval)).all() == []
+
+
+def test_runtime_tool_blocks_high_risk_when_platform_policy_blocks_it() -> None:
+    session = _session()
+    workspace, template = _seed_runtime_template(session)
+    _seed_risky_policy(session, high_risk_tool_mode="block")
+    docker = FakeDockerClient()
+    manager = RuntimeManager(session, docker)
+    runtime = manager.create_runtime(
+        workspace_id=workspace.id,
+        template=template,
+        name="runtime",
+        limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
+    )
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=None,
+        agent_run_id=None,
+        allowed_tools=frozenset({"runtime_shell"}),
+    )
+
+    result = RuntimeToolService(session, manager).execute_shell(
+        context,
+        runtime=runtime,
+        command=["rm", "-rf", "/workspace"],
+    )
+
+    assert result.status == "blocked"
+    assert "High-risk" in (result.reason or "")
+    assert docker.executed == []
+
+
 def _seed_runtime_template(session: Session) -> tuple[Workspace, RuntimeTemplate]:
     workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug=str(uuid4()), settings={})
     template = RuntimeTemplate(
@@ -202,3 +294,33 @@ def _patch_portable_types_for_sqlite() -> None:
                 column.type = column.type.as_generic()
             if isinstance(column.type, JSONB):
                 column.type = SqliteJSON()
+
+
+def _seed_risky_policy(
+    session: Session,
+    *,
+    allow_runtime_commands: bool = True,
+    allow_network_egress: bool = False,
+    allow_self_hosted_runtimes: bool = True,
+    require_approval_for_high_risk_tools: bool | None = None,
+    high_risk_tool_mode: str = "require_workspace_approval",
+) -> PlatformPolicy:
+    approval_required = (
+        high_risk_tool_mode == "require_workspace_approval"
+        if require_approval_for_high_risk_tools is None
+        else require_approval_for_high_risk_tools
+    )
+    policy = PlatformPolicy(
+        policy_key=RISKY_EXECUTION_POLICY_KEY,
+        value={
+            "allow_runtime_commands": allow_runtime_commands,
+            "allow_network_egress": allow_network_egress,
+            "allow_self_hosted_runtimes": allow_self_hosted_runtimes,
+            "require_approval_for_high_risk_tools": approval_required,
+            "high_risk_tool_mode": high_risk_tool_mode,
+        },
+        description="test",
+    )
+    session.add(policy)
+    session.commit()
+    return policy

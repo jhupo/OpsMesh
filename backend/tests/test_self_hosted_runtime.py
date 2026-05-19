@@ -9,6 +9,8 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.admin.models import PlatformPolicy
+from backend.app.admin.policies import RISKY_EXECUTION_POLICY_KEY
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -198,6 +200,46 @@ def test_runtime_credentials_are_bound_to_token_hash_pepper() -> None:
     assert denied.status_code == 401
 
 
+def test_self_hosted_runtime_respects_platform_policy_disable() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    _seed_risky_policy(session, allow_self_hosted_runtimes=False)
+
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "blocked-node"},
+    )
+
+    assert enrollment.status_code == 400
+    assert "Self-hosted runtimes are disabled" in enrollment.json()["error"]["message"]
+
+
+def test_self_hosted_worker_cannot_poll_when_policy_is_disabled_after_registration() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-policy",
+        },
+    )
+    credential = registered.json()["credential_token"]
+    _seed_risky_policy(session, allow_self_hosted_runtimes=False)
+
+    denied = client.get("/api/v1/self-hosted/jobs/next", headers=_runtime_headers(credential))
+
+    assert denied.status_code == 400
+    assert "Self-hosted runtimes are disabled" in denied.json()["error"]["message"]
+
+
 def _client(settings: Settings | None = None) -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
@@ -243,6 +285,26 @@ def _headers(user_id: object) -> dict[str, str]:
 
 def _runtime_headers(token: str) -> dict[str, str]:
     return {"X-Runtime-Authorization": f"Bearer {token}"}
+
+
+def _seed_risky_policy(
+    session: Session,
+    *,
+    allow_self_hosted_runtimes: bool,
+) -> PlatformPolicy:
+    policy = PlatformPolicy(
+        policy_key=RISKY_EXECUTION_POLICY_KEY,
+        value={
+            "allow_runtime_commands": True,
+            "allow_network_egress": False,
+            "allow_self_hosted_runtimes": allow_self_hosted_runtimes,
+            "require_approval_for_high_risk_tools": True,
+        },
+        description="test",
+    )
+    session.add(policy)
+    session.commit()
+    return policy
 
 
 def _patch_portable_types_for_sqlite() -> None:

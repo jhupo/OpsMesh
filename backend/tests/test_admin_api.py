@@ -232,6 +232,7 @@ def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> N
             "value": {
                 "allow_runtime_commands": True,
                 "allow_network_egress": False,
+                "high_risk_tool_mode": "allow",
                 "unknown": True,
             },
             "description": "Test policy",
@@ -264,6 +265,8 @@ def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> N
     assert updated_policy.json()["description"] == "Test policy"
     assert updated_policy.json()["updated_by"] == "admin-test"
     assert updated_policy.json()["value"]["allow_runtime_commands"] is True
+    assert updated_policy.json()["value"]["high_risk_tool_mode"] == "allow"
+    assert updated_policy.json()["value"]["require_approval_for_high_risk_tools"] is False
     assert "unknown" not in updated_policy.json()["value"]
 
 

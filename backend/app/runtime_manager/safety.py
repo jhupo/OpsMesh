@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from backend.app.admin.policies import RiskyExecutionPolicy
 from backend.app.runtimes.models import RuntimeTemplate
 
 
@@ -13,6 +14,7 @@ class RuntimeSafetyError(ValueError):
 @dataclass(frozen=True)
 class RuntimeSafetyPolicy:
     allowed_images: tuple[str, ...]
+    risky_execution_policy: RiskyExecutionPolicy = RiskyExecutionPolicy()
 
     def assert_template_allowed(self, template: RuntimeTemplate) -> None:
         if template.status != "active":
@@ -34,6 +36,11 @@ class RuntimeSafetyPolicy:
     ) -> None:
         if network_disabled:
             return
+        if not self.risky_execution_policy.allow_network_egress:
+            raise RuntimeSafetyError(
+                "runtime_network_globally_disabled",
+                "Runtime network access is disabled by platform safety policy",
+            )
         if template.default_network_policy.get("allow_network") is True:
             return
         raise RuntimeSafetyError(

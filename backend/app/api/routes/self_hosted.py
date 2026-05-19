@@ -41,11 +41,14 @@ async def create_enrollment_token(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> EnrollmentTokenCreateResponse:
-    created = SelfHostedRuntimeService(session, settings).create_enrollment_token(
-        context.workspace.id,
-        context.user.user_id,
-        request,
-    )
+    try:
+        created = SelfHostedRuntimeService(session, settings).create_enrollment_token(
+            context.workspace.id,
+            context.user.user_id,
+            request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return EnrollmentTokenCreateResponse(
         id=created.record.id,
         created_at=created.record.created_at,
@@ -108,7 +111,10 @@ async def poll_job(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> SelfHostedJobResponse | None:
-    run = SelfHostedRuntimeService(session, settings).poll_job(auth)
+    try:
+        run = SelfHostedRuntimeService(session, settings).poll_job(auth)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if run is None:
         return None
     return SelfHostedJobResponse(
@@ -130,7 +136,12 @@ async def claim_job(
     try:
         claim = SelfHostedRuntimeService(session, settings).claim_job(auth, agent_run_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        status_code = (
+            status.HTTP_400_BAD_REQUEST
+            if "disabled by platform safety policy" in str(exc)
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return JobClaimResponse(
         claim_id=claim.id,
         agent_run_id=claim.agent_run_id,

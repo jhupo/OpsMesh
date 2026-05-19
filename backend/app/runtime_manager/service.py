@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
+from backend.app.admin.policies import PlatformPolicyService
 from backend.app.core.config import Settings
 from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeLimits
 from backend.app.runtime_manager.manager import RuntimeManager
@@ -27,7 +28,10 @@ class RuntimeControlService:
     ) -> None:
         self._session = session
         self._manager = RuntimeManager(session, docker_client)
-        self._safety = RuntimeSafetyPolicy(tuple(settings.runtime_allowed_images))
+        self._safety = RuntimeSafetyPolicy(
+            tuple(settings.runtime_allowed_images),
+            PlatformPolicyService(session).risky_execution_policy(),
+        )
 
     def list_templates(self) -> list[RuntimeTemplate]:
         return list(

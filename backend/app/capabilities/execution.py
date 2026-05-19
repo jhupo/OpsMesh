@@ -10,6 +10,8 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.admin.policies import PlatformPolicyService
+from backend.app.approvals.service import ApprovalService
 from backend.app.capabilities.models import (
     McpCredentialReference,
     McpServer,
@@ -17,8 +19,11 @@ from backend.app.capabilities.models import (
     McpToolCallLog,
 )
 from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.runs.status import RunStatus
 from backend.app.security.models import SecurityEvent
-from backend.app.tasks.models import TaskMessage
+from backend.app.tasks.models import Task, TaskMessage
+from backend.app.tasks.service import TaskStateService
+from backend.app.tasks.status import TaskStatus
 from backend.app.tools.errors import ToolPermissionError, ToolResourceNotFoundError
 
 
@@ -95,6 +100,14 @@ class McpToolExecutionService:
         self._validate_snapshot_scope(snapshot, request)
         allow, server = self._resolve_allowed_tool(request)
         self._require_snapshot_tool(snapshot, request)
+        policy_decision = PlatformPolicyService(self._session).risky_execution_policy()
+        if _is_high_risk_tool(allow) and policy_decision.high_risk_tool_mode == "block":
+            self._block(request, "mcp_high_risk_tool_globally_disabled")
+        if (
+            _is_high_risk_tool(allow)
+            and policy_decision.high_risk_tool_mode == "require_workspace_approval"
+        ):
+            return self._request_high_risk_approval(request, run, allow, server)
         policy = _mcp_policy(snapshot, allow)
 
         self._append_run_event(
@@ -304,6 +317,68 @@ class McpToolExecutionService:
         self._session.flush()
         return log
 
+    def _request_high_risk_approval(
+        self,
+        request: McpExecutionRequest,
+        run: AgentRun,
+        allow: McpToolAllowlist,
+        server: McpServer,
+    ) -> McpExecutionResult:
+        log = self._log_call(
+            request=request,
+            server_id=server.id,
+            status="waiting_approval",
+            response=None,
+            error=None,
+        )
+        ApprovalService(self._session).create_approval(
+            workspace_id=request.workspace_id,
+            task_id=run.task_id,
+            agent_run_id=run.id,
+            requested_by_agent_profile_id=run.agent_profile_id,
+            approval_type="mcp.tool",
+            risk_level=allow.risk_level,
+            payload={
+                "tool_name": request.tool_name,
+                "mcp_server_id": str(server.id),
+                "arguments_sha256": _payload_hash(request.arguments),
+            },
+        )
+        run.status = RunStatus.WAITING_APPROVAL.value
+        if run.task_id is not None:
+            task = self._session.get(Task, run.task_id)
+            if task is not None and task.status == TaskStatus.RUNNING.value:
+                TaskStateService().transition(task, TaskStatus.WAITING_APPROVAL)
+        self._append_run_event(
+            run=run,
+            event_type="approval.requested",
+            message=request.tool_name,
+            metadata={
+                "tool_kind": "mcp",
+                "mcp_server_id": str(server.id),
+                "tool_name": request.tool_name,
+                "risk_level": allow.risk_level,
+            },
+        )
+        self._append_task_message(
+            run=run,
+            message_type="approval.requested",
+            body=f"MCP tool requires approval: {request.tool_name}",
+            payload={
+                "tool_name": request.tool_name,
+                "mcp_server_id": str(server.id),
+                "risk_level": allow.risk_level,
+            },
+        )
+        self._session.flush()
+        return McpExecutionResult(
+            status="waiting_approval",
+            response=None,
+            error=None,
+            log_id=log.id,
+            latency_ms=0,
+        )
+
     def _append_run_event(
         self,
         *,
@@ -476,6 +551,10 @@ def _int_policy(
         if isinstance(value, int) and value > 0:
             return value
     return default
+
+
+def _is_high_risk_tool(allow: McpToolAllowlist) -> bool:
+    return allow.risk_level in {"high", "critical"}
 
 
 def _next_run_event_sequence(session: Session, workspace_id: UUID, run_id: UUID) -> int:

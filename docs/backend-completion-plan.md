@@ -42,8 +42,9 @@ Current state:
 - Teams, tasks, task steps, runs, Docker runtimes, runtime commands, and runtime events now carry `runtime_space_id` where applicable.
 - Worker node tracking, worker leases, drain requests, and worker/lease operations APIs are now implemented.
 - Platform admin APIs now expose global overview, workspaces, workers, worker drain, runtime spaces, runtime-space quarantine, worker leases, queues, dead-letter requeue, runtimes, runtime force-stop, platform policies, and security events behind a separate platform admin token.
+- Global risky-execution policy now applies to Docker runtime network access, runtime shell commands, self-hosted runtime registration/job polling, and high-risk MCP tools. Platform admins set global guardrails; task approvals remain workspace-owner approvals, not platform-admin approvals.
 - Runtime-space scheduler reservations now enforce `active_runs` capacity for team task steps before run enqueue and release the reservation on run completion, failure, stale-run recovery, or cancellation.
-- Broader runtime-space reservations for CPU, memory, storage, logs, artifacts, Docker lease cleanup evidence, and enforcement of global risky-execution controls in runtime/MCP execution paths are not implemented yet.
+- Broader runtime-space reservations for CPU, memory, storage, logs, artifacts, and Docker lease cleanup evidence are not implemented yet.
 
 Build:
 
@@ -55,7 +56,8 @@ Build:
 - Extend runtime-space reservations to Docker runtimes, self-hosted jobs, CPU, memory, storage, logs, and artifacts.
 - Add cleanup evidence for Docker leases and runtime-space temporary storage.
 - [x] Add operator APIs for workers, runtime spaces, worker leases, workspaces, queues, runtimes, platform policies, and security events.
-- Enforce global risky-execution controls inside Docker runtime, self-hosted runtime, and MCP execution paths.
+- [x] Enforce global risky-execution controls inside Docker runtime, self-hosted runtime, and MCP execution paths.
+- [x] Keep workspace-owner approval separate from platform-admin policy controls for high-risk tool use.
 - [x] Keep admin APIs metadata-only: no raw secrets, raw file contents, or cross-workspace data leakage.
 
 API/data changes:
