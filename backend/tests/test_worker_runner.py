@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from threading import Event
+from uuid import uuid4
 
 import fakeredis
 import pytest
@@ -194,6 +195,117 @@ def test_worker_runner_drain_prevents_new_job_claims() -> None:
     assert queue.count_queued(workspace_id=workspace_id) == 1
     with session_factory() as session:
         assert session.query(WorkerLease).count() == 0
+
+
+def test_worker_runner_capacity_prevents_new_job_claims_when_full() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, run_id, user_id = _seed_run(session_factory)
+    queue.enqueue(
+        JobPayload(
+            workspace_id=workspace_id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run_id,
+            requested_by_user_id=user_id,
+            idempotency_key=f"agent.run:{workspace_id}:{run_id}",
+        )
+    )
+    with session_factory() as session:
+        session.add(
+            WorkerNode(
+                worker_id="worker-full",
+                worker_type="cloud",
+                status="online",
+                queue_name="agent_runs",
+                capacity={"max_jobs": 1},
+                details={},
+                last_seen_at=datetime.now(UTC),
+            )
+        )
+        session.add(
+            WorkerLease(
+                workspace_id=workspace_id,
+                worker_id="worker-full",
+                queue_name="agent_runs",
+                job_id=uuid4(),
+                job_type=JobType.AGENT_RUN.value,
+                resource_id=run_id,
+                status="running",
+                attempt=0,
+                lease_metadata={},
+                started_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="worker-full", queue_name="agent_runs"),
+    )
+
+    assert runner.run_once() is False
+    assert queue.count_queued(workspace_id=workspace_id) == 1
+    with session_factory() as session:
+        leases = session.scalars(
+            select(WorkerLease).where(WorkerLease.worker_id == "worker-full")
+        ).all()
+        assert len(leases) == 1
+        assert leases[0].status == "running"
+
+
+def test_worker_runner_capacity_allows_claim_when_slot_available() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, run_id, user_id = _seed_run(session_factory)
+    queue.enqueue(
+        JobPayload(
+            workspace_id=workspace_id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run_id,
+            requested_by_user_id=user_id,
+            idempotency_key=f"agent.run:{workspace_id}:{run_id}",
+        )
+    )
+    with session_factory() as session:
+        session.add(
+            WorkerNode(
+                worker_id="worker-slot",
+                worker_type="cloud",
+                status="online",
+                queue_name="agent_runs",
+                capacity={"max_jobs": 2},
+                details={},
+                last_seen_at=datetime.now(UTC),
+            )
+        )
+        session.add(
+            WorkerLease(
+                workspace_id=workspace_id,
+                worker_id="worker-slot",
+                queue_name="agent_runs",
+                job_id=uuid4(),
+                job_type=JobType.AGENT_RUN.value,
+                resource_id=uuid4(),
+                status="running",
+                attempt=0,
+                lease_metadata={},
+                started_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="worker-slot", queue_name="agent_runs"),
+    )
+
+    assert runner.run_once() is True
+    assert queue.count_queued(workspace_id=workspace_id) == 0
+    with session_factory() as session:
+        leases = session.scalars(
+            select(WorkerLease).where(WorkerLease.worker_id == "worker-slot")
+        ).all()
+        assert {lease.status for lease in leases} == {"running", "completed"}
 
 
 def test_worker_runner_rolls_back_failed_session() -> None:

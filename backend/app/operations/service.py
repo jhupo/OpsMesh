@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar, cast
 from uuid import UUID
@@ -20,6 +21,17 @@ from backend.app.workers.jobs import JobPayload
 from backend.app.workers.queue import RedisQueue
 
 T = TypeVar("T")
+RUNNING_LEASE_STATUSES = {"running"}
+
+
+@dataclass(frozen=True)
+class WorkerCapacitySnapshot:
+    worker_id: str
+    max_jobs: int
+    running_jobs: int
+    available_slots: int
+    accepting: bool
+    reason: str | None = None
 
 
 class OperationsService:
@@ -152,6 +164,38 @@ class OperationsService:
         node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
         return bool(node is not None and node.drain_requested_at is not None)
 
+    def worker_capacity_snapshot(
+        self,
+        worker_id: str,
+        *,
+        default_max_jobs: int = 1,
+    ) -> WorkerCapacitySnapshot:
+        node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
+        if node is not None and node.drain_requested_at is not None:
+            return WorkerCapacitySnapshot(
+                worker_id=worker_id,
+                max_jobs=_positive_int(node.capacity.get("max_jobs"), default_max_jobs),
+                running_jobs=self._running_leases_for_worker(worker_id),
+                available_slots=0,
+                accepting=False,
+                reason="worker_draining",
+            )
+        max_jobs = (
+            _positive_int(node.capacity.get("max_jobs"), default_max_jobs)
+            if node is not None
+            else max(1, default_max_jobs)
+        )
+        running_jobs = self._running_leases_for_worker(worker_id)
+        available_slots = max(0, max_jobs - running_jobs)
+        return WorkerCapacitySnapshot(
+            worker_id=worker_id,
+            max_jobs=max_jobs,
+            running_jobs=running_jobs,
+            available_slots=available_slots,
+            accepting=available_slots > 0,
+            reason=None if available_slots > 0 else "worker_capacity_full",
+        )
+
     def start_worker_lease(
         self,
         *,
@@ -205,6 +249,17 @@ class OperationsService:
         self._session.commit()
         self._session.refresh(lease)
         return lease
+
+    def _running_leases_for_worker(self, worker_id: str) -> int:
+        running = self._session.scalar(
+            select(func.count())
+            .select_from(WorkerLease)
+            .where(
+                WorkerLease.worker_id == worker_id,
+                WorkerLease.status.in_(RUNNING_LEASE_STATUSES),
+            )
+        )
+        return int(running or 0)
 
     def list_worker_leases(
         self,
@@ -421,3 +476,15 @@ class OperationsService:
         )
         rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
         return list(rows), int(total or 0)
+
+
+def _positive_int(value: object, fallback: int) -> int:
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = int(value)
+        except ValueError:
+            return max(1, fallback)
+        return parsed if parsed > 0 else max(1, fallback)
+    return max(1, fallback)

@@ -30,6 +30,7 @@ class WorkerRunnerConfig:
     worker_id: str
     worker_type: str = "cloud"
     queue_name: str = "agent_runs"
+    max_jobs: int = 1
     heartbeat_interval_seconds: float = 30.0
     idle_sleep_seconds: float = 1.0
     maintenance_interval_seconds: float = 60.0
@@ -69,7 +70,11 @@ class WorkerRunner:
     def run_once(self) -> bool:
         with self._session_scope() as session:
             operations = OperationsService(session)
-            if operations.is_worker_draining(self._config.worker_id):
+            capacity = operations.worker_capacity_snapshot(
+                self._config.worker_id,
+                default_max_jobs=self._config.max_jobs,
+            )
+            if not capacity.accepting:
                 return False
         job = self._queue.dequeue()
         if job is None:
@@ -186,7 +191,7 @@ class WorkerRunner:
                     status=status,
                     queue_name=self._config.queue_name,
                     details=details,
-                    capacity={"max_jobs": 1},
+                    capacity={"max_jobs": self._config.max_jobs},
                 )
         except Exception:
             logger.exception("Failed to record worker heartbeat")
@@ -234,6 +239,9 @@ class WorkerRunner:
             "failed": failed,
             "idle_polls": idle_polls,
             "recovered_runs": recovered_runs,
+            "capacity": {
+                "max_jobs": self._config.max_jobs,
+            },
         }
         if last_error is not None:
             details["last_error"] = last_error
