@@ -1,5 +1,6 @@
 from collections.abc import Generator
-from uuid import UUID
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
 import fakeredis
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.artifacts.models import Artifact
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
@@ -17,9 +19,9 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runs.models import AgentRun
+from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
-from backend.app.tasks.models import Task, TaskMessage
+from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue
@@ -786,6 +788,136 @@ def test_task_messages_api_lists_filters_and_enforces_workspace_scope() -> None:
     assert filtered.status_code == 200
     assert filtered.json()["total"] == 1
     assert filtered.json()["items"][0]["message_type"] == "step.completed"
+    assert foreign.status_code == 404
+
+
+def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other@example.com",
+        slug="other-space",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        domain_type="novel",
+        title="Write a mystery novel",
+        status="running",
+        priority=7,
+        input={"outline": ["Act 1", "Act 2"]},
+        generic_state={"word_count": 3200},
+        domain_state={
+            "chapters": [{"title": "Chapter 1", "status": "drafting"}],
+            "characters": [{"name": "Lin", "role": "detective"}],
+        },
+    )
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Draft chapter 1",
+        status="running",
+        order_index=1,
+        work_package_id="chapter-1",
+        required_role="writer",
+        required_skills=["plotting"],
+    )
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        status=RunStatus.RUNNING.value,
+        input={},
+    )
+    session.add_all([step, run])
+    session.flush()
+    session.add_all(
+        [
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=step.id,
+                agent_run_id=run.id,
+                message_type="step.started",
+                sequence=1,
+                body="Started drafting.",
+                payload={"note": "draft", "api_key": "sk-hidden"},
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                message_type="pm.acceptance_decision",
+                sequence=2,
+                body="Keep writing.",
+                payload={"decision": "continue", "token": "hidden-token"},
+            ),
+            RunEvent(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                event_type="run.started",
+                sequence=1,
+                message="Run started",
+                event_metadata={},
+                created_at=datetime.now(UTC),
+            ),
+            Artifact(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                agent_run_id=run.id,
+                artifact_type="draft",
+                filename="chapter-1.md",
+                content_type="text/markdown",
+                size_bytes=1024,
+                checksum_sha256="a" * 64,
+                storage_key=f"workspaces/{workspace.id}/artifacts/{uuid4()}",
+                artifact_metadata={"work_package_id": "chapter-1"},
+                created_at=datetime.now(UTC),
+            ),
+        ]
+    )
+    session.commit()
+
+    observed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/observation",
+        headers=_headers(owner.id),
+    )
+    forced = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/observation?view_type=software",
+        headers=_headers(owner.id),
+    )
+    unsupported = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/observation?view_type=finance",
+        headers=_headers(owner.id),
+    )
+    foreign = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks/{task.id}/observation",
+        headers=_headers(other_owner.id),
+    )
+
+    assert observed.status_code == 200
+    body = observed.json()
+    assert body["view_type"] == "novel"
+    assert body["summary"]["status"] == "running"
+    assert body["summary"]["progress"] == 0.0
+    assert body["summary"]["artifact_count"] == 1
+    sections = {section["key"]: section for section in body["sections"]}
+    assert set(sections) == {"overview", "timeline", "artifacts", "review", "domain"}
+    assert sections["domain"]["cards"][0]["card_type"] == "outline"
+    assert sections["domain"]["cards"][1]["data"]["value"] == [
+        {"title": "Chapter 1", "status": "drafting"}
+    ]
+    message_payload = sections["timeline"]["cards"][0]["data"]["payload"]
+    review_payload = sections["review"]["cards"][0]["data"]["payload"]
+    assert message_payload == {"note": "draft"}
+    assert review_payload == {"decision": "continue"}
+    assert sections["artifacts"]["cards"][0]["title"] == "chapter-1.md"
+    assert forced.status_code == 200
+    assert forced.json()["view_type"] == "software"
+    assert unsupported.status_code == 400
     assert foreign.status_code == 404
 
 

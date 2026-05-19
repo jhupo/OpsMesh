@@ -48,3 +48,25 @@ class TaskMessageResponse(TimestampedModel):
     sequence: int
     body: str
     payload: dict[str, object]
+
+
+class TaskObservationCard(BaseModel):
+    card_type: str
+    title: str
+    status: str
+    data: dict[str, object]
+
+
+class TaskObservationSection(BaseModel):
+    key: str
+    title: str
+    cards: list[TaskObservationCard]
+
+
+class TaskObservationResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    view_type: str
+    generated_at: datetime
+    summary: dict[str, object]
+    sections: list[TaskObservationSection]

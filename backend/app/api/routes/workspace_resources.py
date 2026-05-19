@@ -14,7 +14,12 @@ from backend.app.api.pagination import PageParams, PageResponse, pagination_para
 from backend.app.api.schemas.agents import AgentProfileCreateRequest, AgentProfileResponse
 from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
-from backend.app.api.schemas.tasks import TaskCreateRequest, TaskMessageResponse, TaskResponse
+from backend.app.api.schemas.tasks import (
+    TaskCreateRequest,
+    TaskMessageResponse,
+    TaskObservationResponse,
+    TaskResponse,
+)
 from backend.app.api.schemas.teams import (
     AgentTeamCreateRequest,
     AgentTeamMemberCreateRequest,
@@ -30,6 +35,7 @@ from backend.app.db.session import get_db_session
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.tasks.observation import TaskObservationService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
 
@@ -302,6 +308,26 @@ async def list_task_messages(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get("/tasks/{task_id}/observation", response_model=TaskObservationResponse)
+async def get_task_observation(
+    task_id: UUID,
+    view_type: str | None = Query(default="auto"),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskObservationResponse:
+    try:
+        observation = TaskObservationService(session).get_observation(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            view_type=view_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if observation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskObservationResponse.model_validate(observation)
 
 
 @router.get("/runs", response_model=PageResponse[AgentRunResponse])

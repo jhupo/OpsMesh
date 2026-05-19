@@ -23,7 +23,7 @@ Incomplete or basic-only areas:
 - Cloud control plane and runtime spaces are now documented, but the data model, admin APIs, runtime-space reservations, and worker fleet controls are not implemented yet.
 - MCP skills are cataloged and authorized, but not yet fully connected to the runtime execution path.
 - Skills can be visible as private/public, but public skill copy/provenance and install workflows are incomplete.
-- Task observation is still mostly generic; AIGC, novel writing, research, and software teams need domain-specific status views.
+- Task observation now has a stable backend API with generic and domain-specific sections for AIGC, novel writing, research, and software tasks. The first implementation composes existing task, step, message, run event, and artifact data; richer domain persistence can be added behind the same response shape.
 - Correction/revision is supported internally, but a generic user-facing endpoint is missing.
 - Scheduling supports per-member concurrency, workspace active run quotas, blocked reasons, and cross-task priority ordering. Runtime/self-hosted/storage quotas and starvation prevention still need completion.
 - Docker and self-hosted runtime policies need stronger quota enforcement, cleanup verification, and revocation evidence.
@@ -221,32 +221,36 @@ Current state:
 
 - Tasks, steps, messages, artifacts, and domain state are persisted.
 - Generic task state is visible, and domain task extensions exist.
-- Domain-specific observation payloads are not complete for AIGC, novel writing, research, and software work.
+- `GET /api/v1/workspaces/{workspace_id}/tasks/{task_id}/observation` now returns stable `view_type`, `summary`, `sections`, and typed `cards`.
+- Generic, AIGC, novel, research, and software views are composed from existing durable records and degrade gracefully when optional domain data is missing.
+- Task message payloads are sanitized before entering the observation response.
 
 Build:
 
-- Add a task observation service that composes status from task, steps, messages, artifacts, domain state, and run events.
-- Define reusable observation sections: timeline, current blockers, active agents, step progress, produced artifacts, review state, revision history, and risk flags.
-- Add domain-specific views:
-  - AIGC: prompt, generation queue, variants, selected asset, model/settings, review notes, asset versions.
-  - Novel writing: outline, chapters, scenes, characters, continuity notes, draft/revision status, word count, editorial review.
-  - Research: source list, claims, confidence, citations, extracted notes, report sections.
-  - Software: requirements, design tasks, branches/patches, tests, build status, review comments.
-- Keep the API schema stable by returning `view_type`, `sections`, and typed `cards`.
+- [x] Add a task observation service that composes status from task, steps, messages, artifacts, domain state, and run events.
+- [x] Define reusable observation sections: timeline, current blockers, active agents, step progress, produced artifacts, and review state.
+- [x] Add domain-specific views:
+  - [x] AIGC: prompt, variants, selected asset, model/settings, review notes, asset versions through artifact cards.
+  - [x] Novel writing: outline, chapters, scenes, characters, continuity notes, word count, editorial review.
+  - [x] Research: source list, claims, confidence, citations, extracted notes, report sections.
+  - [x] Software: requirements, design tasks, branches/patches, tests, build status, review comments.
+- [x] Keep the API schema stable by returning `view_type`, `sections`, and typed `cards`.
+- Add richer persisted domain-specific progress writers from worker outputs.
+- Add revision history and risk flag cards once correction commands and risk scoring are expanded.
 
 API/data changes:
 
-- `GET /api/v1/workspaces/{workspace_id}/tasks/{task_id}/observation`
-- optional `?view_type=generic|aigc|novel|research|software`
-- Add domain observation schema models with versioned card types.
+- [x] `GET /api/v1/workspaces/{workspace_id}/tasks/{task_id}/observation`
+- [x] optional `?view_type=auto|generic|aigc|novel|research|software`
+- [x] Add domain observation schema models with versioned card types.
 
 Tests:
 
-- generic observation works for every task
-- each domain view returns deterministic sections from seeded state
-- cross-workspace observation is rejected
-- missing optional domain data degrades gracefully
-- artifacts are included only when authorized
+- [x] generic observation works for every task
+- [x] each domain view returns deterministic sections from seeded state
+- [x] cross-workspace observation is rejected
+- [x] missing optional domain data degrades gracefully
+- [x] artifacts are included only when authorized by workspace scope
 
 Acceptance:
 
