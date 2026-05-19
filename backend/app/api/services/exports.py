@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
@@ -811,6 +812,8 @@ class WorkspaceExportService:
                     import_agents=request.import_agents,
                     import_teams=request.import_teams,
                     import_tasks=request.import_tasks,
+                    import_runtime_spaces=request.import_runtime_spaces,
+                    import_skill_installs=request.import_skill_installs,
                     name_prefix=request.name_prefix,
                     max_items_per_collection=request.max_items_per_collection,
                 ),
@@ -897,7 +900,7 @@ class WorkspaceExportService:
         total_bytes += len(content)
         if request.dry_run:
             return total_bytes
-        checksum = _validated_checksum(
+        checksum_result = _validated_checksum(
             content=content,
             source_checksum=_string_field(item, "checksum_sha256"),
             source_id=source_id,
@@ -911,7 +914,7 @@ class WorkspaceExportService:
             filename=imported_filename,
             content_type=_string_field(item, "content_type", "application/octet-stream"),
             size_bytes=len(content),
-            checksum_sha256=checksum,
+            checksum_sha256=checksum_result.checksum_sha256,
             storage_key=(
                 f"workspaces/{workspace.id}/files/imported/{source_id}/{imported_filename}"
             ),
@@ -919,6 +922,7 @@ class WorkspaceExportService:
             file_metadata={
                 **_dict_field(item, "metadata"),
                 "imported_from_file_id": source_id,
+                "import_checksum_matched": checksum_result.matched,
             },
         )
         self._session.add(file)
@@ -959,12 +963,18 @@ class WorkspaceExportService:
         if request.dry_run:
             return total_bytes
         source_task_id = _string_field(item, "task_id")
+        source_run_id = _string_field(item, "agent_run_id")
         imported_task_id = response.id_map["tasks"].get(source_task_id)
+        imported_run_id = response.id_map.get("runs", {}).get(source_run_id)
         if source_task_id and imported_task_id is None:
             response.warnings.append(
                 f"Imported artifact {source_id} without a mapped task"
             )
-        checksum = _validated_checksum(
+        if source_run_id and imported_run_id is None:
+            response.warnings.append(
+                f"Imported artifact {source_id} without a mapped run"
+            )
+        checksum_result = _validated_checksum(
             content=content,
             source_checksum=_string_field(item, "checksum_sha256"),
             source_id=source_id,
@@ -980,7 +990,7 @@ class WorkspaceExportService:
             filename=imported_filename,
             content_type=_string_field(item, "content_type", "application/octet-stream"),
             size_bytes=len(content),
-            checksum_sha256=checksum,
+            checksum_sha256=checksum_result.checksum_sha256,
             storage_key=(
                 f"workspaces/{workspace.id}/artifacts/imported/{source_id}/"
                 f"{imported_filename}"
@@ -989,6 +999,10 @@ class WorkspaceExportService:
                 **_dict_field(item, "metadata"),
                 "imported_from_artifact_id": source_id,
                 "source_task_id": source_task_id or None,
+                "source_agent_run_id": source_run_id or None,
+                "imported_task_id": imported_task_id,
+                "imported_agent_run_id": imported_run_id,
+                "import_checksum_matched": checksum_result.matched,
             },
             created_at=datetime.now(UTC),
         )
@@ -1118,6 +1132,12 @@ class WorkspaceExportService:
                 WorkspaceSkillInstall.installed_key == installed_key,
             )
         ) is not None
+
+
+@dataclass(frozen=True)
+class _ChecksumResult:
+    checksum_sha256: str
+    matched: bool
 
 
 def _workspace_payload(workspace: Workspace) -> dict[str, object]:
@@ -1479,8 +1499,9 @@ def _validated_checksum(
     source_id: str,
     collection: str,
     warnings: list[str],
-) -> str:
+) -> _ChecksumResult:
     actual_checksum = sha256(content).hexdigest()
-    if source_checksum and source_checksum != actual_checksum:
+    matched = not source_checksum or source_checksum == actual_checksum
+    if not matched:
         warnings.append(f"Imported {collection} {source_id} with checksum mismatch")
-    return actual_checksum
+    return _ChecksumResult(checksum_sha256=actual_checksum, matched=matched)
