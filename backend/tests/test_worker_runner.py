@@ -427,9 +427,10 @@ def test_worker_runner_maintenance_recovers_stale_runs() -> None:
         ),
     )
 
-    recovered = runner.run_maintenance()
+    maintenance = runner.run_maintenance()
 
-    assert recovered == 1
+    assert maintenance.recovered_runs == 1
+    assert maintenance.expired_leases == 0
     with session_factory() as session:
         run = session.get(AgentRun, run_id)
         task = session.scalar(select(Task).where(Task.workspace_id == workspace_id))
@@ -437,6 +438,48 @@ def test_worker_runner_maintenance_recovers_stale_runs() -> None:
         assert task is not None
         assert run.status == RunStatus.FAILED.value
         assert task.status == TaskStatus.FAILED.value
+
+
+def test_worker_runner_maintenance_expires_stale_worker_leases() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, run_id, _ = _seed_run(session_factory, slug="stale-lease")
+    with session_factory() as session:
+        session.add(
+            WorkerLease(
+                workspace_id=workspace_id,
+                worker_id="worker-expire",
+                queue_name="agent_runs",
+                job_id=uuid4(),
+                job_type=JobType.AGENT_RUN.value,
+                resource_id=run_id,
+                status="running",
+                attempt=0,
+                lease_metadata={},
+                started_at=datetime.now(UTC) - timedelta(seconds=3_600),
+            )
+        )
+        session.commit()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(
+            worker_id="worker-expire",
+            queue_name="agent_runs",
+            run_lease_seconds=60,
+        ),
+    )
+
+    maintenance = runner.run_maintenance()
+
+    assert maintenance.recovered_runs == 0
+    assert maintenance.expired_leases == 1
+    with session_factory() as session:
+        lease = session.scalar(select(WorkerLease).where(WorkerLease.worker_id == "worker-expire"))
+        assert lease is not None
+        assert lease.status == "expired"
+        assert lease.finished_at is not None
+        assert lease.lease_metadata["expired_by"] == "worker_maintenance"
 
 
 def test_worker_runner_summary_includes_maintenance_recovery() -> None:
@@ -469,6 +512,7 @@ def test_worker_runner_summary_includes_maintenance_recovery() -> None:
     assert summary.processed == 0
     assert summary.failed == 0
     assert summary.recovered_runs == 1
+    assert summary.expired_leases == 0
     with session_factory() as session:
         run = session.get(AgentRun, run_id)
         heartbeat = session.scalar(
@@ -480,6 +524,7 @@ def test_worker_runner_summary_includes_maintenance_recovery() -> None:
         assert run.status == RunStatus.FAILED.value
         assert heartbeat is not None
         assert heartbeat.details["recovered_runs"] == 1
+        assert heartbeat.details["expired_leases"] == 0
 
 
 def test_agent_run_jobs_include_runtime_space_routing_requirements() -> None:

@@ -264,6 +264,25 @@ class OperationsService:
         )
         return int(running or 0)
 
+    def expire_stale_worker_leases(self, *, stale_after_seconds: int = 900) -> int:
+        cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
+        stale_leases = self._session.scalars(
+            select(WorkerLease).where(
+                WorkerLease.status.in_(RUNNING_LEASE_STATUSES),
+                WorkerLease.started_at < cutoff,
+            )
+        ).all()
+        expired_at = datetime.now(UTC)
+        for lease in stale_leases:
+            lease.status = "expired"
+            lease.finished_at = expired_at
+            lease.lease_metadata = lease.lease_metadata | {
+                "expired_by": "worker_maintenance",
+                "expired_at": expired_at.isoformat(),
+            }
+        self._session.commit()
+        return len(stale_leases)
+
     def list_worker_leases(
         self,
         workspace_id: UUID,

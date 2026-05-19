@@ -45,7 +45,14 @@ class WorkerRunSummary:
     failed: int
     idle_polls: int
     recovered_runs: int
+    expired_leases: int
     stopped: bool
+
+
+@dataclass(frozen=True)
+class WorkerMaintenanceSummary:
+    recovered_runs: int
+    expired_leases: int
 
 
 class WorkerRunner:
@@ -118,6 +125,7 @@ class WorkerRunner:
         failed = 0
         idle_polls = 0
         recovered_runs = 0
+        expired_leases = 0
         last_error: str | None = None
         next_heartbeat_at = 0.0
         next_maintenance_at = 0.0
@@ -132,12 +140,15 @@ class WorkerRunner:
                         failed=failed,
                         idle_polls=idle_polls,
                         recovered_runs=recovered_runs,
+                        expired_leases=expired_leases,
                         last_error=last_error,
                     ),
                 )
                 next_heartbeat_at = now + self._config.heartbeat_interval_seconds
             if now >= next_maintenance_at:
-                recovered_runs += self.run_maintenance()
+                maintenance = self.run_maintenance()
+                recovered_runs += maintenance.recovered_runs
+                expired_leases += maintenance.expired_leases
                 next_maintenance_at = now + self._config.maintenance_interval_seconds
 
             try:
@@ -153,6 +164,7 @@ class WorkerRunner:
                         failed=failed,
                         idle_polls=idle_polls,
                         recovered_runs=recovered_runs,
+                        expired_leases=expired_leases,
                         last_error=last_error,
                     ),
                 )
@@ -176,6 +188,7 @@ class WorkerRunner:
                 failed=failed,
                 idle_polls=idle_polls,
                 recovered_runs=recovered_runs,
+                expired_leases=expired_leases,
                 last_error=last_error,
             ),
         )
@@ -184,6 +197,7 @@ class WorkerRunner:
             failed=failed,
             idle_polls=idle_polls,
             recovered_runs=recovered_runs,
+            expired_leases=expired_leases,
             stopped=self._is_stopped(stop_event),
         )
 
@@ -215,17 +229,23 @@ class WorkerRunner:
     def _is_stopped(self, stop_event: Event | None) -> bool:
         return stop_event is not None and stop_event.is_set()
 
-    def run_maintenance(self) -> int:
+    def run_maintenance(self) -> WorkerMaintenanceSummary:
         try:
             with self._session_scope() as session:
                 summary = RunOrchestrationService(session).recover_stale_running_runs(
                     stale_after_seconds=self._config.run_lease_seconds,
                     limit=self._config.recovery_batch_size,
                 )
-                return summary.recovered_runs
+                expired_leases = OperationsService(session).expire_stale_worker_leases(
+                    stale_after_seconds=self._config.run_lease_seconds,
+                )
+                return WorkerMaintenanceSummary(
+                    recovered_runs=summary.recovered_runs,
+                    expired_leases=expired_leases,
+                )
         except Exception:
             logger.exception("Failed to run worker maintenance")
-            return 0
+            return WorkerMaintenanceSummary(recovered_runs=0, expired_leases=0)
 
     def _status_for(self, failed: int) -> str:
         return "degraded" if failed > 0 else "online"
@@ -237,6 +257,7 @@ class WorkerRunner:
         failed: int,
         idle_polls: int,
         recovered_runs: int,
+        expired_leases: int,
         last_error: str | None,
     ) -> dict[str, object]:
         details: dict[str, object] = {
@@ -244,6 +265,7 @@ class WorkerRunner:
             "failed": failed,
             "idle_polls": idle_polls,
             "recovered_runs": recovered_runs,
+            "expired_leases": expired_leases,
             "capacity": {
                 "max_jobs": self._config.max_jobs,
             },
