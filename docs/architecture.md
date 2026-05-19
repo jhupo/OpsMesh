@@ -34,6 +34,10 @@ User and workspace isolation is mandatory. The product must enforce isolation ac
 
    Backend services manage Docker-backed isolated runtimes for executable agent work. The backend creates containers, applies resource limits, controls mounts and network policy, executes approved commands inside containers, collects artifacts, and cleans up runtime resources. See [Backend Runtime Control Plane](backend-runtime-control-plane.md).
 
+7. Cloud Control Plane
+
+   Platform operator services manage runtime spaces, worker fleet health, queue pressure, quota reservations, Docker leases, self-hosted trust state, network policy, and cleanup evidence. This is still personal-workspace oriented and does not require a billing or company-account layer. See [Cloud Control Plane And Runtime Spaces](cloud-control-plane-and-runtime-spaces.md).
+
 The backend should be organized into three major domains: the OpenAI Agents Runtime Layer, the Agent Management and Orchestration Layer, and the Product Backend Service Layer. Long-running work is executed by workers through queues and persisted state, not directly inside API requests. See [Backend Service Architecture](backend-service-architecture.md).
 
 The runtime model should support both platform-managed cloud Docker runtimes and future self-hosted runtimes on user-owned machines. Self-hosted workers connect outbound to the platform, keep sensitive data local when configured, and execute tasks in local isolated runtimes. See [Self-Hosted Runtimes](self-hosted-runtimes.md).

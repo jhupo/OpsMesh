@@ -495,6 +495,14 @@ Goal: close the gaps needed before this can feel like a mature commercial backen
 
 Tasks:
 
+- [ ] Add cloud control plane and runtime spaces.
+  - [x] Document the managed control plane objects, runtime space model, worker fleet controls, quota reservations, operator APIs, and concurrency rules.
+  - [ ] Add runtime space data model for workspace, team, and task scopes.
+  - [ ] Bind teams, tasks, runs, Docker runtimes, runtime commands, and runtime-origin files to runtime spaces.
+  - [ ] Add runtime space quotas and durable reservations.
+  - [ ] Add worker node and worker lease tracking.
+  - [ ] Add admin/operator APIs for workers, queues, runtime spaces, Docker leases, and security events.
+  - [ ] Add concurrent scheduler tests that prove runtime-space quotas cannot be over-reserved.
 - [ ] Connect MCP skills to the real runtime execution path.
   - [x] Add internal MCP execution service with run snapshot authorization, adapter boundary, payload limits, logs, events, task messages, and blocked-call security evidence.
   - [ ] Add real stdio, HTTP/SSE, and hosted MCP protocol adapters.

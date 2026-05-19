@@ -47,51 +47,55 @@ The backend must provide:
 
    Docker runtime lifecycle, limits, files, logs, and cleanup.
 
-7. [Agent Runtime Contract](agent-runtime-contract.md)
+7. [Cloud Control Plane And Runtime Spaces](cloud-control-plane-and-runtime-spaces.md)
+
+   Managed backend control plane objects, runtime spaces, worker fleet controls, quotas, and operator APIs.
+
+8. [Agent Runtime Contract](agent-runtime-contract.md)
 
    Boundary between product orchestration and OpenAI Agents SDK execution.
 
-8. [Capabilities And Runtime](capabilities-and-runtime.md)
+9. [Capabilities And Runtime](capabilities-and-runtime.md)
 
    Capability, skill, tool, MCP, and runtime model.
 
-9. [Workspace Data Management](workspace-data-management.md)
+10. [Workspace Data Management](workspace-data-management.md)
 
    Upload, download, artifacts, runtime staging, and exports.
 
-10. [Isolation And Security](isolation-and-security.md)
+11. [Isolation And Security](isolation-and-security.md)
 
    Workspace, runtime, tool, memory, file, and worker isolation.
 
-11. [Threat Model](threat-model.md)
+12. [Threat Model](threat-model.md)
 
     Backend security threats and mitigations.
 
-12. [Self-Hosted Runtimes](self-hosted-runtimes.md)
+13. [Self-Hosted Runtimes](self-hosted-runtimes.md)
 
     User-owned machine execution model.
 
-13. [MVP Spec](mvp-spec.md)
+14. [MVP Spec](mvp-spec.md)
 
     First backend MVP acceptance criteria.
 
-14. [Roadmap](roadmap.md)
+15. [Roadmap](roadmap.md)
 
     Backend-first implementation sequence.
 
-15. [Decisions](decisions.md)
+16. [Decisions](decisions.md)
 
    Stable architecture and implementation decisions.
 
-16. [Backend Task Breakdown](backend-task-breakdown.md)
+17. [Backend Task Breakdown](backend-task-breakdown.md)
 
    Actionable engineering task list from backend framework setup to complete backend capabilities.
 
-17. [Backend Deployment](backend-deployment.md)
+18. [Backend Deployment](backend-deployment.md)
 
    Production-oriented backend process, Docker, Compose, and environment guidance.
 
-18. [Backend Completion Plan](backend-completion-plan.md)
+19. [Backend Completion Plan](backend-completion-plan.md)
 
    Detailed list of backend areas that are incomplete or only implemented as a basic foundation, with implementation tasks and acceptance criteria.
 

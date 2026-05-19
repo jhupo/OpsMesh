@@ -8,6 +8,8 @@ The backend should never run user-controlled or agent-controlled shell commands 
 
 Frontend is out of scope for the first implementation. The initial backend should expose APIs and worker services for workspace, agent, task, and runtime management.
 
+Runtime spaces sit above Docker runtimes. A runtime space is the workspace/team execution boundary that owns quotas, storage scope, network rules, reservations, and runtime leases. Docker containers are disposable execution resources leased by a runtime space. See [Cloud Control Plane And Runtime Spaces](cloud-control-plane-and-runtime-spaces.md).
+
 ## High-Level Architecture
 
 ```text
@@ -34,6 +36,8 @@ The backend owns:
 - user authentication and workspace authorization
 - workspace and agent configuration
 - task and run orchestration
+- runtime spaces and quota reservations
+- worker fleet and queue visibility
 - Docker runtime provisioning
 - resource limits
 - workspace-to-container binding

@@ -14,6 +14,7 @@ Frontend work is intentionally not the current focus. The current priority is a 
 - Postgres as the source of truth
 - Redis for queues, locks, pub/sub, and short-lived cache
 - Worker processes for async agent execution
+- Cloud control plane for runtime spaces, worker fleet controls, quotas, and operations
 - Docker runtime manager for isolated executable work
 - Self-hosted runtime support for user-owned machines
 - Workspace-scoped permissions, files, tools, MCP, skills, and runtimes
@@ -39,6 +40,7 @@ Frontend work is intentionally not the current focus. The current priority is a 
 - Talent marketplace listing, search, and hiring flow.
 - Task, run, event, approval, retry, cancellation, and revision flows.
 - Redis-backed queues, locks, idempotency, retries, dead letters, worker heartbeats, and API rate limits.
+- Runtime space planning for workspace/team execution areas, quota reservations, Docker leases, and operator controls.
 - Docker runtime control plane for risky execution.
 - Self-hosted runtime enrollment, heartbeat, job polling, progress upload, artifact upload, and credential revocation.
 - Workspace files, artifacts, checksums, upload/download authorization, and runtime staging.
@@ -57,6 +59,7 @@ Frontend work is intentionally not the current focus. The current priority is a 
 - [API Design](docs/api-design.md)
 - [Domain Task Extensions](docs/domain-task-extensions.md)
 - [Backend Runtime Control Plane](docs/backend-runtime-control-plane.md)
+- [Cloud Control Plane And Runtime Spaces](docs/cloud-control-plane-and-runtime-spaces.md)
 - [Agent Runtime Contract](docs/agent-runtime-contract.md)
 - [Capabilities And Runtime](docs/capabilities-and-runtime.md)
 - [Workspace Data Management](docs/workspace-data-management.md)

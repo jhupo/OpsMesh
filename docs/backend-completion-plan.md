@@ -20,6 +20,7 @@ Completed foundation:
 
 Incomplete or basic-only areas:
 
+- Cloud control plane and runtime spaces are now documented, but the data model, admin APIs, runtime-space reservations, and worker fleet controls are not implemented yet.
 - MCP skills are cataloged and authorized, but not yet fully connected to the runtime execution path.
 - Skills can be visible as private/public, but public skill copy/provenance and install workflows are incomplete.
 - Task observation is still mostly generic; AIGC, novel writing, research, and software teams need domain-specific status views.
@@ -30,6 +31,48 @@ Incomplete or basic-only areas:
 - Model provider selection exists, but provider fallback and per-agent audit trails need completion.
 - Operations APIs exist, but capacity, queue latency, and saturation dashboards need richer aggregate endpoints.
 - The memory search tool is still a placeholder and needs a real workspace memory/index implementation.
+
+## P0: Cloud Control Plane And Runtime Spaces
+
+Current state:
+
+- Docker runtimes, self-hosted runtimes, queue metrics, worker heartbeats, security events, and scheduler limits exist as separate foundations.
+- The platform control plane objects are now specified in [Cloud Control Plane And Runtime Spaces](cloud-control-plane-and-runtime-spaces.md).
+- Runtime spaces are not yet represented as first-class database records, so teams cannot yet own a persistent execution boundary that controls files, network, quotas, and runtime leases.
+
+Build:
+
+- Add runtime spaces with workspace, team, and task scopes.
+- Bind teams, tasks, task steps, runs, Docker runtimes, runtime commands, and staged files to a runtime space where applicable.
+- Add runtime space quota records and reservation records for active runs, Docker runtimes, self-hosted jobs, CPU, memory, storage, logs, and artifacts.
+- Add worker node records, worker leases, drain status, worker version, and capacity reporting.
+- Extend scheduler decisions to reserve runtime-space capacity atomically before enqueueing executable work.
+- Add cleanup evidence for Docker leases and runtime-space temporary storage.
+- Add operator APIs for workers, queues, runtime spaces, Docker leases, security events, and global risky-execution controls.
+- Keep admin APIs metadata-only: no raw secrets, raw file contents, or cross-workspace data leakage.
+
+API/data changes:
+
+- Add `runtime_spaces`, `runtime_space_bindings`, `runtime_space_quotas`, `runtime_space_reservations`, `runtime_space_events`, `runtime_leases`, `worker_nodes`, `worker_leases`, `scheduler_decisions`, `egress_policy_rules`, and `egress_events` as needed.
+- Add `runtime_space_id` to teams, tasks, task steps, runs, workspace runtimes, runtime commands, and runtime-origin file metadata where applicable.
+- Add workspace APIs for runtime spaces and operations aggregates.
+- Add admin APIs under `/api/v1/admin/...` with platform-operator authentication.
+
+Tests:
+
+- runtime space access is workspace-scoped
+- a team-bound runtime space cannot be used by another workspace
+- concurrent schedulers cannot reserve beyond runtime-space quota
+- cancellation, timeout, failure, and cleanup release reservations
+- worker drain prevents new leases but does not corrupt running leases
+- admin APIs redact secrets and file contents
+- Docker lease cleanup records success or failure evidence
+
+Acceptance:
+
+- a user can operate a persistent team execution space while Docker containers remain controlled and disposable
+- platform operators can see and control workers, queues, runtime spaces, quotas, Docker leases, self-hosted trust state, and security events
+- concurrent multi-task execution is bounded by durable reservations instead of best-effort checks
 
 ## P0: MCP Runtime Execution Path
 
@@ -541,21 +584,22 @@ Acceptance:
 
 ## Recommended Implementation Order
 
-1. MCP runtime execution path.
-2. Public skill install/copy/provenance.
-3. Workspace quotas and multi-task priority scheduling.
-4. Task observation views.
-5. Generic correction endpoint.
-6. Import conflict preview.
-7. Docker quota cleanup verification.
-8. Self-hosted runtime policy and revocation hardening.
-9. Model provider audit and fallback.
-10. Operations dashboard aggregate APIs.
-11. Real workspace memory search.
-12. Dynamic planning failure review and future-only regeneration.
-13. Artifact work package version metadata.
-14. OpenAI Agents event mapping into task messages.
-15. Security review test suite expansion.
+1. Cloud control plane and runtime spaces.
+2. MCP runtime execution path.
+3. Public skill install/copy/provenance.
+4. Workspace quotas and multi-task priority scheduling.
+5. Task observation views.
+6. Generic correction endpoint.
+7. Import conflict preview.
+8. Docker quota cleanup verification.
+9. Self-hosted runtime policy and revocation hardening.
+10. Model provider audit and fallback.
+11. Operations dashboard aggregate APIs.
+12. Real workspace memory search.
+13. Dynamic planning failure review and future-only regeneration.
+14. Artifact work package version metadata.
+15. OpenAI Agents event mapping into task messages.
+16. Security review test suite expansion.
 
 ## Definition Of Done For Each Remaining Module
 
