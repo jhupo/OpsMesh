@@ -36,6 +36,7 @@ class WorkerRunnerConfig:
     maintenance_interval_seconds: float = 60.0
     run_lease_seconds: int = 900
     recovery_batch_size: int = 100
+    job_scan_limit: int = 50
 
 
 @dataclass(frozen=True)
@@ -76,7 +77,11 @@ class WorkerRunner:
             )
             if not capacity.accepting:
                 return False
-        job = self._queue.dequeue()
+            worker_capacity = capacity.capacity or {}
+        job = self._queue.dequeue_matching(
+            lambda candidate: _worker_can_run_job(candidate, worker_capacity),
+            scan_limit=self._config.job_scan_limit,
+        )
         if job is None:
             return False
         self._start_lease(job)
@@ -261,6 +266,7 @@ class WorkerRunner:
                         "requested_by_agent_run_id": str(job.requested_by_agent_run_id)
                         if job.requested_by_agent_run_id is not None
                         else None,
+                        "routing": dict(job.routing),
                     },
                 )
         except Exception:
@@ -282,3 +288,57 @@ class WorkerRunner:
                 )
         except Exception:
             logger.exception("Failed to finish worker lease")
+
+
+def _worker_can_run_job(job: JobPayload, capacity: dict[str, object]) -> bool:
+    routing = job.routing
+    if not routing:
+        return True
+    required_worker_types = _string_set(routing.get("worker_types"))
+    worker_type = _capacity_string(capacity, "worker_type")
+    if required_worker_types and worker_type not in required_worker_types:
+        return False
+    required_capabilities = _string_set(routing.get("capabilities"))
+    worker_capabilities = _string_set(capacity.get("capabilities"))
+    if required_capabilities and not required_capabilities <= worker_capabilities:
+        return False
+    required_runtime_modes = _string_set(routing.get("runtime_modes"))
+    worker_runtime_modes = _string_set(capacity.get("runtime_modes"))
+    if required_runtime_modes and not required_runtime_modes <= worker_runtime_modes:
+        return False
+    resource_requirements = _dict(routing.get("resource_requirements"))
+    for key, required_value in resource_requirements.items():
+        if _positive_number(capacity.get(key)) < _positive_number(required_value):
+            return False
+    return True
+
+
+def _capacity_string(capacity: dict[str, object], key: str) -> str:
+    value = capacity.get(key)
+    return value if isinstance(value, str) else ""
+
+
+def _dict(value: object) -> dict[str, object]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _positive_number(value: object) -> float:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int | float) and value > 0:
+        return float(value)
+    if isinstance(value, str):
+        try:
+            parsed = float(value)
+        except ValueError:
+            return 0
+        return parsed if parsed > 0 else 0
+    return 0
+
+
+def _string_set(value: object) -> set[str]:
+    if isinstance(value, str) and value:
+        return {value}
+    if not isinstance(value, list):
+        return set()
+    return {item for item in value if isinstance(item, str) and item}

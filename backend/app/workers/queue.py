@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Protocol, cast
@@ -48,6 +48,26 @@ class RedisQueue:
             return None
         _, raw_payload = cast(tuple[str, bytes | str], result)
         return self._deserialize(raw_payload)
+
+    def dequeue_matching(
+        self,
+        predicate: Callable[[JobPayload], bool],
+        *,
+        scan_limit: int = 50,
+    ) -> JobPayload | None:
+        queue_key = self.keys.queue(self.queue_name)
+        limit = max(1, scan_limit)
+        for raw_payload in self.redis.lrange(queue_key, 0, limit - 1):
+            job = self._deserialize(raw_payload)
+            if not predicate(job):
+                continue
+            removed = self.redis.lrem(queue_key, 1, raw_payload)
+            if int(removed) == 0:
+                continue
+            return job
+        if self.blocking_timeout_seconds > 0:
+            return self.dequeue()
+        return None
 
     def retry_or_dead_letter(self, job: JobPayload) -> None:
         if job.can_retry:

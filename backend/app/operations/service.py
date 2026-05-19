@@ -32,6 +32,7 @@ class WorkerCapacitySnapshot:
     available_slots: int
     accepting: bool
     reason: str | None = None
+    capacity: dict[str, object] | None = None
 
 
 class OperationsService:
@@ -90,7 +91,7 @@ class OperationsService:
             details=details,
             worker_version=worker_version,
             hostname=hostname,
-            capacity=capacity or {},
+            capacity=_worker_capacity(capacity, worker_type),
             last_seen_at=now,
         )
         self._session.commit()
@@ -120,7 +121,7 @@ class OperationsService:
                 queue_name=queue_name,
                 worker_version=worker_version,
                 hostname=hostname,
-                capacity=capacity or {},
+                capacity=_worker_capacity(capacity, worker_type),
                 details=details,
                 last_seen_at=now,
             )
@@ -131,7 +132,7 @@ class OperationsService:
             node.queue_name = queue_name
             node.worker_version = worker_version
             node.hostname = hostname
-            node.capacity = capacity or {}
+            node.capacity = _worker_capacity(capacity, worker_type)
             node.details = details
             node.last_seen_at = now
         return node
@@ -179,6 +180,7 @@ class OperationsService:
                 available_slots=0,
                 accepting=False,
                 reason="worker_draining",
+                capacity=dict(node.capacity),
             )
         max_jobs = (
             _positive_int(node.capacity.get("max_jobs"), default_max_jobs)
@@ -194,6 +196,7 @@ class OperationsService:
             available_slots=available_slots,
             accepting=available_slots > 0,
             reason=None if available_slots > 0 else "worker_capacity_full",
+            capacity=dict(node.capacity) if node is not None else {"max_jobs": max_jobs},
         )
 
     def start_worker_lease(
@@ -488,3 +491,9 @@ def _positive_int(value: object, fallback: int) -> int:
             return max(1, fallback)
         return parsed if parsed > 0 else max(1, fallback)
     return max(1, fallback)
+
+
+def _worker_capacity(capacity: dict[str, object] | None, worker_type: str) -> dict[str, object]:
+    normalized = dict(capacity or {})
+    normalized.setdefault("worker_type", worker_type)
+    return normalized

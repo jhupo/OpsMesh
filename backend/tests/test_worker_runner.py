@@ -16,9 +16,11 @@ from backend.app.agents.models import AgentProfile
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
+from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
+from backend.app.runtime_spaces.models import RuntimeSpace
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
 from backend.app.workers.jobs import JobPayload, JobType
@@ -308,6 +310,84 @@ def test_worker_runner_capacity_allows_claim_when_slot_available() -> None:
         assert {lease.status for lease in leases} == {"running", "completed"}
 
 
+def test_worker_runner_skips_jobs_that_do_not_match_worker_capacity() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    docker_workspace_id, docker_run_id, docker_user_id = _seed_run(
+        session_factory,
+        slug="docker-job",
+    )
+    self_hosted_workspace_id, self_hosted_run_id, self_hosted_user_id = _seed_run(
+        session_factory,
+        slug="self-hosted-job",
+    )
+    queue.enqueue(
+        JobPayload(
+            workspace_id=docker_workspace_id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=docker_run_id,
+            requested_by_user_id=docker_user_id,
+            idempotency_key=f"agent.run:{docker_workspace_id}:{docker_run_id}",
+            routing={
+                "runtime_modes": ["docker"],
+                "capabilities": ["image.generate"],
+                "resource_requirements": {"memory_mb": 4096},
+            },
+        )
+    )
+    queue.enqueue(
+        JobPayload(
+            workspace_id=self_hosted_workspace_id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=self_hosted_run_id,
+            requested_by_user_id=self_hosted_user_id,
+            idempotency_key=f"agent.run:{self_hosted_workspace_id}:{self_hosted_run_id}",
+            routing={"runtime_modes": ["self_hosted"]},
+        )
+    )
+    with session_factory() as session:
+        session.add(
+            WorkerNode(
+                worker_id="worker-self-hosted",
+                worker_type="self_hosted",
+                status="online",
+                queue_name="agent_runs",
+                capacity={
+                    "max_jobs": 1,
+                    "worker_type": "self_hosted",
+                    "runtime_modes": ["self_hosted"],
+                    "capabilities": ["code.execute"],
+                    "memory_mb": 2048,
+                },
+                details={},
+                last_seen_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="worker-self-hosted", queue_name="agent_runs"),
+    )
+
+    assert runner.run_once() is True
+    assert queue.count_queued(workspace_id=docker_workspace_id) == 1
+    assert queue.count_queued(workspace_id=self_hosted_workspace_id) == 0
+    with session_factory() as session:
+        docker_run = session.get(AgentRun, docker_run_id)
+        self_hosted_run = session.get(AgentRun, self_hosted_run_id)
+        lease = session.scalar(
+            select(WorkerLease).where(WorkerLease.worker_id == "worker-self-hosted")
+        )
+        assert docker_run is not None
+        assert docker_run.status == RunStatus.QUEUED.value
+        assert self_hosted_run is not None
+        assert self_hosted_run.status == RunStatus.COMPLETED.value
+        assert lease is not None
+        assert lease.resource_id == self_hosted_run_id
+        assert lease.lease_metadata["routing"] == {"runtime_modes": ["self_hosted"]}
+
+
 def test_worker_runner_rolls_back_failed_session() -> None:
     session_factory = _session_factory()
     queue = _queue()
@@ -400,6 +480,46 @@ def test_worker_runner_summary_includes_maintenance_recovery() -> None:
         assert run.status == RunStatus.FAILED.value
         assert heartbeat is not None
         assert heartbeat.details["recovered_runs"] == 1
+
+
+def test_agent_run_jobs_include_runtime_space_routing_requirements() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, run_id, user_id = _seed_run(session_factory)
+    with session_factory() as session:
+        runtime_space = RuntimeSpace(
+            workspace_id=workspace_id,
+            name="Docker Studio",
+            scope="workspace",
+            policy={
+                "runtime_modes": ["docker"],
+                "worker_capabilities": ["image.generate"],
+                "worker_types": ["cloud"],
+                "resource_requirements": {"memory_mb": 4096, "cpu": "2"},
+            },
+        )
+        session.add(runtime_space)
+        session.flush()
+        run = session.get(AgentRun, run_id)
+        assert run is not None
+        run.runtime_space_id = runtime_space.id
+        enqueued = RunOrchestrationService(session, queue=queue).enqueue_run(
+            run,
+            requested_by_user_id=user_id,
+        )
+        session.commit()
+
+    job = queue.dequeue()
+
+    assert enqueued is True
+    assert job is not None
+    assert job.routing == {
+        "runtime_space_id": str(runtime_space.id),
+        "runtime_modes": ["docker"],
+        "capabilities": ["image.generate"],
+        "worker_types": ["cloud"],
+        "resource_requirements": {"memory_mb": 4096, "cpu": 2.0},
+    }
 
 
 def _queue() -> RedisQueue:

@@ -31,6 +31,23 @@ def test_enqueue_is_idempotent_and_dequeue_round_trips_payload() -> None:
     assert queue.dequeue() is None
 
 
+def test_dequeue_matching_skips_unmatched_head_job_without_dropping_it() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
+    docker_job = _job(routing={"runtime_modes": ["docker"]})
+    self_hosted_job = _job(routing={"runtime_modes": ["self_hosted"]})
+    queue.enqueue(docker_job)
+    queue.enqueue(self_hosted_job)
+
+    matched = queue.dequeue_matching(
+        lambda job: job.routing.get("runtime_modes") == ["self_hosted"],
+    )
+
+    assert matched == self_hosted_job
+    assert queue.dequeue() == docker_job
+    assert queue.dequeue() is None
+
+
 def test_run_lock_allows_one_holder() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
@@ -84,7 +101,7 @@ def test_dead_letter_jobs_can_be_listed_and_requeued() -> None:
     assert queue.dequeue() == requeued
 
 
-def _job(max_attempts: int = 3) -> JobPayload:
+def _job(max_attempts: int = 3, routing: dict[str, object] | None = None) -> JobPayload:
     workspace_id = uuid4()
     return JobPayload(
         workspace_id=workspace_id,
@@ -92,4 +109,5 @@ def _job(max_attempts: int = 3) -> JobPayload:
         resource_id=uuid4(),
         idempotency_key=f"agent.run:{workspace_id}:resource",
         max_attempts=max_attempts,
+        routing=routing or {},
     )

@@ -25,7 +25,7 @@ from backend.app.planning.project_plans import ProjectPlanningService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus, require_run_transition
-from backend.app.runtime_spaces.models import RuntimeSpaceReservation
+from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceReservation
 from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
@@ -95,6 +95,7 @@ class RunOrchestrationService:
             resource_id=run.id,
             requested_by_user_id=requested_by_user_id,
             idempotency_key=f"agent.run:{run.workspace_id}:{run.id}",
+            routing=self._run_job_routing(run),
         )
         return self._queue.enqueue(job)
 
@@ -1280,6 +1281,34 @@ class RunOrchestrationService:
             released_at=released_at,
         )
 
+    def _run_job_routing(self, run: AgentRun) -> dict[str, object]:
+        routing: dict[str, object] = {}
+        if run.runtime_space_id is None:
+            return routing
+        routing["runtime_space_id"] = str(run.runtime_space_id)
+        runtime_space = self._session.get(RuntimeSpace, run.runtime_space_id)
+        if runtime_space is None or runtime_space.workspace_id != run.workspace_id:
+            return routing
+
+        runtime_modes = _string_list(runtime_space.policy.get("runtime_modes"))
+        runtime_mode = runtime_space.policy.get("runtime_mode")
+        if not runtime_modes and isinstance(runtime_mode, str):
+            runtime_modes = [runtime_mode]
+        capabilities = _string_list(runtime_space.policy.get("worker_capabilities"))
+        worker_types = _string_list(runtime_space.policy.get("worker_types"))
+        resource_requirements = _positive_number_dict(
+            runtime_space.policy.get("resource_requirements"),
+        )
+        if runtime_modes:
+            routing["runtime_modes"] = runtime_modes
+        if capabilities:
+            routing["capabilities"] = capabilities
+        if worker_types:
+            routing["worker_types"] = worker_types
+        if resource_requirements:
+            routing["resource_requirements"] = resource_requirements
+        return routing
+
     def _scheduler(self) -> WorkspaceScheduler:
         return WorkspaceScheduler(self._session)
 
@@ -1869,6 +1898,26 @@ def _dict_or_empty(value: object) -> dict[str, object]:
 
 def _dict_copy(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _positive_number_dict(value: object) -> dict[str, int | float]:
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[str, int | float] = {}
+    for key, amount in value.items():
+        if not isinstance(key, str) or isinstance(amount, bool):
+            continue
+        if isinstance(amount, int | float) and amount > 0:
+            normalized[key] = amount
+            continue
+        if isinstance(amount, str):
+            try:
+                parsed = float(amount)
+            except ValueError:
+                continue
+            if parsed > 0:
+                normalized[key] = parsed
+    return normalized
 
 
 def _json_object_from_text(value: str) -> dict[str, object] | None:
