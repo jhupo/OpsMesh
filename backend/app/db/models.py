@@ -24,7 +24,7 @@ from backend.app.marketplace.models import (
     WorkspaceAgentInstall,
 )
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.operations.models import WorkerHeartbeat
+from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import (
     RuntimeSpace,
@@ -103,4 +103,6 @@ __all__ = [
     "WorkspaceRuntime",
     "WorkspaceSkillInstall",
     "WorkerHeartbeat",
+    "WorkerLease",
+    "WorkerNode",
 ]

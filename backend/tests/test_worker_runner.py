@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.agents.models import AgentProfile
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.operations.models import WorkerHeartbeat
+from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
@@ -89,8 +89,14 @@ def test_worker_runner_loop_records_heartbeat_and_summary() -> None:
         heartbeat = session.scalar(
             select(WorkerHeartbeat).where(WorkerHeartbeat.worker_id == "worker-loop")
         )
+        node = session.scalar(select(WorkerNode).where(WorkerNode.worker_id == "worker-loop"))
+        lease = session.scalar(select(WorkerLease).where(WorkerLease.worker_id == "worker-loop"))
         assert heartbeat is not None
+        assert node is not None
+        assert lease is not None
         assert heartbeat.status == "online"
+        assert node.status == "online"
+        assert lease.status == "completed"
         assert heartbeat.details["processed"] == 1
         assert heartbeat.details["failed"] == 0
 
@@ -140,12 +146,54 @@ def test_worker_runner_continues_after_job_failure() -> None:
         heartbeat = session.scalar(
             select(WorkerHeartbeat).where(WorkerHeartbeat.worker_id == "worker-degraded")
         )
+        leases = session.scalars(
+            select(WorkerLease).where(WorkerLease.worker_id == "worker-degraded")
+        ).all()
         assert run is not None
         assert run.status == RunStatus.COMPLETED.value
         assert heartbeat is not None
         assert heartbeat.status == "degraded"
         assert heartbeat.details["failed"] == 1
         assert "workspace mismatch" in str(heartbeat.details["last_error"])
+        assert {lease.status for lease in leases} == {"failed", "completed"}
+
+
+def test_worker_runner_drain_prevents_new_job_claims() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, run_id, user_id = _seed_run(session_factory)
+    queue.enqueue(
+        JobPayload(
+            workspace_id=workspace_id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run_id,
+            requested_by_user_id=user_id,
+            idempotency_key=f"agent.run:{workspace_id}:{run_id}",
+        )
+    )
+    with session_factory() as session:
+        node = WorkerNode(
+            worker_id="worker-draining",
+            worker_type="cloud",
+            status="draining",
+            queue_name="agent_runs",
+            capacity={},
+            details={},
+            last_seen_at=datetime.now(UTC),
+            drain_requested_at=datetime.now(UTC),
+        )
+        session.add(node)
+        session.commit()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="worker-draining", queue_name="agent_runs"),
+    )
+
+    assert runner.run_once() is False
+    assert queue.count_queued(workspace_id=workspace_id) == 1
+    with session_factory() as session:
+        assert session.query(WorkerLease).count() == 0
 
 
 def test_worker_runner_rolls_back_failed_session() -> None:

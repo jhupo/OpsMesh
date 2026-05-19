@@ -42,6 +42,9 @@ class WorkerHeartbeatRequest(BaseModel):
     worker_type: str = Field(default="cloud", max_length=80)
     status: str = Field(default="online", max_length=32)
     queue_name: str = Field(default="agent_runs", max_length=120)
+    worker_version: str | None = Field(default=None, max_length=120)
+    hostname: str | None = Field(default=None, max_length=255)
+    capacity: dict[str, object] = Field(default_factory=dict)
     details: dict[str, object] = Field(default_factory=dict)
 
 
@@ -53,6 +56,33 @@ class WorkerHeartbeatResponse(TimestampedModel):
     queue_name: str
     details: dict[str, object]
     last_seen_at: datetime
+
+
+class WorkerNodeResponse(TimestampedModel):
+    worker_id: str
+    worker_type: str
+    status: str
+    queue_name: str
+    worker_version: str | None
+    hostname: str | None
+    capacity: dict[str, object]
+    details: dict[str, object]
+    drain_requested_at: datetime | None
+    last_seen_at: datetime
+
+
+class WorkerLeaseResponse(TimestampedModel):
+    workspace_id: UUID
+    worker_id: str
+    queue_name: str
+    job_id: UUID
+    job_type: str
+    resource_id: UUID
+    status: str
+    attempt: int
+    lease_metadata: dict[str, object]
+    started_at: datetime
+    finished_at: datetime | None
 
 
 class QueueMetricsResponse(BaseModel):

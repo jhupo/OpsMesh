@@ -15,7 +15,8 @@ from backend.app.core.config import Settings
 from backend.app.operations.service import OperationsService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.workers.handlers import WorkerJobHandler
-from backend.app.workers.queue import RedisQueue, consume_once
+from backend.app.workers.jobs import JobPayload
+from backend.app.workers.queue import RedisQueue
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +68,35 @@ class WorkerRunner:
 
     def run_once(self) -> bool:
         with self._session_scope() as session:
+            operations = OperationsService(session)
+            if operations.is_worker_draining(self._config.worker_id):
+                return False
+        job = self._queue.dequeue()
+        if job is None:
+            return False
+        self._start_lease(job)
+        try:
+            self._handle_job(job)
+        except Exception as exc:
+            self._finish_lease(
+                job,
+                status="retrying" if job.can_retry else "failed",
+                metadata={"error": str(exc)},
+            )
+            self._queue.retry_or_dead_letter(job)
+            raise
+        self._finish_lease(job, status="completed")
+        return True
+
+    def _handle_job(self, job: JobPayload) -> None:
+        with self._session_scope() as session:
             handler = WorkerJobHandler(
                 session,
                 self._queue,
                 self._agent_runner,
                 self._settings,
             )
-            return consume_once(self._queue, handler.handle)
+            handler.handle(job)
 
     def run(
         self,
@@ -163,6 +186,7 @@ class WorkerRunner:
                     status=status,
                     queue_name=self._config.queue_name,
                     details=details,
+                    capacity={"max_jobs": 1},
                 )
         except Exception:
             logger.exception("Failed to record worker heartbeat")
@@ -214,3 +238,39 @@ class WorkerRunner:
         if last_error is not None:
             details["last_error"] = last_error
         return details
+
+    def _start_lease(self, job: JobPayload) -> None:
+        try:
+            with self._session_scope() as session:
+                OperationsService(session).start_worker_lease(
+                    worker_id=self._config.worker_id,
+                    queue_name=self._config.queue_name,
+                    job=job,
+                    metadata={
+                        "requested_by_user_id": str(job.requested_by_user_id)
+                        if job.requested_by_user_id is not None
+                        else None,
+                        "requested_by_agent_run_id": str(job.requested_by_agent_run_id)
+                        if job.requested_by_agent_run_id is not None
+                        else None,
+                    },
+                )
+        except Exception:
+            logger.exception("Failed to start worker lease")
+
+    def _finish_lease(
+        self,
+        job: JobPayload,
+        *,
+        status: str,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        try:
+            with self._session_scope() as session:
+                OperationsService(session).finish_worker_lease(
+                    job_id=job.job_id,
+                    status=status,
+                    metadata=metadata,
+                )
+        except Exception:
+            logger.exception("Failed to finish worker lease")

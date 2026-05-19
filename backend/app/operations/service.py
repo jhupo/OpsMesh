@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.operations import DeadLetterJobsResponse, QueueMetricsResponse
 from backend.app.audit.models import AuditEvent
-from backend.app.operations.models import WorkerHeartbeat
+from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
@@ -41,6 +41,9 @@ class OperationsService:
         status: str,
         queue_name: str,
         details: dict[str, object],
+        worker_version: str | None = None,
+        hostname: str | None = None,
+        capacity: dict[str, object] | None = None,
         workspace_id: UUID | None = None,
     ) -> WorkerHeartbeat:
         heartbeat = self._session.scalar(
@@ -67,9 +70,156 @@ class OperationsService:
             heartbeat.status = status
             heartbeat.details = details
             heartbeat.last_seen_at = now
+        self.upsert_worker_node(
+            worker_id=worker_id,
+            worker_type=worker_type,
+            status=status,
+            queue_name=queue_name,
+            details=details,
+            worker_version=worker_version,
+            hostname=hostname,
+            capacity=capacity or {},
+            last_seen_at=now,
+        )
         self._session.commit()
         self._session.refresh(heartbeat)
         return heartbeat
+
+    def upsert_worker_node(
+        self,
+        *,
+        worker_id: str,
+        worker_type: str,
+        status: str,
+        queue_name: str,
+        details: dict[str, object],
+        worker_version: str | None = None,
+        hostname: str | None = None,
+        capacity: dict[str, object] | None = None,
+        last_seen_at: datetime | None = None,
+    ) -> WorkerNode:
+        node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
+        now = last_seen_at or datetime.now(UTC)
+        if node is None:
+            node = WorkerNode(
+                worker_id=worker_id,
+                worker_type=worker_type,
+                status=status,
+                queue_name=queue_name,
+                worker_version=worker_version,
+                hostname=hostname,
+                capacity=capacity or {},
+                details=details,
+                last_seen_at=now,
+            )
+            self._session.add(node)
+        else:
+            node.worker_type = worker_type
+            node.status = "draining" if node.drain_requested_at is not None else status
+            node.queue_name = queue_name
+            node.worker_version = worker_version
+            node.hostname = hostname
+            node.capacity = capacity or {}
+            node.details = details
+            node.last_seen_at = now
+        return node
+
+    def list_worker_nodes(
+        self,
+        page: PageParams,
+        *,
+        status: str | None = None,
+        worker_type: str | None = None,
+    ) -> tuple[list[WorkerNode], int]:
+        statement = select(WorkerNode)
+        if status is not None:
+            statement = statement.where(WorkerNode.status == status)
+        if worker_type is not None:
+            statement = statement.where(WorkerNode.worker_type == worker_type)
+        return self._page(statement.order_by(WorkerNode.last_seen_at.desc()), page)
+
+    def request_worker_drain(self, worker_id: str) -> WorkerNode | None:
+        node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
+        if node is None:
+            return None
+        node.status = "draining"
+        node.drain_requested_at = datetime.now(UTC)
+        self._session.commit()
+        self._session.refresh(node)
+        return node
+
+    def is_worker_draining(self, worker_id: str) -> bool:
+        node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
+        return bool(node is not None and node.drain_requested_at is not None)
+
+    def start_worker_lease(
+        self,
+        *,
+        worker_id: str,
+        queue_name: str,
+        job: JobPayload,
+        metadata: dict[str, object] | None = None,
+    ) -> WorkerLease:
+        now = datetime.now(UTC)
+        lease = self._session.scalar(select(WorkerLease).where(WorkerLease.job_id == job.job_id))
+        if lease is None:
+            lease = WorkerLease(
+                workspace_id=job.workspace_id,
+                worker_id=worker_id,
+                queue_name=queue_name,
+                job_id=job.job_id,
+                job_type=job.job_type.value,
+                resource_id=job.resource_id,
+                status="running",
+                attempt=job.attempt,
+                lease_metadata=metadata or {},
+                started_at=now,
+            )
+            self._session.add(lease)
+        else:
+            lease.worker_id = worker_id
+            lease.queue_name = queue_name
+            lease.status = "running"
+            lease.attempt = job.attempt
+            lease.lease_metadata = metadata or {}
+            lease.started_at = now
+            lease.finished_at = None
+        self._session.commit()
+        self._session.refresh(lease)
+        return lease
+
+    def finish_worker_lease(
+        self,
+        *,
+        job_id: UUID,
+        status: str,
+        metadata: dict[str, object] | None = None,
+    ) -> WorkerLease | None:
+        lease = self._session.scalar(select(WorkerLease).where(WorkerLease.job_id == job_id))
+        if lease is None:
+            return None
+        lease.status = status
+        lease.finished_at = datetime.now(UTC)
+        if metadata:
+            lease.lease_metadata = lease.lease_metadata | metadata
+        self._session.commit()
+        self._session.refresh(lease)
+        return lease
+
+    def list_worker_leases(
+        self,
+        workspace_id: UUID,
+        page: PageParams,
+        *,
+        status: str | None = None,
+        worker_id: str | None = None,
+    ) -> tuple[list[WorkerLease], int]:
+        statement = select(WorkerLease).where(WorkerLease.workspace_id == workspace_id)
+        if status is not None:
+            statement = statement.where(WorkerLease.status == status)
+        if worker_id is not None:
+            statement = statement.where(WorkerLease.worker_id == worker_id)
+        return self._page(statement.order_by(WorkerLease.created_at.desc()), page)
 
     def queue_metrics(
         self,

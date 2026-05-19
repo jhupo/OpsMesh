@@ -18,6 +18,7 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.operations.models import WorkerLease
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
@@ -119,9 +120,30 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     heartbeat = client.post(
         f"/api/v1/workspaces/{workspace.id}/operations/worker-heartbeats",
         headers=_headers(owner.id),
-        json={"worker_id": "worker-1", "details": {"pid": 123}},
+        json={
+            "worker_id": "worker-1",
+            "worker_version": "2026.05.19",
+            "hostname": "host-a",
+            "capacity": {"max_jobs": 2},
+            "details": {"pid": 123},
+        },
     )
     assert heartbeat.status_code == 200
+    workers = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/workers",
+        headers=_headers(owner.id),
+    )
+    assert workers.status_code == 200
+    assert workers.json()["total"] == 1
+    assert workers.json()["items"][0]["worker_id"] == "worker-1"
+    assert workers.json()["items"][0]["capacity"] == {"max_jobs": 2}
+
+    drain = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/workers/worker-1/drain",
+        headers=_headers(owner.id),
+    )
+    assert drain.status_code == 200
+    assert drain.json()["status"] == "draining"
 
     metrics = client.get(
         f"/api/v1/workspaces/{workspace.id}/operations/queue-metrics",
@@ -201,6 +223,59 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert cleanup.json()["stale_marked_offline"] == 1
     session.refresh(runtime)
     assert runtime.connection_status == "offline"
+
+
+def test_operations_lists_worker_leases_by_workspace() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    other_user, other_workspace = _seed_workspace_with_role(
+        session,
+        email="other@example.com",
+        slug="other",
+    )
+    lease = WorkerLease(
+        workspace_id=workspace.id,
+        worker_id="worker-1",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=uuid4(),
+        status="running",
+        attempt=0,
+        lease_metadata={"task": "owned"},
+        started_at=datetime.now(UTC),
+    )
+    other_lease = WorkerLease(
+        workspace_id=other_workspace.id,
+        worker_id="worker-2",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=uuid4(),
+        status="running",
+        attempt=0,
+        lease_metadata={"task": "other"},
+        started_at=datetime.now(UTC),
+    )
+    session.add_all([lease, other_lease])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/worker-leases?status=running",
+        headers=_headers(owner.id),
+    )
+    other_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/operations/worker-leases",
+        headers=_headers(other_user.id),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["job_id"] == str(lease.job_id)
+    assert other_response.status_code == 200
+    assert other_response.json()["total"] == 1
+    assert other_response.json()["items"][0]["job_id"] == str(other_lease.job_id)
 
 
 def test_operator_can_use_operations_but_viewer_cannot() -> None:

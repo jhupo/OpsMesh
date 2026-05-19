@@ -40,14 +40,15 @@ Current state:
 - The platform control plane objects are now specified in [Cloud Control Plane And Runtime Spaces](cloud-control-plane-and-runtime-spaces.md).
 - Runtime spaces are now represented as first-class records with workspace/team/task scopes, quota tables, reservation tables, event logs, and workspace-scoped APIs.
 - Teams, tasks, task steps, runs, Docker runtimes, runtime commands, and runtime events now carry `runtime_space_id` where applicable.
-- Worker node tracking, worker leases, runtime-space scheduler reservations, and admin/operator APIs are not implemented yet.
+- Worker node tracking, worker leases, drain requests, and worker/lease operations APIs are now implemented.
+- Runtime-space scheduler reservations and broader admin/operator APIs are not implemented yet.
 
 Build:
 
 - [x] Add runtime spaces with workspace, team, and task scopes.
 - [x] Bind teams, tasks, task steps, runs, Docker runtimes, and runtime commands to a runtime space where applicable.
 - [x] Add runtime space quota records and reservation records for active runs, Docker runtimes, self-hosted jobs, CPU, memory, storage, logs, and artifacts.
-- Add worker node records, worker leases, drain status, worker version, and capacity reporting.
+- [x] Add worker node records, worker leases, drain status, worker version, and capacity reporting.
 - Extend scheduler decisions to reserve runtime-space capacity atomically before enqueueing executable work.
 - Add cleanup evidence for Docker leases and runtime-space temporary storage.
 - Add operator APIs for workers, queues, runtime spaces, Docker leases, security events, and global risky-execution controls.

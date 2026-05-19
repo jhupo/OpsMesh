@@ -500,7 +500,7 @@ Tasks:
   - [x] Add runtime space data model for workspace, team, and task scopes.
   - [x] Bind teams, tasks, runs, Docker runtimes, and runtime commands to runtime spaces.
   - [x] Add runtime space quotas and durable reservation tables.
-  - [ ] Add worker node and worker lease tracking.
+  - [x] Add worker node and worker lease tracking.
   - [ ] Add admin/operator APIs for workers, queues, runtime spaces, Docker leases, and security events.
   - [ ] Add concurrent scheduler tests that prove runtime-space quotas cannot be over-reserved.
 - [ ] Connect MCP skills to the real runtime execution path.

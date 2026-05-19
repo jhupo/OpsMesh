@@ -23,6 +23,8 @@ from backend.app.api.schemas.operations import (
     SecurityEventResponse,
     WorkerHeartbeatRequest,
     WorkerHeartbeatResponse,
+    WorkerLeaseResponse,
+    WorkerNodeResponse,
 )
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
 from backend.app.auth.context import WorkspaceContext
@@ -55,8 +57,66 @@ async def record_worker_heartbeat(
         status=request.status,
         queue_name=request.queue_name,
         details=request.details,
+        worker_version=request.worker_version,
+        hostname=request.hostname,
+        capacity=request.capacity,
     )
     return WorkerHeartbeatResponse.model_validate(heartbeat)
+
+
+@router.get("/workers", response_model=PageResponse[WorkerNodeResponse])
+async def list_workers(
+    page: PageParams = Depends(pagination_params),
+    status_filter: str | None = Query(default=None, alias="status"),
+    worker_type: str | None = Query(default=None),
+    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[WorkerNodeResponse]:
+    items, total = OperationsService(session).list_worker_nodes(
+        page,
+        status=status_filter,
+        worker_type=worker_type,
+    )
+    return PageResponse(
+        items=[WorkerNodeResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.post("/workers/{worker_id}/drain", response_model=WorkerNodeResponse)
+async def drain_worker(
+    worker_id: str,
+    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> WorkerNodeResponse:
+    node = OperationsService(session).request_worker_drain(worker_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    return WorkerNodeResponse.model_validate(node)
+
+
+@router.get("/worker-leases", response_model=PageResponse[WorkerLeaseResponse])
+async def list_worker_leases(
+    page: PageParams = Depends(pagination_params),
+    status_filter: str | None = Query(default=None, alias="status"),
+    worker_id: str | None = Query(default=None),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[WorkerLeaseResponse]:
+    items, total = OperationsService(session).list_worker_leases(
+        context.workspace.id,
+        page,
+        status=status_filter,
+        worker_id=worker_id,
+    )
+    return PageResponse(
+        items=[WorkerLeaseResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 @router.get("/queue-metrics", response_model=QueueMetricsResponse)
