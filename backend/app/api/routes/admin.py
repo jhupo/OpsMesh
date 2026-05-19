@@ -11,6 +11,7 @@ from backend.app.api.pagination import PageParams, PageResponse, pagination_para
 from backend.app.api.schemas.admin import (
     AdminDeadLetterJobsResponse,
     AdminForceStopRuntimeRequest,
+    AdminOperationsSummaryResponse,
     AdminOverviewResponse,
     AdminPlatformPolicyResponse,
     AdminQuarantineRuntimeSpaceRequest,
@@ -202,6 +203,22 @@ async def admin_queue_metrics(
         RedisKeyBuilder(settings.redis_key_prefix),
     ).queue_metrics(queue_name)
     return AdminQueueMetricsResponse(**metrics.model_dump())
+
+
+@router.get("/operations/summary", response_model=AdminOperationsSummaryResponse)
+async def admin_operations_summary(
+    queue_name: str = Query(default="agent_runs"),
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> AdminOperationsSummaryResponse:
+    return AdminOperationsSummaryResponse(
+        **AdminControlPlaneService(
+            session,
+            redis,
+            RedisKeyBuilder(settings.redis_key_prefix),
+        ).operations_summary(queue_name)
+    )
 
 
 @router.get("/queues/{queue_name}/dead-letter-jobs", response_model=AdminDeadLetterJobsResponse)

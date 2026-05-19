@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.admin.models import PlatformPolicy, PlatformPolicyEvent
+from backend.app.approvals.models import Approval
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -21,9 +22,11 @@ from backend.app.main import create_app
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runs.models import AgentRun
+from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
+from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -334,6 +337,137 @@ def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> N
     assert updated_policy.json()["value"]["high_risk_tool_mode"] == "allow"
     assert updated_policy.json()["value"]["require_approval_for_high_risk_tools"] is False
     assert "unknown" not in updated_policy.json()["value"]
+
+
+def test_admin_operations_summary_aggregates_queue_capacity_and_blockers() -> None:
+    client, session, redis = _client()
+    _, workspace = _seed_workspace(session)
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Team Space",
+        scope="team",
+        status="active",
+        policy={},
+        network_policy={},
+        storage_policy={},
+        cleanup_policy={},
+    )
+    worker = WorkerNode(
+        worker_id="worker-summary",
+        worker_type="cloud",
+        status="online",
+        queue_name="agent_runs",
+        capacity={"max_jobs": 3},
+        details={},
+        last_seen_at=datetime.now(UTC),
+    )
+    failed_run = AgentRun(
+        workspace_id=workspace.id,
+        status="failed",
+        input={},
+        error={"code": "model_timeout"},
+    )
+    waiting_run = AgentRun(
+        workspace_id=workspace.id,
+        status="waiting_approval",
+        input={},
+    )
+    waiting_task = Task(
+        workspace_id=workspace.id,
+        title="Needs approval",
+        status="waiting_approval",
+    )
+    approval = Approval(
+        workspace_id=workspace.id,
+        task_id=None,
+        agent_run_id=waiting_run.id,
+        approval_type="mcp.tool",
+        risk_level="high",
+        payload={},
+        status="pending",
+        created_at=datetime.now(UTC),
+    )
+    security_event = SecurityEvent(
+        workspace_id=workspace.id,
+        user_id=None,
+        action="mcp_tool.blocked",
+        outcome="blocked",
+        severity="high",
+        path="internal:mcp",
+        method="WORKER",
+        reason="mcp_tool_not_allowed",
+        event_metadata={},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([runtime_space, worker, failed_run, waiting_run, waiting_task])
+    session.flush()
+    quota = RuntimeSpaceQuota(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="active_runs",
+        limit_value=4,
+        reserved_value=2,
+        unit="count",
+    )
+    lease = WorkerLease(
+        workspace_id=workspace.id,
+        worker_id=worker.worker_id,
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=waiting_run.id,
+        status="running",
+        attempt=0,
+        lease_metadata={},
+        started_at=datetime.now(UTC),
+    )
+    approval.agent_run_id = waiting_run.id
+    session.add_all([quota, lease, approval, security_event])
+    session.commit()
+    queue = RedisQueue(redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    high_priority_job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="high-priority",
+        priority=9,
+    )
+    low_priority_job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="low-priority",
+        priority=1,
+    )
+    queue.enqueue(low_priority_job)
+    queue.enqueue(high_priority_job)
+
+    response = client.get(
+        "/api/v1/admin/operations/summary?queue_name=agent_runs",
+        headers=_admin_headers(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["queue"]["queued"] == 2
+    assert body["queue"]["highest_priority"] == 9
+    assert body["queue"]["oldest_queued_at"] is not None
+    assert body["workers"]["total"] == 1
+    assert body["workers"]["running_leases"] == 1
+    assert body["workers"]["total_capacity"] == 3
+    assert body["workers"]["available_capacity"] == 2
+    assert body["runtime_spaces"]["quota_usage"]["active_runs"]["limit_value"] == 4
+    assert body["runtime_spaces"]["quota_usage"]["active_runs"]["reserved_value"] == 2
+    assert body["approvals"]["pending"] == 1
+    assert body["approvals"]["runs_waiting"] == 1
+    assert body["approvals"]["tasks_waiting"] == 1
+    assert body["failures"]["failed_runs"] == 1
+    assert body["failures"]["top_run_error_codes"] == [
+        {"key": "model_timeout", "count": 1}
+    ]
+    assert body["failures"]["top_security_reasons"] == [
+        {"key": "mcp_tool_not_allowed", "count": 1}
+    ]
 
 
 def _client() -> tuple[TestClient, Session, fakeredis.FakeRedis]:

@@ -113,6 +113,14 @@ class RedisQueue:
             if self._deserialize(raw_job).workspace_id == workspace_id
         )
 
+    def peek(self, *, limit: int = 50) -> list[JobPayload]:
+        if limit <= 0:
+            return []
+        return [
+            self._deserialize(raw_job)
+            for raw_job in self.redis.lrange(self.keys.queue(self.queue_name), 0, limit - 1)
+        ]
+
     def requeue_dead_letter(
         self,
         job_id: UUID,

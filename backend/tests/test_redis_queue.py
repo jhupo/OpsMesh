@@ -60,6 +60,21 @@ def test_job_payload_round_trips_priority() -> None:
     assert stored.priority == 42
 
 
+def test_peek_returns_jobs_without_removing_them() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
+    first = _job(priority=1)
+    second = _job(priority=2)
+    queue.enqueue(first)
+    queue.enqueue(second)
+
+    peeked = queue.peek(limit=1)
+
+    assert peeked == [first]
+    assert queue.count_queued() == 2
+    assert queue.dequeue() == first
+
+
 def test_run_lock_allows_one_holder() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
