@@ -12,6 +12,8 @@ class WorkspaceExportRequest(BaseModel):
     include_tasks: bool = True
     include_runs: bool = True
     include_files: bool = True
+    include_runtime_spaces: bool = True
+    include_skill_installs: bool = True
     include_audit_events: bool = True
     max_items_per_collection: int = Field(default=500, ge=1, le=5_000)
 
@@ -44,6 +46,9 @@ class WorkspaceExportResponse(BaseModel):
     run_events: list[dict[str, object]] = Field(default_factory=list)
     files: list[dict[str, object]] = Field(default_factory=list)
     artifacts: list[dict[str, object]] = Field(default_factory=list)
+    runtime_spaces: list[dict[str, object]] = Field(default_factory=list)
+    runtime_space_quotas: list[dict[str, object]] = Field(default_factory=list)
+    skill_installs: list[dict[str, object]] = Field(default_factory=list)
     audit_events: list[dict[str, object]] = Field(default_factory=list)
 
 
@@ -80,6 +85,8 @@ class WorkspaceImportRequest(BaseModel):
     import_agents: bool = True
     import_teams: bool = True
     import_tasks: bool = True
+    import_runtime_spaces: bool = True
+    import_skill_installs: bool = True
     name_prefix: str = Field(default="Imported ", max_length=80)
     max_items_per_collection: int = Field(default=500, ge=1, le=5_000)
 
@@ -89,6 +96,8 @@ class WorkspaceArchiveImportRequest(BaseModel):
     import_agents: bool = True
     import_teams: bool = True
     import_tasks: bool = True
+    import_runtime_spaces: bool = True
+    import_skill_installs: bool = True
     import_file_bytes: bool = True
     import_artifact_bytes: bool = True
     name_prefix: str = Field(default="Imported ", max_length=80)

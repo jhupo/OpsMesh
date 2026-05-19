@@ -23,12 +23,14 @@ from backend.app.api.schemas.exports import (
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
+from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
 from backend.app.exports.models import WorkspaceExportJob
 from backend.app.exports.status import WorkspaceExportJobStatus
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.security import safe_filename
 from backend.app.files.storage import LocalStorage
 from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.jobs import JobPayload, JobType
@@ -59,6 +61,9 @@ class WorkspaceExportService:
             "run_events": [],
             "files": [],
             "artifacts": [],
+            "runtime_spaces": [],
+            "runtime_space_quotas": [],
+            "skill_installs": [],
             "audit_events": [],
         }
 
@@ -131,6 +136,28 @@ class WorkspaceExportService:
                 workspace.id,
                 request.max_items_per_collection,
                 _artifact_payload,
+            )
+        if request.include_runtime_spaces:
+            included.append("runtime_spaces")
+            payload["runtime_spaces"] = self._rows(
+                RuntimeSpace,
+                workspace.id,
+                request.max_items_per_collection,
+                _runtime_space_payload,
+            )
+            payload["runtime_space_quotas"] = self._rows(
+                RuntimeSpaceQuota,
+                workspace.id,
+                request.max_items_per_collection,
+                _runtime_space_quota_payload,
+            )
+        if request.include_skill_installs:
+            included.append("skill_installs")
+            payload["skill_installs"] = self._rows(
+                WorkspaceSkillInstall,
+                workspace.id,
+                request.max_items_per_collection,
+                _skill_install_payload,
             )
         if request.include_audit_events:
             included.append("audit_events")
@@ -400,6 +427,9 @@ class WorkspaceExportService:
             "tasks": {},
             "task_steps": {},
             "task_messages": {},
+            "runtime_spaces": {},
+            "runtime_space_quotas": {},
+            "skill_installs": {},
         }
         created_counts = {
             "agents": 0,
@@ -408,6 +438,9 @@ class WorkspaceExportService:
             "tasks": 0,
             "task_steps": 0,
             "task_messages": 0,
+            "runtime_spaces": 0,
+            "runtime_space_quotas": 0,
+            "skill_installs": 0,
         }
         skipped_counts = {
             "agents": 0,
@@ -416,8 +449,111 @@ class WorkspaceExportService:
             "tasks": 0,
             "task_steps": 0,
             "task_messages": 0,
+            "runtime_spaces": 0,
+            "runtime_space_quotas": 0,
+            "skill_installs": 0,
         }
         warnings: list[str] = []
+
+        if request.import_runtime_spaces:
+            for item in request.export.runtime_spaces[: request.max_items_per_collection]:
+                source_id = _string_field(item, "id")
+                imported_name = f"{request.name_prefix}{_string_field(item, 'name')}"
+                if self._runtime_space_exists(workspace.id, imported_name):
+                    skipped_counts["runtime_spaces"] += 1
+                    continue
+                created_counts["runtime_spaces"] += 1
+                if request.dry_run:
+                    id_map["runtime_spaces"][source_id] = source_id
+                    continue
+                runtime_space = RuntimeSpace(
+                    workspace_id=workspace.id,
+                    created_by_user_id=user_id,
+                    default_runtime_template_id=None,
+                    name=imported_name,
+                    scope=_string_field(item, "scope", "workspace"),
+                    status="active",
+                    policy=_dict_field(item, "policy"),
+                    network_policy=_dict_field(item, "network_policy"),
+                    storage_policy=_dict_field(item, "storage_policy"),
+                    cleanup_policy=_dict_field(item, "cleanup_policy"),
+                )
+                self._session.add(runtime_space)
+                self._session.flush()
+                id_map["runtime_spaces"][source_id] = str(runtime_space.id)
+
+            for item in request.export.runtime_space_quotas[: request.max_items_per_collection]:
+                source_id = _string_field(item, "id")
+                runtime_space_id = id_map["runtime_spaces"].get(
+                    _string_field(item, "runtime_space_id")
+                )
+                if runtime_space_id is None:
+                    skipped_counts["runtime_space_quotas"] += 1
+                    warnings.append("Skipped runtime space quota with missing imported space")
+                    continue
+                created_counts["runtime_space_quotas"] += 1
+                if request.dry_run:
+                    id_map["runtime_space_quotas"][source_id] = source_id
+                    continue
+                quota = RuntimeSpaceQuota(
+                    workspace_id=workspace.id,
+                    runtime_space_id=UUID(runtime_space_id),
+                    quota_key=_string_field(item, "quota_key"),
+                    limit_value=_int_field(item, "limit_value", 0),
+                    reserved_value=0,
+                    unit=_string_field(item, "unit", "count"),
+                    status="active",
+                )
+                self._session.add(quota)
+                self._session.flush()
+                id_map["runtime_space_quotas"][source_id] = str(quota.id)
+
+        if request.import_skill_installs:
+            for item in request.export.skill_installs[: request.max_items_per_collection]:
+                source_id = _string_field(item, "id")
+                installed_key = _string_field(item, "installed_key")
+                if self._skill_install_exists(workspace.id, installed_key):
+                    skipped_counts["skill_installs"] += 1
+                    continue
+                created_counts["skill_installs"] += 1
+                if request.dry_run:
+                    id_map["skill_installs"][source_id] = source_id
+                    continue
+                skill = Skill(
+                    key=f"imported.{workspace.id}.{installed_key}",
+                    name=_string_field(item, "installed_name"),
+                    version=_string_field(item, "installed_version"),
+                    description=_string_field(item, "installed_description"),
+                    capability_keys=_string_list_field(item, "installed_capability_keys"),
+                    manifest=_dict_field(item, "installed_manifest"),
+                    owner_workspace_id=workspace.id,
+                    visibility="private",
+                    status="active",
+                )
+                self._session.add(skill)
+                self._session.flush()
+                install = WorkspaceSkillInstall(
+                    workspace_id=workspace.id,
+                    skill_id=skill.id,
+                    installed_by_user_id=user_id,
+                    installed_key=installed_key,
+                    installed_name=_string_field(item, "installed_name"),
+                    installed_version=_string_field(item, "installed_version"),
+                    installed_description=_string_field(item, "installed_description"),
+                    installed_capability_keys=_string_list_field(
+                        item,
+                        "installed_capability_keys",
+                    ),
+                    installed_manifest=_dict_field(item, "installed_manifest"),
+                    source_owner_workspace_id=None,
+                    source_visibility=_string_field(item, "source_visibility", "public"),
+                    source_checksum=_string_field(item, "source_checksum"),
+                    config=_dict_field(item, "config"),
+                    status="active",
+                )
+                self._session.add(install)
+                self._session.flush()
+                id_map["skill_installs"][source_id] = str(install.id)
 
         if request.import_agents:
             for item in request.export.agents[: request.max_items_per_collection]:
@@ -439,7 +575,10 @@ class WorkspaceExportService:
                     model=_string_field(item, "model", "gpt-4.1"),
                     model_settings=_dict_field(item, "model_settings"),
                     capabilities=_dict_field(item, "capabilities"),
-                    skills=_dict_field(item, "skills"),
+                    skills=_remap_agent_skills(
+                        _dict_field(item, "skills"),
+                        id_map["skill_installs"],
+                    ),
                     tool_policy=_dict_field(item, "tool_policy"),
                     runtime_policy=_dict_field(item, "runtime_policy"),
                     memory_policy=_dict_field(item, "memory_policy"),
@@ -463,12 +602,16 @@ class WorkspaceExportService:
                     id_map["teams"][source_id] = source_id
                     continue
                 manager_id = id_map["agents"].get(_string_field(item, "manager_agent_profile_id"))
+                runtime_space_id = id_map["runtime_spaces"].get(
+                    _string_field(item, "runtime_space_id")
+                )
                 team = AgentTeam(
                     workspace_id=workspace.id,
                     name=imported_name,
                     team_type=_string_field(item, "team_type", "general"),
                     description=_string_field(item, "description"),
                     manager_agent_profile_id=_uuid_or_none(manager_id),
+                    runtime_space_id=_uuid_or_none(runtime_space_id),
                     coordination_rules=_dict_field(item, "coordination_rules"),
                     default_task_policy=_dict_field(item, "default_task_policy"),
                     status="active",
@@ -525,10 +668,14 @@ class WorkspaceExportService:
                     id_map["tasks"][source_id] = source_id
                     continue
                 team_id = id_map["teams"].get(_string_field(item, "agent_team_id"))
+                runtime_space_id = id_map["runtime_spaces"].get(
+                    _string_field(item, "runtime_space_id")
+                )
                 task = Task(
                     workspace_id=workspace.id,
                     created_by_user_id=user_id,
                     agent_team_id=_uuid_or_none(team_id),
+                    runtime_space_id=_uuid_or_none(runtime_space_id),
                     domain_type=_string_field(item, "domain_type", "general"),
                     title=imported_title,
                     description=_string_field(item, "description"),
@@ -557,10 +704,14 @@ class WorkspaceExportService:
                     id_map["task_steps"][source_id] = source_id
                     continue
                 agent_id = id_map["agents"].get(_string_field(item, "assigned_agent_profile_id"))
+                runtime_space_id = id_map["runtime_spaces"].get(
+                    _string_field(item, "runtime_space_id")
+                )
                 step = TaskStep(
                     workspace_id=workspace.id,
                     task_id=UUID(task_id),
                     assigned_agent_profile_id=_uuid_or_none(agent_id),
+                    runtime_space_id=_uuid_or_none(runtime_space_id),
                     work_package_id=_optional_string_field(item, "work_package_id"),
                     required_role=_optional_string_field(item, "required_role"),
                     required_skills=_string_list_field(item, "required_skills"),
@@ -952,6 +1103,22 @@ class WorkspaceExportService:
             select(Task.id).where(Task.workspace_id == workspace_id, Task.title == title)
         ) is not None
 
+    def _runtime_space_exists(self, workspace_id: UUID, name: str) -> bool:
+        return self._session.scalar(
+            select(RuntimeSpace.id).where(
+                RuntimeSpace.workspace_id == workspace_id,
+                RuntimeSpace.name == name,
+            )
+        ) is not None
+
+    def _skill_install_exists(self, workspace_id: UUID, installed_key: str) -> bool:
+        return self._session.scalar(
+            select(WorkspaceSkillInstall.id).where(
+                WorkspaceSkillInstall.workspace_id == workspace_id,
+                WorkspaceSkillInstall.installed_key == installed_key,
+            )
+        ) is not None
+
 
 def _workspace_payload(workspace: Workspace) -> dict[str, object]:
     return {
@@ -997,6 +1164,7 @@ def _team_payload(team: AgentTeam) -> dict[str, object]:
         "team_type": team.team_type,
         "description": team.description,
         "manager_agent_profile_id": _str_or_none(team.manager_agent_profile_id),
+        "runtime_space_id": _str_or_none(team.runtime_space_id),
         "coordination_rules": team.coordination_rules,
         "default_task_policy": team.default_task_policy,
         "status": team.status,
@@ -1033,6 +1201,7 @@ def _task_payload(task: Task) -> dict[str, object]:
         "created_by_user_id": _str_or_none(task.created_by_user_id),
         "created_by_agent_run_id": _str_or_none(task.created_by_agent_run_id),
         "agent_team_id": _str_or_none(task.agent_team_id),
+        "runtime_space_id": _str_or_none(task.runtime_space_id),
         "domain_type": task.domain_type,
         "title": task.title,
         "description": task.description,
@@ -1056,6 +1225,7 @@ def _task_step_payload(step: TaskStep) -> dict[str, object]:
         "workspace_id": str(step.workspace_id),
         "task_id": str(step.task_id),
         "assigned_agent_profile_id": _str_or_none(step.assigned_agent_profile_id),
+        "runtime_space_id": _str_or_none(step.runtime_space_id),
         "work_package_id": step.work_package_id,
         "required_role": step.required_role,
         "required_skills": step.required_skills,
@@ -1098,6 +1268,7 @@ def _run_payload(run: AgentRun) -> dict[str, object]:
         "task_step_id": _str_or_none(run.task_step_id),
         "agent_profile_id": _str_or_none(run.agent_profile_id),
         "runtime_id": _str_or_none(run.runtime_id),
+        "runtime_space_id": _str_or_none(run.runtime_space_id),
         "status": run.status,
         "input": run.input,
         "output": run.output,
@@ -1157,6 +1328,61 @@ def _artifact_payload(artifact: Artifact) -> dict[str, object]:
     }
 
 
+def _runtime_space_payload(runtime_space: RuntimeSpace) -> dict[str, object]:
+    return {
+        "id": str(runtime_space.id),
+        "workspace_id": str(runtime_space.workspace_id),
+        "created_by_user_id": _str_or_none(runtime_space.created_by_user_id),
+        "default_runtime_template_id": _str_or_none(runtime_space.default_runtime_template_id),
+        "name": runtime_space.name,
+        "scope": runtime_space.scope,
+        "status": runtime_space.status,
+        "policy": runtime_space.policy,
+        "network_policy": runtime_space.network_policy,
+        "storage_policy": runtime_space.storage_policy,
+        "cleanup_policy": runtime_space.cleanup_policy,
+        "created_at": _dt(runtime_space.created_at),
+        "updated_at": _dt(runtime_space.updated_at),
+    }
+
+
+def _runtime_space_quota_payload(quota: RuntimeSpaceQuota) -> dict[str, object]:
+    return {
+        "id": str(quota.id),
+        "workspace_id": str(quota.workspace_id),
+        "runtime_space_id": str(quota.runtime_space_id),
+        "quota_key": quota.quota_key,
+        "limit_value": quota.limit_value,
+        "reserved_value": quota.reserved_value,
+        "unit": quota.unit,
+        "status": quota.status,
+        "created_at": _dt(quota.created_at),
+        "updated_at": _dt(quota.updated_at),
+    }
+
+
+def _skill_install_payload(install: WorkspaceSkillInstall) -> dict[str, object]:
+    return {
+        "id": str(install.id),
+        "workspace_id": str(install.workspace_id),
+        "skill_id": str(install.skill_id),
+        "installed_by_user_id": _str_or_none(install.installed_by_user_id),
+        "installed_key": install.installed_key,
+        "installed_name": install.installed_name,
+        "installed_version": install.installed_version,
+        "installed_description": install.installed_description,
+        "installed_capability_keys": install.installed_capability_keys,
+        "installed_manifest": install.installed_manifest,
+        "source_owner_workspace_id": _str_or_none(install.source_owner_workspace_id),
+        "source_visibility": install.source_visibility,
+        "source_checksum": install.source_checksum,
+        "config": install.config,
+        "status": install.status,
+        "created_at": _dt(install.created_at),
+        "updated_at": _dt(install.updated_at),
+    }
+
+
 def _audit_payload(event: AuditEvent) -> dict[str, object]:
     return {
         "id": str(event.id),
@@ -1198,6 +1424,24 @@ def _optional_string_field(item: dict[str, object], key: str) -> str | None:
 def _dict_field(item: dict[str, object], key: str) -> dict[str, object]:
     value = item.get(key)
     return value if isinstance(value, dict) else {}
+
+
+def _remap_agent_skills(
+    skills: dict[str, object],
+    skill_install_id_map: dict[str, str],
+) -> dict[str, object]:
+    if not skill_install_id_map:
+        return skills
+    remapped = dict(skills)
+    for key in ("installed_skill_ids", "skill_install_ids"):
+        values = remapped.get(key)
+        if not isinstance(values, list):
+            continue
+        remapped[key] = [
+            skill_install_id_map.get(value, value) if isinstance(value, str) else value
+            for value in values
+        ]
+    return remapped
 
 
 def _optional_dict_field(item: dict[str, object], key: str) -> dict[str, object] | None:

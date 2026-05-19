@@ -18,6 +18,7 @@ from sqlalchemy.pool import StaticPool
 from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
+from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -28,6 +29,7 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue
@@ -340,6 +342,178 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
     assert imported_task.status == "draft"
     assert audit is not None
     assert audit.user_id == target_user.id
+
+
+def test_workspace_metadata_export_import_preserves_runtime_spaces_and_skill_snapshots(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-runtime@example.com",
+        slug="source-runtime",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-runtime@example.com",
+        slug="target-runtime",
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        name="Design Runtime",
+        scope="team",
+        policy={"runtime_modes": ["docker"], "resource_requirements": {"cpu": 2}},
+        network_policy={"egress": "restricted"},
+        storage_policy={"max_gb": 20},
+        cleanup_policy={"idle_ttl_minutes": 60},
+    )
+    skill = Skill(
+        key="poster-maker",
+        name="Poster Maker",
+        version="1.0.0",
+        description="Generate posters",
+        capability_keys=["image.generate"],
+        manifest={"tools": ["generate_image"]},
+        visibility="public",
+    )
+    session.add_all([runtime_space, skill])
+    session.flush()
+    quota = RuntimeSpaceQuota(
+        workspace_id=source_workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="cpu",
+        limit_value=4,
+        reserved_value=2,
+        unit="cores",
+    )
+    install = WorkspaceSkillInstall(
+        workspace_id=source_workspace.id,
+        skill_id=skill.id,
+        installed_by_user_id=source_user.id,
+        installed_key="poster-maker",
+        installed_name="Poster Maker",
+        installed_version="1.0.0",
+        installed_description="Generate posters",
+        installed_capability_keys=["image.generate"],
+        installed_manifest={"tools": ["generate_image"]},
+        source_visibility="public",
+        source_checksum="sha256:poster",
+        config={"quality": "high"},
+    )
+    session.add_all([quota, install])
+    session.flush()
+    agent = AgentProfile(
+        workspace_id=source_workspace.id,
+        name="Designer",
+        role="designer",
+        skills={"installed_skill_ids": [str(install.id)]},
+    )
+    team = AgentTeam(
+        workspace_id=source_workspace.id,
+        name="Design Team",
+        team_type="design",
+        runtime_space_id=runtime_space.id,
+    )
+    session.add_all([agent, team])
+    session.flush()
+    task = Task(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        agent_team_id=team.id,
+        runtime_space_id=runtime_space.id,
+        title="Poster",
+    )
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=source_workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        runtime_space_id=runtime_space.id,
+        title="Create poster",
+    )
+    session.add(step)
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={"include_audit_events": False},
+    )
+    export_payload = json.loads(export_response.content)
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": False},
+    )
+
+    assert export_response.status_code == 200
+    assert export_payload["manifest"]["counts"]["runtime_spaces"] == 1
+    assert export_payload["manifest"]["counts"]["runtime_space_quotas"] == 1
+    assert export_payload["manifest"]["counts"]["skill_installs"] == 1
+    assert export_payload["teams"][0]["runtime_space_id"] == str(runtime_space.id)
+    assert export_payload["tasks"][0]["runtime_space_id"] == str(runtime_space.id)
+    assert export_payload["task_steps"][0]["runtime_space_id"] == str(runtime_space.id)
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["created_counts"]["runtime_spaces"] == 1
+    assert body["created_counts"]["runtime_space_quotas"] == 1
+    assert body["created_counts"]["skill_installs"] == 1
+
+    imported_space = session.scalar(
+        select(RuntimeSpace).where(
+            RuntimeSpace.workspace_id == target_workspace.id,
+            RuntimeSpace.name == "Imported Design Runtime",
+        )
+    )
+    imported_agent = session.scalar(
+        select(AgentProfile).where(
+            AgentProfile.workspace_id == target_workspace.id,
+            AgentProfile.name == "Imported Designer",
+        )
+    )
+    imported_install = session.scalar(
+        select(WorkspaceSkillInstall).where(
+            WorkspaceSkillInstall.workspace_id == target_workspace.id,
+            WorkspaceSkillInstall.installed_key == "poster-maker",
+        )
+    )
+    imported_team = session.scalar(
+        select(AgentTeam).where(
+            AgentTeam.workspace_id == target_workspace.id,
+            AgentTeam.name == "Imported Design Team",
+        )
+    )
+    imported_task = session.scalar(
+        select(Task).where(
+            Task.workspace_id == target_workspace.id,
+            Task.title == "Imported Poster",
+        )
+    )
+    imported_step = session.scalar(
+        select(TaskStep).where(
+            TaskStep.workspace_id == target_workspace.id,
+            TaskStep.title == "Create poster",
+        )
+    )
+
+    assert imported_space is not None
+    assert imported_space.policy == {
+        "runtime_modes": ["docker"],
+        "resource_requirements": {"cpu": 2},
+    }
+    assert imported_space.network_policy == {"egress": "restricted"}
+    assert imported_install is not None
+    assert imported_install.installed_manifest == {"tools": ["generate_image"]}
+    assert imported_agent is not None
+    assert imported_agent.skills == {"installed_skill_ids": [str(imported_install.id)]}
+    assert imported_team is not None
+    assert imported_team.runtime_space_id == imported_space.id
+    assert imported_task is not None
+    assert imported_task.runtime_space_id == imported_space.id
+    assert imported_step is not None
+    assert imported_step.runtime_space_id == imported_space.id
 
 
 def test_workspace_archive_export_includes_metadata_and_file_bytes(tmp_path: Path) -> None:
