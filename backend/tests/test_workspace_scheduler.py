@@ -99,6 +99,57 @@ def test_workspace_scheduler_can_allow_multiple_steps_per_task_per_tick() -> Non
     assert decision.blocked_steps == ()
 
 
+def test_workspace_scheduler_task_quota_allows_highest_priority_new_tasks() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(
+        session,
+        settings={"scheduler": {"max_running_tasks": 1}},
+    )
+    low_task, low_step = _seed_task_step(session, workspace, title="Low", priority=1)
+    high_task, high_step = _seed_task_step(session, workspace, title="High", priority=10)
+
+    decision = WorkspaceScheduler(session).select_runnable_steps(
+        workspace_id=workspace.id,
+        candidate_steps=[low_step, high_step],
+    )
+
+    assert [step.task_id for step in decision.runnable_steps] == [high_task.id]
+    assert decision.blocked_steps == (low_step,)
+    assert decision.blocked_reason == "workspace_task_quota_exceeded"
+    assert low_step.dependencies["blocked_reason"] == "workspace_task_quota_exceeded"
+
+
+def test_workspace_scheduler_task_quota_keeps_existing_active_task_eligible() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(
+        session,
+        settings={"scheduler": {"max_running_tasks": 1}},
+    )
+    active_task, active_next_step = _seed_task_step(
+        session,
+        workspace,
+        title="Active",
+        priority=1,
+    )
+    active_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=active_task.id,
+        status=RunStatus.RUNNING.value,
+    )
+    high_task, high_step = _seed_task_step(session, workspace, title="High", priority=10)
+    session.add(active_run)
+    session.flush()
+
+    decision = WorkspaceScheduler(session).select_runnable_steps(
+        workspace_id=workspace.id,
+        candidate_steps=[active_next_step, high_step],
+    )
+
+    assert decision.runnable_steps == (active_next_step,)
+    assert decision.blocked_steps == (high_step,)
+    assert high_step.dependencies["blocked_reason"] == "workspace_task_quota_exceeded"
+
+
 def test_workspace_scheduler_blocks_when_active_run_quota_is_full() -> None:
     session = _session()
     _, workspace = _seed_workspace(

@@ -19,7 +19,6 @@ ACTIVE_RUN_STATUSES = (
     RunStatus.RUNNING.value,
     RunStatus.WAITING_APPROVAL.value,
 )
-ACTIVE_TASK_STATUSES = ("queued", "running", "waiting_approval")
 
 
 @dataclass(frozen=True)
@@ -51,35 +50,34 @@ class WorkspaceScheduler:
         if not candidate_steps:
             return SchedulingDecision((), (), None, None)
         policy = self._policy_for(workspace_id)
-        if policy.max_running_tasks is not None:
-            running_tasks = self._active_task_count(workspace_id)
-            candidate_task_ids = {step.task_id for step in candidate_steps}
-            already_running_candidate_tasks = self._active_task_ids(
-                workspace_id,
-                candidate_task_ids,
+        task_quota_allowed_steps, task_quota_blocked_steps = self._apply_task_quota(
+            workspace_id,
+            candidate_steps,
+            policy,
+        )
+        if not task_quota_allowed_steps:
+            self._mark_blocked(task_quota_blocked_steps, "workspace_task_quota_exceeded")
+            return SchedulingDecision(
+                (),
+                tuple(task_quota_blocked_steps),
+                "workspace_task_quota_exceeded",
+                self._available_run_slots(workspace_id, policy),
             )
-            new_task_count = len(candidate_task_ids - already_running_candidate_tasks)
-            if running_tasks + new_task_count > policy.max_running_tasks:
-                self._mark_blocked(candidate_steps, "workspace_task_quota_exceeded")
-                return SchedulingDecision(
-                    (),
-                    tuple(candidate_steps),
-                    "workspace_task_quota_exceeded",
-                    self._available_run_slots(workspace_id, policy),
-                )
 
         available_slots = self._available_run_slots(workspace_id, policy)
-        ordered_steps = self._order_steps(candidate_steps)
+        ordered_steps = self._order_steps(task_quota_allowed_steps)
         if available_slots is not None:
             available_slots = min(
                 available_slots,
                 policy.max_runs_to_start_per_tick or available_slots,
             )
             if available_slots <= 0:
+                blocked = [*ordered_steps, *task_quota_blocked_steps]
                 self._mark_blocked(ordered_steps, "workspace_run_quota_exceeded")
+                self._mark_blocked(task_quota_blocked_steps, "workspace_task_quota_exceeded")
                 return SchedulingDecision(
                     (),
-                    tuple(ordered_steps),
+                    tuple(blocked),
                     "workspace_run_quota_exceeded",
                     0,
                 )
@@ -96,10 +94,16 @@ class WorkspaceScheduler:
         self._mark_runnable(runnable)
         if blocked:
             self._mark_blocked(blocked, "workspace_run_quota_exceeded")
+        if task_quota_blocked_steps:
+            self._mark_blocked(task_quota_blocked_steps, "workspace_task_quota_exceeded")
+        all_blocked = [*blocked, *task_quota_blocked_steps]
         return SchedulingDecision(
             runnable_steps=tuple(runnable),
-            blocked_steps=tuple(blocked),
-            blocked_reason="workspace_run_quota_exceeded" if blocked else None,
+            blocked_steps=tuple(all_blocked),
+            blocked_reason=_blocked_reason(
+                run_blocked=bool(blocked),
+                task_blocked=bool(task_quota_blocked_steps),
+            ),
             available_run_slots=available_slots,
         )
 
@@ -135,29 +139,56 @@ class WorkspaceScheduler:
         )
         return max(policy.max_active_runs - int(active_runs or 0), 0)
 
-    def _active_task_count(self, workspace_id: UUID) -> int:
-        return int(
-            self._session.scalar(
-                select(func.count(Task.id)).where(
-                    Task.workspace_id == workspace_id,
-                    Task.status.in_(ACTIVE_TASK_STATUSES),
-                )
-            )
-            or 0
+    def _active_run_task_ids(
+        self,
+        workspace_id: UUID,
+        task_ids: set[UUID] | None,
+    ) -> set[UUID]:
+        statement = select(AgentRun.task_id).where(
+            AgentRun.workspace_id == workspace_id,
+            AgentRun.task_id.is_not(None),
+            AgentRun.status.in_(ACTIVE_RUN_STATUSES),
         )
+        if task_ids is not None:
+            if not task_ids:
+                return set()
+            statement = statement.where(AgentRun.task_id.in_(task_ids))
+        return {
+            task_id
+            for task_id in self._session.scalars(statement).all()
+            if task_id is not None
+        }
 
-    def _active_task_ids(self, workspace_id: UUID, task_ids: set[UUID]) -> set[UUID]:
-        if not task_ids:
-            return set()
-        return set(
-            self._session.scalars(
-                select(Task.id).where(
-                    Task.workspace_id == workspace_id,
-                    Task.id.in_(task_ids),
-                    Task.status.in_(ACTIVE_TASK_STATUSES),
-                )
-            ).all()
-        )
+    def _apply_task_quota(
+        self,
+        workspace_id: UUID,
+        candidate_steps: list[TaskStep],
+        policy: WorkspaceSchedulerPolicy,
+    ) -> tuple[list[TaskStep], list[TaskStep]]:
+        if policy.max_running_tasks is None:
+            return candidate_steps, []
+
+        candidate_task_ids = {step.task_id for step in candidate_steps}
+        already_running_task_ids = self._active_run_task_ids(workspace_id, candidate_task_ids)
+        active_task_ids = self._active_run_task_ids(workspace_id, None)
+        remaining_new_task_slots = max(policy.max_running_tasks - len(active_task_ids), 0)
+        selected_new_task_ids: set[UUID] = set()
+        allowed_steps: list[TaskStep] = []
+        blocked_steps: list[TaskStep] = []
+        for step in self._order_steps(candidate_steps):
+            if step.task_id in already_running_task_ids:
+                allowed_steps.append(step)
+                continue
+            if step.task_id in selected_new_task_ids:
+                allowed_steps.append(step)
+                continue
+            if remaining_new_task_slots > 0:
+                selected_new_task_ids.add(step.task_id)
+                remaining_new_task_slots -= 1
+                allowed_steps.append(step)
+                continue
+            blocked_steps.append(step)
+        return allowed_steps, blocked_steps
 
     def _order_steps(self, steps: list[TaskStep]) -> list[TaskStep]:
         task_ids = {step.task_id for step in steps}
@@ -235,6 +266,14 @@ def _positive_int_or_none(value: object) -> int | None:
 def _positive_int_or_default(value: object, default: int) -> int:
     parsed = _positive_int_or_none(value)
     return parsed if parsed is not None else default
+
+
+def _blocked_reason(*, run_blocked: bool, task_blocked: bool) -> str | None:
+    if run_blocked:
+        return "workspace_run_quota_exceeded"
+    if task_blocked:
+        return "workspace_task_quota_exceeded"
+    return None
 
 
 @dataclass(frozen=True)
