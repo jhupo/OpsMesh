@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from backend.app.api.routes.admin import router as admin_router
 from backend.app.api.routes.approvals import router as approvals_router
 from backend.app.api.routes.capabilities import router as capabilities_router
 from backend.app.api.routes.domains import router as domains_router
@@ -16,6 +17,7 @@ from backend.app.api.routes.workspace_resources import router as workspace_resou
 from backend.app.api.routes.workspaces import router as workspaces_router
 
 api_router = APIRouter()
+api_router.include_router(admin_router)
 api_router.include_router(health_router, tags=["health"])
 api_router.include_router(workspaces_router)
 api_router.include_router(marketplace_router)

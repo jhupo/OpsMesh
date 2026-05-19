@@ -41,7 +41,8 @@ Current state:
 - Runtime spaces are now represented as first-class records with workspace/team/task scopes, quota tables, reservation tables, event logs, and workspace-scoped APIs.
 - Teams, tasks, task steps, runs, Docker runtimes, runtime commands, and runtime events now carry `runtime_space_id` where applicable.
 - Worker node tracking, worker leases, drain requests, and worker/lease operations APIs are now implemented.
-- Runtime-space scheduler reservations and broader admin/operator APIs are not implemented yet.
+- Platform admin APIs now expose global overview, workspaces, workers, worker drain, runtime spaces, runtime-space quarantine, worker leases, and security events behind a separate platform admin token.
+- Runtime-space scheduler reservations, Docker lease admin actions, queue admin actions, and global risky-execution controls are not implemented yet.
 
 Build:
 
@@ -51,8 +52,9 @@ Build:
 - [x] Add worker node records, worker leases, drain status, worker version, and capacity reporting.
 - Extend scheduler decisions to reserve runtime-space capacity atomically before enqueueing executable work.
 - Add cleanup evidence for Docker leases and runtime-space temporary storage.
-- Add operator APIs for workers, queues, runtime spaces, Docker leases, security events, and global risky-execution controls.
-- Keep admin APIs metadata-only: no raw secrets, raw file contents, or cross-workspace data leakage.
+- [x] Add operator APIs for workers, runtime spaces, worker leases, workspaces, and security events.
+- Add operator APIs for queues, Docker leases, and global risky-execution controls.
+- [x] Keep admin APIs metadata-only: no raw secrets, raw file contents, or cross-workspace data leakage.
 
 API/data changes:
 
@@ -62,7 +64,7 @@ API/data changes:
 - Add `runtime_space_id` to runtime-origin file metadata where applicable.
 - [x] Add workspace APIs for runtime spaces.
 - Add workspace APIs for operations aggregates.
-- Add admin APIs under `/api/v1/admin/...` with platform-operator authentication.
+- [x] Add admin APIs under `/api/v1/admin/...` with platform-operator authentication.
 
 Tests:
 

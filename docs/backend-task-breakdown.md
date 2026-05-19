@@ -501,7 +501,8 @@ Tasks:
   - [x] Bind teams, tasks, runs, Docker runtimes, and runtime commands to runtime spaces.
   - [x] Add runtime space quotas and durable reservation tables.
   - [x] Add worker node and worker lease tracking.
-  - [ ] Add admin/operator APIs for workers, queues, runtime spaces, Docker leases, and security events.
+  - [x] Add admin/operator APIs for workers, runtime spaces, worker leases, workspaces, and security events.
+  - [ ] Add admin/operator APIs for Docker leases, queues, and global risky-execution controls.
   - [ ] Add concurrent scheduler tests that prove runtime-space quotas cannot be over-reserved.
 - [ ] Connect MCP skills to the real runtime execution path.
   - [x] Add internal MCP execution service with run snapshot authorization, adapter boundary, payload limits, logs, events, task messages, and blocked-call security evidence.
