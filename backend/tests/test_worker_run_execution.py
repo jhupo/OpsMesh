@@ -315,6 +315,140 @@ def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
     assert task.status == TaskStatus.COMPLETED.value
 
 
+def test_workspace_run_quota_limits_parallel_specialist_scheduling() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    workspace.settings = {"scheduler": {"max_active_runs": 1}}
+    manager = AgentProfile(workspace_id=workspace.id, name="Manager", role="manager")
+    researcher = AgentProfile(workspace_id=workspace.id, name="Researcher", role="researcher")
+    analyst = AgentProfile(workspace_id=workspace.id, name="Analyst", role="analyst")
+    session.add_all([manager, researcher, analyst])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Research Team",
+        team_type="research",
+        manager_agent_profile_id=manager.id,
+    )
+    session.add(team)
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=researcher.id,
+                team_role="Research",
+                order_index=0,
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=analyst.id,
+                team_role="Analysis",
+                order_index=1,
+            ),
+        ]
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Q2 market analysis",
+    )
+    session.add(task)
+    session.flush()
+
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+    orchestration = RunOrchestrationService(session, queue)
+    first_run = orchestration.create_queued_run_for_task(task)
+    orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
+    session.commit()
+
+    handler = WorkerJobHandler(session, queue)
+    assert consume_once(queue, handler.handle) is True
+    session.expire_all()
+
+    queued_runs = session.scalars(
+        select(AgentRun).where(
+            AgentRun.task_id == task.id,
+            AgentRun.status == RunStatus.QUEUED.value,
+        )
+    ).all()
+    queued_step_ids = {run.task_step_id for run in queued_runs}
+    specialist_steps = session.scalars(
+        select(TaskStep).where(
+            TaskStep.task_id == task.id,
+            TaskStep.work_package_id.in_(["Research-1", "Analysis-2"]),
+        )
+    ).all()
+
+    assert queue.count_queued(workspace_id=workspace.id) == 1
+    assert len(queued_runs) == 1
+    assert any(step.id in queued_step_ids for step in specialist_steps)
+    assert any(
+        step.dependencies.get("blocked_reason") == "workspace_run_quota_exceeded"
+        for step in specialist_steps
+        if step.id not in queued_step_ids
+    )
+
+
+def test_workspace_scheduler_starts_higher_priority_task_first() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    workspace.settings = {"scheduler": {"max_active_runs": 1}}
+    low_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Low priority",
+        priority=1,
+        status=TaskStatus.QUEUED.value,
+    )
+    high_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="High priority",
+        priority=10,
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add_all([low_task, high_task])
+    session.flush()
+    low_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=low_task.id,
+        title="Low step",
+        status="queued",
+        order_index=0,
+    )
+    high_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=high_task.id,
+        title="High step",
+        status="queued",
+        order_index=0,
+    )
+    session.add_all([low_step, high_step])
+    session.flush()
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+
+    runs = RunOrchestrationService(session, queue).schedule_workspace_steps(
+        workspace_id=workspace.id,
+        requested_by_user_id=user.id,
+    )
+
+    assert [run.task_id for run in runs] == [high_task.id]
+    assert queue.count_queued(workspace_id=workspace.id) == 1
+    assert low_step.dependencies["blocked_reason"] == "workspace_run_quota_exceeded"
+
+
 def test_pm_summary_acceptance_completes_task_with_structured_decision() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)

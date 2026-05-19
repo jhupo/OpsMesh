@@ -19,6 +19,7 @@ from backend.app.capabilities.adapters import McpAdapterResolver
 from backend.app.capabilities.models import WorkspaceSkillInstall
 from backend.app.core.config import Settings
 from backend.app.model_providers.service import ModelProviderCredentialService
+from backend.app.orchestration.scheduler import WorkspaceScheduler
 from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.planning.project_plans import ProjectPlanningService
 from backend.app.redis.keys import RedisKeyBuilder
@@ -91,6 +92,32 @@ class RunOrchestrationService:
             idempotency_key=f"agent.run:{run.workspace_id}:{run.id}",
         )
         return self._queue.enqueue(job)
+
+    def schedule_workspace_steps(
+        self,
+        *,
+        workspace_id: UUID,
+        requested_by_user_id: UUID | None = None,
+    ) -> list[AgentRun]:
+        candidates = [
+            step
+            for step in self._workspace_eligible_steps(workspace_id)
+            if not self._step_has_active_run(step)
+        ]
+        scheduled_steps = self._scheduler().select_runnable_steps(
+            workspace_id=workspace_id,
+            candidate_steps=candidates,
+        ).runnable_steps
+        runs: list[AgentRun] = []
+        for step in scheduled_steps:
+            task = self._session.get(Task, step.task_id)
+            if task is None or task.workspace_id != workspace_id:
+                continue
+            run = self._create_run_for_step(task, step)
+            self.enqueue_run(run, requested_by_user_id)
+            runs.append(run)
+        self._session.flush()
+        return runs
 
     def cancel_task(
         self,
@@ -328,6 +355,11 @@ class RunOrchestrationService:
                         task,
                         requested_by_user_id=requested_by_user_id,
                     )
+                    if not next_runs:
+                        next_runs = self.schedule_workspace_steps(
+                            workspace_id=run.workspace_id,
+                            requested_by_user_id=requested_by_user_id,
+                        )
                     if next_runs:
                         return
                     if self._task_has_open_team_work(task):
@@ -1154,11 +1186,19 @@ class RunOrchestrationService:
         requested_by_user_id: UUID | None,
     ) -> list[AgentRun]:
         next_runs: list[AgentRun] = []
-        for next_step in self._next_eligible_steps(task.id, task.workspace_id):
+        eligible_steps = self._next_eligible_steps(task.id, task.workspace_id)
+        scheduled_steps = self._scheduler().select_runnable_steps(
+            workspace_id=task.workspace_id,
+            candidate_steps=eligible_steps,
+        ).runnable_steps
+        for next_step in scheduled_steps:
             next_run = self._create_run_for_step(task, next_step)
             self.enqueue_run(next_run, requested_by_user_id)
             next_runs.append(next_run)
         return next_runs
+
+    def _scheduler(self) -> WorkspaceScheduler:
+        return WorkspaceScheduler(self._session)
 
     def _next_eligible_steps(self, task_id: UUID, workspace_id: UUID) -> list[TaskStep]:
         queued_steps = self._session.scalars(
@@ -1175,6 +1215,26 @@ class RunOrchestrationService:
             for step in queued_steps
             if self._dependencies_satisfied(step) and not self._step_has_active_run(step)
         ]
+
+    def _workspace_eligible_steps(self, workspace_id: UUID) -> list[TaskStep]:
+        queued_steps = self._session.scalars(
+            select(TaskStep)
+            .join(Task, Task.id == TaskStep.task_id)
+            .where(
+                TaskStep.workspace_id == workspace_id,
+                Task.workspace_id == workspace_id,
+                TaskStep.status == STEP_STATUS_QUEUED,
+                Task.status.in_(
+                    [
+                        TaskStatus.QUEUED.value,
+                        TaskStatus.RUNNING.value,
+                        TaskStatus.WAITING_APPROVAL.value,
+                    ]
+                ),
+            )
+            .order_by(Task.priority.desc(), TaskStep.order_index.asc())
+        ).all()
+        return [step for step in queued_steps if self._dependencies_satisfied(step)]
 
     def _step_has_active_run(self, step: TaskStep) -> bool:
         active_count = self._session.scalar(

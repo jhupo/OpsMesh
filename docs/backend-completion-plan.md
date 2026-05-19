@@ -24,7 +24,7 @@ Incomplete or basic-only areas:
 - Skills can be visible as private/public, but public skill copy/provenance and install workflows are incomplete.
 - Task observation is still mostly generic; AIGC, novel writing, research, and software teams need domain-specific status views.
 - Correction/revision is supported internally, but a generic user-facing endpoint is missing.
-- Scheduling supports per-member concurrency, but workspace-level quotas and multi-task priority scheduling need completion.
+- Scheduling supports per-member concurrency, workspace active run quotas, blocked reasons, and cross-task priority ordering. Runtime/self-hosted/storage quotas and starvation prevention still need completion.
 - Docker and self-hosted runtime policies need stronger quota enforcement, cleanup verification, and revocation evidence.
 - Import preview does not yet produce a full conflict plan before users commit a workspace archive import.
 - Model provider selection exists, but provider fallback and per-agent audit trails need completion.
@@ -122,16 +122,21 @@ Current state:
 
 - Per-member max concurrency exists.
 - Runtime capacity is considered during member matching.
-- Workspace-level task/run/runtime limits and cross-task priority scheduling are not complete.
+- Workspace-level active run limits and cross-task priority scheduling are now enforced by the workspace scheduler.
+- Blocked queued steps record a scheduling status and blocked reason in step dependencies for observation and operations.
+- Workspace runtime, self-hosted job, CPU, memory, and storage quotas still need deeper integration with the scheduler.
 
 Build:
 
-- Add a central scheduler service that selects eligible steps across all queued tasks in a workspace.
-- Enforce workspace-level limits for active tasks, active runs, Docker runtimes, self-hosted jobs, CPU, memory, and storage.
-- Support priority ordering with starvation prevention.
+- [x] Add a central scheduler service that selects eligible steps across all queued tasks in a workspace.
+- [ ] Enforce workspace-level limits for active tasks, active runs, Docker runtimes, self-hosted jobs, CPU, memory, and storage.
+  - [x] Enforce active run limits from `workspace.settings.scheduler.max_active_runs`.
+  - [ ] Enforce Docker runtime, self-hosted job, CPU, memory, and storage limits in scheduler decisions.
+- [x] Support priority ordering.
+- [ ] Add starvation prevention for long-waiting lower-priority work.
 - Reserve capacity atomically before enqueueing a run.
 - Release capacity on completion, failure, cancellation, timeout, or cleanup.
-- Add scheduling reason codes for blocked work.
+- [x] Add scheduling reason codes for blocked work.
 
 API/data changes:
 
