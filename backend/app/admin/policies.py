@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.admin.models import PlatformPolicy
 
 RISKY_EXECUTION_POLICY_KEY = "global_risky_execution"
+WORKER_CONTROL_POLICY_KEY = "global_worker_control"
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,14 @@ def default_risky_execution_policy_value() -> dict[str, object]:
         "allow_self_hosted_runtimes": policy.allow_self_hosted_runtimes,
         "require_approval_for_high_risk_tools": policy.require_approval_for_high_risk_tools,
         "high_risk_tool_mode": policy.high_risk_tool_mode,
+    }
+
+
+def default_worker_control_policy_value() -> dict[str, object]:
+    return {
+        "managed_by": "platform_admin",
+        "allow_capacity_updates": True,
+        "allowed_statuses": ["online", "offline", "draining", "maintenance"],
     }
 
 

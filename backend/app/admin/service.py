@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 from backend.app.admin.models import PlatformPolicy, PlatformPolicyEvent
 from backend.app.admin.policies import (
     RISKY_EXECUTION_POLICY_KEY,
+    WORKER_CONTROL_POLICY_KEY,
     default_risky_execution_policy_value,
+    default_worker_control_policy_value,
     normalize_risky_execution_policy_value,
 )
 from backend.app.api.pagination import PageParams
@@ -100,6 +102,71 @@ class AdminControlPlaneService:
             return None
         node.status = "draining"
         node.drain_requested_at = datetime.now(UTC)
+        self._append_worker_control_event(
+            "worker.drained",
+            f"Worker {worker_id} marked draining",
+            {"worker_id": worker_id, "reason": "Drain requested by platform admin"},
+        )
+        self._session.commit()
+        self._session.refresh(node)
+        return node
+
+    def update_worker(
+        self,
+        worker_id: str,
+        *,
+        status: str | None,
+        worker_type: str | None,
+        queue_name: str | None,
+        worker_version: str | None,
+        hostname: str | None,
+        capacity: dict[str, object] | None,
+        details: dict[str, object] | None,
+        reason: str,
+        updated_by: str | None,
+    ) -> WorkerNode | None:
+        node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
+        if node is None:
+            return None
+        before = _worker_node_snapshot(node)
+        changed_fields: list[str] = []
+        if status is not None:
+            node.status = status
+            node.drain_requested_at = datetime.now(UTC) if status == "draining" else None
+            changed_fields.append("status")
+        if worker_type is not None:
+            node.worker_type = worker_type
+            changed_fields.append("worker_type")
+        if queue_name is not None:
+            node.queue_name = queue_name
+            changed_fields.append("queue_name")
+        if worker_version is not None:
+            node.worker_version = worker_version
+            changed_fields.append("worker_version")
+        if hostname is not None:
+            node.hostname = hostname
+            changed_fields.append("hostname")
+        if capacity is not None:
+            node.capacity = _normalized_worker_capacity(capacity, node.worker_type)
+            changed_fields.append("capacity")
+        elif worker_type is not None:
+            node.capacity = _normalized_worker_capacity(node.capacity, node.worker_type)
+        if details is not None:
+            node.details = dict(details)
+            changed_fields.append("details")
+        if changed_fields:
+            self._append_worker_control_event(
+                "worker.updated",
+                f"Worker {worker_id} updated",
+                {
+                    "worker_id": worker_id,
+                    "changed_fields": changed_fields,
+                    "before": before,
+                    "after": _worker_node_snapshot(node),
+                    "reason": reason,
+                    "updated_by": updated_by,
+                },
+            )
         self._session.commit()
         self._session.refresh(node)
         return node
@@ -270,6 +337,25 @@ class AdminControlPlaneService:
         self._session.refresh(policy)
         return policy
 
+    def get_or_create_worker_control_policy(self) -> PlatformPolicy:
+        policy = self._session.scalar(
+            select(PlatformPolicy).where(
+                PlatformPolicy.policy_key == WORKER_CONTROL_POLICY_KEY,
+            )
+        )
+        if policy is not None:
+            return policy
+        policy = PlatformPolicy(
+            policy_key=WORKER_CONTROL_POLICY_KEY,
+            status="active",
+            value=default_worker_control_policy_value(),
+            description="Global controls and audit stream for worker nodes.",
+        )
+        self._session.add(policy)
+        self._session.flush([policy])
+        self._append_policy_event(policy, "platform_policy.created", "Policy created", {})
+        return policy
+
     def update_risky_execution_policy(
         self,
         *,
@@ -332,6 +418,15 @@ class AdminControlPlaneService:
             )
         )
 
+    def _append_worker_control_event(
+        self,
+        event_type: str,
+        message: str,
+        metadata: dict[str, object],
+    ) -> None:
+        policy = self.get_or_create_worker_control_policy()
+        self._append_policy_event(policy, event_type, message, metadata)
+
     def _count(self, statement: Select[tuple[T]]) -> int:
         count_statement = select(func.count()).select_from(statement.subquery())
         return int(self._session.scalar(count_statement) or 0)
@@ -347,3 +442,28 @@ class AdminControlPlaneService:
         )
         rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
         return list(rows), int(total or 0)
+
+
+def _normalized_worker_capacity(
+    capacity: dict[str, object],
+    worker_type: str,
+) -> dict[str, object]:
+    normalized = dict(capacity)
+    normalized.setdefault("worker_type", worker_type)
+    return normalized
+
+
+def _worker_node_snapshot(node: WorkerNode) -> dict[str, object]:
+    return {
+        "worker_id": node.worker_id,
+        "worker_type": node.worker_type,
+        "status": node.status,
+        "queue_name": node.queue_name,
+        "worker_version": node.worker_version,
+        "hostname": node.hostname,
+        "capacity": dict(node.capacity),
+        "details": dict(node.details),
+        "drain_requested_at": node.drain_requested_at.isoformat()
+        if node.drain_requested_at is not None
+        else None,
+    }

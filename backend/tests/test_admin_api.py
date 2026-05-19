@@ -11,6 +11,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.admin.models import PlatformPolicy, PlatformPolicyEvent
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -172,6 +173,71 @@ def test_admin_can_drain_worker_and_quarantine_runtime_space() -> None:
     assert quarantined.json()["reason"] == "Suspicious egress"
     assert runtime_space.status == "quarantined"
     assert event.event_type == "runtime_space.quarantined"
+
+
+def test_admin_can_update_worker_governance_capacity_and_status() -> None:
+    client, session, _ = _client()
+    worker = WorkerNode(
+        worker_id="worker-governed",
+        worker_type="cloud",
+        status="draining",
+        queue_name="agent_runs",
+        capacity={"max_jobs": 1, "worker_type": "cloud"},
+        details={"region": "sg"},
+        last_seen_at=datetime.now(UTC),
+        drain_requested_at=datetime.now(UTC),
+    )
+    session.add(worker)
+    session.commit()
+
+    updated = client.patch(
+        "/api/v1/admin/workers/worker-governed",
+        headers=_admin_headers(),
+        json={
+            "status": "online",
+            "worker_type": "self_hosted",
+            "worker_version": "2026.05.20",
+            "hostname": "node-a",
+            "capacity": {
+                "max_jobs": 4,
+                "runtime_modes": ["self_hosted", "docker"],
+                "capabilities": ["code.execute", "image.generate"],
+                "memory_mb": 8192,
+            },
+            "details": {"region": "sg", "pool": "premium"},
+            "reason": "Resize worker pool",
+            "updated_by": "ops-admin",
+        },
+    )
+
+    session.refresh(worker)
+    policy = session.query(PlatformPolicy).filter_by(policy_key="global_worker_control").one()
+    events = (
+        session.query(PlatformPolicyEvent)
+        .filter_by(platform_policy_id=policy.id)
+        .order_by(PlatformPolicyEvent.created_at)
+        .all()
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["status"] == "online"
+    assert updated.json()["worker_type"] == "self_hosted"
+    assert updated.json()["capacity"]["max_jobs"] == 4
+    assert updated.json()["capacity"]["worker_type"] == "self_hosted"
+    assert updated.json()["capacity"]["runtime_modes"] == ["self_hosted", "docker"]
+    assert worker.drain_requested_at is None
+    assert worker.details == {"region": "sg", "pool": "premium"}
+    assert [event.event_type for event in events] == ["platform_policy.created", "worker.updated"]
+    assert events[-1].event_metadata["reason"] == "Resize worker pool"
+    assert events[-1].event_metadata["updated_by"] == "ops-admin"
+    assert events[-1].event_metadata["changed_fields"] == [
+        "status",
+        "worker_type",
+        "worker_version",
+        "hostname",
+        "capacity",
+        "details",
+    ]
 
 
 def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> None:
