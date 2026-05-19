@@ -600,8 +600,8 @@ Tasks:
   - [x] Build every run with an isolated authorization context.
   - [x] Reject cross-workspace agent profiles and mismatched task steps at run request build time.
   - [x] Add policy snapshots for tools, files, and runtime scope on each new run.
-  - [ ] Copy public skills into the user's workspace before use.
-  - [ ] Enforce copied skill provenance inside the run policy snapshot.
+  - [x] Install public/private skills into workspace-owned snapshots before use.
+  - [x] Enforce copied skill provenance inside the run policy snapshot.
 - [x] Local tests.
   - [x] Test fixed team task intake.
   - [x] Test PM plan generation and validation.

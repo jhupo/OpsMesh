@@ -74,12 +74,16 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
     assert len(logs) == 1
     assert logs[0].status == "completed"
     assert logs[0].request["arguments_sha256"]
+    assert logs[0].request["authorization_snapshot_version"] == 1
+    assert logs[0].request["snapshot_workspace_id"] == str(workspace.id)
+    assert logs[0].request["snapshot_allowed_tools"] == ["generate_image"]
     assert "prompt" not in str(logs[0].request)
     assert "mountain" not in str(logs[0].request)
     assert logs[0].response is not None
     assert logs[0].response["result"] == {"asset_id": "img_123", "status": "created"}
     assert [event.event_type for event in events] == ["tool.called", "tool.completed"]
     assert events[0].event_metadata["request_sha256"]
+    assert events[0].event_metadata["authorization_snapshot_version"] == 1
     assert "mountain" not in str(events[0].event_metadata)
     assert [message.message_type for message in messages] == ["tool.completed"]
     assert messages[0].payload["response_sha256"]
@@ -121,6 +125,39 @@ def test_mcp_execution_blocks_tool_not_in_run_snapshot_and_records_security_even
     assert security_event.reason == "mcp_tool_not_allowed"
     assert [event.event_type for event in run_events] == ["tool.blocked"]
     assert [message.message_type for message in task_messages] == ["tool.blocked"]
+
+
+def test_mcp_execution_blocks_tool_not_in_runtime_context() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace, snapshot_tools=["generate_image"])
+
+    try:
+        McpToolExecutionService(session, RecordingAdapter({})).execute(
+            McpExecutionRequest(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                arguments={"prompt": "mountain"},
+                runtime_allowed_tools=("search_web",),
+            )
+        )
+    except ToolPermissionError as exc:
+        assert "blocked" in str(exc)
+    else:
+        raise AssertionError("Expected runtime context tool policy to be enforced")
+
+    log = session.scalar(select(McpToolCallLog))
+    security_event = session.scalar(select(SecurityEvent))
+
+    assert log is not None
+    assert log.status == "blocked"
+    assert log.error is not None
+    assert log.error["code"] == "mcp_tool_not_in_runtime_context"
+    assert log.request["authorization_snapshot_version"] == 1
+    assert security_event is not None
+    assert security_event.reason == "mcp_tool_not_in_runtime_context"
 
 
 def test_mcp_execution_rejects_oversized_payload_and_logs_failure() -> None:
@@ -205,6 +242,35 @@ def test_mcp_execution_sends_high_risk_tool_to_approval_by_default() -> None:
     assert log is not None
     assert log.status == "waiting_approval"
     assert run.status == "waiting_approval"
+
+
+def test_mcp_execution_sends_explicit_approval_tool_to_approval() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace, requires_approval=True)
+    adapter = RecordingAdapter({"ok": True})
+
+    result = McpToolExecutionService(session, adapter).execute(
+        McpExecutionRequest(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            mcp_server_id=server.id,
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+        )
+    )
+
+    approval = session.scalar(select(Approval))
+    log = session.scalar(select(McpToolCallLog))
+
+    assert result.status == "waiting_approval"
+    assert adapter.calls == []
+    assert approval is not None
+    assert approval.payload["reason"] == "mcp_tool_requires_approval"
+    assert approval.payload["requires_approval"] is True
+    assert approval.payload["authorization_snapshot_version"] == 1
+    assert log is not None
+    assert log.status == "waiting_approval"
 
 
 def test_mcp_execution_allows_high_risk_tool_when_platform_policy_allows_it() -> None:
@@ -309,6 +375,7 @@ def _seed_run_with_mcp_tool(
     snapshot_tools: list[str] | None = None,
     allow_policy: dict[str, object] | None = None,
     risk_level: str = "medium",
+    requires_approval: bool = False,
 ) -> tuple[AgentRun, McpServer]:
     task = Task(workspace_id=workspace.id, title="Create poster")
     session.add(task)
@@ -330,6 +397,7 @@ def _seed_run_with_mcp_tool(
         tool_name="generate_image",
         capability_key="image.generate",
         risk_level=risk_level,
+        requires_approval=requires_approval,
         policy=allow_policy or {},
     )
     run = AgentRun(

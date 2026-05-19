@@ -74,6 +74,7 @@ class McpExecutionRequest:
     tool_name: str
     arguments: dict[str, object]
     mcp_server_id: UUID | None = None
+    runtime_allowed_tools: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -98,16 +99,31 @@ class McpToolExecutionService:
         run = self._require_run(request.workspace_id, request.agent_run_id)
         snapshot = _authorization_snapshot(run)
         self._validate_snapshot_scope(snapshot, request)
+        self._require_runtime_context_tool(request)
         allow, server = self._resolve_allowed_tool(request)
         self._require_snapshot_tool(snapshot, request)
         policy_decision = PlatformPolicyService(self._session).risky_execution_policy()
         if _is_high_risk_tool(allow) and policy_decision.high_risk_tool_mode == "block":
             self._block(request, "mcp_high_risk_tool_globally_disabled")
+        if allow.requires_approval:
+            return self._request_tool_approval(
+                request,
+                run,
+                allow,
+                server,
+                reason="mcp_tool_requires_approval",
+            )
         if (
             _is_high_risk_tool(allow)
             and policy_decision.high_risk_tool_mode == "require_workspace_approval"
         ):
-            return self._request_high_risk_approval(request, run, allow, server)
+            return self._request_tool_approval(
+                request,
+                run,
+                allow,
+                server,
+                reason="mcp_high_risk_tool_requires_approval",
+            )
         policy = _mcp_policy(snapshot, allow)
 
         self._append_run_event(
@@ -119,6 +135,7 @@ class McpToolExecutionService:
                 "mcp_server_id": str(server.id),
                 "tool_name": request.tool_name,
                 "request_sha256": _payload_hash(request.arguments),
+                **_snapshot_audit_metadata(snapshot),
             },
         )
         started = monotonic()
@@ -144,6 +161,7 @@ class McpToolExecutionService:
                 status="failed",
                 response=None,
                 error={**error, "latency_ms": latency_ms},
+                snapshot=snapshot,
             )
             self._append_run_event(
                 run=run,
@@ -178,6 +196,7 @@ class McpToolExecutionService:
             status="completed",
             response={"result": response, "latency_ms": latency_ms},
             error=None,
+            snapshot=snapshot,
         )
         self._append_run_event(
             run=run,
@@ -189,6 +208,7 @@ class McpToolExecutionService:
                 "tool_name": request.tool_name,
                 "response_sha256": _payload_hash(response),
                 "latency_ms": latency_ms,
+                **_snapshot_audit_metadata(snapshot),
             },
         )
         self._append_task_message(
@@ -226,6 +246,13 @@ class McpToolExecutionService:
             self._block(request, "authorization_snapshot_workspace_mismatch")
         if snapshot.get("agent_run_id") not in (None, str(request.agent_run_id)):
             self._block(request, "authorization_snapshot_run_mismatch")
+
+    def _require_runtime_context_tool(self, request: McpExecutionRequest) -> None:
+        if request.runtime_allowed_tools is None:
+            return
+        if request.tool_name in request.runtime_allowed_tools:
+            return
+        self._block(request, "mcp_tool_not_in_runtime_context")
 
     def _resolve_allowed_tool(
         self,
@@ -298,6 +325,7 @@ class McpToolExecutionService:
         status: str,
         response: dict[str, object] | None,
         error: dict[str, object] | None,
+        snapshot: dict[str, object] | None = None,
     ) -> McpToolCallLog:
         log = McpToolCallLog(
             workspace_id=request.workspace_id,
@@ -308,6 +336,7 @@ class McpToolExecutionService:
             request={
                 "arguments_sha256": _payload_hash(request.arguments),
                 "argument_bytes": len(_canonical_payload(request.arguments).encode("utf-8")),
+                **_snapshot_audit_metadata(snapshot or {}),
             },
             response=response,
             error=error,
@@ -317,19 +346,23 @@ class McpToolExecutionService:
         self._session.flush()
         return log
 
-    def _request_high_risk_approval(
+    def _request_tool_approval(
         self,
         request: McpExecutionRequest,
         run: AgentRun,
         allow: McpToolAllowlist,
         server: McpServer,
+        *,
+        reason: str,
     ) -> McpExecutionResult:
+        snapshot = _authorization_snapshot(run)
         log = self._log_call(
             request=request,
             server_id=server.id,
             status="waiting_approval",
             response=None,
             error=None,
+            snapshot=snapshot,
         )
         ApprovalService(self._session).create_approval(
             workspace_id=request.workspace_id,
@@ -342,6 +375,9 @@ class McpToolExecutionService:
                 "tool_name": request.tool_name,
                 "mcp_server_id": str(server.id),
                 "arguments_sha256": _payload_hash(request.arguments),
+                "reason": reason,
+                "requires_approval": allow.requires_approval,
+                **_snapshot_audit_metadata(snapshot),
             },
         )
         run.status = RunStatus.WAITING_APPROVAL.value
@@ -358,6 +394,9 @@ class McpToolExecutionService:
                 "mcp_server_id": str(server.id),
                 "tool_name": request.tool_name,
                 "risk_level": allow.risk_level,
+                "reason": reason,
+                "requires_approval": allow.requires_approval,
+                **_snapshot_audit_metadata(snapshot),
             },
         )
         self._append_task_message(
@@ -368,6 +407,8 @@ class McpToolExecutionService:
                 "tool_name": request.tool_name,
                 "mcp_server_id": str(server.id),
                 "risk_level": allow.risk_level,
+                "reason": reason,
+                "requires_approval": allow.requires_approval,
             },
         )
         self._session.flush()
@@ -427,6 +468,11 @@ class McpToolExecutionService:
 
     def _block(self, request: McpExecutionRequest, reason: str) -> None:
         run = self._session.get(AgentRun, request.agent_run_id)
+        snapshot = (
+            _authorization_snapshot(run)
+            if run is not None and run.workspace_id == request.workspace_id
+            else {}
+        )
         error = {"code": reason, "message": "MCP tool invocation was blocked by policy"}
         if run is not None and run.workspace_id == request.workspace_id:
             self._append_run_event(
@@ -440,6 +486,7 @@ class McpToolExecutionService:
                     else None,
                     "tool_name": request.tool_name,
                     "reason": reason,
+                    **_snapshot_audit_metadata(snapshot),
                 },
             )
             self._append_task_message(
@@ -464,6 +511,7 @@ class McpToolExecutionService:
                 request={
                     "arguments_sha256": _payload_hash(request.arguments),
                     "argument_bytes": len(_canonical_payload(request.arguments).encode("utf-8")),
+                    **_snapshot_audit_metadata(snapshot),
                 },
                 response=None,
                 error=error,
@@ -489,6 +537,7 @@ class McpToolExecutionService:
                     if request.mcp_server_id is not None
                     else None,
                     "tool_name": request.tool_name,
+                    **_snapshot_audit_metadata(snapshot),
                 },
                 created_at=datetime.now(UTC),
             )
@@ -519,6 +568,37 @@ def _authorization_snapshot(run: AgentRun) -> dict[str, object]:
     run_input = run.input if isinstance(run.input, dict) else {}
     snapshot = run_input.get("authorization_snapshot")
     return snapshot if isinstance(snapshot, dict) else {}
+
+
+def _snapshot_audit_metadata(snapshot: dict[str, object]) -> dict[str, object]:
+    metadata: dict[str, object] = {}
+    version = snapshot.get("version")
+    if isinstance(version, int):
+        metadata["authorization_snapshot_version"] = version
+    for key in ("workspace_id", "task_id", "task_step_id", "agent_profile_id", "runtime_space_id"):
+        value = snapshot.get(key)
+        if value is None or isinstance(value, str):
+            metadata[f"snapshot_{key}"] = value
+    installed_skills = snapshot.get("installed_skills")
+    if isinstance(installed_skills, list):
+        skill_refs: list[dict[str, object]] = []
+        for item in installed_skills:
+            if not isinstance(item, dict):
+                continue
+            skill_refs.append(
+                {
+                    "install_id": item.get("install_id"),
+                    "installed_key": item.get("installed_key"),
+                    "installed_version": item.get("installed_version"),
+                    "source_checksum": item.get("source_checksum"),
+                    "source_visibility": item.get("source_visibility"),
+                }
+            )
+        metadata["snapshot_installed_skills"] = skill_refs
+    raw_tools = snapshot.get("allowed_tools")
+    if isinstance(raw_tools, list):
+        metadata["snapshot_allowed_tools"] = [tool for tool in raw_tools if isinstance(tool, str)]
+    return metadata
 
 
 def _mcp_policy(snapshot: dict[str, object], allow: McpToolAllowlist) -> _McpPolicy:

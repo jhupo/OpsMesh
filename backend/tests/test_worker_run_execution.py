@@ -1549,6 +1549,87 @@ def test_agent_request_rejects_authorization_snapshot_unavailable_skill() -> Non
         raise AssertionError("Expected unavailable skill snapshot to be rejected")
 
 
+def test_agent_request_rejects_authorization_snapshot_skill_provenance_mismatch() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        skills={},
+    )
+    skill = Skill(
+        key="writer-pro",
+        name="Writer Pro",
+        version="1.0.0",
+        capability_keys=["writing"],
+        manifest={"prompt": "v1"},
+        visibility="public",
+    )
+    session.add_all([task, agent, skill])
+    session.flush()
+    install = WorkspaceSkillInstall(
+        workspace_id=workspace.id,
+        skill_id=skill.id,
+        installed_by_user_id=user.id,
+        installed_key=skill.key,
+        installed_name=skill.name,
+        installed_version=skill.version,
+        installed_description=skill.description,
+        installed_capability_keys=skill.capability_keys,
+        installed_manifest=skill.manifest,
+        source_visibility=skill.visibility,
+        source_checksum="sha256:v1",
+    )
+    session.add(install)
+    session.flush()
+    agent.skills = {"installed_skill_ids": [str(install.id)]}
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={
+            "authorization_snapshot": {
+                "workspace_id": str(workspace.id),
+                "task_id": str(task.id),
+                "agent_profile_id": str(agent.id),
+                "installed_skills": [
+                    {
+                        "install_id": str(install.id),
+                        "source_skill_id": str(skill.id),
+                        "installed_key": "writer-pro",
+                        "installed_name": "Writer Pro",
+                        "installed_version": "1.0.0",
+                        "installed_capability_keys": ["writing"],
+                        "source_checksum": "sha256:tampered",
+                        "source_visibility": "public",
+                    }
+                ],
+            }
+        },
+    )
+    session.add(run)
+    session.commit()
+
+    try:
+        RunOrchestrationService(session)._build_agent_request(
+            run,
+            JobPayload(
+                workspace_id=workspace.id,
+                job_type=JobType.AGENT_RUN,
+                resource_id=run.id,
+                requested_by_user_id=user.id,
+                idempotency_key="bad-skill-provenance",
+            ),
+        )
+    except ValueError as exc:
+        assert "skill provenance mismatch" in str(exc)
+    else:
+        raise AssertionError("Expected skill provenance mismatch to be rejected")
+
+
 def test_stale_running_runs_are_recovered_as_failed() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)

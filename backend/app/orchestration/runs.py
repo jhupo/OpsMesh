@@ -743,8 +743,8 @@ class RunOrchestrationService:
                 raise ValueError("Authorization snapshot grants tools outside agent policy")
         installed_skills = snapshot.get("installed_skills")
         if isinstance(installed_skills, list):
-            valid_install_ids = {
-                str(item["install_id"])
+            valid_install_snapshots = {
+                str(item["install_id"]): item
                 for item in self._installed_skill_snapshots(run.workspace_id, profile)
                 if isinstance(item.get("install_id"), str)
             }
@@ -752,9 +752,16 @@ class RunOrchestrationService:
                 if not isinstance(item, dict):
                     continue
                 install_id = item.get("install_id")
-                if isinstance(install_id, str) and install_id not in valid_install_ids:
+                if not isinstance(install_id, str):
+                    continue
+                valid_snapshot = valid_install_snapshots.get(install_id)
+                if valid_snapshot is None:
                     raise ValueError(
                         "Authorization snapshot references unavailable workspace skill",
+                    )
+                if not _skill_snapshot_matches(item, valid_snapshot):
+                    raise ValueError(
+                        "Authorization snapshot workspace skill provenance mismatch",
                     )
 
     def _step_context_for_run(self, run: AgentRun) -> dict[str, object]:
@@ -2027,6 +2034,29 @@ def _dict_or_empty(value: object) -> dict[str, object]:
 
 def _dict_copy(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _skill_snapshot_matches(
+    snapshot_item: dict[str, object],
+    current_item: dict[str, object],
+) -> bool:
+    comparable_keys = (
+        "install_id",
+        "source_skill_id",
+        "installed_key",
+        "installed_name",
+        "installed_version",
+        "source_checksum",
+        "source_visibility",
+    )
+    for key in comparable_keys:
+        if snapshot_item.get(key) != current_item.get(key):
+            return False
+    snapshot_caps = snapshot_item.get("installed_capability_keys")
+    current_caps = current_item.get("installed_capability_keys")
+    if isinstance(snapshot_caps, list) or isinstance(current_caps, list):
+        return snapshot_caps == current_caps
+    return True
 
 
 def _positive_number_dict(value: object) -> dict[str, int | float]:

@@ -39,6 +39,7 @@ class BackendToolExecutor:
                 agent_run_id=context.run_id,
                 tool_name=tool_name,
                 arguments=arguments,
+                runtime_allowed_tools=context.allowed_tools,
             )
         )
         return AgentRuntimeToolResult(

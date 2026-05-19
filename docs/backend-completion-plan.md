@@ -95,6 +95,7 @@ Current state:
 - MCP servers, tools, credentials, visibility, and account-scoped authorization are represented in the backend.
 - Tool call logging exists, and hosted credentials can be encrypted or referenced through an external vault.
 - The execution service now resolves an MCP server/tool from the run authorization snapshot, injects workspace-owned credential references into an adapter, enforces payload policy, and records call logs, run events, task messages, and security events.
+- MCP execution also re-checks the runtime context tool set, sends explicitly approval-required tools into workspace approval, and writes authorization snapshot metadata into tool audit records.
 - Worker-built agent requests now carry a backend tool executor, and the OpenAI Agents runner registers allowed MCP tools as SDK function tools that call back into the backend execution service.
 - HTTP JSON-RPC MCP servers can now be executed through the adapter resolver. Stdio, SSE, and hosted MCP adapters remain blocked until they can run through the hosted runtime/self-hosted safety boundary.
 
@@ -111,7 +112,7 @@ Build:
 - [x] Persist `tool.called`, `tool.completed`, `tool.failed`, and `tool.blocked` run events and task messages.
 - [x] Normalize MCP errors without leaking secrets.
 - [x] Wire MCP execution into worker/OpenAI tool invocation through runtime tool executor and OpenAI function-tool bridge.
-- Add optional approval hooks for high-risk MCP tools.
+- [x] Add optional approval hooks for high-risk and explicitly approval-required MCP tools.
 
 API/data changes:
 
