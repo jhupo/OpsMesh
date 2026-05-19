@@ -47,6 +47,10 @@ class WorkerHeartbeatResponse(BaseModel):
     last_heartbeat_at: datetime
 
 
+class SelfHostedWorkerCleanupResponse(BaseModel):
+    marked_offline: int
+
+
 class SelfHostedJobResponse(BaseModel):
     agent_run_id: UUID
     task_id: UUID | None

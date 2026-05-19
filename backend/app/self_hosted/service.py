@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from secrets import token_urlsafe
 from uuid import UUID
@@ -20,6 +20,7 @@ from backend.app.core.config import Settings
 from backend.app.files.security import safe_filename, validate_storage_key
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
+from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.self_hosted.models import (
     LocalFileReference,
@@ -86,6 +87,7 @@ class SelfHostedRuntimeService:
         now = datetime.now(UTC)
         runtime = WorkspaceRuntime(
             workspace_id=token.workspace_id,
+            runtime_space_id=self._registration_runtime_space_id(token.workspace_id, data),
             runtime_provider="self_hosted",
             runtime_type="self_hosted",
             name=data.name,
@@ -116,6 +118,7 @@ class SelfHostedRuntimeService:
         token.used_at = now
         self._session.add_all([credential, worker])
         self._append_runtime_event(runtime, "self_hosted.registered", data.machine_id)
+        self._append_runtime_space_event(runtime, "self_hosted.registered", data.machine_id)
         self._session.commit()
         self._session.refresh(runtime)
         self._session.refresh(worker)
@@ -159,13 +162,14 @@ class SelfHostedRuntimeService:
         auth.runtime.capabilities = auth.worker.capabilities
         auth.runtime.last_heartbeat_at = now
         self._append_runtime_event(auth.runtime, "self_hosted.heartbeat", data.status)
+        self._append_runtime_space_event(auth.runtime, "self_hosted.heartbeat", data.status)
         self._session.commit()
         self._session.refresh(auth.worker)
         return auth.worker
 
     def poll_job(self, auth: AuthenticatedWorker) -> AgentRun | None:
         self._require_self_hosted_enabled()
-        return self._session.scalar(
+        statement = (
             select(AgentRun)
             .where(
                 AgentRun.workspace_id == auth.worker.workspace_id,
@@ -173,8 +177,11 @@ class SelfHostedRuntimeService:
                 AgentRun.runtime_id == auth.runtime.id,
             )
             .order_by(AgentRun.created_at.asc())
-            .limit(1)
         )
+        for run in self._session.scalars(statement).all():
+            if self._runtime_space_allowed(auth, run):
+                return run
+        return None
 
     def claim_job(self, auth: AuthenticatedWorker, agent_run_id: UUID) -> SelfHostedJobClaim:
         self._require_self_hosted_enabled()
@@ -185,6 +192,8 @@ class SelfHostedRuntimeService:
             or run.runtime_id != auth.runtime.id
         ):
             raise ValueError("Agent run not available for this worker")
+        if not self._runtime_space_allowed(auth, run):
+            raise ValueError("Agent run runtime space is not allowed for this worker")
         if run.status != RunStatus.QUEUED.value:
             raise ValueError("Agent run is not queued")
         now = datetime.now(UTC)
@@ -202,6 +211,12 @@ class SelfHostedRuntimeService:
         )
         self._session.add(claim)
         self._append_run_event(run, "self_hosted.claimed", str(auth.worker.id), {})
+        self._append_runtime_space_event(
+            auth.runtime,
+            "self_hosted.job_claimed",
+            str(run.id),
+            {"agent_run_id": str(run.id)},
+        )
         self._session.commit()
         self._session.refresh(claim)
         return claim
@@ -284,6 +299,32 @@ class SelfHostedRuntimeService:
         if not policy.allow_self_hosted_runtimes:
             raise ValueError("Self-hosted runtimes are disabled by platform safety policy")
 
+    def cleanup_stale_workers(self, workspace_id: UUID, *, stale_after_seconds: int = 600) -> int:
+        cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
+        stale_workers = self._session.scalars(
+            select(SelfHostedWorker).where(
+                SelfHostedWorker.workspace_id == workspace_id,
+                SelfHostedWorker.status == "online",
+                SelfHostedWorker.last_heartbeat_at.is_not(None),
+                SelfHostedWorker.last_heartbeat_at < cutoff,
+            )
+        ).all()
+        now = datetime.now(UTC)
+        for worker in stale_workers:
+            worker.status = "offline"
+            runtime = self._session.get(WorkspaceRuntime, worker.workspace_runtime_id)
+            if runtime is not None:
+                runtime.connection_status = "offline"
+                self._append_runtime_event(runtime, "self_hosted.worker_offline", worker.machine_id)
+                self._append_runtime_space_event(
+                    runtime,
+                    "self_hosted.worker_offline",
+                    worker.machine_id,
+                    {"worker_id": str(worker.id), "marked_offline_at": now.isoformat()},
+                )
+        self._session.commit()
+        return len(stale_workers)
+
     def _consume_enrollment_token(self, raw_token: str) -> RuntimeEnrollmentToken:
         token = self._session.scalar(
             select(RuntimeEnrollmentToken).where(
@@ -351,6 +392,70 @@ class SelfHostedRuntimeService:
         self._session.add(event)
         return event
 
+    def _append_runtime_space_event(
+        self,
+        runtime: WorkspaceRuntime,
+        event_type: str,
+        message: str,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        if runtime.runtime_space_id is None:
+            return
+        self._session.add(
+            RuntimeSpaceEvent(
+                workspace_id=runtime.workspace_id,
+                runtime_space_id=runtime.runtime_space_id,
+                event_type=event_type,
+                message=message,
+                event_metadata={"runtime_id": str(runtime.id), **(metadata or {})},
+                created_at=datetime.now(UTC),
+            )
+        )
+
+    def _registration_runtime_space_id(
+        self,
+        workspace_id: UUID,
+        data: RuntimeRegistrationRequest,
+    ) -> UUID | None:
+        runtime_space_id = _uuid_from_capabilities(data.capabilities, "runtime_space_id")
+        if runtime_space_id is None:
+            return None
+        runtime_space = self._session.get(RuntimeSpace, runtime_space_id)
+        if (
+            runtime_space is None
+            or runtime_space.workspace_id != workspace_id
+            or runtime_space.status != "active"
+        ):
+            raise ValueError("Runtime space not found")
+        return runtime_space_id
+
+    def _runtime_space_allowed(self, auth: AuthenticatedWorker, run: AgentRun) -> bool:
+        if run.runtime_space_id is None:
+            return True
+        runtime_space_id = str(run.runtime_space_id)
+        if auth.runtime.runtime_space_id is not None and runtime_space_id == str(
+            auth.runtime.runtime_space_id
+        ):
+            return True
+        allowed_ids = _string_list(auth.worker.capabilities.get("allowed_runtime_space_ids"))
+        return runtime_space_id in allowed_ids
+
     def _hash(self, token: str) -> str:
         material = f"{self._settings.token_hash_pepper}:{token}"
         return sha256(material.encode("utf-8")).hexdigest()
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _uuid_from_capabilities(capabilities: dict[str, object], key: str) -> UUID | None:
+    value = capabilities.get(key)
+    if not isinstance(value, str):
+        return None
+    try:
+        return UUID(value)
+    except ValueError:
+        return None

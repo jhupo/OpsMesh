@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi.testclient import TestClient
@@ -18,7 +19,9 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.self_hosted.models import RuntimeCredential
+from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.self_hosted.models import RuntimeCredential, SelfHostedWorker
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -238,6 +241,119 @@ def test_self_hosted_worker_cannot_poll_when_policy_is_disabled_after_registrati
 
     assert denied.status_code == 400
     assert "Self-hosted runtimes are disabled" in denied.json()["error"]["message"]
+
+
+def test_self_hosted_worker_is_limited_to_allowed_runtime_spaces() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    allowed_space = RuntimeSpace(workspace_id=workspace.id, name="Allowed", scope="workspace")
+    denied_space = RuntimeSpace(workspace_id=workspace.id, name="Denied", scope="workspace")
+    session.add_all([allowed_space, denied_space])
+    session.commit()
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-space",
+            "capabilities": {
+                "runtime_space_id": str(allowed_space.id),
+                "allowed_runtime_space_ids": [str(allowed_space.id)],
+            },
+        },
+    )
+    credential = registered.json()["credential_token"]
+    allowed_run = AgentRun(
+        workspace_id=workspace.id,
+        runtime_id=UUID(registered.json()["workspace_runtime_id"]),
+        runtime_space_id=allowed_space.id,
+        status="queued",
+        input={"task": "allowed"},
+    )
+    denied_run = AgentRun(
+        workspace_id=workspace.id,
+        runtime_id=UUID(registered.json()["workspace_runtime_id"]),
+        runtime_space_id=denied_space.id,
+        status="queued",
+        input={"task": "denied"},
+    )
+    session.add_all([denied_run, allowed_run])
+    session.commit()
+
+    next_job = client.get("/api/v1/self-hosted/jobs/next", headers=_runtime_headers(credential))
+    denied_claim = client.post(
+        f"/api/v1/self-hosted/jobs/{denied_run.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+    allowed_claim = client.post(
+        f"/api/v1/self-hosted/jobs/{allowed_run.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+
+    assert next_job.status_code == 200
+    assert next_job.json()["agent_run_id"] == str(allowed_run.id)
+    assert denied_claim.status_code == 409
+    assert "runtime space is not allowed" in denied_claim.json()["error"]["message"]
+    assert allowed_claim.status_code == 200
+    runtime = session.get(WorkspaceRuntime, UUID(registered.json()["workspace_runtime_id"]))
+    assert runtime is not None
+    assert runtime.runtime_space_id == allowed_space.id
+    space_events = session.query(RuntimeSpaceEvent).filter_by(runtime_space_id=allowed_space.id)
+    assert {event.event_type for event in space_events} >= {
+        "self_hosted.registered",
+        "self_hosted.job_claimed",
+    }
+
+
+def test_self_hosted_worker_cleanup_marks_stale_workers_offline() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    runtime_space = RuntimeSpace(workspace_id=workspace.id, name="Local", scope="workspace")
+    session.add(runtime_space)
+    session.commit()
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-stale",
+            "capabilities": {"runtime_space_id": str(runtime_space.id)},
+        },
+    )
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    runtime = session.get(WorkspaceRuntime, runtime_id)
+    assert runtime is not None
+    runtime.last_heartbeat_at = datetime.now(UTC) - timedelta(seconds=3_600)
+    self_hosted_worker = session.query(SelfHostedWorker).one()
+    self_hosted_worker.last_heartbeat_at = datetime.now(UTC) - timedelta(seconds=3_600)
+    session.commit()
+
+    cleanup = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/worker-cleanup?stale_after_seconds=60",
+        headers=_headers(owner.id),
+    )
+
+    session.refresh(runtime)
+    session.refresh(self_hosted_worker)
+    event = session.query(RuntimeSpaceEvent).filter_by(
+        runtime_space_id=runtime_space.id,
+        event_type="self_hosted.worker_offline",
+    ).one()
+    assert cleanup.status_code == 200
+    assert cleanup.json()["marked_offline"] == 1
+    assert self_hosted_worker.status == "offline"
+    assert runtime.connection_status == "offline"
+    assert event.event_metadata["runtime_id"] == str(runtime_id)
 
 
 def _client(settings: Settings | None = None) -> tuple[TestClient, Session]:

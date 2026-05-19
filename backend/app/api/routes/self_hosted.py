@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.runs import RunEventResponse
@@ -16,6 +16,7 @@ from backend.app.api.schemas.self_hosted import (
     RuntimeRegistrationRequest,
     RuntimeRegistrationResponse,
     SelfHostedJobResponse,
+    SelfHostedWorkerCleanupResponse,
     WorkerHeartbeatRequest,
     WorkerHeartbeatResponse,
 )
@@ -103,6 +104,23 @@ async def heartbeat(
         status=worker.status,
         last_heartbeat_at=worker.last_heartbeat_at,
     )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/self-hosted/worker-cleanup",
+    response_model=SelfHostedWorkerCleanupResponse,
+)
+async def cleanup_self_hosted_workers(
+    stale_after_seconds: int = Query(default=600, ge=60, le=86_400),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> SelfHostedWorkerCleanupResponse:
+    marked_offline = SelfHostedRuntimeService(session, settings).cleanup_stale_workers(
+        context.workspace.id,
+        stale_after_seconds=stale_after_seconds,
+    )
+    return SelfHostedWorkerCleanupResponse(marked_offline=marked_offline)
 
 
 @router.get("/self-hosted/jobs/next", response_model=SelfHostedJobResponse | None)
