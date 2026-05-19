@@ -1,22 +1,39 @@
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from typing import TypeVar
 from uuid import UUID
 
+from redis import Redis
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
+from backend.app.admin.models import PlatformPolicy, PlatformPolicyEvent
 from backend.app.api.pagination import PageParams
+from backend.app.api.schemas.operations import QueueMetricsResponse
 from backend.app.operations.models import WorkerLease, WorkerNode
+from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
+from backend.app.workers.jobs import JobPayload
+from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace
 
 T = TypeVar("T")
+RISKY_EXECUTION_POLICY_KEY = "global_risky_execution"
 
 
 class AdminControlPlaneService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        redis: Redis[str] | None = None,
+        key_builder: RedisKeyBuilder | None = None,
+    ) -> None:
         self._session = session
+        self._redis = redis
+        self._keys = key_builder or RedisKeyBuilder("chaincloud")
 
     def overview(self) -> dict[str, int]:
         return {
@@ -33,6 +50,15 @@ class AdminControlPlaneService:
             "runtime_spaces_total": self._count(select(RuntimeSpace)),
             "runtime_spaces_quarantined": self._count(
                 select(RuntimeSpace).where(RuntimeSpace.status == "quarantined")
+            ),
+            "runtimes_running": self._count(
+                select(WorkspaceRuntime).where(WorkspaceRuntime.status == "running")
+            ),
+            "runtimes_offline": self._count(
+                select(WorkspaceRuntime).where(
+                    WorkspaceRuntime.connection_status == "offline",
+                    WorkspaceRuntime.status != "deleted",
+                )
             ),
             "critical_security_events": self._count(
                 select(SecurityEvent).where(SecurityEvent.severity == "critical")
@@ -129,6 +155,144 @@ class AdminControlPlaneService:
             statement = statement.where(WorkerLease.worker_id == worker_id)
         return self._page(statement.order_by(WorkerLease.created_at.desc()), page)
 
+    def queue_metrics(self, queue_name: str) -> QueueMetricsResponse:
+        if self._redis is None:
+            return QueueMetricsResponse(
+                queue_name=queue_name,
+                queued=0,
+                dead_letter=0,
+                idempotency_keys=0,
+            )
+        queue = RedisQueue(self._redis, self._keys, queue_name)
+        return QueueMetricsResponse(
+            queue_name=queue_name,
+            queued=queue.count_queued(),
+            dead_letter=queue.count_dead_letters(),
+            idempotency_keys=self._count_keys(self._keys.idempotency_key("*", "*")),
+        )
+
+    def list_dead_letters(self, queue_name: str, limit: int) -> tuple[list[JobPayload], int]:
+        if self._redis is None:
+            return [], 0
+        queue = RedisQueue(self._redis, self._keys, queue_name)
+        return queue.list_dead_letters(limit), queue.count_dead_letters()
+
+    def requeue_dead_letter(self, queue_name: str, job_id: UUID) -> JobPayload | None:
+        if self._redis is None:
+            return None
+        queue = RedisQueue(self._redis, self._keys, queue_name)
+        return queue.requeue_dead_letter(job_id, workspace_id=None)
+
+    def list_runtimes(
+        self,
+        page: PageParams,
+        *,
+        workspace_id: UUID | None = None,
+        runtime_space_id: UUID | None = None,
+        status: str | None = None,
+        connection_status: str | None = None,
+    ) -> tuple[list[WorkspaceRuntime], int]:
+        statement = select(WorkspaceRuntime).where(WorkspaceRuntime.status != "deleted")
+        if workspace_id is not None:
+            statement = statement.where(WorkspaceRuntime.workspace_id == workspace_id)
+        if runtime_space_id is not None:
+            statement = statement.where(WorkspaceRuntime.runtime_space_id == runtime_space_id)
+        if status is not None:
+            statement = statement.where(WorkspaceRuntime.status == status)
+        if connection_status is not None:
+            statement = statement.where(WorkspaceRuntime.connection_status == connection_status)
+        return self._page(statement.order_by(WorkspaceRuntime.created_at.desc()), page)
+
+    def force_stop_runtime(
+        self,
+        runtime_id: UUID,
+        *,
+        reason: str,
+    ) -> WorkspaceRuntime | None:
+        runtime = self._session.scalar(
+            select(WorkspaceRuntime).where(
+                WorkspaceRuntime.id == runtime_id,
+                WorkspaceRuntime.status != "deleted",
+            )
+        )
+        if runtime is None:
+            return None
+        runtime.status = "stopped"
+        runtime.connection_status = "offline"
+        self._session.add(
+            RuntimeEvent(
+                workspace_id=runtime.workspace_id,
+                workspace_runtime_id=runtime.id,
+                runtime_space_id=runtime.runtime_space_id,
+                event_type="runtime.force_stopped",
+                message=reason,
+                event_metadata={"source": "platform_admin"},
+                created_at=datetime.now(UTC),
+            )
+        )
+        self._session.commit()
+        self._session.refresh(runtime)
+        return runtime
+
+    def list_platform_policies(
+        self,
+        page: PageParams,
+        *,
+        status: str | None = None,
+    ) -> tuple[list[PlatformPolicy], int]:
+        statement = select(PlatformPolicy)
+        if status is not None:
+            statement = statement.where(PlatformPolicy.status == status)
+        return self._page(statement.order_by(PlatformPolicy.updated_at.desc()), page)
+
+    def get_or_create_risky_execution_policy(self) -> PlatformPolicy:
+        policy = self._session.scalar(
+            select(PlatformPolicy).where(
+                PlatformPolicy.policy_key == RISKY_EXECUTION_POLICY_KEY,
+            )
+        )
+        if policy is not None:
+            return policy
+        policy = PlatformPolicy(
+            policy_key=RISKY_EXECUTION_POLICY_KEY,
+            status="active",
+            value={
+                "allow_runtime_commands": False,
+                "allow_network_egress": False,
+                "allow_self_hosted_runtimes": True,
+                "require_approval_for_high_risk_tools": True,
+            },
+            description="Global personal-safety controls for risky execution capabilities.",
+        )
+        self._session.add(policy)
+        self._session.flush([policy])
+        self._append_policy_event(policy, "platform_policy.created", "Policy created", {})
+        self._session.commit()
+        self._session.refresh(policy)
+        return policy
+
+    def update_risky_execution_policy(
+        self,
+        *,
+        value: dict[str, object],
+        updated_by: str | None,
+        description: str | None = None,
+    ) -> PlatformPolicy:
+        policy = self.get_or_create_risky_execution_policy()
+        policy.value = self._normalize_risky_execution_policy(value)
+        if description is not None:
+            policy.description = description
+        policy.updated_by = updated_by
+        self._append_policy_event(
+            policy,
+            "platform_policy.updated",
+            "Risky execution policy updated",
+            {"value": policy.value, "updated_by": updated_by},
+        )
+        self._session.commit()
+        self._session.refresh(policy)
+        return policy
+
     def list_security_events(
         self,
         page: PageParams,
@@ -143,9 +307,49 @@ class AdminControlPlaneService:
             statement = statement.where(SecurityEvent.workspace_id == workspace_id)
         return self._page(statement.order_by(SecurityEvent.created_at.desc()), page)
 
+    def _normalize_risky_execution_policy(
+        self,
+        value: dict[str, object],
+    ) -> dict[str, object]:
+        defaults = self.get_or_create_risky_execution_policy().value
+        merged = dict(defaults)
+        allowed_keys = {
+            "allow_runtime_commands",
+            "allow_network_egress",
+            "allow_self_hosted_runtimes",
+            "require_approval_for_high_risk_tools",
+        }
+        for key in allowed_keys:
+            raw_value = value.get(key)
+            if isinstance(raw_value, bool):
+                merged[key] = raw_value
+        return merged
+
+    def _append_policy_event(
+        self,
+        policy: PlatformPolicy,
+        event_type: str,
+        message: str,
+        metadata: dict[str, object],
+    ) -> None:
+        self._session.add(
+            PlatformPolicyEvent(
+                platform_policy_id=policy.id,
+                event_type=event_type,
+                message=message,
+                event_metadata=metadata,
+                created_at=datetime.now(UTC),
+            )
+        )
+
     def _count(self, statement: Select[tuple[T]]) -> int:
         count_statement = select(func.count()).select_from(statement.subquery())
         return int(self._session.scalar(count_statement) or 0)
+
+    def _count_keys(self, pattern: str) -> int:
+        if self._redis is None:
+            return 0
+        return sum(1 for _ in self._redis.scan_iter(pattern))
 
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
         total = self._session.scalar(

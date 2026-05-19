@@ -1,5 +1,6 @@
 """Import all SQLAlchemy models so relationship targets are registered."""
 
+from backend.app.admin.models import PlatformPolicy, PlatformPolicyEvent
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval
 from backend.app.artifacts.models import Artifact
@@ -70,6 +71,8 @@ __all__ = [
     "McpToolAllowlist",
     "McpToolCallLog",
     "ModelProviderCredential",
+    "PlatformPolicy",
+    "PlatformPolicyEvent",
     "ReviewComment",
     "RevisionRequest",
     "RunEvent",

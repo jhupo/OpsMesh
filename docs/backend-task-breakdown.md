@@ -504,7 +504,8 @@ Tasks:
   - [x] Add admin/operator APIs for workers, runtime spaces, worker leases, workspaces, and security events.
   - [x] Enforce runtime-space `active_runs` quota when scheduling team task steps.
   - [x] Release runtime-space run reservations on completion, failure, stale-run recovery, and cancellation.
-  - [ ] Add admin/operator APIs for Docker leases, queues, and global risky-execution controls.
+  - [x] Add admin/operator APIs for queues, dead-letter requeue, runtimes, runtime force-stop, and global risky-execution policy records.
+  - [ ] Enforce global risky-execution policy records inside Docker runtime, self-hosted runtime, and MCP execution paths.
   - [ ] Add PostgreSQL-level concurrent scheduler tests that prove runtime-space quotas cannot be over-reserved under parallel schedulers.
 - [ ] Connect MCP skills to the real runtime execution path.
   - [x] Add internal MCP execution service with run snapshot authorization, adapter boundary, payload limits, logs, events, task messages, and blocked-call security evidence.

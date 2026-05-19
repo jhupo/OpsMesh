@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,17 +9,34 @@ from sqlalchemy.orm import Session
 from backend.app.admin.service import AdminControlPlaneService
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
 from backend.app.api.schemas.admin import (
+    AdminDeadLetterJobsResponse,
+    AdminForceStopRuntimeRequest,
     AdminOverviewResponse,
+    AdminPlatformPolicyResponse,
     AdminQuarantineRuntimeSpaceRequest,
     AdminQuarantineRuntimeSpaceResponse,
+    AdminQueueMetricsResponse,
+    AdminRequeueDeadLetterResponse,
+    AdminRiskyExecutionPolicyUpdateRequest,
     AdminRuntimeSpaceResponse,
     AdminSecurityEventResponse,
     AdminWorkerLeaseResponse,
     AdminWorkerNodeResponse,
     AdminWorkspaceResponse,
+    AdminWorkspaceRuntimeResponse,
 )
 from backend.app.auth.admin import require_platform_admin
+from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
+from backend.app.redis.dependencies import get_redis_client
+from backend.app.redis.keys import RedisKeyBuilder
+
+if TYPE_CHECKING:
+    from redis import Redis
+
+    RedisClient = Redis[str]
+else:
+    RedisClient = object
 
 router = APIRouter(
     prefix="/admin",
@@ -143,6 +163,139 @@ async def list_admin_worker_leases(
         limit=page.limit,
         offset=page.offset,
     )
+
+
+@router.get("/queues/{queue_name}/metrics", response_model=AdminQueueMetricsResponse)
+async def admin_queue_metrics(
+    queue_name: str,
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> AdminQueueMetricsResponse:
+    metrics = AdminControlPlaneService(
+        session,
+        redis,
+        RedisKeyBuilder(settings.redis_key_prefix),
+    ).queue_metrics(queue_name)
+    return AdminQueueMetricsResponse(**metrics.model_dump())
+
+
+@router.get("/queues/{queue_name}/dead-letter-jobs", response_model=AdminDeadLetterJobsResponse)
+async def list_admin_dead_letter_jobs(
+    queue_name: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> AdminDeadLetterJobsResponse:
+    items, total = AdminControlPlaneService(
+        session,
+        redis,
+        RedisKeyBuilder(settings.redis_key_prefix),
+    ).list_dead_letters(queue_name, limit)
+    return AdminDeadLetterJobsResponse(items=items, total=total)
+
+
+@router.post(
+    "/queues/{queue_name}/dead-letter-jobs/{job_id}/requeue",
+    response_model=AdminRequeueDeadLetterResponse,
+)
+async def requeue_admin_dead_letter_job(
+    queue_name: str,
+    job_id: UUID,
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> AdminRequeueDeadLetterResponse:
+    job = AdminControlPlaneService(
+        session,
+        redis,
+        RedisKeyBuilder(settings.redis_key_prefix),
+    ).requeue_dead_letter(queue_name, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Dead-letter job not found")
+    return AdminRequeueDeadLetterResponse(requeued=True, job=job)
+
+
+@router.get("/runtimes", response_model=PageResponse[AdminWorkspaceRuntimeResponse])
+async def list_admin_runtimes(
+    page: PageParams = Depends(pagination_params),
+    workspace_id: UUID | None = Query(default=None),
+    runtime_space_id: UUID | None = Query(default=None),
+    status: str | None = Query(default=None),
+    connection_status: str | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[AdminWorkspaceRuntimeResponse]:
+    items, total = AdminControlPlaneService(session).list_runtimes(
+        page,
+        workspace_id=workspace_id,
+        runtime_space_id=runtime_space_id,
+        status=status,
+        connection_status=connection_status,
+    )
+    return PageResponse(
+        items=[AdminWorkspaceRuntimeResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.post("/runtimes/{runtime_id}/force-stop", response_model=AdminWorkspaceRuntimeResponse)
+async def force_stop_admin_runtime(
+    runtime_id: UUID,
+    request: AdminForceStopRuntimeRequest,
+    session: Session = Depends(get_db_session),
+) -> AdminWorkspaceRuntimeResponse:
+    runtime = AdminControlPlaneService(session).force_stop_runtime(
+        runtime_id,
+        reason=request.reason,
+    )
+    if runtime is None:
+        raise HTTPException(status_code=404, detail="Runtime not found")
+    return AdminWorkspaceRuntimeResponse.model_validate(runtime)
+
+
+@router.get("/platform-policies", response_model=PageResponse[AdminPlatformPolicyResponse])
+async def list_admin_platform_policies(
+    page: PageParams = Depends(pagination_params),
+    status: str | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[AdminPlatformPolicyResponse]:
+    items, total = AdminControlPlaneService(session).list_platform_policies(page, status=status)
+    return PageResponse(
+        items=[AdminPlatformPolicyResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.get(
+    "/platform-policies/risky-execution",
+    response_model=AdminPlatformPolicyResponse,
+)
+async def get_admin_risky_execution_policy(
+    session: Session = Depends(get_db_session),
+) -> AdminPlatformPolicyResponse:
+    policy = AdminControlPlaneService(session).get_or_create_risky_execution_policy()
+    return AdminPlatformPolicyResponse.model_validate(policy)
+
+
+@router.patch(
+    "/platform-policies/risky-execution",
+    response_model=AdminPlatformPolicyResponse,
+)
+async def update_admin_risky_execution_policy(
+    request: AdminRiskyExecutionPolicyUpdateRequest,
+    session: Session = Depends(get_db_session),
+) -> AdminPlatformPolicyResponse:
+    policy = AdminControlPlaneService(session).update_risky_execution_policy(
+        value=request.value,
+        updated_by=request.updated_by,
+        description=request.description,
+    )
+    return AdminPlatformPolicyResponse.model_validate(policy)
 
 
 @router.get("/security-events", response_model=PageResponse[AdminSecurityEventResponse])

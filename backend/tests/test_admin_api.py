@@ -2,6 +2,7 @@ from collections.abc import Generator
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import fakeredis
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
@@ -17,8 +18,13 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.operations.models import WorkerLease, WorkerNode
+from backend.app.redis.dependencies import get_redis_client
+from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
+from backend.app.workers.jobs import JobPayload, JobType
+from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -26,7 +32,7 @@ ADMIN_TOKEN = "admin-token"
 
 
 def test_admin_api_requires_platform_admin_token() -> None:
-    client, session = _client()
+    client, session, _ = _client()
     _seed_workspace(session)
 
     missing = client.get("/api/v1/admin/overview")
@@ -43,7 +49,7 @@ def test_admin_api_requires_platform_admin_token() -> None:
 
 
 def test_admin_api_exposes_global_control_plane_metadata() -> None:
-    client, session = _client()
+    client, session, _ = _client()
     _, workspace = _seed_workspace(session)
     _, other_workspace = _seed_workspace(
         session,
@@ -123,7 +129,7 @@ def test_admin_api_exposes_global_control_plane_metadata() -> None:
 
 
 def test_admin_can_drain_worker_and_quarantine_runtime_space() -> None:
-    client, session = _client()
+    client, session, _ = _client()
     _, workspace = _seed_workspace(session)
     runtime_space = RuntimeSpace(
         workspace_id=workspace.id,
@@ -168,7 +174,100 @@ def test_admin_can_drain_worker_and_quarantine_runtime_space() -> None:
     assert event.event_type == "runtime_space.quarantined"
 
 
-def _client() -> tuple[TestClient, Session]:
+def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> None:
+    client, session, redis = _client()
+    _, workspace = _seed_workspace(session)
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="Team runtime",
+        status="running",
+        connection_status="online",
+        docker_container_id="container-123",
+        limits={"cpu_count": 1, "memory_mb": 512},
+        network_policy={"disabled": True},
+        capabilities={},
+    )
+    session.add(runtime)
+    session.commit()
+    queue = RedisQueue(redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    queued = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="queued-job",
+    )
+    dead = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.RUNTIME_CLEANUP,
+        resource_id=runtime.id,
+        idempotency_key="dead-job",
+        attempt=2,
+    )
+    queue.enqueue(queued)
+    queue.retry_or_dead_letter(dead)
+
+    metrics = client.get("/api/v1/admin/queues/agent_runs/metrics", headers=_admin_headers())
+    dead_letters = client.get(
+        "/api/v1/admin/queues/agent_runs/dead-letter-jobs",
+        headers=_admin_headers(),
+    )
+    requeued = client.post(
+        f"/api/v1/admin/queues/agent_runs/dead-letter-jobs/{dead.job_id}/requeue",
+        headers=_admin_headers(),
+    )
+    runtimes = client.get("/api/v1/admin/runtimes", headers=_admin_headers())
+    stopped = client.post(
+        f"/api/v1/admin/runtimes/{runtime.id}/force-stop",
+        headers=_admin_headers(),
+        json={"reason": "Operator safety stop"},
+    )
+    policy = client.get(
+        "/api/v1/admin/platform-policies/risky-execution",
+        headers=_admin_headers(),
+    )
+    updated_policy = client.patch(
+        "/api/v1/admin/platform-policies/risky-execution",
+        headers=_admin_headers(),
+        json={
+            "value": {
+                "allow_runtime_commands": True,
+                "allow_network_egress": False,
+                "unknown": True,
+            },
+            "description": "Test policy",
+            "updated_by": "admin-test",
+        },
+    )
+
+    session.refresh(runtime)
+    runtime_event = session.query(RuntimeEvent).filter_by(workspace_runtime_id=runtime.id).one()
+
+    assert metrics.status_code == 200
+    assert metrics.json()["queued"] == 1
+    assert metrics.json()["dead_letter"] == 1
+    assert dead_letters.status_code == 200
+    assert dead_letters.json()["total"] == 1
+    assert requeued.status_code == 200
+    assert requeued.json()["requeued"] is True
+    admin_queue = RedisQueue(redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    assert admin_queue.count_dead_letters() == 0
+    assert runtimes.status_code == 200
+    assert runtimes.json()["items"][0]["id"] == str(runtime.id)
+    assert stopped.status_code == 200
+    assert stopped.json()["status"] == "stopped"
+    assert runtime.status == "stopped"
+    assert runtime.connection_status == "offline"
+    assert runtime_event.event_type == "runtime.force_stopped"
+    assert policy.status_code == 200
+    assert policy.json()["policy_key"] == "global_risky_execution"
+    assert updated_policy.status_code == 200
+    assert updated_policy.json()["description"] == "Test policy"
+    assert updated_policy.json()["updated_by"] == "admin-test"
+    assert updated_policy.json()["value"]["allow_runtime_commands"] is True
+    assert "unknown" not in updated_policy.json()["value"]
+
+
+def _client() -> tuple[TestClient, Session, fakeredis.FakeRedis]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -179,6 +278,7 @@ def _client() -> tuple[TestClient, Session]:
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
+    redis = fakeredis.FakeRedis(decode_responses=True)
     app = create_app(
         Settings(
             environment="test",
@@ -197,7 +297,8 @@ def _client() -> tuple[TestClient, Session]:
 
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
-    return TestClient(app), session
+    app.dependency_overrides[get_redis_client] = lambda: redis
+    return TestClient(app), session, redis
 
 
 def _seed_workspace(

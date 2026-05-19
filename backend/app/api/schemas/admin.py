@@ -4,9 +4,15 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
-from backend.app.api.schemas.operations import WorkerLeaseResponse, WorkerNodeResponse
+from backend.app.api.schemas.operations import (
+    QueueMetricsResponse,
+    WorkerLeaseResponse,
+    WorkerNodeResponse,
+)
 from backend.app.api.schemas.runtime_spaces import RuntimeSpaceResponse
+from backend.app.api.schemas.runtimes import WorkspaceRuntimeResponse
 from backend.app.api.schemas.workspaces import WorkspaceResponse
+from backend.app.workers.jobs import JobPayload
 
 
 class AdminOverviewResponse(BaseModel):
@@ -18,6 +24,8 @@ class AdminOverviewResponse(BaseModel):
     active_worker_leases: int
     runtime_spaces_total: int
     runtime_spaces_quarantined: int
+    runtimes_running: int
+    runtimes_offline: int
     critical_security_events: int
 
 
@@ -30,6 +38,24 @@ class AdminWorkerNodeResponse(WorkerNodeResponse):
 
 
 class AdminWorkerLeaseResponse(WorkerLeaseResponse):
+    pass
+
+
+class AdminQueueMetricsResponse(QueueMetricsResponse):
+    pass
+
+
+class AdminDeadLetterJobsResponse(BaseModel):
+    items: list[JobPayload]
+    total: int
+
+
+class AdminRequeueDeadLetterResponse(BaseModel):
+    requeued: bool
+    job: JobPayload | None = None
+
+
+class AdminWorkspaceRuntimeResponse(WorkspaceRuntimeResponse):
     pass
 
 
@@ -64,3 +90,21 @@ class AdminQuarantineRuntimeSpaceResponse(TimestampedModel):
     scope: str
     status: str
     reason: str
+
+
+class AdminForceStopRuntimeRequest(BaseModel):
+    reason: str = "Force stopped by platform admin"
+
+
+class AdminPlatformPolicyResponse(TimestampedModel):
+    policy_key: str
+    status: str
+    value: dict[str, object]
+    description: str
+    updated_by: str | None
+
+
+class AdminRiskyExecutionPolicyUpdateRequest(BaseModel):
+    value: dict[str, object]
+    description: str | None = None
+    updated_by: str | None = "platform_admin"
