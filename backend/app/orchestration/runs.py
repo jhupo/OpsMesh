@@ -1113,6 +1113,11 @@ class RunOrchestrationService:
             task_id=task.id,
             task_step_id=step.id,
             reservation_key=f"task_step:{step.id}:run",
+            resource_usage=self._runtime_space_resource_usage(
+                task.workspace_id,
+                runtime_space_id,
+                step,
+            ),
         )
         if result.reservation is None:
             self._mark_step_scheduling_blocked(
@@ -1122,6 +1127,48 @@ class RunOrchestrationService:
             return False, None
         self._mark_step_scheduling_runnable(step)
         return True, result.reservation
+
+    def _runtime_space_resource_usage(
+        self,
+        workspace_id: UUID,
+        runtime_space_id: UUID,
+        step: TaskStep,
+    ) -> dict[str, int]:
+        usage: dict[str, int] = {"active_runs": 1}
+        runtime_space = self._session.get(RuntimeSpace, runtime_space_id)
+        if runtime_space is not None and runtime_space.workspace_id == workspace_id:
+            _merge_usage_max(
+                usage,
+                _positive_int_dict(runtime_space.policy.get("resource_requirements")),
+            )
+            _merge_usage_max(
+                usage,
+                _positive_int_dict(runtime_space.policy.get("reservation_usage")),
+            )
+        profile = (
+            self._session.get(AgentProfile, step.assigned_agent_profile_id)
+            if step.assigned_agent_profile_id is not None
+            else None
+        )
+        if profile is not None and profile.workspace_id == workspace_id:
+            _merge_usage_max(
+                usage,
+                _positive_int_dict(profile.runtime_policy.get("resource_requirements")),
+            )
+            _merge_usage_max(
+                usage,
+                _positive_int_dict(profile.runtime_policy.get("reservation_usage")),
+            )
+        _merge_usage_max(
+            usage,
+            _positive_int_dict(step.dependencies.get("resource_requirements")),
+        )
+        _merge_usage_max(
+            usage,
+            _positive_int_dict(step.dependencies.get("reservation_usage")),
+        )
+        usage["active_runs"] = max(1, usage.get("active_runs", 1))
+        return usage
 
     def _build_authorization_snapshot(
         self,
@@ -1918,6 +1965,34 @@ def _positive_number_dict(value: object) -> dict[str, int | float]:
             if parsed > 0:
                 normalized[key] = parsed
     return normalized
+
+
+def _positive_int_dict(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[str, int] = {}
+    for key, amount in value.items():
+        if not isinstance(key, str) or isinstance(amount, bool):
+            continue
+        if isinstance(amount, int) and amount > 0:
+            normalized[key] = amount
+            continue
+        if isinstance(amount, float) and amount > 0:
+            normalized[key] = int(amount)
+            continue
+        if isinstance(amount, str):
+            try:
+                parsed = int(amount)
+            except ValueError:
+                continue
+            if parsed > 0:
+                normalized[key] = parsed
+    return normalized
+
+
+def _merge_usage_max(target: dict[str, int], update: dict[str, int]) -> None:
+    for key, value in update.items():
+        target[key] = max(target.get(key, 0), value)
 
 
 def _json_object_from_text(value: str) -> dict[str, object] | None:

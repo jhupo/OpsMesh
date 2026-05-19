@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.agents.models import AgentProfile
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
@@ -134,6 +135,73 @@ def test_run_orchestration_reserves_runtime_space_capacity_before_enqueue() -> N
     assert released.released_at is not None
 
 
+def test_run_orchestration_reserves_runtime_space_resource_requirements() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(
+        session,
+        settings={"scheduler": {"max_active_runs": 10}},
+    )
+    runtime_space = _seed_runtime_space(
+        session,
+        workspace,
+        active_runs=10,
+        quota_limits={"memory_mb": 4096, "cpu": 4},
+        policy={"resource_requirements": {"memory_mb": 2048, "cpu": 1}},
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Image Worker",
+        role="designer",
+        runtime_policy={"resource_requirements": {"memory_mb": 4096, "cpu": 2}},
+    )
+    session.add(agent)
+    session.flush()
+    first_task, first_step = _seed_task_step(
+        session,
+        workspace,
+        title="Render high",
+        priority=10,
+        runtime_space_id=runtime_space.id,
+        assigned_agent_profile_id=agent.id,
+        dependencies={"resource_requirements": {"cpu": 3}},
+    )
+    second_task, second_step = _seed_task_step(
+        session,
+        workspace,
+        title="Render low",
+        priority=1,
+        runtime_space_id=runtime_space.id,
+        assigned_agent_profile_id=agent.id,
+    )
+
+    runs = RunOrchestrationService(session).schedule_workspace_steps(workspace_id=workspace.id)
+
+    memory_quota = _runtime_space_quota(session, runtime_space.id, "memory_mb")
+    cpu_quota = _runtime_space_quota(session, runtime_space.id, "cpu")
+    reservations = _runtime_space_reservations(session, runtime_space.id)
+
+    assert len(runs) == 1
+    assert runs[0].task_id == first_task.id
+    assert memory_quota.reserved_value == 4096
+    assert cpu_quota.reserved_value == 3
+    assert reservations[0].resource_usage == {"active_runs": 1, "memory_mb": 4096, "cpu": 3}
+    assert first_step.dependencies == {"resource_requirements": {"cpu": 3}}
+    assert second_step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded"
+
+    RunOrchestrationService(session)._mark_run_cancelled(
+        runs[0],
+        completed_at=datetime.now(UTC),
+    )
+    next_runs = RunOrchestrationService(session).schedule_workspace_steps(
+        workspace_id=workspace.id,
+    )
+
+    assert len(next_runs) == 1
+    assert next_runs[0].task_id == second_task.id
+    assert _runtime_space_quota(session, runtime_space.id, "memory_mb").reserved_value == 4096
+    assert _runtime_space_quota(session, runtime_space.id, "cpu").reserved_value == 2
+
+
 def _seed_task_step(
     session: Session,
     workspace: Workspace,
@@ -141,6 +209,8 @@ def _seed_task_step(
     title: str,
     priority: int,
     runtime_space_id: UUID | None = None,
+    assigned_agent_profile_id: UUID | None = None,
+    dependencies: dict[str, object] | None = None,
 ) -> tuple[Task, TaskStep]:
     task = Task(
         workspace_id=workspace.id,
@@ -158,6 +228,8 @@ def _seed_task_step(
         status="queued",
         order_index=0,
         runtime_space_id=runtime_space_id,
+        assigned_agent_profile_id=assigned_agent_profile_id,
+        dependencies=dependencies or {},
     )
     session.add(step)
     session.flush()
@@ -169,31 +241,40 @@ def _seed_runtime_space(
     workspace: Workspace,
     *,
     active_runs: int,
+    quota_limits: dict[str, int] | None = None,
+    policy: dict[str, object] | None = None,
 ) -> RuntimeSpace:
     runtime_space = RuntimeSpace(
         workspace_id=workspace.id,
         name="Team space",
         scope="team",
+        policy=policy or {},
     )
     session.add(runtime_space)
     session.flush()
-    session.add(
+    quotas = {"active_runs": active_runs} | (quota_limits or {})
+    for quota_key, limit_value in quotas.items():
+        session.add(
         RuntimeSpaceQuota(
             workspace_id=workspace.id,
             runtime_space_id=runtime_space.id,
-            quota_key="active_runs",
-            limit_value=active_runs,
+                quota_key=quota_key,
+                limit_value=limit_value,
+            )
         )
-    )
     session.flush()
     return runtime_space
 
 
-def _runtime_space_quota(session: Session, runtime_space_id: UUID) -> RuntimeSpaceQuota:
+def _runtime_space_quota(
+    session: Session,
+    runtime_space_id: UUID,
+    quota_key: str = "active_runs",
+) -> RuntimeSpaceQuota:
     quota = session.scalar(
         select(RuntimeSpaceQuota).where(
             RuntimeSpaceQuota.runtime_space_id == runtime_space_id,
-            RuntimeSpaceQuota.quota_key == "active_runs",
+            RuntimeSpaceQuota.quota_key == quota_key,
         )
     )
     assert quota is not None
