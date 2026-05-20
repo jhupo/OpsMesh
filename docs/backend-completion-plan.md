@@ -488,12 +488,13 @@ Policy shape:
 
 Current state:
 
-- Operations APIs expose queue metrics, failed runs, runtime events, audit filters, and security events.
-- Dashboard-level aggregates for worker capacity, queue latency, and runtime saturation need completion.
+- Operations APIs expose queue metrics, failed runs, runtime events, audit filters, security events,
+  and a dashboard capacity aggregate for queue latency, worker slots, and runtime space saturation.
 
 Build:
 
 - Add aggregate endpoints for worker fleet health, queue latency percentiles, queued/running/completed counts by priority, runtime saturation, Docker/self-hosted capacity, failure rates, and approval backlog.
+- [x] Add capacity aggregate for queue age, worker slot utilization, and runtime space quota saturation.
 - Support time windows and workspace scope.
 - [x] Cache overview aggregate in Redis with short TTL and workspace-scoped cache keys.
 - Cache future expensive scheduler/runtime aggregates in Redis with short TTL.
@@ -502,6 +503,7 @@ Build:
 API/data changes:
 
 - `GET /api/v1/workspaces/{workspace_id}/operations/overview`
+- `GET /api/v1/workspaces/{workspace_id}/operations/capacity`
 - `GET /api/v1/workspaces/{workspace_id}/operations/scheduler`
 - `GET /api/v1/workspaces/{workspace_id}/operations/runtime-capacity`
 

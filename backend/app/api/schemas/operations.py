@@ -120,6 +120,51 @@ class OperationsOverviewResponse(BaseModel):
     security_warnings: int
 
 
+class QueueLatencyResponse(BaseModel):
+    queue_name: str
+    queued: int
+    oldest_age_seconds: int | None
+    newest_age_seconds: int | None
+    average_age_seconds: int | None
+    highest_priority: int | None
+
+
+class WorkerCapacityAggregateResponse(BaseModel):
+    workers_total: int
+    workers_online: int
+    workers_draining: int
+    workers_offline: int
+    max_jobs: int
+    running_jobs: int
+    available_slots: int
+    utilization: float
+
+
+class RuntimeSpaceQuotaUsageResponse(BaseModel):
+    quota_key: str
+    limit_value: int
+    reserved_value: int
+    unit: str
+    utilization: float
+    saturated: bool
+
+
+class RuntimeSpaceSaturationResponse(BaseModel):
+    runtime_space_id: UUID
+    name: str
+    status: str
+    active_runtimes: int
+    quotas: list[RuntimeSpaceQuotaUsageResponse]
+    saturated: bool
+
+
+class OperationsCapacityResponse(BaseModel):
+    generated_at: datetime
+    queue: QueueLatencyResponse
+    worker_capacity: WorkerCapacityAggregateResponse
+    runtime_spaces: list[RuntimeSpaceSaturationResponse]
+
+
 class AuditEventFilterResponse(BaseModel):
     items: list[AuditEventResponse]
     total: int

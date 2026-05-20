@@ -13,6 +13,7 @@ from backend.app.api.schemas.operations import (
     AuditEventFilterResponse,
     DeadLetterJobsResponse,
     FailedJobInspectionResponse,
+    OperationsCapacityResponse,
     OperationsOverviewResponse,
     QueueMetricsResponse,
     RequeueDeadLetterResponse,
@@ -299,3 +300,18 @@ async def operations_overview(
         ttl_seconds=10,
     )
     return OperationsOverviewResponse(**cached.value)
+
+
+@router.get("/capacity", response_model=OperationsCapacityResponse)
+async def operations_capacity(
+    queue_name: str = Query(default="agent_runs"),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> OperationsCapacityResponse:
+    return OperationsService(
+        session,
+        redis,
+        RedisKeyBuilder(settings.redis_key_prefix),
+    ).capacity_payload(context.workspace.id, queue_name)

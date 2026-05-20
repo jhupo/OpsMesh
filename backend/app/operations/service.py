@@ -10,12 +10,20 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
-from backend.app.api.schemas.operations import DeadLetterJobsResponse, QueueMetricsResponse
+from backend.app.api.schemas.operations import (
+    DeadLetterJobsResponse,
+    OperationsCapacityResponse,
+    QueueLatencyResponse,
+    QueueMetricsResponse,
+    RuntimeSpaceQuotaUsageResponse,
+    RuntimeSpaceSaturationResponse,
+    WorkerCapacityAggregateResponse,
+)
 from backend.app.audit.models import AuditEvent
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runtime_spaces.models import RuntimeSpaceEvent
+from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.workers.jobs import JobPayload
@@ -484,6 +492,123 @@ class OperationsService:
             "security_warnings": int(recent_security_events or 0),
         }
 
+    def capacity_payload(self, workspace_id: UUID, queue_name: str) -> OperationsCapacityResponse:
+        return OperationsCapacityResponse(
+            generated_at=datetime.now(UTC),
+            queue=self._queue_latency(queue_name, workspace_id),
+            worker_capacity=self._worker_capacity_aggregate(),
+            runtime_spaces=self._runtime_space_saturation(workspace_id),
+        )
+
+    def _queue_latency(self, queue_name: str, workspace_id: UUID) -> QueueLatencyResponse:
+        if self._redis is None:
+            return QueueLatencyResponse(
+                queue_name=queue_name,
+                queued=0,
+                oldest_age_seconds=None,
+                newest_age_seconds=None,
+                average_age_seconds=None,
+                highest_priority=None,
+            )
+        queue = RedisQueue(self._redis, self._keys, queue_name)
+        jobs = [job for job in queue.peek(limit=500) if job.workspace_id == workspace_id]
+        if not jobs:
+            return QueueLatencyResponse(
+                queue_name=queue_name,
+                queued=0,
+                oldest_age_seconds=None,
+                newest_age_seconds=None,
+                average_age_seconds=None,
+                highest_priority=None,
+            )
+        now = datetime.now(UTC)
+        ages = [max(0, int((now - job.created_at).total_seconds())) for job in jobs]
+        return QueueLatencyResponse(
+            queue_name=queue_name,
+            queued=len(jobs),
+            oldest_age_seconds=max(ages),
+            newest_age_seconds=min(ages),
+            average_age_seconds=int(sum(ages) / len(ages)),
+            highest_priority=max(job.priority for job in jobs),
+        )
+
+    def _worker_capacity_aggregate(self) -> WorkerCapacityAggregateResponse:
+        nodes = list(self._session.scalars(select(WorkerNode)).all())
+        running_jobs = int(
+            self._session.scalar(
+                select(func.count()).select_from(WorkerLease).where(
+                    WorkerLease.status.in_(RUNNING_LEASE_STATUSES),
+                )
+            )
+            or 0
+        )
+        max_jobs = sum(_positive_int(node.capacity.get("max_jobs"), 1) for node in nodes)
+        available_slots = max(0, max_jobs - running_jobs)
+        online = sum(1 for node in nodes if node.status == "online")
+        draining = sum(1 for node in nodes if node.status == "draining")
+        offline = sum(1 for node in nodes if node.status == "offline")
+        utilization = round(running_jobs / max_jobs, 4) if max_jobs > 0 else 0.0
+        return WorkerCapacityAggregateResponse(
+            workers_total=len(nodes),
+            workers_online=online,
+            workers_draining=draining,
+            workers_offline=offline,
+            max_jobs=max_jobs,
+            running_jobs=running_jobs,
+            available_slots=available_slots,
+            utilization=utilization,
+        )
+
+    def _runtime_space_saturation(
+        self,
+        workspace_id: UUID,
+    ) -> list[RuntimeSpaceSaturationResponse]:
+        spaces = self._session.scalars(
+            select(RuntimeSpace)
+            .where(RuntimeSpace.workspace_id == workspace_id)
+            .order_by(RuntimeSpace.created_at.desc())
+        ).all()
+        if not spaces:
+            return []
+        space_ids = [space.id for space in spaces]
+        active_runtime_counts = dict(
+            self._session.execute(
+                select(WorkspaceRuntime.runtime_space_id, func.count())
+                .where(
+                    WorkspaceRuntime.workspace_id == workspace_id,
+                    WorkspaceRuntime.runtime_space_id.in_(space_ids),
+                    WorkspaceRuntime.status.in_(["created", "running"]),
+                )
+                .group_by(WorkspaceRuntime.runtime_space_id)
+            ).all()
+        )
+        quotas = self._session.scalars(
+            select(RuntimeSpaceQuota).where(
+                RuntimeSpaceQuota.workspace_id == workspace_id,
+                RuntimeSpaceQuota.runtime_space_id.in_(space_ids),
+                RuntimeSpaceQuota.status == "active",
+            )
+        ).all()
+        quotas_by_space: dict[UUID, list[RuntimeSpaceQuota]] = {}
+        for quota in quotas:
+            quotas_by_space.setdefault(quota.runtime_space_id, []).append(quota)
+        responses: list[RuntimeSpaceSaturationResponse] = []
+        for space in spaces:
+            quota_usages = [
+                _runtime_space_quota_usage(quota) for quota in quotas_by_space.get(space.id, [])
+            ]
+            responses.append(
+                RuntimeSpaceSaturationResponse(
+                    runtime_space_id=space.id,
+                    name=space.name,
+                    status=space.status,
+                    active_runtimes=int(active_runtime_counts.get(space.id, 0)),
+                    quotas=quota_usages,
+                    saturated=any(quota.saturated for quota in quota_usages),
+                )
+            )
+        return responses
+
     def _mark_deleted_terminal_runtimes(self, workspace_id: UUID) -> int:
         terminal = self._session.scalars(
             select(WorkspaceRuntime).where(
@@ -558,3 +683,17 @@ def _worker_capacity(capacity: dict[str, object] | None, worker_type: str) -> di
     normalized = dict(capacity or {})
     normalized.setdefault("worker_type", worker_type)
     return normalized
+
+
+def _runtime_space_quota_usage(quota: RuntimeSpaceQuota) -> RuntimeSpaceQuotaUsageResponse:
+    utilization = (
+        round(quota.reserved_value / quota.limit_value, 4) if quota.limit_value > 0 else 0.0
+    )
+    return RuntimeSpaceQuotaUsageResponse(
+        quota_key=quota.quota_key,
+        limit_value=quota.limit_value,
+        reserved_value=quota.reserved_value,
+        unit=quota.unit,
+        utilization=utilization,
+        saturated=quota.limit_value > 0 and quota.reserved_value >= quota.limit_value,
+    )

@@ -18,11 +18,11 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.operations.models import WorkerLease
+from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.workers.jobs import JobPayload, JobType
@@ -287,6 +287,143 @@ def test_operations_overview_uses_workspace_scoped_short_cache() -> None:
 
     assert refreshed_response.status_code == 200
     assert refreshed_response.json()["failed_runs"] == 1
+
+
+def test_operations_capacity_reports_queue_workers_and_runtime_space_saturation() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    other_user, other_workspace = _seed_workspace_with_role(
+        session,
+        email="other-capacity@example.com",
+        slug="other-capacity",
+    )
+    keys = RedisKeyBuilder("chaincloud")
+    old_job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="old",
+        priority=2,
+        created_at=datetime.now(UTC) - timedelta(seconds=90),
+    )
+    new_job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="new",
+        priority=8,
+        created_at=datetime.now(UTC) - timedelta(seconds=30),
+    )
+    other_job = JobPayload(
+        workspace_id=other_workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="other",
+        priority=99,
+        created_at=datetime.now(UTC) - timedelta(seconds=600),
+    )
+    redis.rpush(keys.queue("agent_runs"), old_job.model_dump_json())
+    redis.rpush(keys.queue("agent_runs"), new_job.model_dump_json())
+    redis.rpush(keys.queue("agent_runs"), other_job.model_dump_json())
+
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Team Space",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.flush()
+    quota = RuntimeSpaceQuota(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="active_runs",
+        limit_value=2,
+        reserved_value=2,
+        unit="count",
+    )
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        name="runtime",
+        status="running",
+        connection_status="online",
+    )
+    worker_a = WorkerNode(
+        worker_id="worker-a",
+        worker_type="cloud",
+        status="online",
+        queue_name="agent_runs",
+        capacity={"max_jobs": 3},
+        details={},
+        last_seen_at=datetime.now(UTC),
+    )
+    worker_b = WorkerNode(
+        worker_id="worker-b",
+        worker_type="self_hosted",
+        status="draining",
+        queue_name="agent_runs",
+        capacity={"max_jobs": 1},
+        details={},
+        drain_requested_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+    )
+    lease = WorkerLease(
+        workspace_id=workspace.id,
+        worker_id="worker-a",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=uuid4(),
+        status="running",
+        attempt=0,
+        lease_metadata={},
+        started_at=datetime.now(UTC),
+    )
+    session.add_all([quota, runtime, worker_a, worker_b, lease])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/capacity",
+        headers=_headers(owner.id),
+    )
+    other_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/operations/capacity",
+        headers=_headers(other_user.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["queue"]["queued"] == 2
+    assert payload["queue"]["highest_priority"] == 8
+    assert payload["queue"]["oldest_age_seconds"] >= 80
+    assert payload["queue"]["newest_age_seconds"] >= 20
+    assert payload["worker_capacity"] == {
+        "workers_total": 2,
+        "workers_online": 1,
+        "workers_draining": 1,
+        "workers_offline": 0,
+        "max_jobs": 4,
+        "running_jobs": 1,
+        "available_slots": 3,
+        "utilization": 0.25,
+    }
+    assert payload["runtime_spaces"][0]["runtime_space_id"] == str(runtime_space.id)
+    assert payload["runtime_spaces"][0]["active_runtimes"] == 1
+    assert payload["runtime_spaces"][0]["saturated"] is True
+    assert payload["runtime_spaces"][0]["quotas"] == [
+        {
+            "quota_key": "active_runs",
+            "limit_value": 2,
+            "reserved_value": 2,
+            "unit": "count",
+            "utilization": 1.0,
+            "saturated": True,
+        }
+    ]
+    assert other_response.status_code == 200
+    assert other_response.json()["queue"]["queued"] == 1
+    assert other_response.json()["runtime_spaces"] == []
 
 
 def test_operations_lists_worker_leases_by_workspace() -> None:
