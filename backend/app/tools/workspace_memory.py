@@ -125,6 +125,12 @@ class WorkspaceMemorySearchService:
                 metadata={
                     "task_id": _str_or_none(artifact.task_id),
                     "agent_run_id": _str_or_none(artifact.agent_run_id),
+                    "task_step_id": _str_or_none(artifact.task_step_id),
+                    "agent_profile_id": _str_or_none(artifact.agent_profile_id),
+                    "work_package_id": artifact.work_package_id,
+                    "version": artifact.version,
+                    "supersedes_artifact_id": _str_or_none(artifact.supersedes_artifact_id),
+                    "review_status": artifact.review_status,
                     "artifact_type": artifact.artifact_type,
                     "content_type": artifact.content_type,
                     "size_bytes": artifact.size_bytes,

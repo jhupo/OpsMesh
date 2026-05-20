@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import BigInteger, ForeignKey, Index, String
+from sqlalchemy import BigInteger, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,6 +13,7 @@ class Artifact(UUIDPrimaryKeyMixin, Base):
     __table_args__ = (
         Index("ix_artifacts_workspace_task", "workspace_id", "task_id"),
         Index("ix_artifacts_workspace_run", "workspace_id", "agent_run_id"),
+        Index("ix_artifacts_workspace_work_package", "workspace_id", "work_package_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -24,6 +25,21 @@ class Artifact(UUIDPrimaryKeyMixin, Base):
         ForeignKey("agent_runs.id", ondelete="SET NULL"),
         nullable=True,
     )
+    task_step_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("task_steps.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    agent_profile_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    supersedes_artifact_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("artifacts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    work_package_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    review_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     artifact_type: Mapped[str] = mapped_column(String(80), nullable=False)
     filename: Mapped[str] = mapped_column(String(260), nullable=False)
     content_type: Mapped[str] = mapped_column(String(120), nullable=False)

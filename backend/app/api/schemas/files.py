@@ -21,6 +21,12 @@ class ArtifactResponse(ORMModel):
     workspace_id: UUID
     task_id: UUID | None
     agent_run_id: UUID | None
+    task_step_id: UUID | None
+    agent_profile_id: UUID | None
+    supersedes_artifact_id: UUID | None
+    work_package_id: str | None
+    version: int
+    review_status: str
     artifact_type: str
     filename: str
     content_type: str
@@ -29,4 +35,3 @@ class ArtifactResponse(ORMModel):
     storage_key: str
     artifact_metadata: dict[str, object]
     created_at: datetime
-

@@ -202,6 +202,14 @@ class TaskObservationService:
                         "size_bytes": artifact.size_bytes,
                         "checksum_sha256": artifact.checksum_sha256,
                         "agent_run_id": self._str_or_none(artifact.agent_run_id),
+                        "task_step_id": self._str_or_none(artifact.task_step_id),
+                        "agent_profile_id": self._str_or_none(artifact.agent_profile_id),
+                        "work_package_id": artifact.work_package_id,
+                        "version": artifact.version,
+                        "supersedes_artifact_id": self._str_or_none(
+                            artifact.supersedes_artifact_id
+                        ),
+                        "review_status": artifact.review_status,
                         "metadata": artifact.artifact_metadata,
                         "created_at": artifact.created_at,
                     },

@@ -13,7 +13,7 @@ from backend.app.db.base import Base
 from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.tasks.models import Task, TaskMessage
+from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolPermissionError, ToolResourceNotFoundError
 from backend.app.tools.product_tools import ProductToolService
@@ -181,6 +181,59 @@ def test_workspace_memory_search_returns_workspace_scoped_matches() -> None:
         "content_type": "text/plain",
         "size_bytes": 120,
     }
+
+
+def test_write_artifact_versions_are_bound_to_work_package() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, slug="acme")
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Task")
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Draft report",
+        work_package_id="research-1",
+    )
+    session.add(step)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+    )
+    session.add(run)
+    session.commit()
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        allowed_tools=frozenset({"write_artifact"}),
+    )
+    service = ProductToolService(session)
+
+    first = service.write_artifact(
+        context,
+        filename="report-v1.pdf",
+        content=b"v1",
+        content_type="application/pdf",
+    )
+    second = service.write_artifact(
+        context,
+        filename="report-v2.pdf",
+        content=b"v2",
+        content_type="application/pdf",
+    )
+
+    assert first.task_step_id == step.id
+    assert first.work_package_id == "research-1"
+    assert first.version == 1
+    assert first.supersedes_artifact_id is None
+    assert first.review_status == "pending"
+    assert second.task_step_id == step.id
+    assert second.work_package_id == "research-1"
+    assert second.version == 2
+    assert second.supersedes_artifact_id == first.id
 
 
 def test_product_tool_permission_denied() -> None:

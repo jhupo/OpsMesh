@@ -30,7 +30,7 @@ from backend.app.self_hosted.models import (
     SelfHostedJobClaim,
     SelfHostedWorker,
 )
-from backend.app.tasks.models import Task
+from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
 
@@ -261,6 +261,16 @@ class SelfHostedRuntimeService:
     ) -> SelfHostedArtifactUpload:
         if data.agent_run_id is not None:
             self._require_worker_run(auth, data.agent_run_id)
+        run = (
+            self._session.get(AgentRun, data.agent_run_id)
+            if data.agent_run_id is not None
+            else None
+        )
+        step = (
+            self._session.get(TaskStep, run.task_step_id)
+            if run is not None and run.task_step_id is not None
+            else None
+        )
         max_artifact_bytes = _positive_int(auth.worker.capabilities.get("max_artifact_bytes"))
         artifact_size = _positive_int(data.metadata.get("size_bytes"))
         if (
@@ -285,7 +295,15 @@ class SelfHostedRuntimeService:
             filename=filename,
             storage_key=storage_key,
             checksum_sha256=data.checksum_sha256,
-            artifact_metadata=data.metadata,
+            artifact_metadata={
+                **data.metadata,
+                "task_id": str(run.task_id) if run is not None and run.task_id else None,
+                "task_step_id": str(step.id) if step is not None else None,
+                "agent_profile_id": str(run.agent_profile_id)
+                if run is not None and run.agent_profile_id
+                else None,
+                "work_package_id": step.work_package_id if step is not None else None,
+            },
         )
         self._session.add(upload)
         self._session.commit()

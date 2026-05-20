@@ -964,8 +964,14 @@ class WorkspaceExportService:
             return total_bytes
         source_task_id = _string_field(item, "task_id")
         source_run_id = _string_field(item, "agent_run_id")
+        source_step_id = _string_field(item, "task_step_id")
+        source_agent_id = _string_field(item, "agent_profile_id")
+        source_supersedes_id = _string_field(item, "supersedes_artifact_id")
         imported_task_id = response.id_map["tasks"].get(source_task_id)
         imported_run_id = response.id_map.get("runs", {}).get(source_run_id)
+        imported_step_id = response.id_map.get("task_steps", {}).get(source_step_id)
+        imported_agent_id = response.id_map.get("agents", {}).get(source_agent_id)
+        imported_supersedes_id = response.id_map["artifacts"].get(source_supersedes_id)
         if source_task_id and imported_task_id is None:
             response.warnings.append(
                 f"Imported artifact {source_id} without a mapped task"
@@ -986,6 +992,12 @@ class WorkspaceExportService:
             workspace_id=workspace.id,
             task_id=_uuid_or_none(imported_task_id),
             agent_run_id=None,
+            task_step_id=_uuid_or_none(imported_step_id),
+            agent_profile_id=_uuid_or_none(imported_agent_id),
+            supersedes_artifact_id=_uuid_or_none(imported_supersedes_id),
+            work_package_id=_optional_string_field(item, "work_package_id"),
+            version=_int_field(item, "version", 1),
+            review_status=_string_field(item, "review_status", "pending"),
             artifact_type=_string_field(item, "artifact_type", "file"),
             filename=imported_filename,
             content_type=_string_field(item, "content_type", "application/octet-stream"),
@@ -1000,8 +1012,14 @@ class WorkspaceExportService:
                 "imported_from_artifact_id": source_id,
                 "source_task_id": source_task_id or None,
                 "source_agent_run_id": source_run_id or None,
+                "source_task_step_id": source_step_id or None,
+                "source_agent_profile_id": source_agent_id or None,
+                "source_supersedes_artifact_id": source_supersedes_id or None,
                 "imported_task_id": imported_task_id,
                 "imported_agent_run_id": imported_run_id,
+                "imported_task_step_id": imported_step_id,
+                "imported_agent_profile_id": imported_agent_id,
+                "imported_supersedes_artifact_id": imported_supersedes_id,
                 "import_checksum_matched": checksum_result.matched,
             },
             created_at=datetime.now(UTC),
@@ -1337,6 +1355,12 @@ def _artifact_payload(artifact: Artifact) -> dict[str, object]:
         "workspace_id": str(artifact.workspace_id),
         "task_id": _str_or_none(artifact.task_id),
         "agent_run_id": _str_or_none(artifact.agent_run_id),
+        "task_step_id": _str_or_none(artifact.task_step_id),
+        "agent_profile_id": _str_or_none(artifact.agent_profile_id),
+        "supersedes_artifact_id": _str_or_none(artifact.supersedes_artifact_id),
+        "work_package_id": artifact.work_package_id,
+        "version": artifact.version,
+        "review_status": artifact.review_status,
         "artifact_type": artifact.artifact_type,
         "filename": artifact.filename,
         "content_type": artifact.content_type,

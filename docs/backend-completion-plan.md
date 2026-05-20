@@ -597,20 +597,21 @@ Current state:
 
 Build:
 
-- Bind every produced artifact to task ID, step ID, work package ID, agent ID, run ID, and artifact version.
-- Record supersedes/superseded_by relationships for revisions.
-- Expose artifact history for a work package and final output.
+- [x] Bind produced artifacts to task ID, step ID, work package ID, agent ID, run ID, and artifact version.
+- [x] Record supersedes relationships for subsequent work-package outputs.
+- [x] Expose artifact version metadata in artifact list responses, task observation, workspace memory, and export/import payloads.
+- Expose dedicated artifact history for a work package and final output.
 
 API/data changes:
 
-- Add `task_step_id`, `work_package_id`, `agent_profile_id`, `version`, `supersedes_artifact_id`, and `review_status` fields to artifacts if not already present.
-- Add artifact version response schemas.
+- [x] Add `task_step_id`, `work_package_id`, `agent_profile_id`, `version`, `supersedes_artifact_id`, and `review_status` fields to artifacts.
+- [x] Add artifact version response fields.
 
 Tests:
 
-- first generated artifact is version 1 for its work package
-- revision output creates version 2 and preserves version 1
-- artifact download authorization still works after versioning
+- [x] first generated artifact is version 1 for its work package
+- [x] subsequent output creates version 2 and preserves version 1
+- [x] artifact download/list authorization still works after versioning
 
 Acceptance:
 

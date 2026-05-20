@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from backend.app.artifacts.models import Artifact
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.security import safe_filename
-from backend.app.runs.models import RunEvent
+from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.tasks.models import TaskStep
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
 from backend.app.tools.workspace_memory import WorkspaceMemorySearchService
@@ -53,10 +54,17 @@ class ProductToolService:
         self._append_tool_event(context, "tool.called", "write_artifact")
         checksum = sha256(content).hexdigest()
         sanitized_filename = safe_filename(filename, default="artifact.bin")
+        binding = self._artifact_binding(context)
         artifact = Artifact(
             workspace_id=context.workspace_id,
             task_id=context.task_id,
             agent_run_id=context.agent_run_id,
+            task_step_id=binding["task_step_id"],
+            agent_profile_id=binding["agent_profile_id"],
+            work_package_id=binding["work_package_id"],
+            version=binding["version"],
+            supersedes_artifact_id=binding["supersedes_artifact_id"],
+            review_status="pending",
             artifact_type=artifact_type,
             filename=sanitized_filename,
             content_type=content_type,
@@ -101,4 +109,44 @@ class ProductToolService:
                 message=tool_name,
                 created_at=datetime.now(UTC),
             )
+        )
+
+    def _artifact_binding(self, context: ToolContext) -> dict[str, object]:
+        run = (
+            self._session.get(AgentRun, context.agent_run_id)
+            if context.agent_run_id is not None
+            else None
+        )
+        step = (
+            self._session.get(TaskStep, run.task_step_id)
+            if run is not None and run.task_step_id is not None
+            else None
+        )
+        if step is not None and step.workspace_id != context.workspace_id:
+            step = None
+        work_package_id = step.work_package_id if step is not None else None
+        previous = self._latest_artifact_for_work_package(context, work_package_id)
+        return {
+            "task_step_id": step.id if step is not None else None,
+            "agent_profile_id": run.agent_profile_id if run is not None else None,
+            "work_package_id": work_package_id,
+            "version": (previous.version + 1) if previous is not None else 1,
+            "supersedes_artifact_id": previous.id if previous is not None else None,
+        }
+
+    def _latest_artifact_for_work_package(
+        self,
+        context: ToolContext,
+        work_package_id: str | None,
+    ) -> Artifact | None:
+        if context.task_id is None or work_package_id is None:
+            return None
+        return self._session.scalar(
+            select(Artifact)
+            .where(
+                Artifact.workspace_id == context.workspace_id,
+                Artifact.task_id == context.task_id,
+                Artifact.work_package_id == work_package_id,
+            )
+            .order_by(Artifact.version.desc(), Artifact.created_at.desc())
         )

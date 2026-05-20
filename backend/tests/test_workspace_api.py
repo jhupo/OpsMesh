@@ -1377,6 +1377,48 @@ def test_artifact_correction_creates_replacement_work_without_mutating_artifact(
     assert step.dependencies["correction"]["target"]["artifact_id"] == str(artifact.id)
 
 
+def test_artifact_list_includes_work_package_version_metadata() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Artifact metadata",
+    )
+    session.add(task)
+    session.flush()
+    artifact = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        work_package_id="research-1",
+        version=3,
+        review_status="approved",
+        artifact_type="document",
+        filename="report.pdf",
+        content_type="application/pdf",
+        size_bytes=10,
+        checksum_sha256="c" * 64,
+        storage_key="owned",
+        created_at=datetime.now(UTC),
+    )
+    session.add(artifact)
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/artifacts",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["work_package_id"] == "research-1"
+    assert item["version"] == 3
+    assert item["review_status"] == "approved"
+    assert item["task_step_id"] is None
+    assert item["agent_profile_id"] is None
+    assert item["supersedes_artifact_id"] is None
+
+
 def test_create_workspace_assigns_owner_membership() -> None:
     client, session = _client()
     user = User(email="new-owner@example.com", display_name="New Owner")

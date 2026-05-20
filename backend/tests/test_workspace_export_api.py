@@ -656,7 +656,22 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
         title="Novel Draft",
         domain_type="writing",
     )
-    session.add(source_task)
+    source_agent = AgentProfile(
+        workspace_id=source_workspace.id,
+        name="Writer",
+        role="writer",
+    )
+    session.add_all([source_task, source_agent])
+    session.flush()
+    source_step = TaskStep(
+        workspace_id=source_workspace.id,
+        task_id=source_task.id,
+        assigned_agent_profile_id=source_agent.id,
+        work_package_id="chapter-1",
+        title="Draft chapter",
+        status="completed",
+    )
+    session.add(source_step)
     session.flush()
     artifact_bytes = b"chapter one artifact"
     storage_key = f"workspaces/{source_workspace.id}/artifacts/{source_task.id}/chapter.txt"
@@ -665,6 +680,11 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
         workspace_id=source_workspace.id,
         task_id=source_task.id,
         agent_run_id=None,
+        task_step_id=source_step.id,
+        agent_profile_id=source_agent.id,
+        work_package_id="chapter-1",
+        version=2,
+        review_status="approved",
         artifact_type="document",
         filename="chapter.txt",
         content_type="text/plain",
@@ -709,6 +729,9 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
     assert imported_artifact is not None
     assert imported_artifact.task_id == imported_task.id
     assert imported_artifact.agent_run_id is None
+    assert imported_artifact.work_package_id == "chapter-1"
+    assert imported_artifact.version == 2
+    assert imported_artifact.review_status == "approved"
     assert imported_artifact.checksum_sha256 == sha256(artifact_bytes).hexdigest()
     assert imported_artifact.artifact_metadata["imported_from_artifact_id"] == str(
         source_artifact.id
