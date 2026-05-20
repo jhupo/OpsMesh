@@ -565,22 +565,22 @@ Current state:
 
 Build:
 
-- Add planning attempts with prompt/input snapshot, output, validation errors, status, and retry count.
+- [x] Add planning attempts with prompt/input snapshot, output, validation errors, status, and retry count.
 - Retry failed planning with stricter repair prompts.
-- If retries fail, create a human approval/review item with validation errors and suggested fixes.
+- [x] If planning fails, create a human approval/review item with validation errors and suggested fixes.
 - Support future-only plan regeneration after hiring new team members, preserving completed work.
 
 API/data changes:
 
-- Add `task_planning_attempts` table if current run events are not enough for queryability.
+- [x] Add `task_planning_attempts` table for queryable planning attempts.
 - Add `POST /api/v1/workspaces/{workspace_id}/tasks/{task_id}/plan/retry`
 - Add `POST /api/v1/workspaces/{workspace_id}/tasks/{task_id}/plan/regenerate`
 
 Tests:
 
-- invalid PM plan records validation errors
+- [x] invalid PM plan records validation errors
 - retry can repair a failed plan
-- failed retries create an approval/review item
+- [x] failed planning creates an approval/review item
 - future-only regeneration does not rewrite completed steps
 
 Acceptance:

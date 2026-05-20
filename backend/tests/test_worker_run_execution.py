@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agents.models import AgentProfile
+from backend.app.approvals.models import Approval
 from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
 from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
@@ -18,6 +19,7 @@ from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
@@ -1436,6 +1438,71 @@ def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
     assert steps[1].required_role == "frontend_engineer"
     assert new_developer.id not in {run.agent_profile_id for run in runs}
     assert task.status == TaskStatus.COMPLETED.value
+
+
+def test_invalid_project_plan_records_attempt_and_blocks_task_for_review() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="Manager",
+        role="manager",
+        model="manager-model",
+    )
+    session.add(manager)
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Build dashboard",
+        agent_team_id=uuid4(),
+        team_snapshot={
+            "snapshot_version": 1,
+            "team": {
+                "id": str(uuid4()),
+                "name": "Broken Team Snapshot",
+                "manager_agent_profile_id": str(manager.id),
+            },
+            "members": [],
+            "agents": [],
+        },
+        input={
+            "work_packages": [
+                {
+                    "package_id": "build-ui",
+                    "title": "Build UI",
+                    "required_role": "frontend_engineer",
+                },
+                {
+                    "package_id": "build-ui",
+                    "title": "Build UI again",
+                    "required_role": "frontend_engineer",
+                }
+            ]
+        },
+    )
+    session.add(task)
+    session.flush()
+
+    run = RunOrchestrationService(session).create_queued_run_for_task(task)
+
+    attempt = session.scalar(select(TaskPlanningAttempt))
+    approval = session.scalar(select(Approval))
+    messages = session.scalars(
+        select(TaskMessage).where(TaskMessage.task_id == task.id).order_by(TaskMessage.sequence)
+    ).all()
+
+    assert run is None
+    assert task.status == TaskStatus.BLOCKED.value
+    assert task.project_plan is None
+    assert attempt is not None
+    assert attempt.status == "failed"
+    assert attempt.validation_errors == ["Duplicate work package id: build-ui"]
+    assert approval is not None
+    assert approval.approval_type == "task.plan_review"
+    assert approval.payload["attempt_id"] == str(attempt.id)
+    assert approval.payload["validation_errors"] == attempt.validation_errors
+    assert [message.message_type for message in messages] == ["planning.failed"]
 
 
 def test_worker_rejects_workspace_mismatch() -> None:

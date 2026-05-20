@@ -14,8 +14,7 @@ from backend.app.audit.service import AuditService
 from backend.app.core.config import Settings
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.orchestration.runs import RunOrchestrationService
-from backend.app.planning.member_matching import MemberMatchingService
-from backend.app.planning.project_plans import ProjectPlanningService
+from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.tasks.models import Task, TaskMessage
@@ -238,12 +237,13 @@ class WorkspaceResourceService:
         )
         self._session.add(task)
         self._session.flush()
-        task.project_plan = ProjectPlanningService(
-            MemberMatchingService(self._session)
-        ).create_initial_plan(task)
-        RunOrchestrationService(self._session, settings=self._settings).create_queued_run_for_task(
-            task
-        )
+        if task.agent_team_id is not None:
+            TaskPlanningAttemptService(self._session).ensure_initial_plan(task)
+        if task.project_plan is not None or task.agent_team_id is None:
+            RunOrchestrationService(
+                self._session,
+                settings=self._settings,
+            ).create_queued_run_for_task(task)
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
             user_id=created_by_user_id,

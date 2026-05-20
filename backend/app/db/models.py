@@ -26,6 +26,7 @@ from backend.app.marketplace.models import (
 )
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
+from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import (
     RuntimeSpace,
@@ -98,6 +99,7 @@ __all__ = [
     "SelfHostedWorker",
     "Task",
     "TaskMessage",
+    "TaskPlanningAttempt",
     "TaskStep",
     "TalentListing",
     "TalentListingReview",

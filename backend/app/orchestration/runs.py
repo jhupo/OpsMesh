@@ -21,6 +21,7 @@ from backend.app.core.config import Settings
 from backend.app.model_providers.resolution import ModelProviderResolutionService
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.orchestration.scheduler import WorkspaceScheduler
+from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.planning.project_plans import ProjectPlanningService
 from backend.app.redis.keys import RedisKeyBuilder
@@ -72,6 +73,9 @@ class RunOrchestrationService:
         first_team_step = self._create_team_step_plan(task)
         run: AgentRun | None
         if first_team_step is None:
+            if task.agent_team_id is not None and task.project_plan is None:
+                self._session.flush()
+                return None
             generic_run = AgentRun(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
@@ -1038,10 +1042,13 @@ class RunOrchestrationService:
                 self._session.flush([task])
         if snapshot is not None:
             if task.project_plan is None:
-                task.project_plan = ProjectPlanningService(
-                    MemberMatchingService(self._session)
-                ).create_initial_plan(task)
+                TaskPlanningAttemptService(
+                    self._session,
+                    planner=ProjectPlanningService(MemberMatchingService(self._session)),
+                ).ensure_initial_plan(task)
                 self._session.flush([task])
+                if task.project_plan is None:
+                    return None
             return self._create_team_step_plan_from_snapshot(task, snapshot)
 
         team = self._session.scalar(

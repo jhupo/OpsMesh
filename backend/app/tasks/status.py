@@ -20,9 +20,14 @@ TERMINAL_TASK_STATUSES = {
 }
 
 ALLOWED_TASK_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
-    TaskStatus.DRAFT: {TaskStatus.QUEUED, TaskStatus.CANCELLED},
+    TaskStatus.DRAFT: {TaskStatus.PLANNING, TaskStatus.QUEUED, TaskStatus.CANCELLED},
     TaskStatus.QUEUED: {TaskStatus.PLANNING, TaskStatus.RUNNING, TaskStatus.CANCELLED},
-    TaskStatus.PLANNING: {TaskStatus.RUNNING, TaskStatus.BLOCKED, TaskStatus.FAILED},
+    TaskStatus.PLANNING: {
+        TaskStatus.QUEUED,
+        TaskStatus.RUNNING,
+        TaskStatus.BLOCKED,
+        TaskStatus.FAILED,
+    },
     TaskStatus.RUNNING: {
         TaskStatus.WAITING_APPROVAL,
         TaskStatus.BLOCKED,
