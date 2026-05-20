@@ -204,7 +204,8 @@ Current state:
 - Runtime capacity is considered during member matching.
 - Workspace-level active run limits and cross-task priority scheduling are now enforced by the workspace scheduler.
 - Blocked queued steps record a scheduling status and blocked reason in step dependencies for observation and operations.
-- Workspace active run, CPU, memory, storage-style quota usage has durable reservation and release at run lifecycle boundaries. Docker/self-hosted execution slot usage still needs deeper completion.
+- Workspace active run, CPU, memory, storage-style quota usage, Docker runtime slots, and
+  self-hosted job slots have durable reservation and release at run lifecycle boundaries.
 
 Build:
 
@@ -213,7 +214,7 @@ Build:
   - [x] Enforce active run limits from `workspace.settings.scheduler.max_active_runs`.
   - [x] Enforce per-tick scheduler resource limits from `workspace.settings.scheduler.resource_limits`.
   - [x] Enforce durable workspace active run, CPU, memory, and storage-style usage reservations in scheduler decisions.
-  - [ ] Enforce durable Docker runtime and self-hosted job slot usage reservations in scheduler decisions.
+  - [x] Enforce durable Docker runtime and self-hosted job slot usage reservations in scheduler decisions.
 - [x] Support priority ordering.
 - [x] Add starvation prevention for long-waiting lower-priority work.
 - [x] Reserve workspace and runtime-space capacity before enqueueing a run.

@@ -1636,6 +1636,18 @@ class RunOrchestrationService:
         step: TaskStep,
     ) -> dict[str, int]:
         usage: dict[str, int] = {"active_runs": 1}
+        runtime_space_id = step.runtime_space_id
+        if runtime_space_id is None:
+            task = self._session.get(Task, step.task_id)
+            if task is not None and task.workspace_id == workspace_id:
+                runtime_space_id = task.runtime_space_id
+        if runtime_space_id is not None:
+            runtime_space = self._session.get(RuntimeSpace, runtime_space_id)
+            if runtime_space is not None and runtime_space.workspace_id == workspace_id:
+                _merge_usage_max(
+                    usage,
+                    _positive_int_dict(runtime_space.policy.get("workspace_reservation_usage")),
+                )
         profile = (
             self._session.get(AgentProfile, step.assigned_agent_profile_id)
             if step.assigned_agent_profile_id is not None
@@ -1646,6 +1658,10 @@ class RunOrchestrationService:
                 usage,
                 _positive_int_dict(profile.runtime_policy.get("workspace_reservation_usage")),
             )
+            _merge_workspace_slot_usage(
+                usage,
+                _positive_int_dict(profile.runtime_policy.get("reservation_usage")),
+            )
             _merge_usage_max(
                 usage,
                 _positive_int_dict(profile.runtime_policy.get("resource_requirements")),
@@ -1653,6 +1669,10 @@ class RunOrchestrationService:
         _merge_usage_max(
             usage,
             _positive_int_dict(step.dependencies.get("workspace_reservation_usage")),
+        )
+        _merge_workspace_slot_usage(
+            usage,
+            _positive_int_dict(step.dependencies.get("reservation_usage")),
         )
         _merge_usage_max(
             usage,
@@ -2711,6 +2731,13 @@ def _positive_int_dict(value: object) -> dict[str, int]:
 def _merge_usage_max(target: dict[str, int], update: dict[str, int]) -> None:
     for key, value in update.items():
         target[key] = max(target.get(key, 0), value)
+
+
+def _merge_workspace_slot_usage(target: dict[str, int], update: dict[str, int]) -> None:
+    for key in ("docker_runtimes", "self_hosted_jobs"):
+        value = update.get(key)
+        if value is not None:
+            target[key] = max(target.get(key, 0), value)
 
 
 def _json_object_from_text(value: str) -> dict[str, object] | None:

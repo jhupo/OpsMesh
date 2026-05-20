@@ -444,6 +444,93 @@ def test_run_orchestration_reserves_and_releases_workspace_quota() -> None:
     assert released.released_at is not None
 
 
+def test_run_orchestration_enforces_workspace_runtime_slot_quotas() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    session.add_all(
+        [
+            WorkspaceQuota(
+                workspace_id=workspace.id,
+                quota_key="active_runs",
+                limit_value=10,
+            ),
+            WorkspaceQuota(
+                workspace_id=workspace.id,
+                quota_key="docker_runtimes",
+                limit_value=1,
+            ),
+            WorkspaceQuota(
+                workspace_id=workspace.id,
+                quota_key="self_hosted_jobs",
+                limit_value=1,
+            ),
+        ]
+    )
+    runtime_space = _seed_runtime_space(
+        session,
+        workspace,
+        active_runs=10,
+        policy={"workspace_reservation_usage": {"docker_runtimes": 1}},
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Builder",
+        role="builder",
+        runtime_policy={"reservation_usage": {"self_hosted_jobs": 1}},
+    )
+    session.add(agent)
+    session.flush()
+    first_task, first_step = _seed_task_step(
+        session,
+        workspace,
+        title="First",
+        priority=10,
+        runtime_space_id=runtime_space.id,
+        assigned_agent_profile_id=agent.id,
+    )
+    second_task, second_step = _seed_task_step(
+        session,
+        workspace,
+        title="Second",
+        priority=9,
+        runtime_space_id=runtime_space.id,
+        assigned_agent_profile_id=agent.id,
+    )
+
+    runs = RunOrchestrationService(session).schedule_workspace_steps(workspace_id=workspace.id)
+
+    reservations = _workspace_reservations(session, workspace.id)
+    assert len(runs) == 1
+    assert runs[0].task_id == first_task.id
+    assert reservations[0].resource_usage == {
+        "active_runs": 1,
+        "docker_runtimes": 1,
+        "self_hosted_jobs": 1,
+    }
+    assert _workspace_quota(session, workspace.id, "docker_runtimes").reserved_value == 1
+    assert _workspace_quota(session, workspace.id, "self_hosted_jobs").reserved_value == 1
+    assert second_step.dependencies["blocked_reason"] == (
+        "workspace_quota_exceeded:docker_runtimes"
+    )
+
+    RunOrchestrationService(session)._mark_run_cancelled(
+        runs[0],
+        completed_at=datetime.now(UTC),
+    )
+    next_runs = RunOrchestrationService(session).schedule_workspace_steps(workspace_id=workspace.id)
+
+    assert len(next_runs) == 1
+    assert next_runs[0].task_id == second_task.id
+    released = [
+        reservation
+        for reservation in _workspace_reservations(session, workspace.id)
+        if reservation.task_id == first_task.id
+    ][0]
+    assert released.status == "released"
+    assert _workspace_quota(session, workspace.id, "docker_runtimes").reserved_value == 1
+    assert _workspace_quota(session, workspace.id, "self_hosted_jobs").reserved_value == 1
+
+
 def test_workspace_quota_reservation_releases_when_runtime_space_blocks() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
