@@ -15,11 +15,13 @@ from backend.app.api.schemas.operations import (
     DeadLetterJobsResponse,
     OperationsCapacityResponse,
     OperationsOutcomesResponse,
+    OperationsRuntimeCapacityResponse,
     OperationsSchedulerResponse,
     QueueLatencyResponse,
     QueueMetricsResponse,
     RunFailureReasonResponse,
     RunOutcomeWindowResponse,
+    RuntimeProviderCapacityResponse,
     RuntimeSpaceQuotaUsageResponse,
     RuntimeSpaceSaturationResponse,
     SchedulerBacklogResponse,
@@ -27,6 +29,7 @@ from backend.app.api.schemas.operations import (
     SchedulerPolicyResponse,
     SchedulerPriorityBucketResponse,
     WorkerCapacityAggregateResponse,
+    WorkerTypeCapacityResponse,
 )
 from backend.app.approvals.models import Approval
 from backend.app.audit.models import AuditEvent
@@ -512,6 +515,14 @@ class OperationsService:
             runtime_spaces=self._runtime_space_saturation(workspace_id),
         )
 
+    def runtime_capacity_payload(self, workspace_id: UUID) -> OperationsRuntimeCapacityResponse:
+        return OperationsRuntimeCapacityResponse(
+            generated_at=datetime.now(UTC),
+            providers=self._runtime_provider_capacity(workspace_id),
+            worker_types=self._worker_type_capacity(),
+            runtime_spaces=self._runtime_space_saturation(workspace_id),
+        )
+
     def scheduler_payload(self, workspace_id: UUID) -> OperationsSchedulerResponse:
         task_steps = self._session.execute(
             select(TaskStep, Task)
@@ -771,6 +782,105 @@ class OperationsService:
             )
         return responses
 
+    def _runtime_provider_capacity(
+        self,
+        workspace_id: UUID,
+    ) -> list[RuntimeProviderCapacityResponse]:
+        runtimes = self._session.scalars(
+            select(WorkspaceRuntime)
+            .where(WorkspaceRuntime.workspace_id == workspace_id)
+            .order_by(WorkspaceRuntime.runtime_provider.asc(), WorkspaceRuntime.runtime_type.asc())
+        ).all()
+        active_runs_by_runtime = dict(
+            self._session.execute(
+                select(AgentRun.runtime_id, func.count())
+                .where(
+                    AgentRun.workspace_id == workspace_id,
+                    AgentRun.runtime_id.is_not(None),
+                    AgentRun.status.in_(["queued", "running", "waiting_approval"]),
+                )
+                .group_by(AgentRun.runtime_id)
+            ).all()
+        )
+        grouped: dict[tuple[str, str], dict[str, int]] = {}
+        for runtime in runtimes:
+            key = (runtime.runtime_provider, runtime.runtime_type)
+            bucket = grouped.setdefault(
+                key,
+                {
+                    "total": 0,
+                    "online": 0,
+                    "offline": 0,
+                    "degraded": 0,
+                    "running": 0,
+                    "capacity_slots": 0,
+                    "active_runs": 0,
+                },
+            )
+            bucket["total"] += 1
+            if runtime.connection_status == "online":
+                bucket["online"] += 1
+            elif runtime.connection_status == "degraded":
+                bucket["degraded"] += 1
+            elif runtime.connection_status == "offline":
+                bucket["offline"] += 1
+            if runtime.status in {"created", "running", "active"}:
+                bucket["running"] += 1
+            bucket["capacity_slots"] += _runtime_capacity_slots(runtime)
+            bucket["active_runs"] += int(active_runs_by_runtime.get(runtime.id, 0))
+        return [
+            RuntimeProviderCapacityResponse(
+                provider=provider,
+                runtime_type=runtime_type,
+                utilization=round(values["active_runs"] / values["capacity_slots"], 4)
+                if values["capacity_slots"] > 0
+                else 0.0,
+                **values,
+            )
+            for (provider, runtime_type), values in sorted(grouped.items())
+        ]
+
+    def _worker_type_capacity(self) -> list[WorkerTypeCapacityResponse]:
+        nodes = self._session.scalars(select(WorkerNode)).all()
+        running_by_worker = dict(
+            self._session.execute(
+                select(WorkerLease.worker_id, func.count())
+                .where(WorkerLease.status.in_(RUNNING_LEASE_STATUSES))
+                .group_by(WorkerLease.worker_id)
+            ).all()
+        )
+        grouped: dict[str, dict[str, int]] = {}
+        for node in nodes:
+            bucket = grouped.setdefault(
+                node.worker_type,
+                {
+                    "workers_total": 0,
+                    "workers_online": 0,
+                    "workers_draining": 0,
+                    "max_jobs": 0,
+                    "running_jobs": 0,
+                    "available_slots": 0,
+                },
+            )
+            max_jobs = _positive_int(node.capacity.get("max_jobs"), 1)
+            running_jobs = int(running_by_worker.get(node.worker_id, 0))
+            bucket["workers_total"] += 1
+            bucket["workers_online"] += 1 if node.status == "online" else 0
+            bucket["workers_draining"] += 1 if node.status == "draining" else 0
+            bucket["max_jobs"] += max_jobs
+            bucket["running_jobs"] += running_jobs
+            bucket["available_slots"] += max(0, max_jobs - running_jobs)
+        return [
+            WorkerTypeCapacityResponse(
+                worker_type=worker_type,
+                utilization=round(values["running_jobs"] / values["max_jobs"], 4)
+                if values["max_jobs"] > 0
+                else 0.0,
+                **values,
+            )
+            for worker_type, values in sorted(grouped.items())
+        ]
+
     def _scheduler_policy(self, workspace_id: UUID) -> SchedulerPolicyResponse:
         workspace = self._session.get(Workspace, workspace_id)
         settings = workspace.settings if workspace is not None else {}
@@ -881,6 +991,16 @@ def _worker_capacity(capacity: dict[str, object] | None, worker_type: str) -> di
     normalized = dict(capacity or {})
     normalized.setdefault("worker_type", worker_type)
     return normalized
+
+
+def _runtime_capacity_slots(runtime: WorkspaceRuntime) -> int:
+    for key in ("max_concurrent_jobs", "max_jobs", "slots", "capacity_slots"):
+        value = _positive_int_or_none(runtime.capabilities.get(key))
+        if value is not None:
+            return value
+    if runtime.runtime_provider == "self_hosted":
+        return 1
+    return 1
 
 
 def _runtime_space_quota_usage(quota: RuntimeSpaceQuota) -> RuntimeSpaceQuotaUsageResponse:

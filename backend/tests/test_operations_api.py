@@ -428,6 +428,152 @@ def test_operations_capacity_reports_queue_workers_and_runtime_space_saturation(
     assert other_response.json()["runtime_spaces"] == []
 
 
+def test_operations_runtime_capacity_reports_provider_and_worker_slots() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    other_user, other_workspace = _seed_workspace_with_role(
+        session,
+        email="other-runtime-capacity@example.com",
+        slug="other-runtime-capacity",
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Team Space",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.flush()
+    cloud_runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        runtime_provider="cloud_docker",
+        runtime_type="docker",
+        name="cloud",
+        status="running",
+        connection_status="online",
+        capabilities={"slots": 2},
+    )
+    self_hosted_runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_provider="self_hosted",
+        runtime_type="self_hosted",
+        name="local",
+        status="active",
+        connection_status="degraded",
+        capabilities={"max_concurrent_jobs": 3},
+    )
+    other_runtime = WorkspaceRuntime(
+        workspace_id=other_workspace.id,
+        runtime_provider="cloud_docker",
+        runtime_type="docker",
+        name="other",
+        status="running",
+        connection_status="online",
+    )
+    session.add_all([cloud_runtime, self_hosted_runtime, other_runtime])
+    session.flush()
+    cloud_run = AgentRun(
+        workspace_id=workspace.id,
+        runtime_id=cloud_runtime.id,
+        status="running",
+    )
+    self_hosted_run = AgentRun(
+        workspace_id=workspace.id,
+        runtime_id=self_hosted_runtime.id,
+        status="queued",
+    )
+    session.add_all([cloud_run, self_hosted_run])
+    session.flush()
+    quota = RuntimeSpaceQuota(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="docker_runtimes",
+        limit_value=2,
+        reserved_value=1,
+        unit="count",
+    )
+    cloud_worker = WorkerNode(
+        worker_id="worker-cloud",
+        worker_type="cloud",
+        status="online",
+        queue_name="agent_runs",
+        capacity={"max_jobs": 4},
+        details={},
+        last_seen_at=datetime.now(UTC),
+    )
+    local_worker = WorkerNode(
+        worker_id="worker-local",
+        worker_type="self_hosted",
+        status="draining",
+        queue_name="agent_runs",
+        capacity={"max_jobs": 2},
+        details={},
+        drain_requested_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+    )
+    lease = WorkerLease(
+        workspace_id=workspace.id,
+        worker_id="worker-local",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=self_hosted_run.id,
+        status="running",
+        attempt=0,
+        lease_metadata={},
+        started_at=datetime.now(UTC),
+    )
+    session.add_all(
+        [
+            quota,
+            cloud_worker,
+            local_worker,
+            lease,
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/runtime-capacity",
+        headers=_headers(owner.id),
+    )
+    other_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/operations/runtime-capacity",
+        headers=_headers(other_user.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    providers = {
+        (item["provider"], item["runtime_type"]): item for item in payload["providers"]
+    }
+    assert providers[("cloud_docker", "docker")] == {
+        "provider": "cloud_docker",
+        "runtime_type": "docker",
+        "total": 1,
+        "online": 1,
+        "offline": 0,
+        "degraded": 0,
+        "running": 1,
+        "capacity_slots": 2,
+        "active_runs": 1,
+        "utilization": 0.5,
+    }
+    assert providers[("self_hosted", "self_hosted")]["degraded"] == 1
+    assert providers[("self_hosted", "self_hosted")]["capacity_slots"] == 3
+    assert providers[("self_hosted", "self_hosted")]["active_runs"] == 1
+    worker_types = {item["worker_type"]: item for item in payload["worker_types"]}
+    assert worker_types["cloud"]["available_slots"] == 4
+    assert worker_types["self_hosted"]["workers_draining"] == 1
+    assert worker_types["self_hosted"]["running_jobs"] == 1
+    assert worker_types["self_hosted"]["utilization"] == 0.5
+    assert payload["runtime_spaces"][0]["quotas"][0]["quota_key"] == "docker_runtimes"
+    assert other_response.status_code == 200
+    assert other_response.json()["providers"][0]["total"] == 1
+    assert other_response.json()["runtime_spaces"] == []
+
+
 def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

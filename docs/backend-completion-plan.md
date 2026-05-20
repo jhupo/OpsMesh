@@ -514,7 +514,7 @@ API/data changes:
 - `GET /api/v1/workspaces/{workspace_id}/operations/capacity`
 - `GET /api/v1/workspaces/{workspace_id}/operations/scheduler`
 - `GET /api/v1/workspaces/{workspace_id}/operations/outcomes`
-- `GET /api/v1/workspaces/{workspace_id}/operations/runtime-capacity`
+- [x] `GET /api/v1/workspaces/{workspace_id}/operations/runtime-capacity`
 
 Tests:
 

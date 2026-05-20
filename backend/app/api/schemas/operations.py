@@ -165,6 +165,37 @@ class OperationsCapacityResponse(BaseModel):
     runtime_spaces: list[RuntimeSpaceSaturationResponse]
 
 
+class RuntimeProviderCapacityResponse(BaseModel):
+    provider: str
+    runtime_type: str
+    total: int
+    online: int
+    offline: int
+    degraded: int
+    running: int
+    capacity_slots: int
+    active_runs: int
+    utilization: float
+
+
+class WorkerTypeCapacityResponse(BaseModel):
+    worker_type: str
+    workers_total: int
+    workers_online: int
+    workers_draining: int
+    max_jobs: int
+    running_jobs: int
+    available_slots: int
+    utilization: float
+
+
+class OperationsRuntimeCapacityResponse(BaseModel):
+    generated_at: datetime
+    providers: list[RuntimeProviderCapacityResponse]
+    worker_types: list[WorkerTypeCapacityResponse]
+    runtime_spaces: list[RuntimeSpaceSaturationResponse]
+
+
 class SchedulerBacklogResponse(BaseModel):
     queued_steps: int
     running_steps: int
