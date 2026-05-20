@@ -32,7 +32,7 @@ from backend.app.auth.admin import require_platform_admin
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.executors import blocking_executor_snapshot
 from backend.app.core.resources import recommend_runtime_resources
-from backend.app.db.session import get_db_session
+from backend.app.db.session import database_pool_snapshot, get_db_session
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 
@@ -246,6 +246,7 @@ async def admin_system_configuration(
         configured_resources=configured_resources,
         resource_deltas=resource_deltas,
         blocking_executor=blocking_executor_snapshot(settings).as_dict(),
+        database_pool=database_pool_snapshot().as_dict(),
     )
 
 

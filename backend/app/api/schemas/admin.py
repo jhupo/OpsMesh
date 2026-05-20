@@ -59,6 +59,7 @@ class AdminSystemConfigurationResponse(BaseModel):
     configured_resources: dict[str, int]
     resource_deltas: dict[str, int]
     blocking_executor: dict[str, int | bool]
+    database_pool: dict[str, int | str | None]
 
 
 class AdminDeadLetterJobsResponse(BaseModel):

@@ -10,7 +10,7 @@ from backend.app.core.executors import (
     shutdown_blocking_executor,
 )
 from backend.app.core.resources import recommend_runtime_resources
-from backend.app.db.session import create_database_engine
+from backend.app.db.session import create_database_engine, database_pool_snapshot
 from backend.app.redis.client import create_redis_client
 
 
@@ -150,6 +150,11 @@ def test_database_engine_uses_pool_settings_for_postgres_url() -> None:
     assert engine.pool.size() == 3
     assert engine.pool._max_overflow == 4  # noqa: SLF001
     assert engine.url.get_backend_name() == "postgresql"
+    snapshot = database_pool_snapshot(engine)
+    assert snapshot.backend == "postgresql"
+    assert snapshot.pool_size == 3
+    assert snapshot.max_overflow == 4
+    assert snapshot.checked_out == 0
     engine.dispose()
 
 
@@ -159,6 +164,9 @@ def test_database_engine_skips_queue_pool_settings_for_sqlite() -> None:
     engine = create_database_engine(settings)
 
     assert engine.url.get_backend_name() == "sqlite"
+    snapshot = database_pool_snapshot(engine)
+    assert snapshot.backend == "sqlite"
+    assert snapshot.pool_class is not None
     engine.dispose()
 
 

@@ -23,6 +23,7 @@ Completed foundation:
 - reusable Redis JSON cache abstraction with namespaced keys, TTLs, get-or-set loading, corrupt-value healing, and namespace invalidation
 - platform-admin system configuration endpoint exposing redacted settings plus recommended/configured core resource sizing deltas
 - blocking executor observability snapshot for configured workers, initialized state, active threads, and queued work items
+- database pool observability snapshot for backend, pool class, size, checked-in/out, overflow, max overflow, and raw pool status
 - workspace agents, teams, members, tasks, steps, runs, events, approvals, files, artifacts, exports, and audit records
 - worker queue, retries, dead letters, idempotency, heartbeats, and rate limits
 - OpenAI Agents runtime contract and fake/runtime adapters
@@ -45,7 +46,7 @@ Incomplete or basic-only areas:
 - Model provider selection exists, but provider fallback and per-agent audit trails need completion.
 - Operations APIs exist and overview now uses short Redis caching, but capacity, queue latency, and saturation dashboards need richer aggregate endpoints.
 - The memory search tool is still a placeholder and needs a real workspace memory/index implementation.
-- Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, reusable maintenance runner, HTTP metrics, domain error mapping, production config guardrails, Redis distributed locks, structured idempotency states, feature flags, Redis cache abstraction, admin-visible core configuration summaries, and blocking executor snapshots are implemented.
+- Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, reusable maintenance runner, HTTP metrics, domain error mapping, production config guardrails, Redis distributed locks, structured idempotency states, feature flags, Redis cache abstraction, admin-visible core configuration summaries, blocking executor snapshots, and database pool snapshots are implemented.
 
 ## P0: Cloud Control Plane And Runtime Spaces
 

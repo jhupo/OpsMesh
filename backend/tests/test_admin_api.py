@@ -485,6 +485,8 @@ def test_admin_system_configuration_exposes_redacted_resource_summary() -> None:
     assert body["configured_resources"]["database_pool_size"] >= 1
     assert body["blocking_executor"]["initialized"] is False
     assert body["blocking_executor"]["configured_workers"] >= 1
+    assert body["database_pool"]["backend"] in {"postgresql", "sqlite"}
+    assert body["database_pool"]["pool_class"]
     assert set(body["resource_deltas"]) == {
         "database_pool_size",
         "database_max_overflow",
