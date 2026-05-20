@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from redis import Redis
 
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.redis.locks import redis_lock
 from backend.app.workers.jobs import JobPayload
 
 
@@ -149,12 +150,8 @@ class RedisQueue:
     @contextmanager
     def run_lock(self, workspace_id: str, run_id: str, ttl_seconds: int = 600) -> Iterator[bool]:
         lock_key = self.keys.run_lock(workspace_id, run_id)
-        acquired = bool(self.redis.set(lock_key, "1", nx=True, ex=ttl_seconds))
-        try:
+        with redis_lock(self.redis, lock_key, ttl_seconds) as acquired:
             yield acquired
-        finally:
-            if acquired:
-                self.redis.delete(lock_key)
 
     def _serialize(self, job: JobPayload) -> str:
         return job.model_dump_json()
