@@ -121,6 +121,9 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
         "runtime.stopped",
         "runtime.deleted",
     ]
+    assert events[-1].event_metadata["cleanup"]["action"] == "delete"
+    assert events[-1].event_metadata["cleanup"]["container_id"] == "container-123"
+    assert events[-1].event_metadata["cleanup"]["success"] is True
     assert [event.event_type for event in space_events] == [
         "runtime.created",
         "runtime.started",
@@ -189,6 +192,57 @@ def test_cleanup_stale_runtime_removes_only_recorded_container() -> None:
 
     assert docker.removed == ["container-123"]
     assert runtime.status == "deleted"
+    cleanup_event = session.scalar(
+        select(RuntimeEvent).where(
+            RuntimeEvent.workspace_runtime_id == runtime.id,
+            RuntimeEvent.event_type == "runtime.cleanup",
+        )
+    )
+    assert cleanup_event is not None
+    assert cleanup_event.event_metadata["cleanup"]["action"] == "stale_cleanup"
+    assert cleanup_event.event_metadata["cleanup"]["success"] is True
+
+
+def test_cleanup_stale_runtime_records_failure_evidence() -> None:
+    class FailingDockerClient(FakeDockerClient):
+        def remove_container(self, container_id: str) -> None:
+            super().remove_container(container_id)
+            raise RuntimeError("docker daemon unavailable")
+
+    session = _session()
+    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme-fail", settings={})
+    template = RuntimeTemplate(
+        name="python",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.commit()
+    docker = FailingDockerClient()
+    runtime = RuntimeManager(session, docker).create_runtime(
+        workspace_id=workspace.id,
+        template=template,
+        name="analysis",
+        limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
+    )
+    runtime.status = "failed"
+    session.commit()
+
+    RuntimeManager(session, docker).cleanup_stale_runtime(runtime)
+
+    event = session.scalar(
+        select(RuntimeEvent).where(
+            RuntimeEvent.workspace_runtime_id == runtime.id,
+            RuntimeEvent.event_type == "runtime.cleanup_failed",
+        )
+    )
+    assert docker.removed == ["container-123"]
+    assert runtime.status == "cleanup_failed"
+    assert event is not None
+    assert event.event_metadata["cleanup"]["success"] is False
+    assert event.event_metadata["cleanup"]["error"] == "docker daemon unavailable"
 
 
 def test_runtime_manager_rejects_single_runtime_over_workspace_quota() -> None:

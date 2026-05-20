@@ -42,7 +42,7 @@ Incomplete or basic-only areas:
 - Task observation now has a stable backend API with generic and domain-specific sections for AIGC, novel writing, research, and software tasks. The first implementation composes existing task, step, message, run event, and artifact data; richer domain persistence can be added behind the same response shape.
 - Correction/revision is supported through a generic user-facing endpoint that targets tasks, steps, agents, artifacts, or final output and records follow-up work plus task messages.
 - Scheduling supports per-member concurrency, workspace active run quotas, per-tick resource-limit prechecks, durable workspace usage reservations, blocked reasons, cross-task priority ordering, and starvation prevention. Docker/self-hosted execution slot usage still needs deeper completion.
-- Docker and self-hosted runtime policies need stronger quota enforcement, cleanup verification, and revocation evidence.
+- Docker runtime cleanup now records success/failure evidence; self-hosted runtime policies still need stronger quota enforcement and revocation evidence.
 - Import preview does not yet produce a full conflict plan before users commit a workspace archive import.
 - Model provider selection exists, but provider fallback and per-agent audit trails need completion.
 - Operations APIs exist and overview now uses short Redis caching, but capacity, queue latency, and saturation dashboards need richer aggregate endpoints.
@@ -62,7 +62,7 @@ Current state:
 - Global risky-execution policy now applies to Docker runtime network access, runtime shell commands, self-hosted runtime registration/job polling, and high-risk MCP tools. Platform admins set global guardrails; task approvals remain workspace-owner approvals, not platform-admin approvals.
 - Runtime-space scheduler reservations now enforce `active_runs` capacity for team task steps before run enqueue and release the reservation on run completion, failure, stale-run recovery, or cancellation.
 - Runtime-space reservations now merge runtime-space, agent, and task-step resource requirements for CPU, memory, storage, Docker runtime slots, self-hosted job slots, and artifact/log style quota keys before run creation.
-- Docker lease cleanup evidence is not implemented yet.
+- Docker cleanup evidence is now recorded on runtime delete/stale cleanup success and failure.
 
 Build:
 
@@ -72,7 +72,8 @@ Build:
 - [x] Add worker node records, worker leases, drain status, worker version, and capacity reporting.
 - [x] Extend scheduler decisions to reserve runtime-space `active_runs` capacity before enqueueing team task steps.
 - [x] Extend runtime-space reservations to Docker runtimes, self-hosted jobs, CPU, memory, storage, logs, and artifacts.
-- Add cleanup evidence for Docker leases and runtime-space temporary storage.
+- [x] Add cleanup evidence for Docker runtime delete and stale cleanup.
+- Add cleanup evidence for runtime-space temporary storage.
 - [x] Add operator APIs for workers, runtime spaces, worker leases, workspaces, queues, runtimes, platform policies, and security events.
 - [x] Enforce global risky-execution controls inside Docker runtime, self-hosted runtime, and MCP execution paths.
 - [x] Keep workspace-owner approval separate from platform-admin policy controls for high-risk tool use.
@@ -350,20 +351,21 @@ Current state:
 
 - Docker runtime management and safety defaults exist.
 - Image allowlist and disabled network defaults exist.
-- Quota enforcement and cleanup verification need stronger production evidence.
+- Quota enforcement exists at runtime creation, and cleanup success/failure now records structured runtime evidence.
 
 Build:
 
 - Enforce CPU, memory, process, disk, network, timeout, and output limits at container creation.
 - Track runtime lease lifecycle from reservation to cleanup.
-- Verify container, volume, temp directory, and staged file cleanup after every run.
+- [x] Verify container cleanup action and record structured success/failure evidence.
+- Verify volume, temp directory, and staged file cleanup after every run.
 - Emit security events when cleanup fails or a container exceeds policy.
 - Add periodic sweeper for abandoned containers and stale runtime leases.
 
 API/data changes:
 
 - Add runtime lease records or extend runtime events with lease IDs.
-- Add cleanup status, cleanup attempts, and evidence metadata.
+- [x] Add cleanup status and evidence metadata to runtime events.
 - Add operations endpoint for leaked/stale runtime resources.
 
 Tests:

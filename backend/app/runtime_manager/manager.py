@@ -91,20 +91,57 @@ class RuntimeManager:
 
     def delete_runtime(self, runtime: WorkspaceRuntime) -> None:
         self._require_container(runtime)
-        self._docker.remove_container(runtime.docker_container_id or "")
+        container_id = runtime.docker_container_id or ""
+        self._docker.remove_container(container_id)
         runtime.status = "deleted"
         runtime.connection_status = "offline"
-        self._append_event(runtime, "runtime.deleted", "")
+        self._append_event(
+            runtime,
+            "runtime.deleted",
+            "",
+            metadata=_cleanup_evidence(
+                action="delete",
+                container_id=container_id,
+                success=True,
+            ),
+        )
         self._session.commit()
 
     def cleanup_stale_runtime(self, runtime: WorkspaceRuntime) -> None:
         if runtime.status not in {"stopped", "failed", "deleted"}:
             return
-        if runtime.docker_container_id:
-            self._docker.remove_container(runtime.docker_container_id)
+        container_id = runtime.docker_container_id
+        if container_id:
+            try:
+                self._docker.remove_container(container_id)
+            except Exception as exc:
+                runtime.status = "cleanup_failed"
+                runtime.connection_status = "offline"
+                self._append_event(
+                    runtime,
+                    "runtime.cleanup_failed",
+                    str(exc),
+                    metadata=_cleanup_evidence(
+                        action="stale_cleanup",
+                        container_id=container_id,
+                        success=False,
+                        error=str(exc),
+                    ),
+                )
+                self._session.commit()
+                return
         runtime.status = "deleted"
         runtime.connection_status = "offline"
-        self._append_event(runtime, "runtime.cleanup", "")
+        self._append_event(
+            runtime,
+            "runtime.cleanup",
+            "",
+            metadata=_cleanup_evidence(
+                action="stale_cleanup",
+                container_id=container_id,
+                success=True,
+            ),
+        )
         self._session.commit()
 
     def execute_command(
@@ -148,8 +185,16 @@ class RuntimeManager:
         record.status = "completed" if result.exit_code == 0 else "failed"
         record.completed_at = datetime.now(UTC)
 
-    def _append_event(self, runtime: WorkspaceRuntime, event_type: str, message: str) -> None:
+    def _append_event(
+        self,
+        runtime: WorkspaceRuntime,
+        event_type: str,
+        message: str,
+        *,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
         created_at = datetime.now(UTC)
+        event_metadata = {"runtime_id": str(runtime.id)} | (metadata or {})
         self._session.add(
             RuntimeEvent(
                 workspace_id=runtime.workspace_id,
@@ -157,7 +202,7 @@ class RuntimeManager:
                 runtime_space_id=runtime.runtime_space_id,
                 event_type=event_type,
                 message=message,
-                event_metadata={"runtime_id": str(runtime.id)},
+                event_metadata=event_metadata,
                 created_at=created_at,
             )
         )
@@ -172,6 +217,7 @@ class RuntimeManager:
                         "runtime_id": str(runtime.id),
                         "runtime_status": runtime.status,
                         "connection_status": runtime.connection_status,
+                        **(metadata or {}),
                     },
                     created_at=created_at,
                 )
@@ -180,3 +226,23 @@ class RuntimeManager:
     def _require_container(self, runtime: WorkspaceRuntime) -> None:
         if not runtime.docker_container_id:
             raise ValueError("Runtime has no Docker container")
+
+
+def _cleanup_evidence(
+    *,
+    action: str,
+    container_id: str | None,
+    success: bool,
+    error: str | None = None,
+) -> dict[str, object]:
+    evidence: dict[str, object] = {
+        "cleanup": {
+            "action": action,
+            "container_id": container_id,
+            "success": success,
+            "checked_at": datetime.now(UTC).isoformat(),
+        }
+    }
+    if error is not None:
+        evidence["cleanup"]["error"] = error
+    return evidence
