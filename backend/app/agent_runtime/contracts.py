@@ -22,6 +22,15 @@ class AgentRuntimeToolResult:
     error: dict[str, object] | None = None
 
 
+@dataclass(frozen=True)
+class AgentRuntimeToolContinuation:
+    tool_name: str
+    status: str
+    result: dict[str, object] | None = None
+    error: dict[str, object] | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
+
+
 class AgentRuntimeToolExecutor(Protocol):
     def execute_tool(
         self,
@@ -43,6 +52,7 @@ class AgentRunRequest:
     api_key: str | None = None
     model_provider_credential_id: UUID | None = None
     tool_executor: AgentRuntimeToolExecutor | None = None
+    continuations: tuple[AgentRuntimeToolContinuation, ...] = ()
 
 
 @dataclass(frozen=True)

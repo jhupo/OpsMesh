@@ -1246,7 +1246,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     assert request.context.metadata["authorization_snapshot_version"] == 1
 
 
-def test_resumed_run_includes_completed_self_hosted_tool_results_in_input() -> None:
+def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
@@ -1290,9 +1290,18 @@ def test_resumed_run_includes_completed_self_hosted_tool_results_in_input() -> N
         ),
     )
 
-    assert "Completed runtime tool results:" in request.input_text
-    assert '"tool_name": "generate_image"' in request.input_text
-    assert '"asset_id": "img_123"' in request.input_text
+    assert request.continuations[0].tool_name == "generate_image"
+    assert request.continuations[0].status == "completed"
+    assert request.continuations[0].result == {"asset_id": "img_123"}
+    assert request.context.metadata["tool_continuations"] == [
+        {
+            "tool_name": "generate_image",
+            "status": "completed",
+            "metadata": {},
+        }
+    ]
+    assert "Completed runtime tool results" not in request.input_text
+    assert "img_123" not in request.input_text
     assert "do not include this original prompt" not in request.input_text
 
 

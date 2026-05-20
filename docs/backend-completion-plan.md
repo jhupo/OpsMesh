@@ -119,7 +119,7 @@ Current state:
 - The execution service now resolves an MCP server/tool from the run authorization snapshot, injects workspace-owned credential references into an adapter, enforces payload policy, and records call logs, run events, task messages, and security events.
 - MCP execution also re-checks the runtime context tool set, sends explicitly approval-required tools into workspace approval, and writes authorization snapshot metadata into tool audit records.
 - Worker-built agent requests now carry a backend tool executor, and the OpenAI Agents runner registers allowed MCP tools as SDK function tools that call back into the backend execution service.
-- HTTP JSON-RPC, remote SSE, and remote hosted MCP servers can now be executed through the adapter resolver. Stdio MCP has a Docker-runtime-only adapter, but it is not selected by the default resolver; callers must explicitly bind it to a workspace runtime so the API host never executes stdio commands directly. Self-hosted runtimes now have an auditable MCP job queue for poll, claim, and completion callbacks, and OpenAI tool calls can submit stdio jobs with an explicit `waiting_self_hosted` result. Completed self-hosted MCP jobs now move waiting runs back to queued, persist pending tool results, and inject those results into resumed run input.
+- HTTP JSON-RPC, remote SSE, and remote hosted MCP servers can now be executed through the adapter resolver. Stdio MCP has a Docker-runtime-only adapter, but it is not selected by the default resolver; callers must explicitly bind it to a workspace runtime so the API host never executes stdio commands directly. Self-hosted runtimes now have an auditable MCP job queue for poll, claim, and completion callbacks, and OpenAI tool calls can submit stdio jobs with an explicit `waiting_self_hosted` result. Completed self-hosted MCP jobs now move waiting runs back to queued, persist pending tool results, and resume through structured tool continuations rendered at the OpenAI runtime boundary.
 
 Build:
 
@@ -132,8 +132,8 @@ Build:
   - [x] Add self-hosted stdio MCP job dispatch foundation with worker poll, claim, and completion APIs.
   - [x] Wire self-hosted MCP job dispatch into the runtime tool adapter with pending-result semantics for OpenAI tool calls.
   - [x] Add waiting-runtime run state and self-hosted MCP result handoff back to queued runs.
-  - [x] Inject completed self-hosted MCP results into resumed OpenAI run input.
-  - [ ] Add first-class OpenAI tool-call continuation state instead of prompt-level result injection.
+  - [x] Resume completed self-hosted MCP results through structured OpenAI tool continuations instead of mutating orchestration input text.
+  - [ ] Replace runner-level continuation rendering with SDK-native tool-call continuation when the OpenAI Agents SDK exposes a stable API for it.
   - [x] Add operations visibility for self-hosted MCP job backlog and tool distribution.
 - [x] Inject only the credentials that belong to the current workspace and selected tool.
 - [x] Enforce timeout, payload size, response size, allowlisted tool names, and network policy.

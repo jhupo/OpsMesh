@@ -1,3 +1,4 @@
+import json
 from typing import Any, Literal
 
 from agents import Agent, ModelSettings, Runner, function_tool
@@ -17,7 +18,7 @@ class OpenAIAgentsRunner:
         agent = self._build_agent(request)
         result = await Runner.run(
             agent,
-            request.input_text,
+            self._input_for_request(request),
             context=request.context,
             max_turns=request.max_turns,
         )
@@ -83,6 +84,30 @@ class OpenAIAgentsRunner:
             name_override=tool_name,
             description_override=f"Execute the approved MCP tool `{tool_name}`.",
             strict_mode=False,
+        )
+
+    def _input_for_request(self, request: AgentRunRequest) -> str:
+        if not request.continuations:
+            return request.input_text
+        continuation_lines = [
+            "- "
+            + json.dumps(
+                {
+                    "tool_name": continuation.tool_name,
+                    "status": continuation.status,
+                    "result": continuation.result
+                    if continuation.status == "completed"
+                    else continuation.error,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            for continuation in request.continuations
+        ]
+        return (
+            request.input_text
+            + "\n\nCompleted runtime tool results:\n"
+            + "\n".join(continuation_lines)
         )
 
     def _model_settings(self, settings: dict[str, object]) -> ModelSettings:

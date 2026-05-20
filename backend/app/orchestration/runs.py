@@ -14,6 +14,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
+    AgentRuntimeToolContinuation,
 )
 from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.event_mapping import RuntimeEventTaskMessageMapper
@@ -807,6 +808,16 @@ class RunOrchestrationService:
             "authorization_snapshot_version": authorization_snapshot.get("version"),
         }
         metadata.update(step_context)
+        continuations = _tool_continuations_for_run(run.input)
+        if continuations:
+            metadata["tool_continuations"] = [
+                {
+                    "tool_name": item.tool_name,
+                    "status": item.status,
+                    "metadata": item.metadata,
+                }
+                for item in continuations
+            ]
         return AgentRunRequest(
             agent_profile=profile,
             input_text=self._input_text_for_run(run),
@@ -828,6 +839,7 @@ class RunOrchestrationService:
             )
             if allowed_tools
             else None,
+            continuations=continuations,
         )
 
     def _validate_job_scope(self, run: AgentRun, job: JobPayload) -> None:
@@ -1050,11 +1062,6 @@ class RunOrchestrationService:
             return str(run.input)
 
         parts = [task.title, task.description]
-        pending_tool_results = _pending_tool_result_summaries(run.input)
-        if pending_tool_results:
-            parts.append(
-                "Completed runtime tool results:\n" + "\n".join(pending_tool_results)
-            )
         if run.task_step_id is not None:
             step = self._session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
@@ -2621,11 +2628,13 @@ def _dict_copy(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, dict) else {}
 
 
-def _pending_tool_result_summaries(run_input: dict[str, object]) -> list[str]:
+def _tool_continuations_for_run(
+    run_input: dict[str, object],
+) -> tuple[AgentRuntimeToolContinuation, ...]:
     results = run_input.get("pending_tool_results")
     if not isinstance(results, list):
-        return []
-    summaries: list[str] = []
+        return ()
+    continuations: list[AgentRuntimeToolContinuation] = []
     for item in results:
         if not isinstance(item, dict):
             continue
@@ -2633,30 +2642,21 @@ def _pending_tool_result_summaries(run_input: dict[str, object]) -> list[str]:
         status = item.get("status")
         if not isinstance(tool_name, str) or not isinstance(status, str):
             continue
-        payload = item.get("response") if status == "completed" else item.get("error")
-        summaries.append(
-            "- "
-            + json.dumps(
-                {
-                    "tool_name": tool_name,
-                    "status": status,
-                    "result": _jsonable_runtime_result(payload),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
+        metadata = {
+            key: value
+            for key, value in item.items()
+            if key not in {"tool_name", "status", "response", "error", "request"}
+        }
+        continuations.append(
+            AgentRuntimeToolContinuation(
+                tool_name=tool_name,
+                status=status,
+                result=_dict_copy(item.get("response")),
+                error=_dict_copy(item.get("error")),
+                metadata=_dict_copy(metadata),
             )
         )
-    return summaries
-
-
-def _jsonable_runtime_result(value: object) -> object:
-    if value is None or isinstance(value, str | int | float | bool):
-        return value
-    if isinstance(value, list):
-        return [_jsonable_runtime_result(item) for item in value]
-    if isinstance(value, dict):
-        return {str(key): _jsonable_runtime_result(item) for key, item in value.items()}
-    return str(value)
+    return tuple(continuations)
 
 
 def _skill_snapshot_matches(

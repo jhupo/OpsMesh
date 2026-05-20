@@ -4,6 +4,7 @@ from uuid import uuid4
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
+    AgentRuntimeToolContinuation,
     AgentRuntimeToolResult,
 )
 from backend.app.agent_runtime.errors import normalize_agent_error
@@ -103,6 +104,39 @@ def test_openai_agents_runner_registers_allowed_mcp_tools() -> None:
     agent = OpenAIAgentsRunner()._build_agent(request)
 
     assert [tool.name for tool in agent.tools] == ["generate_image", "search.web"]
+
+
+def test_openai_agents_runner_renders_tool_continuations_at_runtime_boundary() -> None:
+    profile = AgentProfile(
+        workspace_id=uuid4(),
+        name="Designer",
+        role="designer",
+        instructions="Design carefully.",
+        model="gpt-4.1",
+    )
+    request = AgentRunRequest(
+        agent_profile=profile,
+        input_text="Continue after the tool result.",
+        context=AgentRuntimeContext(
+            workspace_id=profile.workspace_id,
+            task_id=None,
+            run_id=uuid4(),
+        ),
+        continuations=(
+            AgentRuntimeToolContinuation(
+                tool_name="generate_image",
+                status="completed",
+                result={"asset_id": "img_123"},
+            ),
+        ),
+    )
+
+    rendered = OpenAIAgentsRunner()._input_for_request(request)
+
+    assert rendered.startswith("Continue after the tool result.")
+    assert "Completed runtime tool results:" in rendered
+    assert '"tool_name": "generate_image"' in rendered
+    assert '"asset_id": "img_123"' in rendered
 
 
 def test_fake_agent_runner_returns_deterministic_output() -> None:
