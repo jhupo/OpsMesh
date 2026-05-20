@@ -27,6 +27,7 @@ def test_settings_defaults_are_local_development_friendly() -> None:
     assert settings.blocking_thread_pool_workers == recommendation.blocking_thread_pool_workers
     assert settings.redis_max_connections == recommendation.redis_max_connections
     assert settings.request_slow_log_threshold_ms == 1_000
+    assert settings.feature_flags == {}
 
 
 def test_runtime_resource_recommendations_scale_with_cpu_count() -> None:
@@ -121,6 +122,7 @@ def test_settings_redacted_summary_hides_secrets() -> None:
         internal_api_token="secret",
         credential_encryption_secret="credential-secret",
         cors_origins=["https://console.example.com"],
+        feature_flags={"workspace_memory": True, "docker_runtimes": False},
     )
 
     summary = settings.redacted_summary()
@@ -129,6 +131,7 @@ def test_settings_redacted_summary_hides_secrets() -> None:
     assert summary["redis_url"] == "redis://***:***@redis.example.com:6379/0"
     assert "secret" not in str(summary)
     assert summary["cors_origins_count"] == 1
+    assert summary["enabled_feature_flags"] == ["workspace_memory"]
 
 
 def test_database_engine_uses_pool_settings_for_postgres_url() -> None:

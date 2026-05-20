@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     credential_encryption_secret: str = Field(default="change-me-credential-encryption-secret")
     credential_encryption_key_id: str = Field(default="local")
     runtime_allowed_images: list[str] = Field(default_factory=lambda: ["python:3.12-slim"])
+    feature_flags: dict[str, bool] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
@@ -116,6 +117,9 @@ class Settings(BaseSettings):
             "api_rate_limit_enabled": self.api_rate_limit_enabled,
             "storage_root": self.storage_root,
             "cors_origins_count": len(self.cors_origins),
+            "enabled_feature_flags": sorted(
+                key for key, value in self.feature_flags.items() if value
+            ),
         }
 
 
