@@ -22,7 +22,9 @@ class McpAdapterResolver:
             return HttpJsonRpcMcpToolAdapter(secret_service=self.secret_service)
         if server_type in {"sse", "http_sse"}:
             return SseMcpToolAdapter(secret_service=self.secret_service)
-        if server_type in {"stdio", "hosted"}:
+        if server_type == "hosted":
+            return HostedMcpToolAdapter(secret_service=self.secret_service)
+        if server_type == "stdio":
             return UnsupportedMcpToolAdapter(server_type=server_type)
         return UnsupportedMcpToolAdapter(server_type=server.server_type)
 
@@ -202,6 +204,43 @@ class SseMcpToolAdapter(HttpJsonRpcMcpToolAdapter):
             ) from exc
 
         return _result_from_sse_body(raw_body)
+
+
+class HostedMcpToolAdapter:
+    def __init__(self, *, secret_service: SecretEncryptionService | None = None) -> None:
+        self._http_adapter = HttpJsonRpcMcpToolAdapter(secret_service=secret_service)
+        self._sse_adapter = SseMcpToolAdapter(secret_service=secret_service)
+
+    def call(
+        self,
+        *,
+        server: McpServer,
+        tool_name: str,
+        arguments: dict[str, object],
+        credential_refs: list[McpCredentialReference],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        transport = (_string_setting(server.connection, "transport") or "").lower().strip()
+        if transport in {"http", "https", "http_jsonrpc", "jsonrpc"}:
+            return self._http_adapter.call(
+                server=server,
+                tool_name=tool_name,
+                arguments=arguments,
+                credential_refs=credential_refs,
+                timeout_seconds=timeout_seconds,
+            )
+        if transport in {"sse", "http_sse"}:
+            return self._sse_adapter.call(
+                server=server,
+                tool_name=tool_name,
+                arguments=arguments,
+                credential_refs=credential_refs,
+                timeout_seconds=timeout_seconds,
+            )
+        raise McpExecutionError(
+            "Hosted MCP server must declare a supported remote transport",
+            code="mcp_hosted_transport_unsupported",
+        )
 
 
 @dataclass(frozen=True)

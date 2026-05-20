@@ -7,8 +7,10 @@ from typing import Any
 from uuid import uuid4
 
 from backend.app.capabilities.adapters import (
+    HostedMcpToolAdapter,
     HttpJsonRpcMcpToolAdapter,
     McpAdapterResolver,
+    SseMcpToolAdapter,
     UnsupportedMcpToolAdapter,
 )
 from backend.app.capabilities.execution import McpExecutionError
@@ -92,7 +94,58 @@ def test_http_jsonrpc_mcp_adapter_sanitizes_remote_errors() -> None:
             raise AssertionError("Expected remote MCP error")
 
 
-def test_mcp_adapter_resolver_selects_http_and_blocks_unsafe_direct_stdio() -> None:
+def test_hosted_mcp_adapter_delegates_to_remote_http_transport() -> None:
+    secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
+    encrypted = secret_service.encrypt_payload({"api_key": "secret-key"})
+    credential = McpCredentialReference(
+        workspace_id=uuid4(),
+        name="hosted",
+        provider="hosted",
+        external_ref="",
+        encrypted_secret_payload=encrypted.ciphertext,
+        secret_fingerprint=encrypted.fingerprint,
+        encryption_key_id=encrypted.key_id,
+    )
+
+    with JsonRpcServer({"result": {"ok": True}}) as server:
+        response = HostedMcpToolAdapter(secret_service=secret_service).call(
+            server=McpServer(
+                workspace_id=uuid4(),
+                name="hosted-tools",
+                server_type="hosted",
+                connection={"transport": "http_jsonrpc", "url": server.url},
+            ),
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+            credential_refs=[credential],
+            timeout_seconds=5,
+        )
+
+    assert response == {"ok": True}
+    assert server.requests[0]["headers"]["x-api-key"] == "secret-key"
+
+
+def test_hosted_mcp_adapter_blocks_missing_remote_transport() -> None:
+    try:
+        HostedMcpToolAdapter().call(
+            server=McpServer(
+                workspace_id=uuid4(),
+                name="hosted-tools",
+                server_type="hosted",
+                connection={"command": "mcp-server"},
+            ),
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+            credential_refs=[],
+            timeout_seconds=5,
+        )
+    except McpExecutionError as exc:
+        assert exc.code == "mcp_hosted_transport_unsupported"
+    else:
+        raise AssertionError("Expected hosted MCP without remote transport to be blocked")
+
+
+def test_mcp_adapter_resolver_selects_remote_adapters_and_blocks_unsafe_direct_stdio() -> None:
     resolver = McpAdapterResolver()
 
     http_adapter = resolver.resolve(
@@ -101,6 +154,22 @@ def test_mcp_adapter_resolver_selects_http_and_blocks_unsafe_direct_stdio() -> N
             name="http-tools",
             server_type="http",
             connection={"url": "https://example.test/mcp"},
+        )
+    )
+    sse_adapter = resolver.resolve(
+        McpServer(
+            workspace_id=uuid4(),
+            name="sse-tools",
+            server_type="sse",
+            connection={"url": "https://example.test/sse"},
+        )
+    )
+    hosted_adapter = resolver.resolve(
+        McpServer(
+            workspace_id=uuid4(),
+            name="hosted-tools",
+            server_type="hosted",
+            connection={"transport": "http_jsonrpc", "url": "https://example.test/mcp"},
         )
     )
     stdio_adapter = resolver.resolve(
@@ -113,6 +182,8 @@ def test_mcp_adapter_resolver_selects_http_and_blocks_unsafe_direct_stdio() -> N
     )
 
     assert isinstance(http_adapter, HttpJsonRpcMcpToolAdapter)
+    assert isinstance(sse_adapter, SseMcpToolAdapter)
+    assert isinstance(hosted_adapter, HostedMcpToolAdapter)
     assert isinstance(stdio_adapter, UnsupportedMcpToolAdapter)
 
 

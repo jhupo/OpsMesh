@@ -118,7 +118,7 @@ Current state:
 - The execution service now resolves an MCP server/tool from the run authorization snapshot, injects workspace-owned credential references into an adapter, enforces payload policy, and records call logs, run events, task messages, and security events.
 - MCP execution also re-checks the runtime context tool set, sends explicitly approval-required tools into workspace approval, and writes authorization snapshot metadata into tool audit records.
 - Worker-built agent requests now carry a backend tool executor, and the OpenAI Agents runner registers allowed MCP tools as SDK function tools that call back into the backend execution service.
-- HTTP JSON-RPC and remote SSE MCP servers can now be executed through the adapter resolver. Stdio and hosted MCP adapters remain blocked until they can run through the hosted runtime/self-hosted safety boundary.
+- HTTP JSON-RPC, remote SSE, and remote hosted MCP servers can now be executed through the adapter resolver. Stdio-style hosted MCP remains blocked until it can run through the hosted runtime/self-hosted safety boundary.
 
 Build:
 
@@ -126,7 +126,7 @@ Build:
 - [ ] Support stdio, HTTP/SSE, and hosted MCP adapters behind one internal interface.
   - [x] Add HTTP JSON-RPC adapter with credential header injection and sanitized remote errors.
   - [x] Add SSE adapter.
-  - [ ] Add hosted MCP adapter.
+  - [x] Add hosted MCP adapter for declared remote HTTP/SSE transports.
   - [ ] Add stdio adapter that executes only through Docker/self-hosted runtimes, not on the API/worker host.
 - [x] Inject only the credentials that belong to the current workspace and selected tool.
 - [x] Enforce timeout, payload size, response size, allowlisted tool names, and network policy.
