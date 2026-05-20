@@ -74,7 +74,7 @@ async def create_agent(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> AgentProfileResponse:
-    resource_service = WorkspaceResourceService(session)
+    resource_service = WorkspaceResourceService(session, settings)
     idempotency = IdempotencyService(redis, RedisKeyBuilder(settings.redis_key_prefix))
     try:
         agent = run_idempotent_create(
@@ -122,7 +122,7 @@ async def create_team(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamResponse:
-    resource_service = WorkspaceResourceService(session)
+    resource_service = WorkspaceResourceService(session, settings)
     idempotency = IdempotencyService(redis, RedisKeyBuilder(settings.redis_key_prefix))
     try:
         team = run_idempotent_create(
@@ -178,7 +178,7 @@ async def create_team_member(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamMemberResponse:
-    resource_service = WorkspaceResourceService(session)
+    resource_service = WorkspaceResourceService(session, settings)
     idempotency = IdempotencyService(redis, RedisKeyBuilder(settings.redis_key_prefix))
     try:
         member = run_idempotent_create(
@@ -239,7 +239,7 @@ async def create_task(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> TaskResponse:
-    resource_service = WorkspaceResourceService(session)
+    resource_service = WorkspaceResourceService(session, settings)
     idempotency = IdempotencyService(
         redis,
         RedisKeyBuilder(settings.redis_key_prefix),

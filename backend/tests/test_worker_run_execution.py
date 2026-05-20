@@ -1159,6 +1159,83 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     assert request.context.metadata["authorization_snapshot_version"] == 1
 
 
+def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    credential = ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
+    ).create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Private Router",
+        provider="openai-compatible",
+        api_key="sk-never-store-in-run",
+        default_model="router/default",
+        base_url="https://llm.example.test/v1",
+        is_default=True,
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        model="workspace-default",
+        model_provider_credential_id=credential.id,
+    )
+    team = AgentTeam(workspace_id=workspace.id, name="Writing Team", team_type="writing")
+    session.add_all([agent, team])
+    session.flush()
+    member = AgentTeamMember(
+        workspace_id=workspace.id,
+        agent_team_id=team.id,
+        agent_profile_id=agent.id,
+        team_role="writer",
+    )
+    session.add(member)
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        team_snapshot={
+            "team": {"id": str(team.id), "name": team.name},
+            "members": [
+                {
+                    "id": str(member.id),
+                    "agent_profile_id": str(agent.id),
+                    "team_role": "writer",
+                    "accepts_tasks": True,
+                }
+            ],
+            "agents": [],
+        },
+        input={"work_packages": [{"package_id": "draft", "title": "Draft"}]},
+        title="Draft chapter",
+    )
+    session.add(task)
+    session.flush()
+
+    run = RunOrchestrationService(session).create_queued_run_for_task(task)
+    snapshot = run.input["authorization_snapshot"]["model_provider"]
+    events = session.scalars(
+        select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
+    ).all()
+
+    assert run.model == "router/default"
+    assert snapshot["source"] == "agent_override"
+    assert snapshot["selected_model"] == "router/default"
+    assert snapshot["credential_id"] == str(credential.id)
+    assert snapshot["credential_reference"] == f"model_provider_credentials:{credential.id}"
+    assert snapshot["provider"] == "openai-compatible"
+    assert snapshot["base_url_host"] == "llm.example.test"
+    assert snapshot["base_url_configured"] is True
+    assert snapshot["api_key_fingerprint"] == credential.api_key_fingerprint
+    assert "api_key" not in snapshot
+    assert "base_url" not in snapshot
+    assert [event.event_type for event in events] == ["model_provider.resolved"]
+    assert events[0].event_metadata == {"model_provider": snapshot}
+
+
 def test_disabled_skill_install_is_not_in_future_run_snapshot() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)

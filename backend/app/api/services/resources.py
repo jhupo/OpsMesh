@@ -11,6 +11,7 @@ from backend.app.api.schemas.tasks import TaskCreateRequest
 from backend.app.api.schemas.teams import AgentTeamCreateRequest, AgentTeamMemberCreateRequest
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
+from backend.app.core.config import Settings
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.member_matching import MemberMatchingService
@@ -25,8 +26,9 @@ T = TypeVar("T")
 
 
 class WorkspaceResourceService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self._session = session
+        self._settings = settings
 
     def list_agents(
         self,
@@ -239,7 +241,9 @@ class WorkspaceResourceService:
         task.project_plan = ProjectPlanningService(
             MemberMatchingService(self._session)
         ).create_initial_plan(task)
-        RunOrchestrationService(self._session).create_queued_run_for_task(task)
+        RunOrchestrationService(self._session, settings=self._settings).create_queued_run_for_task(
+            task
+        )
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
             user_id=created_by_user_id,

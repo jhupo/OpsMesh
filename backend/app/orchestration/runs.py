@@ -18,6 +18,7 @@ from backend.app.audit.service import AuditService
 from backend.app.capabilities.adapters import McpAdapterResolver
 from backend.app.capabilities.models import WorkspaceSkillInstall
 from backend.app.core.config import Settings
+from backend.app.model_providers.resolution import ModelProviderResolutionService
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.orchestration.scheduler import WorkspaceScheduler
 from backend.app.planning.member_matching import MemberMatchingService
@@ -484,7 +485,13 @@ class RunOrchestrationService:
             if step is not None and step.workspace_id == run.workspace_id:
                 step.status = STEP_STATUS_CANCELLED
 
-    def _append_event(self, run: AgentRun, event_type: str, message: str) -> RunEvent:
+    def _append_event(
+        self,
+        run: AgentRun,
+        event_type: str,
+        message: str,
+        metadata: dict[str, object] | None = None,
+    ) -> RunEvent:
         next_sequence = (
             self._session.scalar(
                 select(func.coalesce(func.max(RunEvent.sequence), 0)).where(
@@ -500,6 +507,7 @@ class RunOrchestrationService:
             event_type=event_type,
             sequence=next_sequence,
             message=message,
+            event_metadata=metadata or {},
             created_at=datetime.now(UTC),
         )
         self._session.add(event)
@@ -1133,6 +1141,11 @@ class RunOrchestrationService:
             if step.assigned_agent_profile_id is not None
             else None
         )
+        authorization_snapshot = self._build_authorization_snapshot(
+            task,
+            step,
+            profile,
+        )
         run = AgentRun(
             workspace_id=task.workspace_id,
             task_id=task.id,
@@ -1146,16 +1159,20 @@ class RunOrchestrationService:
                 "title": task.title,
                 "step_title": step.title,
                 "team_orchestration": True,
-                "authorization_snapshot": self._build_authorization_snapshot(
-                    task,
-                    step,
-                    profile,
-                ),
+                "authorization_snapshot": authorization_snapshot,
             },
-            model=profile.model if profile is not None else None,
+            model=_run_model_from_snapshot(authorization_snapshot, profile),
         )
         self._session.add(run)
         self._session.flush([run])
+        model_provider = authorization_snapshot.get("model_provider")
+        if isinstance(model_provider, dict):
+            self._append_event(
+                run,
+                "model_provider.resolved",
+                "Model provider resolved for queued run",
+                {"model_provider": model_provider},
+            )
         return run
 
     def _create_reserved_run_for_step(self, task: Task, step: TaskStep) -> AgentRun | None:
@@ -1305,6 +1322,7 @@ class RunOrchestrationService:
         memory_policy = profile.memory_policy if profile is not None else {}
         approval_policy = profile.approval_policy if profile is not None else {}
         installed_skills = self._installed_skill_snapshots(task.workspace_id, profile)
+        model_provider = self._model_provider_snapshot(task.workspace_id, profile)
         return {
             "version": 1,
             "workspace_id": str(task.workspace_id),
@@ -1319,6 +1337,7 @@ class RunOrchestrationService:
             "allowed_tools": list(allowed_tools),
             "tool_policy": _dict_copy(tool_policy),
             "installed_skills": installed_skills,
+            "model_provider": model_provider,
             "runtime_policy": _dict_copy(runtime_policy),
             "memory_policy": _dict_copy(memory_policy),
             "approval_policy": _dict_copy(approval_policy),
@@ -1337,6 +1356,19 @@ class RunOrchestrationService:
                 "task_step_id": str(step.id),
             },
         }
+
+    def _model_provider_snapshot(
+        self,
+        workspace_id: UUID,
+        profile: AgentProfile | None,
+    ) -> dict[str, object]:
+        agent_model = profile.model if profile is not None else "gpt-4.1"
+        credential_id = profile.model_provider_credential_id if profile is not None else None
+        return ModelProviderResolutionService(self._session).resolve_snapshot_for_agent(
+            workspace_id=workspace_id,
+            agent_credential_id=credential_id,
+            agent_model=agent_model,
+        ).as_dict()
 
     def _installed_skill_snapshots(
         self,
@@ -2129,6 +2161,18 @@ def _skill_snapshot_matches(
     if isinstance(snapshot_caps, list) or isinstance(current_caps, list):
         return snapshot_caps == current_caps
     return True
+
+
+def _run_model_from_snapshot(
+    snapshot: dict[str, object],
+    profile: AgentProfile | None,
+) -> str | None:
+    model_provider = snapshot.get("model_provider")
+    if isinstance(model_provider, dict):
+        selected_model = model_provider.get("selected_model")
+        if isinstance(selected_model, str) and selected_model:
+            return selected_model
+    return profile.model if profile is not None else None
 
 
 def _positive_number_dict(value: object) -> dict[str, int | float]:

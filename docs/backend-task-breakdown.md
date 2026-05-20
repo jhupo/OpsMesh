@@ -525,6 +525,10 @@ Tasks:
 - [ ] Add import conflict previews for workspace archives.
 - [ ] Add stricter Docker runtime quota enforcement and cleanup verification.
 - [ ] Add per-agent model provider audit events and fallback handling.
+  - [x] Freeze provider resolution metadata into queued run authorization snapshots.
+  - [x] Emit `model_provider.resolved` run events without raw API keys or full base URLs.
+  - [ ] Add workspace-scoped provider fallback policy.
+  - [ ] Track provider health and last failure reason.
 - [ ] Add operations dashboards APIs for worker capacity, queue latency, and runtime saturation.
 - [ ] Add security review tests around account-scoped skill/tool invocation.
 

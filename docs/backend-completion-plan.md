@@ -44,7 +44,9 @@ Incomplete or basic-only areas:
 - Scheduling supports per-member concurrency, workspace active run quotas, per-tick resource-limit prechecks, durable workspace usage reservations, blocked reasons, cross-task priority ordering, and starvation prevention. Docker/self-hosted execution slot usage still needs deeper completion.
 - Docker runtime cleanup now records success/failure evidence. Self-hosted runtimes enforce worker concurrency/artifact limits and revocation evidence; broader machine trust workflows still need completion.
 - Import preview does not yet produce a full conflict plan before users commit a workspace archive import.
-- Model provider selection exists, but provider fallback and per-agent audit trails need completion.
+- Model provider selection exists, and queued runs now freeze per-agent/default provider
+  resolution metadata without storing secrets. Provider fallback policy and provider health state
+  still need completion.
 - Operations APIs exist and overview now uses short Redis caching, but capacity, queue latency, and saturation dashboards need richer aggregate endpoints.
 - The memory search tool is still a placeholder and needs a real workspace memory/index implementation.
 - Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, reusable maintenance runner, HTTP metrics, domain error mapping, production config guardrails, Redis distributed locks, structured idempotency states, feature flags, Redis cache abstraction, admin-visible core configuration summaries, blocking executor snapshots, database pool snapshots, and Redis pool snapshots are implemented.
@@ -427,11 +429,14 @@ Current state:
 
 - Cloud base URL, key, and model can be configured globally and per agent.
 - Provider credentials are stored securely.
-- Run-level audit and fallback behavior are incomplete.
+- Queued team runs now include a run-level provider resolution snapshot and a
+  `model_provider.resolved` run event.
+- Fallback behavior and provider health state are incomplete.
 
 Build:
 
-- Resolve model provider at run creation and snapshot provider ID, base URL alias, model, key reference, and fallback chain.
+- Resolve model provider at run creation and snapshot provider ID, base URL host, model, key
+  fingerprint/reference, and source policy without raw API keys.
 - Add retry/fallback policy for provider errors, rate limits, and model unavailability.
 - Record which provider/model actually handled each run.
 - Prevent fallback from crossing user/workspace policy boundaries.
@@ -439,13 +444,15 @@ Build:
 
 API/data changes:
 
-- Extend run authorization snapshot and run events with provider resolution metadata.
+- Extend run authorization snapshot and run events with provider resolution metadata. (Done for
+  queued team runs.)
 - Add provider health status and last failure reason.
 - Add audit action for provider selection and fallback.
 
 Tests:
 
 - agent-specific provider overrides workspace default
+- provider resolution snapshot excludes raw API keys and full base URLs
 - failed primary provider falls back only to allowed provider
 - fallback event records reason without leaking key/base URL secret
 - disallowed fallback fails the run cleanly
