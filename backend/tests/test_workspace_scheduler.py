@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import create_engine, select
@@ -148,6 +148,35 @@ def test_workspace_scheduler_task_quota_keeps_existing_active_task_eligible() ->
     assert decision.runnable_steps == (active_next_step,)
     assert decision.blocked_steps == (high_step,)
     assert high_step.dependencies["blocked_reason"] == "workspace_task_quota_exceeded"
+
+
+def test_workspace_scheduler_boosts_long_waiting_lower_priority_work() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(
+        session,
+        settings={
+            "scheduler": {
+                "max_active_runs": 1,
+                "starvation_boost_after_seconds": 60,
+            }
+        },
+    )
+    low_task, low_step = _seed_task_step(session, workspace, title="Old low", priority=1)
+    high_task, high_step = _seed_task_step(session, workspace, title="New high", priority=10)
+    old_created_at = datetime.now(UTC) - timedelta(minutes=20)
+    low_step.created_at = old_created_at
+    low_task.created_at = old_created_at
+    session.flush()
+
+    decision = WorkspaceScheduler(session).select_runnable_steps(
+        workspace_id=workspace.id,
+        candidate_steps=[high_step, low_step],
+    )
+
+    assert decision.runnable_steps == (low_step,)
+    assert decision.blocked_steps == (high_step,)
+    assert "priority_score" not in low_step.dependencies
+    assert high_step.dependencies["priority_score"] == 10
 
 
 def test_workspace_scheduler_blocks_when_active_run_quota_is_full() -> None:

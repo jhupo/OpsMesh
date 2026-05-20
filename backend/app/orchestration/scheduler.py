@@ -27,6 +27,7 @@ class WorkspaceSchedulerPolicy:
     max_running_tasks: int | None = None
     max_runs_to_start_per_tick: int | None = None
     max_steps_per_task_per_tick: int = 1
+    starvation_boost_after_seconds: int | None = None
 
 
 @dataclass(frozen=True)
@@ -122,6 +123,9 @@ class WorkspaceScheduler:
                 scheduler.get("max_steps_per_task_per_tick"),
                 1,
             ),
+            starvation_boost_after_seconds=_positive_int_or_none(
+                scheduler.get("starvation_boost_after_seconds")
+            ),
         )
 
     def _available_run_slots(
@@ -191,6 +195,7 @@ class WorkspaceScheduler:
         return allowed_steps, blocked_steps
 
     def _order_steps(self, steps: list[TaskStep]) -> list[TaskStep]:
+        policy = self._policy_for(steps[0].workspace_id)
         task_ids = {step.task_id for step in steps}
         task_rank = {
             task_id: _TaskRank(priority=int(priority or 0), created_at=created_at)
@@ -198,21 +203,31 @@ class WorkspaceScheduler:
                 select(Task.id, Task.priority, Task.created_at).where(Task.id.in_(task_ids))
             ).all()
         }
+        scored_steps = [
+            _ScoredStep(
+                step=step,
+                rank=task_rank.get(step.task_id, _TaskRank()),
+                priority_score=_priority_score(
+                    task_rank.get(step.task_id, _TaskRank()).priority,
+                    step.created_at,
+                    policy.starvation_boost_after_seconds,
+                ),
+            )
+            for step in steps
+        ]
         ordered_by_task = sorted(
-            steps,
-            key=lambda step: (
-                -task_rank.get(step.task_id, _TaskRank()).priority,
-                task_rank.get(step.task_id, _TaskRank()).created_at,
-                step.order_index,
-                step.created_at,
-                step.id,
+            scored_steps,
+            key=lambda scored: (
+                -scored.priority_score,
+                scored.rank.created_at,
+                scored.step.order_index,
+                scored.step.created_at,
+                scored.step.id,
             ),
         )
         return self._round_robin_by_task(
-            ordered_by_task,
-            max_steps_per_task_per_round=self._policy_for(
-                steps[0].workspace_id,
-            ).max_steps_per_task_per_tick,
+            [scored.step for scored in ordered_by_task],
+            max_steps_per_task_per_round=policy.max_steps_per_task_per_tick,
         )
 
     def _round_robin_by_task(
@@ -247,6 +262,7 @@ class WorkspaceScheduler:
             dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
             dependencies.pop("scheduling_status", None)
             dependencies.pop("blocked_reason", None)
+            dependencies.pop("priority_score", None)
             step.dependencies = dependencies
 
     def _mark_blocked(self, steps: list[TaskStep], reason: str) -> None:
@@ -254,7 +270,17 @@ class WorkspaceScheduler:
             dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
             dependencies["scheduling_status"] = "blocked"
             dependencies["blocked_reason"] = reason
+            dependencies["priority_score"] = self._step_priority_score(step)
             step.dependencies = dependencies
+
+    def _step_priority_score(self, step: TaskStep) -> int:
+        policy = self._policy_for(step.workspace_id)
+        task = self._session.get(Task, step.task_id)
+        return _priority_score(
+            int(task.priority if task is not None else 0),
+            step.created_at,
+            policy.starvation_boost_after_seconds,
+        )
 
 
 def _positive_int_or_none(value: object) -> int | None:
@@ -280,3 +306,27 @@ def _blocked_reason(*, run_blocked: bool, task_blocked: bool) -> str | None:
 class _TaskRank:
     priority: int = 0
     created_at: datetime = datetime.min.replace(tzinfo=UTC)
+
+
+@dataclass(frozen=True)
+class _ScoredStep:
+    step: TaskStep
+    rank: _TaskRank
+    priority_score: int
+
+
+def _priority_score(
+    priority: int,
+    created_at: datetime | None,
+    starvation_boost_after_seconds: int | None,
+) -> int:
+    if starvation_boost_after_seconds is None or created_at is None:
+        return priority
+    elapsed_seconds = max(0, int((datetime.now(UTC) - _aware_datetime(created_at)).total_seconds()))
+    return priority + elapsed_seconds // starvation_boost_after_seconds
+
+
+def _aware_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
