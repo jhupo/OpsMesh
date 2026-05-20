@@ -10,6 +10,7 @@ from backend.app.auth.errors import AuthenticationError, PermissionDeniedError
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.auth.service import AuthorizationService
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.request_context import set_log_context
 from backend.app.db.session import get_db_session
 from backend.app.security.service import SecurityAuditService
 
@@ -50,7 +51,9 @@ async def get_current_user(
     _: None = Depends(require_internal_token),  # noqa: B008
 ) -> AuthenticatedUser:
     try:
-        return AuthorizationService(session).authenticate_user(x_user_id)
+        user = AuthorizationService(session).authenticate_user(x_user_id)
+        set_log_context(user_id=user.user_id)
+        return user
     except AuthenticationError as exc:
         SecurityAuditService(session).record_request_event(
             request=request,
@@ -75,11 +78,16 @@ def workspace_dependency(action: WorkspaceAction) -> Callable[..., object]:
         session: Session = DB_SESSION_DEPENDENCY,
     ) -> WorkspaceContext:
         try:
-            return AuthorizationService(session).require_workspace(
+            context = AuthorizationService(session).require_workspace(
                 user_id=current_user.user_id,
                 workspace_id=workspace_id,
                 action=action,
             )
+            set_log_context(
+                user_id=current_user.user_id,
+                workspace_id=context.workspace.id,
+            )
+            return context
         except PermissionDeniedError as exc:
             SecurityAuditService(session).record_request_event(
                 request=request,

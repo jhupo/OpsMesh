@@ -13,6 +13,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agents.models import AgentProfile
+from backend.app.core.request_context import current_log_context
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
@@ -568,6 +569,35 @@ def test_agent_run_jobs_include_runtime_space_routing_requirements() -> None:
         "worker_types": ["cloud"],
         "resource_requirements": {"memory_mb": 4096, "cpu": 2.0},
     }
+
+
+def test_worker_job_log_context_is_scoped_to_single_job() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, run_id, user_id = _seed_run(session_factory)
+    queue.enqueue(
+        JobPayload(
+            workspace_id=workspace_id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run_id,
+            requested_by_user_id=user_id,
+            idempotency_key=f"agent.run:{workspace_id}:{run_id}",
+        )
+    )
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="worker-context", queue_name="agent_runs"),
+    )
+
+    assert current_log_context()["worker_id"] is None
+
+    handled = runner.run_once()
+
+    assert handled is True
+    assert current_log_context()["worker_id"] is None
+    assert current_log_context()["workspace_id"] is None
+    assert current_log_context()["run_id"] is None
 
 
 def _queue() -> RedisQueue:

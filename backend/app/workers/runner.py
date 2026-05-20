@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunner
 from backend.app.core.config import Settings
+from backend.app.core.request_context import log_context
 from backend.app.operations.service import OperationsService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.workers.handlers import WorkerJobHandler
@@ -91,18 +92,19 @@ class WorkerRunner:
         )
         if job is None:
             return False
-        self._start_lease(job)
-        try:
-            self._handle_job(job)
-        except Exception as exc:
-            self._finish_lease(
-                job,
-                status="retrying" if job.can_retry else "failed",
-                metadata={"error": str(exc)},
-            )
-            self._queue.retry_or_dead_letter(job)
-            raise
-        self._finish_lease(job, status="completed")
+        with self._job_log_context(job):
+            self._start_lease(job)
+            try:
+                self._handle_job(job)
+            except Exception as exc:
+                self._finish_lease(
+                    job,
+                    status="retrying" if job.can_retry else "failed",
+                    metadata={"error": str(exc)},
+                )
+                self._queue.retry_or_dead_letter(job)
+                raise
+            self._finish_lease(job, status="completed")
         return True
 
     def _handle_job(self, job: JobPayload) -> None:
@@ -114,6 +116,14 @@ class WorkerRunner:
                 self._settings,
             )
             handler.handle(job)
+
+    def _job_log_context(self, job: JobPayload) -> Iterator[None]:
+        run_id = job.resource_id if job.job_type.value == "agent.run" else None
+        return log_context(
+            worker_id=self._config.worker_id,
+            workspace_id=job.workspace_id,
+            run_id=run_id,
+        )
 
     def run(
         self,
