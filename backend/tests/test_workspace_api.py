@@ -540,6 +540,105 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
     assert queue.count_queued(workspace_id=workspace.id) == 1
 
 
+def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+    client, session = _client(queue=queue)
+    owner, workspace = _seed_workspace(session, role="owner")
+    manager = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "PM", "role": "project_manager"},
+    )
+    developer = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Developer", "role": "frontend_engineer"},
+    )
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={
+            "name": "Product Team",
+            "team_type": "software",
+            "manager_agent_profile_id": manager.json()["id"],
+        },
+    )
+    client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": developer.json()["id"],
+            "team_role": "frontend_engineer",
+            "skill_weights": {"react": 0.9},
+        },
+    )
+    created_task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={
+            "title": "Build dashboard",
+            "agent_team_id": team.json()["id"],
+            "input": {
+                "work_packages": [
+                    {
+                        "package_id": "frontend-build",
+                        "title": "Frontend Build",
+                        "required_role": "frontend_engineer",
+                    }
+                ]
+            },
+        },
+    )
+    task_id = UUID(created_task.json()["id"])
+    step = session.scalar(
+        select(TaskStep).where(
+            TaskStep.task_id == task_id,
+            TaskStep.work_package_id == "frontend-build",
+        )
+    )
+    assert step is not None
+    step.status = "completed"
+    step.result_summary = "Frontend build completed."
+    session.commit()
+
+    regenerated = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/plan/regenerate",
+        headers=_headers(owner.id),
+        json={
+            "enqueue": True,
+            "input": {
+                "work_packages": [
+                    {
+                        "package_id": "frontend-build-v2",
+                        "title": "Frontend Build V2",
+                        "required_role": "frontend_engineer",
+                    }
+                ]
+            },
+        },
+    )
+
+    session.refresh(step)
+    messages = session.scalars(
+        select(TaskMessage).where(
+            TaskMessage.task_id == task_id,
+            TaskMessage.message_type == "planning.regenerated",
+        )
+    ).all()
+
+    assert regenerated.status_code == 200
+    assert step.status == "completed"
+    regeneration = regenerated.json()["project_plan"]["regeneration"]
+    assert regeneration["mode"] == "future_only"
+    assert regeneration["preserved_completed_work_package_ids"] == ["frontend-build"]
+    assert messages[0].payload["preserved_completed_work_package_ids"] == ["frontend-build"]
+    assert queue.count_queued(workspace_id=workspace.id) == 0
+
+
 def test_create_task_rejects_foreign_team_reference() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

@@ -24,6 +24,12 @@ class TaskPlanRetryRequest(BaseModel):
     enqueue: bool = True
 
 
+class TaskPlanRegenerateRequest(BaseModel):
+    input: dict[str, object] | None = None
+    refresh_team_snapshot: bool = True
+    enqueue: bool = False
+
+
 class TaskCorrectionRequest(BaseModel):
     target_type: str = Field(pattern="^(task|step|agent|artifact|final_output)$")
     mode: str = Field(pattern="^(revise|regenerate|add_missing_work|replace_artifact|stop_work)$")

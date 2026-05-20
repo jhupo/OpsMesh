@@ -27,10 +27,16 @@ class TaskPlanningAttemptService:
         self._session = session
         self._planner = planner or ProjectPlanningService()
 
-    def ensure_initial_plan(self, task: Task) -> dict[str, object] | None:
+    def ensure_initial_plan(
+        self,
+        task: Task,
+        *,
+        transition_to_planning: bool = True,
+    ) -> dict[str, object] | None:
         if task.project_plan is not None:
             return task.project_plan
-        TaskStateService().transition(task, TaskStatus.PLANNING)
+        if transition_to_planning:
+            TaskStateService().transition(task, TaskStatus.PLANNING)
         attempt = self._create_attempt(task, retry_count=self._next_retry_count(task))
         try:
             plan = self._planner.create_initial_plan(task)

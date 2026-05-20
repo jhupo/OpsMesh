@@ -20,6 +20,7 @@ from backend.app.api.schemas.tasks import (
     TaskCreateRequest,
     TaskMessageResponse,
     TaskObservationResponse,
+    TaskPlanRegenerateRequest,
     TaskPlanRetryRequest,
     TaskResponse,
 )
@@ -305,6 +306,37 @@ async def retry_task_plan(
 ) -> TaskResponse:
     try:
         task = WorkspaceResourceService(session, settings).retry_task_plan(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            actor_user_id=context.user.user_id,
+            data=request,
+            enqueue_run=request.enqueue and queue is not None,
+            queue=queue,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskResponse.model_validate(task)
+
+
+@router.post("/tasks/{task_id}/plan/regenerate", response_model=TaskResponse)
+async def regenerate_task_plan(
+    task_id: UUID,
+    request: TaskPlanRegenerateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+    settings: Settings = Depends(get_settings),
+) -> TaskResponse:
+    try:
+        task = WorkspaceResourceService(session, settings).regenerate_task_plan(
             workspace_id=context.workspace.id,
             task_id=task_id,
             actor_user_id=context.user.user_id,
