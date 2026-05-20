@@ -1,4 +1,6 @@
 
+from datetime import UTC, datetime
+
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -11,7 +13,7 @@ from backend.app.db.base import Base
 from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.tasks.models import Task
+from backend.app.tasks.models import Task, TaskMessage
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolPermissionError, ToolResourceNotFoundError
 from backend.app.tools.product_tools import ProductToolService
@@ -97,6 +99,88 @@ def test_product_tools_enforce_permissions_and_workspace_scope() -> None:
         "tool.called",
         "tool.completed",
     ]
+
+
+def test_workspace_memory_search_returns_workspace_scoped_matches() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, slug="acme")
+    _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Customer onboarding research",
+        description="Collect customer notes and extract renewal risks.",
+    )
+    run = AgentRun(workspace_id=workspace.id, task_id=task.id)
+    session.add_all([task, run])
+    session.flush()
+    file = WorkspaceFile(
+        workspace_id=workspace.id,
+        uploaded_by_user_id=user.id,
+        filename="customer-notes.txt",
+        content_type="text/plain",
+        size_bytes=120,
+        checksum_sha256="c" * 64,
+        storage_key="workspaces/acme/files/customer-notes.txt",
+        file_metadata={"summary": "Enterprise customer notes about onboarding blockers"},
+    )
+    other_file = WorkspaceFile(
+        workspace_id=other_workspace.id,
+        filename="customer-notes-secret.txt",
+        content_type="text/plain",
+        size_bytes=64,
+        checksum_sha256="d" * 64,
+        storage_key="workspaces/other/files/customer-notes-secret.txt",
+        file_metadata={"summary": "Secret customer notes from another workspace"},
+    )
+    artifact = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        artifact_type="report",
+        filename="renewal-risk-report.pdf",
+        content_type="application/pdf",
+        size_bytes=2048,
+        checksum_sha256="e" * 64,
+        storage_key="workspaces/acme/artifacts/renewal-risk-report.pdf",
+        artifact_metadata={"summary": "Customer renewal risk report"},
+        created_at=datetime.now(UTC),
+    )
+    message = TaskMessage(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        message_type="step.completed",
+        sequence=1,
+        body="Analyst summarized customer notes and flagged onboarding risk.",
+        payload={"decision": "continue"},
+    )
+    session.add_all([file, other_file, artifact, message])
+    session.commit()
+
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        allowed_tools=frozenset({"search_workspace_memory"}),
+    )
+
+    results = ProductToolService(session).search_workspace_memory(context, "customer notes")
+
+    assert results
+    assert {item["source_type"] for item in results} >= {
+        "workspace_file",
+        "task",
+        "task_message",
+    }
+    assert all("secret" not in item["title"] for item in results)
+    assert all(item["score"] > 0 for item in results)
+    assert next(item for item in results if item["source_type"] == "workspace_file")[
+        "metadata"
+    ] == {
+        "content_type": "text/plain",
+        "size_bytes": 120,
+    }
 
 
 def test_product_tool_permission_denied() -> None:

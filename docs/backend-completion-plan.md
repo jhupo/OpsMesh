@@ -526,12 +526,14 @@ Acceptance:
 
 Current state:
 
-- `search_workspace_memory` is a placeholder product tool.
-- Agents cannot yet search durable workspace memory beyond explicit files/events.
+- `search_workspace_memory` now performs workspace-scoped lexical search across tasks, task steps, task messages, files, artifacts, and domain items.
+- It is intentionally lightweight and keeps a clean service boundary for later indexing/vector upgrades.
 
 Build:
 
-- Define workspace memory sources: task summaries, final outputs, artifacts metadata, user-pinned notes, and optional file excerpts.
+- [x] Define initial workspace memory sources: task summaries/final outputs, task steps, task messages, artifacts metadata, file metadata, and domain items.
+- [x] Replace placeholder implementation with a workspace-scoped lexical search service.
+- [x] Enforce workspace authorization at query time by filtering every source by `workspace_id`.
 - Add a memory indexing service with deterministic text chunks and metadata.
 - Start with Postgres full-text search; leave a clean interface for vector search later.
 - Enforce workspace, file, and task authorization at indexing and query time.
@@ -541,12 +543,12 @@ API/data changes:
 
 - Add `workspace_memory_entries` table with source type, source ID, text, metadata, visibility, checksum, and indexed_at.
 - Add internal indexing jobs.
-- Replace placeholder implementation with real search ranked by text relevance and recency.
+- [x] Replace placeholder implementation with real search ranked by text relevance and recency.
 
 Tests:
 
-- task summary appears in workspace memory search after indexing
-- private workspace memory is not visible cross-workspace
+- [x] task summary appears in workspace memory search
+- [x] private workspace memory is not visible cross-workspace
 - deleted/disabled source stops appearing
 - search respects max results and source filters
 

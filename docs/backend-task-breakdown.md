@@ -204,7 +204,7 @@ Tasks:
 - [x] Implement `list_workspace_files`.
 - [x] Implement `read_workspace_file`.
 - [x] Implement `write_artifact`.
-- [x] Implement `search_workspace_memory` placeholder.
+- [x] Implement `search_workspace_memory` lightweight workspace-scoped search.
 - [x] Add tool event logging.
 - [x] Add tool error formatter.
 - [x] Add tests for tool workspace isolation.

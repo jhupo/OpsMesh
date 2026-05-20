@@ -11,6 +11,7 @@ from backend.app.files.security import safe_filename
 from backend.app.runs.models import RunEvent
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
+from backend.app.tools.workspace_memory import WorkspaceMemorySearchService
 
 
 class ProductToolService:
@@ -72,8 +73,12 @@ class ProductToolService:
     def search_workspace_memory(self, context: ToolContext, query: str) -> list[dict[str, object]]:
         context.require_tool("search_workspace_memory")
         self._append_tool_event(context, "tool.called", "search_workspace_memory")
+        results = WorkspaceMemorySearchService(self._session).search(
+            workspace_id=context.workspace_id,
+            query=query,
+        )
         self._append_tool_event(context, "tool.completed", "search_workspace_memory")
-        return []
+        return results
 
     def _append_tool_event(self, context: ToolContext, event_type: str, tool_name: str) -> None:
         if context.agent_run_id is None:
