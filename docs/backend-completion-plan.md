@@ -41,7 +41,7 @@ Incomplete or basic-only areas:
 - Skills can be visible as private/public, but public skill copy/provenance and install workflows are incomplete.
 - Task observation now has a stable backend API with generic and domain-specific sections for AIGC, novel writing, research, and software tasks. The first implementation composes existing task, step, message, run event, and artifact data; richer domain persistence can be added behind the same response shape.
 - Correction/revision is supported through a generic user-facing endpoint that targets tasks, steps, agents, artifacts, or final output and records follow-up work plus task messages.
-- Scheduling supports per-member concurrency, workspace active run quotas, per-tick resource-limit prechecks, blocked reasons, cross-task priority ordering, and starvation prevention. Durable runtime/self-hosted/storage quota reservations still need deeper completion.
+- Scheduling supports per-member concurrency, workspace active run quotas, per-tick resource-limit prechecks, durable workspace usage reservations, blocked reasons, cross-task priority ordering, and starvation prevention. Docker/self-hosted execution slot usage still needs deeper completion.
 - Docker and self-hosted runtime policies need stronger quota enforcement, cleanup verification, and revocation evidence.
 - Import preview does not yet produce a full conflict plan before users commit a workspace archive import.
 - Model provider selection exists, but provider fallback and per-agent audit trails need completion.
@@ -200,7 +200,7 @@ Current state:
 - Runtime capacity is considered during member matching.
 - Workspace-level active run limits and cross-task priority scheduling are now enforced by the workspace scheduler.
 - Blocked queued steps record a scheduling status and blocked reason in step dependencies for observation and operations.
-- Workspace runtime, self-hosted job, CPU, memory, and storage quotas have scheduler prechecks, but durable usage/reservation integration still needs deeper completion.
+- Workspace active run, CPU, memory, storage-style quota usage has durable reservation and release at run lifecycle boundaries. Docker/self-hosted execution slot usage still needs deeper completion.
 
 Build:
 
@@ -208,11 +208,12 @@ Build:
 - [ ] Enforce workspace-level limits for active tasks, active runs, Docker runtimes, self-hosted jobs, CPU, memory, and storage.
   - [x] Enforce active run limits from `workspace.settings.scheduler.max_active_runs`.
   - [x] Enforce per-tick scheduler resource limits from `workspace.settings.scheduler.resource_limits`.
-  - [ ] Enforce durable Docker runtime, self-hosted job, CPU, memory, and storage usage reservations in scheduler decisions.
+  - [x] Enforce durable workspace active run, CPU, memory, and storage-style usage reservations in scheduler decisions.
+  - [ ] Enforce durable Docker runtime and self-hosted job slot usage reservations in scheduler decisions.
 - [x] Support priority ordering.
 - [x] Add starvation prevention for long-waiting lower-priority work.
-- Reserve capacity atomically before enqueueing a run.
-- Release capacity on completion, failure, cancellation, timeout, or cleanup.
+- [x] Reserve workspace and runtime-space capacity before enqueueing a run.
+- [x] Release workspace and runtime-space capacity on completion, failure, cancellation, timeout, or cleanup.
 - [x] Add scheduling reason codes for blocked work.
 
 API/data changes:

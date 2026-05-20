@@ -51,7 +51,12 @@ from backend.app.self_hosted.models import (
 )
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.workspaces.models import (
+    Workspace,
+    WorkspaceMember,
+    WorkspaceQuota,
+    WorkspaceReservation,
+)
 
 __all__ = [
     "AgentProfile",
@@ -103,6 +108,8 @@ __all__ = [
     "WorkspaceExportJob",
     "WorkspaceFile",
     "WorkspaceMember",
+    "WorkspaceQuota",
+    "WorkspaceReservation",
     "WorkspaceRuntime",
     "WorkspaceSkillInstall",
     "WorkerHeartbeat",

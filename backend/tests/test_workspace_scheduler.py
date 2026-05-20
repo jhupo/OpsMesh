@@ -22,7 +22,12 @@ from backend.app.runtime_spaces.models import (
 )
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.status import TaskStatus
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.workspaces.models import (
+    Workspace,
+    WorkspaceMember,
+    WorkspaceQuota,
+    WorkspaceReservation,
+)
 
 
 def test_workspace_scheduler_orders_steps_by_task_priority_and_run_quota() -> None:
@@ -375,6 +380,98 @@ def test_run_orchestration_reserves_runtime_space_resource_requirements() -> Non
     assert _runtime_space_quota(session, runtime_space.id, "cpu").reserved_value == 2
 
 
+def test_run_orchestration_reserves_and_releases_workspace_quota() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    session.add_all(
+        [
+            WorkspaceQuota(
+                workspace_id=workspace.id,
+                quota_key="active_runs",
+                limit_value=1,
+            ),
+            WorkspaceQuota(
+                workspace_id=workspace.id,
+                quota_key="memory_mb",
+                limit_value=4096,
+            ),
+        ]
+    )
+    first_task, first_step = _seed_task_step(
+        session,
+        workspace,
+        title="First",
+        priority=10,
+        dependencies={"resource_requirements": {"memory_mb": 3072}},
+    )
+    second_task, second_step = _seed_task_step(
+        session,
+        workspace,
+        title="Second",
+        priority=9,
+        dependencies={"resource_requirements": {"memory_mb": 2048}},
+    )
+
+    runs = RunOrchestrationService(session).schedule_workspace_steps(workspace_id=workspace.id)
+
+    active_quota = _workspace_quota(session, workspace.id, "active_runs")
+    memory_quota = _workspace_quota(session, workspace.id, "memory_mb")
+    reservations = _workspace_reservations(session, workspace.id)
+    assert len(runs) == 1
+    assert runs[0].task_id == first_task.id
+    assert active_quota.reserved_value == 1
+    assert memory_quota.reserved_value == 3072
+    assert reservations[0].agent_run_id == runs[0].id
+    assert reservations[0].resource_usage == {"active_runs": 1, "memory_mb": 3072}
+    assert second_step.dependencies["blocked_reason"] == "workspace_quota_exceeded:active_runs"
+
+    RunOrchestrationService(session)._mark_run_cancelled(
+        runs[0],
+        completed_at=datetime.now(UTC),
+    )
+    next_runs = RunOrchestrationService(session).schedule_workspace_steps(workspace_id=workspace.id)
+
+    assert len(next_runs) == 1
+    assert next_runs[0].task_id == second_task.id
+    assert _workspace_quota(session, workspace.id, "active_runs").reserved_value == 1
+    assert _workspace_quota(session, workspace.id, "memory_mb").reserved_value == 2048
+    released = [
+        reservation
+        for reservation in _workspace_reservations(session, workspace.id)
+        if reservation.task_id == first_task.id
+    ][0]
+    assert released.status == "released"
+    assert released.released_at is not None
+
+
+def test_workspace_quota_reservation_releases_when_runtime_space_blocks() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    session.add(
+        WorkspaceQuota(
+            workspace_id=workspace.id,
+            quota_key="active_runs",
+            limit_value=1,
+        )
+    )
+    runtime_space = _seed_runtime_space(session, workspace, active_runs=0)
+    _, step = _seed_task_step(
+        session,
+        workspace,
+        title="Blocked runtime space",
+        priority=10,
+        runtime_space_id=runtime_space.id,
+    )
+
+    runs = RunOrchestrationService(session).schedule_workspace_steps(workspace_id=workspace.id)
+
+    assert runs == []
+    assert _workspace_quota(session, workspace.id, "active_runs").reserved_value == 0
+    reservation = _workspace_reservations(session, workspace.id)[0]
+    assert reservation.status == "released"
+    assert step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded:active_runs"
+
+
 def _seed_task_step(
     session: Session,
     workspace: Workspace,
@@ -485,6 +582,34 @@ def _runtime_space_reservations(
             select(RuntimeSpaceReservation)
             .where(RuntimeSpaceReservation.runtime_space_id == runtime_space_id)
             .order_by(RuntimeSpaceReservation.created_at.asc())
+        ).all()
+    )
+
+
+def _workspace_quota(
+    session: Session,
+    workspace_id: UUID,
+    quota_key: str,
+) -> WorkspaceQuota:
+    quota = session.scalar(
+        select(WorkspaceQuota).where(
+            WorkspaceQuota.workspace_id == workspace_id,
+            WorkspaceQuota.quota_key == quota_key,
+        )
+    )
+    assert quota is not None
+    return quota
+
+
+def _workspace_reservations(
+    session: Session,
+    workspace_id: UUID,
+) -> list[WorkspaceReservation]:
+    return list(
+        session.scalars(
+            select(WorkspaceReservation)
+            .where(WorkspaceReservation.workspace_id == workspace_id)
+            .order_by(WorkspaceReservation.created_at.asc())
         ).all()
     )
 

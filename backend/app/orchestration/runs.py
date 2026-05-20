@@ -35,6 +35,7 @@ from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.snapshots import build_team_snapshot
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
+from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 STEP_STATUS_QUEUED = "queued"
 STEP_STATUS_RUNNING = "running"
@@ -1158,10 +1159,33 @@ class RunOrchestrationService:
         return run
 
     def _create_reserved_run_for_step(self, task: Task, step: TaskStep) -> AgentRun | None:
+        workspace_usage = self._workspace_resource_usage(task.workspace_id, step)
+        workspace_reservation_result = WorkspaceQuotaService(self._session).reserve(
+            workspace_id=task.workspace_id,
+            task_id=task.id,
+            task_step_id=step.id,
+            reservation_key=f"task_step:{step.id}:workspace_run",
+            resource_usage=workspace_usage,
+        )
+        if workspace_reservation_result.reservation is None:
+            self._mark_step_scheduling_blocked(
+                step,
+                workspace_reservation_result.blocked_reason or "workspace_quota_exceeded",
+            )
+            return None
+
         reservation_available, reservation = self._reserve_runtime_space_for_step(task, step)
         if not reservation_available:
+            WorkspaceQuotaService(self._session).release_reservation(
+                workspace_reservation_result.reservation,
+                released_at=datetime.now(UTC),
+            )
             return None
         run = self._create_run_for_step(task, step)
+        WorkspaceQuotaService(self._session).attach_reservation_to_run(
+            workspace_reservation_result.reservation,
+            run.id,
+        )
         if reservation is not None:
             RuntimeSpaceService(self._session).attach_reservation_to_run(reservation, run.id)
         return run
@@ -1234,6 +1258,37 @@ class RunOrchestrationService:
         _merge_usage_max(
             usage,
             _positive_int_dict(step.dependencies.get("reservation_usage")),
+        )
+        usage["active_runs"] = max(1, usage.get("active_runs", 1))
+        return usage
+
+    def _workspace_resource_usage(
+        self,
+        workspace_id: UUID,
+        step: TaskStep,
+    ) -> dict[str, int]:
+        usage: dict[str, int] = {"active_runs": 1}
+        profile = (
+            self._session.get(AgentProfile, step.assigned_agent_profile_id)
+            if step.assigned_agent_profile_id is not None
+            else None
+        )
+        if profile is not None and profile.workspace_id == workspace_id:
+            _merge_usage_max(
+                usage,
+                _positive_int_dict(profile.runtime_policy.get("workspace_reservation_usage")),
+            )
+            _merge_usage_max(
+                usage,
+                _positive_int_dict(profile.runtime_policy.get("resource_requirements")),
+            )
+        _merge_usage_max(
+            usage,
+            _positive_int_dict(step.dependencies.get("workspace_reservation_usage")),
+        )
+        _merge_usage_max(
+            usage,
+            _positive_int_dict(step.dependencies.get("resource_requirements")),
         )
         usage["active_runs"] = max(1, usage.get("active_runs", 1))
         return usage
@@ -1391,6 +1446,11 @@ class RunOrchestrationService:
         released_at: datetime,
     ) -> None:
         RuntimeSpaceService(self._session).release_reservations_for_run(
+            workspace_id=run.workspace_id,
+            agent_run_id=run.id,
+            released_at=released_at,
+        )
+        WorkspaceQuotaService(self._session).release_reservations_for_run(
             workspace_id=run.workspace_id,
             agent_run_id=run.id,
             released_at=released_at,
