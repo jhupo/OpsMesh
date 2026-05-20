@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -204,6 +205,42 @@ class ModelProviderCredentialService:
         self._session.commit()
         self._session.refresh(credential)
         return credential
+
+    def record_success(
+        self,
+        *,
+        workspace_id: UUID,
+        credential_id: UUID | None,
+    ) -> None:
+        if credential_id is None:
+            return
+        credential = self.get(workspace_id=workspace_id, credential_id=credential_id)
+        if credential is None:
+            return
+        credential.health_status = "healthy"
+        credential.last_success_at = datetime.now(UTC)
+        credential.last_failure_code = None
+        credential.last_failure_message = None
+        self._session.flush([credential])
+
+    def record_failure(
+        self,
+        *,
+        workspace_id: UUID,
+        credential_id: UUID | None,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        if credential_id is None:
+            return
+        credential = self.get(workspace_id=workspace_id, credential_id=credential_id)
+        if credential is None:
+            return
+        credential.health_status = "degraded"
+        credential.last_failure_at = datetime.now(UTC)
+        credential.last_failure_code = error_code[:120]
+        credential.last_failure_message = error_message[:1000]
+        self._session.flush([credential])
 
     def resolve_for_agent(
         self,

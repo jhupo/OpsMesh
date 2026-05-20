@@ -1885,6 +1885,12 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
     assert [request.model for request in runner.requests] == ["primary-model", "backup-model"]
     assert runner.requests[0].api_key == "sk-primary"
     assert runner.requests[1].api_key == "sk-backup"
+    assert primary.health_status == "degraded"
+    assert primary.last_failure_code == "RuntimeError"
+    assert primary.last_failure_message == "primary provider unavailable"
+    assert primary.last_failure_at is not None
+    assert backup.health_status == "healthy"
+    assert backup.last_success_at is not None
     assert run.status == RunStatus.COMPLETED.value
     assert run.output == {"final_output": "handled by backup-model"}
     assert fallback_event.event_metadata["reason"]["code"] == "RuntimeError"

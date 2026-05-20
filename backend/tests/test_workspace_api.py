@@ -494,6 +494,11 @@ def test_model_provider_credentials_are_created_without_returning_secret() -> No
     assert body["is_default"] is True
     assert body["default_model"] == "gpt-4.1-mini"
     assert body["api_key_fingerprint"].startswith("sha256:")
+    assert body["health_status"] == "unknown"
+    assert body["last_success_at"] is None
+    assert body["last_failure_at"] is None
+    assert body["last_failure_code"] is None
+    assert body["last_failure_message"] is None
     assert "api_key" not in body
     assert "encrypted_api_key" not in body
     assert listed.status_code == 200

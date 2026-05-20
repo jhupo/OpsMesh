@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import Boolean, ForeignKey, Index, String, UniqueConstraint
@@ -31,3 +32,8 @@ class ModelProviderCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     encryption_key_id: Mapped[str] = mapped_column(String(120), nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    health_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    last_success_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_failure_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    last_failure_message: Mapped[str | None] = mapped_column(String(1_000), nullable=True)

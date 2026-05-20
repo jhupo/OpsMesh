@@ -45,8 +45,8 @@ Incomplete or basic-only areas:
 - Docker runtime cleanup now records success/failure evidence. Self-hosted runtimes enforce worker concurrency/artifact limits and revocation evidence; broader machine trust workflows still need completion.
 - Import preview does not yet produce a full conflict plan before users commit a workspace archive import.
 - Model provider selection exists. Queued runs now freeze per-agent/default provider resolution
-  metadata without storing secrets, and worker execution can use a workspace-scoped fallback
-  policy. Provider health state still needs completion.
+  metadata without storing secrets, worker execution can use a workspace-scoped fallback policy,
+  and provider credentials track health state plus last success/failure details.
 - Operations APIs exist and overview now uses short Redis caching, but capacity, queue latency, and saturation dashboards need richer aggregate endpoints.
 - The memory search tool is still a placeholder and needs a real workspace memory/index implementation.
 - Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, reusable maintenance runner, HTTP metrics, domain error mapping, production config guardrails, Redis distributed locks, structured idempotency states, feature flags, Redis cache abstraction, admin-visible core configuration summaries, blocking executor snapshots, database pool snapshots, and Redis pool snapshots are implemented.
@@ -433,7 +433,8 @@ Current state:
   `model_provider.resolved` run event.
 - Worker execution supports workspace-scoped provider fallback with same-workspace credential
   enforcement.
-- Provider health state is incomplete.
+- Provider credentials expose `health_status`, `last_success_at`, `last_failure_at`,
+  `last_failure_code`, and `last_failure_message`.
 
 Build:
 
@@ -451,7 +452,7 @@ API/data changes:
 
 - Extend run authorization snapshot and run events with provider resolution metadata. (Done for
   queued team runs.)
-- Add provider health status and last failure reason.
+- Add provider health status and last failure reason. (Done.)
 - Add audit action for provider selection and fallback.
 
 Tests:

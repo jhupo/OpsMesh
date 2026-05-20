@@ -318,6 +318,11 @@ class RunOrchestrationService:
                     result = await self._agent_runner.run(request)
                     break
                 except Exception as exc:
+                    self._record_model_provider_failure(
+                        run,
+                        request.model_provider_credential_id,
+                        exc,
+                    )
                     fallback = self._next_model_provider_fallback(
                         run=run,
                         failed_request=request,
@@ -330,6 +335,7 @@ class RunOrchestrationService:
                         raise
                     model_provider_override = fallback
 
+            self._record_model_provider_success(run, request.model_provider_credential_id)
             self._append_model_provider_used_event(run, request)
             self._mark_run_completed(run, result.final_output, job.requested_by_user_id)
             self._session.commit()
@@ -751,6 +757,43 @@ class RunOrchestrationService:
             "api_key": resolved.api_key,
             "model_provider_credential_id": resolved.credential_id,
         }
+
+    def _record_model_provider_success(
+        self,
+        run: AgentRun,
+        credential_id: UUID | None,
+    ) -> None:
+        if self._settings is None:
+            return
+        ModelProviderCredentialService(
+            self._session,
+            SecretEncryptionService(
+                secret=self._settings.credential_encryption_secret,
+                key_id=self._settings.credential_encryption_key_id,
+            ),
+        ).record_success(workspace_id=run.workspace_id, credential_id=credential_id)
+
+    def _record_model_provider_failure(
+        self,
+        run: AgentRun,
+        credential_id: UUID | None,
+        exc: Exception,
+    ) -> None:
+        if self._settings is None:
+            return
+        error = normalize_agent_error(exc)
+        ModelProviderCredentialService(
+            self._session,
+            SecretEncryptionService(
+                secret=self._settings.credential_encryption_secret,
+                key_id=self._settings.credential_encryption_key_id,
+            ),
+        ).record_failure(
+            workspace_id=run.workspace_id,
+            credential_id=credential_id,
+            error_code=error.code,
+            error_message=error.message,
+        )
 
     def _next_model_provider_fallback(
         self,

@@ -39,5 +39,10 @@ class ModelProviderCredentialResponse(ORMModel):
     encryption_key_id: str
     is_default: bool
     status: str
+    health_status: str
+    last_success_at: datetime | None
+    last_failure_at: datetime | None
+    last_failure_code: str | None
+    last_failure_message: str | None
     created_at: datetime
     updated_at: datetime

@@ -241,6 +241,39 @@ def test_disable_removes_credential_from_default_resolution() -> None:
     assert resolved.model == "gpt-4.1"
 
 
+def test_records_provider_health_success_and_failure() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Health",
+        provider="openai",
+        api_key="sk-health",
+        default_model="gpt-4.1",
+        base_url=None,
+        is_default=False,
+    )
+
+    service.record_failure(
+        workspace_id=workspace.id,
+        credential_id=credential.id,
+        error_code="RateLimitError",
+        error_message="rate limited",
+    )
+    assert credential.health_status == "degraded"
+    assert credential.last_failure_at is not None
+    assert credential.last_failure_code == "RateLimitError"
+    assert credential.last_failure_message == "rate limited"
+
+    service.record_success(workspace_id=workspace.id, credential_id=credential.id)
+    assert credential.health_status == "healthy"
+    assert credential.last_success_at is not None
+    assert credential.last_failure_code is None
+    assert credential.last_failure_message is None
+
+
 def _service(session: Session) -> ModelProviderCredentialService:
     return ModelProviderCredentialService(
         session,
