@@ -310,7 +310,7 @@ def test_self_hosted_worker_is_limited_to_allowed_runtime_spaces() -> None:
     }
 
 
-def test_self_hosted_worker_cleanup_marks_stale_workers_offline() -> None:
+def test_self_hosted_worker_cleanup_marks_stale_workers_degraded() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
     runtime_space = RuntimeSpace(workspace_id=workspace.id, name="Local", scope="workspace")
@@ -339,7 +339,8 @@ def test_self_hosted_worker_cleanup_marks_stale_workers_offline() -> None:
     session.commit()
 
     cleanup = client.post(
-        f"/api/v1/workspaces/{workspace.id}/self-hosted/worker-cleanup?stale_after_seconds=60",
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/worker-cleanup"
+        "?stale_after_seconds=60&quarantine_after_seconds=7200",
         headers=_headers(owner.id),
     )
 
@@ -347,13 +348,95 @@ def test_self_hosted_worker_cleanup_marks_stale_workers_offline() -> None:
     session.refresh(self_hosted_worker)
     event = session.query(RuntimeSpaceEvent).filter_by(
         runtime_space_id=runtime_space.id,
-        event_type="self_hosted.worker_offline",
+        event_type="self_hosted.worker_degraded",
     ).one()
     assert cleanup.status_code == 200
-    assert cleanup.json()["marked_offline"] == 1
-    assert self_hosted_worker.status == "offline"
-    assert runtime.connection_status == "offline"
+    assert cleanup.json()["degraded"] == 1
+    assert cleanup.json()["quarantined"] == 0
+    assert self_hosted_worker.status == "degraded"
+    assert runtime.connection_status == "degraded"
     assert event.event_metadata["runtime_id"] == str(runtime_id)
+
+    recovered = client.post(
+        "/api/v1/self-hosted/heartbeat",
+        headers=_runtime_headers(registered.json()["credential_token"]),
+        json={"status": "online", "capabilities": {"runtime_space_id": str(runtime_space.id)}},
+    )
+
+    session.refresh(runtime)
+    session.refresh(self_hosted_worker)
+    assert recovered.status_code == 200
+    assert self_hosted_worker.status == "online"
+    assert runtime.connection_status == "online"
+
+
+def test_self_hosted_worker_cleanup_quarantines_severely_stale_workers() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    runtime_space = RuntimeSpace(workspace_id=workspace.id, name="Local", scope="workspace")
+    session.add(runtime_space)
+    session.commit()
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-quarantine",
+            "capabilities": {"runtime_space_id": str(runtime_space.id)},
+        },
+    )
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    runtime = session.get(WorkspaceRuntime, runtime_id)
+    assert runtime is not None
+    self_hosted_worker = session.query(SelfHostedWorker).one()
+    last_heartbeat = datetime.now(UTC) - timedelta(seconds=10_000)
+    runtime.last_heartbeat_at = last_heartbeat
+    self_hosted_worker.last_heartbeat_at = last_heartbeat
+    queued_run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    session.add(queued_run)
+    session.commit()
+
+    cleanup = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/worker-cleanup"
+        "?stale_after_seconds=60&quarantine_after_seconds=120",
+        headers=_headers(owner.id),
+    )
+    denied_poll = client.get(
+        "/api/v1/self-hosted/jobs/next",
+        headers=_runtime_headers(registered.json()["credential_token"]),
+    )
+    denied_heartbeat = client.post(
+        "/api/v1/self-hosted/heartbeat",
+        headers=_runtime_headers(registered.json()["credential_token"]),
+        json={"status": "online", "capabilities": {"runtime_space_id": str(runtime_space.id)}},
+    )
+
+    session.refresh(runtime)
+    session.refresh(self_hosted_worker)
+    runtime_event = session.query(RuntimeEvent).filter_by(
+        workspace_runtime_id=runtime_id,
+        event_type="self_hosted.worker_quarantined",
+    ).one()
+    space_event = session.query(RuntimeSpaceEvent).filter_by(
+        runtime_space_id=runtime_space.id,
+        event_type="self_hosted.worker_quarantined",
+    ).one()
+    assert cleanup.status_code == 200
+    assert cleanup.json()["degraded"] == 0
+    assert cleanup.json()["quarantined"] == 1
+    assert self_hosted_worker.status == "quarantined"
+    assert runtime.status == "quarantined"
+    assert runtime.connection_status == "offline"
+    assert denied_poll.status_code == 400
+    assert "quarantined" in denied_poll.json()["error"]["message"]
+    assert denied_heartbeat.status_code == 409
+    assert runtime_event.event_metadata["worker_id"] == str(self_hosted_worker.id)
+    assert space_event.event_metadata["runtime_id"] == str(runtime_id)
 
 
 def test_self_hosted_worker_enforces_max_concurrent_jobs() -> None:

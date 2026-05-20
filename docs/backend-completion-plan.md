@@ -387,8 +387,8 @@ Acceptance:
 Current state:
 
 - Users can enroll a self-hosted runtime, heartbeat, poll jobs, update progress, upload artifacts, and revoke credentials.
-- Workers enforce `max_concurrent_jobs`, artifact upload byte limits, runtime-space allowlists, allowed tools, network mode expectations, supported model lists, supported runtime lists, and revocation blocks future API use while recording runtime/runtime-space evidence.
-- Broader trust-state automation still needs more depth.
+- Workers enforce `max_concurrent_jobs`, artifact upload byte limits, runtime-space allowlists, allowed tools, network mode expectations, supported model lists, supported runtime lists, degraded/quarantined stale-machine transitions, and revocation blocks future API use while recording runtime/runtime-space evidence.
+- Broader trust-state review and manual remediation UX still needs more depth.
 
 Build:
 
@@ -399,7 +399,7 @@ Build:
   - [x] Enforce allowed tools, network expectations, and supported models/runtimes.
 - Add machine trust state: active, degraded, quarantined, revoked.
   - [x] Mark worker/runtime revoked when credentials are revoked.
-  - [ ] Add degraded/quarantined trust automation.
+  - [x] Add degraded/quarantined trust automation.
 - Enforce job assignment only to compatible trusted machines.
   - [x] Block offline/revoked/quarantined workers from polling or claiming jobs.
 - Record revocation reason, actor, affected jobs, credential rotation evidence, and final heartbeat state.
@@ -410,13 +410,13 @@ API/data changes:
 
 - Extend self-hosted runtime policy schema.
 - Add revocation event metadata and machine trust status.
-- Add operations endpoints for stale/degraded machines.
+- Add operations endpoints for stale/degraded machines. (Initial cleanup endpoint now returns degraded/quarantined counts.)
 
 Tests:
 
 - incompatible job is not assigned to a self-hosted runtime
 - revoked runtime cannot poll or upload artifacts
-- stale heartbeat moves machine to degraded/quarantined state
+- [x] stale heartbeat moves machine to degraded/quarantined state
 - revocation audit contains actor, reason, and affected job IDs
 
 Acceptance:

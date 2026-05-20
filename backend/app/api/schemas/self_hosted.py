@@ -48,7 +48,9 @@ class WorkerHeartbeatResponse(BaseModel):
 
 
 class SelfHostedWorkerCleanupResponse(BaseModel):
-    marked_offline: int
+    degraded: int
+    quarantined: int
+    marked_offline: int = 0
 
 
 class SelfHostedJobResponse(BaseModel):

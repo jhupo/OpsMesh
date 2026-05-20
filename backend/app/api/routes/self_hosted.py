@@ -92,7 +92,10 @@ async def heartbeat(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> WorkerHeartbeatResponse:
-    worker = SelfHostedRuntimeService(session, settings).heartbeat(auth, request)
+    try:
+        worker = SelfHostedRuntimeService(session, settings).heartbeat(auth, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if worker.last_heartbeat_at is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -112,15 +115,20 @@ async def heartbeat(
 )
 async def cleanup_self_hosted_workers(
     stale_after_seconds: int = Query(default=600, ge=60, le=86_400),
+    quarantine_after_seconds: int | None = Query(default=None, ge=60, le=604_800),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> SelfHostedWorkerCleanupResponse:
-    marked_offline = SelfHostedRuntimeService(session, settings).cleanup_stale_workers(
+    result = SelfHostedRuntimeService(session, settings).cleanup_stale_workers(
         context.workspace.id,
         stale_after_seconds=stale_after_seconds,
+        quarantine_after_seconds=quarantine_after_seconds,
     )
-    return SelfHostedWorkerCleanupResponse(marked_offline=marked_offline)
+    return SelfHostedWorkerCleanupResponse(
+        degraded=result.degraded,
+        quarantined=result.quarantined,
+    )
 
 
 @router.get("/self-hosted/jobs/next", response_model=SelfHostedJobResponse | None)

@@ -57,6 +57,12 @@ class AuthenticatedWorker:
     credential: RuntimeCredential
 
 
+@dataclass(frozen=True)
+class WorkerTrustCleanupResult:
+    degraded: int = 0
+    quarantined: int = 0
+
+
 class SelfHostedRuntimeService:
     def __init__(self, session: Session, settings: Settings) -> None:
         self._session = session
@@ -156,6 +162,8 @@ class SelfHostedRuntimeService:
         data: WorkerHeartbeatRequest,
     ) -> SelfHostedWorker:
         now = datetime.now(UTC)
+        if auth.worker.status == "quarantined" or auth.runtime.status == "quarantined":
+            raise ValueError("Self-hosted worker is quarantined")
         auth.worker.status = data.status
         auth.worker.capabilities = data.capabilities or auth.worker.capabilities
         auth.worker.last_heartbeat_at = now
@@ -360,31 +368,86 @@ class SelfHostedRuntimeService:
         if not policy.allow_self_hosted_runtimes:
             raise ValueError("Self-hosted runtimes are disabled by platform safety policy")
 
-    def cleanup_stale_workers(self, workspace_id: UUID, *, stale_after_seconds: int = 600) -> int:
-        cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
+    def cleanup_stale_workers(
+        self,
+        workspace_id: UUID,
+        *,
+        stale_after_seconds: int = 600,
+        quarantine_after_seconds: int | None = None,
+    ) -> WorkerTrustCleanupResult:
+        now = datetime.now(UTC)
+        degraded_cutoff = now - timedelta(seconds=stale_after_seconds)
+        quarantine_after_seconds = quarantine_after_seconds or stale_after_seconds * 3
+        quarantine_after_seconds = max(quarantine_after_seconds, stale_after_seconds)
+        quarantine_cutoff = now - timedelta(seconds=quarantine_after_seconds)
         stale_workers = self._session.scalars(
             select(SelfHostedWorker).where(
                 SelfHostedWorker.workspace_id == workspace_id,
-                SelfHostedWorker.status == "online",
+                SelfHostedWorker.status.in_(["online", "degraded"]),
                 SelfHostedWorker.last_heartbeat_at.is_not(None),
-                SelfHostedWorker.last_heartbeat_at < cutoff,
+                SelfHostedWorker.last_heartbeat_at < degraded_cutoff,
             )
         ).all()
-        now = datetime.now(UTC)
+        degraded = 0
+        quarantined = 0
         for worker in stale_workers:
-            worker.status = "offline"
             runtime = self._session.get(WorkspaceRuntime, worker.workspace_runtime_id)
+            last_heartbeat_at = _as_utc(worker.last_heartbeat_at)
+            if last_heartbeat_at is None:
+                continue
+            should_quarantine = last_heartbeat_at <= quarantine_cutoff
+            if should_quarantine:
+                if worker.status != "quarantined":
+                    quarantined += 1
+                worker.status = "quarantined"
+                if runtime is not None:
+                    runtime.status = "quarantined"
+                    runtime.connection_status = "offline"
+                    metadata = {
+                        "worker_id": str(worker.id),
+                        "last_heartbeat_at": last_heartbeat_at.isoformat(),
+                        "stale_after_seconds": stale_after_seconds,
+                        "quarantine_after_seconds": quarantine_after_seconds,
+                        "quarantined_at": now.isoformat(),
+                    }
+                    self._append_runtime_event(
+                        runtime,
+                        "self_hosted.worker_quarantined",
+                        worker.machine_id,
+                        metadata,
+                    )
+                    self._append_runtime_space_event(
+                        runtime,
+                        "self_hosted.worker_quarantined",
+                        worker.machine_id,
+                        metadata,
+                    )
+                continue
+            if worker.status != "degraded":
+                degraded += 1
+            worker.status = "degraded"
             if runtime is not None:
-                runtime.connection_status = "offline"
-                self._append_runtime_event(runtime, "self_hosted.worker_offline", worker.machine_id)
+                runtime.connection_status = "degraded"
+                metadata = {
+                    "worker_id": str(worker.id),
+                    "last_heartbeat_at": last_heartbeat_at.isoformat(),
+                    "stale_after_seconds": stale_after_seconds,
+                    "degraded_at": now.isoformat(),
+                }
+                self._append_runtime_event(
+                    runtime,
+                    "self_hosted.worker_degraded",
+                    worker.machine_id,
+                    metadata,
+                )
                 self._append_runtime_space_event(
                     runtime,
-                    "self_hosted.worker_offline",
+                    "self_hosted.worker_degraded",
                     worker.machine_id,
-                    {"worker_id": str(worker.id), "marked_offline_at": now.isoformat()},
+                    metadata,
                 )
         self._session.commit()
-        return len(stale_workers)
+        return WorkerTrustCleanupResult(degraded=degraded, quarantined=quarantined)
 
     def _consume_enrollment_token(self, raw_token: str) -> RuntimeEnrollmentToken:
         token = self._session.scalar(
@@ -521,10 +584,12 @@ class SelfHostedRuntimeService:
         )
 
     def _require_worker_accepting_jobs(self, auth: AuthenticatedWorker) -> None:
-        if auth.worker.status in {"revoked", "quarantined", "offline"}:
+        if auth.worker.status in {"revoked", "quarantined", "offline", "degraded"}:
             raise ValueError(f"Self-hosted worker is {auth.worker.status}")
         if auth.runtime.status in {"revoked", "quarantined", "disabled"}:
             raise ValueError(f"Self-hosted runtime is {auth.runtime.status}")
+        if auth.runtime.connection_status == "degraded":
+            raise ValueError("Self-hosted runtime is degraded")
 
     def _worker_capacity_allows(self, auth: AuthenticatedWorker) -> bool:
         max_concurrent_jobs = _positive_int(auth.worker.capabilities.get("max_concurrent_jobs"))
@@ -554,6 +619,14 @@ def _positive_int(value: object) -> int | None:
     if isinstance(value, int) and value > 0:
         return value
     return None
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _uuid_from_capabilities(capabilities: dict[str, object], key: str) -> UUID | None:
