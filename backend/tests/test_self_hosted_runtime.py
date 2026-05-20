@@ -397,6 +397,111 @@ def test_self_hosted_worker_enforces_max_concurrent_jobs() -> None:
     assert next_job.json() is None
 
 
+def test_self_hosted_worker_enforces_capability_policy_for_jobs() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-policy",
+            "capabilities": {
+                "allowed_tools": ["search_web"],
+                "supported_models": ["gpt-4.1-mini"],
+                "supported_runtimes": ["self_hosted"],
+                "supported_network_modes": ["none"],
+            },
+        },
+    )
+    credential = registered.json()["credential_token"]
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    denied_tool_run = _agent_run_with_snapshot(
+        workspace_id=workspace.id,
+        runtime_id=runtime_id,
+        model="gpt-4.1-mini",
+        allowed_tools=["runtime_shell"],
+        runtime_policy={"provider": "self_hosted", "network": {"mode": "none"}},
+    )
+    denied_model_run = _agent_run_with_snapshot(
+        workspace_id=workspace.id,
+        runtime_id=runtime_id,
+        model="gpt-5",
+        allowed_tools=["search_web"],
+        runtime_policy={"provider": "self_hosted", "network": {"mode": "none"}},
+    )
+    denied_runtime_run = _agent_run_with_snapshot(
+        workspace_id=workspace.id,
+        runtime_id=runtime_id,
+        model="gpt-4.1-mini",
+        allowed_tools=["search_web"],
+        runtime_policy={"provider": "cloud_docker", "network": {"mode": "none"}},
+    )
+    denied_network_run = _agent_run_with_snapshot(
+        workspace_id=workspace.id,
+        runtime_id=runtime_id,
+        model="gpt-4.1-mini",
+        allowed_tools=["search_web"],
+        runtime_policy={"provider": "self_hosted", "network": {"mode": "internet"}},
+    )
+    allowed_run = _agent_run_with_snapshot(
+        workspace_id=workspace.id,
+        runtime_id=runtime_id,
+        model="gpt-4.1-mini",
+        allowed_tools=["search_web"],
+        runtime_policy={"provider": "self_hosted", "network": {"mode": "none"}},
+    )
+    session.add_all(
+        [
+            denied_tool_run,
+            denied_model_run,
+            denied_runtime_run,
+            denied_network_run,
+            allowed_run,
+        ]
+    )
+    session.commit()
+
+    next_job = client.get("/api/v1/self-hosted/jobs/next", headers=_runtime_headers(credential))
+    denied_tool_claim = client.post(
+        f"/api/v1/self-hosted/jobs/{denied_tool_run.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+    denied_model_claim = client.post(
+        f"/api/v1/self-hosted/jobs/{denied_model_run.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+    denied_runtime_claim = client.post(
+        f"/api/v1/self-hosted/jobs/{denied_runtime_run.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+    denied_network_claim = client.post(
+        f"/api/v1/self-hosted/jobs/{denied_network_run.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+    allowed_claim = client.post(
+        f"/api/v1/self-hosted/jobs/{allowed_run.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+
+    assert next_job.status_code == 200
+    assert next_job.json()["agent_run_id"] == str(allowed_run.id)
+    assert denied_tool_claim.status_code == 409
+    assert "requires tools" in denied_tool_claim.json()["error"]["message"]
+    assert denied_model_claim.status_code == 409
+    assert "model is not supported" in denied_model_claim.json()["error"]["message"]
+    assert denied_runtime_claim.status_code == 409
+    assert "runtime is not supported" in denied_runtime_claim.json()["error"]["message"]
+    assert denied_network_claim.status_code == 409
+    assert "network mode is not supported" in denied_network_claim.json()["error"]["message"]
+    assert allowed_claim.status_code == 200
+
+
 def test_self_hosted_artifact_upload_enforces_max_artifact_bytes() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
@@ -521,6 +626,31 @@ def _headers(user_id: object) -> dict[str, str]:
 
 def _runtime_headers(token: str) -> dict[str, str]:
     return {"X-Runtime-Authorization": f"Bearer {token}"}
+
+
+def _agent_run_with_snapshot(
+    *,
+    workspace_id: UUID,
+    runtime_id: UUID,
+    model: str,
+    allowed_tools: list[str],
+    runtime_policy: dict[str, object],
+) -> AgentRun:
+    return AgentRun(
+        workspace_id=workspace_id,
+        runtime_id=runtime_id,
+        status="queued",
+        model=model,
+        input={
+            "authorization_snapshot": {
+                "version": 1,
+                "workspace_id": str(workspace_id),
+                "allowed_tools": allowed_tools,
+                "runtime_policy": runtime_policy,
+                "model_provider": {"selected_model": model},
+            }
+        },
+    )
 
 
 def _seed_risky_policy(

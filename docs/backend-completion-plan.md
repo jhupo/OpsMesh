@@ -387,7 +387,7 @@ Acceptance:
 Current state:
 
 - Users can enroll a self-hosted runtime, heartbeat, poll jobs, update progress, upload artifacts, and revoke credentials.
-- Workers enforce `max_concurrent_jobs`, artifact upload byte limits, runtime-space allowlists, and revocation blocks future API use while recording runtime/runtime-space evidence.
+- Workers enforce `max_concurrent_jobs`, artifact upload byte limits, runtime-space allowlists, allowed tools, network mode expectations, supported model lists, supported runtime lists, and revocation blocks future API use while recording runtime/runtime-space evidence.
 - Broader trust-state automation still needs more depth.
 
 Build:
@@ -396,7 +396,7 @@ Build:
   - [x] Enforce max concurrent jobs.
   - [x] Enforce max artifact bytes.
   - [x] Enforce runtime-space allowlists.
-  - [ ] Enforce allowed tools, network expectations, and supported models/runtimes.
+  - [x] Enforce allowed tools, network expectations, and supported models/runtimes.
 - Add machine trust state: active, degraded, quarantined, revoked.
   - [x] Mark worker/runtime revoked when credentials are revoked.
   - [ ] Add degraded/quarantined trust automation.

@@ -30,6 +30,7 @@ from backend.app.self_hosted.models import (
     SelfHostedJobClaim,
     SelfHostedWorker,
 )
+from backend.app.self_hosted.policy import evaluate_worker_job_policy
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
@@ -180,7 +181,7 @@ class SelfHostedRuntimeService:
             .order_by(AgentRun.created_at.asc())
         )
         for run in self._session.scalars(statement).all():
-            if self._runtime_space_allowed(auth, run) and self._worker_capacity_allows(auth):
+            if self._worker_can_accept_run(auth, run) and self._worker_capacity_allows(auth):
                 return run
         return None
 
@@ -196,6 +197,9 @@ class SelfHostedRuntimeService:
             raise ValueError("Agent run not available for this worker")
         if not self._runtime_space_allowed(auth, run):
             raise ValueError("Agent run runtime space is not allowed for this worker")
+        policy_decision = self._worker_job_policy_decision(auth, run)
+        if not policy_decision.allowed:
+            raise ValueError(policy_decision.reason or "Agent run is not compatible with worker")
         if not self._worker_capacity_allows(auth):
             raise ValueError("Self-hosted worker has reached max concurrent jobs")
         if run.status != RunStatus.QUEUED.value:
@@ -498,6 +502,23 @@ class SelfHostedRuntimeService:
             return True
         allowed_ids = _string_list(auth.worker.capabilities.get("allowed_runtime_space_ids"))
         return runtime_space_id in allowed_ids
+
+    def _worker_can_accept_run(self, auth: AuthenticatedWorker, run: AgentRun) -> bool:
+        if not self._runtime_space_allowed(auth, run):
+            return False
+        return self._worker_job_policy_decision(auth, run).allowed
+
+    def _worker_job_policy_decision(self, auth: AuthenticatedWorker, run: AgentRun):
+        runtime_space = (
+            self._session.get(RuntimeSpace, run.runtime_space_id)
+            if run.runtime_space_id is not None
+            else None
+        )
+        return evaluate_worker_job_policy(
+            worker_capabilities=auth.worker.capabilities,
+            run=run,
+            runtime_space=runtime_space,
+        )
 
     def _require_worker_accepting_jobs(self, auth: AuthenticatedWorker) -> None:
         if auth.worker.status in {"revoked", "quarantined", "offline"}:
