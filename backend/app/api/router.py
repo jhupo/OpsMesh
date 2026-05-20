@@ -8,6 +8,7 @@ from backend.app.api.routes.exports import router as exports_router
 from backend.app.api.routes.files import router as files_router
 from backend.app.api.routes.health import router as health_router
 from backend.app.api.routes.marketplace import router as marketplace_router
+from backend.app.api.routes.metrics import router as metrics_router
 from backend.app.api.routes.model_providers import router as model_providers_router
 from backend.app.api.routes.operations import router as operations_router
 from backend.app.api.routes.runtime_spaces import router as runtime_spaces_router
@@ -19,6 +20,7 @@ from backend.app.api.routes.workspaces import router as workspaces_router
 api_router = APIRouter()
 api_router.include_router(admin_router)
 api_router.include_router(health_router, tags=["health"])
+api_router.include_router(metrics_router, tags=["metrics"])
 api_router.include_router(workspaces_router)
 api_router.include_router(marketplace_router)
 api_router.include_router(model_providers_router)

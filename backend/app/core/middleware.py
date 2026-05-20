@@ -12,6 +12,7 @@ from starlette.types import ASGIApp
 
 from backend.app.api.errors import error_response
 from backend.app.core.config import Settings
+from backend.app.core.metrics import record_http_request
 from backend.app.core.request_context import request_id_var
 from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
 
@@ -64,6 +65,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         duration_ms = _elapsed_ms(started_at)
         response.headers["X-Process-Time-Ms"] = str(duration_ms)
         response.headers[REQUEST_ID_HEADER] = request_id
+        record_http_request(request.method, request.url.path, status_code, duration_ms)
         log_level = (
             logging.WARNING
             if duration_ms >= self._settings.request_slow_log_threshold_ms

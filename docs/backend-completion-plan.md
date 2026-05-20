@@ -14,6 +14,7 @@ Completed foundation:
 - structured log context for request, workspace, user, task, run, and worker IDs
 - split health checks for live, ready, and startup probes with DB, Redis, storage, and worker queue readiness
 - reusable maintenance runner for registered sweeper jobs with intervals, duration logging, and failure capture
+- lightweight metrics registry and `/metrics` endpoint with HTTP request counters and duration buckets
 - workspace agents, teams, members, tasks, steps, runs, events, approvals, files, artifacts, exports, and audit records
 - worker queue, retries, dead letters, idempotency, heartbeats, and rate limits
 - OpenAI Agents runtime contract and fake/runtime adapters
@@ -36,7 +37,7 @@ Incomplete or basic-only areas:
 - Model provider selection exists, but provider fallback and per-agent audit trails need completion.
 - Operations APIs exist, but capacity, queue latency, and saturation dashboards need richer aggregate endpoints.
 - The memory search tool is still a placeholder and needs a real workspace memory/index implementation.
-- Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, and reusable maintenance runner are implemented; metrics, distributed locks, and feature flags still need completion.
+- Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, reusable maintenance runner, and HTTP metrics are implemented; distributed locks and feature flags still need completion.
 
 ## P0: Cloud Control Plane And Runtime Spaces
 
