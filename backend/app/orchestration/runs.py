@@ -316,6 +316,7 @@ class RunOrchestrationService:
             self._mark_run_started(run)
             used_provider_credentials: set[UUID] = set()
             model_provider_override: dict[str, Any] | None = None
+            fallback_selected = False
             while True:
                 request = self._build_agent_request(
                     run,
@@ -344,9 +345,11 @@ class RunOrchestrationService:
                         self._session.commit()
                         raise
                     model_provider_override = fallback
+                    fallback_selected = True
 
             self._record_model_provider_success(run, request.model_provider_credential_id)
             self._append_model_provider_used_event(run, request)
+            self._audit_model_provider_used(run, request, job, fallback_selected=fallback_selected)
             self._map_runtime_events_to_task_messages(run, result)
             self._mark_run_completed(run, result.final_output, job.requested_by_user_id)
             self._session.commit()
@@ -539,6 +542,36 @@ class RunOrchestrationService:
                     if request.model_provider_credential_id is not None
                     else None,
                 }
+            },
+        )
+
+    def _audit_model_provider_used(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        job: JobPayload,
+        *,
+        fallback_selected: bool,
+    ) -> None:
+        if job.requested_by_user_id is None:
+            return
+        AuditService(self._session).record_user_action(
+            workspace_id=run.workspace_id,
+            user_id=job.requested_by_user_id,
+            action="model_provider.used",
+            target_type="agent_run",
+            target_id=run.id,
+            metadata={
+                "task_id": str(run.task_id) if run.task_id is not None else None,
+                "task_step_id": str(run.task_step_id) if run.task_step_id is not None else None,
+                "agent_profile_id": str(run.agent_profile_id)
+                if run.agent_profile_id is not None
+                else None,
+                "model": request.model,
+                "credential_id": str(request.model_provider_credential_id)
+                if request.model_provider_credential_id is not None
+                else None,
+                "fallback_selected": fallback_selected,
             },
         )
 

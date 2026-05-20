@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult, AgentRuntimeEvent
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval
+from backend.app.audit.models import AuditEvent
 from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
 from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
@@ -2054,6 +2055,13 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
         event for event in events if event.event_type == "model_provider.fallback_selected"
     )
     used_event = next(event for event in events if event.event_type == "model_provider.used")
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "model_provider.used",
+            AuditEvent.target_id == str(run.id),
+        )
+    )
 
     assert [request.model for request in runner.requests] == ["primary-model", "backup-model"]
     assert runner.requests[0].api_key == "sk-primary"
@@ -2081,6 +2089,13 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
         "model": "backup-model",
         "credential_id": str(backup.id),
     }
+    assert audit is not None
+    assert audit.actor_id == str(user.id)
+    assert audit.audit_metadata["model"] == "backup-model"
+    assert audit.audit_metadata["credential_id"] == str(backup.id)
+    assert audit.audit_metadata["fallback_selected"] is True
+    assert "api_key" not in audit.audit_metadata
+    assert "base_url" not in audit.audit_metadata
 
 
 def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:

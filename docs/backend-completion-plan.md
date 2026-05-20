@@ -454,7 +454,8 @@ API/data changes:
 - Extend run authorization snapshot and run events with provider resolution metadata. (Done for
   queued team runs.)
 - Add provider health status and last failure reason. (Done.)
-- Add audit action for provider selection and fallback.
+- Add audit action for provider selection and fallback. (Done with `model_provider.used`
+  audit events that mark whether fallback was selected.)
 
 Tests:
 
