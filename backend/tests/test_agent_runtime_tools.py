@@ -13,6 +13,8 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.runs.models import AgentRun
+from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.self_hosted.models import SelfHostedMcpJob
 from backend.app.tasks.models import Task
 from backend.app.tools.errors import ToolPermissionError
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -98,6 +100,65 @@ def test_backend_tool_executor_enforces_runtime_allowed_tools() -> None:
         assert "mcp_tool_not_in_runtime_context" in str(exc)
     else:
         raise AssertionError("Expected backend tool executor to enforce runtime context")
+
+
+def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_provider="self_hosted",
+        runtime_type="self_hosted",
+        name="local-node",
+    )
+    task = Task(workspace_id=workspace.id, title="Task")
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="image-tools",
+        server_type="stdio",
+        connection={"command": "mcp-image"},
+    )
+    session.add_all([runtime, task, server])
+    session.flush()
+    allow = McpToolAllowlist(
+        workspace_id=workspace.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+    )
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        runtime_id=runtime.id,
+        input={
+            "authorization_snapshot": {
+                "workspace_id": str(workspace.id),
+                "allowed_tools": ["generate_image"],
+            }
+        },
+    )
+    session.add_all([allow, run])
+    session.commit()
+
+    result = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+        context=AgentRuntimeContext(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            run_id=run.id,
+            allowed_tools=("generate_image",),
+        ),
+        tool_name="generate_image",
+        arguments={"prompt": "mountain"},
+    )
+    job = session.query(SelfHostedMcpJob).one()
+
+    assert result.status == "waiting_self_hosted"
+    assert result.output is not None
+    assert result.output["mcp_job_id"] == str(job.id)
+    assert job.request_payload["command"] == ["mcp-image"]
+    assert job.request_payload["jsonrpc"]["params"] == {
+        "name": "generate_image",
+        "arguments": {"prompt": "mountain"},
+    }
 
 
 class StaticMcpAdapter:

@@ -33,6 +33,19 @@ class McpExecutionError(Exception):
         self.code = code
 
 
+class McpExecutionPending(Exception):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str,
+        response: dict[str, object],
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.response = response
+
+
 class McpToolAdapter(Protocol):
     def call(
         self,
@@ -150,6 +163,49 @@ class McpToolExecutionService:
                 timeout_seconds=policy.timeout_seconds,
             )
             self._enforce_payload_size(response, policy.max_output_bytes)
+        except McpExecutionPending as exc:
+            latency_ms = _latency_ms(started)
+            response = {**exc.response, "status": "waiting_self_hosted"}
+            log = self._log_call(
+                request=request,
+                server_id=server.id,
+                status="waiting_self_hosted",
+                response={"result": response, "latency_ms": latency_ms},
+                error=None,
+                snapshot=snapshot,
+            )
+            self._append_run_event(
+                run=run,
+                event_type="tool.waiting",
+                message=request.tool_name,
+                metadata={
+                    "tool_kind": "mcp",
+                    "mcp_server_id": str(server.id),
+                    "tool_name": request.tool_name,
+                    "pending_code": exc.code,
+                    "latency_ms": latency_ms,
+                    **_snapshot_audit_metadata(snapshot),
+                },
+            )
+            self._append_task_message(
+                run=run,
+                message_type="tool.waiting",
+                body=f"MCP tool waiting for self-hosted runtime: {request.tool_name}",
+                payload={
+                    "tool_name": request.tool_name,
+                    "mcp_server_id": str(server.id),
+                    "latency_ms": latency_ms,
+                    **exc.response,
+                },
+            )
+            self._session.flush()
+            return McpExecutionResult(
+                status="waiting_self_hosted",
+                response=response,
+                error=None,
+                log_id=log.id,
+                latency_ms=latency_ms,
+            )
         except ToolPermissionError:
             raise
         except Exception as exc:
