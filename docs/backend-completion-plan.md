@@ -40,7 +40,7 @@ Incomplete or basic-only areas:
 - MCP skills are cataloged and authorized, but not yet fully connected to the runtime execution path.
 - Skills can be visible as private/public, but public skill copy/provenance and install workflows are incomplete.
 - Task observation now has a stable backend API with generic and domain-specific sections for AIGC, novel writing, research, and software tasks. The first implementation composes existing task, step, message, run event, and artifact data; richer domain persistence can be added behind the same response shape.
-- Correction/revision is supported internally, but a generic user-facing endpoint is missing.
+- Correction/revision is supported through a generic user-facing endpoint that targets tasks, steps, agents, artifacts, or final output and records follow-up work plus task messages.
 - Scheduling supports per-member concurrency, workspace active run quotas, blocked reasons, and cross-task priority ordering. Runtime/self-hosted/storage quotas and starvation prevention still need completion.
 - Docker and self-hosted runtime policies need stronger quota enforcement, cleanup verification, and revocation evidence.
 - Import preview does not yet produce a full conflict plan before users commit a workspace archive import.
@@ -281,29 +281,29 @@ Current state:
 
 - PM decisions can create revision or missing-work follow-up steps.
 - Some domain correction flows exist.
-- There is no generic endpoint that lets the user correct a task, step, agent output, or artifact from one consistent API.
+- A generic endpoint lets users correct a task, step, agent output, artifact, or final output from one consistent API.
 
 Build:
 
-- Add a correction command service with targets: task, step, agent, artifact, and final output.
-- Support correction modes: revise, regenerate, add_missing_work, replace_artifact, and stop_work.
-- Convert correction commands into new versioned work packages and PM re-review steps.
-- Preserve original outputs and link corrections through parent/child step metadata.
-- Add task messages for every user correction and resulting assignment.
+- [x] Add a correction command service with targets: task, step, agent, artifact, and final output.
+- [x] Support correction modes: revise, regenerate, add_missing_work, replace_artifact, and stop_work.
+- [x] Convert correction commands into new queued correction work packages and manager review steps.
+- [x] Preserve original outputs and link corrections through follow-up step metadata.
+- [x] Add task messages and audit events for every user correction and resulting assignment.
 
 API/data changes:
 
-- `POST /api/v1/workspaces/{workspace_id}/tasks/{task_id}/corrections`
-- Add correction request/response schemas.
-- Add correction metadata to `TaskStep.dependencies` or a dedicated `task_corrections` table if query needs grow.
+- [x] `POST /api/v1/workspaces/{workspace_id}/tasks/{task_id}/corrections`
+- [x] Add correction request/response schemas.
+- [x] Add correction metadata to `TaskStep.dependencies`; a dedicated `task_corrections` table can be added later if query needs grow.
 
 Tests:
 
-- correcting one step creates a new revision step only for that scope
+- [x] correcting one step creates a new revision step only for that scope
 - correcting final output creates PM reconciliation work
 - correcting an artifact creates replacement work and preserves old artifact
-- invalid/cross-workspace target is rejected
-- correction event appears in task messages
+- [x] invalid/cross-workspace target is rejected
+- [x] correction event appears in task messages
 
 Acceptance:
 

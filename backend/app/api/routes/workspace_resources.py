@@ -15,6 +15,8 @@ from backend.app.api.schemas.agents import AgentProfileCreateRequest, AgentProfi
 from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
 from backend.app.api.schemas.tasks import (
+    TaskCorrectionRequest,
+    TaskCorrectionResponse,
     TaskCreateRequest,
     TaskMessageResponse,
     TaskObservationResponse,
@@ -35,6 +37,7 @@ from backend.app.db.session import get_db_session
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.observation import TaskObservationService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
@@ -308,6 +311,31 @@ async def list_task_messages(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.post(
+    "/tasks/{task_id}/corrections",
+    response_model=TaskCorrectionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_task_correction(
+    task_id: UUID,
+    request: TaskCorrectionRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> TaskCorrectionResponse:
+    try:
+        correction = TaskCorrectionService(session).create_correction(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            actor_user_id=context.user.user_id,
+            request=request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if correction is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskCorrectionResponse(**correction.__dict__)
 
 
 @router.get("/tasks/{task_id}/observation", response_model=TaskObservationResponse)

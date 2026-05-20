@@ -966,6 +966,140 @@ def test_retry_failed_run_creates_new_queued_run_and_enqueues_job() -> None:
     assert "run.retried" in actions
 
 
+def test_create_task_correction_for_step_creates_follow_up_step_and_message() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Revise report",
+        status="completed",
+    )
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Draft report",
+        status="completed",
+        order_index=1,
+        work_package_id="draft-report",
+        expected_artifacts=["report"],
+    )
+    session.add(step)
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/corrections",
+        headers=_headers(owner.id),
+        json={
+            "target_type": "step",
+            "target_id": str(step.id),
+            "mode": "revise",
+            "instruction": "Rewrite the executive summary with stronger evidence.",
+            "metadata": {"priority": "high"},
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    created_step = session.get(TaskStep, UUID(body["created_step_id"]))
+    message = session.get(TaskMessage, UUID(body["message_id"]))
+    session.refresh(task)
+    assert created_step is not None
+    assert created_step.status == "queued"
+    assert created_step.order_index == 2
+    assert created_step.dependencies["correction"]["target"]["task_step_id"] == str(step.id)
+    assert created_step.acceptance_criteria == [
+        "Rewrite the executive summary with stronger evidence."
+    ]
+    assert message is not None
+    assert message.message_type == "task.correction.created"
+    assert message.payload["created_step_id"] == str(created_step.id)
+    assert task.status == "in_progress"
+
+
+def test_stop_work_correction_cancels_task_without_creating_step() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Stop this",
+        status="running",
+    )
+    session.add(task)
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/corrections",
+        headers=_headers(owner.id),
+        json={
+            "target_type": "task",
+            "mode": "stop_work",
+            "instruction": "Stop all work on this task.",
+        },
+    )
+
+    session.refresh(task)
+    assert response.status_code == 201
+    assert response.json()["created_step_id"] is None
+    assert response.json()["status"] == "cancelled"
+    assert task.status == "cancelled"
+    assert session.scalar(select(TaskStep).where(TaskStep.task_id == task.id)) is None
+
+
+def test_task_correction_rejects_foreign_artifact_target() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    _, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-correction@example.com",
+        slug="other-correction",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Replace artifact",
+        status="running",
+    )
+    foreign_task = Task(
+        workspace_id=other_workspace.id,
+        title="Foreign",
+        status="running",
+    )
+    session.add_all([task, foreign_task])
+    session.flush()
+    artifact = Artifact(
+        workspace_id=other_workspace.id,
+        task_id=foreign_task.id,
+        artifact_type="document",
+        filename="foreign.pdf",
+        content_type="application/pdf",
+        size_bytes=10,
+        checksum_sha256="a" * 64,
+        storage_key="foreign",
+        created_at=datetime.now(UTC),
+    )
+    session.add(artifact)
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/corrections",
+        headers=_headers(owner.id),
+        json={
+            "target_type": "artifact",
+            "target_id": str(artifact.id),
+            "mode": "replace_artifact",
+            "instruction": "Replace this file.",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "does not belong" in response.json()["error"]["message"]
+
+
 def test_create_workspace_assigns_owner_membership() -> None:
     client, session = _client()
     user = User(email="new-owner@example.com", display_name="New Owner")
