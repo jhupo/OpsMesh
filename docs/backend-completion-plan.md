@@ -387,7 +387,7 @@ Acceptance:
 Current state:
 
 - Users can enroll a self-hosted runtime, heartbeat, poll jobs, update progress, upload artifacts, and revoke credentials.
-- Workers enforce `max_concurrent_jobs`, artifact upload byte limits, runtime-space allowlists, allowed tools, network mode expectations, supported model lists, supported runtime lists, degraded/quarantined stale-machine transitions, and revocation blocks future API use while recording runtime/runtime-space evidence.
+- Workers enforce `max_concurrent_jobs`, artifact upload byte limits, runtime-space allowlists, allowed tools, network mode expectations, supported model lists, supported runtime lists, degraded/quarantined stale-machine transitions, and credential revocation that records actor/reason/final heartbeat/affected jobs while blocking future API use.
 - Broader trust-state review and manual remediation UX still needs more depth.
 
 Build:
@@ -404,6 +404,7 @@ Build:
   - [x] Block offline/revoked/quarantined workers from polling or claiming jobs.
 - Record revocation reason, actor, affected jobs, credential rotation evidence, and final heartbeat state.
   - [x] Record credential revocation evidence in runtime and runtime-space events.
+  - [x] Record revocation actor, reason, affected claims/runs, failed run state, and final heartbeat state.
 - Add stale heartbeat quarantine and user-visible warnings.
 
 API/data changes:
@@ -417,7 +418,7 @@ Tests:
 - incompatible job is not assigned to a self-hosted runtime
 - revoked runtime cannot poll or upload artifacts
 - [x] stale heartbeat moves machine to degraded/quarantined state
-- revocation audit contains actor, reason, and affected job IDs
+- [x] revocation audit contains actor, reason, and affected job IDs
 
 Acceptance:
 

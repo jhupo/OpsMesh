@@ -53,6 +53,10 @@ class SelfHostedWorkerCleanupResponse(BaseModel):
     marked_offline: int = 0
 
 
+class RuntimeCredentialRevokeRequest(BaseModel):
+    reason: str = Field(default="", max_length=500)
+
+
 class SelfHostedJobResponse(BaseModel):
     agent_run_id: UUID
     task_id: UUID | None

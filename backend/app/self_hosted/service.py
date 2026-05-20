@@ -326,18 +326,53 @@ class SelfHostedRuntimeService:
         self,
         workspace_id: UUID,
         credential_id: UUID,
+        *,
+        actor_user_id: UUID | None = None,
+        reason: str = "",
     ) -> RuntimeCredential | None:
         credential = self._session.get(RuntimeCredential, credential_id)
         if credential is None or credential.workspace_id != workspace_id:
             return None
+        now = datetime.now(UTC)
         credential.status = "revoked"
-        credential.revoked_at = datetime.now(UTC)
+        credential.revoked_at = now
         runtime = self._session.get(WorkspaceRuntime, credential.workspace_runtime_id)
         worker = self._session.scalar(
             select(SelfHostedWorker).where(
                 SelfHostedWorker.workspace_runtime_id == credential.workspace_runtime_id
             )
         )
+        affected_claims = self._active_claims_for_worker(worker) if worker is not None else []
+        affected_run_ids: list[str] = []
+        for claim in affected_claims:
+            claim.status = "revoked"
+            claim.completed_at = now
+            run = self._session.get(AgentRun, claim.agent_run_id)
+            if run is None:
+                continue
+            affected_run_ids.append(str(run.id))
+            if run.status in {
+                RunStatus.QUEUED.value,
+                RunStatus.RUNNING.value,
+                RunStatus.WAITING_APPROVAL.value,
+            }:
+                run.status = RunStatus.FAILED.value
+                run.completed_at = now
+                run.error = {
+                    "code": "runtime_credential_revoked",
+                    "message": "Self-hosted runtime credential was revoked.",
+                    "credential_id": str(credential.id),
+                }
+                self._append_run_event(
+                    run,
+                    "self_hosted.run_failed_by_revoke",
+                    "Self-hosted runtime credential was revoked.",
+                    {
+                        "credential_id": str(credential.id),
+                        "worker_id": str(worker.id) if worker else None,
+                        "reason": reason,
+                    },
+                )
         if worker is not None:
             worker.status = "revoked"
         if runtime is not None:
@@ -346,11 +381,24 @@ class SelfHostedRuntimeService:
             event_metadata = {
                 "credential_id": str(credential.id),
                 "worker_id": str(worker.id) if worker else None,
+                "actor_user_id": str(actor_user_id) if actor_user_id is not None else None,
+                "reason": reason,
+                "affected_claim_ids": [str(claim.id) for claim in affected_claims],
+                "affected_run_ids": affected_run_ids,
+                "final_heartbeat": {
+                    "worker_status": worker.status if worker is not None else None,
+                    "worker_last_heartbeat_at": _dt_iso(worker.last_heartbeat_at)
+                    if worker is not None
+                    else None,
+                    "runtime_status": runtime.status,
+                    "runtime_connection_status": runtime.connection_status,
+                    "runtime_last_heartbeat_at": _dt_iso(runtime.last_heartbeat_at),
+                },
             }
             self._append_runtime_event(
                 runtime,
                 "self_hosted.credential_revoked",
-                str(credential.id),
+                reason or str(credential.id),
                 event_metadata,
             )
             self._append_runtime_space_event(
@@ -604,6 +652,17 @@ class SelfHostedRuntimeService:
         )
         return int(running_claims or 0) < max_concurrent_jobs
 
+    def _active_claims_for_worker(self, worker: SelfHostedWorker) -> list[SelfHostedJobClaim]:
+        return list(
+            self._session.scalars(
+                select(SelfHostedJobClaim).where(
+                    SelfHostedJobClaim.workspace_id == worker.workspace_id,
+                    SelfHostedJobClaim.worker_id == worker.id,
+                    SelfHostedJobClaim.status == "claimed",
+                )
+            ).all()
+        )
+
     def _hash(self, token: str) -> str:
         material = f"{self._settings.token_hash_pepper}:{token}"
         return sha256(material.encode("utf-8")).hexdigest()
@@ -627,6 +686,11 @@ def _as_utc(value: datetime | None) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _dt_iso(value: datetime | None) -> str | None:
+    utc_value = _as_utc(value)
+    return utc_value.isoformat() if utc_value is not None else None
 
 
 def _uuid_from_capabilities(capabilities: dict[str, object], key: str) -> UUID | None:

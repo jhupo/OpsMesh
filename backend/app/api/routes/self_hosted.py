@@ -13,6 +13,7 @@ from backend.app.api.schemas.self_hosted import (
     LocalFileReferenceRequest,
     LocalFileReferenceResponse,
     ProgressEventRequest,
+    RuntimeCredentialRevokeRequest,
     RuntimeRegistrationRequest,
     RuntimeRegistrationResponse,
     SelfHostedJobResponse,
@@ -235,13 +236,16 @@ async def register_artifact_upload(
 )
 async def revoke_runtime_credential(
     credential_id: UUID,
-    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    request: RuntimeCredentialRevokeRequest | None = None,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> None:
     revoked = SelfHostedRuntimeService(session, settings).revoke_credential(
-        _.workspace.id,
+        context.workspace.id,
         credential_id,
+        actor_user_id=context.user.user_id,
+        reason=request.reason if request is not None else "",
     )
     if revoked is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Credential not found")

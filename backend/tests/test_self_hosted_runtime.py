@@ -21,7 +21,7 @@ from backend.app.main import create_app
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
-from backend.app.self_hosted.models import RuntimeCredential, SelfHostedWorker
+from backend.app.self_hosted.models import RuntimeCredential, SelfHostedJobClaim, SelfHostedWorker
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -638,16 +638,28 @@ def test_self_hosted_revoke_records_runtime_evidence_and_blocks_jobs() -> None:
         },
     )
     credential_token = registered.json()["credential_token"]
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    session.add(run)
+    session.commit()
+    claim = client.post(
+        f"/api/v1/self-hosted/jobs/{run.id}/claim",
+        headers=_runtime_headers(credential_token),
+    )
+    assert claim.status_code == 200
     credential = session.query(RuntimeCredential).one()
 
     revoked = client.post(
         f"/api/v1/workspaces/{workspace.id}/self-hosted/credentials/{credential.id}/revoke",
         headers=_headers(owner.id),
+        json={"reason": "lost laptop"},
     )
     denied = client.get("/api/v1/self-hosted/jobs/next", headers=_runtime_headers(credential_token))
 
-    runtime = session.get(WorkspaceRuntime, UUID(registered.json()["workspace_runtime_id"]))
+    session.refresh(run)
+    runtime = session.get(WorkspaceRuntime, runtime_id)
     worker = session.query(SelfHostedWorker).one()
+    claim_record = session.query(SelfHostedJobClaim).one()
     runtime_event = session.query(RuntimeEvent).filter_by(
         event_type="self_hosted.credential_revoked"
     ).one()
@@ -660,8 +672,19 @@ def test_self_hosted_revoke_records_runtime_evidence_and_blocks_jobs() -> None:
     assert runtime.status == "revoked"
     assert runtime.connection_status == "offline"
     assert worker.status == "revoked"
+    assert claim_record.status == "revoked"
+    assert claim_record.completed_at is not None
+    assert run.status == "failed"
+    assert run.error is not None
+    assert run.error["code"] == "runtime_credential_revoked"
     assert runtime_event.event_metadata["credential_id"] == str(credential.id)
+    assert runtime_event.event_metadata["actor_user_id"] == str(owner.id)
+    assert runtime_event.event_metadata["reason"] == "lost laptop"
+    assert runtime_event.event_metadata["affected_run_ids"] == [str(run.id)]
+    assert runtime_event.event_metadata["affected_claim_ids"] == [str(claim_record.id)]
+    assert runtime_event.event_metadata["final_heartbeat"]["runtime_status"] == "revoked"
     assert space_event.event_metadata["worker_id"] == str(worker.id)
+    assert space_event.event_metadata["affected_run_ids"] == [str(run.id)]
 
 
 def _client(settings: Settings | None = None) -> tuple[TestClient, Session]:
