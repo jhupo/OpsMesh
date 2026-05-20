@@ -449,6 +449,9 @@ class OperationsService:
         return len(stale_runtimes), deleted_records
 
     def overview(self, workspace_id: UUID, queue_name: str) -> dict[str, Any]:
+        return self.overview_payload(workspace_id, queue_name)
+
+    def overview_payload(self, workspace_id: UUID, queue_name: str) -> dict[str, Any]:
         failed_runs = self._session.scalar(
             select(func.count()).select_from(AgentRun).where(
                 AgentRun.workspace_id == workspace_id,
@@ -474,7 +477,7 @@ class OperationsService:
             )
         )
         return {
-            "queue": self.queue_metrics(queue_name, workspace_id),
+            "queue": self.queue_metrics(queue_name, workspace_id).model_dump(),
             "failed_runs": int(failed_runs or 0),
             "offline_runtimes": int(offline_runtimes or 0),
             "workers_online": int(workers_online or 0),

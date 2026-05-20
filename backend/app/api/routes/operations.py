@@ -33,7 +33,8 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.operations.service import OperationsService
-from backend.app.redis.dependencies import get_redis_client
+from backend.app.redis.cache import RedisJsonCache
+from backend.app.redis.dependencies import get_cache_service, get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 
 if TYPE_CHECKING:
@@ -284,11 +285,17 @@ async def operations_overview(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
+    cache: RedisJsonCache = Depends(get_cache_service),
     settings: Settings = Depends(get_settings),
 ) -> OperationsOverviewResponse:
-    data = OperationsService(
-        session,
-        redis,
-        RedisKeyBuilder(settings.redis_key_prefix),
-    ).overview(context.workspace.id, queue_name)
-    return OperationsOverviewResponse(**data)
+    cache_key = f"overview:{context.workspace.id}:{queue_name}"
+    cached = cache.get_or_set(
+        cache_key,
+        lambda: OperationsService(
+            session,
+            redis,
+            RedisKeyBuilder(settings.redis_key_prefix),
+        ).overview_payload(context.workspace.id, queue_name),
+        ttl_seconds=10,
+    )
+    return OperationsOverviewResponse(**cached.value)

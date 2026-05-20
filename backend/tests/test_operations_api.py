@@ -239,6 +239,56 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert space_event.event_metadata["runtime_id"] == str(runtime.id)
 
 
+def test_operations_overview_uses_workspace_scoped_short_cache() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    other_user, other_workspace = _seed_workspace_with_role(
+        session,
+        email="other-cache@example.com",
+        slug="other-cache",
+    )
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/overview",
+        headers=_headers(owner.id),
+    )
+    assert response.status_code == 200
+    assert response.json()["failed_runs"] == 0
+
+    session.add(
+        AgentRun(
+            workspace_id=workspace.id,
+            status="failed",
+            error={"message": "late failure"},
+        )
+    )
+    session.commit()
+
+    cached_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/overview",
+        headers=_headers(owner.id),
+    )
+    other_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/operations/overview",
+        headers=_headers(other_user.id),
+    )
+
+    assert cached_response.status_code == 200
+    assert cached_response.json()["failed_runs"] == 0
+    assert other_response.status_code == 200
+    assert other_response.json()["failed_runs"] == 0
+
+    redis.delete(f"chaincloud:cache:api:overview:{workspace.id}:agent_runs")
+    refreshed_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/overview",
+        headers=_headers(owner.id),
+    )
+
+    assert refreshed_response.status_code == 200
+    assert refreshed_response.json()["failed_runs"] == 1
+
+
 def test_operations_lists_worker_leases_by_workspace() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

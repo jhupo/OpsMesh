@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fastapi import Request
+from fastapi import Depends, Request
 from redis import Redis
 
-from backend.app.core.config import get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.redis.cache import RedisJsonCache
 from backend.app.redis.client import redis_client
 from backend.app.redis.keys import RedisKeyBuilder
@@ -21,10 +21,16 @@ def get_redis_client(_: Request) -> RedisClient:
     return app_redis_client or redis_client
 
 
-def get_cache_service(_: Request) -> RedisJsonCache:
-    settings = get_settings()
+_REDIS_DEPENDENCY = Depends(get_redis_client)
+_SETTINGS_DEPENDENCY = Depends(get_settings)
+
+
+def get_cache_service(
+    redis: RedisClient = _REDIS_DEPENDENCY,
+    settings: Settings = _SETTINGS_DEPENDENCY,
+) -> RedisJsonCache:
     return RedisJsonCache(
-        get_redis_client(_),
+        redis,
         RedisKeyBuilder(settings.redis_key_prefix),
         namespace="api",
     )

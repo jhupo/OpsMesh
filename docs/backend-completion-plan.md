@@ -41,7 +41,7 @@ Incomplete or basic-only areas:
 - Docker and self-hosted runtime policies need stronger quota enforcement, cleanup verification, and revocation evidence.
 - Import preview does not yet produce a full conflict plan before users commit a workspace archive import.
 - Model provider selection exists, but provider fallback and per-agent audit trails need completion.
-- Operations APIs exist, but capacity, queue latency, and saturation dashboards need richer aggregate endpoints.
+- Operations APIs exist and overview now uses short Redis caching, but capacity, queue latency, and saturation dashboards need richer aggregate endpoints.
 - The memory search tool is still a placeholder and needs a real workspace memory/index implementation.
 - Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, reusable maintenance runner, HTTP metrics, domain error mapping, production config guardrails, Redis distributed locks, structured idempotency states, feature flags, and Redis cache abstraction are implemented.
 
@@ -448,7 +448,8 @@ Build:
 
 - Add aggregate endpoints for worker fleet health, queue latency percentiles, queued/running/completed counts by priority, runtime saturation, Docker/self-hosted capacity, failure rates, and approval backlog.
 - Support time windows and workspace scope.
-- Cache expensive aggregates in Redis with short TTL.
+- [x] Cache overview aggregate in Redis with short TTL and workspace-scoped cache keys.
+- Cache future expensive scheduler/runtime aggregates in Redis with short TTL.
 - Keep raw drill-down endpoints separate from summary endpoints.
 
 API/data changes:
