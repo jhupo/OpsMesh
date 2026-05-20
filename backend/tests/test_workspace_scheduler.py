@@ -179,6 +179,46 @@ def test_workspace_scheduler_boosts_long_waiting_lower_priority_work() -> None:
     assert high_step.dependencies["priority_score"] == 10
 
 
+def test_workspace_scheduler_blocks_steps_exceeding_tick_resource_limits() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(
+        session,
+        settings={
+            "scheduler": {
+                "max_active_runs": 2,
+                "resource_limits": {"memory_mb": 4096, "cpu": 4},
+            }
+        },
+    )
+    first_task, first_step = _seed_task_step(
+        session,
+        workspace,
+        title="First render",
+        priority=10,
+        dependencies={"resource_requirements": {"memory_mb": 3072, "cpu": 2}},
+    )
+    second_task, second_step = _seed_task_step(
+        session,
+        workspace,
+        title="Second render",
+        priority=9,
+        dependencies={"resource_requirements": {"memory_mb": 2048, "cpu": 2}},
+    )
+
+    decision = WorkspaceScheduler(session).select_runnable_steps(
+        workspace_id=workspace.id,
+        candidate_steps=[second_step, first_step],
+    )
+
+    assert decision.runnable_steps == (first_step,)
+    assert decision.blocked_steps == (second_step,)
+    assert decision.blocked_reason == "workspace_resource_quota_exceeded"
+    assert first_step.dependencies == {"resource_requirements": {"memory_mb": 3072, "cpu": 2}}
+    assert second_step.dependencies["blocked_reason"] == "workspace_resource_quota_exceeded"
+    assert second_step.dependencies["blocked_resource_keys"] == ["memory_mb"]
+    assert {first_task.id, second_task.id} == {step.task_id for step in [first_step, second_step]}
+
+
 def test_workspace_scheduler_blocks_when_active_run_quota_is_full() -> None:
     session = _session()
     _, workspace = _seed_workspace(

@@ -28,6 +28,7 @@ class WorkspaceSchedulerPolicy:
     max_runs_to_start_per_tick: int | None = None
     max_steps_per_task_per_tick: int = 1
     starvation_boost_after_seconds: int | None = None
+    resource_limits: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -67,14 +68,19 @@ class WorkspaceScheduler:
 
         available_slots = self._available_run_slots(workspace_id, policy)
         ordered_steps = self._order_steps(task_quota_allowed_steps)
+        ordered_steps, resource_blocked_steps = self._apply_resource_limits(
+            ordered_steps,
+            policy,
+        )
         if available_slots is not None:
             available_slots = min(
                 available_slots,
                 policy.max_runs_to_start_per_tick or available_slots,
             )
             if available_slots <= 0:
-                blocked = [*ordered_steps, *task_quota_blocked_steps]
+                blocked = [*ordered_steps, *resource_blocked_steps, *task_quota_blocked_steps]
                 self._mark_blocked(ordered_steps, "workspace_run_quota_exceeded")
+                self._mark_blocked(resource_blocked_steps, "workspace_resource_quota_exceeded")
                 self._mark_blocked(task_quota_blocked_steps, "workspace_task_quota_exceeded")
                 return SchedulingDecision(
                     (),
@@ -83,18 +89,22 @@ class WorkspaceScheduler:
                     0,
                 )
             runnable = ordered_steps[:available_slots]
-            blocked = ordered_steps[available_slots:]
+            blocked = [*ordered_steps[available_slots:], *resource_blocked_steps]
         else:
             runnable = (
                 ordered_steps[: policy.max_runs_to_start_per_tick]
                 if policy.max_runs_to_start_per_tick is not None
                 else ordered_steps
             )
-            blocked = ordered_steps[len(runnable) :]
+            blocked = [*ordered_steps[len(runnable) :], *resource_blocked_steps]
 
         self._mark_runnable(runnable)
         if blocked:
-            self._mark_blocked(blocked, "workspace_run_quota_exceeded")
+            run_blocked_steps = [step for step in blocked if step not in resource_blocked_steps]
+            if run_blocked_steps:
+                self._mark_blocked(run_blocked_steps, "workspace_run_quota_exceeded")
+            if resource_blocked_steps:
+                self._mark_blocked(resource_blocked_steps, "workspace_resource_quota_exceeded")
         if task_quota_blocked_steps:
             self._mark_blocked(task_quota_blocked_steps, "workspace_task_quota_exceeded")
         all_blocked = [*blocked, *task_quota_blocked_steps]
@@ -102,7 +112,8 @@ class WorkspaceScheduler:
             runnable_steps=tuple(runnable),
             blocked_steps=tuple(all_blocked),
             blocked_reason=_blocked_reason(
-                run_blocked=bool(blocked),
+                run_blocked=bool([step for step in blocked if step not in resource_blocked_steps]),
+                resource_blocked=bool(resource_blocked_steps),
                 task_blocked=bool(task_quota_blocked_steps),
             ),
             available_run_slots=available_slots,
@@ -126,6 +137,7 @@ class WorkspaceScheduler:
             starvation_boost_after_seconds=_positive_int_or_none(
                 scheduler.get("starvation_boost_after_seconds")
             ),
+            resource_limits=_positive_number_dict(scheduler.get("resource_limits")),
         )
 
     def _available_run_slots(
@@ -193,6 +205,33 @@ class WorkspaceScheduler:
                 continue
             blocked_steps.append(step)
         return allowed_steps, blocked_steps
+
+    def _apply_resource_limits(
+        self,
+        ordered_steps: list[TaskStep],
+        policy: WorkspaceSchedulerPolicy,
+    ) -> tuple[list[TaskStep], list[TaskStep]]:
+        if not policy.resource_limits:
+            return ordered_steps, []
+        used = {key: 0.0 for key in policy.resource_limits}
+        allowed_steps: list[TaskStep] = []
+        blocked_steps: list[TaskStep] = []
+        for step in ordered_steps:
+            requirements = _step_resource_requirements(step)
+            exceeded_keys = [
+                key
+                for key, limit in policy.resource_limits.items()
+                if used[key] + requirements.get(key, 0.0) > limit
+            ]
+            if exceeded_keys:
+                self._set_blocked_resource_keys(step, exceeded_keys)
+                blocked_steps.append(step)
+                continue
+            for key in policy.resource_limits:
+                used[key] += requirements.get(key, 0.0)
+            allowed_steps.append(step)
+        return allowed_steps, blocked_steps
+
 
     def _order_steps(self, steps: list[TaskStep]) -> list[TaskStep]:
         policy = self._policy_for(steps[0].workspace_id)
@@ -262,6 +301,7 @@ class WorkspaceScheduler:
             dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
             dependencies.pop("scheduling_status", None)
             dependencies.pop("blocked_reason", None)
+            dependencies.pop("blocked_resource_keys", None)
             dependencies.pop("priority_score", None)
             step.dependencies = dependencies
 
@@ -272,6 +312,11 @@ class WorkspaceScheduler:
             dependencies["blocked_reason"] = reason
             dependencies["priority_score"] = self._step_priority_score(step)
             step.dependencies = dependencies
+
+    def _set_blocked_resource_keys(self, step: TaskStep, keys: list[str]) -> None:
+        dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
+        dependencies["blocked_resource_keys"] = keys
+        step.dependencies = dependencies
 
     def _step_priority_score(self, step: TaskStep) -> int:
         policy = self._policy_for(step.workspace_id)
@@ -294,9 +339,16 @@ def _positive_int_or_default(value: object, default: int) -> int:
     return parsed if parsed is not None else default
 
 
-def _blocked_reason(*, run_blocked: bool, task_blocked: bool) -> str | None:
+def _blocked_reason(
+    *,
+    run_blocked: bool,
+    resource_blocked: bool,
+    task_blocked: bool,
+) -> str | None:
     if run_blocked:
         return "workspace_run_quota_exceeded"
+    if resource_blocked:
+        return "workspace_resource_quota_exceeded"
     if task_blocked:
         return "workspace_task_quota_exceeded"
     return None
@@ -330,3 +382,26 @@ def _aware_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value
+
+
+def _positive_number_dict(value: object) -> dict[str, float] | None:
+    if not isinstance(value, dict):
+        return None
+    result = {
+        str(key): float(raw_value)
+        for key, raw_value in value.items()
+        if isinstance(raw_value, int | float) and raw_value >= 0
+    }
+    return result or None
+
+
+def _step_resource_requirements(step: TaskStep) -> dict[str, float]:
+    dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
+    raw_requirements = dependencies.get("resource_requirements")
+    if not isinstance(raw_requirements, dict):
+        return {}
+    return {
+        str(key): float(raw_value)
+        for key, raw_value in raw_requirements.items()
+        if isinstance(raw_value, int | float) and raw_value > 0
+    }
