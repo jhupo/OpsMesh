@@ -22,7 +22,12 @@ from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.models import AgentProfile
 from backend.app.audit.service import AuditService
 from backend.app.capabilities.adapters import McpAdapterResolver
-from backend.app.capabilities.models import WorkspaceSkillInstall
+from backend.app.capabilities.models import (
+    McpCredentialReference,
+    McpServer,
+    McpToolAllowlist,
+    WorkspaceSkillInstall,
+)
 from backend.app.core.config import Settings
 from backend.app.model_providers.resolution import ModelProviderResolutionService
 from backend.app.model_providers.service import ModelProviderCredentialService
@@ -1743,11 +1748,18 @@ class RunOrchestrationService:
             )
         ).all()
         by_id = {str(install.id): install for install in installs}
+        mcp_tool_snapshots = self._installed_skill_mcp_tool_snapshots(workspace_id)
         snapshots: list[dict[str, object]] = []
         for install_id in install_ids:
             install = by_id.get(install_id)
             if install is None:
                 continue
+            installed_capability_keys = list(install.installed_capability_keys)
+            matched_mcp_tools = [
+                tool
+                for tool in mcp_tool_snapshots
+                if _skill_mcp_tool_matches(tool, installed_capability_keys)
+            ]
             snapshots.append(
                 {
                     "install_id": str(install.id),
@@ -1755,12 +1767,81 @@ class RunOrchestrationService:
                     "installed_key": install.installed_key,
                     "installed_name": install.installed_name,
                     "installed_version": install.installed_version,
-                    "installed_capability_keys": install.installed_capability_keys,
+                    "installed_capability_keys": installed_capability_keys,
                     "source_checksum": install.source_checksum,
                     "source_visibility": install.source_visibility,
+                    "mcp_tools": matched_mcp_tools,
+                    "mcp_credential_references": _credential_refs_for_tool_snapshots(
+                        matched_mcp_tools,
+                    ),
                 }
             )
         return snapshots
+
+    def _installed_skill_mcp_tool_snapshots(self, workspace_id: UUID) -> list[dict[str, object]]:
+        rows = self._session.execute(
+            select(McpToolAllowlist, McpServer).join(
+                McpServer,
+                McpServer.id == McpToolAllowlist.mcp_server_id,
+            )
+            .where(
+                McpToolAllowlist.workspace_id == workspace_id,
+                McpToolAllowlist.status == "active",
+                McpServer.status == "active",
+            )
+            .order_by(McpServer.name.asc(), McpToolAllowlist.tool_name.asc())
+        ).all()
+        credential_refs = self._mcp_credential_reference_snapshots(workspace_id)
+        tools: list[dict[str, object]] = []
+        for allow, server in rows:
+            refs = [
+                ref
+                for ref in credential_refs
+                if ref.get("mcp_server_id") in {str(server.id), None}
+            ]
+            tools.append(
+                {
+                    "allowlist_id": str(allow.id),
+                    "mcp_server_id": str(server.id),
+                    "mcp_server_name": server.name,
+                    "server_type": server.server_type,
+                    "tool_name": allow.tool_name,
+                    "capability_key": allow.capability_key,
+                    "requires_approval": allow.requires_approval,
+                    "risk_level": allow.risk_level,
+                    "policy": _dict_copy(allow.policy),
+                    "credential_reference_ids": [
+                        str(ref["credential_reference_id"]) for ref in refs
+                    ],
+                    "credential_references": refs,
+                }
+            )
+        return tools
+
+    def _mcp_credential_reference_snapshots(
+        self,
+        workspace_id: UUID,
+    ) -> list[dict[str, object]]:
+        refs = self._session.scalars(
+            select(McpCredentialReference)
+            .where(
+                McpCredentialReference.workspace_id == workspace_id,
+                McpCredentialReference.status == "active",
+            )
+            .order_by(McpCredentialReference.created_at.asc())
+        ).all()
+        return [
+            {
+                "credential_reference_id": str(ref.id),
+                "mcp_server_id": str(ref.mcp_server_id) if ref.mcp_server_id is not None else None,
+                "name": ref.name,
+                "provider": ref.provider,
+                "secret_fingerprint": ref.secret_fingerprint,
+                "encryption_key_id": ref.encryption_key_id,
+                "scopes": list(ref.scopes),
+            }
+            for ref in refs
+        ]
 
     def _mark_step_completed(self, run: AgentRun, final_output: str) -> None:
         if run.task_step_id is None:
@@ -2504,9 +2585,57 @@ def _skill_snapshot_matches(
             return False
     snapshot_caps = snapshot_item.get("installed_capability_keys")
     current_caps = current_item.get("installed_capability_keys")
-    if isinstance(snapshot_caps, list) or isinstance(current_caps, list):
-        return snapshot_caps == current_caps
-    return True
+    if (isinstance(snapshot_caps, list) or isinstance(current_caps, list)) and (
+        snapshot_caps != current_caps
+    ):
+        return False
+    if not _optional_list_matches(
+        snapshot_item.get("mcp_tools"),
+        current_item.get("mcp_tools"),
+    ):
+        return False
+    return _optional_list_matches(
+        snapshot_item.get("mcp_credential_references"),
+        current_item.get("mcp_credential_references"),
+    )
+
+
+def _skill_mcp_tool_matches(
+    tool_snapshot: dict[str, object],
+    installed_capability_keys: list[str],
+) -> bool:
+    capability_key = tool_snapshot.get("capability_key")
+    if isinstance(capability_key, str) and capability_key:
+        return capability_key in installed_capability_keys
+    policy = tool_snapshot.get("policy")
+    if isinstance(policy, dict):
+        policy_caps = _string_list(policy.get("capability_keys"))
+        if policy_caps:
+            return any(capability in installed_capability_keys for capability in policy_caps)
+    return False
+
+
+def _credential_refs_for_tool_snapshots(
+    tool_snapshots: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    refs_by_id: dict[str, dict[str, object]] = {}
+    for tool in tool_snapshots:
+        credential_refs = tool.get("credential_references")
+        if not isinstance(credential_refs, list):
+            continue
+        for credential_ref in credential_refs:
+            if not isinstance(credential_ref, dict):
+                continue
+            credential_ref_id = credential_ref.get("credential_reference_id")
+            if isinstance(credential_ref_id, str):
+                refs_by_id.setdefault(credential_ref_id, credential_ref)
+    return list(refs_by_id.values())
+
+
+def _optional_list_matches(snapshot_value: object, current_value: object) -> bool:
+    if isinstance(snapshot_value, list):
+        return snapshot_value == current_value
+    return not isinstance(current_value, list) or current_value == []
 
 
 def _run_model_from_snapshot(

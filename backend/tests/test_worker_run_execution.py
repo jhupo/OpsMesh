@@ -13,7 +13,13 @@ from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult,
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval
 from backend.app.audit.models import AuditEvent
-from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
+from backend.app.capabilities.models import (
+    McpCredentialReference,
+    McpServer,
+    McpToolAllowlist,
+    Skill,
+    WorkspaceSkillInstall,
+)
 from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -1093,6 +1099,36 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     )
     session.add(install)
     session.flush()
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="Image MCP",
+        server_type="http",
+        connection={"url": "https://mcp.example.test/rpc"},
+    )
+    session.add(server)
+    session.flush()
+    allow = McpToolAllowlist(
+        workspace_id=workspace.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+        capability_key="image.generate",
+        requires_approval=True,
+        risk_level="medium",
+        policy={"timeout_seconds": 12},
+    )
+    credential_ref = McpCredentialReference(
+        workspace_id=workspace.id,
+        mcp_server_id=server.id,
+        name="image-key",
+        provider="hosted",
+        external_ref="vault://do-not-freeze",
+        encrypted_secret_payload="encrypted-secret",
+        secret_fingerprint="fp-image",
+        encryption_key_id="test-key",
+        scopes=["image.generate"],
+    )
+    session.add_all([allow, credential_ref])
+    session.flush()
     agent.skills = {"installed_skill_ids": [str(install.id), "not-a-uuid"]}
     member = AgentTeamMember(
         workspace_id=workspace.id,
@@ -1163,8 +1199,46 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
             "installed_capability_keys": ["image.generate"],
             "source_checksum": "sha256:installed",
             "source_visibility": "public",
+            "mcp_tools": [
+                {
+                    "allowlist_id": str(allow.id),
+                    "mcp_server_id": str(server.id),
+                    "mcp_server_name": "Image MCP",
+                    "server_type": "http",
+                    "tool_name": "generate_image",
+                    "capability_key": "image.generate",
+                    "requires_approval": True,
+                    "risk_level": "medium",
+                    "policy": {"timeout_seconds": 12},
+                    "credential_reference_ids": [str(credential_ref.id)],
+                    "credential_references": [
+                        {
+                            "credential_reference_id": str(credential_ref.id),
+                            "mcp_server_id": str(server.id),
+                            "name": "image-key",
+                            "provider": "hosted",
+                            "secret_fingerprint": "fp-image",
+                            "encryption_key_id": "test-key",
+                            "scopes": ["image.generate"],
+                        }
+                    ],
+                }
+            ],
+            "mcp_credential_references": [
+                {
+                    "credential_reference_id": str(credential_ref.id),
+                    "mcp_server_id": str(server.id),
+                    "name": "image-key",
+                    "provider": "hosted",
+                    "secret_fingerprint": "fp-image",
+                    "encryption_key_id": "test-key",
+                    "scopes": ["image.generate"],
+                }
+            ],
         }
     ]
+    assert "encrypted-secret" not in str(snapshot["installed_skills"])
+    assert "vault://do-not-freeze" not in str(snapshot["installed_skills"])
     assert snapshot["runtime_policy"] == {"provider": "docker", "network": "disabled"}
     assert snapshot["approval_policy"] == {"required_tools": ["write_artifact"]}
     assert request.context.allowed_tools == ("generate_image",)

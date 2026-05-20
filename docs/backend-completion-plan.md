@@ -180,7 +180,8 @@ API/data changes:
 - [x] `POST /api/v1/workspaces/{workspace_id}/capabilities/workspace-skills/{installed_skill_id}/disable`
 - Add `installed_from_skill_id`, `installed_version`, `source_checksum`, `installed_by_user_id`, and `disabled_at` fields if not already represented.
 - [x] Extend run authorization snapshots with installed skill IDs, versions, and source checksums.
-- [ ] Extend run authorization snapshots with installed skill MCP tool allowlists and credential references.
+- [x] Extend run authorization snapshots with installed skill MCP tool allowlists and
+  credential references, excluding secret payloads and external refs.
 
 Tests:
 
