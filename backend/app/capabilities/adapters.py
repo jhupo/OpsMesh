@@ -9,6 +9,8 @@ from uuid import uuid4
 
 from backend.app.capabilities.execution import McpExecutionError, McpToolAdapter
 from backend.app.capabilities.models import McpCredentialReference, McpServer
+from backend.app.runtime_manager.manager import RuntimeManager
+from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 
 
@@ -243,6 +245,44 @@ class HostedMcpToolAdapter:
         )
 
 
+class DockerRuntimeStdioMcpToolAdapter:
+    def __init__(self, *, runtime_manager: RuntimeManager, runtime: WorkspaceRuntime) -> None:
+        self._runtime_manager = runtime_manager
+        self._runtime = runtime
+
+    def call(
+        self,
+        *,
+        server: McpServer,
+        tool_name: str,
+        arguments: dict[str, object],
+        credential_refs: list[McpCredentialReference],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        _ = credential_refs, timeout_seconds
+        command = _stdio_command(server.connection)
+        payload = {
+            "jsonrpc": "2.0",
+            "id": str(uuid4()),
+            "method": _string_setting(server.connection, "method") or "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": arguments,
+            },
+        }
+        record = self._runtime_manager.execute_command(
+            workspace_id=server.workspace_id,
+            runtime=self._runtime,
+            command=[*command, json.dumps(payload, ensure_ascii=False)],
+        )
+        if record.status != "completed" or record.exit_code != 0:
+            raise McpExecutionError(
+                "Docker runtime MCP stdio command failed",
+                code="mcp_stdio_runtime_failed",
+            )
+        return _result_from_jsonrpc_body(record.stdout, transport="stdio")
+
+
 @dataclass(frozen=True)
 class UnsupportedMcpToolAdapter:
     server_type: str
@@ -286,6 +326,55 @@ def _jsonable(value: Any) -> object:
     if isinstance(value, dict):
         return {str(key): _jsonable(item) for key, item in value.items()}
     return str(value)
+
+
+def _stdio_command(connection: dict[str, object]) -> list[str]:
+    raw_command = connection.get("command")
+    if isinstance(raw_command, list) and raw_command:
+        command = [item for item in raw_command if isinstance(item, str) and item]
+        if command:
+            return command
+    if isinstance(raw_command, str) and raw_command.strip():
+        command = [raw_command.strip()]
+        args = connection.get("args")
+        if isinstance(args, list):
+            command.extend(item for item in args if isinstance(item, str) and item)
+        return command
+    raise McpExecutionError(
+        "Stdio MCP server is missing command",
+        code="mcp_stdio_command_missing",
+    )
+
+
+def _result_from_jsonrpc_body(raw_body: bytes | str, *, transport: str) -> dict[str, object]:
+    if isinstance(raw_body, bytes):
+        try:
+            raw_body = raw_body.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise McpExecutionError(
+                f"{transport.upper()} MCP server returned invalid UTF-8",
+                code=f"mcp_{transport}_invalid_encoding",
+            ) from exc
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError as exc:
+        raise McpExecutionError(
+            f"{transport.upper()} MCP server returned invalid JSON",
+            code=f"mcp_{transport}_invalid_json",
+        ) from exc
+    if not isinstance(body, dict):
+        raise McpExecutionError(
+            f"{transport.upper()} MCP server returned an invalid JSON-RPC envelope",
+            code=f"mcp_{transport}_invalid_envelope",
+        )
+    error = body.get("error")
+    if isinstance(error, dict):
+        raise McpExecutionError(
+            "Remote MCP tool failed",
+            code="mcp_remote_error",
+        )
+    result = body.get("result")
+    return result if isinstance(result, dict) else {"result": _jsonable(result)}
 
 
 def _result_from_sse_body(raw_body: bytes) -> dict[str, object]:

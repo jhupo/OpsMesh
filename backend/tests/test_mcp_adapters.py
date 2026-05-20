@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from backend.app.capabilities.adapters import (
+    DockerRuntimeStdioMcpToolAdapter,
     HostedMcpToolAdapter,
     HttpJsonRpcMcpToolAdapter,
     McpAdapterResolver,
@@ -15,6 +16,9 @@ from backend.app.capabilities.adapters import (
 )
 from backend.app.capabilities.execution import McpExecutionError
 from backend.app.capabilities.models import McpCredentialReference, McpServer
+from backend.app.db import models as registered_models  # noqa: F401
+from backend.app.runtime_manager.contracts import RuntimeCommandResult
+from backend.app.runtimes.models import RuntimeCommand, WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 
 
@@ -145,6 +149,87 @@ def test_hosted_mcp_adapter_blocks_missing_remote_transport() -> None:
         raise AssertionError("Expected hosted MCP without remote transport to be blocked")
 
 
+def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> None:
+    workspace_id = uuid4()
+    runtime = WorkspaceRuntime(
+        id=uuid4(),
+        workspace_id=workspace_id,
+        name="team-runtime",
+        docker_container_id="container-123",
+        limits={},
+    )
+    runtime_manager = RecordingRuntimeManager(
+        RuntimeCommandResult(
+            exit_code=0,
+            stdout=json.dumps({"jsonrpc": "2.0", "id": "1", "result": {"ok": True}}),
+            stderr="",
+        )
+    )
+
+    response = DockerRuntimeStdioMcpToolAdapter(
+        runtime_manager=runtime_manager,
+        runtime=runtime,
+    ).call(
+        server=McpServer(
+            workspace_id=workspace_id,
+            name="stdio-tools",
+            server_type="stdio",
+            connection={"command": ["mcp-server", "--stdio"]},
+        ),
+        tool_name="generate_image",
+        arguments={"prompt": "mountain"},
+        credential_refs=[],
+        timeout_seconds=5,
+    )
+
+    assert response == {"ok": True}
+    assert runtime_manager.calls[0]["workspace_id"] == workspace_id
+    assert runtime_manager.calls[0]["runtime"] is runtime
+    command = runtime_manager.calls[0]["command"]
+    assert command[:2] == ["mcp-server", "--stdio"]
+    payload = json.loads(command[2])
+    assert payload["method"] == "tools/call"
+    assert payload["params"] == {
+        "name": "generate_image",
+        "arguments": {"prompt": "mountain"},
+    }
+
+
+def test_docker_runtime_stdio_mcp_adapter_sanitizes_command_failure() -> None:
+    workspace_id = uuid4()
+    runtime_manager = RecordingRuntimeManager(
+        RuntimeCommandResult(exit_code=2, stdout="", stderr="secret stderr")
+    )
+
+    try:
+        DockerRuntimeStdioMcpToolAdapter(
+            runtime_manager=runtime_manager,
+            runtime=WorkspaceRuntime(
+                id=uuid4(),
+                workspace_id=workspace_id,
+                name="team-runtime",
+                docker_container_id="container-123",
+                limits={},
+            ),
+        ).call(
+            server=McpServer(
+                workspace_id=workspace_id,
+                name="stdio-tools",
+                server_type="stdio",
+                connection={"command": "mcp-server"},
+            ),
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+            credential_refs=[],
+            timeout_seconds=5,
+        )
+    except McpExecutionError as exc:
+        assert exc.code == "mcp_stdio_runtime_failed"
+        assert "secret" not in str(exc)
+    else:
+        raise AssertionError("Expected failed stdio runtime command to be normalized")
+
+
 def test_mcp_adapter_resolver_selects_remote_adapters_and_blocks_unsafe_direct_stdio() -> None:
     resolver = McpAdapterResolver()
 
@@ -240,3 +325,34 @@ class JsonRpcServer:
             self._server.server_close()
         if self._thread is not None:
             self._thread.join(timeout=5)
+
+
+class RecordingRuntimeManager:
+    def __init__(self, result: RuntimeCommandResult) -> None:
+        self._result = result
+        self.calls: list[dict[str, Any]] = []
+
+    def execute_command(
+        self,
+        *,
+        workspace_id: object,
+        runtime: WorkspaceRuntime,
+        command: list[str],
+    ) -> RuntimeCommand:
+        self.calls.append(
+            {
+                "workspace_id": workspace_id,
+                "runtime": runtime,
+                "command": command,
+            }
+        )
+        return RuntimeCommand(
+            workspace_id=workspace_id,
+            workspace_runtime_id=runtime.id,
+            runtime_space_id=runtime.runtime_space_id,
+            command=command,
+            status="completed" if self._result.exit_code == 0 else "failed",
+            exit_code=self._result.exit_code,
+            stdout=self._result.stdout,
+            stderr=self._result.stderr,
+        )
