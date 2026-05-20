@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
+from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult, AgentRuntimeEvent
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval
 from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
@@ -1609,6 +1609,112 @@ def test_worker_persists_failed_run_event() -> None:
         "retryable": True,
     }
     assert failed_event is not None
+
+
+def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Researcher",
+        role="researcher",
+    )
+    session.add_all([task, agent])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        title="Research",
+        work_package_id="research-1",
+    )
+    session.add(step)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    class EventfulRunner:
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            return AgentRunResult(
+                final_output="done",
+                events=(
+                    AgentRuntimeEvent(
+                        event_type="tool.called",
+                        message="Searching docs",
+                        payload={
+                            "tool_name": "search",
+                            "api_key": "sk-secret",
+                            "arguments": {"query": "market"},
+                        },
+                    ),
+                    AgentRuntimeEvent(
+                        event_type="agent.handoff",
+                        message="Handed to analyst",
+                        payload={
+                            "source_agent": "Researcher",
+                            "target_agent": "Analyst",
+                            "token": "hidden-token",
+                        },
+                    ),
+                    AgentRuntimeEvent(
+                        event_type="debug.trace",
+                        message="Noisy internal event",
+                        payload={"secret": "still-hidden"},
+                    ),
+                ),
+            )
+
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        requested_by_user_id=user.id,
+        idempotency_key="runtime-events",
+    )
+
+    WorkerJobHandler(session, agent_runner=EventfulRunner()).handle(job)
+
+    messages = session.scalars(
+        select(TaskMessage)
+        .where(TaskMessage.task_id == task.id)
+        .order_by(TaskMessage.sequence)
+    ).all()
+    event_types = [
+        event.event_type
+        for event in session.scalars(
+            select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
+        )
+    ]
+
+    runtime_messages = [
+        message
+        for message in messages
+        if message.message_type in {"tool.requested", "agent.handoff"}
+    ]
+    assert [message.message_type for message in runtime_messages] == [
+        "tool.requested",
+        "agent.handoff",
+    ]
+    assert runtime_messages[0].payload["tool_name"] == "search"
+    assert runtime_messages[0].payload["api_key"] == "[redacted]"
+    assert runtime_messages[0].payload["work_package_id"] == "research-1"
+    assert runtime_messages[1].payload["token"] == "[redacted]"
+    assert "debug.trace" in event_types
+    assert "debug.trace" not in {message.message_type for message in messages}
 
 
 def test_agent_request_includes_profile_tool_policy_context() -> None:

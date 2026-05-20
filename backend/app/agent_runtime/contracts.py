@@ -46,9 +46,17 @@ class AgentRunRequest:
 
 
 @dataclass(frozen=True)
+class AgentRuntimeEvent:
+    event_type: str
+    message: str = ""
+    payload: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class AgentRunResult:
     final_output: str
     raw_output: object | None = None
+    events: tuple[AgentRuntimeEvent, ...] = ()
 
 
 class AgentRunner(Protocol):

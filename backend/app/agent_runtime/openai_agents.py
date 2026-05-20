@@ -7,6 +7,7 @@ from agents.models.openai_provider import OpenAIProvider
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
+    AgentRuntimeEvent,
     AgentRuntimeToolExecutor,
 )
 
@@ -23,6 +24,7 @@ class OpenAIAgentsRunner:
         return AgentRunResult(
             final_output=str(result.final_output),
             raw_output=self._safe_raw_output(result),
+            events=tuple(self._runtime_events(result)),
         )
 
     def _build_agent(self, request: AgentRunRequest) -> Agent[Any]:
@@ -147,6 +149,45 @@ class OpenAIAgentsRunner:
         if usage is not None:
             payload["usage"] = self._jsonable(usage)
         return payload
+
+    def _runtime_events(self, result: Any) -> list[AgentRuntimeEvent]:
+        events: list[AgentRuntimeEvent] = []
+        last_agent = getattr(result, "last_agent", None)
+        if last_agent is not None:
+            events.append(
+                AgentRuntimeEvent(
+                    event_type="agent.handoff",
+                    message="Run finished with agent handoff state.",
+                    payload={"target_agent": str(getattr(last_agent, "name", last_agent))},
+                )
+            )
+        usage = getattr(result, "usage", None)
+        if usage is not None:
+            events.append(
+                AgentRuntimeEvent(
+                    event_type="model.usage",
+                    message="Model usage recorded.",
+                    payload={"usage": self._jsonable(usage)},
+                )
+            )
+        raw_events = getattr(result, "events", None)
+        if isinstance(raw_events, list | tuple):
+            for item in raw_events:
+                event = self._runtime_event_from_sdk_item(item)
+                if event is not None:
+                    events.append(event)
+        return events
+
+    def _runtime_event_from_sdk_item(self, item: object) -> AgentRuntimeEvent | None:
+        event_type = getattr(item, "type", None) or getattr(item, "event_type", None)
+        if not isinstance(event_type, str) or not event_type:
+            return None
+        payload = self._jsonable(item)
+        return AgentRuntimeEvent(
+            event_type=event_type,
+            message=str(getattr(item, "message", "") or event_type),
+            payload=payload if isinstance(payload, dict) else {"value": payload},
+        )
 
     def _jsonable(self, value: Any) -> object:
         if value is None or isinstance(value, str | int | float | bool):

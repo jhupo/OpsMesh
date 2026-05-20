@@ -9,8 +9,14 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRunner, AgentRunRequest, AgentRuntimeContext
+from backend.app.agent_runtime.contracts import (
+    AgentRunner,
+    AgentRunRequest,
+    AgentRunResult,
+    AgentRuntimeContext,
+)
 from backend.app.agent_runtime.errors import normalize_agent_error
+from backend.app.agent_runtime.event_mapping import RuntimeEventTaskMessageMapper
 from backend.app.agent_runtime.fake import FakeAgentRunner
 from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.models import AgentProfile
@@ -341,6 +347,7 @@ class RunOrchestrationService:
 
             self._record_model_provider_success(run, request.model_provider_credential_id)
             self._append_model_provider_used_event(run, request)
+            self._map_runtime_events_to_task_messages(run, result)
             self._mark_run_completed(run, result.final_output, job.requested_by_user_id)
             self._session.commit()
             self._session.refresh(run)
@@ -599,6 +606,42 @@ class RunOrchestrationService:
         self._session.add(message)
         self._session.flush([message])
         return message
+
+    def _map_runtime_events_to_task_messages(
+        self,
+        run: AgentRun,
+        result: AgentRunResult,
+    ) -> None:
+        if run.task_id is None or not result.events:
+            return
+        step = (
+            self._session.get(TaskStep, run.task_step_id)
+            if run.task_step_id is not None
+            else None
+        )
+        if step is not None and step.workspace_id != run.workspace_id:
+            step = None
+        mapper = RuntimeEventTaskMessageMapper()
+        for event in result.events:
+            self._append_event(
+                run,
+                event.event_type,
+                event.message,
+                {"runtime_event": event.payload},
+            )
+            draft = mapper.map_event(event=event, run=run, step=step)
+            if draft is None:
+                continue
+            self._append_task_message(
+                task_id=run.task_id,
+                workspace_id=run.workspace_id,
+                message_type=draft.message_type,
+                body=draft.body,
+                task_step_id=run.task_step_id,
+                agent_run_id=run.id,
+                agent_profile_id=run.agent_profile_id,
+                payload=draft.payload,
+            )
 
     def _build_agent_request(
         self,

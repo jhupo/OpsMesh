@@ -627,22 +627,22 @@ Current state:
 
 Build:
 
-- Add an event mapper from runtime event types to normalized task message types.
-- Filter noisy internal events.
+- [x] Add an event mapper from runtime event types to normalized task message types.
+- [x] Filter noisy internal events.
 - Group related low-level events into readable milestones where appropriate.
-- Preserve raw run events for debugging while exposing concise task messages for users.
+- [x] Preserve raw run events for debugging while exposing concise task messages for users.
 
 API/data changes:
 
-- Add message types for agent handoff, tool request, tool result summary, approval wait, and model fallback.
-- Add mapper configuration to runtime contract.
+- [x] Add message types for agent handoff, tool request, tool result summary, approval wait, and model fallback.
+- [x] Add mapper configuration to runtime contract.
 
 Tests:
 
-- tool event creates a task message with sanitized payload
-- handoff event creates a message linked to source/target agents
-- secret-bearing event fields are redacted
-- raw run events remain available separately
+- [x] tool event creates a task message with sanitized payload
+- [x] handoff event creates a message linked to source/target agents
+- [x] secret-bearing event fields are redacted
+- [x] raw run events remain available separately
 
 Acceptance:
 
