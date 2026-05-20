@@ -36,6 +36,7 @@ from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.snapshots import build_team_snapshot
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
+from backend.app.workspaces.models import Workspace
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 STEP_STATUS_QUEUED = "queued"
@@ -303,13 +304,33 @@ class RunOrchestrationService:
                 raise RuntimeError("Agent run is already locked")
 
             self._mark_run_started(run)
-            try:
-                result = await self._agent_runner.run(self._build_agent_request(run, job))
-            except Exception as exc:
-                self._mark_run_failed(run, exc)
-                self._session.commit()
-                raise
+            used_provider_credentials: set[UUID] = set()
+            model_provider_override: dict[str, Any] | None = None
+            while True:
+                request = self._build_agent_request(
+                    run,
+                    job,
+                    model_provider_override=model_provider_override,
+                )
+                if request.model_provider_credential_id is not None:
+                    used_provider_credentials.add(request.model_provider_credential_id)
+                try:
+                    result = await self._agent_runner.run(request)
+                    break
+                except Exception as exc:
+                    fallback = self._next_model_provider_fallback(
+                        run=run,
+                        failed_request=request,
+                        exc=exc,
+                        used_provider_credentials=used_provider_credentials,
+                    )
+                    if fallback is None:
+                        self._mark_run_failed(run, exc)
+                        self._session.commit()
+                        raise
+                    model_provider_override = fallback
 
+            self._append_model_provider_used_event(run, request)
             self._mark_run_completed(run, result.final_output, job.requested_by_user_id)
             self._session.commit()
             self._session.refresh(run)
@@ -485,6 +506,25 @@ class RunOrchestrationService:
             if step is not None and step.workspace_id == run.workspace_id:
                 step.status = STEP_STATUS_CANCELLED
 
+    def _append_model_provider_used_event(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+    ) -> None:
+        self._append_event(
+            run,
+            "model_provider.used",
+            "Model provider handled the run",
+            {
+                "model_provider": {
+                    "model": request.model,
+                    "credential_id": str(request.model_provider_credential_id)
+                    if request.model_provider_credential_id is not None
+                    else None,
+                }
+            },
+        )
+
     def _append_event(
         self,
         run: AgentRun,
@@ -550,7 +590,12 @@ class RunOrchestrationService:
         self._session.flush([message])
         return message
 
-    def _build_agent_request(self, run: AgentRun, job: JobPayload) -> AgentRunRequest:
+    def _build_agent_request(
+        self,
+        run: AgentRun,
+        job: JobPayload,
+        model_provider_override: dict[str, Any] | None = None,
+    ) -> AgentRunRequest:
         self._validate_job_scope(run, job)
         task = self._authorized_task_for_run(run)
         profile = self._authorized_profile_for_run(run)
@@ -566,7 +611,11 @@ class RunOrchestrationService:
         authorization_snapshot = self._authorization_snapshot_for_run(run)
         self._validate_authorization_snapshot(run, task, profile, authorization_snapshot)
         allowed_tools = self._allowed_tools_for_run(run, profile)
-        model_provider = self._model_provider_for_profile(profile)
+        model_provider = self._model_provider_for_run(
+            run,
+            profile,
+            override=model_provider_override,
+        )
         step_context = self._step_context_for_run(run)
         metadata: dict[str, object] = {
             "agent_profile_id": str(profile.id) if profile.id is not None else None,
@@ -641,10 +690,46 @@ class RunOrchestrationService:
             raise ValueError("Run agent profile workspace mismatch")
         return profile
 
-    def _model_provider_for_profile(self, profile: AgentProfile) -> dict[str, Any]:
+    def _model_provider_for_run(
+        self,
+        run: AgentRun,
+        profile: AgentProfile,
+        *,
+        override: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if override is not None:
+            return override
         if self._settings is None:
             return {
                 "model": profile.model,
+                "base_url": None,
+                "api_key": None,
+                "model_provider_credential_id": None,
+            }
+        snapshot = self._authorization_snapshot_for_run(run).get("model_provider")
+        credential_id = profile.model_provider_credential_id
+        agent_model = profile.model
+        if isinstance(snapshot, dict):
+            credential_id = _uuid_or_none(snapshot.get("credential_id"))
+            selected_model = snapshot.get("selected_model")
+            if isinstance(selected_model, str) and selected_model:
+                agent_model = selected_model
+        return self._resolve_model_provider(
+            workspace_id=run.workspace_id,
+            credential_id=credential_id,
+            agent_model=agent_model,
+        )
+
+    def _resolve_model_provider(
+        self,
+        *,
+        workspace_id: UUID,
+        credential_id: UUID | None,
+        agent_model: str,
+    ) -> dict[str, Any]:
+        if self._settings is None:
+            return {
+                "model": agent_model,
                 "base_url": None,
                 "api_key": None,
                 "model_provider_credential_id": None,
@@ -656,9 +741,9 @@ class RunOrchestrationService:
                 key_id=self._settings.credential_encryption_key_id,
             ),
         ).resolve_for_agent(
-            workspace_id=profile.workspace_id,
-            agent_credential_id=profile.model_provider_credential_id,
-            agent_model=profile.model,
+            workspace_id=workspace_id,
+            agent_credential_id=credential_id,
+            agent_model=agent_model,
         )
         return {
             "model": resolved.model,
@@ -666,6 +751,85 @@ class RunOrchestrationService:
             "api_key": resolved.api_key,
             "model_provider_credential_id": resolved.credential_id,
         }
+
+    def _next_model_provider_fallback(
+        self,
+        *,
+        run: AgentRun,
+        failed_request: AgentRunRequest,
+        exc: Exception,
+        used_provider_credentials: set[UUID],
+    ) -> dict[str, Any] | None:
+        policy = self._workspace_model_provider_fallback_policy(run.workspace_id)
+        if policy is None:
+            return None
+        error = normalize_agent_error(exc)
+        if not error.retryable:
+            return None
+        retry_error_codes = policy.get("retry_error_codes")
+        if isinstance(retry_error_codes, list) and retry_error_codes:
+            allowed_codes = {code for code in retry_error_codes if isinstance(code, str)}
+            if error.code not in allowed_codes:
+                return None
+        candidates = policy.get("candidates")
+        if not isinstance(candidates, list):
+            return None
+        for candidate in candidates:
+            parsed = _fallback_candidate(candidate)
+            if parsed is None:
+                continue
+            credential_id, model = parsed
+            if credential_id in used_provider_credentials:
+                continue
+            try:
+                model_provider = self._resolve_model_provider(
+                    workspace_id=run.workspace_id,
+                    credential_id=credential_id,
+                    agent_model=model or "workspace-default",
+                )
+            except ValueError:
+                continue
+            selected_model = model_provider["model"]
+            snapshot = ModelProviderResolutionService(self._session).resolve_snapshot_for_agent(
+                workspace_id=run.workspace_id,
+                agent_credential_id=credential_id,
+                agent_model=str(selected_model),
+            ).as_dict()
+            snapshot["source"] = "fallback_policy"
+            self._append_event(
+                run,
+                "model_provider.fallback_selected",
+                "Model provider fallback selected",
+                {
+                    "reason": error.as_dict(),
+                    "failed_provider": {
+                        "model": failed_request.model,
+                        "credential_id": str(failed_request.model_provider_credential_id)
+                        if failed_request.model_provider_credential_id is not None
+                        else None,
+                    },
+                    "model_provider": snapshot,
+                },
+            )
+            return model_provider
+        return None
+
+    def _workspace_model_provider_fallback_policy(
+        self,
+        workspace_id: UUID,
+    ) -> dict[str, object] | None:
+        workspace = self._session.get(Workspace, workspace_id)
+        settings = workspace.settings if workspace is not None else None
+        if not isinstance(settings, dict):
+            return None
+        raw_policy = settings.get("model_provider_fallback")
+        if raw_policy is None:
+            raw_policy = settings.get("model_provider_fallback_policy")
+        if not isinstance(raw_policy, dict):
+            return None
+        if raw_policy.get("enabled") is not True:
+            return None
+        return raw_policy
 
     def _input_text_for_run(self, run: AgentRun) -> str:
         task = self._session.get(Task, run.task_id) if run.task_id is not None else None
@@ -2173,6 +2337,21 @@ def _run_model_from_snapshot(
         if isinstance(selected_model, str) and selected_model:
             return selected_model
     return profile.model if profile is not None else None
+
+
+def _fallback_candidate(value: object) -> tuple[UUID, str | None] | None:
+    if isinstance(value, str):
+        credential_id = _uuid_or_none(value)
+        return (credential_id, None) if credential_id is not None else None
+    if not isinstance(value, dict):
+        return None
+    credential_id = _uuid_or_none(
+        value.get("credential_id") or value.get("model_provider_credential_id")
+    )
+    if credential_id is None:
+        return None
+    model = value.get("model")
+    return credential_id, model if isinstance(model, str) and model else None
 
 
 def _positive_number_dict(value: object) -> dict[str, int | float]:

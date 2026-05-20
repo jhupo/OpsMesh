@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
 from backend.app.core.config import Settings
@@ -38,7 +39,12 @@ from backend.app.workspaces.models import Workspace, WorkspaceMember
 def test_task_start_creates_queued_run_and_worker_completes_fake_run() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
     session.add(task)
     session.flush()
 
@@ -70,7 +76,11 @@ def test_task_start_creates_queued_run_and_worker_completes_fake_run() -> None:
     assert stored_run.output == {"final_output": "fake_run_completed"}
     assert stored_task is not None
     assert stored_task.status == TaskStatus.COMPLETED.value
-    assert [event.event_type for event in events] == ["run.started", "run.completed"]
+    assert [event.event_type for event in events] == [
+        "run.started",
+        "model_provider.used",
+        "run.completed",
+    ]
 
 
 def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
@@ -1431,7 +1441,12 @@ def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
 def test_worker_rejects_workspace_mismatch() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
     session.add(task)
     session.flush()
     run = RunOrchestrationService(session).create_queued_run_for_task(task)
@@ -1482,7 +1497,12 @@ def test_failed_worker_job_is_retried_by_queue() -> None:
 def test_worker_persists_failed_run_event() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
     session.add(task)
     session.flush()
     run = RunOrchestrationService(session).create_queued_run_for_task(task)
@@ -1527,7 +1547,12 @@ def test_worker_persists_failed_run_event() -> None:
 def test_agent_request_includes_profile_tool_policy_context() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
     agent = AgentProfile(
         workspace_id=workspace.id,
         name="Designer",
@@ -1646,7 +1671,12 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
 def test_agent_request_allows_snapshot_to_narrow_agent_tools() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
     agent = AgentProfile(
         workspace_id=workspace.id,
         name="Designer",
@@ -1711,7 +1741,12 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
         base_url="https://llm.example.test/v1",
         is_default=True,
     )
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
     agent = AgentProfile(
         workspace_id=workspace.id,
         name="Custom",
@@ -1748,6 +1783,233 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
     assert request.api_key == "sk-custom"
     assert request.model_provider_credential_id == credential.id
     assert request.context.metadata["model_provider_credential_id"] == str(credential.id)
+
+
+def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    settings = Settings(
+        environment="test",
+        credential_encryption_secret="test-secret",
+        credential_encryption_key_id="test-key",
+    )
+    service = ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(
+            secret=settings.credential_encryption_secret,
+            key_id=settings.credential_encryption_key_id,
+        ),
+    )
+    primary = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Primary",
+        provider="openai-compatible",
+        api_key="sk-primary",
+        default_model="primary-model",
+        base_url="https://primary.example.test/v1",
+        is_default=False,
+    )
+    backup = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Backup",
+        provider="openai-compatible",
+        api_key="sk-backup",
+        default_model="backup-default",
+        base_url="https://backup.example.test/v1",
+        is_default=False,
+    )
+    workspace.settings = {
+        "model_provider_fallback": {
+            "enabled": True,
+            "retry_error_codes": ["RuntimeError"],
+            "candidates": [{"credential_id": str(backup.id), "model": "backup-model"}],
+        }
+    }
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        instructions="Write.",
+        model="primary-model",
+        model_provider_credential_id=primary.id,
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    class FallbackRunner:
+        def __init__(self) -> None:
+            self.requests: list[AgentRunRequest] = []
+
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            self.requests.append(request)
+            if len(self.requests) == 1:
+                raise RuntimeError("primary provider unavailable")
+            return AgentRunResult(final_output=f"handled by {request.model}")
+
+    runner = FallbackRunner()
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        requested_by_user_id=user.id,
+        idempotency_key="provider-fallback",
+    )
+
+    RunOrchestrationService(session, agent_runner=runner, settings=settings).run_fake_agent(job)
+
+    events = session.scalars(
+        select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
+    ).all()
+    fallback_event = next(
+        event for event in events if event.event_type == "model_provider.fallback_selected"
+    )
+    used_event = next(event for event in events if event.event_type == "model_provider.used")
+
+    assert [request.model for request in runner.requests] == ["primary-model", "backup-model"]
+    assert runner.requests[0].api_key == "sk-primary"
+    assert runner.requests[1].api_key == "sk-backup"
+    assert run.status == RunStatus.COMPLETED.value
+    assert run.output == {"final_output": "handled by backup-model"}
+    assert fallback_event.event_metadata["reason"]["code"] == "RuntimeError"
+    assert fallback_event.event_metadata["failed_provider"] == {
+        "model": "primary-model",
+        "credential_id": str(primary.id),
+    }
+    selected = fallback_event.event_metadata["model_provider"]
+    assert selected["source"] == "fallback_policy"
+    assert selected["credential_id"] == str(backup.id)
+    assert selected["selected_model"] == "backup-model"
+    assert "api_key" not in selected
+    assert "base_url" not in selected
+    assert used_event.event_metadata["model_provider"] == {
+        "model": "backup-model",
+        "credential_id": str(backup.id),
+    }
+
+
+def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    other_user = User(email="other@example.com", display_name="Other")
+    other_workspace = Workspace(owner=other_user, name="Other", slug="other", settings={})
+    session.add_all(
+        [
+            other_user,
+            other_workspace,
+            WorkspaceMember(workspace=other_workspace, user=other_user, role="owner"),
+        ]
+    )
+    session.commit()
+    settings = Settings(
+        environment="test",
+        credential_encryption_secret="test-secret",
+        credential_encryption_key_id="test-key",
+    )
+    secret_service = SecretEncryptionService(
+        secret=settings.credential_encryption_secret,
+        key_id=settings.credential_encryption_key_id,
+    )
+    primary = ModelProviderCredentialService(session, secret_service).create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Primary",
+        provider="openai",
+        api_key="sk-primary",
+        default_model="primary-model",
+        base_url=None,
+        is_default=False,
+    )
+    foreign = ModelProviderCredentialService(session, secret_service).create(
+        workspace_id=other_workspace.id,
+        created_by_user_id=other_user.id,
+        name="Foreign",
+        provider="openai",
+        api_key="sk-foreign",
+        default_model="foreign-model",
+        base_url=None,
+        is_default=False,
+    )
+    workspace.settings = {
+        "model_provider_fallback": {
+            "enabled": True,
+            "candidates": [{"credential_id": str(foreign.id), "model": "foreign-model"}],
+        }
+    }
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        instructions="Write.",
+        model="primary-model",
+        model_provider_credential_id=primary.id,
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    class FailingRunner:
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            raise RuntimeError("primary provider unavailable")
+
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        requested_by_user_id=user.id,
+        idempotency_key="blocked-provider-fallback",
+    )
+
+    try:
+        RunOrchestrationService(
+            session,
+            agent_runner=FailingRunner(),
+            settings=settings,
+        ).run_fake_agent(job)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Expected run failure when fallback crosses workspace")
+
+    event_types = [
+        event.event_type
+        for event in session.scalars(
+            select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
+        ).all()
+    ]
+    assert "model_provider.fallback_selected" not in event_types
+    assert run.status == RunStatus.FAILED.value
+    assert run.error["message"] == "primary provider unavailable"
 
 
 def test_agent_request_rejects_foreign_workspace_agent_profile() -> None:
