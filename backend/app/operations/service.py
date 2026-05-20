@@ -11,11 +11,15 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.operations import (
+    ApprovalBacklogResponse,
     DeadLetterJobsResponse,
     OperationsCapacityResponse,
+    OperationsOutcomesResponse,
     OperationsSchedulerResponse,
     QueueLatencyResponse,
     QueueMetricsResponse,
+    RunFailureReasonResponse,
+    RunOutcomeWindowResponse,
     RuntimeSpaceQuotaUsageResponse,
     RuntimeSpaceSaturationResponse,
     SchedulerBacklogResponse,
@@ -24,6 +28,7 @@ from backend.app.api.schemas.operations import (
     SchedulerPriorityBucketResponse,
     WorkerCapacityAggregateResponse,
 )
+from backend.app.approvals.models import Approval
 from backend.app.audit.models import AuditEvent
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.redis.keys import RedisKeyBuilder
@@ -589,6 +594,72 @@ class OperationsService:
                 for reason, count in sorted(blocked_reasons.items())
             ],
             policy=self._scheduler_policy(workspace_id),
+        )
+
+    def outcomes_payload(
+        self,
+        workspace_id: UUID,
+        *,
+        window_seconds: int,
+    ) -> OperationsOutcomesResponse:
+        now = datetime.now(UTC)
+        cutoff = now - timedelta(seconds=window_seconds)
+        runs = self._session.scalars(
+            select(AgentRun).where(
+                AgentRun.workspace_id == workspace_id,
+                AgentRun.updated_at >= cutoff,
+            )
+        ).all()
+        completed_runs = sum(1 for run in runs if run.status == "completed")
+        failed_runs = [run for run in runs if run.status == "failed"]
+        cancelled_runs = sum(1 for run in runs if run.status == "cancelled")
+        failure_reasons: dict[str, int] = {}
+        for run in failed_runs:
+            code = "unknown"
+            if isinstance(run.error, dict):
+                raw_code = run.error.get("code")
+                if isinstance(raw_code, str) and raw_code:
+                    code = raw_code
+            failure_reasons[code] = failure_reasons.get(code, 0) + 1
+        pending_approvals = self._session.scalars(
+            select(Approval).where(
+                Approval.workspace_id == workspace_id,
+                Approval.status == "pending",
+            )
+        ).all()
+        pending_by_type: dict[str, int] = {}
+        pending_ages: list[int] = []
+        high_risk_pending = 0
+        for approval in pending_approvals:
+            pending_by_type[approval.approval_type] = (
+                pending_by_type.get(approval.approval_type, 0) + 1
+            )
+            pending_ages.append(
+                max(0, int((now - _aware_datetime(approval.created_at)).total_seconds()))
+            )
+            if approval.risk_level == "high":
+                high_risk_pending += 1
+        total_runs = len(runs)
+        return OperationsOutcomesResponse(
+            generated_at=now,
+            runs=RunOutcomeWindowResponse(
+                window_seconds=window_seconds,
+                total_runs=total_runs,
+                completed_runs=completed_runs,
+                failed_runs=len(failed_runs),
+                cancelled_runs=cancelled_runs,
+                failure_rate=round(len(failed_runs) / total_runs, 4) if total_runs else 0.0,
+                failure_reasons=[
+                    RunFailureReasonResponse(code=code, count=count)
+                    for code, count in sorted(failure_reasons.items())
+                ],
+            ),
+            approvals=ApprovalBacklogResponse(
+                pending=len(pending_approvals),
+                high_risk_pending=high_risk_pending,
+                oldest_pending_age_seconds=max(pending_ages) if pending_ages else None,
+                pending_by_type=dict(sorted(pending_by_type.items())),
+            ),
         )
 
     def _queue_latency(self, queue_name: str, workspace_id: UUID) -> QueueLatencyResponse:

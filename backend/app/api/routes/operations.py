@@ -14,6 +14,7 @@ from backend.app.api.schemas.operations import (
     DeadLetterJobsResponse,
     FailedJobInspectionResponse,
     OperationsCapacityResponse,
+    OperationsOutcomesResponse,
     OperationsOverviewResponse,
     OperationsSchedulerResponse,
     QueueMetricsResponse,
@@ -324,3 +325,15 @@ async def operations_scheduler(
     session: Session = Depends(get_db_session),
 ) -> OperationsSchedulerResponse:
     return OperationsService(session).scheduler_payload(context.workspace.id)
+
+
+@router.get("/outcomes", response_model=OperationsOutcomesResponse)
+async def operations_outcomes(
+    window_seconds: int = Query(default=86_400, ge=60, le=2_592_000),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> OperationsOutcomesResponse:
+    return OperationsService(session).outcomes_payload(
+        context.workspace.id,
+        window_seconds=window_seconds,
+    )

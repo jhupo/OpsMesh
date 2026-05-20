@@ -11,6 +11,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.approvals.models import Approval
 from backend.app.audit.models import AuditEvent
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
@@ -529,6 +530,99 @@ def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:
         "max_steps_per_task_per_tick": 1,
         "starvation_boost_after_seconds": 60,
         "resource_limits": {"cpu": 4.0},
+    }
+
+
+def test_operations_outcomes_reports_failure_rate_and_approval_backlog() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    now = datetime.now(UTC)
+    completed_run = AgentRun(
+        workspace_id=workspace.id,
+        status="completed",
+        input={},
+        updated_at=now - timedelta(seconds=120),
+    )
+    failed_run = AgentRun(
+        workspace_id=workspace.id,
+        status="failed",
+        input={},
+        error={"code": "RuntimeError", "message": "model failed"},
+        updated_at=now - timedelta(seconds=90),
+    )
+    cancelled_run = AgentRun(
+        workspace_id=workspace.id,
+        status="cancelled",
+        input={},
+        updated_at=now - timedelta(seconds=60),
+    )
+    old_failed_run = AgentRun(
+        workspace_id=workspace.id,
+        status="failed",
+        input={},
+        error={"code": "OldError"},
+        updated_at=now - timedelta(seconds=10_000),
+    )
+    approval = Approval(
+        workspace_id=workspace.id,
+        approval_type="mcp.tool",
+        risk_level="high",
+        payload={"tool_name": "deploy"},
+        status="pending",
+        created_at=now - timedelta(seconds=300),
+    )
+    low_risk_approval = Approval(
+        workspace_id=workspace.id,
+        approval_type="runtime.command",
+        risk_level="medium",
+        payload={"command": "ls"},
+        status="pending",
+        created_at=now - timedelta(seconds=120),
+    )
+    decided_approval = Approval(
+        workspace_id=workspace.id,
+        approval_type="mcp.tool",
+        risk_level="high",
+        payload={},
+        status="approved",
+        created_at=now - timedelta(seconds=400),
+    )
+    session.add_all(
+        [
+            completed_run,
+            failed_run,
+            cancelled_run,
+            old_failed_run,
+            approval,
+            low_risk_approval,
+            decided_approval,
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/outcomes?window_seconds=600",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["runs"] == {
+        "window_seconds": 600,
+        "total_runs": 3,
+        "completed_runs": 1,
+        "failed_runs": 1,
+        "cancelled_runs": 1,
+        "failure_rate": 0.3333,
+        "failure_reasons": [{"code": "RuntimeError", "count": 1}],
+    }
+    assert payload["approvals"]["pending"] == 2
+    assert payload["approvals"]["high_risk_pending"] == 1
+    assert payload["approvals"]["oldest_pending_age_seconds"] >= 290
+    assert payload["approvals"]["pending_by_type"] == {
+        "mcp.tool": 1,
+        "runtime.command": 1,
     }
 
 
