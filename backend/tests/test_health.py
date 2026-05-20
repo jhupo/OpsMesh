@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.core.config import Settings
+from backend.app.core.errors import QuotaExceededError
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
@@ -186,6 +187,27 @@ def test_validation_errors_use_consistent_error_envelope() -> None:
     assert body["error"]["code"] == "validation_error"
     assert body["error"]["request_id"] == response.headers["X-Request-ID"]
     assert body["error"]["details"]
+
+
+def test_domain_errors_use_consistent_error_envelope() -> None:
+    app = create_app(Settings(environment="test", log_format="text"))
+
+    @app.get("/domain-error-demo")
+    async def domain_error_demo() -> None:
+        raise QuotaExceededError(
+            "Runtime quota exceeded",
+            details={"quota_key": "memory_mb"},
+        )
+
+    client = TestClient(app)
+
+    response = client.get("/domain-error-demo")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "quota_exceeded"
+    assert response.json()["error"]["message"] == "Runtime quota exceeded"
+    assert response.json()["error"]["details"] == {"quota_key": "memory_mb"}
+    assert response.json()["error"]["request_id"] == response.headers["X-Request-ID"]
 
 
 class BrokenRedis:

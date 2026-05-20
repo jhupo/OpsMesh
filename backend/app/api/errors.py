@@ -3,10 +3,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette import status
 
+from backend.app.core.errors import DomainError
+
 
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(DomainError, domain_exception_handler)
 
 
 async def validation_exception_handler(
@@ -45,22 +48,39 @@ async def http_exception_handler(
     )
 
 
+async def domain_exception_handler(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    if not isinstance(exc, DomainError):
+        raise exc
+    return error_response(
+        status_code=exc.status_code,
+        code=exc.code,
+        message=exc.message,
+        request_id=getattr(request.state, "request_id", None),
+        details=exc.details or None,
+    )
+
+
 def error_response(
     *,
     status_code: int,
     code: str,
     message: str,
     request_id: str | None = None,
+    details: dict[str, object] | None = None,
 ) -> JSONResponse:
+    payload = {
+        "code": code,
+        "message": message,
+        "request_id": request_id,
+    }
+    if details is not None:
+        payload["details"] = details
     return JSONResponse(
         status_code=status_code,
-        content={
-            "error": {
-                "code": code,
-                "message": message,
-                "request_id": request_id,
-            }
-        },
+        content={"error": payload},
     )
 
 
