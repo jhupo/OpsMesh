@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeVar
@@ -10,6 +11,9 @@ from redis import Redis
 from backend.app.redis.keys import RedisKeyBuilder
 
 PROCESSING_VALUE = "processing"
+STATE_IN_PROGRESS = "in_progress"
+STATE_SUCCEEDED = "succeeded"
+STATE_FAILED = "failed"
 T = TypeVar("T")
 
 
@@ -54,17 +58,26 @@ class IdempotencyService:
         storage_key = self._storage_key(resolved_scope_id, operation, normalized_key)
         current_value = self._redis.get(storage_key)
         if current_value is not None:
-            if current_value == PROCESSING_VALUE:
+            current_state = _decode_idempotency_state(current_value)
+            if current_state["status"] == STATE_IN_PROGRESS:
                 raise IdempotencyInProgressError
+            resource_id = current_state.get("resource_id")
+            if not isinstance(resource_id, str):
+                self._redis.delete(storage_key)
+                return IdempotencyReservation(
+                    key=storage_key,
+                    existing_resource_id=None,
+                    created=False,
+                )
             return IdempotencyReservation(
                 key=storage_key,
-                existing_resource_id=UUID(current_value),
+                existing_resource_id=UUID(resource_id),
                 created=False,
             )
 
         reserved = self._redis.set(
             storage_key,
-            PROCESSING_VALUE,
+            _encode_idempotency_state(status=STATE_IN_PROGRESS),
             nx=True,
             ex=self._ttl_seconds,
         )
@@ -76,12 +89,23 @@ class IdempotencyService:
     def complete(self, reservation: IdempotencyReservation | None, resource_id: UUID) -> None:
         if reservation is None or not reservation.created:
             return
-        self._redis.set(reservation.key, str(resource_id), ex=self._ttl_seconds)
+        self._redis.set(
+            reservation.key,
+            _encode_idempotency_state(
+                status=STATE_SUCCEEDED,
+                resource_id=str(resource_id),
+            ),
+            ex=self._ttl_seconds,
+        )
 
     def release(self, reservation: IdempotencyReservation | None) -> None:
         if reservation is None or not reservation.created:
             return
-        self._redis.delete(reservation.key)
+        self._redis.set(
+            reservation.key,
+            _encode_idempotency_state(status=STATE_FAILED),
+            ex=min(self._ttl_seconds, 300),
+        )
 
     def forget(self, reservation: IdempotencyReservation | None) -> None:
         if reservation is None:
@@ -93,6 +117,32 @@ class IdempotencyService:
             str(scope_id),
             f"http:{operation}:{idempotency_key.strip()}",
         )
+
+
+def _encode_idempotency_state(
+    *,
+    status: str,
+    resource_id: str | None = None,
+) -> str:
+    payload = {"status": status}
+    if resource_id is not None:
+        payload["resource_id"] = resource_id
+    return json.dumps(payload, separators=(",", ":"))
+
+
+def _decode_idempotency_state(raw_value: str) -> dict[str, object]:
+    if raw_value == PROCESSING_VALUE:
+        return {"status": STATE_IN_PROGRESS}
+    try:
+        payload = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return {"status": STATE_SUCCEEDED, "resource_id": raw_value}
+    if not isinstance(payload, dict):
+        return {"status": STATE_FAILED}
+    status = payload.get("status")
+    if status not in {STATE_IN_PROGRESS, STATE_SUCCEEDED, STATE_FAILED}:
+        return {"status": STATE_FAILED}
+    return payload
 
 
 def run_idempotent_create(
