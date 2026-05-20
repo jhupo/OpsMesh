@@ -1050,6 +1050,11 @@ class RunOrchestrationService:
             return str(run.input)
 
         parts = [task.title, task.description]
+        pending_tool_results = _pending_tool_result_summaries(run.input)
+        if pending_tool_results:
+            parts.append(
+                "Completed runtime tool results:\n" + "\n".join(pending_tool_results)
+            )
         if run.task_step_id is not None:
             step = self._session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
@@ -2614,6 +2619,44 @@ def _dict_or_empty(value: object) -> dict[str, object]:
 
 def _dict_copy(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _pending_tool_result_summaries(run_input: dict[str, object]) -> list[str]:
+    results = run_input.get("pending_tool_results")
+    if not isinstance(results, list):
+        return []
+    summaries: list[str] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        tool_name = item.get("tool_name")
+        status = item.get("status")
+        if not isinstance(tool_name, str) or not isinstance(status, str):
+            continue
+        payload = item.get("response") if status == "completed" else item.get("error")
+        summaries.append(
+            "- "
+            + json.dumps(
+                {
+                    "tool_name": tool_name,
+                    "status": status,
+                    "result": _jsonable_runtime_result(payload),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+    return summaries
+
+
+def _jsonable_runtime_result(value: object) -> object:
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    if isinstance(value, list):
+        return [_jsonable_runtime_result(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _jsonable_runtime_result(item) for key, item in value.items()}
+    return str(value)
 
 
 def _skill_snapshot_matches(

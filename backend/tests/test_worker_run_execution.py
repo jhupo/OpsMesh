@@ -1246,6 +1246,56 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     assert request.context.metadata["authorization_snapshot_version"] == 1
 
 
+def test_resumed_run_includes_completed_self_hosted_tool_results_in_input() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Create image",
+        description="Use the render result.",
+    )
+    session.add(task)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        status=RunStatus.QUEUED.value,
+        input={
+            "authorization_snapshot": {
+                "workspace_id": str(workspace.id),
+                "allowed_tools": [],
+            },
+            "pending_tool_results": [
+                {
+                    "tool_name": "generate_image",
+                    "status": "completed",
+                    "response": {"asset_id": "img_123"},
+                    "request": {"prompt": "do not include this original prompt"},
+                }
+            ],
+        },
+    )
+    session.add(run)
+    session.commit()
+
+    request = RunOrchestrationService(session)._build_agent_request(
+        run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="resumed-tool-result",
+        ),
+    )
+
+    assert "Completed runtime tool results:" in request.input_text
+    assert '"tool_name": "generate_image"' in request.input_text
+    assert '"asset_id": "img_123"' in request.input_text
+    assert "do not include this original prompt" not in request.input_text
+
+
 def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
