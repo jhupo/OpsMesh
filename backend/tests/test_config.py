@@ -74,14 +74,7 @@ def test_production_requires_real_token_and_disabled_docs() -> None:
             enable_api_docs=False,
         )
 
-    settings = Settings(
-        environment="production",
-        internal_api_token="secret",
-        platform_admin_token="admin-secret",
-        token_hash_pepper="pepper",
-        enable_api_docs=False,
-        credential_encryption_secret="credential-secret",
-    )
+    settings = _production_settings()
     assert settings.environment == "production"
 
 
@@ -100,6 +93,42 @@ def test_production_requires_platform_admin_token() -> None:
             enable_api_docs=False,
             credential_encryption_secret="credential-secret",
         )
+
+
+def test_production_rejects_unsafe_runtime_and_infrastructure_defaults() -> None:
+    with pytest.raises(ValueError, match="AGENT_RUNNER_BACKEND"):
+        _production_settings(agent_runner_backend="fake")
+
+    with pytest.raises(ValueError, match="DATABASE_URL"):
+        _production_settings(
+            database_url="postgresql+psycopg://chaincloud:chaincloud@localhost:5432/chaincloud"
+        )
+
+    with pytest.raises(ValueError, match="REDIS_URL"):
+        _production_settings(redis_url="redis://localhost:6379/0")
+
+    with pytest.raises(ValueError, match="CORS_ORIGINS"):
+        _production_settings(cors_origins=[])
+
+    with pytest.raises(ValueError, match="STORAGE_ROOT"):
+        _production_settings(storage_root=".chaincloud-storage")
+
+
+def test_settings_redacted_summary_hides_secrets() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@db.example.com:5432/app?ssl=true",
+        redis_url="redis://:redis-secret@redis.example.com:6379/0",
+        internal_api_token="secret",
+        credential_encryption_secret="credential-secret",
+        cors_origins=["https://console.example.com"],
+    )
+
+    summary = settings.redacted_summary()
+
+    assert summary["database_url"] == "postgresql+psycopg://***:***@db.example.com:5432/app"
+    assert summary["redis_url"] == "redis://***:***@redis.example.com:6379/0"
+    assert "secret" not in str(summary)
+    assert summary["cors_origins_count"] == 1
 
 
 def test_database_engine_uses_pool_settings_for_postgres_url() -> None:
@@ -161,3 +190,21 @@ def test_blocking_executor_reuses_configured_thread_pool() -> None:
         assert result == 42
     finally:
         shutdown_blocking_executor(wait=True)
+
+
+def _production_settings(**overrides: object) -> Settings:
+    values = {
+        "environment": "production",
+        "internal_api_token": "secret",
+        "platform_admin_token": "admin-secret",
+        "token_hash_pepper": "pepper",
+        "enable_api_docs": False,
+        "credential_encryption_secret": "credential-secret",
+        "agent_runner_backend": "openai",
+        "database_url": "postgresql+psycopg://app:strong@db.example.com:5432/app",
+        "redis_url": "redis://redis.example.com:6379/0",
+        "cors_origins": ["https://console.example.com"],
+        "storage_root": "/srv/chaincloud/storage",
+    }
+    values.update(overrides)
+    return Settings(**values)

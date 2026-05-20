@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -76,6 +77,16 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET must be set in production"
                 )
+            if self.agent_runner_backend == "fake":
+                raise ValueError("CHAINCLOUD_AGENT_RUNNER_BACKEND must not be fake in production")
+            if "localhost" in self.database_url or "chaincloud:chaincloud" in self.database_url:
+                raise ValueError("CHAINCLOUD_DATABASE_URL must not use local default credentials")
+            if self.redis_url == "redis://localhost:6379/0":
+                raise ValueError("CHAINCLOUD_REDIS_URL must not use the local default")
+            if not self.cors_origins:
+                raise ValueError("CHAINCLOUD_CORS_ORIGINS must be set in production")
+            if self.storage_root == ".chaincloud-storage":
+                raise ValueError("CHAINCLOUD_STORAGE_ROOT must be explicit in production")
         return self
 
     @property
@@ -85,6 +96,42 @@ class Settings(BaseSettings):
             for token in self.internal_api_token.split(",")
             if token.strip()
         )
+
+    def redacted_summary(self) -> dict[str, object]:
+        return {
+            "environment": self.environment,
+            "service_name": self.service_name,
+            "api_prefix": self.api_prefix,
+            "log_level": self.log_level,
+            "log_format": self.log_format,
+            "enable_api_docs": self.enable_api_docs,
+            "database_url": _redact_url(self.database_url),
+            "database_pool_size": self.database_pool_size,
+            "database_max_overflow": self.database_max_overflow,
+            "redis_url": _redact_url(self.redis_url),
+            "redis_max_connections": self.redis_max_connections,
+            "worker_queue_name": self.worker_queue_name,
+            "blocking_thread_pool_workers": self.blocking_thread_pool_workers,
+            "agent_runner_backend": self.agent_runner_backend,
+            "api_rate_limit_enabled": self.api_rate_limit_enabled,
+            "storage_root": self.storage_root,
+            "cors_origins_count": len(self.cors_origins),
+        }
+
+
+def _redact_url(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return "<invalid-url>"
+    if not parsed.netloc:
+        return value
+    hostname = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    username = parsed.username
+    redacted_auth = "***:***@" if username is not None else ""
+    netloc = f"{redacted_auth}{hostname}{port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
 
 
 @lru_cache(maxsize=1)
