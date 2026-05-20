@@ -25,7 +25,7 @@ from backend.app.identity.models import User
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.tools.errors import ToolPermissionError
+from backend.app.tools.errors import ToolPermissionError, ToolResourceNotFoundError
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 
@@ -158,6 +158,75 @@ def test_mcp_execution_blocks_tool_not_in_runtime_context() -> None:
     assert log.request["authorization_snapshot_version"] == 1
     assert security_event is not None
     assert security_event.reason == "mcp_tool_not_in_runtime_context"
+
+
+def test_mcp_execution_rejects_cross_workspace_run_context() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
+    _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+    run, server = _seed_run_with_mcp_tool(session, workspace, snapshot_tools=["generate_image"])
+    adapter = RecordingAdapter({})
+
+    try:
+        McpToolExecutionService(session, adapter).execute(
+            McpExecutionRequest(
+                workspace_id=other_workspace.id,
+                agent_run_id=run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                arguments={"prompt": "mountain"},
+            )
+        )
+    except ToolResourceNotFoundError as exc:
+        assert "Agent run not found" in str(exc)
+    else:
+        raise AssertionError("Expected foreign workspace run to be hidden")
+
+    assert adapter.calls == []
+    assert session.scalar(select(McpToolCallLog)) is None
+    assert session.scalar(select(SecurityEvent)) is None
+
+
+def test_mcp_execution_rejects_foreign_mcp_server_for_same_tool_name() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
+    _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+    run, _ = _seed_run_with_mcp_tool(session, workspace, snapshot_tools=["generate_image"])
+    _, foreign_server = _seed_run_with_mcp_tool(
+        session,
+        other_workspace,
+        snapshot_tools=["generate_image"],
+    )
+    adapter = RecordingAdapter({})
+
+    try:
+        McpToolExecutionService(session, adapter).execute(
+            McpExecutionRequest(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                mcp_server_id=foreign_server.id,
+                tool_name="generate_image",
+                arguments={"prompt": "mountain"},
+            )
+        )
+    except ToolPermissionError as exc:
+        assert "mcp_tool_not_allowed" in str(exc)
+    else:
+        raise AssertionError("Expected foreign MCP server to be blocked")
+
+    log = session.scalar(select(McpToolCallLog))
+    security_event = session.scalar(select(SecurityEvent))
+
+    assert adapter.calls == []
+    assert log is not None
+    assert log.workspace_id == workspace.id
+    assert log.mcp_server_id == foreign_server.id
+    assert log.status == "blocked"
+    assert log.error is not None
+    assert log.error["code"] == "mcp_tool_not_allowed"
+    assert security_event is not None
+    assert security_event.workspace_id == workspace.id
+    assert security_event.reason == "mcp_tool_not_allowed"
 
 
 def test_mcp_execution_rejects_oversized_payload_and_logs_failure() -> None:

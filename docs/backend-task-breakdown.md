@@ -534,7 +534,7 @@ Tasks:
   - [x] Add `/operations/capacity` aggregate for queue age, worker slots, and runtime space quotas.
   - [x] Add scheduler-specific backlog and fairness aggregate.
   - [x] Add failure-rate and approval-backlog aggregate.
-- [ ] Add security review tests around account-scoped skill/tool invocation.
+- [x] Add security review tests around account-scoped skill/tool invocation.
 
 ## Phase 22: Persistent AI Organization Architecture
 
