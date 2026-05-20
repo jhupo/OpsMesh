@@ -25,9 +25,16 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+psycopg://chaincloud:chaincloud@localhost:5432/chaincloud"
     )
+    database_pool_size: int = Field(default=10, ge=1)
+    database_max_overflow: int = Field(default=20, ge=0)
+    database_pool_timeout_seconds: int = Field(default=30, ge=1)
+    database_pool_recycle_seconds: int = Field(default=1_800, ge=30)
+    database_statement_timeout_ms: int = Field(default=30_000, ge=1_000)
     redis_url: str = Field(default="redis://localhost:6379/0")
     redis_key_prefix: str = Field(default="chaincloud")
     worker_queue_name: str = Field(default="agent_runs")
+    blocking_thread_pool_workers: int = Field(default=16, ge=1)
+    request_slow_log_threshold_ms: int = Field(default=1_000, ge=1)
     internal_api_token: str = Field(default="change-me-in-production")
     platform_admin_token: str | None = Field(default=None)
     token_hash_pepper: str = Field(default="change-me-token-pepper")

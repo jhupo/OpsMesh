@@ -44,7 +44,8 @@ Current state:
 - Platform admin APIs now expose global overview, workspaces, workers, worker drain, runtime spaces, runtime-space quarantine, worker leases, queues, dead-letter requeue, runtimes, runtime force-stop, platform policies, and security events behind a separate platform admin token.
 - Global risky-execution policy now applies to Docker runtime network access, runtime shell commands, self-hosted runtime registration/job polling, and high-risk MCP tools. Platform admins set global guardrails; task approvals remain workspace-owner approvals, not platform-admin approvals.
 - Runtime-space scheduler reservations now enforce `active_runs` capacity for team task steps before run enqueue and release the reservation on run completion, failure, stale-run recovery, or cancellation.
-- Broader runtime-space reservations for CPU, memory, storage, logs, artifacts, and Docker lease cleanup evidence are not implemented yet.
+- Runtime-space reservations now merge runtime-space, agent, and task-step resource requirements for CPU, memory, storage, Docker runtime slots, self-hosted job slots, and artifact/log style quota keys before run creation.
+- Docker lease cleanup evidence is not implemented yet.
 
 Build:
 
@@ -53,7 +54,7 @@ Build:
 - [x] Add runtime space quota records and reservation records for active runs, Docker runtimes, self-hosted jobs, CPU, memory, storage, logs, and artifacts.
 - [x] Add worker node records, worker leases, drain status, worker version, and capacity reporting.
 - [x] Extend scheduler decisions to reserve runtime-space `active_runs` capacity before enqueueing team task steps.
-- Extend runtime-space reservations to Docker runtimes, self-hosted jobs, CPU, memory, storage, logs, and artifacts.
+- [x] Extend runtime-space reservations to Docker runtimes, self-hosted jobs, CPU, memory, storage, logs, and artifacts.
 - Add cleanup evidence for Docker leases and runtime-space temporary storage.
 - [x] Add operator APIs for workers, runtime spaces, worker leases, workspaces, queues, runtimes, platform policies, and security events.
 - [x] Enforce global risky-execution controls inside Docker runtime, self-hosted runtime, and MCP execution paths.

@@ -1,4 +1,5 @@
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from hashlib import sha256
@@ -27,6 +28,15 @@ SECURITY_HEADERS = {
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        settings: Settings,
+    ) -> None:
+        super().__init__(app)
+        self._settings = settings
+
     async def dispatch(
         self,
         request: Request,
@@ -35,16 +45,35 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get(REQUEST_ID_HEADER) or uuid.uuid4().hex
         token = request_id_var.set(request_id)
         request.state.request_id = request_id
+        started_at = time.perf_counter()
+        status_code = 500
 
         try:
             response = await call_next(request)
+            status_code = response.status_code
         except Exception:
-            logger.exception("Unhandled request error")
+            duration_ms = _elapsed_ms(started_at)
+            logger.exception(
+                "Unhandled request error",
+                extra=_request_log_extra(request, status_code, duration_ms),
+            )
             raise
         finally:
             request_id_var.reset(token)
 
+        duration_ms = _elapsed_ms(started_at)
+        response.headers["X-Process-Time-Ms"] = str(duration_ms)
         response.headers[REQUEST_ID_HEADER] = request_id
+        log_level = (
+            logging.WARNING
+            if duration_ms >= self._settings.request_slow_log_threshold_ms
+            else logging.INFO
+        )
+        logger.log(
+            log_level,
+            "HTTP request completed",
+            extra=_request_log_extra(request, status_code, duration_ms),
+        )
         return response
 
 
@@ -117,3 +146,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             ]
         )
         return sha256(material.encode("utf-8")).hexdigest()
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return max(0, int((time.perf_counter() - started_at) * 1000))
+
+
+def _request_log_extra(request: Request, status_code: int, duration_ms: int) -> dict[str, object]:
+    client_host = request.client.host if request.client is not None else None
+    return {
+        "http_method": request.method,
+        "http_path": request.url.path,
+        "http_status": status_code,
+        "duration_ms": duration_ms,
+        "client_host": client_host,
+    }

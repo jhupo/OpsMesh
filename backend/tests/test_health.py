@@ -24,6 +24,7 @@ def test_health_endpoint_returns_service_status() -> None:
 
     assert response.status_code == 200
     assert response.headers["X-Request-ID"] == "test-request-id"
+    assert int(response.headers["X-Process-Time-Ms"]) >= 0
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "no-referrer"

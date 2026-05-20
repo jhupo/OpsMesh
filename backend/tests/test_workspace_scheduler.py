@@ -214,7 +214,7 @@ def test_run_orchestration_reserves_runtime_space_capacity_before_enqueue() -> N
     assert reservations[0].status == "active"
     assert first_step.dependencies == {}
     assert second_step.dependencies["scheduling_status"] == "blocked"
-    assert second_step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded"
+    assert second_step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded:active_runs"
 
     RunOrchestrationService(session)._mark_run_cancelled(
         runs[0],
@@ -290,7 +290,7 @@ def test_run_orchestration_reserves_runtime_space_resource_requirements() -> Non
     assert cpu_quota.reserved_value == 3
     assert reservations[0].resource_usage == {"active_runs": 1, "memory_mb": 4096, "cpu": 3}
     assert first_step.dependencies == {"resource_requirements": {"cpu": 3}}
-    assert second_step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded"
+    assert second_step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded:memory_mb"
 
     RunOrchestrationService(session)._mark_run_cancelled(
         runs[0],

@@ -41,7 +41,7 @@ def create_app_with_dependencies(
     app.state.settings = app_settings
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(RequestContextMiddleware, settings=app_settings)
     app.add_middleware(
         RateLimitMiddleware,
         settings=app_settings,

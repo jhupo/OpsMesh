@@ -344,6 +344,245 @@ def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> N
     assert messages[-1].payload["decision"] == "approved"
 
 
+def test_runtime_space_reserves_multi_resource_capacity_for_team_steps() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Build Space",
+        scope="team",
+        policy={
+            "runtime_modes": ["docker"],
+            "reservation_usage": {"docker_runtimes": 1, "storage_mb": 256},
+            "resource_requirements": {"cpu": 2, "memory_mb": 1024},
+        },
+    )
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="Manager",
+        role="manager",
+        instructions="Plan and review.",
+        runtime_policy={"reservation_usage": {"artifact_mb": 50}},
+    )
+    developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+        instructions="Build the feature.",
+        runtime_policy={
+            "resource_requirements": {"memory_mb": 1536},
+            "reservation_usage": {"artifact_mb": 50},
+        },
+    )
+    session.add_all([runtime_space, manager, developer])
+    session.flush()
+    quotas = [
+        RuntimeSpaceQuota(
+            workspace_id=workspace.id,
+            runtime_space_id=runtime_space.id,
+            quota_key=quota_key,
+            limit_value=limit_value,
+            reserved_value=0,
+            unit=unit,
+        )
+        for quota_key, limit_value, unit in [
+            ("active_runs", 2, "count"),
+            ("docker_runtimes", 2, "count"),
+            ("cpu", 4, "cores"),
+            ("memory_mb", 2048, "mb"),
+            ("storage_mb", 1024, "mb"),
+            ("artifact_mb", 100, "mb"),
+        ]
+    ]
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Build Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+        runtime_space_id=runtime_space.id,
+    )
+    session.add_all([*quotas, team])
+    session.flush()
+    session.add(
+        AgentTeamMember(
+            workspace_id=workspace.id,
+            agent_team_id=team.id,
+            agent_profile_id=developer.id,
+            team_role="Developer",
+            order_index=0,
+        )
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        runtime_space_id=runtime_space.id,
+        title="Build feature",
+        input={
+            "work_packages": [
+                {
+                    "package_id": "build",
+                    "title": "Build",
+                    "required_role": "Developer",
+                    "resource_requirements": {"storage_mb": 512},
+                    "reservation_usage": {"self_hosted_jobs": 1},
+                }
+            ]
+        },
+    )
+    session.add(task)
+    session.flush()
+    task.project_plan = {
+        "plan_version": 1,
+        "work_packages": [
+            {
+                "package_id": "manager-planning",
+                "title": "Manager planning",
+                "required_role": "manager",
+                "assigned_agent_profile_id": str(manager.id),
+                "dependencies": {},
+            },
+            {
+                "package_id": "build",
+                "title": "Build",
+                "required_role": "Developer",
+                "assigned_agent_profile_id": str(developer.id),
+                "dependencies": {
+                    "after_step_ids": [],
+                    "resource_requirements": {"storage_mb": 512},
+                    "reservation_usage": {"self_hosted_jobs": 1},
+                },
+            },
+            {
+                "package_id": "manager-summary",
+                "title": "Manager summary",
+                "required_role": "manager",
+                "assigned_agent_profile_id": str(manager.id),
+                "dependencies": {},
+            },
+        ],
+    }
+    build_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=developer.id,
+        runtime_space_id=runtime_space.id,
+        work_package_id="build",
+        required_role="Developer",
+        title="Build",
+        status="queued",
+        order_index=1,
+        dependencies={
+            "resource_requirements": {"storage_mb": 512},
+            "reservation_usage": {"self_hosted_jobs": 1},
+        },
+    )
+    session.add(build_step)
+    session.flush()
+
+    orchestration = RunOrchestrationService(session)
+    run = orchestration._create_reserved_run_for_step(task, build_step)
+
+    assert run is not None
+    assert run.runtime_space_id == runtime_space.id
+    reservations = session.scalars(
+        select(RuntimeSpaceReservation).where(
+            RuntimeSpaceReservation.runtime_space_id == runtime_space.id
+        )
+    ).all()
+    assert len(reservations) == 1
+    assert reservations[0].resource_usage == {
+        "active_runs": 1,
+        "docker_runtimes": 1,
+        "storage_mb": 512,
+        "cpu": 2,
+        "memory_mb": 1536,
+        "artifact_mb": 50,
+        "self_hosted_jobs": 1,
+    }
+    quota_by_key = {
+        quota.quota_key: quota
+        for quota in session.scalars(
+            select(RuntimeSpaceQuota).where(
+                RuntimeSpaceQuota.runtime_space_id == runtime_space.id
+            )
+        ).all()
+    }
+    assert quota_by_key["active_runs"].reserved_value == 1
+    assert quota_by_key["docker_runtimes"].reserved_value == 1
+    assert quota_by_key["cpu"].reserved_value == 2
+    assert quota_by_key["memory_mb"].reserved_value == 1536
+    assert quota_by_key["storage_mb"].reserved_value == 512
+    assert quota_by_key["artifact_mb"].reserved_value == 50
+    assert "self_hosted_jobs" not in quota_by_key
+
+    orchestration._release_runtime_space_reservations(
+        run,
+        released_at=datetime.now(UTC),
+    )
+
+    for quota in quota_by_key.values():
+        assert quota.reserved_value == 0
+    assert reservations[0].status == "released"
+
+
+def test_runtime_space_blocks_step_when_multi_resource_quota_exceeded() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Small Space",
+        scope="team",
+        policy={"resource_requirements": {"memory_mb": 1024}},
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Heavy Agent",
+        role="developer",
+        instructions="Use memory.",
+        runtime_policy={"resource_requirements": {"memory_mb": 4096}},
+    )
+    session.add_all([runtime_space, agent])
+    session.flush()
+    quota = RuntimeSpaceQuota(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="memory_mb",
+        limit_value=2048,
+        reserved_value=0,
+        unit="mb",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        runtime_space_id=runtime_space.id,
+        title="Heavy task",
+    )
+    session.add_all([quota, task])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        runtime_space_id=runtime_space.id,
+        title="Heavy step",
+        status="queued",
+        order_index=0,
+    )
+    session.add(step)
+    session.flush()
+
+    run = RunOrchestrationService(session)._create_reserved_run_for_step(task, step)
+
+    assert run is None
+    assert step.dependencies["scheduling_status"] == "blocked"
+    assert step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded:memory_mb"
+    session.refresh(quota)
+    assert quota.reserved_value == 0
+
+
 def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)

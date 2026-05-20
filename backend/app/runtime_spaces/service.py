@@ -265,7 +265,7 @@ class RuntimeSpaceService:
         if exceeded_quota is not None:
             return RuntimeSpaceReservationResult(
                 reservation=None,
-                blocked_reason="runtime_space_quota_exceeded",
+                blocked_reason=f"runtime_space_quota_exceeded:{exceeded_quota.quota_key}",
             )
 
         for quota_key, amount in usage.items():
