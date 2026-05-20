@@ -470,6 +470,27 @@ def test_admin_operations_summary_aggregates_queue_capacity_and_blockers() -> No
     ]
 
 
+def test_admin_system_configuration_exposes_redacted_resource_summary() -> None:
+    client, _, _ = _client()
+
+    response = client.get("/api/v1/admin/system/configuration", headers=_admin_headers())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["settings"]["environment"] == "test"
+    assert body["settings"]["database_url"].startswith("postgresql+psycopg://***:***@")
+    assert "test-token" not in str(body)
+    assert "admin-token" not in str(body)
+    assert body["recommended_resources"]["cpu_count"] >= 1
+    assert body["configured_resources"]["database_pool_size"] >= 1
+    assert set(body["resource_deltas"]) == {
+        "database_pool_size",
+        "database_max_overflow",
+        "blocking_thread_pool_workers",
+        "redis_max_connections",
+    }
+
+
 def _client() -> tuple[TestClient, Session, fakeredis.FakeRedis]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(

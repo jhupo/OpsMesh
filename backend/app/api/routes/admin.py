@@ -21,6 +21,7 @@ from backend.app.api.schemas.admin import (
     AdminRiskyExecutionPolicyUpdateRequest,
     AdminRuntimeSpaceResponse,
     AdminSecurityEventResponse,
+    AdminSystemConfigurationResponse,
     AdminWorkerLeaseResponse,
     AdminWorkerNodeResponse,
     AdminWorkerUpdateRequest,
@@ -29,6 +30,7 @@ from backend.app.api.schemas.admin import (
 )
 from backend.app.auth.admin import require_platform_admin
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.resources import recommend_runtime_resources
 from backend.app.db.session import get_db_session
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
@@ -218,6 +220,30 @@ async def admin_operations_summary(
             redis,
             RedisKeyBuilder(settings.redis_key_prefix),
         ).operations_summary(queue_name)
+    )
+
+
+@router.get("/system/configuration", response_model=AdminSystemConfigurationResponse)
+async def admin_system_configuration(
+    settings: Settings = Depends(get_settings),
+) -> AdminSystemConfigurationResponse:
+    recommendation = recommend_runtime_resources()
+    recommended_resources = recommendation.as_dict()
+    configured_resources = {
+        "database_pool_size": settings.database_pool_size,
+        "database_max_overflow": settings.database_max_overflow,
+        "blocking_thread_pool_workers": settings.blocking_thread_pool_workers,
+        "redis_max_connections": settings.redis_max_connections,
+    }
+    resource_deltas = {
+        key: configured_resources[key] - recommended_resources[key]
+        for key in configured_resources
+    }
+    return AdminSystemConfigurationResponse(
+        settings=settings.redacted_summary(),
+        recommended_resources=recommended_resources,
+        configured_resources=configured_resources,
+        resource_deltas=resource_deltas,
     )
 
 

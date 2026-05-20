@@ -53,6 +53,13 @@ class AdminOperationsSummaryResponse(BaseModel):
     failures: dict[str, object]
 
 
+class AdminSystemConfigurationResponse(BaseModel):
+    settings: dict[str, object]
+    recommended_resources: dict[str, int]
+    configured_resources: dict[str, int]
+    resource_deltas: dict[str, int]
+
+
 class AdminDeadLetterJobsResponse(BaseModel):
     items: list[JobPayload]
     total: int

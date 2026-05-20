@@ -21,6 +21,7 @@ Completed foundation:
 - structured idempotency states for in-progress, succeeded, and failed reservations with legacy value compatibility
 - core feature flag service with defaults, global settings, workspace overrides, safe disabled unknowns, and redacted enabled-flag summary
 - reusable Redis JSON cache abstraction with namespaced keys, TTLs, get-or-set loading, corrupt-value healing, and namespace invalidation
+- platform-admin system configuration endpoint exposing redacted settings plus recommended/configured core resource sizing deltas
 - workspace agents, teams, members, tasks, steps, runs, events, approvals, files, artifacts, exports, and audit records
 - worker queue, retries, dead letters, idempotency, heartbeats, and rate limits
 - OpenAI Agents runtime contract and fake/runtime adapters
@@ -43,7 +44,7 @@ Incomplete or basic-only areas:
 - Model provider selection exists, but provider fallback and per-agent audit trails need completion.
 - Operations APIs exist and overview now uses short Redis caching, but capacity, queue latency, and saturation dashboards need richer aggregate endpoints.
 - The memory search tool is still a placeholder and needs a real workspace memory/index implementation.
-- Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, reusable maintenance runner, HTTP metrics, domain error mapping, production config guardrails, Redis distributed locks, structured idempotency states, feature flags, and Redis cache abstraction are implemented.
+- Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, reusable maintenance runner, HTTP metrics, domain error mapping, production config guardrails, Redis distributed locks, structured idempotency states, feature flags, Redis cache abstraction, and admin-visible core configuration summaries are implemented.
 
 ## P0: Cloud Control Plane And Runtime Spaces
 
