@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -9,7 +11,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.admin.models import PlatformPolicy
 from backend.app.admin.policies import RISKY_EXECUTION_POLICY_KEY
 from backend.app.approvals.models import Approval
+from backend.app.capabilities.adapters import McpAdapterResolver, SseMcpToolAdapter
 from backend.app.capabilities.execution import (
+    McpExecutionError,
     McpExecutionRequest,
     McpToolExecutionService,
 )
@@ -393,6 +397,110 @@ def test_mcp_execution_blocks_high_risk_tool_when_platform_policy_blocks_it() ->
     assert log.error["code"] == "mcp_high_risk_tool_globally_disabled"
     assert security_event is not None
     assert security_event.reason == "mcp_high_risk_tool_globally_disabled"
+
+
+def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace)
+    server.server_type = "sse"
+    server.connection = {
+        "url": "https://mcp.example.test/sse",
+        "headers": {"x-client": "chaincloud"},
+    }
+    credential = McpCredentialReference(
+        workspace_id=workspace.id,
+        mcp_server_id=server.id,
+        name="api-key",
+        provider="static_header",
+        external_ref="x-api-key: test-secret",
+        scopes=["images.write"],
+    )
+    session.add(credential)
+    session.commit()
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(request, timeout: int):  # type: ignore[no-untyped-def]
+        captured["url"] = request.full_url
+        captured["headers"] = {key.lower(): value for key, value in request.header_items()}
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return _FakeHttpResponse(
+            b'event: message\n'
+            b'data: {"jsonrpc":"2.0","id":"1","result":{"status":"created"}}\n\n'
+        )
+
+    monkeypatch.setattr("backend.app.capabilities.adapters.urlopen", fake_urlopen)
+
+    result = McpToolExecutionService(session, McpAdapterResolver()).execute(
+        McpExecutionRequest(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            mcp_server_id=server.id,
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+        )
+    )
+
+    assert result.status == "completed"
+    assert result.response == {"status": "created"}
+    assert captured["url"] == "https://mcp.example.test/sse"
+    assert captured["timeout"] == 15
+    assert captured["headers"] == {
+        "content-type": "application/json",
+        "accept": "text/event-stream",
+        "x-client": "chaincloud",
+        "x-api-key": "test-secret",
+    }
+    assert captured["payload"]["method"] == "tools/call"
+    assert captured["payload"]["params"] == {
+        "name": "generate_image",
+        "arguments": {"prompt": "mountain"},
+    }
+
+
+def test_mcp_sse_adapter_normalizes_remote_errors(monkeypatch) -> None:
+    server = McpServer(
+        name="image-tools",
+        server_type="sse",
+        connection={"url": "https://mcp.example.test/sse"},
+    )
+
+    def fake_urlopen(request, timeout: int):  # type: ignore[no-untyped-def]
+        return _FakeHttpResponse(
+            b'data: {"jsonrpc":"2.0","id":"1",'
+            b'"error":{"code":-32000,"message":"sk-secret remote failure"}}\n\n'
+        )
+
+    monkeypatch.setattr("backend.app.capabilities.adapters.urlopen", fake_urlopen)
+
+    try:
+        SseMcpToolAdapter().call(
+            server=server,
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+            credential_refs=[],
+            timeout_seconds=15,
+        )
+    except McpExecutionError as exc:
+        assert exc.code == "mcp_remote_error"
+        assert "sk-secret" not in str(exc)
+    else:
+        raise AssertionError("Expected SSE remote errors to be normalized")
+
+
+class _FakeHttpResponse:
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def __enter__(self) -> _FakeHttpResponse:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._body
 
 
 class RecordingAdapter:

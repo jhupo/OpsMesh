@@ -20,7 +20,9 @@ class McpAdapterResolver:
         server_type = server.server_type.lower().strip()
         if server_type in {"http", "https", "http_jsonrpc", "jsonrpc"}:
             return HttpJsonRpcMcpToolAdapter(secret_service=self.secret_service)
-        if server_type in {"stdio", "sse", "hosted"}:
+        if server_type in {"sse", "http_sse"}:
+            return SseMcpToolAdapter(secret_service=self.secret_service)
+        if server_type in {"stdio", "hosted"}:
             return UnsupportedMcpToolAdapter(server_type=server_type)
         return UnsupportedMcpToolAdapter(server_type=server.server_type)
 
@@ -140,6 +142,68 @@ class HttpJsonRpcMcpToolAdapter:
         return headers
 
 
+class SseMcpToolAdapter(HttpJsonRpcMcpToolAdapter):
+    def call(
+        self,
+        *,
+        server: McpServer,
+        tool_name: str,
+        arguments: dict[str, object],
+        credential_refs: list[McpCredentialReference],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        url = _string_setting(server.connection, "url") or _string_setting(
+            server.connection,
+            "endpoint",
+        )
+        if not url:
+            raise McpExecutionError("SSE MCP server is missing url", code="mcp_server_url_missing")
+        if not url.lower().startswith(("https://", "http://")):
+            raise McpExecutionError("SSE MCP server url is invalid", code="mcp_server_url_invalid")
+
+        headers = {
+            "content-type": "application/json",
+            "accept": "text/event-stream",
+            **_string_dict_setting(server.connection, "headers"),
+            **self._credential_headers(credential_refs),
+        }
+        payload = {
+            "jsonrpc": "2.0",
+            "id": str(uuid4()),
+            "method": _string_setting(server.connection, "method") or "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": arguments,
+            },
+        }
+        request = Request(
+            url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
+                raw_body = response.read()
+        except HTTPError as exc:
+            raise McpExecutionError(
+                f"SSE MCP server returned status {exc.code}",
+                code="mcp_sse_status_error",
+            ) from exc
+        except URLError as exc:
+            raise McpExecutionError(
+                "SSE MCP server request failed",
+                code="mcp_sse_request_failed",
+            ) from exc
+        except TimeoutError as exc:
+            raise McpExecutionError(
+                "SSE MCP server request timed out",
+                code="mcp_sse_timeout",
+            ) from exc
+
+        return _result_from_sse_body(raw_body)
+
+
 @dataclass(frozen=True)
 class UnsupportedMcpToolAdapter:
     server_type: str
@@ -183,3 +247,67 @@ def _jsonable(value: Any) -> object:
     if isinstance(value, dict):
         return {str(key): _jsonable(item) for key, item in value.items()}
     return str(value)
+
+
+def _result_from_sse_body(raw_body: bytes) -> dict[str, object]:
+    try:
+        body = raw_body.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise McpExecutionError(
+            "SSE MCP server returned invalid UTF-8",
+            code="mcp_sse_invalid_encoding",
+        ) from exc
+
+    for data in _sse_data_messages(body):
+        if not data or data == "[DONE]":
+            continue
+        try:
+            envelope = json.loads(data)
+        except json.JSONDecodeError as exc:
+            raise McpExecutionError(
+                "SSE MCP server returned invalid JSON",
+                code="mcp_sse_invalid_json",
+            ) from exc
+        if not isinstance(envelope, dict):
+            raise McpExecutionError(
+                "SSE MCP server returned an invalid JSON-RPC envelope",
+                code="mcp_sse_invalid_envelope",
+            )
+        error = envelope.get("error")
+        if isinstance(error, dict):
+            raise McpExecutionError(
+                "Remote MCP tool failed",
+                code="mcp_remote_error",
+            )
+        if "result" in envelope:
+            result = envelope["result"]
+            return result if isinstance(result, dict) else {"result": _jsonable(result)}
+
+    raise McpExecutionError(
+        "SSE MCP server did not return a result",
+        code="mcp_sse_no_result",
+    )
+
+
+def _sse_data_messages(body: str) -> list[str]:
+    messages: list[str] = []
+    data_lines: list[str] = []
+    for raw_line in body.splitlines():
+        line = raw_line.rstrip("\r")
+        if line == "":
+            if data_lines:
+                messages.append("\n".join(data_lines))
+                data_lines = []
+            continue
+        if line.startswith(":"):
+            continue
+        field, separator, value = line.partition(":")
+        if not separator:
+            continue
+        if value.startswith(" "):
+            value = value[1:]
+        if field == "data":
+            data_lines.append(value)
+    if data_lines:
+        messages.append("\n".join(data_lines))
+    return messages
