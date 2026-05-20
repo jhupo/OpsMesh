@@ -48,6 +48,7 @@ from backend.app.self_hosted.models import (
     RuntimeEnrollmentToken,
     SelfHostedArtifactUpload,
     SelfHostedJobClaim,
+    SelfHostedMcpJob,
     SelfHostedWorker,
 )
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
@@ -96,6 +97,7 @@ __all__ = [
     "Skill",
     "SelfHostedArtifactUpload",
     "SelfHostedJobClaim",
+    "SelfHostedMcpJob",
     "SelfHostedWorker",
     "Task",
     "TaskMessage",

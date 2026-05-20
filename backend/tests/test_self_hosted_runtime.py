@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.admin.models import PlatformPolicy
 from backend.app.admin.policies import RISKY_EXECUTION_POLICY_KEY
+from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -21,7 +22,13 @@ from backend.app.main import create_app
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
-from backend.app.self_hosted.models import RuntimeCredential, SelfHostedJobClaim, SelfHostedWorker
+from backend.app.self_hosted.models import (
+    RuntimeCredential,
+    SelfHostedJobClaim,
+    SelfHostedMcpJob,
+    SelfHostedWorker,
+)
+from backend.app.self_hosted.service import SelfHostedRuntimeService
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -583,6 +590,137 @@ def test_self_hosted_worker_enforces_capability_policy_for_jobs() -> None:
     assert denied_network_claim.status_code == 409
     assert "network mode is not supported" in denied_network_claim.json()["error"]["message"]
     assert allowed_claim.status_code == 200
+
+
+def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-mcp",
+            "capabilities": {"allowed_tools": ["generate_image"], "max_concurrent_mcp_jobs": 1},
+        },
+    )
+    credential = registered.json()["credential_token"]
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="image-tools",
+        server_type="stdio",
+        connection={"command": "mcp-image"},
+    )
+    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="running")
+    session.add_all([server, run])
+    session.flush()
+    queued_job = SelfHostedMcpJob(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime_id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+    )
+    blocked_job = SelfHostedMcpJob(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime_id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="delete_image",
+        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+    )
+    session.add_all([queued_job, blocked_job])
+    session.commit()
+
+    next_job = client.get("/api/v1/self-hosted/mcp-jobs/next", headers=_runtime_headers(credential))
+    claim = client.post(
+        f"/api/v1/self-hosted/mcp-jobs/{queued_job.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+    capacity_blocked = client.get(
+        "/api/v1/self-hosted/mcp-jobs/next",
+        headers=_runtime_headers(credential),
+    )
+    completed = client.post(
+        f"/api/v1/self-hosted/mcp-jobs/{queued_job.id}/complete",
+        headers=_runtime_headers(credential),
+        json={"status": "completed", "response_payload": {"ok": True}},
+    )
+    incompatible_claim = client.post(
+        f"/api/v1/self-hosted/mcp-jobs/{blocked_job.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+    events = (
+        session.query(RunEvent).filter_by(agent_run_id=run.id).order_by(RunEvent.sequence).all()
+    )
+
+    assert next_job.status_code == 200
+    assert next_job.json()["id"] == str(queued_job.id)
+    assert claim.status_code == 200
+    assert claim.json()["status"] == "claimed"
+    assert capacity_blocked.status_code == 200
+    assert capacity_blocked.json() is None
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert incompatible_claim.status_code == 409
+    assert "not compatible" in incompatible_claim.json()["error"]["message"]
+    session.refresh(queued_job)
+    assert queued_job.status == "completed"
+    assert queued_job.response_payload == {"ok": True}
+    assert [event.event_type for event in events] == [
+        "self_hosted.mcp_job_claimed",
+        "self_hosted.mcp_job_completed",
+    ]
+
+
+def test_self_hosted_service_creates_scoped_mcp_job() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-service-mcp",
+        },
+    )
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="image-tools",
+        server_type="stdio",
+        connection={"command": "mcp-image"},
+    )
+    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="running")
+    session.add_all([server, run])
+    session.commit()
+
+    job = SelfHostedRuntimeService(session, client.app.state.settings).create_mcp_job(
+        workspace_id=workspace.id,
+        runtime_id=runtime_id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+        request_payload={"jsonrpc": "2.0"},
+    )
+    event = session.query(RunEvent).filter_by(agent_run_id=run.id).one()
+
+    assert job.status == "queued"
+    assert job.workspace_runtime_id == runtime_id
+    assert event.event_type == "self_hosted.mcp_job_queued"
+    assert event.event_metadata["mcp_job_id"] == str(job.id)
 
 
 def test_self_hosted_artifact_upload_enforces_max_artifact_bytes() -> None:

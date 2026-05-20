@@ -65,11 +65,38 @@ class SelfHostedJobResponse(BaseModel):
     created_at: datetime
 
 
+class SelfHostedMcpJobResponse(BaseModel):
+    id: UUID
+    agent_run_id: UUID
+    mcp_server_id: UUID
+    tool_name: str
+    request_payload: dict[str, object]
+    created_at: datetime
+
+
 class JobClaimResponse(BaseModel):
     claim_id: UUID
     agent_run_id: UUID
     status: str
     claimed_at: datetime
+
+
+class McpJobClaimResponse(BaseModel):
+    id: UUID
+    status: str
+    claimed_at: datetime
+
+
+class McpJobCompleteRequest(BaseModel):
+    status: str = Field(pattern="^(completed|failed)$")
+    response_payload: dict[str, object] | None = None
+    error_payload: dict[str, object] | None = None
+
+
+class McpJobCompleteResponse(BaseModel):
+    id: UUID
+    status: str
+    completed_at: datetime
 
 
 class ProgressEventRequest(BaseModel):

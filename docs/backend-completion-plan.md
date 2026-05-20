@@ -118,7 +118,7 @@ Current state:
 - The execution service now resolves an MCP server/tool from the run authorization snapshot, injects workspace-owned credential references into an adapter, enforces payload policy, and records call logs, run events, task messages, and security events.
 - MCP execution also re-checks the runtime context tool set, sends explicitly approval-required tools into workspace approval, and writes authorization snapshot metadata into tool audit records.
 - Worker-built agent requests now carry a backend tool executor, and the OpenAI Agents runner registers allowed MCP tools as SDK function tools that call back into the backend execution service.
-- HTTP JSON-RPC, remote SSE, and remote hosted MCP servers can now be executed through the adapter resolver. Stdio MCP has a Docker-runtime-only adapter, but it is not selected by the default resolver; callers must explicitly bind it to a workspace runtime so the API host never executes stdio commands directly.
+- HTTP JSON-RPC, remote SSE, and remote hosted MCP servers can now be executed through the adapter resolver. Stdio MCP has a Docker-runtime-only adapter, but it is not selected by the default resolver; callers must explicitly bind it to a workspace runtime so the API host never executes stdio commands directly. Self-hosted runtimes now have an auditable MCP job queue for poll, claim, and completion callbacks.
 
 Build:
 
@@ -128,7 +128,8 @@ Build:
   - [x] Add SSE adapter.
   - [x] Add hosted MCP adapter for declared remote HTTP/SSE transports.
   - [x] Add Docker-runtime stdio adapter that is only usable through explicit runtime binding, not the default API/worker resolver.
-  - [ ] Add self-hosted stdio MCP job dispatch.
+  - [x] Add self-hosted stdio MCP job dispatch foundation with worker poll, claim, and completion APIs.
+  - [ ] Wire self-hosted MCP job dispatch into the runtime tool adapter for async OpenAI tool calls.
 - [x] Inject only the credentials that belong to the current workspace and selected tool.
 - [x] Enforce timeout, payload size, response size, allowlisted tool names, and network policy.
 - [x] Persist `tool.called`, `tool.completed`, `tool.failed`, and `tool.blocked` run events and task messages.

@@ -99,6 +99,43 @@ class SelfHostedJobClaim(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
+class SelfHostedMcpJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "self_hosted_mcp_jobs"
+    __table_args__ = (
+        Index("ix_self_hosted_mcp_jobs_workspace_status", "workspace_id", "status"),
+        Index("ix_self_hosted_mcp_jobs_workspace_worker", "workspace_id", "worker_id"),
+        Index("ix_self_hosted_mcp_jobs_agent_run", "agent_run_id"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    workspace_runtime_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspace_runtimes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    worker_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("self_hosted_workers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    agent_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    mcp_server_id: Mapped[UUID] = mapped_column(
+        ForeignKey("mcp_servers.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    tool_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    request_payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    response_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    error_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    claimed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+
 class LocalFileReference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "local_file_references"
     __table_args__ = (
