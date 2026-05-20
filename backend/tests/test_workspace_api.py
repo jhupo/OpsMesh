@@ -1100,6 +1100,82 @@ def test_task_correction_rejects_foreign_artifact_target() -> None:
     assert "does not belong" in response.json()["error"]["message"]
 
 
+def test_final_output_correction_creates_reconciliation_work() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Final polish",
+        status="completed",
+        final_output={"summary": "draft"},
+    )
+    session.add(task)
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/corrections",
+        headers=_headers(owner.id),
+        json={
+            "target_type": "final_output",
+            "mode": "regenerate",
+            "instruction": "Regenerate the final answer with a clearer structure.",
+        },
+    )
+
+    assert response.status_code == 201
+    step = session.get(TaskStep, UUID(response.json()["created_step_id"]))
+    assert step is not None
+    assert step.expected_artifacts == ["final_delivery"]
+    assert step.dependencies["correction"]["target"]["target_type"] == "final_output"
+
+
+def test_artifact_correction_creates_replacement_work_without_mutating_artifact() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Replace owned artifact",
+        status="running",
+    )
+    session.add(task)
+    session.flush()
+    artifact = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        artifact_type="document",
+        filename="draft.pdf",
+        content_type="application/pdf",
+        size_bytes=10,
+        checksum_sha256="b" * 64,
+        storage_key="owned",
+        artifact_metadata={"version": 1},
+        created_at=datetime.now(UTC),
+    )
+    session.add(artifact)
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/corrections",
+        headers=_headers(owner.id),
+        json={
+            "target_type": "artifact",
+            "target_id": str(artifact.id),
+            "mode": "replace_artifact",
+            "instruction": "Replace the PDF with the approved version.",
+        },
+    )
+
+    assert response.status_code == 201
+    session.refresh(artifact)
+    step = session.get(TaskStep, UUID(response.json()["created_step_id"]))
+    assert artifact.artifact_metadata == {"version": 1}
+    assert step is not None
+    assert step.expected_artifacts == ["replacement_artifact"]
+    assert step.dependencies["correction"]["target"]["artifact_id"] == str(artifact.id)
+
+
 def test_create_workspace_assigns_owner_membership() -> None:
     client, session = _client()
     user = User(email="new-owner@example.com", display_name="New Owner")

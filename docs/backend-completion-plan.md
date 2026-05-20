@@ -300,8 +300,8 @@ API/data changes:
 Tests:
 
 - [x] correcting one step creates a new revision step only for that scope
-- correcting final output creates PM reconciliation work
-- correcting an artifact creates replacement work and preserves old artifact
+- [x] correcting final output creates PM reconciliation work
+- [x] correcting an artifact creates replacement work and preserves old artifact
 - [x] invalid/cross-workspace target is rejected
 - [x] correction event appears in task messages
 
