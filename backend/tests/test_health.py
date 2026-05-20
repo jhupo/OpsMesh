@@ -47,6 +47,28 @@ def test_health_endpoint_generates_request_id_when_missing() -> None:
     assert response.json()["request_id"] == response.headers["X-Request-ID"]
 
 
+def test_liveness_and_startup_endpoints_return_split_health_status() -> None:
+    app = create_app(
+        Settings(
+            environment="test",
+            log_format="text",
+            storage_root=".chaincloud-test-storage",
+        )
+    )
+    client = TestClient(app)
+
+    live = client.get("/api/v1/health/live")
+    startup = client.get("/api/v1/health/startup")
+
+    assert live.status_code == 200
+    assert live.json()["status"] == "ok"
+    assert startup.status_code == 200
+    assert startup.json()["dependencies"] == {
+        "configuration": "ok",
+        "storage": "ok",
+    }
+
+
 def test_app_lifespan_closes_owned_redis_client() -> None:
     app = create_app(Settings(environment="test", log_format="text"))
 
@@ -80,13 +102,24 @@ def test_cors_middleware_uses_configured_origins() -> None:
 
 
 def test_readiness_endpoint_checks_dependencies() -> None:
-    app, session = _health_client_app()
+    app, session = _health_client_app(
+        Settings(
+            environment="test",
+            log_format="text",
+            storage_root=".chaincloud-test-storage",
+        )
+    )
     client = TestClient(app)
 
     response = client.get("/api/v1/health/ready")
 
     assert response.status_code == 200
-    assert response.json()["dependencies"] == {"database": "ok", "redis": "ok"}
+    assert response.json()["dependencies"] == {
+        "database": "ok",
+        "redis": "ok",
+        "storage": "ok",
+        "worker_queue": "ok",
+    }
     session.close()
 
 
@@ -99,6 +132,23 @@ def test_readiness_endpoint_returns_503_when_dependency_fails() -> None:
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "service_unavailable"
     assert response.json()["error"]["request_id"] == response.headers["X-Request-ID"]
+    session.close()
+
+
+def test_readiness_endpoint_returns_503_when_storage_is_unavailable() -> None:
+    app, session = _health_client_app(
+        Settings(
+            environment="test",
+            log_format="text",
+            storage_root="backend/tests/test_config.py",
+        )
+    )
+    client = TestClient(app)
+
+    response = client.get("/api/v1/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "service_unavailable"
     session.close()
 
 
