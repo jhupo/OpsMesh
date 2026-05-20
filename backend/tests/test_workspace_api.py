@@ -17,6 +17,7 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
@@ -441,6 +442,102 @@ def test_create_task_matches_requested_work_packages_to_team_members() -> None:
     by_id = {package["package_id"]: package for package in work_packages}
     assert by_id["ui-design"]["assigned_agent_profile_id"] == designer.json()["id"]
     assert by_id["frontend-build"]["assigned_agent_profile_id"] == developer.json()["id"]
+
+
+def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+    client, session = _client(queue=queue)
+    owner, workspace = _seed_workspace(session, role="owner")
+    manager = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "PM", "role": "project_manager"},
+    )
+    developer = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Developer", "role": "frontend_engineer"},
+    )
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={
+            "name": "Product Team",
+            "team_type": "software",
+            "manager_agent_profile_id": manager.json()["id"],
+        },
+    )
+    client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": developer.json()["id"],
+            "team_role": "frontend_engineer",
+            "skill_weights": {"react": 0.9},
+        },
+    )
+    created_task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={
+            "title": "Build dashboard",
+            "agent_team_id": team.json()["id"],
+            "input": {
+                "work_packages": [
+                    {
+                        "package_id": "build-ui",
+                        "title": "Build UI",
+                        "required_role": "frontend_engineer",
+                    },
+                    {
+                        "package_id": "build-ui",
+                        "title": "Build UI duplicate",
+                        "required_role": "frontend_engineer",
+                    },
+                ]
+            },
+        },
+    )
+
+    retry = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{created_task.json()['id']}/plan/retry",
+        headers=_headers(owner.id),
+        json={
+            "enqueue": True,
+            "input": {
+                "work_packages": [
+                    {
+                        "package_id": "build-ui",
+                        "title": "Build UI",
+                        "required_role": "frontend_engineer",
+                        "required_skills": ["react"],
+                    }
+                ]
+            },
+        },
+    )
+
+    attempts = session.scalars(
+        select(TaskPlanningAttempt).order_by(TaskPlanningAttempt.attempt_number)
+    ).all()
+    queued_run = session.scalar(
+        select(AgentRun).where(AgentRun.task_id == UUID(retry.json()["id"]))
+    )
+
+    assert created_task.status_code == 201
+    assert created_task.json()["status"] == "blocked"
+    assert created_task.json()["project_plan"] is None
+    assert retry.status_code == 200
+    assert retry.json()["status"] == "queued"
+    assert retry.json()["project_plan"]["work_packages"][1]["package_id"] == "build-ui"
+    assert [attempt.status for attempt in attempts] == ["failed", "completed"]
+    assert [attempt.retry_count for attempt in attempts] == [0, 1]
+    assert queued_run is not None
+    assert queue.count_queued(workspace_id=workspace.id) == 1
 
 
 def test_create_task_rejects_foreign_team_reference() -> None:

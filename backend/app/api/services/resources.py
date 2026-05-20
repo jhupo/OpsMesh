@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.agents import AgentProfileCreateRequest
-from backend.app.api.schemas.tasks import TaskCreateRequest
+from backend.app.api.schemas.tasks import TaskCreateRequest, TaskPlanRetryRequest
 from backend.app.api.schemas.teams import AgentTeamCreateRequest, AgentTeamMemberCreateRequest
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
@@ -20,6 +20,7 @@ from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.tasks.models import Task, TaskMessage
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.snapshots import build_team_snapshot
+from backend.app.workers.queue import RedisQueue
 
 T = TypeVar("T")
 
@@ -251,6 +252,67 @@ class WorkspaceResourceService:
             target_type="task",
             target_id=task.id,
             metadata={"title": task.title, "domain_type": task.domain_type},
+        )
+        self._session.commit()
+        self._session.refresh(task)
+        return task
+
+    def retry_task_plan(
+        self,
+        workspace_id: UUID,
+        task_id: UUID,
+        actor_user_id: UUID,
+        data: TaskPlanRetryRequest,
+        *,
+        enqueue_run: bool = False,
+        queue: RedisQueue | None = None,
+    ) -> Task | None:
+        task = self.get_task(workspace_id, task_id)
+        if task is None:
+            return None
+        if task.agent_team_id is None:
+            raise ValueError("Task is not team-backed")
+        if data.input is not None:
+            task.input = data.input
+        if data.refresh_team_snapshot:
+            task.team_snapshot = build_team_snapshot(
+                self._session,
+                workspace_id=workspace_id,
+                team_id=task.agent_team_id,
+            )
+        if task.team_snapshot is None:
+            task.team_snapshot = build_team_snapshot(
+                self._session,
+                workspace_id=workspace_id,
+                team_id=task.agent_team_id,
+            )
+        task.project_plan = None
+        if task.status in {"blocked", "failed"}:
+            task.status = "draft"
+        TaskPlanningAttemptService(self._session).ensure_initial_plan(task)
+        run = None
+        if task.project_plan is not None:
+            run = RunOrchestrationService(
+                self._session,
+                settings=self._settings,
+            ).create_queued_run_for_task(task)
+            if enqueue_run and run is not None:
+                RunOrchestrationService(
+                    self._session,
+                    queue=queue,
+                ).enqueue_run(run, actor_user_id)
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=actor_user_id,
+            action="task.plan_retried",
+            target_type="task",
+            target_id=task.id,
+            metadata={
+                "refresh_team_snapshot": data.refresh_team_snapshot,
+                "input_replaced": data.input is not None,
+                "planned": task.project_plan is not None,
+                "run_id": str(run.id) if run is not None else None,
+            },
         )
         self._session.commit()
         self._session.refresh(task)

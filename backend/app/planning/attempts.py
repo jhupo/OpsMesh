@@ -31,7 +31,7 @@ class TaskPlanningAttemptService:
         if task.project_plan is not None:
             return task.project_plan
         TaskStateService().transition(task, TaskStatus.PLANNING)
-        attempt = self._create_attempt(task, retry_count=0)
+        attempt = self._create_attempt(task, retry_count=self._next_retry_count(task))
         try:
             plan = self._planner.create_initial_plan(task)
             if plan is not None:
@@ -139,6 +139,15 @@ class TaskPlanningAttemptService:
             )
         )
         return int(current or 0) + 1
+
+    def _next_retry_count(self, task: Task) -> int:
+        current = self._session.scalar(
+            select(func.coalesce(func.max(TaskPlanningAttempt.retry_count), -1)).where(
+                TaskPlanningAttempt.workspace_id == task.workspace_id,
+                TaskPlanningAttempt.task_id == task.id,
+            )
+        )
+        return int(current if current is not None else -1) + 1
 
     def _append_message(
         self,

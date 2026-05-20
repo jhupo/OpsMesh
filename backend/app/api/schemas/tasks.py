@@ -18,6 +18,12 @@ class TaskCreateRequest(BaseModel):
     domain_state: dict[str, object] = Field(default_factory=dict)
 
 
+class TaskPlanRetryRequest(BaseModel):
+    input: dict[str, object] | None = None
+    refresh_team_snapshot: bool = False
+    enqueue: bool = True
+
+
 class TaskCorrectionRequest(BaseModel):
     target_type: str = Field(pattern="^(task|step|agent|artifact|final_output)$")
     mode: str = Field(pattern="^(revise|regenerate|add_missing_work|replace_artifact|stop_work)$")
