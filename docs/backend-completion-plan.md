@@ -33,7 +33,7 @@ Incomplete or basic-only areas:
 - Model provider selection exists, but provider fallback and per-agent audit trails need completion.
 - Operations APIs exist, but capacity, queue latency, and saturation dashboards need richer aggregate endpoints.
 - The memory search tool is still a placeholder and needs a real workspace memory/index implementation.
-- Core lifecycle, Redis pooling, and machine-aware defaults are implemented; transaction retry helpers, richer structured context, metrics, distributed locks, and feature flags still need completion.
+- Core lifecycle, Redis pooling, machine-aware defaults, and database transaction retry helpers are implemented; richer structured context, metrics, distributed locks, and feature flags still need completion.
 
 ## P0: Cloud Control Plane And Runtime Spaces
 
