@@ -532,7 +532,7 @@ Tasks:
   - [x] Track provider health and last failure reason.
 - [ ] Add operations dashboards APIs for worker capacity, queue latency, and runtime saturation.
   - [x] Add `/operations/capacity` aggregate for queue age, worker slots, and runtime space quotas.
-  - [ ] Add scheduler-specific backlog and fairness aggregate.
+  - [x] Add scheduler-specific backlog and fairness aggregate.
   - [ ] Add failure-rate and approval-backlog aggregate.
 - [ ] Add security review tests around account-scoped skill/tool invocation.
 

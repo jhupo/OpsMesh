@@ -25,6 +25,7 @@ from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
+from backend.app.tasks.models import Task, TaskStep
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
@@ -424,6 +425,111 @@ def test_operations_capacity_reports_queue_workers_and_runtime_space_saturation(
     assert other_response.status_code == 200
     assert other_response.json()["queue"]["queued"] == 1
     assert other_response.json()["runtime_spaces"] == []
+
+
+def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    workspace.settings = {
+        "scheduler": {
+            "max_active_runs": 2,
+            "max_running_tasks": 1,
+            "max_runs_to_start_per_tick": 1,
+            "max_steps_per_task_per_tick": 1,
+            "starvation_boost_after_seconds": 60,
+            "resource_limits": {"cpu": 4},
+        }
+    }
+    queued_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="High priority",
+        status="queued",
+        priority=10,
+    )
+    running_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Running",
+        status="running",
+        priority=5,
+    )
+    waiting_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Waiting",
+        status="waiting_approval",
+        priority=3,
+    )
+    session.add_all([queued_task, running_task, waiting_task])
+    session.flush()
+    queued_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=queued_task.id,
+        title="Queued step",
+        status="queued",
+        order_index=0,
+    )
+    blocked_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=queued_task.id,
+        title="Blocked step",
+        status="queued",
+        order_index=1,
+        dependencies={
+            "scheduling_status": "blocked",
+            "blocked_reason": "workspace_run_quota_exceeded",
+        },
+    )
+    running_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=running_task.id,
+        title="Running step",
+        status="running",
+        order_index=0,
+    )
+    session.add_all([queued_step, blocked_step, running_step])
+    session.add(
+        AgentRun(
+            workspace_id=workspace.id,
+            task_id=running_task.id,
+            status="running",
+            input={},
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/scheduler",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["backlog"]["queued_steps"] == 2
+    assert payload["backlog"]["running_steps"] == 1
+    assert payload["backlog"]["waiting_approval_tasks"] == 1
+    assert payload["backlog"]["blocked_steps"] == 1
+    assert payload["backlog"]["active_runs"] == 1
+    assert payload["backlog"]["highest_priority"] == 10
+    assert payload["priority_buckets"][0] == {
+        "priority": 10,
+        "queued_steps": 2,
+        "running_steps": 0,
+        "blocked_steps": 1,
+    }
+    assert payload["blocked_reasons"] == [
+        {"reason": "workspace_run_quota_exceeded", "count": 1}
+    ]
+    assert payload["policy"] == {
+        "max_active_runs": 2,
+        "max_running_tasks": 1,
+        "max_runs_to_start_per_tick": 1,
+        "max_steps_per_task_per_tick": 1,
+        "starvation_boost_after_seconds": 60,
+        "resource_limits": {"cpu": 4.0},
+    }
 
 
 def test_operations_lists_worker_leases_by_workspace() -> None:

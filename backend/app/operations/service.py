@@ -13,10 +13,15 @@ from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.operations import (
     DeadLetterJobsResponse,
     OperationsCapacityResponse,
+    OperationsSchedulerResponse,
     QueueLatencyResponse,
     QueueMetricsResponse,
     RuntimeSpaceQuotaUsageResponse,
     RuntimeSpaceSaturationResponse,
+    SchedulerBacklogResponse,
+    SchedulerBlockedReasonResponse,
+    SchedulerPolicyResponse,
+    SchedulerPriorityBucketResponse,
     WorkerCapacityAggregateResponse,
 )
 from backend.app.audit.models import AuditEvent
@@ -26,8 +31,10 @@ from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
+from backend.app.tasks.models import Task, TaskStep
 from backend.app.workers.jobs import JobPayload
 from backend.app.workers.queue import RedisQueue
+from backend.app.workspaces.models import Workspace
 
 T = TypeVar("T")
 RUNNING_LEASE_STATUSES = {"running"}
@@ -500,6 +507,90 @@ class OperationsService:
             runtime_spaces=self._runtime_space_saturation(workspace_id),
         )
 
+    def scheduler_payload(self, workspace_id: UUID) -> OperationsSchedulerResponse:
+        task_steps = self._session.execute(
+            select(TaskStep, Task)
+            .join(Task, Task.id == TaskStep.task_id)
+            .where(
+                TaskStep.workspace_id == workspace_id,
+                Task.workspace_id == workspace_id,
+                Task.status.in_(["queued", "running", "waiting_approval", "blocked"]),
+            )
+        ).all()
+        active_runs = int(
+            self._session.scalar(
+                select(func.count()).select_from(AgentRun).where(
+                    AgentRun.workspace_id == workspace_id,
+                    AgentRun.status.in_(["queued", "running", "waiting_approval"]),
+                )
+            )
+            or 0
+        )
+        waiting_approval_tasks = int(
+            self._session.scalar(
+                select(func.count()).select_from(Task).where(
+                    Task.workspace_id == workspace_id,
+                    Task.status == "waiting_approval",
+                )
+            )
+            or 0
+        )
+        priority_buckets: dict[int, dict[str, int]] = {}
+        blocked_reasons: dict[str, int] = {}
+        queued_ages: list[int] = []
+        now = datetime.now(UTC)
+        queued_steps = 0
+        running_steps = 0
+        blocked_steps = 0
+        highest_priority: int | None = None
+        for step, task in task_steps:
+            priority = int(task.priority or 0)
+            highest_priority = (
+                priority if highest_priority is None else max(highest_priority, priority)
+            )
+            bucket = priority_buckets.setdefault(
+                priority,
+                {"queued_steps": 0, "running_steps": 0, "blocked_steps": 0},
+            )
+            if step.status == "queued":
+                queued_steps += 1
+                bucket["queued_steps"] += 1
+                queued_ages.append(
+                    max(0, int((now - _aware_datetime(step.created_at)).total_seconds()))
+                )
+            elif step.status == "running":
+                running_steps += 1
+                bucket["running_steps"] += 1
+            dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
+            if dependencies.get("scheduling_status") == "blocked":
+                blocked_steps += 1
+                bucket["blocked_steps"] += 1
+                reason = dependencies.get("blocked_reason")
+                blocked_reasons[str(reason or "unknown")] = (
+                    blocked_reasons.get(str(reason or "unknown"), 0) + 1
+                )
+        return OperationsSchedulerResponse(
+            generated_at=now,
+            backlog=SchedulerBacklogResponse(
+                queued_steps=queued_steps,
+                running_steps=running_steps,
+                waiting_approval_tasks=waiting_approval_tasks,
+                blocked_steps=blocked_steps,
+                active_runs=active_runs,
+                oldest_queued_age_seconds=max(queued_ages) if queued_ages else None,
+                highest_priority=highest_priority,
+            ),
+            priority_buckets=[
+                SchedulerPriorityBucketResponse(priority=priority, **counts)
+                for priority, counts in sorted(priority_buckets.items(), reverse=True)
+            ],
+            blocked_reasons=[
+                SchedulerBlockedReasonResponse(reason=reason, count=count)
+                for reason, count in sorted(blocked_reasons.items())
+            ],
+            policy=self._scheduler_policy(workspace_id),
+        )
+
     def _queue_latency(self, queue_name: str, workspace_id: UUID) -> QueueLatencyResponse:
         if self._redis is None:
             return QueueLatencyResponse(
@@ -609,6 +700,26 @@ class OperationsService:
             )
         return responses
 
+    def _scheduler_policy(self, workspace_id: UUID) -> SchedulerPolicyResponse:
+        workspace = self._session.get(Workspace, workspace_id)
+        settings = workspace.settings if workspace is not None else {}
+        raw_scheduler = settings.get("scheduler") if isinstance(settings, dict) else None
+        scheduler = raw_scheduler if isinstance(raw_scheduler, dict) else {}
+        return SchedulerPolicyResponse(
+            max_active_runs=_positive_int_or_none(scheduler.get("max_active_runs")),
+            max_running_tasks=_positive_int_or_none(scheduler.get("max_running_tasks")),
+            max_runs_to_start_per_tick=_positive_int_or_none(
+                scheduler.get("max_runs_to_start_per_tick")
+            ),
+            max_steps_per_task_per_tick=_positive_int_or_none(
+                scheduler.get("max_steps_per_task_per_tick")
+            ),
+            starvation_boost_after_seconds=_positive_int_or_none(
+                scheduler.get("starvation_boost_after_seconds")
+            ),
+            resource_limits=_positive_number_dict(scheduler.get("resource_limits")),
+        )
+
     def _mark_deleted_terminal_runtimes(self, workspace_id: UUID) -> int:
         terminal = self._session.scalars(
             select(WorkspaceRuntime).where(
@@ -679,6 +790,22 @@ def _positive_int(value: object, fallback: int) -> int:
     return max(1, fallback)
 
 
+def _positive_int_or_none(value: object) -> int | None:
+    if isinstance(value, int) and value > 0:
+        return value
+    return None
+
+
+def _positive_number_dict(value: object) -> dict[str, float]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(key): float(raw_value)
+        for key, raw_value in value.items()
+        if isinstance(raw_value, int | float) and not isinstance(raw_value, bool) and raw_value >= 0
+    }
+
+
 def _worker_capacity(capacity: dict[str, object] | None, worker_type: str) -> dict[str, object]:
     normalized = dict(capacity or {})
     normalized.setdefault("worker_type", worker_type)
@@ -697,3 +824,9 @@ def _runtime_space_quota_usage(quota: RuntimeSpaceQuota) -> RuntimeSpaceQuotaUsa
         utilization=utilization,
         saturated=quota.limit_value > 0 and quota.reserved_value >= quota.limit_value,
     )
+
+
+def _aware_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value

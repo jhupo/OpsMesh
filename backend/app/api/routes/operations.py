@@ -15,6 +15,7 @@ from backend.app.api.schemas.operations import (
     FailedJobInspectionResponse,
     OperationsCapacityResponse,
     OperationsOverviewResponse,
+    OperationsSchedulerResponse,
     QueueMetricsResponse,
     RequeueDeadLetterResponse,
     RunEventFilterResponse,
@@ -315,3 +316,11 @@ async def operations_capacity(
         redis,
         RedisKeyBuilder(settings.redis_key_prefix),
     ).capacity_payload(context.workspace.id, queue_name)
+
+
+@router.get("/scheduler", response_model=OperationsSchedulerResponse)
+async def operations_scheduler(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> OperationsSchedulerResponse:
+    return OperationsService(session).scheduler_payload(context.workspace.id)

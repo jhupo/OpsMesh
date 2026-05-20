@@ -165,6 +165,45 @@ class OperationsCapacityResponse(BaseModel):
     runtime_spaces: list[RuntimeSpaceSaturationResponse]
 
 
+class SchedulerBacklogResponse(BaseModel):
+    queued_steps: int
+    running_steps: int
+    waiting_approval_tasks: int
+    blocked_steps: int
+    active_runs: int
+    oldest_queued_age_seconds: int | None
+    highest_priority: int | None
+
+
+class SchedulerPriorityBucketResponse(BaseModel):
+    priority: int
+    queued_steps: int
+    running_steps: int
+    blocked_steps: int
+
+
+class SchedulerBlockedReasonResponse(BaseModel):
+    reason: str
+    count: int
+
+
+class SchedulerPolicyResponse(BaseModel):
+    max_active_runs: int | None
+    max_running_tasks: int | None
+    max_runs_to_start_per_tick: int | None
+    max_steps_per_task_per_tick: int | None
+    starvation_boost_after_seconds: int | None
+    resource_limits: dict[str, float]
+
+
+class OperationsSchedulerResponse(BaseModel):
+    generated_at: datetime
+    backlog: SchedulerBacklogResponse
+    priority_buckets: list[SchedulerPriorityBucketResponse]
+    blocked_reasons: list[SchedulerBlockedReasonResponse]
+    policy: SchedulerPolicyResponse
+
+
 class AuditEventFilterResponse(BaseModel):
     items: list[AuditEventResponse]
     total: int

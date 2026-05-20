@@ -495,6 +495,8 @@ Build:
 
 - Add aggregate endpoints for worker fleet health, queue latency percentiles, queued/running/completed counts by priority, runtime saturation, Docker/self-hosted capacity, failure rates, and approval backlog.
 - [x] Add capacity aggregate for queue age, worker slot utilization, and runtime space quota saturation.
+- [x] Add scheduler aggregate for backlog, priority buckets, blocked reasons, active runs, and
+  effective workspace scheduler policy.
 - Support time windows and workspace scope.
 - [x] Cache overview aggregate in Redis with short TTL and workspace-scoped cache keys.
 - Cache future expensive scheduler/runtime aggregates in Redis with short TTL.
