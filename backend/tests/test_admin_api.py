@@ -483,6 +483,8 @@ def test_admin_system_configuration_exposes_redacted_resource_summary() -> None:
     assert "admin-token" not in str(body)
     assert body["recommended_resources"]["cpu_count"] >= 1
     assert body["configured_resources"]["database_pool_size"] >= 1
+    assert body["blocking_executor"]["initialized"] is False
+    assert body["blocking_executor"]["configured_workers"] >= 1
     assert set(body["resource_deltas"]) == {
         "database_pool_size",
         "database_max_overflow",

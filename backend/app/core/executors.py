@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from functools import partial
 from typing import TypeVar
 
@@ -12,6 +13,22 @@ T = TypeVar("T")
 
 _blocking_executor: ThreadPoolExecutor | None = None
 _blocking_executor_workers: int | None = None
+
+
+@dataclass(frozen=True)
+class BlockingExecutorSnapshot:
+    configured_workers: int
+    active_threads: int
+    queued_work_items: int
+    initialized: bool
+
+    def as_dict(self) -> dict[str, int | bool]:
+        return {
+            "configured_workers": self.configured_workers,
+            "active_threads": self.active_threads,
+            "queued_work_items": self.queued_work_items,
+            "initialized": self.initialized,
+        }
 
 
 def get_blocking_executor(settings: Settings | None = None) -> ThreadPoolExecutor:
@@ -27,6 +44,25 @@ def get_blocking_executor(settings: Settings | None = None) -> ThreadPoolExecuto
         )
         _blocking_executor_workers = workers
     return _blocking_executor
+
+
+def blocking_executor_snapshot(settings: Settings | None = None) -> BlockingExecutorSnapshot:
+    resolved_settings = settings or get_settings()
+    if _blocking_executor is None:
+        return BlockingExecutorSnapshot(
+            configured_workers=resolved_settings.blocking_thread_pool_workers,
+            active_threads=0,
+            queued_work_items=0,
+            initialized=False,
+        )
+
+    return BlockingExecutorSnapshot(
+        configured_workers=_blocking_executor_workers
+        or resolved_settings.blocking_thread_pool_workers,
+        active_threads=len(_blocking_executor._threads),  # noqa: SLF001
+        queued_work_items=_blocking_executor._work_queue.qsize(),  # noqa: SLF001
+        initialized=True,
+    )
 
 
 async def run_blocking(

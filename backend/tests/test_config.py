@@ -4,6 +4,7 @@ import pytest
 
 from backend.app.core.config import Settings
 from backend.app.core.executors import (
+    blocking_executor_snapshot,
     get_blocking_executor,
     run_blocking,
     shutdown_blocking_executor,
@@ -184,13 +185,21 @@ def test_redis_client_uses_configured_connection_pool() -> None:
 def test_blocking_executor_reuses_configured_thread_pool() -> None:
     settings = Settings(blocking_thread_pool_workers=2)
     try:
+        initial_snapshot = blocking_executor_snapshot(settings)
         first = get_blocking_executor(settings)
         second = get_blocking_executor(settings)
         result = asyncio.run(run_blocking(lambda value: value + 1, 41, settings=settings))
+        running_snapshot = blocking_executor_snapshot(settings)
 
+        assert initial_snapshot.initialized is False
+        assert initial_snapshot.configured_workers == 2
         assert first is second
         assert first._max_workers == 2  # noqa: SLF001
         assert result == 42
+        assert running_snapshot.initialized is True
+        assert running_snapshot.configured_workers == 2
+        assert running_snapshot.active_threads >= 1
+        assert running_snapshot.queued_work_items >= 0
     finally:
         shutdown_blocking_executor(wait=True)
 
