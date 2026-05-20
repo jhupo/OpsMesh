@@ -20,7 +20,7 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.self_hosted.models import RuntimeCredential, SelfHostedWorker
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
@@ -354,6 +354,126 @@ def test_self_hosted_worker_cleanup_marks_stale_workers_offline() -> None:
     assert self_hosted_worker.status == "offline"
     assert runtime.connection_status == "offline"
     assert event.event_metadata["runtime_id"] == str(runtime_id)
+
+
+def test_self_hosted_worker_enforces_max_concurrent_jobs() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-capacity",
+            "capabilities": {"max_concurrent_jobs": 1},
+        },
+    )
+    credential = registered.json()["credential_token"]
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    first_run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    second_run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    session.add_all([first_run, second_run])
+    session.commit()
+
+    first_claim = client.post(
+        f"/api/v1/self-hosted/jobs/{first_run.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+    second_claim = client.post(
+        f"/api/v1/self-hosted/jobs/{second_run.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+    next_job = client.get("/api/v1/self-hosted/jobs/next", headers=_runtime_headers(credential))
+
+    assert first_claim.status_code == 200
+    assert second_claim.status_code == 409
+    assert "max concurrent jobs" in second_claim.json()["error"]["message"]
+    assert next_job.status_code == 200
+    assert next_job.json() is None
+
+
+def test_self_hosted_artifact_upload_enforces_max_artifact_bytes() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-artifact",
+            "capabilities": {"max_artifact_bytes": 1024},
+        },
+    )
+    credential = registered.json()["credential_token"]
+
+    rejected = client.post(
+        "/api/v1/self-hosted/artifact-uploads",
+        headers=_runtime_headers(credential),
+        json={
+            "filename": "large.bin",
+            "metadata": {"size_bytes": 2048},
+        },
+    )
+
+    assert rejected.status_code == 404
+    assert "Artifact upload exceeds" in rejected.json()["error"]["message"]
+
+
+def test_self_hosted_revoke_records_runtime_evidence_and_blocks_jobs() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    runtime_space = RuntimeSpace(workspace_id=workspace.id, name="Local", scope="workspace")
+    session.add(runtime_space)
+    session.commit()
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-revoke",
+            "capabilities": {"runtime_space_id": str(runtime_space.id)},
+        },
+    )
+    credential_token = registered.json()["credential_token"]
+    credential = session.query(RuntimeCredential).one()
+
+    revoked = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/credentials/{credential.id}/revoke",
+        headers=_headers(owner.id),
+    )
+    denied = client.get("/api/v1/self-hosted/jobs/next", headers=_runtime_headers(credential_token))
+
+    runtime = session.get(WorkspaceRuntime, UUID(registered.json()["workspace_runtime_id"]))
+    worker = session.query(SelfHostedWorker).one()
+    runtime_event = session.query(RuntimeEvent).filter_by(
+        event_type="self_hosted.credential_revoked"
+    ).one()
+    space_event = session.query(RuntimeSpaceEvent).filter_by(
+        event_type="self_hosted.credential_revoked"
+    ).one()
+    assert revoked.status_code == 204
+    assert denied.status_code == 401
+    assert runtime is not None
+    assert runtime.status == "revoked"
+    assert runtime.connection_status == "offline"
+    assert worker.status == "revoked"
+    assert runtime_event.event_metadata["credential_id"] == str(credential.id)
+    assert space_event.event_metadata["worker_id"] == str(worker.id)
 
 
 def _client(settings: Settings | None = None) -> tuple[TestClient, Session]:

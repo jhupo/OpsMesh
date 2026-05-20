@@ -169,6 +169,7 @@ class SelfHostedRuntimeService:
 
     def poll_job(self, auth: AuthenticatedWorker) -> AgentRun | None:
         self._require_self_hosted_enabled()
+        self._require_worker_accepting_jobs(auth)
         statement = (
             select(AgentRun)
             .where(
@@ -179,12 +180,13 @@ class SelfHostedRuntimeService:
             .order_by(AgentRun.created_at.asc())
         )
         for run in self._session.scalars(statement).all():
-            if self._runtime_space_allowed(auth, run):
+            if self._runtime_space_allowed(auth, run) and self._worker_capacity_allows(auth):
                 return run
         return None
 
     def claim_job(self, auth: AuthenticatedWorker, agent_run_id: UUID) -> SelfHostedJobClaim:
         self._require_self_hosted_enabled()
+        self._require_worker_accepting_jobs(auth)
         run = self._session.get(AgentRun, agent_run_id)
         if (
             run is None
@@ -194,6 +196,8 @@ class SelfHostedRuntimeService:
             raise ValueError("Agent run not available for this worker")
         if not self._runtime_space_allowed(auth, run):
             raise ValueError("Agent run runtime space is not allowed for this worker")
+        if not self._worker_capacity_allows(auth):
+            raise ValueError("Self-hosted worker has reached max concurrent jobs")
         if run.status != RunStatus.QUEUED.value:
             raise ValueError("Agent run is not queued")
         now = datetime.now(UTC)
@@ -257,6 +261,14 @@ class SelfHostedRuntimeService:
     ) -> SelfHostedArtifactUpload:
         if data.agent_run_id is not None:
             self._require_worker_run(auth, data.agent_run_id)
+        max_artifact_bytes = _positive_int(auth.worker.capabilities.get("max_artifact_bytes"))
+        artifact_size = _positive_int(data.metadata.get("size_bytes"))
+        if (
+            max_artifact_bytes is not None
+            and artifact_size is not None
+            and artifact_size > max_artifact_bytes
+        ):
+            raise ValueError("Artifact upload exceeds self-hosted worker policy")
         filename = safe_filename(data.filename, default="artifact.bin")
         storage_key = (
             validate_storage_key(
@@ -290,6 +302,33 @@ class SelfHostedRuntimeService:
             return None
         credential.status = "revoked"
         credential.revoked_at = datetime.now(UTC)
+        runtime = self._session.get(WorkspaceRuntime, credential.workspace_runtime_id)
+        worker = self._session.scalar(
+            select(SelfHostedWorker).where(
+                SelfHostedWorker.workspace_runtime_id == credential.workspace_runtime_id
+            )
+        )
+        if worker is not None:
+            worker.status = "revoked"
+        if runtime is not None:
+            runtime.status = "revoked"
+            runtime.connection_status = "offline"
+            event_metadata = {
+                "credential_id": str(credential.id),
+                "worker_id": str(worker.id) if worker else None,
+            }
+            self._append_runtime_event(
+                runtime,
+                "self_hosted.credential_revoked",
+                str(credential.id),
+                event_metadata,
+            )
+            self._append_runtime_space_event(
+                runtime,
+                "self_hosted.credential_revoked",
+                str(credential.id),
+                event_metadata,
+            )
         self._session.commit()
         self._session.refresh(credential)
         return credential
@@ -381,12 +420,14 @@ class SelfHostedRuntimeService:
         runtime: WorkspaceRuntime,
         event_type: str,
         message: str,
+        metadata: dict[str, object] | None = None,
     ) -> RuntimeEvent:
         event = RuntimeEvent(
             workspace_id=runtime.workspace_id,
             workspace_runtime_id=runtime.id,
             event_type=event_type,
             message=message,
+            event_metadata=metadata or {},
             created_at=datetime.now(UTC),
         )
         self._session.add(event)
@@ -440,6 +481,25 @@ class SelfHostedRuntimeService:
         allowed_ids = _string_list(auth.worker.capabilities.get("allowed_runtime_space_ids"))
         return runtime_space_id in allowed_ids
 
+    def _require_worker_accepting_jobs(self, auth: AuthenticatedWorker) -> None:
+        if auth.worker.status in {"revoked", "quarantined", "offline"}:
+            raise ValueError(f"Self-hosted worker is {auth.worker.status}")
+        if auth.runtime.status in {"revoked", "quarantined", "disabled"}:
+            raise ValueError(f"Self-hosted runtime is {auth.runtime.status}")
+
+    def _worker_capacity_allows(self, auth: AuthenticatedWorker) -> bool:
+        max_concurrent_jobs = _positive_int(auth.worker.capabilities.get("max_concurrent_jobs"))
+        if max_concurrent_jobs is None:
+            return True
+        running_claims = self._session.scalar(
+            select(func.count(SelfHostedJobClaim.id)).where(
+                SelfHostedJobClaim.workspace_id == auth.worker.workspace_id,
+                SelfHostedJobClaim.worker_id == auth.worker.id,
+                SelfHostedJobClaim.status == "claimed",
+            )
+        )
+        return int(running_claims or 0) < max_concurrent_jobs
+
     def _hash(self, token: str) -> str:
         material = f"{self._settings.token_hash_pepper}:{token}"
         return sha256(material.encode("utf-8")).hexdigest()
@@ -449,6 +509,12 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _positive_int(value: object) -> int | None:
+    if isinstance(value, int) and value > 0:
+        return value
+    return None
 
 
 def _uuid_from_capabilities(capabilities: dict[str, object], key: str) -> UUID | None:

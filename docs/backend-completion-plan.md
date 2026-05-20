@@ -42,7 +42,7 @@ Incomplete or basic-only areas:
 - Task observation now has a stable backend API with generic and domain-specific sections for AIGC, novel writing, research, and software tasks. The first implementation composes existing task, step, message, run event, and artifact data; richer domain persistence can be added behind the same response shape.
 - Correction/revision is supported through a generic user-facing endpoint that targets tasks, steps, agents, artifacts, or final output and records follow-up work plus task messages.
 - Scheduling supports per-member concurrency, workspace active run quotas, per-tick resource-limit prechecks, durable workspace usage reservations, blocked reasons, cross-task priority ordering, and starvation prevention. Docker/self-hosted execution slot usage still needs deeper completion.
-- Docker runtime cleanup now records success/failure evidence; self-hosted runtime policies still need stronger quota enforcement and revocation evidence.
+- Docker runtime cleanup now records success/failure evidence. Self-hosted runtimes enforce worker concurrency/artifact limits and revocation evidence; broader machine trust workflows still need completion.
 - Import preview does not yet produce a full conflict plan before users commit a workspace archive import.
 - Model provider selection exists, but provider fallback and per-agent audit trails need completion.
 - Operations APIs exist and overview now uses short Redis caching, but capacity, queue latency, and saturation dashboards need richer aggregate endpoints.
@@ -385,14 +385,23 @@ Acceptance:
 Current state:
 
 - Users can enroll a self-hosted runtime, heartbeat, poll jobs, update progress, upload artifacts, and revoke credentials.
-- Policies and revocation audit trails need more depth.
+- Workers enforce `max_concurrent_jobs`, artifact upload byte limits, runtime-space allowlists, and revocation blocks future API use while recording runtime/runtime-space evidence.
+- Broader trust-state automation still needs more depth.
 
 Build:
 
 - Add per-machine capability policies: allowed tools, max concurrent jobs, max artifact bytes, network expectations, and supported models/runtimes.
+  - [x] Enforce max concurrent jobs.
+  - [x] Enforce max artifact bytes.
+  - [x] Enforce runtime-space allowlists.
+  - [ ] Enforce allowed tools, network expectations, and supported models/runtimes.
 - Add machine trust state: active, degraded, quarantined, revoked.
+  - [x] Mark worker/runtime revoked when credentials are revoked.
+  - [ ] Add degraded/quarantined trust automation.
 - Enforce job assignment only to compatible trusted machines.
+  - [x] Block offline/revoked/quarantined workers from polling or claiming jobs.
 - Record revocation reason, actor, affected jobs, credential rotation evidence, and final heartbeat state.
+  - [x] Record credential revocation evidence in runtime and runtime-space events.
 - Add stale heartbeat quarantine and user-visible warnings.
 
 API/data changes:
