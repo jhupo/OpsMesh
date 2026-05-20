@@ -60,6 +60,7 @@ class AdminSystemConfigurationResponse(BaseModel):
     resource_deltas: dict[str, int]
     blocking_executor: dict[str, int | bool]
     database_pool: dict[str, int | str | None]
+    redis_pool: dict[str, int | None]
 
 
 class AdminDeadLetterJobsResponse(BaseModel):

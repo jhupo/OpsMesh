@@ -33,6 +33,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.executors import blocking_executor_snapshot
 from backend.app.core.resources import recommend_runtime_resources
 from backend.app.db.session import database_pool_snapshot, get_db_session
+from backend.app.redis.client import redis_pool_snapshot
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 
@@ -227,6 +228,7 @@ async def admin_operations_summary(
 @router.get("/system/configuration", response_model=AdminSystemConfigurationResponse)
 async def admin_system_configuration(
     settings: Settings = Depends(get_settings),
+    redis: RedisClient = Depends(get_redis_client),
 ) -> AdminSystemConfigurationResponse:
     recommendation = recommend_runtime_resources()
     recommended_resources = recommendation.as_dict()
@@ -247,6 +249,7 @@ async def admin_system_configuration(
         resource_deltas=resource_deltas,
         blocking_executor=blocking_executor_snapshot(settings).as_dict(),
         database_pool=database_pool_snapshot().as_dict(),
+        redis_pool=redis_pool_snapshot(redis).as_dict(),
     )
 
 

@@ -487,6 +487,7 @@ def test_admin_system_configuration_exposes_redacted_resource_summary() -> None:
     assert body["blocking_executor"]["configured_workers"] >= 1
     assert body["database_pool"]["backend"] in {"postgresql", "sqlite"}
     assert body["database_pool"]["pool_class"]
+    assert body["redis_pool"]["max_connections"] is not None
     assert set(body["resource_deltas"]) == {
         "database_pool_size",
         "database_max_overflow",

@@ -11,7 +11,7 @@ from backend.app.core.executors import (
 )
 from backend.app.core.resources import recommend_runtime_resources
 from backend.app.db.session import create_database_engine, database_pool_snapshot
-from backend.app.redis.client import create_redis_client
+from backend.app.redis.client import create_redis_client, redis_pool_snapshot
 
 
 def test_settings_defaults_are_local_development_friendly() -> None:
@@ -186,6 +186,11 @@ def test_redis_client_uses_configured_connection_pool() -> None:
     assert connection_kwargs["socket_timeout"] == 1.5
     assert connection_kwargs["socket_connect_timeout"] == 2.5
     assert connection_kwargs["health_check_interval"] == 13
+    snapshot = redis_pool_snapshot(client)
+    assert snapshot.max_connections == 7
+    assert snapshot.created_connections == 0
+    assert snapshot.available_connections == 0
+    assert snapshot.in_use_connections == 0
     client.close()
     client.connection_pool.disconnect()
 
