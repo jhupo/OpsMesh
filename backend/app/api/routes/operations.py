@@ -14,6 +14,7 @@ from backend.app.api.schemas.operations import (
     DeadLetterJobsResponse,
     FailedJobInspectionResponse,
     OperationsCapacityResponse,
+    OperationsMcpJobsResponse,
     OperationsOutcomesResponse,
     OperationsOverviewResponse,
     OperationsRuntimeCapacityResponse,
@@ -326,6 +327,14 @@ async def operations_runtime_capacity(
     session: Session = Depends(get_db_session),
 ) -> OperationsRuntimeCapacityResponse:
     return OperationsService(session).runtime_capacity_payload(context.workspace.id)
+
+
+@router.get("/mcp-jobs", response_model=OperationsMcpJobsResponse)
+async def operations_mcp_jobs(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> OperationsMcpJobsResponse:
+    return OperationsService(session).mcp_jobs_payload(context.workspace.id)
 
 
 @router.get("/scheduler", response_model=OperationsSchedulerResponse)

@@ -107,6 +107,7 @@ Acceptance:
 
 - a user can operate a persistent team execution space while Docker containers remain controlled and disposable
 - platform operators can see and control workers, queues, runtime spaces, quotas, Docker leases, self-hosted trust state, and security events
+- platform operators can see self-hosted MCP tool job backlog by status, tool, and oldest queued age
 - concurrent multi-task execution is bounded by durable reservations instead of best-effort checks
 
 ## P0: MCP Runtime Execution Path
@@ -133,6 +134,7 @@ Build:
   - [x] Add waiting-runtime run state and self-hosted MCP result handoff back to queued runs.
   - [x] Inject completed self-hosted MCP results into resumed OpenAI run input.
   - [ ] Add first-class OpenAI tool-call continuation state instead of prompt-level result injection.
+  - [x] Add operations visibility for self-hosted MCP job backlog and tool distribution.
 - [x] Inject only the credentials that belong to the current workspace and selected tool.
 - [x] Enforce timeout, payload size, response size, allowlisted tool names, and network policy.
 - [x] Persist `tool.called`, `tool.completed`, `tool.failed`, and `tool.blocked` run events and task messages.

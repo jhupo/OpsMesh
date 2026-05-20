@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.approvals.models import Approval
 from backend.app.audit.models import AuditEvent
+from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -26,6 +27,7 @@ from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
+from backend.app.self_hosted.models import SelfHostedMcpJob
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -572,6 +574,112 @@ def test_operations_runtime_capacity_reports_provider_and_worker_slots() -> None
     assert other_response.status_code == 200
     assert other_response.json()["providers"][0]["total"] == 1
     assert other_response.json()["runtime_spaces"] == []
+
+
+def test_operations_mcp_jobs_reports_self_hosted_tool_queue() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    _, other_workspace = _seed_workspace_with_role(
+        session,
+        email="other-mcp-jobs@example.com",
+        slug="other-mcp-jobs",
+    )
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_provider="self_hosted",
+        runtime_type="self_hosted",
+        name="local",
+    )
+    other_runtime = WorkspaceRuntime(
+        workspace_id=other_workspace.id,
+        runtime_provider="self_hosted",
+        runtime_type="self_hosted",
+        name="other",
+    )
+    session.add_all([runtime, other_runtime])
+    session.flush()
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="tools",
+        server_type="stdio",
+        connection={},
+    )
+    other_server = McpServer(
+        workspace_id=other_workspace.id,
+        name="other-tools",
+        server_type="stdio",
+        connection={},
+    )
+    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime.id, status="waiting_runtime")
+    other_run = AgentRun(
+        workspace_id=other_workspace.id,
+        runtime_id=other_runtime.id,
+        status="waiting_runtime",
+    )
+    session.add_all([server, other_server, run, other_run])
+    session.flush()
+    old_job = SelfHostedMcpJob(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime.id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+        request_payload={},
+        status="queued",
+        created_at=datetime.now(UTC) - timedelta(seconds=90),
+    )
+    claimed_job = SelfHostedMcpJob(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime.id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+        request_payload={},
+        status="claimed",
+    )
+    failed_job = SelfHostedMcpJob(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime.id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="search_web",
+        request_payload={},
+        status="failed",
+    )
+    other_job = SelfHostedMcpJob(
+        workspace_id=other_workspace.id,
+        workspace_runtime_id=other_runtime.id,
+        agent_run_id=other_run.id,
+        mcp_server_id=other_server.id,
+        tool_name="generate_image",
+        request_payload={},
+        status="queued",
+    )
+    session.add_all([old_job, claimed_job, failed_job, other_job])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/mcp-jobs",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 3
+    assert payload["queued"] == 1
+    assert payload["claimed"] == 1
+    assert payload["failed"] == 1
+    assert payload["oldest_queued_age_seconds"] >= 80
+    assert {item["status"]: item["count"] for item in payload["statuses"]} == {
+        "claimed": 1,
+        "failed": 1,
+        "queued": 1,
+    }
+    tools = {item["tool_name"]: item for item in payload["tools"]}
+    assert tools["generate_image"]["total"] == 2
+    assert tools["generate_image"]["queued"] == 1
+    assert tools["search_web"]["failed"] == 1
 
 
 def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:

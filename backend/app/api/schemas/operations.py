@@ -263,6 +263,32 @@ class OperationsOutcomesResponse(BaseModel):
     approvals: ApprovalBacklogResponse
 
 
+class McpJobStatusBucketResponse(BaseModel):
+    status: str
+    count: int
+
+
+class McpJobToolBucketResponse(BaseModel):
+    tool_name: str
+    queued: int
+    claimed: int
+    completed: int
+    failed: int
+    total: int
+
+
+class OperationsMcpJobsResponse(BaseModel):
+    generated_at: datetime
+    total: int
+    queued: int
+    claimed: int
+    completed: int
+    failed: int
+    oldest_queued_age_seconds: int | None
+    statuses: list[McpJobStatusBucketResponse]
+    tools: list[McpJobToolBucketResponse]
+
+
 class AuditEventFilterResponse(BaseModel):
     items: list[AuditEventResponse]
     total: int

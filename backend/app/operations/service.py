@@ -13,7 +13,10 @@ from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.operations import (
     ApprovalBacklogResponse,
     DeadLetterJobsResponse,
+    McpJobStatusBucketResponse,
+    McpJobToolBucketResponse,
     OperationsCapacityResponse,
+    OperationsMcpJobsResponse,
     OperationsOutcomesResponse,
     OperationsRuntimeCapacityResponse,
     OperationsSchedulerResponse,
@@ -39,6 +42,7 @@ from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
+from backend.app.self_hosted.models import SelfHostedMcpJob
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.workers.jobs import JobPayload
 from backend.app.workers.queue import RedisQueue
@@ -671,6 +675,45 @@ class OperationsService:
                 oldest_pending_age_seconds=max(pending_ages) if pending_ages else None,
                 pending_by_type=dict(sorted(pending_by_type.items())),
             ),
+        )
+
+    def mcp_jobs_payload(self, workspace_id: UUID) -> OperationsMcpJobsResponse:
+        now = datetime.now(UTC)
+        jobs = self._session.scalars(
+            select(SelfHostedMcpJob).where(SelfHostedMcpJob.workspace_id == workspace_id)
+        ).all()
+        status_counts: dict[str, int] = {}
+        tool_counts: dict[str, dict[str, int]] = {}
+        queued_ages: list[int] = []
+        for job in jobs:
+            status_counts[job.status] = status_counts.get(job.status, 0) + 1
+            tool_bucket = tool_counts.setdefault(
+                job.tool_name,
+                {"queued": 0, "claimed": 0, "completed": 0, "failed": 0, "total": 0},
+            )
+            tool_bucket["total"] += 1
+            if job.status in tool_bucket:
+                tool_bucket[job.status] += 1
+            if job.status == "queued":
+                queued_ages.append(
+                    max(0, int((now - _aware_datetime(job.created_at)).total_seconds()))
+                )
+        return OperationsMcpJobsResponse(
+            generated_at=now,
+            total=len(jobs),
+            queued=status_counts.get("queued", 0),
+            claimed=status_counts.get("claimed", 0),
+            completed=status_counts.get("completed", 0),
+            failed=status_counts.get("failed", 0),
+            oldest_queued_age_seconds=max(queued_ages) if queued_ages else None,
+            statuses=[
+                McpJobStatusBucketResponse(status=status, count=count)
+                for status, count in sorted(status_counts.items())
+            ],
+            tools=[
+                McpJobToolBucketResponse(tool_name=tool_name, **counts)
+                for tool_name, counts in sorted(tool_counts.items())
+            ],
         )
 
     def _queue_latency(self, queue_name: str, workspace_id: UUID) -> QueueLatencyResponse:
