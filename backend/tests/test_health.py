@@ -47,6 +47,16 @@ def test_health_endpoint_generates_request_id_when_missing() -> None:
     assert response.json()["request_id"] == response.headers["X-Request-ID"]
 
 
+def test_app_lifespan_closes_owned_redis_client() -> None:
+    app = create_app(Settings(environment="test", log_format="text"))
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/health")
+
+    assert response.status_code == 200
+    assert app.state.redis_client.connection_pool._available_connections == []  # noqa: SLF001
+
+
 def test_cors_middleware_uses_configured_origins() -> None:
     app = create_app(
         Settings(

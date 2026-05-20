@@ -14,4 +14,5 @@ else:
 
 
 def get_redis_client(_: Request) -> RedisClient:
-    return redis_client
+    app_redis_client = getattr(_.app.state, "redis_client", None)
+    return app_redis_client or redis_client

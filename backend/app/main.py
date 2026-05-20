@@ -1,9 +1,13 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.errors import register_error_handlers
 from backend.app.api.router import api_router
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.executors import shutdown_blocking_executor
 from backend.app.core.logging import configure_logging
 from backend.app.core.middleware import (
     RateLimitMiddleware,
@@ -11,22 +15,28 @@ from backend.app.core.middleware import (
     SecurityHeadersMiddleware,
 )
 from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
-from backend.app.redis.client import create_redis_client
+from backend.app.redis.client import close_redis_client, create_redis_client
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
+    redis_client = create_redis_client(app_settings)
     limiter = RedisFixedWindowRateLimiter(
-        create_redis_client(app_settings),
+        redis_client,
         key_prefix=app_settings.redis_key_prefix,
     )
-    return create_app_with_dependencies(settings=app_settings, rate_limiter=limiter)
+    return create_app_with_dependencies(
+        settings=app_settings,
+        rate_limiter=limiter,
+        redis_client=redis_client,
+    )
 
 
 def create_app_with_dependencies(
     *,
     settings: Settings,
     rate_limiter: RedisFixedWindowRateLimiter,
+    redis_client: object | None = None,
 ) -> FastAPI:
     app_settings = settings
     configure_logging(app_settings)
@@ -37,8 +47,10 @@ def create_app_with_dependencies(
         docs_url="/docs" if app_settings.enable_api_docs else None,
         redoc_url="/redoc" if app_settings.enable_api_docs else None,
         openapi_url="/openapi.json" if app_settings.enable_api_docs else None,
+        lifespan=_lifespan,
     )
     app.state.settings = app_settings
+    app.state.redis_client = redis_client
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestContextMiddleware, settings=app_settings)
@@ -58,6 +70,17 @@ def create_app_with_dependencies(
     register_error_handlers(app)
     app.include_router(api_router, prefix=app_settings.api_prefix)
     return app
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    try:
+        yield
+    finally:
+        redis_client = getattr(app.state, "redis_client", None)
+        if redis_client is not None:
+            close_redis_client(redis_client)
+        shutdown_blocking_executor(wait=False)
 
 
 app = create_app()

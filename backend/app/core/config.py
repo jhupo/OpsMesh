@@ -4,8 +4,11 @@ from typing import Literal
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from backend.app.core.resources import recommend_runtime_resources
+
 LogFormat = Literal["json", "text"]
 AgentRunnerBackend = Literal["fake", "openai"]
+_RESOURCE_RECOMMENDATION = recommend_runtime_resources()
 
 
 class Settings(BaseSettings):
@@ -25,15 +28,25 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+psycopg://chaincloud:chaincloud@localhost:5432/chaincloud"
     )
-    database_pool_size: int = Field(default=10, ge=1)
-    database_max_overflow: int = Field(default=20, ge=0)
+    database_pool_size: int = Field(default=_RESOURCE_RECOMMENDATION.database_pool_size, ge=1)
+    database_max_overflow: int = Field(default=_RESOURCE_RECOMMENDATION.database_max_overflow, ge=0)
     database_pool_timeout_seconds: int = Field(default=30, ge=1)
     database_pool_recycle_seconds: int = Field(default=1_800, ge=30)
     database_statement_timeout_ms: int = Field(default=30_000, ge=1_000)
     redis_url: str = Field(default="redis://localhost:6379/0")
+    redis_max_connections: int = Field(
+        default=_RESOURCE_RECOMMENDATION.redis_max_connections,
+        ge=1,
+    )
+    redis_socket_timeout_seconds: float = Field(default=5.0, gt=0)
+    redis_socket_connect_timeout_seconds: float = Field(default=5.0, gt=0)
+    redis_health_check_interval_seconds: int = Field(default=30, ge=0)
     redis_key_prefix: str = Field(default="chaincloud")
     worker_queue_name: str = Field(default="agent_runs")
-    blocking_thread_pool_workers: int = Field(default=16, ge=1)
+    blocking_thread_pool_workers: int = Field(
+        default=_RESOURCE_RECOMMENDATION.blocking_thread_pool_workers,
+        ge=1,
+    )
     request_slow_log_threshold_ms: int = Field(default=1_000, ge=1)
     internal_api_token: str = Field(default="change-me-in-production")
     platform_admin_token: str | None = Field(default=None)

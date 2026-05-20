@@ -8,7 +8,9 @@ from backend.app.core.executors import (
     run_blocking,
     shutdown_blocking_executor,
 )
+from backend.app.core.resources import recommend_runtime_resources
 from backend.app.db.session import create_database_engine
+from backend.app.redis.client import create_redis_client
 
 
 def test_settings_defaults_are_local_development_friendly() -> None:
@@ -18,11 +20,30 @@ def test_settings_defaults_are_local_development_friendly() -> None:
     assert settings.service_name == "chaincloud-backend"
     assert settings.api_prefix == "/api/v1"
     assert settings.enable_api_docs is True
-    assert settings.database_pool_size == 10
-    assert settings.database_max_overflow == 20
+    recommendation = recommend_runtime_resources()
+    assert settings.database_pool_size == recommendation.database_pool_size
+    assert settings.database_max_overflow == recommendation.database_max_overflow
     assert settings.database_statement_timeout_ms == 30_000
-    assert settings.blocking_thread_pool_workers == 16
+    assert settings.blocking_thread_pool_workers == recommendation.blocking_thread_pool_workers
+    assert settings.redis_max_connections == recommendation.redis_max_connections
     assert settings.request_slow_log_threshold_ms == 1_000
+
+
+def test_runtime_resource_recommendations_scale_with_cpu_count() -> None:
+    small = recommend_runtime_resources(cpu_count=1)
+    medium = recommend_runtime_resources(cpu_count=8)
+    large = recommend_runtime_resources(cpu_count=128)
+
+    assert small.database_pool_size == 5
+    assert small.blocking_thread_pool_workers == 8
+    assert small.worker_max_jobs == 1
+    assert medium.database_pool_size == 16
+    assert medium.blocking_thread_pool_workers == 32
+    assert medium.worker_max_jobs == 8
+    assert large.database_pool_size == 32
+    assert large.blocking_thread_pool_workers == 64
+    assert large.redis_max_connections == 96
+    assert large.worker_max_jobs == 16
 
 
 def test_production_requires_real_token_and_disabled_docs() -> None:
@@ -106,6 +127,26 @@ def test_database_engine_skips_queue_pool_settings_for_sqlite() -> None:
 
     assert engine.url.get_backend_name() == "sqlite"
     engine.dispose()
+
+
+def test_redis_client_uses_configured_connection_pool() -> None:
+    settings = Settings(
+        redis_url="redis://localhost:6379/1",
+        redis_max_connections=7,
+        redis_socket_timeout_seconds=1.5,
+        redis_socket_connect_timeout_seconds=2.5,
+        redis_health_check_interval_seconds=13,
+    )
+
+    client = create_redis_client(settings)
+
+    assert client.connection_pool.max_connections == 7
+    connection_kwargs = client.connection_pool.connection_kwargs
+    assert connection_kwargs["socket_timeout"] == 1.5
+    assert connection_kwargs["socket_connect_timeout"] == 2.5
+    assert connection_kwargs["health_check_interval"] == 13
+    client.close()
+    client.connection_pool.disconnect()
 
 
 def test_blocking_executor_reuses_configured_thread_pool() -> None:
