@@ -13,6 +13,7 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.runs.models import AgentRun
+from backend.app.runs.status import RunStatus
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.self_hosted.models import SelfHostedMcpJob
 from backend.app.tasks.models import Task
@@ -159,6 +160,13 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
         "name": "generate_image",
         "arguments": {"prompt": "mountain"},
     }
+
+
+def test_waiting_runtime_status_transition_is_allowed() -> None:
+    from backend.app.runs.status import can_transition_run
+
+    assert can_transition_run(RunStatus.RUNNING, RunStatus.WAITING_RUNTIME)
+    assert can_transition_run(RunStatus.WAITING_RUNTIME, RunStatus.QUEUED)
 
 
 class StaticMcpAdapter:

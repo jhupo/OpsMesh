@@ -617,7 +617,7 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
         server_type="stdio",
         connection={"command": "mcp-image"},
     )
-    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="running")
+    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="waiting_runtime")
     session.add_all([server, run])
     session.flush()
     queued_job = SelfHostedMcpJob(
@@ -672,8 +672,12 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
     assert incompatible_claim.status_code == 409
     assert "not compatible" in incompatible_claim.json()["error"]["message"]
     session.refresh(queued_job)
+    session.refresh(run)
     assert queued_job.status == "completed"
     assert queued_job.response_payload == {"ok": True}
+    assert run.status == "queued"
+    assert run.input["pending_tool_results"][0]["mcp_job_id"] == str(queued_job.id)
+    assert run.input["pending_tool_results"][0]["response"] == {"ok": True}
     assert [event.event_type for event in events] == [
         "self_hosted.mcp_job_claimed",
         "self_hosted.mcp_job_completed",

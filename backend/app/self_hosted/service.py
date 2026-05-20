@@ -342,6 +342,7 @@ class SelfHostedRuntimeService:
         job.completed_at = datetime.now(UTC)
         run = self._session.get(AgentRun, job.agent_run_id)
         if run is not None:
+            self._record_mcp_job_completion_for_run(run, job)
             self._append_run_event(
                 run,
                 f"self_hosted.mcp_job_{data.status}",
@@ -815,6 +816,40 @@ class SelfHostedRuntimeService:
         ):
             raise ValueError("Self-hosted MCP job not found")
         return job
+
+    def _record_mcp_job_completion_for_run(
+        self,
+        run: AgentRun,
+        job: SelfHostedMcpJob,
+    ) -> None:
+        run_input = dict(run.input) if isinstance(run.input, dict) else {}
+        pending_results = run_input.get("pending_tool_results")
+        if not isinstance(pending_results, list):
+            pending_results = []
+        pending_results.append(
+            {
+                "kind": "mcp",
+                "mcp_job_id": str(job.id),
+                "mcp_server_id": str(job.mcp_server_id),
+                "tool_name": job.tool_name,
+                "status": job.status,
+                "response": job.response_payload,
+                "error": job.error_payload,
+                "completed_at": _dt_iso(job.completed_at),
+            }
+        )
+        run_input["pending_tool_results"] = pending_results
+        run.input = run_input
+        if job.status == "completed" and run.status == RunStatus.WAITING_RUNTIME.value:
+            run.status = RunStatus.QUEUED.value
+        elif job.status == "failed" and run.status == RunStatus.WAITING_RUNTIME.value:
+            run.status = RunStatus.FAILED.value
+            run.error = job.error_payload or {
+                "code": "self_hosted_mcp_job_failed",
+                "message": "Self-hosted MCP job failed",
+                "retryable": True,
+            }
+            run.completed_at = datetime.now(UTC)
 
     def _hash(self, token: str) -> str:
         material = f"{self._settings.token_hash_pepper}:{token}"

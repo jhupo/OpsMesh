@@ -358,6 +358,13 @@ class RunOrchestrationService:
             self._append_model_provider_used_event(run, request)
             self._audit_model_provider_used(run, request, job, fallback_selected=fallback_selected)
             self._map_runtime_events_to_task_messages(run, result)
+            if self._agent_result_waiting_runtime(result) or self._run_has_waiting_runtime_event(
+                run
+            ):
+                self._mark_run_waiting_runtime(run)
+                self._session.commit()
+                self._session.refresh(run)
+                return run
             self._mark_run_completed(run, result.final_output, job.requested_by_user_id)
             self._session.commit()
             self._session.refresh(run)
@@ -393,6 +400,11 @@ class RunOrchestrationService:
                     agent_profile_id=run.agent_profile_id,
                     payload=self._step_message_payload(step),
                 )
+
+    def _mark_run_waiting_runtime(self, run: AgentRun) -> None:
+        require_run_transition(RunStatus(run.status), RunStatus.WAITING_RUNTIME)
+        run.status = RunStatus.WAITING_RUNTIME.value
+        self._append_event(run, "run.waiting_runtime", "Run is waiting for runtime tool result")
 
     def _mark_run_completed(
         self,
@@ -532,6 +544,23 @@ class RunOrchestrationService:
             step = self._session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
                 step.status = STEP_STATUS_CANCELLED
+
+    def _agent_result_waiting_runtime(self, result: AgentRunResult) -> bool:
+        for event in result.events:
+            if event.event_type == "tool.waiting":
+                return True
+            if event.payload.get("status") == "waiting_self_hosted":
+                return True
+        return False
+
+    def _run_has_waiting_runtime_event(self, run: AgentRun) -> bool:
+        return self._session.scalar(
+            select(RunEvent.id).where(
+                RunEvent.workspace_id == run.workspace_id,
+                RunEvent.agent_run_id == run.id,
+                RunEvent.event_type == "tool.waiting",
+            )
+        ) is not None
 
     def _append_model_provider_used_event(
         self,
