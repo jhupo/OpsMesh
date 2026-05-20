@@ -341,6 +341,8 @@ class RunOrchestrationService:
                         used_provider_credentials=used_provider_credentials,
                     )
                     if fallback is None:
+                        self._append_model_provider_fallback_unavailable_event(run, request, exc)
+                        self._audit_model_provider_fallback_unavailable(run, request, job, exc)
                         self._mark_run_failed(run, exc)
                         self._session.commit()
                         raise
@@ -572,6 +574,60 @@ class RunOrchestrationService:
                 if request.model_provider_credential_id is not None
                 else None,
                 "fallback_selected": fallback_selected,
+            },
+        )
+
+    def _append_model_provider_fallback_unavailable_event(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        exc: Exception,
+    ) -> None:
+        error = normalize_agent_error(exc)
+        self._append_event(
+            run,
+            "model_provider.fallback_unavailable",
+            "Model provider fallback was unavailable",
+            {
+                "reason": error.as_dict(),
+                "failed_provider": {
+                    "model": request.model,
+                    "credential_id": str(request.model_provider_credential_id)
+                    if request.model_provider_credential_id is not None
+                    else None,
+                },
+            },
+        )
+
+    def _audit_model_provider_fallback_unavailable(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        job: JobPayload,
+        exc: Exception,
+    ) -> None:
+        if job.requested_by_user_id is None:
+            return
+        error = normalize_agent_error(exc)
+        AuditService(self._session).record_user_action(
+            workspace_id=run.workspace_id,
+            user_id=job.requested_by_user_id,
+            action="model_provider.fallback_unavailable",
+            target_type="agent_run",
+            target_id=run.id,
+            metadata={
+                "task_id": str(run.task_id) if run.task_id is not None else None,
+                "task_step_id": str(run.task_step_id) if run.task_step_id is not None else None,
+                "agent_profile_id": str(run.agent_profile_id)
+                if run.agent_profile_id is not None
+                else None,
+                "reason": error.as_dict(),
+                "failed_provider": {
+                    "model": request.model,
+                    "credential_id": str(request.model_provider_credential_id)
+                    if request.model_provider_credential_id is not None
+                    else None,
+                },
             },
         )
 

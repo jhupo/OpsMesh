@@ -2201,7 +2201,33 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
             select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
         ).all()
     ]
+    fallback_unavailable_event = session.scalar(
+        select(RunEvent).where(
+            RunEvent.agent_run_id == run.id,
+            RunEvent.event_type == "model_provider.fallback_unavailable",
+        )
+    )
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "model_provider.fallback_unavailable",
+            AuditEvent.target_id == str(run.id),
+        )
+    )
     assert "model_provider.fallback_selected" not in event_types
+    assert fallback_unavailable_event is not None
+    assert fallback_unavailable_event.event_metadata["failed_provider"] == {
+        "model": "primary-model",
+        "credential_id": str(primary.id),
+    }
+    assert fallback_unavailable_event.event_metadata["reason"]["code"] == "RuntimeError"
+    assert "api_key" not in fallback_unavailable_event.event_metadata
+    assert "base_url" not in fallback_unavailable_event.event_metadata
+    assert audit is not None
+    assert audit.audit_metadata["failed_provider"]["credential_id"] == str(primary.id)
+    assert audit.audit_metadata["reason"]["message"] == "primary provider unavailable"
+    assert "api_key" not in audit.audit_metadata
+    assert "base_url" not in audit.audit_metadata
     assert run.status == RunStatus.FAILED.value
     assert run.error["message"] == "primary provider unavailable"
 

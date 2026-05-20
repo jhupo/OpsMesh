@@ -463,7 +463,8 @@ Tests:
 - provider resolution snapshot excludes raw API keys and full base URLs
 - failed primary provider falls back only to allowed provider
 - fallback event records reason without leaking key/base URL secret
-- disallowed fallback fails the run cleanly
+- [x] disallowed fallback fails the run cleanly and records sanitized fallback-unavailable
+  run/audit evidence
 
 Acceptance:
 
