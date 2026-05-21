@@ -2,6 +2,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from shutil import rmtree
+from subprocess import TimeoutExpired
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -208,13 +209,41 @@ class RuntimeManager:
         self._session.add(record)
         self._session.flush()
 
-        result = self._docker.exec_command(
-            runtime.docker_container_id or "",
-            command,
-            timeout_seconds,
-        )
-        self._complete_command(record, result)
-        self._append_event(runtime, "runtime.command.completed", " ".join(command))
+        try:
+            result = self._docker.exec_command(
+                runtime.docker_container_id or "",
+                command,
+                timeout_seconds,
+            )
+        except TimeoutExpired as exc:
+            self._fail_command(
+                record,
+                status="timeout",
+                exit_code=None,
+                stderr=f"Command exceeded timeout of {timeout_seconds} seconds",
+            )
+            self._append_event(
+                runtime,
+                "runtime.command.timeout",
+                " ".join(command),
+                metadata=_command_failure_metadata(record, "timeout", str(exc)),
+            )
+        except Exception as exc:
+            self._fail_command(
+                record,
+                status="failed",
+                exit_code=None,
+                stderr=_bounded_error(exc),
+            )
+            self._append_event(
+                runtime,
+                "runtime.command.failed",
+                " ".join(command),
+                metadata=_command_failure_metadata(record, "docker_exec_failed", str(exc)),
+            )
+        else:
+            self._complete_command(record, result)
+            self._append_event(runtime, "runtime.command.completed", " ".join(command))
         self._session.commit()
         self._session.refresh(record)
         return record
@@ -224,6 +253,20 @@ class RuntimeManager:
         record.stdout = result.stdout
         record.stderr = result.stderr
         record.status = "completed" if result.exit_code == 0 else "failed"
+        record.completed_at = datetime.now(UTC)
+
+    def _fail_command(
+        self,
+        record: RuntimeCommand,
+        *,
+        status: str,
+        exit_code: int | None,
+        stderr: str,
+    ) -> None:
+        record.exit_code = exit_code
+        record.stdout = ""
+        record.stderr = stderr
+        record.status = status
         record.completed_at = datetime.now(UTC)
 
     def _append_event(
@@ -427,6 +470,24 @@ def _cleanup_evidence(
 def _cleanup_succeeded(evidence: dict[str, object]) -> bool:
     cleanup = evidence.get("cleanup")
     return isinstance(cleanup, dict) and cleanup.get("success") is True
+
+
+def _command_failure_metadata(
+    record: RuntimeCommand,
+    reason: str,
+    error: str,
+) -> dict[str, object]:
+    return {
+        "command_id": str(record.id),
+        "command_status": record.status,
+        "reason": reason,
+        "error": error[:512],
+    }
+
+
+def _bounded_error(exc: Exception) -> str:
+    message = str(exc).strip() or exc.__class__.__name__
+    return message[:2_000]
 
 
 def _string_items(value: object) -> list[str]:

@@ -42,7 +42,12 @@ Incomplete or basic-only areas:
 - Task observation now has a stable backend API with generic and domain-specific sections for AIGC, novel writing, research, and software tasks. The first implementation composes existing task, step, message, run event, and artifact data; richer domain persistence can be added behind the same response shape.
 - Correction/revision is supported through a generic user-facing endpoint that targets tasks, steps, agents, artifacts, or final output and records follow-up work plus task messages.
 - Scheduling supports per-member concurrency, workspace active run quotas, per-tick resource-limit prechecks, durable workspace usage reservations, blocked reasons, cross-task priority ordering, and starvation prevention. Docker/self-hosted execution slot usage still needs deeper completion.
-- Docker runtime cleanup now records container and managed host-resource evidence and emits critical security events on cleanup failure. Self-hosted runtimes enforce worker concurrency/artifact limits, revocation evidence, and workspace-visible machine trust snapshots; broader manual remediation workflows still need completion.
+- Docker runtime command execution now records timeout and Docker exec failures without leaving
+  dangling running command records. Docker runtime cleanup records container and managed
+  host-resource evidence and emits critical security events on cleanup failure. Self-hosted
+  runtimes enforce worker concurrency/artifact limits, revocation evidence, and
+  workspace-visible machine trust snapshots; broader manual remediation workflows still need
+  completion.
 - Runtime cleanup now marks stale runtimes offline, removes terminal runtime records, and expires stale worker leases within the requesting workspace.
 - Import preview now returns a structured conflict plan for existing names, skipped dependencies, and archive byte limits; preview-token resolution workflows are still pending.
 - Model provider selection exists. Queued runs now freeze per-agent/default provider resolution
@@ -396,6 +401,7 @@ Build:
 - [x] Verify container cleanup action and record structured success/failure evidence.
 - [x] Verify volume, temp directory, and staged file cleanup for managed runtime resources.
 - [x] Emit security events when cleanup fails.
+- [x] Record Docker command timeout and exec failure as terminal command states with runtime events.
 - Emit security events when a container exceeds policy.
 - Add periodic sweeper for abandoned containers and stale runtime leases. (The workspace operations cleanup endpoint now expires stale worker leases idempotently.)
 
@@ -408,7 +414,7 @@ API/data changes:
 Tests:
 
 - over-limit runtime request is rejected before container creation
-- timed-out command is killed and marked failed
+- [x] timed-out command is killed and marked failed
 - cleanup success records evidence
 - [x] simulated cleanup failure emits a security event
 - sweeper cleans stale leases idempotently

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from pathlib import Path
+from subprocess import TimeoutExpired
 from uuid import uuid4
 
 from sqlalchemy import create_engine, select
@@ -170,6 +171,106 @@ def test_runtime_manager_rejects_cross_workspace_command() -> None:
         assert "does not belong" in str(exc)
     else:
         raise AssertionError("Expected cross-workspace runtime command to fail")
+
+
+def test_runtime_manager_records_command_timeout_without_leaving_running_command() -> None:
+    class TimeoutDockerClient(FakeDockerClient):
+        def exec_command(
+            self,
+            container_id: str,
+            command: list[str],
+            timeout_seconds: int,
+        ) -> RuntimeCommandResult:
+            self.executed.append((container_id, command, timeout_seconds))
+            raise TimeoutExpired(cmd=command, timeout=timeout_seconds)
+
+    session = _session()
+    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme-timeout", settings={})
+    template = RuntimeTemplate(
+        name="python",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.commit()
+    docker = TimeoutDockerClient()
+    runtime = RuntimeManager(session, docker).create_runtime(
+        workspace_id=workspace.id,
+        template=template,
+        name="analysis",
+        limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=3),
+    )
+
+    command = RuntimeManager(session, docker).execute_command(
+        workspace_id=workspace.id,
+        runtime=runtime,
+        command=["python", "slow.py"],
+    )
+
+    event = session.scalar(
+        select(RuntimeEvent).where(
+            RuntimeEvent.workspace_runtime_id == runtime.id,
+            RuntimeEvent.event_type == "runtime.command.timeout",
+        )
+    )
+    assert docker.executed == [("container-123", ["python", "slow.py"], 3)]
+    assert command.status == "timeout"
+    assert command.completed_at is not None
+    assert "exceeded timeout" in command.stderr
+    assert event is not None
+    assert event.event_metadata["command_id"] == str(command.id)
+    assert event.event_metadata["reason"] == "timeout"
+
+
+def test_runtime_manager_records_docker_exec_failure_without_raising() -> None:
+    class FailingExecDockerClient(FakeDockerClient):
+        def exec_command(
+            self,
+            container_id: str,
+            command: list[str],
+            timeout_seconds: int,
+        ) -> RuntimeCommandResult:
+            self.executed.append((container_id, command, timeout_seconds))
+            raise RuntimeError("docker exec unavailable")
+
+    session = _session()
+    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme-exec-fail", settings={})
+    template = RuntimeTemplate(
+        name="python",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.commit()
+    docker = FailingExecDockerClient()
+    runtime = RuntimeManager(session, docker).create_runtime(
+        workspace_id=workspace.id,
+        template=template,
+        name="analysis",
+        limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
+    )
+
+    command = RuntimeManager(session, docker).execute_command(
+        workspace_id=workspace.id,
+        runtime=runtime,
+        command=["python", "job.py"],
+    )
+
+    event = session.scalar(
+        select(RuntimeEvent).where(
+            RuntimeEvent.workspace_runtime_id == runtime.id,
+            RuntimeEvent.event_type == "runtime.command.failed",
+        )
+    )
+    assert command.status == "failed"
+    assert command.completed_at is not None
+    assert command.stderr == "docker exec unavailable"
+    assert event is not None
+    assert event.event_metadata["reason"] == "docker_exec_failed"
 
 
 def test_cleanup_stale_runtime_removes_only_recorded_container() -> None:
