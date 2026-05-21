@@ -13,6 +13,7 @@ from backend.app.capabilities.execution import (
 )
 from backend.app.core.config import Settings
 from backend.app.files.storage import LocalStorage
+from backend.app.memory.indexing import WorkspaceMemoryIndexingService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
@@ -51,8 +52,24 @@ class WorkerJobHandler:
                     job=job,
                     storage=LocalStorage(self._settings.storage_root),
                 )
+            case JobType.MEMORY_INDEX:
+                self._handle_memory_index(job)
             case _:
                 raise ValueError(f"Unsupported job type: {job.job_type}")
+
+    def _handle_memory_index(self, job: JobPayload) -> None:
+        source_type = _required_string(job.routing, "source_type")
+        service = WorkspaceMemoryIndexingService(self._session)
+        match source_type:
+            case "task":
+                service.refresh_task(workspace_id=job.workspace_id, task_id=job.resource_id)
+            case "workspace_file":
+                service.refresh_file(workspace_id=job.workspace_id, file_id=job.resource_id)
+            case "artifact":
+                service.refresh_artifact(workspace_id=job.workspace_id, artifact_id=job.resource_id)
+            case _:
+                raise ValueError(f"Unsupported memory index source_type: {source_type}")
+        self._session.commit()
 
     def _handle_mcp_tool_execution(self, job: JobPayload) -> None:
         payload = job.routing

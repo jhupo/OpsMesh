@@ -11,6 +11,7 @@ class JobType(StrEnum):
     TASK_PLAN = "task.plan"
     RUNTIME_CLEANUP = "runtime.cleanup"
     WORKSPACE_ARCHIVE_EXPORT = "workspace.archive_export"
+    MEMORY_INDEX = "memory.index"
 
 
 class JobPayload(BaseModel):

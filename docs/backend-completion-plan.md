@@ -634,8 +634,7 @@ Build:
 - [x] Define initial workspace memory sources: task summaries/final outputs, task steps, task messages, artifacts metadata, file metadata, and domain items.
 - [x] Replace placeholder implementation with a workspace-scoped lexical search service.
 - [x] Enforce workspace authorization at query time by filtering every source by `workspace_id`.
-- [x] Add a memory indexing service with deterministic text chunks and metadata. (Initial
-  service is in place; async worker wiring remains pending.)
+- [x] Add a memory indexing service with deterministic text chunks and metadata.
 - Start with Postgres full-text search; leave a clean interface for vector search later.
 - [x] Enforce workspace, file, and task authorization at query time.
 - [x] Add initial freshness rules: when indexed chunks exist for a source, search uses active
@@ -645,7 +644,7 @@ API/data changes:
 
 - [x] Add `workspace_memory_entries` table with source type, source ID, text, metadata,
   visibility, tags, importance, and status.
-- Add internal indexing jobs.
+- [x] Add internal indexing jobs.
 - [x] Replace placeholder implementation with real search ranked by text relevance and recency.
 - [x] Add internal tool operations to create and archive explicit memory entries.
 - [x] Add product-tool controls for result limit and source-type filters.
@@ -657,6 +656,7 @@ Tests:
 - [x] archived explicit memory stops appearing
 - [x] search respects max results and source filters
 - [x] refreshing a task memory index archives stale chunks and exposes fresh indexed chunks
+- [x] worker memory-index job refreshes source chunks and records a completed lease
 
 Acceptance:
 

@@ -17,6 +17,7 @@ from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpTool
 from backend.app.core.request_context import current_log_context
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
@@ -478,6 +479,54 @@ def test_worker_runner_processes_mcp_tool_execution_job() -> None:
             "timeout_seconds": 15,
         }
     ]
+
+
+def test_worker_runner_processes_memory_index_job() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, _, _ = _seed_run(session_factory, slug="memory-index")
+    with session_factory() as session:
+        task = session.scalar(select(Task).where(Task.workspace_id == workspace_id))
+        assert task is not None
+        task.description = "Customer renewal memory index source"
+        task_id = task.id
+        session.commit()
+    queue.enqueue(
+        JobPayload(
+            workspace_id=workspace_id,
+            job_type=JobType.MEMORY_INDEX,
+            resource_id=task_id,
+            idempotency_key=f"memory.index:{workspace_id}:task:{task_id}",
+            routing={"source_type": "task"},
+        )
+    )
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="worker-memory", queue_name="agent_runs"),
+    )
+
+    assert runner.run_once() is True
+
+    with session_factory() as session:
+        entry = session.scalar(
+            select(WorkspaceMemoryEntry).where(
+                WorkspaceMemoryEntry.workspace_id == workspace_id,
+                WorkspaceMemoryEntry.source_type == "task",
+                WorkspaceMemoryEntry.source_id == str(task_id),
+                WorkspaceMemoryEntry.entry_type == "indexed_chunk",
+                WorkspaceMemoryEntry.status == "active",
+            )
+        )
+        lease = session.scalar(
+            select(WorkerLease).where(WorkerLease.worker_id == "worker-memory")
+        )
+        assert entry is not None
+        assert "renewal memory index" in entry.content
+        assert entry.memory_metadata["indexed"] is True
+        assert lease is not None
+        assert lease.status == "completed"
+        assert lease.job_type == JobType.MEMORY_INDEX.value
 
 
 def test_worker_runner_rolls_back_failed_session() -> None:
