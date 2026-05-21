@@ -23,6 +23,7 @@ from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeEvent,
+    RuntimeLease,
     RuntimeTemplate,
     WorkspaceRuntime,
 )
@@ -128,18 +129,29 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     assert command.status == "completed"
     assert command.stdout == "ok\n"
     assert session.query(RuntimeCommand).count() == 1
+    lease = session.scalar(
+        select(RuntimeLease).where(RuntimeLease.workspace_runtime_id == runtime.id)
+    )
+    assert lease is not None
+    assert lease.status == "released"
+    assert lease.released_at is not None
+    assert lease.docker_container_id == "container-123"
     assert [event.event_type for event in events] == [
         "runtime.created",
+        "runtime.lease_acquired",
         "runtime.started",
         "runtime.command.completed",
         "runtime.stopped",
         "runtime.deleted",
     ]
+    assert events[1].event_metadata["runtime_lease_id"] == str(lease.id)
+    assert events[2].event_metadata["runtime_lease_id"] == str(lease.id)
     assert events[-1].event_metadata["cleanup"]["action"] == "delete"
     assert events[-1].event_metadata["cleanup"]["container_id"] == "container-123"
     assert events[-1].event_metadata["cleanup"]["success"] is True
     assert [event.event_type for event in space_events] == [
         "runtime.created",
+        "runtime.lease_acquired",
         "runtime.started",
         "runtime.command.completed",
         "runtime.stopped",
@@ -420,6 +432,12 @@ def test_cleanup_stale_runtime_records_failure_evidence() -> None:
     assert event is not None
     assert event.event_metadata["cleanup"]["success"] is False
     assert event.event_metadata["cleanup"]["error"] == "docker daemon unavailable"
+    lease = session.scalar(
+        select(RuntimeLease).where(RuntimeLease.workspace_runtime_id == runtime.id)
+    )
+    assert lease is not None
+    assert lease.status == "cleanup_failed"
+    assert lease.released_at is not None
 
 
 def test_cleanup_stale_runtime_removes_managed_host_resources(tmp_path: Path) -> None:

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Integer, String
+from sqlalchemy import ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -89,6 +89,39 @@ class RuntimeEvent(UUIDPrimaryKeyMixin, Base):
         default=dict,
     )
     created_at: Mapped[datetime] = mapped_column(nullable=False)
+
+
+class RuntimeLease(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "runtime_leases"
+    __table_args__ = (
+        UniqueConstraint("workspace_runtime_id", name="uq_runtime_leases_runtime"),
+        Index("ix_runtime_leases_workspace_status", "workspace_id", "status"),
+        Index("ix_runtime_leases_runtime_space", "workspace_id", "runtime_space_id"),
+        Index("ix_runtime_leases_container", "docker_container_id"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    workspace_runtime_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspace_runtimes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    runtime_space_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    docker_container_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    lease_metadata: Mapped[dict[str, object]] = mapped_column(
+        "metadata",
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+    acquired_at: Mapped[datetime] = mapped_column(nullable=False)
+    released_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
 class RuntimeCommand(UUIDPrimaryKeyMixin, Base):

@@ -39,6 +39,7 @@ from backend.app.runtime_spaces.models import (
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeEvent,
+    RuntimeLease,
     RuntimeTemplate,
     WorkspaceRuntime,
 )
@@ -94,6 +95,7 @@ __all__ = [
     "RuntimeCredential",
     "RuntimeEnrollmentToken",
     "RuntimeEvent",
+    "RuntimeLease",
     "RuntimeTemplate",
     "Skill",
     "SelfHostedArtifactUpload",

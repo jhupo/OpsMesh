@@ -5,6 +5,7 @@ from shutil import rmtree
 from subprocess import TimeoutExpired
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.runtime_manager.contracts import (
@@ -18,6 +19,7 @@ from backend.app.runtime_spaces.models import RuntimeSpaceEvent
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeEvent,
+    RuntimeLease,
     RuntimeTemplate,
     WorkspaceRuntime,
 )
@@ -79,7 +81,23 @@ class RuntimeManager:
         )
         runtime.docker_container_id = container_id
         runtime.status = "created"
+        lease = self._ensure_runtime_lease(
+            runtime,
+            status="active",
+            metadata={
+                "action": "create",
+                "image": template.image,
+                "limits": dict(runtime.limits),
+                "network_policy": dict(runtime.network_policy),
+            },
+        )
         self._append_event(runtime, "runtime.created", container_id)
+        self._append_event(
+            runtime,
+            "runtime.lease_acquired",
+            container_id,
+            metadata={"runtime_lease_id": str(lease.id)},
+        )
         self._session.commit()
         self._session.refresh(runtime)
         return runtime
@@ -90,7 +108,8 @@ class RuntimeManager:
         runtime.status = "running"
         runtime.connection_status = "online"
         runtime.last_heartbeat_at = datetime.now(UTC)
-        self._append_event(runtime, "runtime.started", "")
+        lease = self._set_runtime_lease_status(runtime, "running")
+        self._append_event(runtime, "runtime.started", "", metadata=_lease_metadata(lease))
         self._session.commit()
         self._session.refresh(runtime)
         return runtime
@@ -100,7 +119,8 @@ class RuntimeManager:
         self._docker.stop_container(runtime.docker_container_id or "")
         runtime.status = "stopped"
         runtime.connection_status = "offline"
-        self._append_event(runtime, "runtime.stopped", "")
+        lease = self._set_runtime_lease_status(runtime, "stopped")
+        self._append_event(runtime, "runtime.stopped", "", metadata=_lease_metadata(lease))
         self._session.commit()
         self._session.refresh(runtime)
         return runtime
@@ -127,6 +147,7 @@ class RuntimeManager:
                 metadata=cleanup,
             )
             self._record_cleanup_security_event(runtime, cleanup, reason=str(exc))
+            self._set_runtime_lease_status(runtime, "cleanup_failed", released_at=datetime.now(UTC))
             self._session.commit()
             raise
         cleanup = self._cleanup_runtime_resources(
@@ -149,6 +170,11 @@ class RuntimeManager:
                 cleanup,
                 reason="Managed runtime resource cleanup failed",
             )
+        self._set_runtime_lease_status(
+            runtime,
+            "released" if runtime.status == "deleted" else "cleanup_failed",
+            released_at=datetime.now(UTC),
+        )
         self._session.commit()
 
     def cleanup_stale_runtime(self, runtime: WorkspaceRuntime) -> None:
@@ -186,6 +212,11 @@ class RuntimeManager:
                 cleanup,
                 reason=error or "Managed runtime resource cleanup failed",
             )
+        self._set_runtime_lease_status(
+            runtime,
+            "released" if runtime.status == "deleted" else "cleanup_failed",
+            released_at=datetime.now(UTC),
+        )
         self._session.commit()
 
     def execute_command(
@@ -341,6 +372,59 @@ class RuntimeManager:
     def _require_container(self, runtime: WorkspaceRuntime) -> None:
         if not runtime.docker_container_id:
             raise ValueError("Runtime has no Docker container")
+
+    def _ensure_runtime_lease(
+        self,
+        runtime: WorkspaceRuntime,
+        *,
+        status: str,
+        metadata: dict[str, object],
+    ) -> RuntimeLease:
+        lease = self._session.scalar(
+            select(RuntimeLease).where(RuntimeLease.workspace_runtime_id == runtime.id)
+        )
+        now = datetime.now(UTC)
+        if lease is None:
+            lease = RuntimeLease(
+                workspace_id=runtime.workspace_id,
+                workspace_runtime_id=runtime.id,
+                runtime_space_id=runtime.runtime_space_id,
+                docker_container_id=runtime.docker_container_id,
+                status=status,
+                lease_metadata=metadata,
+                acquired_at=now,
+            )
+            self._session.add(lease)
+            self._session.flush([lease])
+            return lease
+        lease.runtime_space_id = runtime.runtime_space_id
+        lease.docker_container_id = runtime.docker_container_id
+        lease.status = status
+        lease.lease_metadata = lease.lease_metadata | metadata
+        if status not in {"released", "cleanup_failed"}:
+            lease.released_at = None
+        self._session.flush([lease])
+        return lease
+
+    def _set_runtime_lease_status(
+        self,
+        runtime: WorkspaceRuntime,
+        status: str,
+        *,
+        released_at: datetime | None = None,
+    ) -> RuntimeLease | None:
+        lease = self._session.scalar(
+            select(RuntimeLease).where(RuntimeLease.workspace_runtime_id == runtime.id)
+        )
+        if lease is None:
+            return None
+        lease.status = status
+        lease.runtime_space_id = runtime.runtime_space_id
+        lease.docker_container_id = runtime.docker_container_id
+        if released_at is not None:
+            lease.released_at = released_at
+        self._session.flush([lease])
+        return lease
 
     def _cleanup_runtime_resources(
         self,
@@ -552,6 +636,10 @@ def _command_failure_metadata(
 def _bounded_error(exc: Exception) -> str:
     message = str(exc).strip() or exc.__class__.__name__
     return message[:2_000]
+
+
+def _lease_metadata(lease: RuntimeLease | None) -> dict[str, object]:
+    return {"runtime_lease_id": str(lease.id)} if lease is not None else {}
 
 
 def _positive_int_limit(value: object, fallback: int) -> int:
