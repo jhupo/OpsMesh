@@ -290,6 +290,45 @@ class OperationsMcpJobsResponse(BaseModel):
     tools: list[McpJobToolBucketResponse]
 
 
+class OperationsSelfHostedMachineResponse(BaseModel):
+    worker_id: UUID
+    workspace_runtime_id: UUID
+    runtime_space_id: UUID | None
+    name: str
+    machine_id: str
+    version: str
+    trust_state: str
+    worker_status: str
+    runtime_status: str
+    connection_status: str
+    credential_status: str | None
+    last_heartbeat_at: datetime | None
+    heartbeat_age_seconds: int | None
+    stale: bool
+    active_job_claims: int
+    active_mcp_jobs: int
+    queued_mcp_jobs: int
+    policy_summary: dict[str, object]
+    capabilities: dict[str, object]
+    warning_code: str | None = None
+    warning_message: str | None = None
+
+
+class OperationsSelfHostedMachinesResponse(BaseModel):
+    generated_at: datetime
+    total: int
+    active: int
+    degraded: int
+    quarantined: int
+    revoked: int
+    offline: int
+    stale: int
+    active_job_claims: int
+    active_mcp_jobs: int
+    queued_mcp_jobs: int
+    items: list[OperationsSelfHostedMachineResponse]
+
+
 class OperationsControlPlaneIssueResponse(BaseModel):
     severity: str
     code: str
@@ -307,6 +346,7 @@ class OperationsControlPlaneResponse(BaseModel):
     scheduler: OperationsSchedulerResponse
     outcomes: OperationsOutcomesResponse
     mcp_jobs: OperationsMcpJobsResponse
+    self_hosted_machines: OperationsSelfHostedMachinesResponse
     issues: list[OperationsControlPlaneIssueResponse]
 
 

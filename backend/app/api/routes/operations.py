@@ -20,6 +20,7 @@ from backend.app.api.schemas.operations import (
     OperationsOverviewResponse,
     OperationsRuntimeCapacityResponse,
     OperationsSchedulerResponse,
+    OperationsSelfHostedMachinesResponse,
     QueueMetricsResponse,
     RequeueDeadLetterResponse,
     RunEventFilterResponse,
@@ -366,6 +367,18 @@ async def operations_mcp_jobs(
     session: Session = Depends(get_db_session),
 ) -> OperationsMcpJobsResponse:
     return OperationsService(session).mcp_jobs_payload(context.workspace.id)
+
+
+@router.get("/self-hosted-machines", response_model=OperationsSelfHostedMachinesResponse)
+async def operations_self_hosted_machines(
+    stale_after_seconds: int = Query(default=600, ge=60, le=86_400),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> OperationsSelfHostedMachinesResponse:
+    return OperationsService(session).self_hosted_machines_payload(
+        context.workspace.id,
+        stale_after_seconds=stale_after_seconds,
+    )
 
 
 @router.get("/scheduler", response_model=OperationsSchedulerResponse)

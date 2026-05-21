@@ -430,6 +430,7 @@ Current state:
 - Users can enroll a self-hosted runtime, heartbeat, poll jobs, update progress, upload artifacts, and revoke credentials.
 - Workers enforce `max_concurrent_jobs`, artifact upload byte limits, runtime-space allowlists, allowed tools, network mode expectations, supported model lists, supported runtime lists, degraded/quarantined stale-machine transitions, and credential revocation that records actor/reason/final heartbeat/affected jobs while blocking future API use.
 - Workspace runtime managers can list self-hosted worker trust snapshots with trust state, runtime/credential state, policy summary, capabilities, and last heartbeat.
+- Operations now exposes a self-hosted machine control-plane aggregate with trust-state counts, stale heartbeat warnings, active job/MCP workload, queued MCP work, policy summaries, and control-plane health issues for unhealthy or stale machines.
 - Broader manual remediation UX still needs more depth.
 
 Build:
@@ -447,13 +448,13 @@ Build:
 - Record revocation reason, actor, affected jobs, credential rotation evidence, and final heartbeat state.
   - [x] Record credential revocation evidence in runtime and runtime-space events.
   - [x] Record revocation actor, reason, affected claims/runs, failed run state, and final heartbeat state.
-- Add stale heartbeat quarantine and user-visible warnings.
+- [x] Add stale heartbeat quarantine and user-visible warnings.
 
 API/data changes:
 
 - [x] Extend self-hosted runtime policy schema through worker capability policy summaries.
 - [x] Add revocation event metadata and machine trust status.
-- Add operations endpoints for stale/degraded machines. (Initial cleanup endpoint now returns degraded/quarantined counts.)
+- [x] Add operations endpoints for stale/degraded machines.
 - [x] Add workspace API for self-hosted machine trust snapshots.
 
 Tests:

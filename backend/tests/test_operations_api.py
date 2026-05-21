@@ -27,7 +27,12 @@ from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
-from backend.app.self_hosted.models import SelfHostedMcpJob
+from backend.app.self_hosted.models import (
+    RuntimeCredential,
+    SelfHostedJobClaim,
+    SelfHostedMcpJob,
+    SelfHostedWorker,
+)
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -659,6 +664,18 @@ def test_operations_control_plane_summarizes_capacity_and_health_issues() -> Non
     )
     session.add_all([runtime, blocked_task])
     session.flush()
+    self_hosted_worker = SelfHostedWorker(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime.id,
+        name="local-worker",
+        machine_id="machine-control",
+        version="2026.05",
+        status="degraded",
+        capabilities={},
+        last_heartbeat_at=datetime.now(UTC) - timedelta(seconds=900),
+    )
+    session.add(self_hosted_worker)
+    session.flush()
     server = McpServer(
         workspace_id=workspace.id,
         name="tools",
@@ -747,6 +764,8 @@ def test_operations_control_plane_summarizes_capacity_and_health_issues() -> Non
     assert payload["scheduler"]["backlog"]["blocked_steps"] == 1
     assert payload["outcomes"]["approvals"]["high_risk_pending"] == 1
     assert payload["mcp_jobs"]["failed"] == 1
+    assert payload["self_hosted_machines"]["degraded"] == 1
+    assert payload["self_hosted_machines"]["stale"] == 1
     assert {
         "queue_latency_high",
         "worker_capacity_exhausted",
@@ -755,6 +774,8 @@ def test_operations_control_plane_summarizes_capacity_and_health_issues() -> Non
         "scheduler_blocked_steps",
         "high_risk_approval_backlog",
         "mcp_jobs_failed",
+        "self_hosted_machines_unhealthy",
+        "self_hosted_heartbeat_stale",
     } <= issue_codes
 
 
@@ -862,6 +883,180 @@ def test_operations_mcp_jobs_reports_self_hosted_tool_queue() -> None:
     assert tools["generate_image"]["total"] == 2
     assert tools["generate_image"]["queued"] == 1
     assert tools["search_web"]["failed"] == 1
+
+
+def test_operations_self_hosted_machines_reports_trust_and_workload() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    _, other_workspace = _seed_workspace_with_role(
+        session,
+        email="other-self-hosted-machines@example.com",
+        slug="other-self-hosted-machines",
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Local Team Space",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.flush()
+    active_runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        runtime_provider="self_hosted",
+        runtime_type="self_hosted",
+        name="active-local",
+        status="active",
+        connection_status="online",
+        capabilities={"max_concurrent_jobs": 2},
+    )
+    degraded_runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_provider="self_hosted",
+        runtime_type="self_hosted",
+        name="degraded-local",
+        status="active",
+        connection_status="degraded",
+    )
+    other_runtime = WorkspaceRuntime(
+        workspace_id=other_workspace.id,
+        runtime_provider="self_hosted",
+        runtime_type="self_hosted",
+        name="other-local",
+        status="active",
+        connection_status="online",
+    )
+    session.add_all([active_runtime, degraded_runtime, other_runtime])
+    session.flush()
+    active_worker = SelfHostedWorker(
+        workspace_id=workspace.id,
+        workspace_runtime_id=active_runtime.id,
+        name="active-worker",
+        machine_id="machine-active",
+        version="2026.05",
+        status="online",
+        capabilities={
+            "allowed_tools": ["generate_image"],
+            "supported_models": ["gpt-5.4"],
+            "supported_runtimes": ["self_hosted"],
+            "max_concurrent_jobs": 2,
+            "max_concurrent_mcp_jobs": 1,
+        },
+        last_heartbeat_at=datetime.now(UTC) - timedelta(seconds=120),
+    )
+    degraded_worker = SelfHostedWorker(
+        workspace_id=workspace.id,
+        workspace_runtime_id=degraded_runtime.id,
+        name="degraded-worker",
+        machine_id="machine-degraded",
+        version="2026.05",
+        status="degraded",
+        capabilities={},
+        last_heartbeat_at=datetime.now(UTC) - timedelta(seconds=1_200),
+    )
+    other_worker = SelfHostedWorker(
+        workspace_id=other_workspace.id,
+        workspace_runtime_id=other_runtime.id,
+        name="other-worker",
+        machine_id="machine-other",
+        version="2026.05",
+        status="online",
+        capabilities={},
+        last_heartbeat_at=datetime.now(UTC),
+    )
+    active_credential = RuntimeCredential(
+        workspace_id=workspace.id,
+        workspace_runtime_id=active_runtime.id,
+        token_hash="active-token",
+        status="active",
+    )
+    degraded_credential = RuntimeCredential(
+        workspace_id=workspace.id,
+        workspace_runtime_id=degraded_runtime.id,
+        token_hash="degraded-token",
+        status="active",
+    )
+    session.add_all(
+        [active_worker, degraded_worker, other_worker, active_credential, degraded_credential]
+    )
+    session.flush()
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="tools",
+        server_type="stdio",
+        connection={},
+    )
+    run = AgentRun(
+        workspace_id=workspace.id,
+        runtime_id=active_runtime.id,
+        status="running",
+    )
+    queued_run = AgentRun(
+        workspace_id=workspace.id,
+        runtime_id=active_runtime.id,
+        status="waiting_runtime",
+    )
+    session.add_all([server, run, queued_run])
+    session.flush()
+    session.add_all(
+        [
+            SelfHostedJobClaim(
+                workspace_id=workspace.id,
+                worker_id=active_worker.id,
+                agent_run_id=run.id,
+                status="claimed",
+                claimed_at=datetime.now(UTC),
+            ),
+            SelfHostedMcpJob(
+                workspace_id=workspace.id,
+                workspace_runtime_id=active_runtime.id,
+                worker_id=active_worker.id,
+                agent_run_id=run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                request_payload={},
+                status="claimed",
+            ),
+            SelfHostedMcpJob(
+                workspace_id=workspace.id,
+                workspace_runtime_id=active_runtime.id,
+                agent_run_id=queued_run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                request_payload={},
+                status="queued",
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/self-hosted-machines"
+        "?stale_after_seconds=600",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    assert payload["active"] == 1
+    assert payload["degraded"] == 1
+    assert payload["quarantined"] == 0
+    assert payload["stale"] == 1
+    assert payload["active_job_claims"] == 1
+    assert payload["active_mcp_jobs"] == 1
+    assert payload["queued_mcp_jobs"] == 1
+    by_machine = {item["machine_id"]: item for item in payload["items"]}
+    assert set(by_machine) == {"machine-active", "machine-degraded"}
+    assert by_machine["machine-active"]["runtime_space_id"] == str(runtime_space.id)
+    assert by_machine["machine-active"]["active_job_claims"] == 1
+    assert by_machine["machine-active"]["active_mcp_jobs"] == 1
+    assert by_machine["machine-active"]["queued_mcp_jobs"] == 1
+    assert by_machine["machine-active"]["policy_summary"]["allowed_tools"] == ["generate_image"]
+    assert by_machine["machine-active"]["warning_code"] is None
+    assert by_machine["machine-degraded"]["stale"] is True
+    assert by_machine["machine-degraded"]["warning_code"] == "machine_degraded"
 
 
 def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:
