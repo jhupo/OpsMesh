@@ -94,7 +94,7 @@ API/data changes:
 - [x] Add `runtime_spaces`, `runtime_space_bindings`, `runtime_space_quotas`, `runtime_space_reservations`, and `runtime_space_events`.
 - Add `runtime_leases`, `worker_nodes`, `worker_leases`, `scheduler_decisions`, `egress_policy_rules`, and `egress_events` as needed.
 - [x] Add `runtime_space_id` to teams, tasks, task steps, runs, workspace runtimes, runtime commands, and runtime events.
-- Add `runtime_space_id` to runtime-origin file metadata where applicable.
+- [x] Add `runtime_space_id` to runtime-origin file metadata where applicable.
 - [x] Add workspace APIs for runtime spaces.
 - [x] Add workspace APIs for operations aggregates.
 - [x] Add workspace operations API for Docker runtime leases.

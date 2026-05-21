@@ -390,7 +390,14 @@ class SelfHostedRuntimeService:
             task_id=data.task_id,
             path=data.path,
             label=data.label,
-            file_metadata=data.metadata,
+            file_metadata={
+                **data.metadata,
+                "runtime_space_id": str(auth.runtime.runtime_space_id)
+                if auth.runtime.runtime_space_id is not None
+                else None,
+                "workspace_runtime_id": str(auth.runtime.id),
+                "worker_id": str(auth.worker.id),
+            },
         )
         self._session.add(reference)
         self._session.commit()
@@ -446,6 +453,11 @@ class SelfHostedRuntimeService:
                 if run is not None and run.agent_profile_id
                 else None,
                 "work_package_id": step.work_package_id if step is not None else None,
+                "runtime_space_id": str(auth.runtime.runtime_space_id)
+                if auth.runtime.runtime_space_id is not None
+                else None,
+                "workspace_runtime_id": str(auth.runtime.id),
+                "worker_id": str(auth.worker.id),
             },
         )
         self._session.add(upload)

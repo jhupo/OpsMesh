@@ -39,6 +39,13 @@ TOKEN = "test-token"
 def test_self_hosted_runtime_registration_and_job_flow() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Local Runtime Space",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.commit()
 
     enrollment = client.post(
         f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
@@ -55,7 +62,7 @@ def test_self_hosted_runtime_registration_and_job_flow() -> None:
             "name": "mac-studio",
             "machine_id": "machine-1",
             "version": "0.1.0",
-            "capabilities": {"gpu": True},
+            "capabilities": {"gpu": True, "runtime_space_id": str(runtime_space.id)},
         },
     )
     assert registered.status_code == 201
@@ -65,7 +72,10 @@ def test_self_hosted_runtime_registration_and_job_flow() -> None:
     heartbeat = client.post(
         "/api/v1/self-hosted/heartbeat",
         headers=_runtime_headers(credential),
-        json={"status": "online", "capabilities": {"gpu": True, "ram_gb": 64}},
+        json={
+            "status": "online",
+            "capabilities": {"gpu": True, "ram_gb": 64, "runtime_space_id": str(runtime_space.id)},
+        },
     )
     assert heartbeat.status_code == 200
 
@@ -116,6 +126,8 @@ def test_self_hosted_runtime_registration_and_job_flow() -> None:
         json={"task_id": str(task.id), "path": "/Users/me/data.csv", "label": "private data"},
     )
     assert local_file.status_code == 201
+    assert local_file.json()["file_metadata"]["runtime_space_id"] == str(runtime_space.id)
+    assert local_file.json()["file_metadata"]["workspace_runtime_id"] == str(runtime_id)
 
     artifact = client.post(
         "/api/v1/self-hosted/artifact-uploads",
@@ -128,6 +140,8 @@ def test_self_hosted_runtime_registration_and_job_flow() -> None:
         },
     )
     assert artifact.status_code == 201
+    assert artifact.json()["artifact_metadata"]["runtime_space_id"] == str(runtime_space.id)
+    assert artifact.json()["artifact_metadata"]["workspace_runtime_id"] == str(runtime_id)
     assert session.query(RunEvent).count() == 2
 
     runtime_credential = session.query(RuntimeCredential).one()
