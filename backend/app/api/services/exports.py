@@ -18,6 +18,7 @@ from backend.app.api.schemas.exports import (
     WorkspaceExportManifest,
     WorkspaceExportRequest,
     WorkspaceExportResponse,
+    WorkspaceImportConflict,
     WorkspaceImportRequest,
     WorkspaceImportResponse,
 )
@@ -455,6 +456,7 @@ class WorkspaceExportService:
             "skill_installs": 0,
         }
         warnings: list[str] = []
+        conflict_plan: list[WorkspaceImportConflict] = []
 
         if request.import_runtime_spaces:
             for item in request.export.runtime_spaces[: request.max_items_per_collection]:
@@ -462,6 +464,19 @@ class WorkspaceExportService:
                 imported_name = f"{request.name_prefix}{_string_field(item, 'name')}"
                 if self._runtime_space_exists(workspace.id, imported_name):
                     skipped_counts["runtime_spaces"] += 1
+                    conflict_plan.append(
+                        _skip_conflict(
+                            collection="runtime_spaces",
+                            source_id=source_id,
+                            field="name",
+                            source_value=_string_field(item, "name"),
+                            target_value=imported_name,
+                            message=(
+                                f"Runtime space {imported_name!r} already exists in target "
+                                "workspace."
+                            ),
+                        )
+                    )
                     continue
                 created_counts["runtime_spaces"] += 1
                 if request.dry_run:
@@ -491,6 +506,14 @@ class WorkspaceExportService:
                 if runtime_space_id is None:
                     skipped_counts["runtime_space_quotas"] += 1
                     warnings.append("Skipped runtime space quota with missing imported space")
+                    conflict_plan.append(
+                        _missing_dependency_conflict(
+                            collection="runtime_space_quotas",
+                            source_id=source_id,
+                            dependency="runtime_space",
+                            dependency_id=_string_field(item, "runtime_space_id"),
+                        )
+                    )
                     continue
                 created_counts["runtime_space_quotas"] += 1
                 if request.dry_run:
@@ -515,6 +538,19 @@ class WorkspaceExportService:
                 installed_key = _string_field(item, "installed_key")
                 if self._skill_install_exists(workspace.id, installed_key):
                     skipped_counts["skill_installs"] += 1
+                    conflict_plan.append(
+                        _skip_conflict(
+                            collection="skill_installs",
+                            source_id=source_id,
+                            field="installed_key",
+                            source_value=installed_key,
+                            target_value=installed_key,
+                            message=(
+                                f"Skill install {installed_key!r} already exists in target "
+                                "workspace."
+                            ),
+                        )
+                    )
                     continue
                 created_counts["skill_installs"] += 1
                 if request.dry_run:
@@ -562,6 +598,16 @@ class WorkspaceExportService:
                 imported_name = f"{request.name_prefix}{_string_field(item, 'name')}"
                 if self._agent_exists(workspace.id, imported_name):
                     skipped_counts["agents"] += 1
+                    conflict_plan.append(
+                        _skip_conflict(
+                            collection="agents",
+                            source_id=source_id,
+                            field="name",
+                            source_value=_string_field(item, "name"),
+                            target_value=imported_name,
+                            message=f"Agent {imported_name!r} already exists in target workspace.",
+                        )
+                    )
                     continue
                 created_counts["agents"] += 1
                 if request.dry_run:
@@ -597,6 +643,16 @@ class WorkspaceExportService:
                 imported_name = f"{request.name_prefix}{_string_field(item, 'name')}"
                 if self._team_exists(workspace.id, imported_name):
                     skipped_counts["teams"] += 1
+                    conflict_plan.append(
+                        _skip_conflict(
+                            collection="teams",
+                            source_id=source_id,
+                            field="name",
+                            source_value=_string_field(item, "name"),
+                            target_value=imported_name,
+                            message=f"Team {imported_name!r} already exists in target workspace.",
+                        )
+                    )
                     continue
                 created_counts["teams"] += 1
                 if request.dry_run:
@@ -631,6 +687,22 @@ class WorkspaceExportService:
                 if team_id is None or agent_id is None:
                     skipped_counts["team_members"] += 1
                     warnings.append("Skipped team member with missing imported team or agent")
+                    conflict_plan.append(
+                        _missing_dependency_conflict(
+                            collection="team_members",
+                            source_id=source_id,
+                            dependency="team_or_agent",
+                            dependency_id=",".join(
+                                filter(
+                                    None,
+                                    [
+                                        _string_field(item, "agent_team_id"),
+                                        _string_field(item, "agent_profile_id"),
+                                    ],
+                                )
+                            ),
+                        )
+                    )
                     continue
                 created_counts["team_members"] += 1
                 if request.dry_run:
@@ -663,6 +735,16 @@ class WorkspaceExportService:
                 imported_title = f"{request.name_prefix}{_string_field(item, 'title')}"
                 if self._task_exists(workspace.id, imported_title):
                     skipped_counts["tasks"] += 1
+                    conflict_plan.append(
+                        _skip_conflict(
+                            collection="tasks",
+                            source_id=source_id,
+                            field="title",
+                            source_value=_string_field(item, "title"),
+                            target_value=imported_title,
+                            message=f"Task {imported_title!r} already exists in target workspace.",
+                        )
+                    )
                     continue
                 created_counts["tasks"] += 1
                 if request.dry_run:
@@ -699,6 +781,14 @@ class WorkspaceExportService:
                 if task_id is None:
                     skipped_counts["task_steps"] += 1
                     warnings.append("Skipped task step with missing imported task")
+                    conflict_plan.append(
+                        _missing_dependency_conflict(
+                            collection="task_steps",
+                            source_id=source_id,
+                            dependency="task",
+                            dependency_id=_string_field(item, "task_id"),
+                        )
+                    )
                     continue
                 created_counts["task_steps"] += 1
                 if request.dry_run:
@@ -736,6 +826,14 @@ class WorkspaceExportService:
                 if task_id is None:
                     skipped_counts["task_messages"] += 1
                     warnings.append("Skipped task message with missing imported task")
+                    conflict_plan.append(
+                        _missing_dependency_conflict(
+                            collection="task_messages",
+                            source_id=source_id,
+                            dependency="task",
+                            dependency_id=_string_field(item, "task_id"),
+                        )
+                    )
                     continue
                 created_counts["task_messages"] += 1
                 if request.dry_run:
@@ -766,6 +864,7 @@ class WorkspaceExportService:
             skipped_counts=skipped_counts,
             id_map=id_map,
             warnings=warnings,
+            conflict_plan=conflict_plan,
         )
         if request.dry_run:
             self._session.rollback()
@@ -1045,16 +1144,56 @@ class WorkspaceExportService:
         if archive_name not in archive_names:
             response.skipped_counts[collection] += 1
             response.warnings.append(f"Skipped {collection[:-1]} {source_id}: bytes not found")
+            response.conflict_plan.append(
+                WorkspaceImportConflict(
+                    collection=collection,
+                    source_id=source_id,
+                    field="bytes",
+                    strategy="skip",
+                    severity="warning",
+                    message=f"{collection[:-1].title()} bytes are missing from the archive.",
+                )
+            )
             return None
         content = archive.read(archive_name)
         if len(content) > request.max_bytes_per_object:
             response.skipped_counts[collection] += 1
             response.warnings.append(f"Skipped {collection[:-1]} {source_id}: object too large")
+            response.conflict_plan.append(
+                WorkspaceImportConflict(
+                    collection=collection,
+                    source_id=source_id,
+                    field="size_bytes",
+                    source_value=str(len(content)),
+                    target_value=str(request.max_bytes_per_object),
+                    strategy="reject",
+                    severity="error",
+                    message=(
+                        f"{collection[:-1].title()} exceeds max_bytes_per_object "
+                        f"({len(content)} > {request.max_bytes_per_object})."
+                    ),
+                )
+            )
             return None
         if total_bytes + len(content) > request.max_total_bytes:
             response.skipped_counts[collection] += 1
             response.warnings.append(
                 f"Skipped {collection[:-1]} {source_id}: archive byte limit reached"
+            )
+            response.conflict_plan.append(
+                WorkspaceImportConflict(
+                    collection=collection,
+                    source_id=source_id,
+                    field="total_bytes",
+                    source_value=str(total_bytes + len(content)),
+                    target_value=str(request.max_total_bytes),
+                    strategy="reject",
+                    severity="error",
+                    message=(
+                        f"Archive import would exceed max_total_bytes "
+                        f"({total_bytes + len(content)} > {request.max_total_bytes})."
+                    ),
+                )
             )
             return None
         return content
@@ -1156,6 +1295,48 @@ class WorkspaceExportService:
 class _ChecksumResult:
     checksum_sha256: str
     matched: bool
+
+
+def _skip_conflict(
+    *,
+    collection: str,
+    source_id: str,
+    field: str,
+    source_value: str,
+    target_value: str,
+    message: str,
+) -> WorkspaceImportConflict:
+    return WorkspaceImportConflict(
+        collection=collection,
+        source_id=source_id,
+        field=field,
+        source_value=source_value,
+        target_value=target_value,
+        strategy="skip_existing",
+        severity="warning",
+        message=message,
+    )
+
+
+def _missing_dependency_conflict(
+    *,
+    collection: str,
+    source_id: str,
+    dependency: str,
+    dependency_id: str,
+) -> WorkspaceImportConflict:
+    return WorkspaceImportConflict(
+        collection=collection,
+        source_id=source_id,
+        field=f"{dependency}_id",
+        source_value=dependency_id,
+        strategy="skip_missing_dependency",
+        severity="warning",
+        message=(
+            f"Skipped {collection[:-1].replace('_', ' ')} because imported "
+            f"{dependency.replace('_', ' ')} {dependency_id!r} is unavailable."
+        ),
+    )
 
 
 def _workspace_payload(workspace: Workspace) -> dict[str, object]:

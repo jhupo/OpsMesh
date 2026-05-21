@@ -344,6 +344,182 @@ def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_pat
     assert audit.user_id == target_user.id
 
 
+def test_workspace_metadata_import_preview_returns_conflict_plan(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-conflicts@example.com",
+        slug="source-conflicts",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-conflicts@example.com",
+        slug="target-conflicts",
+    )
+    source_runtime = RuntimeSpace(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        name="Team Runtime",
+        scope="team",
+    )
+    source_skill = Skill(
+        key="source.web-search",
+        name="Web Search",
+        version="1.0.0",
+        capability_keys=["web.search"],
+        visibility="public",
+    )
+    session.add_all([source_runtime, source_skill])
+    session.flush()
+    source_install = WorkspaceSkillInstall(
+        workspace_id=source_workspace.id,
+        skill_id=source_skill.id,
+        installed_by_user_id=source_user.id,
+        installed_key="web-search",
+        installed_name="Web Search",
+        installed_version="1.0.0",
+        installed_capability_keys=["web.search"],
+    )
+    source_agent = AgentProfile(
+        workspace_id=source_workspace.id,
+        name="Researcher",
+        role="researcher",
+        skills={"installed_skill_ids": [str(source_install.id)]},
+    )
+    source_team = AgentTeam(
+        workspace_id=source_workspace.id,
+        name="Research Team",
+        team_type="research",
+        runtime_space_id=source_runtime.id,
+    )
+    source_task = Task(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        title="Q2 Research",
+        agent_team_id=source_team.id,
+        runtime_space_id=source_runtime.id,
+    )
+    session.add_all([source_install, source_agent, source_team, source_task])
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=source_workspace.id,
+                agent_team_id=source_team.id,
+                agent_profile_id=source_agent.id,
+                team_role="researcher",
+            ),
+            TaskStep(
+                workspace_id=source_workspace.id,
+                task_id=source_task.id,
+                assigned_agent_profile_id=source_agent.id,
+                runtime_space_id=source_runtime.id,
+                title="Research",
+            ),
+            TaskMessage(
+                workspace_id=source_workspace.id,
+                task_id=source_task.id,
+                agent_profile_id=source_agent.id,
+                message_type="note",
+                sequence=1,
+                body="Ready",
+            ),
+        ]
+    )
+
+    target_runtime = RuntimeSpace(
+        workspace_id=target_workspace.id,
+        created_by_user_id=target_user.id,
+        name="Imported Team Runtime",
+        scope="team",
+    )
+    target_skill = Skill(
+        key="target.web-search",
+        name="Web Search",
+        version="1.0.0",
+        capability_keys=["web.search"],
+        visibility="private",
+    )
+    session.add_all([target_runtime, target_skill])
+    session.flush()
+    session.add_all(
+        [
+            WorkspaceSkillInstall(
+                workspace_id=target_workspace.id,
+                skill_id=target_skill.id,
+                installed_by_user_id=target_user.id,
+                installed_key="web-search",
+                installed_name="Web Search",
+                installed_version="1.0.0",
+            ),
+            AgentProfile(
+                workspace_id=target_workspace.id,
+                name="Imported Researcher",
+                role="researcher",
+            ),
+            AgentTeam(
+                workspace_id=target_workspace.id,
+                name="Imported Research Team",
+                team_type="research",
+            ),
+            Task(
+                workspace_id=target_workspace.id,
+                created_by_user_id=target_user.id,
+                title="Imported Q2 Research",
+            ),
+        ]
+    )
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={"include_audit_events": False, "include_runs": False, "include_files": False},
+    )
+    export_payload = json.loads(export_response.content)
+    preview = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import/preview",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": False},
+    )
+
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["dry_run"] is True
+    assert body["created_counts"]["agents"] == 0
+    assert body["skipped_counts"]["agents"] == 1
+    assert body["skipped_counts"]["teams"] == 1
+    assert body["skipped_counts"]["tasks"] == 1
+    assert body["skipped_counts"]["runtime_spaces"] == 1
+    assert body["skipped_counts"]["skill_installs"] == 1
+    conflicts_by_collection = {
+        item["collection"]: item for item in body["conflict_plan"]
+    }
+    assert conflicts_by_collection["agents"]["strategy"] == "skip_existing"
+    assert conflicts_by_collection["agents"]["target_value"] == "Imported Researcher"
+    assert conflicts_by_collection["teams"]["strategy"] == "skip_existing"
+    assert conflicts_by_collection["tasks"]["target_value"] == "Imported Q2 Research"
+    assert conflicts_by_collection["runtime_spaces"]["target_value"] == "Imported Team Runtime"
+    assert conflicts_by_collection["skill_installs"]["field"] == "installed_key"
+    assert "team_members" in conflicts_by_collection
+    assert "task_steps" in conflicts_by_collection
+    assert "task_messages" in conflicts_by_collection
+    assert session.scalar(
+        select(AgentProfile).where(
+            AgentProfile.workspace_id == target_workspace.id,
+            AgentProfile.name == "Imported Researcher",
+        )
+    ) is not None
+    assert (
+        len(
+            session.scalars(
+                select(AgentProfile).where(AgentProfile.workspace_id == target_workspace.id)
+            ).all()
+        )
+        == 1
+    )
+
+
 def test_workspace_metadata_export_import_preserves_runtime_spaces_and_skill_snapshots(
     tmp_path: Path,
 ) -> None:
@@ -569,6 +745,51 @@ def test_workspace_archive_export_skips_large_objects(tmp_path: Path) -> None:
         assert "skipped-objects.json" in names
         skipped = json.loads(archive.read("skipped-objects.json"))
         assert any("exceeds max_bytes_per_object" in item for item in skipped)
+
+
+def test_workspace_archive_import_preview_reports_oversized_objects(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-large-import@example.com",
+        slug="source-large-import",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-large-import@example.com",
+        slug="target-large-import",
+    )
+    uploaded = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/files",
+        headers=_headers(source_user.id),
+        files={"file": ("large.txt", b"1234567890", "text/plain")},
+    )
+    assert uploaded.status_code == 201
+    archive_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
+        headers=_headers(source_user.id),
+        json={"include_audit_events": False},
+    )
+
+    preview = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import/preview",
+        headers=_headers(target_user.id),
+        files={"file": ("archive.zip", archive_response.content, "application/zip")},
+        data={"max_bytes_per_object": "3"},
+    )
+
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["dry_run"] is True
+    assert body["created_counts"]["files"] == 0
+    assert body["skipped_counts"]["files"] == 1
+    assert body["conflict_plan"][0]["collection"] == "files"
+    assert body["conflict_plan"][0]["field"] == "size_bytes"
+    assert body["conflict_plan"][0]["strategy"] == "reject"
+    assert body["conflict_plan"][0]["severity"] == "error"
+    assert session.scalars(
+        select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
+    ).all() == []
 
 
 def test_workspace_archive_import_restores_metadata_and_file_bytes(tmp_path: Path) -> None:

@@ -106,6 +106,17 @@ class WorkspaceArchiveImportRequest(BaseModel):
     max_total_bytes: int = Field(default=100 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
 
 
+class WorkspaceImportConflict(BaseModel):
+    collection: str
+    source_id: str
+    field: str | None = None
+    source_value: str | None = None
+    target_value: str | None = None
+    strategy: str
+    severity: str = "warning"
+    message: str
+
+
 class WorkspaceImportResponse(BaseModel):
     dry_run: bool
     source_workspace_id: UUID
@@ -114,3 +125,4 @@ class WorkspaceImportResponse(BaseModel):
     skipped_counts: dict[str, int]
     id_map: dict[str, dict[str, str]]
     warnings: list[str] = Field(default_factory=list)
+    conflict_plan: list[WorkspaceImportConflict] = Field(default_factory=list)

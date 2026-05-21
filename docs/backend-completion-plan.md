@@ -43,7 +43,7 @@ Incomplete or basic-only areas:
 - Correction/revision is supported through a generic user-facing endpoint that targets tasks, steps, agents, artifacts, or final output and records follow-up work plus task messages.
 - Scheduling supports per-member concurrency, workspace active run quotas, per-tick resource-limit prechecks, durable workspace usage reservations, blocked reasons, cross-task priority ordering, and starvation prevention. Docker/self-hosted execution slot usage still needs deeper completion.
 - Docker runtime cleanup now records success/failure evidence. Self-hosted runtimes enforce worker concurrency/artifact limits and revocation evidence; broader machine trust workflows still need completion.
-- Import preview does not yet produce a full conflict plan before users commit a workspace archive import.
+- Import preview now returns a structured conflict plan for existing names, skipped dependencies, and archive byte limits; preview-token resolution workflows are still pending.
 - Model provider selection exists. Queued runs now freeze per-agent/default provider resolution
   metadata without storing secrets, worker execution can use a workspace-scoped fallback policy,
   and provider credentials track health state plus last success/failure details.
@@ -332,28 +332,32 @@ Acceptance:
 Current state:
 
 - Workspace metadata and archives can be imported.
-- Dry-run counts basic created/skipped resources.
-- It does not produce a detailed conflict plan users can inspect before importing.
+- Dry-run counts created/skipped resources and returns a structured `conflict_plan`.
+- Dedicated metadata/archive preview endpoints run as dry-runs and do not write database rows or storage blobs.
+- Existing-name conflicts, missing dependency skips, missing archive bytes, oversized objects, and archive total byte limits are reported with collection, source ID, field, severity, and strategy.
 
 Build:
 
-- Add an import preview service that validates the archive and builds a resource-by-resource plan.
-- Detect name conflicts, missing dependencies, disabled skills, missing runtime policies, unsupported format versions, checksum mismatches, oversized objects, and quota violations.
-- Return suggested resolutions: rename, skip, replace, install dependency, or reject.
+- [x] Add an import preview service that validates the archive and builds a resource-by-resource conflict plan.
+- [x] Detect name conflicts, missing dependencies, missing bytes, oversized objects, and archive total byte limits.
+- [x] Return suggested skip/reject strategies for currently supported conflict types.
+- Detect disabled skills, missing runtime policies, unsupported format versions, checksum mismatches, and quota violations.
+- Return richer suggested resolutions: rename, replace, install dependency, or reject with required user action.
 - Let committed import accept a preview token or explicit resolution map.
 
 API/data changes:
 
-- `POST /api/v1/workspaces/{workspace_id}/exports/metadata/import/preview`
-- `POST /api/v1/workspaces/{workspace_id}/exports/archive/import/preview`
-- Add preview response schemas: `resources`, `conflicts`, `warnings`, `estimated_counts`, `required_resolutions`.
+- [x] `POST /api/v1/workspaces/{workspace_id}/exports/metadata/import/preview`
+- [x] `POST /api/v1/workspaces/{workspace_id}/exports/archive/import/preview`
+- [x] Add `conflict_plan` response schema with `collection`, `source_id`, `field`, `source_value`, `target_value`, `strategy`, `severity`, and `message`.
+- Add richer preview response sections: `resources`, `estimated_counts`, and `required_resolutions`.
 
 Tests:
 
-- duplicate agent/team/task names generate rename or skip options
+- [x] duplicate agent/team/task names generate skip-existing conflict items
 - missing task mapping blocks dependent artifact unless skipped
-- oversized blobs are reported before commit
-- preview does not write database rows or storage blobs
+- [x] oversized blobs are reported before commit
+- [x] preview does not write database rows or storage blobs
 - committed import honors selected resolutions
 
 Acceptance:
