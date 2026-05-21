@@ -13,6 +13,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agents.models import AgentProfile
+from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
 from backend.app.core.request_context import current_log_context
 from backend.app.db.base import Base
 from backend.app.identity.models import User
@@ -392,6 +393,92 @@ def test_worker_runner_skips_jobs_that_do_not_match_worker_capacity() -> None:
         assert lease.lease_metadata["routing"] == {"runtime_modes": ["self_hosted"]}
 
 
+def test_worker_runner_processes_mcp_tool_execution_job() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, run_id, _ = _seed_run(session_factory)
+    with session_factory() as session:
+        server = McpServer(
+            workspace_id=workspace_id,
+            name="image-tools",
+            server_type="http",
+            connection={"url": "https://mcp.example.test/jsonrpc"},
+        )
+        session.add(server)
+        session.flush()
+        session.add(
+            McpToolAllowlist(
+                workspace_id=workspace_id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                capability_key="image.generate",
+                risk_level="low",
+            )
+        )
+        run = session.get(AgentRun, run_id)
+        assert run is not None
+        run.input = {
+            "authorization_snapshot": {
+                "version": 1,
+                "workspace_id": str(workspace_id),
+                "agent_run_id": str(run_id),
+                "allowed_tools": ["generate_image"],
+                "runtime_policy": {
+                    "mcp": {
+                        "timeout_seconds": 15,
+                        "max_input_bytes": 64_000,
+                        "max_output_bytes": 256_000,
+                    }
+                },
+            }
+        }
+        session.commit()
+        server_id = server.id
+    adapter = RecordingMcpAdapter({"asset_id": "img_123", "status": "created"})
+    queue.enqueue(
+        JobPayload(
+            workspace_id=workspace_id,
+            job_type=JobType.MCP_TOOL_EXECUTION,
+            resource_id=run_id,
+            idempotency_key=f"mcp.tool:{workspace_id}:{run_id}:generate_image",
+            routing={
+                "mcp_server_id": str(server_id),
+                "tool_name": "generate_image",
+                "arguments": {"prompt": "mountain"},
+                "runtime_allowed_tools": ["generate_image"],
+            },
+        )
+    )
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="worker-mcp", queue_name="agent_runs"),
+        mcp_adapter=adapter,
+    )
+
+    assert runner.run_once() is True
+
+    with session_factory() as session:
+        log = session.scalar(select(McpToolCallLog))
+        lease = session.scalar(select(WorkerLease).where(WorkerLease.worker_id == "worker-mcp"))
+        assert log is not None
+        assert log.workspace_id == workspace_id
+        assert log.agent_run_id == run_id
+        assert log.status == "completed"
+        assert log.response is not None
+        assert log.response["result"] == {"asset_id": "img_123", "status": "created"}
+        assert lease is not None
+        assert lease.status == "completed"
+        assert lease.job_type == JobType.MCP_TOOL_EXECUTION.value
+    assert adapter.calls == [
+        {
+            "tool_name": "generate_image",
+            "arguments": {"prompt": "mountain"},
+            "timeout_seconds": 15,
+        }
+    ]
+
+
 def test_worker_runner_rolls_back_failed_session() -> None:
     session_factory = _session_factory()
     queue = _queue()
@@ -607,6 +694,30 @@ def _queue() -> RedisQueue:
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
     )
+
+
+class RecordingMcpAdapter:
+    def __init__(self, response: dict[str, object]) -> None:
+        self._response = response
+        self.calls: list[dict[str, object]] = []
+
+    def call(
+        self,
+        *,
+        server: McpServer,
+        tool_name: str,
+        arguments: dict[str, object],
+        credential_refs: list[object],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        self.calls.append(
+            {
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        return self._response
 
 
 def _session_factory() -> sessionmaker[Session]:

@@ -11,6 +11,7 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunner
+from backend.app.capabilities.execution import McpToolAdapter, McpToolAdapterResolver
 from backend.app.core.config import Settings
 from backend.app.core.request_context import log_context
 from backend.app.operations.service import OperationsService
@@ -64,6 +65,7 @@ class WorkerRunner:
         session_factory: SessionFactory,
         config: WorkerRunnerConfig,
         agent_runner: AgentRunner | None = None,
+        mcp_adapter: McpToolAdapter | McpToolAdapterResolver | None = None,
         settings: Settings | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
@@ -72,6 +74,7 @@ class WorkerRunner:
         self._session_factory = session_factory
         self._config = config
         self._agent_runner = agent_runner
+        self._mcp_adapter = mcp_adapter
         self._settings = settings
         self._monotonic = monotonic
         self._sleep = sleep
@@ -110,15 +113,20 @@ class WorkerRunner:
     def _handle_job(self, job: JobPayload) -> None:
         with self._session_scope() as session:
             handler = WorkerJobHandler(
-                session,
-                self._queue,
-                self._agent_runner,
-                self._settings,
+                session=session,
+                queue=self._queue,
+                agent_runner=self._agent_runner,
+                settings=self._settings,
+                mcp_adapter=self._mcp_adapter,
             )
             handler.handle(job)
 
     def _job_log_context(self, job: JobPayload) -> Iterator[None]:
-        run_id = job.resource_id if job.job_type.value == "agent.run" else None
+        run_id = (
+            job.resource_id
+            if job.job_type.value in {"agent.run", "mcp.tool_execution"}
+            else None
+        )
         return log_context(
             worker_id=self._config.worker_id,
             workspace_id=job.workspace_id,

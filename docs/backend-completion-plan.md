@@ -125,6 +125,8 @@ Current state:
 - HTTP JSON-RPC, remote SSE, and remote hosted MCP servers can now be executed through the adapter resolver. Stdio MCP has a Docker-runtime-only adapter, but it is not selected by the default resolver; callers must explicitly bind it to a workspace runtime so the API host never executes stdio commands directly. Self-hosted runtimes now have an auditable MCP job queue for poll, claim, and completion callbacks, and OpenAI tool calls can submit stdio jobs with an explicit `waiting_self_hosted` result. Completed self-hosted MCP jobs now move waiting runs back to queued, persist pending tool results, and resume through structured tool continuations rendered at the OpenAI runtime boundary.
 - A workspace MCP catalog API now summarizes each server's visibility, allowed tools, credential readiness, execution mode, connection summary, and agent-scoped availability.
 - Stale self-hosted MCP jobs expire through the worker cleanup path, mark waiting runs failed, and record retryable pending tool results.
+- Internal worker jobs can execute MCP tool calls asynchronously through the same authorization,
+  policy, audit, and adapter path used by direct runtime tool calls.
 
 Build:
 
@@ -154,7 +156,7 @@ API/data changes:
 
 - [x] Extend existing MCP tool call logs with run, task, step, agent, server, tool, latency, status, error code, and payload hash fields.
 - [x] Add runtime policy fields for MCP network mode, timeout, max input bytes, and max output bytes.
-- Add an internal worker handler for MCP tool execution jobs.
+- [x] Add an internal worker handler for MCP tool execution jobs.
 
 Tests:
 

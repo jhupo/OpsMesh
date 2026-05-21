@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class JobType(StrEnum):
     AGENT_RUN = "agent.run"
+    MCP_TOOL_EXECUTION = "mcp.tool_execution"
     TASK_PLAN = "task.plan"
     RUNTIME_CLEANUP = "runtime.cleanup"
     WORKSPACE_ARCHIVE_EXPORT = "workspace.archive_export"
