@@ -1106,6 +1106,87 @@ def test_workspace_metadata_import_preview_rejects_disabled_skill_installs(
     ).all() == []
 
 
+def test_workspace_metadata_import_can_exclude_disabled_skill_resolution(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-exclude-disabled-skill@example.com",
+        slug="source-exclude-disabled-skill",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-exclude-disabled-skill@example.com",
+        slug="target-exclude-disabled-skill",
+    )
+    skill = Skill(
+        key="disabled-chart-maker",
+        name="Disabled Chart Maker",
+        version="1.0.0",
+        capability_keys=["chart.generate"],
+        manifest={"tools": ["generate_chart"]},
+        visibility="public",
+    )
+    session.add(skill)
+    session.flush()
+    install = WorkspaceSkillInstall(
+        workspace_id=source_workspace.id,
+        skill_id=skill.id,
+        installed_by_user_id=source_user.id,
+        installed_key="disabled-chart-maker",
+        installed_name="Disabled Chart Maker",
+        installed_version="1.0.0",
+        installed_capability_keys=["chart.generate"],
+        installed_manifest={"tools": ["generate_chart"]},
+        source_visibility="public",
+        source_checksum="sha256:disabled-chart",
+        status="disabled",
+        disabled_at=datetime.now(UTC),
+    )
+    session.add(install)
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_agents": False,
+            "include_teams": False,
+            "include_tasks": False,
+            "include_runs": False,
+            "include_files": False,
+            "include_runtime_spaces": False,
+            "include_audit_events": False,
+        },
+    )
+    export_payload = json.loads(export_response.content)
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={
+            "export": export_payload,
+            "dry_run": False,
+            "resolutions": {
+                f"skill_installs:{install.id}": {"action": "exclude_skill"}
+            },
+        },
+    )
+
+    assert export_response.status_code == 200
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["created_counts"]["skill_installs"] == 0
+    assert body["skipped_counts"]["skill_installs"] == 1
+    assert body["required_resolutions"] == []
+    assert body["conflict_plan"] == []
+    assert session.scalars(
+        select(WorkspaceSkillInstall).where(
+            WorkspaceSkillInstall.workspace_id == target_workspace.id
+        )
+    ).all() == []
+
+
 def test_workspace_metadata_import_preview_rejects_runtime_space_without_policy(
     tmp_path: Path,
 ) -> None:
@@ -1202,6 +1283,87 @@ def test_workspace_metadata_import_preview_rejects_runtime_space_without_policy(
     assert session.scalars(
         select(RuntimeSpace).where(RuntimeSpace.workspace_id == target_workspace.id)
     ).all() == []
+
+
+def test_workspace_metadata_import_can_add_missing_runtime_policy_resolution(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-runtime-policy-resolution@example.com",
+        slug="source-runtime-policy-resolution",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-runtime-policy-resolution@example.com",
+        slug="target-runtime-policy-resolution",
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        name="No Policy Runtime",
+        scope="team",
+        policy={},
+    )
+    session.add(runtime_space)
+    session.flush()
+    quota = RuntimeSpaceQuota(
+        workspace_id=source_workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="active_runs",
+        limit_value=2,
+        unit="count",
+    )
+    session.add(quota)
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_agents": False,
+            "include_teams": False,
+            "include_tasks": False,
+            "include_runs": False,
+            "include_files": False,
+            "include_skill_installs": False,
+            "include_audit_events": False,
+        },
+    )
+    export_payload = json.loads(export_response.content)
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={
+            "export": export_payload,
+            "dry_run": False,
+            "resolutions": {
+                f"runtime_spaces:{runtime_space.id}": {
+                    "action": "add_runtime_policy",
+                    "policy": {"runtime_modes": ["docker"], "network": "restricted"},
+                }
+            },
+        },
+    )
+
+    assert export_response.status_code == 200
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["created_counts"]["runtime_spaces"] == 1
+    assert body["created_counts"]["runtime_space_quotas"] == 1
+    assert body["required_resolutions"] == []
+    imported_runtime = session.scalar(
+        select(RuntimeSpace).where(RuntimeSpace.workspace_id == target_workspace.id)
+    )
+    assert imported_runtime is not None
+    assert imported_runtime.policy == {"runtime_modes": ["docker"], "network": "restricted"}
+    imported_quota = session.scalar(
+        select(RuntimeSpaceQuota).where(RuntimeSpaceQuota.workspace_id == target_workspace.id)
+    )
+    assert imported_quota is not None
+    assert imported_quota.limit_value == 2
+    assert imported_quota.reserved_value == 0
 
 
 def test_workspace_metadata_import_preview_rejects_quota_reserved_over_limit(
@@ -1307,6 +1469,159 @@ def test_workspace_metadata_import_preview_rejects_quota_reserved_over_limit(
     assert session.scalars(
         select(RuntimeSpaceQuota).where(RuntimeSpaceQuota.workspace_id == target_workspace.id)
     ).all() == []
+
+
+def test_workspace_metadata_import_can_release_source_quota_reservations(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-quota-release@example.com",
+        slug="source-quota-release",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-quota-release@example.com",
+        slug="target-quota-release",
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        name="Quota Runtime",
+        scope="team",
+        policy={"runtime_modes": ["docker"]},
+    )
+    session.add(runtime_space)
+    session.flush()
+    quota = RuntimeSpaceQuota(
+        workspace_id=source_workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="active_runs",
+        limit_value=1,
+        reserved_value=2,
+        unit="count",
+    )
+    session.add(quota)
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_agents": False,
+            "include_teams": False,
+            "include_tasks": False,
+            "include_runs": False,
+            "include_files": False,
+            "include_skill_installs": False,
+            "include_audit_events": False,
+        },
+    )
+    export_payload = json.loads(export_response.content)
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={
+            "export": export_payload,
+            "dry_run": False,
+            "resolutions": {
+                f"runtime_space_quotas:{quota.id}": {
+                    "action": "release_source_reservations"
+                }
+            },
+        },
+    )
+
+    assert export_response.status_code == 200
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["created_counts"]["runtime_spaces"] == 1
+    assert body["created_counts"]["runtime_space_quotas"] == 1
+    assert body["required_resolutions"] == []
+    imported_quota = session.scalar(
+        select(RuntimeSpaceQuota).where(RuntimeSpaceQuota.workspace_id == target_workspace.id)
+    )
+    assert imported_quota is not None
+    assert imported_quota.limit_value == 1
+    assert imported_quota.reserved_value == 0
+
+
+def test_workspace_metadata_import_can_increase_quota_limit_resolution(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-quota-increase@example.com",
+        slug="source-quota-increase",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-quota-increase@example.com",
+        slug="target-quota-increase",
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        name="Quota Runtime",
+        scope="team",
+        policy={"runtime_modes": ["docker"]},
+    )
+    session.add(runtime_space)
+    session.flush()
+    quota = RuntimeSpaceQuota(
+        workspace_id=source_workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="active_runs",
+        limit_value=1,
+        reserved_value=2,
+        unit="count",
+    )
+    session.add(quota)
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_agents": False,
+            "include_teams": False,
+            "include_tasks": False,
+            "include_runs": False,
+            "include_files": False,
+            "include_skill_installs": False,
+            "include_audit_events": False,
+        },
+    )
+    export_payload = json.loads(export_response.content)
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={
+            "export": export_payload,
+            "dry_run": False,
+            "resolutions": {
+                f"runtime_space_quotas:{quota.id}": {
+                    "action": "increase_quota_limit",
+                    "limit_value": 3,
+                }
+            },
+        },
+    )
+
+    assert export_response.status_code == 200
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["created_counts"]["runtime_spaces"] == 1
+    assert body["created_counts"]["runtime_space_quotas"] == 1
+    assert body["required_resolutions"] == []
+    imported_quota = session.scalar(
+        select(RuntimeSpaceQuota).where(RuntimeSpaceQuota.workspace_id == target_workspace.id)
+    )
+    assert imported_quota is not None
+    assert imported_quota.limit_value == 3
+    assert imported_quota.reserved_value == 0
 
 
 def test_workspace_archive_export_includes_metadata_and_file_bytes(tmp_path: Path) -> None:

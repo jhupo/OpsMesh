@@ -377,8 +377,10 @@ Build:
 - [x] Return richer suggested resolutions for rename-capable conflicts and required user actions.
 - [x] Let committed metadata imports accept and validate a preview token for the same export
   payload and import scope.
+- [x] Let committed metadata imports apply explicit non-rename resolutions for missing runtime
+  policies, invalid quota reservations, and disabled skill exclusions.
 - Return richer suggested resolutions for replace and install-dependency workflows.
-- Broaden explicit resolution maps beyond rename.
+- Broaden explicit resolution maps for archive object replacement and dependency-install flows.
 
 API/data changes:
 
@@ -399,6 +401,7 @@ Tests:
 - [x] committed metadata import honors selected rename resolutions
 - [x] committed metadata import accepts matching preview tokens and rejects stale tokens without
   writes
+- [x] committed metadata import honors selected policy, quota, and disabled-skill resolutions
 
 Acceptance:
 

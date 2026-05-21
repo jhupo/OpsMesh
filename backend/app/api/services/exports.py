@@ -504,6 +504,13 @@ class WorkspaceExportService:
         if request.import_runtime_spaces:
             for item in request.export.runtime_spaces[: request.max_items_per_collection]:
                 source_id = _string_field(item, "id")
+                if _resolution_action(
+                    request,
+                    "runtime_spaces",
+                    source_id,
+                ) == "exclude_runtime_space":
+                    skipped_counts["runtime_spaces"] += 1
+                    continue
                 imported_name = _resolved_import_name(
                     request,
                     collection="runtime_spaces",
@@ -526,7 +533,8 @@ class WorkspaceExportService:
                         )
                     )
                     continue
-                if not _dict_field(item, "policy"):
+                runtime_policy = _resolved_runtime_policy(request, item)
+                if not runtime_policy:
                     skipped_counts["runtime_spaces"] += 1
                     conflict_plan.append(
                         _missing_runtime_policy_conflict(
@@ -546,7 +554,7 @@ class WorkspaceExportService:
                     name=imported_name,
                     scope=_string_field(item, "scope", "workspace"),
                     status="active",
-                    policy=_dict_field(item, "policy"),
+                    policy=runtime_policy,
                     network_policy=_dict_field(item, "network_policy"),
                     storage_policy=_dict_field(item, "storage_policy"),
                     cleanup_policy=_dict_field(item, "cleanup_policy"),
@@ -557,6 +565,13 @@ class WorkspaceExportService:
 
             for item in request.export.runtime_space_quotas[: request.max_items_per_collection]:
                 source_id = _string_field(item, "id")
+                if _resolution_action(
+                    request,
+                    "runtime_space_quotas",
+                    source_id,
+                ) == "exclude_quota":
+                    skipped_counts["runtime_space_quotas"] += 1
+                    continue
                 runtime_space_id = id_map["runtime_spaces"].get(
                     _string_field(item, "runtime_space_id")
                 )
@@ -572,15 +587,17 @@ class WorkspaceExportService:
                         )
                     )
                     continue
-                if _int_field(item, "reserved_value", 0) > _int_field(item, "limit_value", 0):
+                quota_limit = _resolved_quota_limit(request, item)
+                quota_reserved = _resolved_quota_reserved_for_validation(request, item)
+                if quota_reserved > quota_limit:
                     skipped_counts["runtime_space_quotas"] += 1
                     conflict_plan.append(
                         _quota_violation_conflict(
                             collection="runtime_space_quotas",
                             source_id=source_id,
                             quota_key=_string_field(item, "quota_key"),
-                            limit_value=_int_field(item, "limit_value", 0),
-                            reserved_value=_int_field(item, "reserved_value", 0),
+                            limit_value=quota_limit,
+                            reserved_value=quota_reserved,
                         )
                     )
                     continue
@@ -592,7 +609,7 @@ class WorkspaceExportService:
                     workspace_id=workspace.id,
                     runtime_space_id=UUID(runtime_space_id),
                     quota_key=_string_field(item, "quota_key"),
-                    limit_value=_int_field(item, "limit_value", 0),
+                    limit_value=quota_limit,
                     reserved_value=0,
                     unit=_string_field(item, "unit", "count"),
                     status="active",
@@ -622,6 +639,9 @@ class WorkspaceExportService:
                     )
                     continue
                 if _string_field(item, "status", "active") != "active":
+                    if _resolution_action(request, "skill_installs", source_id) == "exclude_skill":
+                        skipped_counts["skill_installs"] += 1
+                        continue
                     skipped_counts["skill_installs"] += 1
                     conflict_plan.append(
                         _disabled_skill_install_conflict(
@@ -1730,6 +1750,67 @@ def _resolved_import_name(
     if not isinstance(new_name, str) or not new_name.strip():
         return fallback
     return new_name.strip()[:160]
+
+
+def _resolution_action(
+    request: WorkspaceImportRequest,
+    collection: str,
+    source_id: str,
+) -> str | None:
+    resolution = _resolution(request, collection, source_id)
+    action = resolution.get("action")
+    return action if isinstance(action, str) else None
+
+
+def _resolution(
+    request: WorkspaceImportRequest,
+    collection: str,
+    source_id: str,
+) -> dict[str, object]:
+    resolution = request.resolutions.get(f"{collection}:{source_id}")
+    return resolution if isinstance(resolution, dict) else {}
+
+
+def _resolved_runtime_policy(
+    request: WorkspaceImportRequest,
+    item: dict[str, object],
+) -> dict[str, object]:
+    source_policy = _dict_field(item, "policy")
+    source_id = _string_field(item, "id")
+    resolution = _resolution(request, "runtime_spaces", source_id)
+    if resolution.get("action") != "add_runtime_policy":
+        return source_policy
+    policy = resolution.get("policy")
+    return policy if isinstance(policy, dict) else source_policy
+
+
+def _resolved_quota_limit(
+    request: WorkspaceImportRequest,
+    item: dict[str, object],
+) -> int:
+    source_id = _string_field(item, "id")
+    source_limit = _int_field(item, "limit_value", 0)
+    source_reserved = _int_field(item, "reserved_value", 0)
+    action = _resolution_action(request, "runtime_space_quotas", source_id)
+    if action != "increase_quota_limit":
+        return source_limit
+    resolution = _resolution(request, "runtime_space_quotas", source_id)
+    raw_limit = resolution.get("limit_value")
+    if isinstance(raw_limit, int) and raw_limit >= source_reserved:
+        return raw_limit
+    return source_limit
+
+
+def _resolved_quota_reserved_for_validation(
+    request: WorkspaceImportRequest,
+    item: dict[str, object],
+) -> int:
+    source_id = _string_field(item, "id")
+    if _resolution_action(request, "runtime_space_quotas", source_id) == (
+        "release_source_reservations"
+    ):
+        return 0
+    return _int_field(item, "reserved_value", 0)
 
 
 def _metadata_preview_token(request: WorkspaceImportRequest) -> str:
