@@ -378,6 +378,88 @@ def test_operations_capacity_uses_workspace_scoped_short_cache() -> None:
     )
 
 
+def test_operations_aggregates_return_zero_metrics_for_empty_workspace() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace_with_role(
+        session,
+        email="empty-ops@example.com",
+        slug="empty-ops",
+    )
+    headers = _headers(owner.id)
+
+    overview = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/overview",
+        headers=headers,
+    )
+    capacity = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/capacity",
+        headers=headers,
+    )
+    scheduler = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/scheduler",
+        headers=headers,
+    )
+    outcomes = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/outcomes",
+        headers=headers,
+    )
+    runtime_capacity = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/runtime-capacity",
+        headers=headers,
+    )
+    control_plane = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/control-plane",
+        headers=headers,
+    )
+
+    for response in (
+        overview,
+        capacity,
+        scheduler,
+        outcomes,
+        runtime_capacity,
+        control_plane,
+    ):
+        assert response.status_code == 200
+
+    assert overview.json() == {
+        "queue": {
+            "queue_name": "agent_runs",
+            "queued": 0,
+            "dead_letter": 0,
+            "idempotency_keys": 0,
+        },
+        "failed_runs": 0,
+        "offline_runtimes": 0,
+        "workers_online": 0,
+        "security_warnings": 0,
+    }
+    assert capacity.json()["worker_capacity"]["workers_total"] == 0
+    assert capacity.json()["worker_capacity"]["available_slots"] == 0
+    assert capacity.json()["runtime_spaces"] == []
+    assert scheduler.json()["backlog"] == {
+        "queued_steps": 0,
+        "running_steps": 0,
+        "waiting_approval_tasks": 0,
+        "blocked_steps": 0,
+        "active_runs": 0,
+        "oldest_queued_age_seconds": None,
+        "highest_priority": None,
+    }
+    assert scheduler.json()["priority_buckets"] == []
+    assert scheduler.json()["blocked_reasons"] == []
+    assert outcomes.json()["runs"]["total_runs"] == 0
+    assert outcomes.json()["runs"]["failure_rate"] == 0
+    assert outcomes.json()["approvals"]["pending"] == 0
+    assert runtime_capacity.json()["providers"] == []
+    assert runtime_capacity.json()["worker_types"] == []
+    assert control_plane.json()["health"] == "critical"
+    assert [issue["code"] for issue in control_plane.json()["issues"]] == [
+        "worker_fleet_empty"
+    ]
+
+
 def test_operations_capacity_reports_queue_workers_and_runtime_space_saturation() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

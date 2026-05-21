@@ -599,10 +599,10 @@ Build:
 
 API/data changes:
 
-- `GET /api/v1/workspaces/{workspace_id}/operations/overview`
-- `GET /api/v1/workspaces/{workspace_id}/operations/capacity`
-- `GET /api/v1/workspaces/{workspace_id}/operations/scheduler`
-- `GET /api/v1/workspaces/{workspace_id}/operations/outcomes`
+- [x] `GET /api/v1/workspaces/{workspace_id}/operations/overview`
+- [x] `GET /api/v1/workspaces/{workspace_id}/operations/capacity`
+- [x] `GET /api/v1/workspaces/{workspace_id}/operations/scheduler`
+- [x] `GET /api/v1/workspaces/{workspace_id}/operations/outcomes`
 - [x] `GET /api/v1/workspaces/{workspace_id}/operations/runtime-capacity`
 - [x] `GET /api/v1/workspaces/{workspace_id}/operations/mcp-jobs`
 - [x] `GET /api/v1/workspaces/{workspace_id}/operations/control-plane`
@@ -610,7 +610,7 @@ API/data changes:
 Tests:
 
 - [x] aggregates are workspace-scoped
-- empty workspace returns zeroed metrics
+- [x] empty workspace returns zeroed metrics
 - [x] failed/running/queued seeded data produces expected counts
 - [x] control-plane summary emits stable issue codes for capacity, scheduler, approvals, and MCP
   health
