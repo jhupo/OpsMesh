@@ -139,6 +139,7 @@ class RuntimeSpaceService:
         runtime_space = self.get_runtime_space(workspace_id, runtime_space_id)
         if runtime_space is None:
             return None
+        old_status = runtime_space.status
         changed_fields: list[str] = []
         for field_name, value in (
             ("name", name),
@@ -159,11 +160,20 @@ class RuntimeSpaceService:
             )
             changed_fields.append("quota_limits")
         if changed_fields:
+            event_type = (
+                "runtime_space.status_updated"
+                if status is not None and runtime_space.status != old_status
+                else "runtime_space.updated"
+            )
             self._append_event(
                 runtime_space,
-                "runtime_space.updated",
+                event_type,
                 f"Runtime space {runtime_space.name} updated",
-                {"changed_fields": changed_fields},
+                {
+                    "changed_fields": changed_fields,
+                    "before_status": old_status,
+                    "after_status": runtime_space.status,
+                },
             )
         self._session.commit()
         self._session.refresh(runtime_space)

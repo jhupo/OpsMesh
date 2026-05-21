@@ -252,6 +252,27 @@ def test_workspace_scheduler_blocks_when_active_run_quota_is_full() -> None:
     assert step.dependencies["scheduling_status"] == "blocked"
 
 
+def test_workspace_scheduler_pause_blocks_new_steps() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(
+        session,
+        settings={
+            "scheduler": {
+                "paused": True,
+                "pause_reason": "operator_review",
+                "max_active_runs": 10,
+            }
+        },
+    )
+    _, step = _seed_task_step(session, workspace, title="Paused", priority=10)
+
+    runs = RunOrchestrationService(session).schedule_workspace_steps(workspace_id=workspace.id)
+
+    assert runs == []
+    assert step.dependencies["scheduling_status"] == "blocked"
+    assert step.dependencies["blocked_reason"] == "operator_review"
+
+
 def test_run_orchestration_reserves_runtime_space_capacity_before_enqueue() -> None:
     session = _session()
     _, workspace = _seed_workspace(
@@ -312,6 +333,29 @@ def test_run_orchestration_reserves_runtime_space_capacity_before_enqueue() -> N
     ][0]
     assert released.status == "released"
     assert released.released_at is not None
+
+
+def test_run_orchestration_blocks_paused_runtime_space_without_reserving_capacity() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session, settings={"scheduler": {"max_active_runs": 10}})
+    runtime_space = _seed_runtime_space(session, workspace, active_runs=1)
+    runtime_space.status = "paused"
+    _, step = _seed_task_step(
+        session,
+        workspace,
+        title="Paused space",
+        priority=10,
+        runtime_space_id=runtime_space.id,
+    )
+    session.flush()
+
+    runs = RunOrchestrationService(session).schedule_workspace_steps(workspace_id=workspace.id)
+
+    assert runs == []
+    assert _runtime_space_quota(session, runtime_space.id).reserved_value == 0
+    assert _runtime_space_reservations(session, runtime_space.id) == []
+    assert step.dependencies["scheduling_status"] == "blocked"
+    assert step.dependencies["blocked_reason"] == "runtime_space_paused"
 
 
 def test_run_orchestration_reserves_runtime_space_resource_requirements() -> None:

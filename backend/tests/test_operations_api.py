@@ -1201,6 +1201,8 @@ def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:
             "max_steps_per_task_per_tick": 1,
             "starvation_boost_after_seconds": 60,
             "resource_limits": {"cpu": 4},
+            "paused": True,
+            "pause_reason": "maintenance",
         }
     }
     queued_task = Task(
@@ -1285,6 +1287,8 @@ def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:
         {"reason": "workspace_run_quota_exceeded", "count": 1}
     ]
     assert payload["policy"] == {
+        "paused": True,
+        "pause_reason": "maintenance",
         "max_active_runs": 2,
         "max_running_tasks": 1,
         "max_runs_to_start_per_tick": 1,

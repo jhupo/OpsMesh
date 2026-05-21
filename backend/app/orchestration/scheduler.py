@@ -24,6 +24,8 @@ ACTIVE_RUN_STATUSES = (
 
 @dataclass(frozen=True)
 class WorkspaceSchedulerPolicy:
+    paused: bool = False
+    pause_reason: str | None = None
     max_active_runs: int | None = None
     max_running_tasks: int | None = None
     max_runs_to_start_per_tick: int | None = None
@@ -53,6 +55,15 @@ class WorkspaceScheduler:
         if not candidate_steps:
             return SchedulingDecision((), (), None, None)
         policy = self._policy_for(workspace_id)
+        if policy.paused:
+            reason = policy.pause_reason or "workspace_scheduler_paused"
+            self._mark_blocked(candidate_steps, reason)
+            return SchedulingDecision(
+                (),
+                tuple(candidate_steps),
+                reason,
+                self._available_run_slots(workspace_id, policy),
+            )
         task_quota_allowed_steps, task_quota_blocked_steps = self._apply_task_quota(
             workspace_id,
             candidate_steps,
@@ -126,6 +137,8 @@ class WorkspaceScheduler:
         raw_scheduler = raw_settings.get("scheduler") if isinstance(raw_settings, dict) else None
         scheduler = raw_scheduler if isinstance(raw_scheduler, dict) else {}
         return WorkspaceSchedulerPolicy(
+            paused=scheduler.get("paused") is True,
+            pause_reason=_non_empty_string_or_none(scheduler.get("pause_reason")),
             max_active_runs=_positive_int_or_none(scheduler.get("max_active_runs")),
             max_running_tasks=_positive_int_or_none(scheduler.get("max_running_tasks")),
             max_runs_to_start_per_tick=_positive_int_or_none(
@@ -338,6 +351,13 @@ def _positive_int_or_none(value: object) -> int | None:
 def _positive_int_or_default(value: object, default: int) -> int:
     parsed = _positive_int_or_none(value)
     return parsed if parsed is not None else default
+
+
+def _non_empty_string_or_none(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _blocked_reason(

@@ -121,7 +121,7 @@ Operator controls:
 Operator controls:
 
 - view queue depth by workspace, team, priority, and reason
-- pause scheduling for one workspace or runtime space
+- pause scheduling for one workspace or runtime space; workspace scheduler policy now supports a durable `paused` flag and runtime spaces support `paused` status to block new runs without deleting the team workspace
 - cancel stuck runs
 - requeue safe failed jobs
 - inspect starvation and fairness metrics

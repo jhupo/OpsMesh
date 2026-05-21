@@ -231,6 +231,8 @@ class SchedulerBlockedReasonResponse(BaseModel):
 
 
 class SchedulerPolicyResponse(BaseModel):
+    paused: bool = False
+    pause_reason: str | None = None
     max_active_runs: int | None
     max_running_tasks: int | None
     max_runs_to_start_per_tick: int | None

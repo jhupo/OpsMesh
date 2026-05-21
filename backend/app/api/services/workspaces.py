@@ -10,6 +10,7 @@ from backend.app.api.schemas.workspaces import (
     WorkspaceQuotaUpsertRequest,
     WorkspaceUpdateRequest,
 )
+from backend.app.audit.service import AuditService
 from backend.app.auth.permissions import WorkspaceRole
 from backend.app.db.errors import commit_or_raise_conflict
 from backend.app.workspaces.models import Workspace, WorkspaceMember, WorkspaceQuota
@@ -58,10 +59,38 @@ class WorkspaceService:
             )
         )
 
-    def update(self, workspace: Workspace, data: WorkspaceUpdateRequest) -> Workspace:
+    def update(
+        self,
+        workspace: Workspace,
+        data: WorkspaceUpdateRequest,
+        *,
+        actor_user_id: UUID | None = None,
+    ) -> Workspace:
+        old_status = workspace.status
+        old_scheduler = _scheduler_settings(workspace.settings)
         updates = data.model_dump(exclude_unset=True)
         for field, value in updates.items():
             setattr(workspace, field, value)
+        new_scheduler = _scheduler_settings(workspace.settings)
+        if actor_user_id is not None:
+            if workspace.status != old_status:
+                AuditService(self._session).record_user_action(
+                    workspace_id=workspace.id,
+                    user_id=actor_user_id,
+                    action="workspace.status_updated",
+                    target_type="workspace",
+                    target_id=workspace.id,
+                    metadata={"before": old_status, "after": workspace.status},
+                )
+            if new_scheduler != old_scheduler:
+                AuditService(self._session).record_user_action(
+                    workspace_id=workspace.id,
+                    user_id=actor_user_id,
+                    action="workspace.scheduler_policy_updated",
+                    target_type="workspace",
+                    target_id=workspace.id,
+                    metadata={"before": old_scheduler, "after": new_scheduler},
+                )
         self._session.commit()
         self._session.refresh(workspace)
         return workspace
@@ -142,3 +171,10 @@ class WorkspaceService:
         )
         rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
         return list(rows), int(total or 0)
+
+
+def _scheduler_settings(settings: dict[str, object]) -> dict[str, object]:
+    raw_scheduler = settings.get("scheduler") if isinstance(settings, dict) else None
+    if not isinstance(raw_scheduler, dict):
+        return {}
+    return dict(raw_scheduler)

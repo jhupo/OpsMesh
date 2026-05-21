@@ -26,7 +26,7 @@ async def validation_exception_handler(
                 "code": "validation_error",
                 "message": "Request validation failed",
                 "request_id": getattr(request.state, "request_id", None),
-                "details": exc.errors(),
+                "details": _json_safe_validation_errors(exc.errors()),
             }
         },
     )
@@ -102,3 +102,17 @@ def _code_for_status(status_code: int) -> str:
             return "service_unavailable"
         case _:
             return "http_error"
+
+
+def _json_safe_validation_errors(errors: list[dict[str, object]]) -> list[dict[str, object]]:
+    safe_errors: list[dict[str, object]] = []
+    for error in errors:
+        safe_error = dict(error)
+        context = safe_error.get("ctx")
+        if isinstance(context, dict):
+            safe_error["ctx"] = {
+                key: str(value) if isinstance(value, Exception) else value
+                for key, value in context.items()
+            }
+        safe_errors.append(safe_error)
+    return safe_errors

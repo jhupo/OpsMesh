@@ -1647,6 +1647,10 @@ class RunOrchestrationService:
         if runtime_space_id is None:
             self._mark_step_scheduling_runnable(step)
             return True, None
+        runtime_space = self._session.get(RuntimeSpace, runtime_space_id)
+        if runtime_space is not None and runtime_space.status == "paused":
+            self._mark_step_scheduling_blocked(step, "runtime_space_paused")
+            return False, None
         result = RuntimeSpaceService(self._session).reserve_run_capacity(
             workspace_id=task.workspace_id,
             runtime_space_id=runtime_space_id,

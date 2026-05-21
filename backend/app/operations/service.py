@@ -1344,6 +1344,8 @@ class OperationsService:
         raw_scheduler = settings.get("scheduler") if isinstance(settings, dict) else None
         scheduler = raw_scheduler if isinstance(raw_scheduler, dict) else {}
         return SchedulerPolicyResponse(
+            paused=scheduler.get("paused") is True,
+            pause_reason=_non_empty_string_or_none(scheduler.get("pause_reason")),
             max_active_runs=_positive_int_or_none(scheduler.get("max_active_runs")),
             max_running_tasks=_positive_int_or_none(scheduler.get("max_running_tasks")),
             max_runs_to_start_per_tick=_positive_int_or_none(
@@ -1437,6 +1439,13 @@ def _positive_int_or_none(value: object) -> int | None:
     if isinstance(value, int) and value > 0:
         return value
     return None
+
+
+def _non_empty_string_or_none(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _positive_number_dict(value: object) -> dict[str, float]:

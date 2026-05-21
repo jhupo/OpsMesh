@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
 
 RuntimeSpaceScope = Literal["workspace", "team", "task"]
-RuntimeSpaceStatus = Literal["active", "disabled", "quarantined", "archived"]
+RuntimeSpaceStatus = Literal["active", "paused", "disabled", "quarantined", "archived"]
 
 
 def default_network_policy() -> dict[str, object]:

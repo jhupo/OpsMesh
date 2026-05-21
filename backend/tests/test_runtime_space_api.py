@@ -77,7 +77,7 @@ def test_runtime_space_api_lifecycle_and_workspace_scope() -> None:
     updated = client.patch(
         f"/api/v1/workspaces/{workspace.id}/runtime-spaces/{runtime_space_id}",
         headers=_headers(owner.id),
-        json={"status": "disabled", "quota_limits": {"active_runs": 1}},
+        json={"status": "paused", "quota_limits": {"active_runs": 1}},
     )
     reset = client.post(
         f"/api/v1/workspaces/{workspace.id}/runtime-spaces/{runtime_space_id}/reset",
@@ -98,7 +98,7 @@ def test_runtime_space_api_lifecycle_and_workspace_scope() -> None:
     assert events.status_code == 200
     assert events.json()["total"] == 1
     assert updated.status_code == 200
-    assert updated.json()["status"] == "disabled"
+    assert updated.json()["status"] == "paused"
     assert reset.status_code == 200
     assert {quota.quota_key: quota.limit_value for quota in quotas} == {
         "active_runs": 1,
@@ -111,6 +111,18 @@ def test_runtime_space_api_lifecycle_and_workspace_scope() -> None:
     assert len(bindings) == 1
     assert bindings[0].target_type == "workspace"
     assert bindings[0].target_id == workspace.id
+    stored_events = session.scalars(
+        select(RuntimeSpaceEvent)
+        .where(RuntimeSpaceEvent.runtime_space_id == runtime_space_id)
+        .order_by(RuntimeSpaceEvent.created_at.asc())
+    ).all()
+    assert [event.event_type for event in stored_events] == [
+        "runtime_space.created",
+        "runtime_space.status_updated",
+        "runtime_space.reset_requested",
+    ]
+    assert stored_events[1].event_metadata["before_status"] == "active"
+    assert stored_events[1].event_metadata["after_status"] == "paused"
 
 
 def test_team_runtime_space_flows_to_task_and_initial_run() -> None:
@@ -123,6 +135,11 @@ def test_team_runtime_space_flows_to_task_and_initial_run() -> None:
         json={"name": "Design team space", "scope": "workspace"},
     )
     runtime_space_id = UUID(runtime_space.json()["id"])
+    manager = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "PM", "role": "project_manager"},
+    )
 
     team = client.post(
         f"/api/v1/workspaces/{workspace.id}/teams",
@@ -131,6 +148,7 @@ def test_team_runtime_space_flows_to_task_and_initial_run() -> None:
             "name": "Design Team",
             "team_type": "design",
             "runtime_space_id": str(runtime_space_id),
+            "manager_agent_profile_id": manager.json()["id"],
         },
     )
     task = client.post(
@@ -144,6 +162,7 @@ def test_team_runtime_space_flows_to_task_and_initial_run() -> None:
         select(AgentRun).where(AgentRun.workspace_id == workspace.id)
     ).all()
 
+    assert manager.status_code == 201
     assert team.status_code == 201
     assert team.json()["runtime_space_id"] == str(runtime_space_id)
     assert task.status_code == 201

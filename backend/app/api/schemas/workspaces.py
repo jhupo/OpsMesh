@@ -1,6 +1,7 @@
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 from backend.app.api.schemas.common import TimestampedModel
 
@@ -13,8 +14,29 @@ class WorkspaceCreateRequest(BaseModel):
 
 class WorkspaceUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=160)
-    status: str | None = Field(default=None, max_length=32)
+    status: Literal["active", "paused", "disabled", "archived"] | None = None
     settings: dict[str, object] | None = None
+
+    @field_validator("settings")
+    @classmethod
+    def _validate_scheduler_settings(
+        cls,
+        value: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        if value is None:
+            return value
+        raw_scheduler = value.get("scheduler")
+        if raw_scheduler is None:
+            return value
+        if not isinstance(raw_scheduler, dict):
+            raise ValueError("scheduler settings must be an object")
+        paused = raw_scheduler.get("paused")
+        if paused is not None and not isinstance(paused, bool):
+            raise ValueError("scheduler.paused must be a boolean")
+        pause_reason = raw_scheduler.get("pause_reason")
+        if pause_reason is not None and not isinstance(pause_reason, str):
+            raise ValueError("scheduler.pause_reason must be a string")
+        return value
 
 
 class WorkspaceResponse(TimestampedModel):

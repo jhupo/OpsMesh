@@ -2079,6 +2079,53 @@ def test_create_workspace_assigns_owner_membership() -> None:
     assert members.json()["items"][0]["role"] == "owner"
 
 
+def test_workspace_update_can_pause_scheduler_and_records_audit() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+
+    response = client.patch(
+        f"/api/v1/workspaces/{workspace.id}",
+        headers=_headers(owner.id),
+        json={
+            "status": "paused",
+            "settings": {
+                "scheduler": {
+                    "paused": True,
+                    "pause_reason": "maintenance",
+                }
+            },
+        },
+    )
+
+    events = session.scalars(
+        select(AuditEvent)
+        .where(AuditEvent.workspace_id == workspace.id)
+        .order_by(AuditEvent.created_at.asc())
+    ).all()
+    actions = [event.action for event in events]
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "paused"
+    assert response.json()["settings"]["scheduler"]["paused"] is True
+    assert actions == ["workspace.status_updated", "workspace.scheduler_policy_updated"]
+    assert events[0].audit_metadata["before"] == "active"
+    assert events[0].audit_metadata["after"] == "paused"
+    assert events[1].audit_metadata["after"]["pause_reason"] == "maintenance"
+
+
+def test_workspace_update_rejects_invalid_scheduler_pause_config() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+
+    response = client.patch(
+        f"/api/v1/workspaces/{workspace.id}",
+        headers=_headers(owner.id),
+        json={"settings": {"scheduler": {"paused": "yes"}}},
+    )
+
+    assert response.status_code == 422
+
+
 def test_workspace_quota_api_manages_runtime_limits() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
