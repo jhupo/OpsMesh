@@ -560,6 +560,66 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
     assert queue.count_queued(workspace_id=workspace.id) == 1
 
 
+def test_planning_routes_reject_foreign_task_ids() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other@example.com",
+        slug="other-space",
+    )
+    task = Task(
+        workspace_id=other_workspace.id,
+        created_by_user_id=other_owner.id,
+        title="Foreign team task",
+        agent_team_id=uuid4(),
+        project_plan={"plan_id": "foreign-plan", "work_packages": []},
+    )
+    session.add(task)
+    session.flush()
+    attempt = TaskPlanningAttempt(
+        workspace_id=other_workspace.id,
+        task_id=task.id,
+        attempt_number=1,
+        retry_count=0,
+        status="completed",
+        input_snapshot={"title": task.title},
+        output_snapshot=task.project_plan,
+        validation_errors=[],
+        created_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC),
+    )
+    session.add(attempt)
+    session.commit()
+
+    retry = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/plan/retry",
+        headers=_headers(owner.id),
+        json={"enqueue": False},
+    )
+    regenerate = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/plan/regenerate",
+        headers=_headers(owner.id),
+        json={"enqueue": False},
+    )
+    attempts = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/planning-attempts",
+        headers=_headers(owner.id),
+    )
+
+    session.refresh(task)
+    session.refresh(attempt)
+
+    assert retry.status_code == 404
+    assert regenerate.status_code == 404
+    assert attempts.status_code == 404
+    assert task.workspace_id == other_workspace.id
+    assert task.project_plan == {"plan_id": "foreign-plan", "work_packages": []}
+    assert attempt.workspace_id == other_workspace.id
+    assert session.query(TaskPlanningAttempt).count() == 1
+
+
 def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),

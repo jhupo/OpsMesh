@@ -786,6 +786,8 @@ Build:
   - [x] Runtime lease listing does not leak foreign runtime-space leases.
   - [x] Disabled MCP credentials are not injected into tool execution.
   - [x] Disabled MCP servers and tool allowlist entries are rejected by execution.
+  - [x] Forged MCP tool-call log server references are rejected.
+  - [x] Planning retry/regenerate/history routes hide foreign task IDs.
 - Add property-style tests for workspace ID mismatch where practical.
 
 Tests:
