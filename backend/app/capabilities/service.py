@@ -2,6 +2,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import TypeVar
 from urllib.parse import urlparse
 from uuid import UUID
@@ -485,8 +486,15 @@ class CapabilityService:
         allow = self._allowed_tool_by_name(workspace_id, data.tool_name)
         if allow is None:
             raise ValueError("MCP tool is not allowed for this workspace")
+        request_payload = data.request
+        response_payload = data.response
+        error_payload = data.error
         log = McpToolCallLog(
             workspace_id=workspace_id,
+            latency_ms=_latency_ms_from_payload(response_payload, error_payload),
+            argument_sha256=_hash_from_payload(request_payload, "arguments_sha256"),
+            response_sha256=_response_hash_from_payload(response_payload),
+            error_code=_error_code_from_payload(error_payload),
             created_at=datetime.now(UTC),
             **data.model_dump(),
         )
@@ -576,6 +584,44 @@ def _skill_checksum(skill: Skill) -> str:
     }
     normalized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return f"sha256:{hashlib.sha256(normalized.encode('utf-8')).hexdigest()}"
+
+
+def _hash_from_payload(payload: dict[str, object] | None, key: str) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _response_hash_from_payload(payload: dict[str, object] | None) -> str | None:
+    existing = _hash_from_payload(payload, "response_sha256")
+    if existing is not None:
+        return existing
+    result = payload.get("result") if isinstance(payload, dict) else None
+    if isinstance(result, dict):
+        normalized = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return sha256(normalized.encode("utf-8")).hexdigest()
+    return None
+
+
+def _latency_ms_from_payload(
+    response: dict[str, object] | None,
+    error: dict[str, object] | None,
+) -> int | None:
+    for payload in (response, error):
+        if not isinstance(payload, dict):
+            continue
+        value = payload.get("latency_ms")
+        if isinstance(value, int) and value >= 0:
+            return value
+    return None
+
+
+def _error_code_from_payload(payload: dict[str, object] | None) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    code = payload.get("code")
+    return code if isinstance(code, str) else None
 
 
 def _credential_status(

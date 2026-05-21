@@ -203,9 +203,16 @@ class McpToolCallLogResponse(ORMModel):
     workspace_id: UUID
     mcp_server_id: UUID | None
     agent_run_id: UUID | None
+    task_id: UUID | None
+    task_step_id: UUID | None
+    agent_profile_id: UUID | None
     approval_id: UUID | None
     tool_name: str
     status: str
+    latency_ms: int | None
+    argument_sha256: str | None
+    response_sha256: str | None
+    error_code: str | None
     request: dict[str, object]
     response: dict[str, object] | None
     error: dict[str, object] | None

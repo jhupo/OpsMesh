@@ -173,6 +173,8 @@ class McpToolExecutionService:
                 response={"result": response, "latency_ms": latency_ms},
                 error=None,
                 snapshot=snapshot,
+                run=run,
+                latency_ms=latency_ms,
             )
             self._append_run_event(
                 run=run,
@@ -218,6 +220,8 @@ class McpToolExecutionService:
                 response=None,
                 error={**error, "latency_ms": latency_ms},
                 snapshot=snapshot,
+                run=run,
+                latency_ms=latency_ms,
             )
             self._append_run_event(
                 run=run,
@@ -253,6 +257,8 @@ class McpToolExecutionService:
             response={"result": response, "latency_ms": latency_ms},
             error=None,
             snapshot=snapshot,
+            run=run,
+            latency_ms=latency_ms,
         )
         self._append_run_event(
             run=run,
@@ -382,15 +388,26 @@ class McpToolExecutionService:
         response: dict[str, object] | None,
         error: dict[str, object] | None,
         snapshot: dict[str, object] | None = None,
+        run: AgentRun | None = None,
+        latency_ms: int | None = None,
     ) -> McpToolCallLog:
+        argument_sha256 = _payload_hash(request.arguments)
+        response_sha256 = _response_hash(response)
         log = McpToolCallLog(
             workspace_id=request.workspace_id,
             mcp_server_id=server_id,
             agent_run_id=request.agent_run_id,
+            task_id=run.task_id if run is not None else None,
+            task_step_id=run.task_step_id if run is not None else None,
+            agent_profile_id=run.agent_profile_id if run is not None else None,
             tool_name=request.tool_name,
             status=status,
+            latency_ms=latency_ms,
+            argument_sha256=argument_sha256,
+            response_sha256=response_sha256,
+            error_code=_error_code(error),
             request={
-                "arguments_sha256": _payload_hash(request.arguments),
+                "arguments_sha256": argument_sha256,
                 "argument_bytes": len(_canonical_payload(request.arguments).encode("utf-8")),
                 **_snapshot_audit_metadata(snapshot or {}),
             },
@@ -419,6 +436,8 @@ class McpToolExecutionService:
             response=None,
             error=None,
             snapshot=snapshot,
+            run=run,
+            latency_ms=0,
         )
         ApprovalService(self._session).create_approval(
             workspace_id=request.workspace_id,
@@ -562,8 +581,21 @@ class McpToolExecutionService:
                 workspace_id=request.workspace_id,
                 mcp_server_id=request.mcp_server_id,
                 agent_run_id=request.agent_run_id,
+                task_id=run.task_id
+                if run is not None and run.workspace_id == request.workspace_id
+                else None,
+                task_step_id=run.task_step_id
+                if run is not None and run.workspace_id == request.workspace_id
+                else None,
+                agent_profile_id=run.agent_profile_id
+                if run is not None and run.workspace_id == request.workspace_id
+                else None,
                 tool_name=request.tool_name,
                 status="blocked",
+                latency_ms=0,
+                argument_sha256=_payload_hash(request.arguments),
+                response_sha256=None,
+                error_code=reason,
                 request={
                     "arguments_sha256": _payload_hash(request.arguments),
                     "argument_bytes": len(_canonical_payload(request.arguments).encode("utf-8")),
@@ -717,6 +749,20 @@ def _normalized_error(exc: Exception) -> dict[str, object]:
     if isinstance(exc, McpExecutionError):
         return {"code": exc.code, "message": str(exc)}
     return {"code": "mcp_adapter_failed", "message": exc.__class__.__name__}
+
+
+def _error_code(error: dict[str, object] | None) -> str | None:
+    if error is None:
+        return None
+    code = error.get("code")
+    return code if isinstance(code, str) else None
+
+
+def _response_hash(response: dict[str, object] | None) -> str | None:
+    if response is None:
+        return None
+    result = response.get("result")
+    return _payload_hash(result) if isinstance(result, dict) else None
 
 
 def _payload_hash(payload: dict[str, object]) -> str:

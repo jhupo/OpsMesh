@@ -77,6 +77,13 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
 
     assert len(logs) == 1
     assert logs[0].status == "completed"
+    assert logs[0].task_id == run.task_id
+    assert logs[0].task_step_id == run.task_step_id
+    assert logs[0].agent_profile_id == run.agent_profile_id
+    assert logs[0].latency_ms is not None
+    assert logs[0].argument_sha256 == logs[0].request["arguments_sha256"]
+    assert logs[0].response_sha256 is not None
+    assert logs[0].error_code is None
     assert logs[0].request["arguments_sha256"]
     assert logs[0].request["authorization_snapshot_version"] == 1
     assert logs[0].request["snapshot_workspace_id"] == str(workspace.id)
@@ -120,6 +127,12 @@ def test_mcp_execution_blocks_tool_not_in_run_snapshot_and_records_security_even
 
     assert log is not None
     assert log.status == "blocked"
+    assert log.task_id == run.task_id
+    assert log.task_step_id == run.task_step_id
+    assert log.agent_profile_id == run.agent_profile_id
+    assert log.latency_ms == 0
+    assert log.argument_sha256 == log.request["arguments_sha256"]
+    assert log.error_code == "mcp_tool_not_allowed"
     assert log.error == {
         "code": "mcp_tool_not_allowed",
         "message": "MCP tool invocation was blocked by policy",

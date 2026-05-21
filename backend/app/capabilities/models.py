@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -175,6 +175,8 @@ class McpToolCallLog(UUIDPrimaryKeyMixin, Base):
     __table_args__ = (
         Index("ix_mcp_tool_call_logs_workspace_run", "workspace_id", "agent_run_id"),
         Index("ix_mcp_tool_call_logs_workspace_tool", "workspace_id", "tool_name"),
+        Index("ix_mcp_tool_call_logs_workspace_status", "workspace_id", "status"),
+        Index("ix_mcp_tool_call_logs_workspace_agent", "workspace_id", "agent_profile_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -189,12 +191,28 @@ class McpToolCallLog(UUIDPrimaryKeyMixin, Base):
         ForeignKey("agent_runs.id", ondelete="SET NULL"),
         nullable=True,
     )
+    task_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("tasks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    task_step_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("task_steps.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    agent_profile_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     approval_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("approvals.id", ondelete="SET NULL"),
         nullable=True,
     )
     tool_name: Mapped[str] = mapped_column(String(160), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    argument_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    response_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
     request: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     response: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)

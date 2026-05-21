@@ -149,7 +149,7 @@ Build:
 
 API/data changes:
 
-- Add `mcp_tool_executions` or extend existing tool call logs with run, task, step, agent, server, tool, latency, status, error code, and payload hash.
+- [x] Extend existing MCP tool call logs with run, task, step, agent, server, tool, latency, status, error code, and payload hash fields.
 - Add runtime policy fields for MCP network mode, timeout, max input bytes, and max output bytes.
 - Add an internal worker handler for MCP tool execution jobs.
 
