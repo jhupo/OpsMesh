@@ -379,7 +379,8 @@ Build:
   payload and import scope.
 - [x] Let committed metadata imports apply explicit non-rename resolutions for missing runtime
   policies, invalid quota reservations, and disabled skill exclusions.
-- Return richer suggested resolutions for replace and install-dependency workflows.
+- [x] Return richer suggested resolutions with recommended actions and resolution templates for
+  replace-object and install-dependency workflows.
 - Broaden explicit resolution maps for archive object replacement and dependency-install flows.
 
 API/data changes:
@@ -390,6 +391,7 @@ API/data changes:
 - [x] Add richer preview response sections: `resources`, `estimated_counts`, and `required_resolutions`.
 - [x] Add `preview_token` to metadata import preview responses and committed metadata import
   requests.
+- [x] Add `recommended_action` and `resolution_template` to suggested import resolutions.
 
 Tests:
 
@@ -402,6 +404,8 @@ Tests:
 - [x] committed metadata import accepts matching preview tokens and rejects stale tokens without
   writes
 - [x] committed metadata import honors selected policy, quota, and disabled-skill resolutions
+- [x] preview suggests concrete resolution templates for rename, dependency, policy, and archive
+  checksum conflicts
 
 Acceptance:
 

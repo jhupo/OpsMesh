@@ -514,6 +514,18 @@ def test_workspace_metadata_import_preview_returns_conflict_plan(tmp_path: Path)
     assert "team_members" in conflicts_by_collection
     assert "task_steps" in conflicts_by_collection
     assert "task_messages" in conflicts_by_collection
+    dependency_suggestion = next(
+        item
+        for item in body["suggested_resolutions"]
+        if item["collection"] == "team_members"
+    )
+    team_member_conflict = conflicts_by_collection["team_members"]
+    assert dependency_suggestion["recommended_action"] == "import_dependency"
+    assert dependency_suggestion["resolution_template"] == {
+        "action": "import_dependency",
+        "dependency_field": team_member_conflict["field"],
+        "dependency_id": team_member_conflict["source_value"],
+    }
     assert session.scalar(
         select(AgentProfile).where(
             AgentProfile.workspace_id == target_workspace.id,
@@ -605,6 +617,11 @@ def test_workspace_metadata_import_can_rename_existing_agent_conflict(
             "allowed_actions": ["rename", "skip"],
             "message": "Agent 'Imported Researcher' already exists in target workspace.",
             "resolution_key": f"agents:{source_agent.id}",
+            "recommended_action": "rename",
+            "resolution_template": {
+                "action": "rename",
+                "new_name": "Imported Researcher 2",
+            },
         }
     ]
     assert preview.json()["estimated_counts"]["suggested_resolution_total"] == 1
@@ -1277,6 +1294,20 @@ def test_workspace_metadata_import_preview_rejects_runtime_space_without_policy(
             "message": conflict_by_collection["runtime_spaces"]["message"],
         }
     ]
+    assert body["suggested_resolutions"][0] == {
+        "collection": "runtime_spaces",
+        "source_id": str(runtime_space.id),
+        "field": "policy",
+        "reason": "reject",
+        "allowed_actions": ["add_runtime_policy", "exclude_runtime_space"],
+        "message": conflict_by_collection["runtime_spaces"]["message"],
+        "resolution_key": f"runtime_spaces:{runtime_space.id}",
+        "recommended_action": "add_runtime_policy",
+        "resolution_template": {
+            "action": "add_runtime_policy",
+            "policy": {"runtime_modes": ["docker"], "network": "restricted"},
+        },
+    }
     assert committed.status_code == 200
     assert committed.json()["created_counts"]["runtime_spaces"] == 0
     assert committed.json()["skipped_counts"]["runtime_spaces"] == 1
@@ -1798,6 +1829,19 @@ def test_workspace_archive_import_preview_rejects_checksum_mismatch(tmp_path: Pa
             "reason": "reject",
             "allowed_actions": ["replace_archive_object", "exclude_object"],
             "message": body["conflict_plan"][0]["message"],
+        }
+    ]
+    assert body["suggested_resolutions"] == [
+        {
+            "collection": "files",
+            "source_id": uploaded.json()["id"],
+            "field": "checksum_sha256",
+            "reason": "reject",
+            "allowed_actions": ["replace_archive_object", "exclude_object"],
+            "message": body["conflict_plan"][0]["message"],
+            "resolution_key": f"files:{uploaded.json()['id']}",
+            "recommended_action": "replace_archive_object",
+            "resolution_template": {"action": "replace_archive_object"},
         }
     ]
     assert committed.status_code == 200

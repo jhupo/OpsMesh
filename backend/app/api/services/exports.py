@@ -1692,10 +1692,80 @@ def _suggested_resolutions(
             allowed_actions=_allowed_resolution_actions(conflict),
             message=conflict.message,
             resolution_key=f"{conflict.collection}:{conflict.source_id}",
+            recommended_action=_recommended_resolution_action(conflict),
+            resolution_template=_resolution_template(conflict),
         )
         for conflict in conflicts
         if _allowed_resolution_actions(conflict) != ["skip"]
     ]
+
+
+def _recommended_resolution_action(conflict: WorkspaceImportConflict) -> str:
+    if conflict.strategy == "skip_existing" and conflict.field in {"name", "title"}:
+        return "rename"
+    if conflict.field == "preview_token":
+        return "rerun_preview"
+    if conflict.field == "checksum_sha256":
+        return "replace_archive_object"
+    if conflict.field in {"size_bytes", "total_bytes"}:
+        return "exclude_object"
+    if conflict.field == "format_version":
+        return "export_supported_version"
+    if conflict.collection == "skill_installs" and conflict.field == "status":
+        return "exclude_skill"
+    if conflict.collection == "runtime_spaces" and conflict.field == "policy":
+        return "add_runtime_policy"
+    if conflict.field == "reserved_value":
+        return "release_source_reservations"
+    if conflict.strategy == "skip_missing_dependency":
+        return "import_dependency"
+    if conflict.strategy == "reject":
+        return "fix_source"
+    return "skip"
+
+
+def _resolution_template(conflict: WorkspaceImportConflict) -> dict[str, object]:
+    action = _recommended_resolution_action(conflict)
+    if action == "rename":
+        return {
+            "action": action,
+            "new_name": _suggested_rename_value(conflict),
+        }
+    if action == "add_runtime_policy":
+        return {
+            "action": action,
+            "policy": {"runtime_modes": ["docker"], "network": "restricted"},
+        }
+    if action == "increase_quota_limit":
+        return {
+            "action": action,
+            "limit_value": _int_from_optional_string(conflict.source_value, 0),
+        }
+    if action == "import_dependency":
+        return {
+            "action": action,
+            "dependency_field": conflict.field,
+            "dependency_id": conflict.source_value,
+        }
+    if action in {
+        "exclude_skill",
+        "exclude_runtime_space",
+        "exclude_quota",
+        "exclude_object",
+        "release_source_reservations",
+        "replace_archive_object",
+        "rerun_preview",
+        "export_supported_version",
+        "fix_source",
+        "skip",
+    }:
+        return {"action": action}
+    return {"action": action}
+
+
+def _suggested_rename_value(conflict: WorkspaceImportConflict) -> str:
+    value = conflict.target_value or conflict.source_value or conflict.source_id
+    return f"{value} 2"[:160]
 
 
 def _allowed_resolution_actions(conflict: WorkspaceImportConflict) -> list[str]:
@@ -1717,6 +1787,8 @@ def _allowed_resolution_actions(conflict: WorkspaceImportConflict) -> list[str]:
         return ["add_runtime_policy", "exclude_runtime_space"]
     if conflict.field == "reserved_value":
         return ["increase_quota_limit", "release_source_reservations", "exclude_quota"]
+    if conflict.strategy == "skip_missing_dependency":
+        return ["import_dependency", "skip"]
     if conflict.strategy == "reject":
         return ["fix_source", "exclude_object"]
     return ["skip"]
@@ -2178,6 +2250,15 @@ def _string_list_field(item: dict[str, object], key: str) -> list[str]:
 def _int_field(item: dict[str, object], key: str, default: int) -> int:
     value = item.get(key, default)
     return value if isinstance(value, int) else default
+
+
+def _int_from_optional_string(value: str | None, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
 
 
 def _bool_field(item: dict[str, object], key: str, default: bool) -> bool:

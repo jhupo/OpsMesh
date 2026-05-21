@@ -140,6 +140,8 @@ class WorkspaceImportRequiredResolution(BaseModel):
 
 class WorkspaceImportSuggestedResolution(WorkspaceImportRequiredResolution):
     resolution_key: str
+    recommended_action: str
+    resolution_template: dict[str, object] = Field(default_factory=dict)
 
 
 class WorkspaceImportResponse(BaseModel):
