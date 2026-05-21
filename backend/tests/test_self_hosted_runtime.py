@@ -684,6 +684,88 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
     ]
 
 
+def test_self_hosted_worker_cleanup_expires_stale_mcp_jobs_idempotently() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-mcp-cleanup",
+        },
+    )
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="image-tools",
+        server_type="stdio",
+        connection={"command": "mcp-image"},
+    )
+    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="waiting_runtime")
+    session.add_all([server, run])
+    session.flush()
+    stale_job = SelfHostedMcpJob(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime_id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+        status="queued",
+    )
+    fresh_job = SelfHostedMcpJob(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime_id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="search_web",
+        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+        status="queued",
+    )
+    session.add_all([stale_job, fresh_job])
+    session.flush()
+    stale_job.created_at = datetime.now(UTC) - timedelta(seconds=3_600)
+    session.commit()
+
+    cleanup = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/worker-cleanup"
+        "?stale_after_seconds=3600&mcp_job_stale_after_seconds=60",
+        headers=_headers(owner.id),
+    )
+    cleanup_again = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/worker-cleanup"
+        "?stale_after_seconds=3600&mcp_job_stale_after_seconds=60",
+        headers=_headers(owner.id),
+    )
+
+    session.refresh(stale_job)
+    session.refresh(fresh_job)
+    session.refresh(run)
+    event = session.query(RunEvent).filter_by(
+        agent_run_id=run.id,
+        event_type="self_hosted.mcp_job_expired",
+    ).one()
+    assert cleanup.status_code == 200
+    assert cleanup.json()["expired_mcp_jobs"] == 1
+    assert cleanup_again.status_code == 200
+    assert cleanup_again.json()["expired_mcp_jobs"] == 0
+    assert stale_job.status == "expired"
+    assert stale_job.error_payload is not None
+    assert stale_job.error_payload["code"] == "self_hosted_mcp_job_expired"
+    assert fresh_job.status == "queued"
+    assert run.status == "failed"
+    assert run.error is not None
+    assert run.error["code"] == "self_hosted_mcp_job_expired"
+    assert run.input["pending_tool_results"][0]["status"] == "expired"
+    assert event.event_metadata["mcp_job_id"] == str(stale_job.id)
+
+
 def test_self_hosted_service_creates_scoped_mcp_job() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

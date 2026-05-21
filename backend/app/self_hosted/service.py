@@ -64,6 +64,7 @@ class AuthenticatedWorker:
 class WorkerTrustCleanupResult:
     degraded: int = 0
     quarantined: int = 0
+    expired_mcp_jobs: int = 0
 
 
 @dataclass(frozen=True)
@@ -552,9 +553,11 @@ class SelfHostedRuntimeService:
         *,
         stale_after_seconds: int = 600,
         quarantine_after_seconds: int | None = None,
+        mcp_job_stale_after_seconds: int = 900,
     ) -> WorkerTrustCleanupResult:
         now = datetime.now(UTC)
         degraded_cutoff = now - timedelta(seconds=stale_after_seconds)
+        mcp_job_cutoff = now - timedelta(seconds=mcp_job_stale_after_seconds)
         quarantine_after_seconds = quarantine_after_seconds or stale_after_seconds * 3
         quarantine_after_seconds = max(quarantine_after_seconds, stale_after_seconds)
         quarantine_cutoff = now - timedelta(seconds=quarantine_after_seconds)
@@ -624,8 +627,13 @@ class SelfHostedRuntimeService:
                     worker.machine_id,
                     metadata,
                 )
+        expired_mcp_jobs = self._expire_stale_mcp_jobs(workspace_id, mcp_job_cutoff, now)
         self._session.commit()
-        return WorkerTrustCleanupResult(degraded=degraded, quarantined=quarantined)
+        return WorkerTrustCleanupResult(
+            degraded=degraded,
+            quarantined=quarantined,
+            expired_mcp_jobs=expired_mcp_jobs,
+        )
 
     def list_worker_trust(self, workspace_id: UUID) -> list[WorkerTrustSnapshot]:
         rows = self._session.scalars(
@@ -854,6 +862,45 @@ class SelfHostedRuntimeService:
             raise ValueError("Self-hosted MCP job not found")
         return job
 
+    def _expire_stale_mcp_jobs(
+        self,
+        workspace_id: UUID,
+        cutoff: datetime,
+        now: datetime,
+    ) -> int:
+        stale_jobs = self._session.scalars(
+            select(SelfHostedMcpJob).where(
+                SelfHostedMcpJob.workspace_id == workspace_id,
+                SelfHostedMcpJob.status.in_(["queued", "claimed"]),
+                SelfHostedMcpJob.created_at < cutoff,
+            )
+        ).all()
+        expired = 0
+        for job in stale_jobs:
+            expired += 1
+            job.status = "expired"
+            job.completed_at = now
+            job.error_payload = {
+                "code": "self_hosted_mcp_job_expired",
+                "message": "Self-hosted MCP job expired before completion.",
+                "retryable": True,
+            }
+            run = self._session.get(AgentRun, job.agent_run_id)
+            if run is None or run.workspace_id != workspace_id:
+                continue
+            self._record_mcp_job_completion_for_run(run, job)
+            self._append_run_event(
+                run,
+                "self_hosted.mcp_job_expired",
+                job.tool_name,
+                {
+                    "mcp_job_id": str(job.id),
+                    "mcp_server_id": str(job.mcp_server_id),
+                    "expired_at": now.isoformat(),
+                },
+            )
+        return expired
+
     def _record_mcp_job_completion_for_run(
         self,
         run: AgentRun,
@@ -879,7 +926,7 @@ class SelfHostedRuntimeService:
         run.input = run_input
         if job.status == "completed" and run.status == RunStatus.WAITING_RUNTIME.value:
             run.status = RunStatus.QUEUED.value
-        elif job.status == "failed" and run.status == RunStatus.WAITING_RUNTIME.value:
+        elif job.status in {"failed", "expired"} and run.status == RunStatus.WAITING_RUNTIME.value:
             run.status = RunStatus.FAILED.value
             run.error = job.error_payload or {
                 "code": "self_hosted_mcp_job_failed",

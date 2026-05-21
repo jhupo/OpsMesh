@@ -122,6 +122,7 @@ async def heartbeat(
 async def cleanup_self_hosted_workers(
     stale_after_seconds: int = Query(default=600, ge=60, le=86_400),
     quarantine_after_seconds: int | None = Query(default=None, ge=60, le=604_800),
+    mcp_job_stale_after_seconds: int = Query(default=900, ge=60, le=86_400),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
@@ -130,10 +131,12 @@ async def cleanup_self_hosted_workers(
         context.workspace.id,
         stale_after_seconds=stale_after_seconds,
         quarantine_after_seconds=quarantine_after_seconds,
+        mcp_job_stale_after_seconds=mcp_job_stale_after_seconds,
     )
     return SelfHostedWorkerCleanupResponse(
         degraded=result.degraded,
         quarantined=result.quarantined,
+        expired_mcp_jobs=result.expired_mcp_jobs,
     )
 
 

@@ -51,6 +51,7 @@ class SelfHostedWorkerCleanupResponse(BaseModel):
     degraded: int
     quarantined: int
     marked_offline: int = 0
+    expired_mcp_jobs: int = 0
 
 
 class SelfHostedWorkerTrustResponse(BaseModel):
