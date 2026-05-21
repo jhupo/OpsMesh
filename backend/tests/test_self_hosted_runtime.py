@@ -152,6 +152,29 @@ def test_self_hosted_runtime_registration_and_job_flow() -> None:
     assert revoked.status_code == 204
     denied = client.get("/api/v1/self-hosted/jobs/next", headers=_runtime_headers(credential))
     assert denied.status_code == 401
+    denied_progress = client.post(
+        "/api/v1/self-hosted/progress",
+        headers=_runtime_headers(credential),
+        json={
+            "agent_run_id": str(run.id),
+            "event_type": "self_hosted.progress",
+            "message": "should not persist",
+        },
+    )
+    denied_local_file = client.post(
+        "/api/v1/self-hosted/local-files",
+        headers=_runtime_headers(credential),
+        json={"task_id": str(task.id), "path": "/Users/me/leak.csv"},
+    )
+    denied_artifact = client.post(
+        "/api/v1/self-hosted/artifact-uploads",
+        headers=_runtime_headers(credential),
+        json={"agent_run_id": str(run.id), "filename": "late-result.png"},
+    )
+
+    assert denied_progress.status_code == 401
+    assert denied_local_file.status_code == 401
+    assert denied_artifact.status_code == 401
 
 
 def test_self_hosted_artifact_upload_rejects_cross_workspace_storage_key() -> None:

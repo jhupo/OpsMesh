@@ -789,6 +789,7 @@ Build:
   - [x] Forged MCP tool-call log server references are rejected.
   - [x] Planning retry/regenerate/history routes hide foreign task IDs.
   - [x] Artifact history ignores dirty artifacts linked to foreign task IDs.
+  - [x] Revoked self-hosted credentials cannot poll jobs or upload progress/files/artifacts.
 - Add property-style tests for workspace ID mismatch where practical.
 
 Tests:
