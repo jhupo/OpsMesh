@@ -14,6 +14,7 @@ from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
+from backend.app.runtime_manager.contracts import RuntimeCommandResult
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.self_hosted.models import SelfHostedMcpJob
 from backend.app.tasks.models import Task
@@ -162,6 +163,76 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
     }
 
 
+def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_provider="cloud_docker",
+        runtime_type="docker",
+        name="team-runtime",
+        docker_container_id="container-123",
+        limits={"timeout_seconds": 11},
+    )
+    task = Task(workspace_id=workspace.id, title="Task")
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="image-tools",
+        server_type="stdio",
+        connection={"command": ["mcp-image", "--stdio"]},
+    )
+    session.add_all([runtime, task, server])
+    session.flush()
+    allow = McpToolAllowlist(
+        workspace_id=workspace.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+    )
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        runtime_id=runtime.id,
+        input={
+            "authorization_snapshot": {
+                "workspace_id": str(workspace.id),
+                "allowed_tools": ["generate_image"],
+            }
+        },
+    )
+    session.add_all([allow, run])
+    session.commit()
+    docker = RecordingDockerClient(
+        RuntimeCommandResult(
+            exit_code=0,
+            stdout='{"jsonrpc":"2.0","id":"1","result":{"asset_id":"img_123"}}',
+            stderr="",
+        )
+    )
+
+    result = BackendToolExecutor.for_mcp_adapter(
+        session,
+        StaticMcpAdapter(),
+        docker_client=docker,
+    ).execute_tool(
+        context=AgentRuntimeContext(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            run_id=run.id,
+            allowed_tools=("generate_image",),
+        ),
+        tool_name="generate_image",
+        arguments={"prompt": "mountain"},
+    )
+
+    assert result.status == "completed"
+    assert result.output == {"asset_id": "img_123"}
+    assert docker.exec_calls[0]["container_id"] == "container-123"
+    assert docker.exec_calls[0]["timeout_seconds"] == 11
+    command = docker.exec_calls[0]["command"]
+    assert command[:2] == ["mcp-image", "--stdio"]
+    assert '"generate_image"' in command[2]
+
+
 def test_waiting_runtime_status_transition_is_allowed() -> None:
     from backend.app.runs.status import can_transition_run
 
@@ -180,6 +251,42 @@ class StaticMcpAdapter:
         timeout_seconds: int,
     ) -> dict[str, object]:
         return {"ok": True, "tool": tool_name}
+
+
+class RecordingDockerClient:
+    def __init__(self, command_result: RuntimeCommandResult) -> None:
+        self._command_result = command_result
+        self.exec_calls: list[dict[str, object]] = []
+
+    def create_container(self, request: object) -> str:
+        return "container-123"
+
+    def start_container(self, container_id: str) -> None:
+        return None
+
+    def stop_container(self, container_id: str) -> None:
+        return None
+
+    def remove_container(self, container_id: str) -> None:
+        return None
+
+    def remove_volume(self, volume_name: str) -> None:
+        return None
+
+    def exec_command(
+        self,
+        container_id: str,
+        command: list[str],
+        timeout_seconds: int,
+    ) -> RuntimeCommandResult:
+        self.exec_calls.append(
+            {
+                "container_id": container_id,
+                "command": command,
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        return self._command_result
 
 
 def _session() -> Session:

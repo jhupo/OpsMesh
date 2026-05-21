@@ -128,11 +128,12 @@ Build:
 
 - [x] Add an MCP execution service that resolves a requested server/tool from the run authorization snapshot.
 - [x] Add a workspace MCP catalog endpoint for product and control-plane views.
-- [ ] Support stdio, HTTP/SSE, and hosted MCP adapters behind one internal interface.
+- [x] Support stdio, HTTP/SSE, and hosted MCP adapters behind one internal interface.
   - [x] Add HTTP JSON-RPC adapter with credential header injection and sanitized remote errors.
   - [x] Add SSE adapter.
   - [x] Add hosted MCP adapter for declared remote HTTP/SSE transports.
   - [x] Add Docker-runtime stdio adapter that is only usable through explicit runtime binding, not the default API/worker resolver.
+  - [x] Route bound Docker-runtime stdio MCP calls through `RuntimeManager.execute_command`.
   - [x] Add self-hosted stdio MCP job dispatch foundation with worker poll, claim, and completion APIs.
   - [x] Wire self-hosted MCP job dispatch into the runtime tool adapter with pending-result semantics for OpenAI tool calls.
   - [x] Add waiting-runtime run state and self-hosted MCP result handoff back to queued runs.

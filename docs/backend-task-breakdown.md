@@ -508,13 +508,13 @@ Tasks:
   - [x] Enforce global risky-execution policy records inside Docker runtime, self-hosted runtime, and MCP execution paths.
   - [x] Model high-risk tool handling as `require_workspace_approval`, `allow`, or `block`; platform admins set guardrails, workspace owners approve task-level risk.
   - [ ] Add PostgreSQL-level concurrent scheduler tests that prove runtime-space quotas cannot be over-reserved under parallel schedulers.
-- [ ] Connect MCP skills to the real runtime execution path.
+- [x] Connect MCP skills to the real runtime execution path.
   - [x] Add internal MCP execution service with run snapshot authorization, adapter boundary, payload limits, logs, events, task messages, and blocked-call security evidence.
   - [x] Add workspace MCP catalog API that aggregates servers, allowed tools, credential status, execution mode, and agent-scoped availability.
-  - [ ] Add real stdio, HTTP/SSE, and hosted MCP protocol adapters.
+  - [x] Add real stdio, HTTP/SSE, and hosted MCP protocol adapters.
     - [x] Add HTTP JSON-RPC MCP adapter and adapter resolver.
-    - [ ] Add SSE and hosted MCP adapters.
-    - [ ] Add stdio adapter through Docker/self-hosted runtime safety boundary.
+    - [x] Add SSE and hosted MCP adapters.
+    - [x] Add stdio adapter through Docker/self-hosted runtime safety boundary.
   - [x] Wire MCP execution into worker/OpenAI tool invocation through runtime tool executor and OpenAI function-tool bridge.
 - [ ] Add private/public skill marketplace workflows beyond catalog visibility.
   - [x] Persist workspace-local skill install snapshots with installed metadata and source checksum.

@@ -6,7 +6,10 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
-from backend.app.capabilities.adapters import SelfHostedStdioMcpToolAdapter
+from backend.app.capabilities.adapters import (
+    DockerRuntimeStdioMcpToolAdapter,
+    SelfHostedStdioMcpToolAdapter,
+)
 from backend.app.capabilities.execution import (
     McpExecutionRequest,
     McpToolAdapter,
@@ -16,6 +19,9 @@ from backend.app.capabilities.execution import (
 from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings, get_settings
 from backend.app.runs.models import AgentRun
+from backend.app.runtime_manager.contracts import DockerRuntimeClient
+from backend.app.runtime_manager.dependencies import get_docker_runtime_client
+from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.self_hosted.service import SelfHostedRuntimeService
 
@@ -27,18 +33,23 @@ class BackendToolExecutor:
         adapter: McpToolAdapter | McpToolAdapterResolver,
         *,
         settings: Settings | None = None,
+        docker_client: DockerRuntimeClient | None = None,
     ) -> None:
         self._session = session
         self._adapter = adapter
         self._settings = settings
+        self._docker_client = docker_client
 
     @classmethod
     def for_mcp_adapter(
         cls,
         session: Session,
         adapter: McpToolAdapter | McpToolAdapterResolver,
+        *,
+        settings: Settings | None = None,
+        docker_client: DockerRuntimeClient | None = None,
     ) -> BackendToolExecutor:
-        return cls(session, adapter)
+        return cls(session, adapter, settings=settings, docker_client=docker_client)
 
     def execute_tool(
         self,
@@ -52,6 +63,7 @@ class BackendToolExecutor:
             fallback=self._adapter,
             context=context,
             settings=self._settings,
+            docker_client=self._docker_client,
         )
         result = McpToolExecutionService(self._session, resolver).execute(
             McpExecutionRequest(
@@ -76,26 +88,38 @@ class ContextualMcpAdapterResolver:
         fallback: McpToolAdapter | McpToolAdapterResolver,
         context: AgentRuntimeContext,
         settings: Settings | None = None,
+        docker_client: DockerRuntimeClient | None = None,
     ) -> None:
         self._session = session
         self._fallback = fallback
         self._context = context
         self._settings = settings
+        self._docker_client = docker_client
 
     def resolve(self, server: McpServer) -> McpToolAdapter:
         run = self._current_run()
         runtime = self._runtime_for_run(run)
+        if server.server_type != "stdio":
+            return self._fallback_adapter(server)
         if (
             run is not None
             and runtime is not None
             and runtime.runtime_provider == "self_hosted"
-            and server.server_type == "stdio"
         ):
             return SelfHostedStdioMcpToolAdapter(
                 service=SelfHostedRuntimeService(self._session, self._settings or get_settings()),
                 runtime=runtime,
                 agent_run_id=run.id,
             )
+        if runtime is not None and _is_docker_runtime(runtime):
+            docker_client = self._docker_client or get_docker_runtime_client()
+            return DockerRuntimeStdioMcpToolAdapter(
+                runtime_manager=RuntimeManager(self._session, docker_client),
+                runtime=runtime,
+            )
+        return self._fallback_adapter(server)
+
+    def _fallback_adapter(self, server: McpServer) -> McpToolAdapter:
         if isinstance(self._fallback, McpToolAdapterResolver):
             return self._fallback.resolve(server)
         return self._fallback
@@ -130,3 +154,11 @@ class DisabledToolExecutor:
                 "message": f"Tool executor is not configured for {tool_name}",
             },
         )
+
+
+def _is_docker_runtime(runtime: WorkspaceRuntime) -> bool:
+    return (
+        runtime.runtime_provider in {"cloud_docker", "docker"}
+        or runtime.runtime_type == "docker"
+        or runtime.docker_container_id is not None
+    )
