@@ -497,6 +497,15 @@ class WorkspaceExportService:
                         )
                     )
                     continue
+                if not _dict_field(item, "policy"):
+                    skipped_counts["runtime_spaces"] += 1
+                    conflict_plan.append(
+                        _missing_runtime_policy_conflict(
+                            source_id=source_id,
+                            runtime_space_name=_string_field(item, "name"),
+                        )
+                    )
+                    continue
                 created_counts["runtime_spaces"] += 1
                 if request.dry_run:
                     id_map["runtime_spaces"][source_id] = source_id
@@ -1417,6 +1426,25 @@ def _disabled_skill_install_conflict(
     )
 
 
+def _missing_runtime_policy_conflict(
+    *,
+    source_id: str,
+    runtime_space_name: str,
+) -> WorkspaceImportConflict:
+    return WorkspaceImportConflict(
+        collection="runtime_spaces",
+        source_id=source_id,
+        field="policy",
+        source_value="{}",
+        strategy="reject",
+        severity="error",
+        message=(
+            f"Runtime space {runtime_space_name!r} has no runtime policy in the source export; "
+            "import requires an explicit policy before this space can be created."
+        ),
+    )
+
+
 def _checksum_conflict(
     *,
     collection: str,
@@ -1543,6 +1571,8 @@ def _allowed_resolution_actions(conflict: WorkspaceImportConflict) -> list[str]:
         return ["export_supported_version", "cancel_import"]
     if conflict.collection == "skill_installs" and conflict.field == "status":
         return ["exclude_skill", "enable_in_source_and_reexport"]
+    if conflict.collection == "runtime_spaces" and conflict.field == "policy":
+        return ["add_runtime_policy", "exclude_runtime_space"]
     if conflict.strategy == "reject":
         return ["fix_source", "exclude_object"]
     return ["skip"]

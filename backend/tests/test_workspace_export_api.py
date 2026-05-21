@@ -864,6 +864,104 @@ def test_workspace_metadata_import_preview_rejects_disabled_skill_installs(
     ).all() == []
 
 
+def test_workspace_metadata_import_preview_rejects_runtime_space_without_policy(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-runtime-policy@example.com",
+        slug="source-runtime-policy",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-runtime-policy@example.com",
+        slug="target-runtime-policy",
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        name="No Policy Runtime",
+        scope="team",
+        policy={},
+    )
+    session.add(runtime_space)
+    session.flush()
+    quota = RuntimeSpaceQuota(
+        workspace_id=source_workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="active_runs",
+        limit_value=2,
+        unit="count",
+    )
+    session.add(quota)
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_agents": False,
+            "include_teams": False,
+            "include_tasks": False,
+            "include_runs": False,
+            "include_files": False,
+            "include_skill_installs": False,
+            "include_audit_events": False,
+        },
+    )
+    export_payload = json.loads(export_response.content)
+    preview = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import/preview",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": True},
+    )
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": False},
+    )
+
+    assert export_response.status_code == 200
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["created_counts"]["runtime_spaces"] == 0
+    assert body["skipped_counts"]["runtime_spaces"] == 1
+    assert body["skipped_counts"]["runtime_space_quotas"] == 1
+    conflict_by_collection = {
+        item["collection"]: item for item in body["conflict_plan"]
+    }
+    assert conflict_by_collection["runtime_spaces"] == {
+        "collection": "runtime_spaces",
+        "source_id": str(runtime_space.id),
+        "field": "policy",
+        "source_value": "{}",
+        "target_value": None,
+        "strategy": "reject",
+        "severity": "error",
+        "message": (
+            "Runtime space 'No Policy Runtime' has no runtime policy in the source export; "
+            "import requires an explicit policy before this space can be created."
+        ),
+    }
+    assert body["required_resolutions"] == [
+        {
+            "collection": "runtime_spaces",
+            "source_id": str(runtime_space.id),
+            "field": "policy",
+            "reason": "reject",
+            "allowed_actions": ["add_runtime_policy", "exclude_runtime_space"],
+            "message": conflict_by_collection["runtime_spaces"]["message"],
+        }
+    ]
+    assert committed.status_code == 200
+    assert committed.json()["created_counts"]["runtime_spaces"] == 0
+    assert committed.json()["skipped_counts"]["runtime_spaces"] == 1
+    assert session.scalars(
+        select(RuntimeSpace).where(RuntimeSpace.workspace_id == target_workspace.id)
+    ).all() == []
+
+
 def test_workspace_archive_export_includes_metadata_and_file_bytes(tmp_path: Path) -> None:
     client, session = _client(tmp_path)
     owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
