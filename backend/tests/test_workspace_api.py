@@ -1597,6 +1597,112 @@ def test_artifact_list_includes_work_package_version_metadata() -> None:
     assert item["supersedes_artifact_id"] is None
 
 
+def test_artifact_history_lists_versions_for_work_package_only() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-artifacts@example.com",
+        slug="other-artifacts",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Artifact history",
+    )
+    other_task = Task(
+        workspace_id=other_workspace.id,
+        created_by_user_id=other_owner.id,
+        title="Other artifact history",
+    )
+    session.add_all([task, other_task])
+    session.flush()
+    first = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        work_package_id="research-1",
+        version=1,
+        review_status="superseded",
+        artifact_type="document",
+        filename="report-v1.pdf",
+        content_type="application/pdf",
+        size_bytes=10,
+        checksum_sha256="d" * 64,
+        storage_key="owned-v1",
+        created_at=datetime.now(UTC),
+    )
+    session.add(first)
+    session.flush()
+    second = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        work_package_id="research-1",
+        version=2,
+        supersedes_artifact_id=first.id,
+        review_status="approved",
+        artifact_type="document",
+        filename="report-v2.pdf",
+        content_type="application/pdf",
+        size_bytes=12,
+        checksum_sha256="e" * 64,
+        storage_key="owned-v2",
+        created_at=datetime.now(UTC),
+    )
+    other_package = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        work_package_id="other-package",
+        version=1,
+        artifact_type="document",
+        filename="other.pdf",
+        content_type="application/pdf",
+        size_bytes=12,
+        checksum_sha256="f" * 64,
+        storage_key="other-package",
+        created_at=datetime.now(UTC),
+    )
+    foreign = Artifact(
+        workspace_id=other_workspace.id,
+        task_id=other_task.id,
+        work_package_id="research-1",
+        version=99,
+        artifact_type="document",
+        filename="foreign.pdf",
+        content_type="application/pdf",
+        size_bytes=12,
+        checksum_sha256="0" * 64,
+        storage_key="foreign",
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([second, other_package, foreign])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/artifacts/history"
+        f"?task_id={task.id}&work_package_id=research-1",
+        headers=_headers(owner.id),
+    )
+    foreign_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/artifacts/history"
+        f"?task_id={task.id}&work_package_id=research-1",
+        headers=_headers(other_owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    assert payload["latest_artifact_id"] == str(second.id)
+    assert payload["latest_version"] == 2
+    assert [item["version"] for item in payload["items"]] == [2, 1]
+    assert [item["filename"] for item in payload["items"]] == [
+        "report-v2.pdf",
+        "report-v1.pdf",
+    ]
+    assert foreign_response.status_code == 200
+    assert foreign_response.json()["total"] == 0
+
+
 def test_create_workspace_assigns_owner_membership() -> None:
     client, session = _client()
     user = User(email="new-owner@example.com", display_name="New Owner")

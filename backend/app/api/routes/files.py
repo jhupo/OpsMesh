@@ -1,11 +1,15 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
-from backend.app.api.schemas.files import ArtifactResponse, WorkspaceFileResponse
+from backend.app.api.schemas.files import (
+    ArtifactHistoryResponse,
+    ArtifactResponse,
+    WorkspaceFileResponse,
+)
 from backend.app.api.services.files import WorkspaceFileService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
@@ -87,6 +91,29 @@ async def list_artifacts(
 ) -> PageResponse[ArtifactResponse]:
     items, total = service.list_artifacts(context.workspace.id, page)
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get("/artifacts/history", response_model=ArtifactHistoryResponse)
+async def get_artifact_history(
+    task_id: UUID = Query(),
+    work_package_id: str = Query(min_length=1, max_length=120),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    service: WorkspaceFileService = Depends(file_service),
+) -> ArtifactHistoryResponse:
+    items = service.list_artifact_history(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        work_package_id=work_package_id,
+    )
+    latest = items[0] if items else None
+    return ArtifactHistoryResponse(
+        task_id=task_id,
+        work_package_id=work_package_id,
+        items=[ArtifactResponse.model_validate(item) for item in items],
+        total=len(items),
+        latest_artifact_id=latest.id if latest is not None else None,
+        latest_version=latest.version if latest is not None else None,
+    )
 
 
 @router.get("/artifacts/{artifact_id}/download")

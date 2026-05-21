@@ -640,25 +640,29 @@ Current state:
 
 - Files and artifacts are linked to tasks and runs.
 - Task steps can describe expected artifacts.
-- Generated artifacts are not fully bound to producing work packages with version metadata.
+- Generated artifacts are bound to producing work packages with version metadata and can be
+  queried as a dedicated work-package history.
 
 Build:
 
 - [x] Bind produced artifacts to task ID, step ID, work package ID, agent ID, run ID, and artifact version.
 - [x] Record supersedes relationships for subsequent work-package outputs.
 - [x] Expose artifact version metadata in artifact list responses, task observation, workspace memory, and export/import payloads.
-- Expose dedicated artifact history for a work package and final output.
+- [x] Expose dedicated artifact history for a work package.
+- Expose dedicated artifact history for final output.
 
 API/data changes:
 
 - [x] Add `task_step_id`, `work_package_id`, `agent_profile_id`, `version`, `supersedes_artifact_id`, and `review_status` fields to artifacts.
 - [x] Add artifact version response fields.
+- [x] Add `GET /api/v1/workspaces/{workspace_id}/artifacts/history`.
 
 Tests:
 
 - [x] first generated artifact is version 1 for its work package
 - [x] subsequent output creates version 2 and preserves version 1
 - [x] artifact download/list authorization still works after versioning
+- [x] artifact history endpoint is workspace-scoped and returns newest version first
 
 Acceptance:
 

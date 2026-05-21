@@ -86,6 +86,25 @@ class WorkspaceFileService:
         )
         return self._page(statement, page)
 
+    def list_artifact_history(
+        self,
+        *,
+        workspace_id: UUID,
+        task_id: UUID,
+        work_package_id: str,
+    ) -> list[Artifact]:
+        return list(
+            self._session.scalars(
+                select(Artifact)
+                .where(
+                    Artifact.workspace_id == workspace_id,
+                    Artifact.task_id == task_id,
+                    Artifact.work_package_id == work_package_id,
+                )
+                .order_by(Artifact.version.desc(), Artifact.created_at.desc(), Artifact.id.desc())
+            ).all()
+        )
+
     def read_artifact(
         self,
         workspace_id: UUID,

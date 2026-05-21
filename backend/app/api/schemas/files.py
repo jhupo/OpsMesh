@@ -1,6 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
+from pydantic import BaseModel
+
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
 
 
@@ -35,3 +37,12 @@ class ArtifactResponse(ORMModel):
     storage_key: str
     artifact_metadata: dict[str, object]
     created_at: datetime
+
+
+class ArtifactHistoryResponse(BaseModel):
+    task_id: UUID
+    work_package_id: str
+    items: list[ArtifactResponse]
+    total: int
+    latest_artifact_id: UUID | None
+    latest_version: int | None
