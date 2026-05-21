@@ -565,9 +565,9 @@ Tasks:
 - [x] Member matching and scheduling.
   - [x] Match work packages by role, skill, availability, load, priority, and runtime capacity.
   - [x] Enforce per-member max concurrency.
-  - [ ] Enforce workspace-level task/run/runtime limits.
+  - [x] Enforce workspace-level task/run/runtime limits.
     - [x] Enforce active run quota from `workspace.settings.scheduler.max_active_runs`.
-    - [ ] Enforce runtime, self-hosted job, CPU, memory, and storage quotas in scheduler decisions.
+    - [x] Enforce runtime, self-hosted job, CPU, memory, and storage quotas in scheduler decisions.
   - [x] Support priority scheduling across multiple tasks.
     - [x] Start higher-priority task steps first across a workspace.
     - [x] Add starvation prevention for lower-priority work.

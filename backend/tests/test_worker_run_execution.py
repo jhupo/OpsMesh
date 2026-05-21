@@ -919,6 +919,83 @@ def test_workspace_scheduler_boosts_starved_lower_priority_task() -> None:
     assert high_step.dependencies["priority_score"] == 10
 
 
+def test_workspace_scheduler_blocks_steps_over_resource_limits() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    workspace.settings = {
+        "scheduler": {
+            "max_active_runs": 3,
+            "resource_limits": {
+                "cpu": 4,
+                "memory_mb": 2048,
+                "storage_mb": 1024,
+                "self_hosted_jobs": 1,
+            },
+        }
+    }
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Resource limited task",
+        priority=5,
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add(task)
+    session.flush()
+    allowed_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Allowed package",
+        status="queued",
+        order_index=0,
+        dependencies={
+            "resource_requirements": {
+                "cpu": 2,
+                "memory_mb": 1024,
+                "storage_mb": 512,
+                "self_hosted_jobs": 1,
+            }
+        },
+    )
+    blocked_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Blocked package",
+        status="queued",
+        order_index=1,
+        dependencies={
+            "resource_requirements": {
+                "cpu": 3,
+                "memory_mb": 1536,
+                "storage_mb": 768,
+                "self_hosted_jobs": 1,
+            }
+        },
+    )
+    session.add_all([allowed_step, blocked_step])
+    session.flush()
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+
+    runs = RunOrchestrationService(session, queue).schedule_workspace_steps(
+        workspace_id=workspace.id,
+        requested_by_user_id=user.id,
+    )
+
+    assert [run.task_step_id for run in runs] == [allowed_step.id]
+    assert queue.count_queued(workspace_id=workspace.id) == 1
+    assert blocked_step.dependencies["blocked_reason"] == "workspace_resource_quota_exceeded"
+    assert blocked_step.dependencies["blocked_resource_keys"] == [
+        "cpu",
+        "memory_mb",
+        "storage_mb",
+        "self_hosted_jobs",
+    ]
+
+
 def test_pm_summary_acceptance_completes_task_with_structured_decision() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
