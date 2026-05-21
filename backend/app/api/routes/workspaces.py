@@ -14,6 +14,8 @@ from backend.app.api.pagination import PageParams, PageResponse, pagination_para
 from backend.app.api.schemas.workspaces import (
     WorkspaceCreateRequest,
     WorkspaceMemberResponse,
+    WorkspaceQuotaResponse,
+    WorkspaceQuotaUpsertRequest,
     WorkspaceResponse,
     WorkspaceUpdateRequest,
 )
@@ -107,3 +109,43 @@ async def list_workspace_members(
 ) -> PageResponse[WorkspaceMemberResponse]:
     items, total = WorkspaceService(session).list_members(workspace_id, page)
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get("/{workspace_id}/quotas", response_model=PageResponse[WorkspaceQuotaResponse])
+async def list_workspace_quotas(
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[WorkspaceQuotaResponse]:
+    items, total = WorkspaceService(session).list_quotas(context.workspace.id, page)
+    return PageResponse(
+        items=[WorkspaceQuotaResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.put("/{workspace_id}/quotas", response_model=list[WorkspaceQuotaResponse])
+async def upsert_workspace_quotas(
+    request: WorkspaceQuotaUpsertRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+) -> list[WorkspaceQuotaResponse]:
+    quotas = WorkspaceService(session).upsert_quotas(context.workspace.id, request)
+    return [WorkspaceQuotaResponse.model_validate(quota) for quota in quotas]
+
+
+@router.delete("/{workspace_id}/quotas/{quota_key}", response_model=WorkspaceQuotaResponse)
+async def disable_workspace_quota(
+    quota_key: str,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceQuotaResponse:
+    quota = WorkspaceService(session).disable_quota(context.workspace.id, quota_key)
+    if quota is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace quota not found",
+        )
+    return WorkspaceQuotaResponse.model_validate(quota)

@@ -213,11 +213,13 @@ Current state:
 - Blocked queued steps record a scheduling status and blocked reason in step dependencies for observation and operations.
 - Workspace active run, CPU, memory, storage-style quota usage, Docker runtime slots, and
   self-hosted job slots have durable reservation and release at run lifecycle boundaries.
+- Workspace quota limits are now manageable through authenticated workspace APIs, including
+  active run, Docker runtime, self-hosted job, CPU, memory, and storage-style quota keys.
 
 Build:
 
 - [x] Add a central scheduler service that selects eligible steps across all queued tasks in a workspace.
-- [ ] Enforce workspace-level limits for active tasks, active runs, Docker runtimes, self-hosted jobs, CPU, memory, and storage.
+- [x] Enforce workspace-level limits for active tasks, active runs, Docker runtimes, self-hosted jobs, CPU, memory, and storage.
   - [x] Enforce active run limits from `workspace.settings.scheduler.max_active_runs`.
   - [x] Enforce per-tick scheduler resource limits from `workspace.settings.scheduler.resource_limits`.
   - [x] Enforce durable workspace active run, CPU, memory, and storage-style usage reservations in scheduler decisions.
@@ -230,7 +232,7 @@ Build:
 
 API/data changes:
 
-- Add workspace quota settings and current usage counters.
+- [x] Add workspace quota settings and current usage counters.
 - Add `scheduling_status`, `blocked_reason`, `scheduled_at`, and `priority_score` to task steps or a scheduling table.
 - Add operations endpoints for queue depth by priority and blocked scheduling reasons.
 

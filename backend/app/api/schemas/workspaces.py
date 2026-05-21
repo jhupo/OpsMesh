@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from backend.app.api.schemas.common import TimestampedModel
 
@@ -30,3 +30,39 @@ class WorkspaceMemberResponse(TimestampedModel):
     user_id: UUID
     role: str
     status: str
+
+
+class WorkspaceQuotaUpsertItem(BaseModel):
+    quota_key: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_.-]+$")
+    limit_value: int = Field(ge=0)
+    unit: str = Field(default="count", min_length=1, max_length=32)
+
+
+class WorkspaceQuotaUpsertRequest(BaseModel):
+    quotas: list[WorkspaceQuotaUpsertItem] = Field(min_length=1, max_length=64)
+
+
+class WorkspaceQuotaResponse(TimestampedModel):
+    workspace_id: UUID
+    quota_key: str
+    limit_value: int
+    reserved_value: int
+    unit: str
+    status: str
+
+    @computed_field
+    @property
+    def available_value(self) -> int:
+        return max(self.limit_value - self.reserved_value, 0)
+
+    @computed_field
+    @property
+    def utilization(self) -> float:
+        if self.limit_value <= 0:
+            return 0.0
+        return round(self.reserved_value / self.limit_value, 4)
+
+    @computed_field
+    @property
+    def saturated(self) -> bool:
+        return self.limit_value > 0 and self.reserved_value >= self.limit_value

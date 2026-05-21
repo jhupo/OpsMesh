@@ -27,7 +27,7 @@ from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.workspaces.models import Workspace, WorkspaceMember, WorkspaceQuota
 
 TOKEN = "test-token"
 
@@ -1436,6 +1436,68 @@ def test_create_workspace_assigns_owner_membership() -> None:
     members = client.get(f"/api/v1/workspaces/{workspace_id}/members", headers=_headers(user.id))
     assert members.status_code == 200
     assert members.json()["items"][0]["role"] == "owner"
+
+
+def test_workspace_quota_api_manages_runtime_limits() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    viewer, _ = _seed_workspace(
+        session,
+        role="viewer",
+        email="viewer@example.com",
+        slug="viewer-space",
+    )
+
+    upserted = client.put(
+        f"/api/v1/workspaces/{workspace.id}/quotas",
+        headers=_headers(owner.id),
+        json={
+            "quotas": [
+                {"quota_key": "active_runs", "limit_value": 2, "unit": "count"},
+                {"quota_key": "memory_mb", "limit_value": 4096, "unit": "mb"},
+                {"quota_key": "docker_runtimes", "limit_value": 1, "unit": "count"},
+                {"quota_key": "self_hosted_jobs", "limit_value": 1, "unit": "count"},
+            ]
+        },
+    )
+    memory_quota = session.scalar(
+        select(WorkspaceQuota).where(
+            WorkspaceQuota.workspace_id == workspace.id,
+            WorkspaceQuota.quota_key == "memory_mb",
+        )
+    )
+    assert memory_quota is not None
+    memory_quota.reserved_value = 1024
+    session.commit()
+
+    listed = client.get(f"/api/v1/workspaces/{workspace.id}/quotas", headers=_headers(owner.id))
+    denied = client.put(
+        f"/api/v1/workspaces/{workspace.id}/quotas",
+        headers=_headers(viewer.id),
+        json={"quotas": [{"quota_key": "active_runs", "limit_value": 99}]},
+    )
+    disabled = client.delete(
+        f"/api/v1/workspaces/{workspace.id}/quotas/docker_runtimes",
+        headers=_headers(owner.id),
+    )
+
+    assert upserted.status_code == 200
+    assert [item["quota_key"] for item in upserted.json()] == [
+        "active_runs",
+        "docker_runtimes",
+        "memory_mb",
+        "self_hosted_jobs",
+    ]
+    assert listed.status_code == 200
+    quota_by_key = {item["quota_key"]: item for item in listed.json()["items"]}
+    assert quota_by_key["memory_mb"]["reserved_value"] == 1024
+    assert quota_by_key["memory_mb"]["available_value"] == 3072
+    assert quota_by_key["memory_mb"]["utilization"] == 0.25
+    assert quota_by_key["memory_mb"]["saturated"] is False
+    assert denied.status_code == 403
+    assert disabled.status_code == 200
+    assert disabled.json()["quota_key"] == "docker_runtimes"
+    assert disabled.json()["status"] == "disabled"
 
 
 def test_duplicate_workspace_slug_returns_conflict_error() -> None:
