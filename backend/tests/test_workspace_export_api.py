@@ -492,6 +492,16 @@ def test_workspace_metadata_import_preview_returns_conflict_plan(tmp_path: Path)
     assert body["skipped_counts"]["tasks"] == 1
     assert body["skipped_counts"]["runtime_spaces"] == 1
     assert body["skipped_counts"]["skill_installs"] == 1
+    assert body["estimated_counts"]["skip_total"] >= 5
+    assert body["estimated_counts"]["required_resolution_total"] == 0
+    resources_by_collection = {
+        item["collection"]: item for item in body["resources"]
+    }
+    assert resources_by_collection["agents"]["action"] == "skip"
+    assert resources_by_collection["agents"]["source_count"] == 1
+    assert resources_by_collection["agents"]["skip_count"] == 1
+    assert resources_by_collection["team_members"]["action"] == "skip"
+    assert body["required_resolutions"] == []
     conflicts_by_collection = {
         item["collection"]: item for item in body["conflict_plan"]
     }
@@ -787,6 +797,20 @@ def test_workspace_archive_import_preview_reports_oversized_objects(tmp_path: Pa
     assert body["conflict_plan"][0]["field"] == "size_bytes"
     assert body["conflict_plan"][0]["strategy"] == "reject"
     assert body["conflict_plan"][0]["severity"] == "error"
+    assert body["estimated_counts"]["required_resolution_total"] == 1
+    assert body["resources"][0]["collection"] == "files"
+    assert body["resources"][0]["action"] == "requires_resolution"
+    assert body["resources"][0]["required_resolution_count"] == 1
+    assert body["required_resolutions"] == [
+        {
+            "collection": "files",
+            "source_id": body["conflict_plan"][0]["source_id"],
+            "field": "size_bytes",
+            "reason": "reject",
+            "allowed_actions": ["increase_max_bytes_per_object", "exclude_object"],
+            "message": body["conflict_plan"][0]["message"],
+        }
+    ]
     assert session.scalars(
         select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
     ).all() == []

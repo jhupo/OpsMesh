@@ -117,6 +117,25 @@ class WorkspaceImportConflict(BaseModel):
     message: str
 
 
+class WorkspaceImportResourcePreview(BaseModel):
+    collection: str
+    source_count: int
+    create_count: int
+    skip_count: int
+    conflict_count: int
+    action: str
+    required_resolution_count: int = 0
+
+
+class WorkspaceImportRequiredResolution(BaseModel):
+    collection: str
+    source_id: str
+    field: str | None = None
+    reason: str
+    allowed_actions: list[str]
+    message: str
+
+
 class WorkspaceImportResponse(BaseModel):
     dry_run: bool
     source_workspace_id: UUID
@@ -126,3 +145,6 @@ class WorkspaceImportResponse(BaseModel):
     id_map: dict[str, dict[str, str]]
     warnings: list[str] = Field(default_factory=list)
     conflict_plan: list[WorkspaceImportConflict] = Field(default_factory=list)
+    resources: list[WorkspaceImportResourcePreview] = Field(default_factory=list)
+    estimated_counts: dict[str, int] = Field(default_factory=dict)
+    required_resolutions: list[WorkspaceImportRequiredResolution] = Field(default_factory=list)

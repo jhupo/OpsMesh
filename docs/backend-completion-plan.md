@@ -358,7 +358,7 @@ API/data changes:
 - [x] `POST /api/v1/workspaces/{workspace_id}/exports/metadata/import/preview`
 - [x] `POST /api/v1/workspaces/{workspace_id}/exports/archive/import/preview`
 - [x] Add `conflict_plan` response schema with `collection`, `source_id`, `field`, `source_value`, `target_value`, `strategy`, `severity`, and `message`.
-- Add richer preview response sections: `resources`, `estimated_counts`, and `required_resolutions`.
+- [x] Add richer preview response sections: `resources`, `estimated_counts`, and `required_resolutions`.
 
 Tests:
 

@@ -20,6 +20,8 @@ from backend.app.api.schemas.exports import (
     WorkspaceExportResponse,
     WorkspaceImportConflict,
     WorkspaceImportRequest,
+    WorkspaceImportRequiredResolution,
+    WorkspaceImportResourcePreview,
     WorkspaceImportResponse,
 )
 from backend.app.artifacts.models import Artifact
@@ -866,6 +868,7 @@ class WorkspaceExportService:
             warnings=warnings,
             conflict_plan=conflict_plan,
         )
+        _populate_import_preview(response, request.export)
         if request.dry_run:
             self._session.rollback()
             return response
@@ -949,6 +952,7 @@ class WorkspaceExportService:
                         storage=storage,
                         total_bytes=total_bytes,
                     )
+            _populate_import_preview(response, metadata)
             if request.dry_run:
                 self._session.rollback()
                 return response
@@ -1337,6 +1341,118 @@ def _missing_dependency_conflict(
             f"{dependency.replace('_', ' ')} {dependency_id!r} is unavailable."
         ),
     )
+
+
+def _populate_import_preview(
+    response: WorkspaceImportResponse,
+    export: WorkspaceExportResponse,
+) -> None:
+    conflict_counts = _conflict_counts(response.conflict_plan)
+    required_resolutions = _required_resolutions(response.conflict_plan)
+    response.required_resolutions = required_resolutions
+    required_counts = _conflict_counts(required_resolutions)
+    response.resources = [
+        WorkspaceImportResourcePreview(
+            collection=collection,
+            source_count=_source_count(export, collection),
+            create_count=response.created_counts.get(collection, 0),
+            skip_count=response.skipped_counts.get(collection, 0),
+            conflict_count=conflict_counts.get(collection, 0),
+            action=_preview_action(
+                response.created_counts.get(collection, 0),
+                response.skipped_counts.get(collection, 0),
+                required_counts.get(collection, 0),
+            ),
+            required_resolution_count=required_counts.get(collection, 0),
+        )
+        for collection in _preview_collections(export, response)
+    ]
+    response.estimated_counts = {
+        "source_total": sum(item.source_count for item in response.resources),
+        "create_total": sum(item.create_count for item in response.resources),
+        "skip_total": sum(item.skip_count for item in response.resources),
+        "conflict_total": len(response.conflict_plan),
+        "required_resolution_total": len(required_resolutions),
+    }
+
+
+def _preview_collections(
+    export: WorkspaceExportResponse,
+    response: WorkspaceImportResponse,
+) -> list[str]:
+    collections = [
+        "runtime_spaces",
+        "runtime_space_quotas",
+        "skill_installs",
+        "agents",
+        "teams",
+        "team_members",
+        "tasks",
+        "task_steps",
+        "task_messages",
+        "files",
+        "artifacts",
+    ]
+    return [
+        collection
+        for collection in collections
+        if _source_count(export, collection) > 0
+        or response.created_counts.get(collection, 0) > 0
+        or response.skipped_counts.get(collection, 0) > 0
+    ]
+
+
+def _source_count(export: WorkspaceExportResponse, collection: str) -> int:
+    value = getattr(export, collection, None)
+    return len(value) if isinstance(value, list) else 0
+
+
+def _conflict_counts(
+    items: list[WorkspaceImportConflict] | list[WorkspaceImportRequiredResolution],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        counts[item.collection] = counts.get(item.collection, 0) + 1
+    return counts
+
+
+def _required_resolutions(
+    conflicts: list[WorkspaceImportConflict],
+) -> list[WorkspaceImportRequiredResolution]:
+    return [
+        WorkspaceImportRequiredResolution(
+            collection=conflict.collection,
+            source_id=conflict.source_id,
+            field=conflict.field,
+            reason=conflict.strategy,
+            allowed_actions=_allowed_resolution_actions(conflict),
+            message=conflict.message,
+        )
+        for conflict in conflicts
+        if conflict.severity == "error" or conflict.strategy == "reject"
+    ]
+
+
+def _allowed_resolution_actions(conflict: WorkspaceImportConflict) -> list[str]:
+    if conflict.field == "size_bytes":
+        return ["increase_max_bytes_per_object", "exclude_object"]
+    if conflict.field == "total_bytes":
+        return ["increase_max_total_bytes", "exclude_object"]
+    if conflict.strategy == "reject":
+        return ["fix_source", "exclude_object"]
+    return ["skip"]
+
+
+def _preview_action(create_count: int, skip_count: int, required_count: int) -> str:
+    if required_count > 0:
+        return "requires_resolution"
+    if create_count > 0 and skip_count > 0:
+        return "partial_import"
+    if create_count > 0:
+        return "create"
+    if skip_count > 0:
+        return "skip"
+    return "none"
 
 
 def _workspace_payload(workspace: Workspace) -> dict[str, object]:
