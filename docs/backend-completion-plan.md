@@ -258,6 +258,7 @@ Current state:
 - `GET /api/v1/workspaces/{workspace_id}/tasks/{task_id}/observation` now returns stable `view_type`, `summary`, `sections`, and typed `cards`.
 - Generic, AIGC, novel, research, and software views are composed from existing durable records and degrade gracefully when optional domain data is missing.
 - Task message payloads are sanitized before entering the observation response.
+- Observation now includes a quality section with revision history and risk flag cards composed from correction metadata, PM revision decisions, scheduler blockers, and approval/review payloads.
 
 Build:
 
@@ -270,7 +271,7 @@ Build:
   - [x] Software: requirements, design tasks, branches/patches, tests, build status, review comments.
 - [x] Keep the API schema stable by returning `view_type`, `sections`, and typed `cards`.
 - Add richer persisted domain-specific progress writers from worker outputs.
-- Add revision history and risk flag cards once correction commands and risk scoring are expanded.
+- [x] Add revision history and risk flag cards from correction commands, PM revision decisions, scheduler blockers, and review payload risk metadata.
 
 API/data changes:
 

@@ -1027,6 +1027,24 @@ def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> N
         required_role="writer",
         required_skills=["plotting"],
     )
+    correction_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Revise chapter 1",
+        status="queued",
+        order_index=2,
+        work_package_id="correction-revise-2",
+        dependencies={
+            "correction": {
+                "mode": "revise",
+                "target": {"target_type": "step", "task_step_id": str(step.id)},
+                "instruction": "Make the opening more suspenseful.",
+                "metadata": {"risk_level": "medium"},
+            },
+            "blocked_reason": "workspace_quota_exceeded:active_runs",
+            "blocked_resource_keys": ["active_runs"],
+        },
+    )
     run = AgentRun(
         workspace_id=workspace.id,
         task_id=task.id,
@@ -1034,7 +1052,7 @@ def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> N
         status=RunStatus.RUNNING.value,
         input={},
     )
-    session.add_all([step, run])
+    session.add_all([step, correction_step, run])
     session.flush()
     session.add_all(
         [
@@ -1054,7 +1072,16 @@ def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> N
                 message_type="pm.acceptance_decision",
                 sequence=2,
                 body="Keep writing.",
-                payload={"decision": "continue", "token": "hidden-token"},
+                payload={
+                    "decision": "request_revision",
+                    "summary": "Opening is too flat.",
+                    "reasons": ["Weak hook"],
+                    "revision_requests": [
+                        {"work_package_id": "chapter-1", "instruction": "Raise tension."}
+                    ],
+                    "risk_level": "medium",
+                    "token": "hidden-token",
+                },
             ),
             RunEvent(
                 workspace_id=workspace.id,
@@ -1106,7 +1133,7 @@ def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> N
     assert body["summary"]["progress"] == 0.0
     assert body["summary"]["artifact_count"] == 1
     sections = {section["key"]: section for section in body["sections"]}
-    assert set(sections) == {"overview", "timeline", "artifacts", "review", "domain"}
+    assert set(sections) == {"overview", "timeline", "artifacts", "review", "quality", "domain"}
     assert sections["domain"]["cards"][0]["card_type"] == "outline"
     assert sections["domain"]["cards"][1]["data"]["value"] == [
         {"title": "Chapter 1", "status": "drafting"}
@@ -1114,7 +1141,32 @@ def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> N
     message_payload = sections["timeline"]["cards"][0]["data"]["payload"]
     review_payload = sections["review"]["cards"][0]["data"]["payload"]
     assert message_payload == {"note": "draft"}
-    assert review_payload == {"decision": "continue"}
+    assert "token" not in review_payload
+    assert review_payload["decision"] == "request_revision"
+    quality_cards = sections["quality"]["cards"]
+    assert any(
+        card["card_type"] == "revision_history"
+        and card["data"]["instruction"] == "Make the opening more suspenseful."
+        for card in quality_cards
+    )
+    assert any(
+        card["card_type"] == "revision_history"
+        and card["data"]["source"] == "pm_acceptance"
+        and card["data"]["revision_requests"][0]["instruction"] == "Raise tension."
+        for card in quality_cards
+    )
+    assert any(
+        card["card_type"] == "risk_flag"
+        and card["data"]["source"] == "scheduler"
+        and card["data"]["reason"] == "workspace_quota_exceeded:active_runs"
+        for card in quality_cards
+    )
+    assert any(
+        card["card_type"] == "risk_flag"
+        and card["data"]["source"] == "pm.acceptance_decision"
+        and card["data"]["risk"]["severity"] == "medium"
+        for card in quality_cards
+    )
     assert sections["artifacts"]["cards"][0]["title"] == "chapter-1.md"
     assert forced.status_code == 200
     assert forced.json()["view_type"] == "software"

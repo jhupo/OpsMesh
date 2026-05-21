@@ -100,6 +100,7 @@ class TaskObservationService:
             self._timeline_section(messages, run_events),
             self._artifact_section(artifacts),
             self._review_section(task, messages),
+            self._quality_section(steps, messages),
             self._domain_section(task, view_type, artifacts),
         ]
 
@@ -253,6 +254,129 @@ class TaskObservationService:
                 }
             )
         return {"key": "review", "title": "Review", "cards": cards}
+
+    def _quality_section(
+        self,
+        steps: list[TaskStep],
+        messages: list[TaskMessage],
+    ) -> dict[str, object]:
+        revision_cards = self._revision_history_cards(steps, messages)
+        risk_cards = self._risk_flag_cards(steps, messages)
+        return {
+            "key": "quality",
+            "title": "Quality",
+            "cards": [*revision_cards, *risk_cards],
+        }
+
+    def _revision_history_cards(
+        self,
+        steps: list[TaskStep],
+        messages: list[TaskMessage],
+    ) -> list[dict[str, object]]:
+        cards: list[dict[str, object]] = []
+        for step in steps:
+            dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
+            correction = dependencies.get("correction")
+            if isinstance(correction, dict):
+                cards.append(
+                    {
+                        "card_type": "revision_history",
+                        "title": step.title,
+                        "status": step.status,
+                        "data": {
+                            "source": "correction",
+                            "task_step_id": str(step.id),
+                            "work_package_id": step.work_package_id,
+                            "mode": correction.get("mode"),
+                            "target": correction.get("target"),
+                            "instruction": correction.get("instruction"),
+                            "metadata": correction.get("metadata"),
+                            "created_at": step.created_at,
+                        },
+                    }
+                )
+            if "revision_of_work_package_id" in dependencies:
+                cards.append(
+                    {
+                        "card_type": "revision_history",
+                        "title": step.title,
+                        "status": step.status,
+                        "data": {
+                            "source": "pm_revision",
+                            "task_step_id": str(step.id),
+                            "work_package_id": step.work_package_id,
+                            "revision_of_work_package_id": dependencies.get(
+                                "revision_of_work_package_id"
+                            ),
+                            "revision_cycle": dependencies.get("revision_cycle"),
+                            "created_at": step.created_at,
+                        },
+                    }
+                )
+        for message in messages:
+            if message.message_type != "pm.acceptance_decision":
+                continue
+            revision_requests = message.payload.get("revision_requests")
+            if isinstance(revision_requests, list) and revision_requests:
+                cards.append(
+                    {
+                        "card_type": "revision_history",
+                        "title": "PM revision request",
+                        "status": str(message.payload.get("decision") or "recorded"),
+                        "data": {
+                            "source": "pm_acceptance",
+                            "sequence": message.sequence,
+                            "revision_requests": revision_requests,
+                            "created_at": message.created_at,
+                        },
+                    }
+                )
+        return cards
+
+    def _risk_flag_cards(
+        self,
+        steps: list[TaskStep],
+        messages: list[TaskMessage],
+    ) -> list[dict[str, object]]:
+        cards: list[dict[str, object]] = []
+        for step in steps:
+            dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
+            reason = dependencies.get("blocked_reason")
+            if isinstance(reason, str) and reason:
+                cards.append(
+                    {
+                        "card_type": "risk_flag",
+                        "title": step.title,
+                        "status": "attention",
+                        "data": {
+                            "source": "scheduler",
+                            "task_step_id": str(step.id),
+                            "reason": reason,
+                            "blocked_resource_keys": dependencies.get("blocked_resource_keys"),
+                            "priority_score": dependencies.get("priority_score"),
+                        },
+                    }
+                )
+        for message in messages:
+            if message.message_type not in {"pm.acceptance_decision", "approval.requested"}:
+                continue
+            payload = self._safe_message_payload(message.payload)
+            risks = _risk_flags_from_payload(payload)
+            for risk in risks:
+                cards.append(
+                    {
+                        "card_type": "risk_flag",
+                        "title": str(risk.get("title") or message.message_type),
+                        "status": str(risk.get("severity") or "attention"),
+                        "data": {
+                            "source": message.message_type,
+                            "sequence": message.sequence,
+                            "risk": risk,
+                            "created_at": message.created_at,
+                        },
+                    }
+                )
+        return cards
 
     def _domain_section(
         self,
@@ -512,6 +636,35 @@ class TaskObservationService:
 
     def _str_or_none(self, value: Any) -> str | None:
         return str(value) if value is not None else None
+
+
+def _risk_flags_from_payload(payload: dict[str, object]) -> list[dict[str, object]]:
+    risks: list[dict[str, object]] = []
+    raw_risks = payload.get("risks")
+    if isinstance(raw_risks, list):
+        risks.extend(item for item in raw_risks if isinstance(item, dict))
+
+    risk_level = payload.get("risk_level")
+    if isinstance(risk_level, str) and risk_level:
+        risks.append(
+            {
+                "title": str(payload.get("title") or "Risk flagged"),
+                "severity": risk_level,
+                "reason": payload.get("reason") or payload.get("summary"),
+            }
+        )
+
+    decision = payload.get("decision")
+    reasons = payload.get("reasons")
+    if decision == "request_revision":
+        risks.append(
+            {
+                "title": "Revision requested",
+                "severity": "attention",
+                "reason": reasons if isinstance(reasons, list) else payload.get("summary"),
+            }
+        )
+    return risks
 
 
 _SENSITIVE_PAYLOAD_KEYS = {
