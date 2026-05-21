@@ -19,6 +19,7 @@ from backend.app.core.config import Settings
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.attempts import TaskPlanningAttemptService
+from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
@@ -366,6 +367,7 @@ class WorkspaceResourceService:
                     "regenerated_by_user_id": str(actor_user_id),
                 },
             }
+            self._sync_latest_planning_attempt_output(workspace_id, task.id, task.project_plan)
         run = None
         if task.project_plan is not None and not completed_work_package_ids:
             run = RunOrchestrationService(
@@ -424,6 +426,22 @@ class WorkspaceResourceService:
         if message_type is not None:
             statement = statement.where(TaskMessage.message_type == message_type)
         return self._page(statement.order_by(TaskMessage.sequence.asc()), page)
+
+    def list_task_planning_attempts(
+        self,
+        workspace_id: UUID,
+        task_id: UUID,
+        page: PageParams,
+        status: str | None = None,
+    ) -> tuple[list[TaskPlanningAttempt], int]:
+        self._require_task(workspace_id, task_id)
+        statement = select(TaskPlanningAttempt).where(
+            TaskPlanningAttempt.workspace_id == workspace_id,
+            TaskPlanningAttempt.task_id == task_id,
+        )
+        if status is not None:
+            statement = statement.where(TaskPlanningAttempt.status == status)
+        return self._page(statement.order_by(TaskPlanningAttempt.attempt_number.desc()), page)
 
     def list_runs(
         self,
@@ -492,6 +510,25 @@ class WorkspaceResourceService:
             )
         ).all()
         return {str(step.work_package_id) for step in steps if step.work_package_id}
+
+    def _sync_latest_planning_attempt_output(
+        self,
+        workspace_id: UUID,
+        task_id: UUID,
+        project_plan: dict[str, object],
+    ) -> None:
+        attempt = self._session.scalar(
+            select(TaskPlanningAttempt)
+            .where(
+                TaskPlanningAttempt.workspace_id == workspace_id,
+                TaskPlanningAttempt.task_id == task_id,
+                TaskPlanningAttempt.status == "completed",
+            )
+            .order_by(TaskPlanningAttempt.attempt_number.desc())
+        )
+        if attempt is not None:
+            attempt.output_snapshot = project_plan
+            self._session.flush([attempt])
 
     def _append_task_message(
         self,

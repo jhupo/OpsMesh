@@ -605,6 +605,8 @@ Current state:
 
 - PM planning creates structured project plans and validates them before execution.
 - Failure handling is basic, and dynamic replanning is only partially represented by PM revision decisions.
+- Planning attempts are queryable per task, including failed validation errors and final
+  future-only regeneration snapshots.
 
 Build:
 
@@ -618,6 +620,7 @@ API/data changes:
 - [x] Add `task_planning_attempts` table for queryable planning attempts.
 - [x] Add `POST /api/v1/workspaces/{workspace_id}/tasks/{task_id}/plan/retry`
 - [x] Add `POST /api/v1/workspaces/{workspace_id}/tasks/{task_id}/plan/regenerate`
+- [x] Add `GET /api/v1/workspaces/{workspace_id}/tasks/{task_id}/planning-attempts`
 
 Tests:
 
@@ -625,6 +628,7 @@ Tests:
 - [x] retry can repair a failed plan
 - [x] failed planning creates an approval/review item
 - [x] future-only regeneration does not rewrite completed steps
+- [x] planning-attempt history is workspace-scoped and exposes retry/regeneration evidence
 
 Acceptance:
 

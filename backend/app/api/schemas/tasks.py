@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from backend.app.api.schemas.common import TimestampedModel
+from backend.app.api.schemas.common import ORMModel, TimestampedModel
 
 
 class TaskCreateRequest(BaseModel):
@@ -68,6 +68,22 @@ class TaskMessageResponse(TimestampedModel):
     sequence: int
     body: str
     payload: dict[str, object]
+
+
+class TaskPlanningAttemptResponse(ORMModel):
+    id: UUID
+    workspace_id: UUID
+    task_id: UUID
+    planner_agent_profile_id: UUID | None
+    attempt_number: int
+    status: str
+    strategy: str
+    input_snapshot: dict[str, object]
+    output_snapshot: dict[str, object] | None
+    validation_errors: list[str]
+    retry_count: int
+    created_at: datetime
+    completed_at: datetime | None
 
 
 class TaskCorrectionResponse(BaseModel):

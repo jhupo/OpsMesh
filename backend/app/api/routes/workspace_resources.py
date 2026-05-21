@@ -20,6 +20,7 @@ from backend.app.api.schemas.tasks import (
     TaskCreateRequest,
     TaskMessageResponse,
     TaskObservationResponse,
+    TaskPlanningAttemptResponse,
     TaskPlanRegenerateRequest,
     TaskPlanRetryRequest,
     TaskResponse,
@@ -375,6 +376,34 @@ async def list_task_messages(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get(
+    "/tasks/{task_id}/planning-attempts",
+    response_model=PageResponse[TaskPlanningAttemptResponse],
+)
+async def list_task_planning_attempts(
+    task_id: UUID,
+    page: PageParams = Depends(pagination_params),
+    status_filter: str | None = Query(default=None, alias="status"),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[TaskPlanningAttemptResponse]:
+    try:
+        items, total = WorkspaceResourceService(session).list_task_planning_attempts(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            page=page,
+            status=status_filter,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return PageResponse(
+        items=[TaskPlanningAttemptResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 @router.post(

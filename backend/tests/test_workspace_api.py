@@ -521,6 +521,16 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
             },
         },
     )
+    listed_attempts = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{created_task.json()['id']}"
+        "/planning-attempts",
+        headers=_headers(owner.id),
+    )
+    failed_attempts = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{created_task.json()['id']}"
+        "/planning-attempts?status=failed",
+        headers=_headers(owner.id),
+    )
 
     attempts = session.scalars(
         select(TaskPlanningAttempt).order_by(TaskPlanningAttempt.attempt_number)
@@ -537,6 +547,15 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
     assert retry.json()["project_plan"]["work_packages"][1]["package_id"] == "build-ui"
     assert [attempt.status for attempt in attempts] == ["failed", "completed"]
     assert [attempt.retry_count for attempt in attempts] == [0, 1]
+    assert listed_attempts.status_code == 200
+    assert listed_attempts.json()["total"] == 2
+    assert [item["status"] for item in listed_attempts.json()["items"]] == [
+        "completed",
+        "failed",
+    ]
+    assert failed_attempts.status_code == 200
+    assert failed_attempts.json()["total"] == 1
+    assert failed_attempts.json()["items"][0]["validation_errors"]
     assert queued_run is not None
     assert queue.count_queued(workspace_id=workspace.id) == 1
 
@@ -622,6 +641,10 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
             },
         },
     )
+    attempts_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/planning-attempts",
+        headers=_headers(owner.id),
+    )
 
     session.refresh(step)
     messages = session.scalars(
@@ -637,6 +660,11 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
     assert regeneration["mode"] == "future_only"
     assert regeneration["preserved_completed_work_package_ids"] == ["frontend-build"]
     assert messages[0].payload["preserved_completed_work_package_ids"] == ["frontend-build"]
+    assert attempts_response.status_code == 200
+    assert attempts_response.json()["total"] == 2
+    assert attempts_response.json()["items"][0]["output_snapshot"]["regeneration"][
+        "mode"
+    ] == "future_only"
     assert queue.count_queued(workspace_id=workspace.id) == 0
 
 
