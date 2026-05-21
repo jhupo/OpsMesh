@@ -36,9 +36,9 @@ Completed foundation:
 
 Incomplete or basic-only areas:
 
-- Cloud control plane and runtime spaces are now documented, but the data model, admin APIs, runtime-space reservations, and worker fleet controls are not implemented yet.
-- MCP skills are cataloged and authorized, but not yet fully connected to the runtime execution path.
-- Skills can be visible as private/public, but public skill copy/provenance and install workflows are incomplete.
+- Cloud control plane and runtime spaces now have data models, workspace/admin APIs, runtime-space reservations, worker fleet controls, operations aggregates, and Docker/self-hosted policy hooks. Remaining work is mostly deeper resolution workflows and long-tail operator UX.
+- MCP skills are cataloged, authorized, executed through backend-controlled adapters, surfaced through management catalogs, and covered by disabled credential/server/tool execution tests. The remaining SDK-native continuation item depends on a stable OpenAI Agents SDK API.
+- Skills support private/public visibility, workspace-local installs, provenance snapshots, upgrades, disable history, MCP availability diagnostics, and run authorization validation.
 - Task observation now has a stable backend API with generic and domain-specific sections for AIGC, novel writing, research, and software tasks. The first implementation composes existing task, step, message, run event, and artifact data; richer domain persistence can be added behind the same response shape.
 - Correction/revision is supported through a generic user-facing endpoint that targets tasks, steps, agents, artifacts, or final output and records follow-up work plus task messages.
 - Scheduling supports per-member concurrency, workspace active run quotas, per-tick resource-limit prechecks, durable workspace usage reservations, blocked reasons, cross-task priority ordering, and starvation prevention. Docker/self-hosted execution slot usage still needs deeper completion.
@@ -46,10 +46,11 @@ Incomplete or basic-only areas:
   dangling running command records. Docker runtime cleanup records container and managed
   host-resource evidence and emits critical security events on cleanup failure. Self-hosted
   runtimes enforce worker concurrency/artifact limits, revocation evidence, and
-  workspace-visible machine trust snapshots; broader manual remediation workflows still need
-  completion.
+  workspace-visible machine trust snapshots and structured remediation actions.
 - Runtime cleanup now marks stale runtimes offline, removes terminal runtime records, expires stale worker leases within the requesting workspace, and worker maintenance periodically performs cross-workspace stale runtime cleanup.
-- Import preview now returns a structured conflict plan for existing names, skipped dependencies, and archive byte limits; preview-token resolution workflows are still pending.
+- Import preview now returns a structured conflict plan for existing names, skipped dependencies,
+  disabled skill installs, missing runtime policies, quota violations, checksum/version issues,
+  and archive byte limits; preview-token resolution workflows are still pending.
 - Model provider selection exists. Queued runs now freeze per-agent/default provider resolution
   metadata without storing secrets, worker execution can use a workspace-scoped fallback policy,
   and provider credentials track health state plus last success/failure details.
