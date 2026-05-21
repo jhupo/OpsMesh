@@ -9,6 +9,7 @@ class RuntimeLimits:
     disk_mb: int
     timeout_seconds: int
     max_output_bytes: int = 256_000
+    max_processes: int = 256
 
 
 @dataclass(frozen=True)

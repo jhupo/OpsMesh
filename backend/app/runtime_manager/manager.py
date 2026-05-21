@@ -60,6 +60,7 @@ class RuntimeManager:
                 "disk_mb": limits.disk_mb,
                 "timeout_seconds": limits.timeout_seconds,
                 "max_output_bytes": limits.max_output_bytes,
+                "max_processes": limits.max_processes,
             },
             network_policy={"disabled": network_disabled},
             capabilities={},

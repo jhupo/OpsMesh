@@ -392,12 +392,12 @@ Current state:
 
 - Docker runtime management and safety defaults exist.
 - Image allowlist and disabled network defaults exist.
-- Quota enforcement exists at runtime creation, command output limits are persisted and enforced, and cleanup success/failure now records structured runtime evidence.
+- Quota enforcement exists at runtime creation, Docker create applies CPU, memory, disk, process, and network limits, command output limits are persisted and enforced, and cleanup success/failure now records structured runtime evidence.
 
 Build:
 
 - Enforce CPU, memory, process, disk, network, timeout, and output limits at container creation.
-  - [x] Enforce CPU, memory, disk, network, timeout, and command output limits.
+  - [x] Enforce CPU, memory, disk, process, network, timeout, and command output limits.
 - Track runtime lease lifecycle from reservation to cleanup.
 - [x] Verify container cleanup action and record structured success/failure evidence.
 - [x] Verify volume, temp directory, and staged file cleanup for managed runtime resources.

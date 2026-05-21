@@ -82,7 +82,13 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     session.commit()
     docker = FakeDockerClient()
     manager = RuntimeManager(session, docker)
-    limits = RuntimeLimits(cpu_count=1.5, memory_mb=512, disk_mb=1024, timeout_seconds=30)
+    limits = RuntimeLimits(
+        cpu_count=1.5,
+        memory_mb=512,
+        disk_mb=1024,
+        timeout_seconds=30,
+        max_processes=64,
+    )
 
     runtime = manager.create_runtime(
         workspace_id=workspace.id,
@@ -114,6 +120,7 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     assert docker.created_requests[0].limits == limits
     assert docker.created_requests[0].network_disabled is True
     assert docker.created_requests[0].workspace_id == str(workspace.id)
+    assert docker.created_requests[0].limits.max_processes == 64
     assert docker.started == ["container-123"]
     assert docker.executed == [("container-123", ["python", "--version"], 30)]
     assert docker.stopped == ["container-123"]
@@ -656,6 +663,92 @@ def test_runtime_manager_rejects_total_cpu_over_workspace_quota() -> None:
         raise AssertionError("Expected total CPU quota to fail")
 
     assert docker.created_requests == []
+
+
+def test_runtime_manager_rejects_process_limit_over_workspace_quota() -> None:
+    session = _session()
+    workspace = Workspace(
+        owner_user_id=uuid4(),
+        name="Acme",
+        slug="acme-process-quota",
+        settings={"runtime_quota": {"max_runtime_processes": 32}},
+    )
+    template = RuntimeTemplate(
+        name="python",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.commit()
+    docker = FakeDockerClient()
+
+    try:
+        RuntimeManager(session, docker).create_runtime(
+            workspace_id=workspace.id,
+            template=template,
+            name="too-many-processes",
+            limits=RuntimeLimits(
+                cpu_count=1,
+                memory_mb=256,
+                disk_mb=512,
+                timeout_seconds=10,
+                max_processes=64,
+            ),
+        )
+    except RuntimeQuotaExceededError as exc:
+        assert exc.code == "runtime_process_quota_exceeded"
+    else:
+        raise AssertionError("Expected runtime process quota to fail")
+
+    assert docker.created_requests == []
+
+
+def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch) -> None:
+    from backend.app.runtime_manager.docker_client import DockerCliRuntimeClient
+
+    captured: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        *,
+        capture_output: bool,
+        check: bool,
+        text: bool,
+        timeout: int,
+    ):
+        _ = capture_output, check, text, timeout
+        captured.append(command)
+
+        class Completed:
+            returncode = 0
+            stdout = "container-abc\n"
+            stderr = ""
+
+        return Completed()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    container_id = DockerCliRuntimeClient().create_container(
+        RuntimeCreateRequest(
+            image="python:3.12-slim",
+            name="chaincloud-test",
+            workspace_id="workspace-1",
+            limits=RuntimeLimits(
+                cpu_count=1,
+                memory_mb=512,
+                disk_mb=2048,
+                timeout_seconds=30,
+                max_processes=96,
+            ),
+        )
+    )
+
+    command = captured[0]
+    assert container_id == "container-abc"
+    assert command[command.index("--pids-limit") + 1] == "96"
+    assert command[command.index("--storage-opt") + 1] == "size=2048m"
 
 
 def _session() -> Session:
