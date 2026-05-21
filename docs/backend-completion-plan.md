@@ -647,13 +647,14 @@ API/data changes:
 - Add internal indexing jobs.
 - [x] Replace placeholder implementation with real search ranked by text relevance and recency.
 - [x] Add internal tool operations to create and archive explicit memory entries.
+- [x] Add product-tool controls for result limit and source-type filters.
 
 Tests:
 
 - [x] task summary appears in workspace memory search
 - [x] private workspace memory is not visible cross-workspace
 - [x] archived explicit memory stops appearing
-- search respects max results and source filters
+- [x] search respects max results and source filters
 
 Acceptance:
 

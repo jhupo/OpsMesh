@@ -241,6 +241,72 @@ def test_workspace_memory_entries_can_be_written_searched_and_archived() -> None
     assert all(item["source_id"] != str(entry.id) for item in archived_results)
 
 
+def test_workspace_memory_search_respects_limit_and_source_filters() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, slug="acme")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Renewal research",
+        description="Customer renewal blockers and onboarding notes.",
+    )
+    run = AgentRun(workspace_id=workspace.id, task_id=task.id)
+    session.add_all([task, run])
+    session.flush()
+    session.add_all(
+        [
+            WorkspaceFile(
+                workspace_id=workspace.id,
+                uploaded_by_user_id=user.id,
+                filename="renewal-notes.txt",
+                content_type="text/plain",
+                size_bytes=120,
+                checksum_sha256="a" * 64,
+                storage_key="workspaces/acme/files/renewal-notes.txt",
+                file_metadata={"summary": "Customer renewal notes"},
+            ),
+            Artifact(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                agent_run_id=run.id,
+                artifact_type="report",
+                filename="renewal-report.pdf",
+                content_type="application/pdf",
+                size_bytes=2048,
+                checksum_sha256="b" * 64,
+                storage_key="workspaces/acme/artifacts/renewal-report.pdf",
+                artifact_metadata={"summary": "Customer renewal report"},
+                created_at=datetime.now(UTC),
+            ),
+        ]
+    )
+    session.commit()
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        allowed_tools=frozenset({"search_workspace_memory"}),
+    )
+    service = ProductToolService(session)
+
+    limited = service.search_workspace_memory(context, "renewal customer", limit=1)
+    files_only = service.search_workspace_memory(
+        context,
+        "renewal customer",
+        source_types={"workspace_file"},
+    )
+    none = service.search_workspace_memory(
+        context,
+        "renewal customer",
+        source_types={"workspace_memory"},
+    )
+
+    assert len(limited) == 1
+    assert files_only
+    assert {item["source_type"] for item in files_only} == {"workspace_file"}
+    assert none == []
+
+
 def test_workspace_memory_write_requires_tool_permission() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)

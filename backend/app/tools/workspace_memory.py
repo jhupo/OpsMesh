@@ -42,6 +42,7 @@ class WorkspaceMemorySearchService:
         workspace_id: UUID,
         query: str,
         limit: int = 10,
+        source_types: set[str] | None = None,
     ) -> list[dict[str, object]]:
         terms = _query_terms(query)
         if not terms or limit <= 0:
@@ -49,6 +50,8 @@ class WorkspaceMemorySearchService:
 
         results: list[tuple[int, _MemoryCandidate]] = []
         for candidate in self._candidates(workspace_id):
+            if source_types is not None and candidate.source_type not in source_types:
+                continue
             score = _score(candidate, terms, query)
             if score > 0:
                 results.append((score, candidate))

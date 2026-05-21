@@ -79,12 +79,21 @@ class ProductToolService:
         self._session.flush()
         return artifact
 
-    def search_workspace_memory(self, context: ToolContext, query: str) -> list[dict[str, object]]:
+    def search_workspace_memory(
+        self,
+        context: ToolContext,
+        query: str,
+        *,
+        limit: int = 10,
+        source_types: set[str] | None = None,
+    ) -> list[dict[str, object]]:
         context.require_tool("search_workspace_memory")
         self._append_tool_event(context, "tool.called", "search_workspace_memory")
         results = WorkspaceMemorySearchService(self._session).search(
             workspace_id=context.workspace_id,
             query=query,
+            limit=limit,
+            source_types=source_types,
         )
         self._append_tool_event(context, "tool.completed", "search_workspace_memory")
         return results
