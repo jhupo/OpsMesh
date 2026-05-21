@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import fakeredis
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
@@ -31,6 +32,38 @@ from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember, WorkspaceQuota
 
 TOKEN = "test-token"
+
+
+@pytest.mark.parametrize(
+    "path_template",
+    [
+        "/api/v1/workspaces/{workspace_id}/agents",
+        "/api/v1/workspaces/{workspace_id}/teams",
+        "/api/v1/workspaces/{workspace_id}/tasks",
+        "/api/v1/workspaces/{workspace_id}/runs",
+        "/api/v1/workspaces/{workspace_id}/files",
+        "/api/v1/workspaces/{workspace_id}/artifacts",
+        "/api/v1/workspaces/{workspace_id}/capabilities/workspace-skills",
+        "/api/v1/workspaces/{workspace_id}/capabilities/mcp-servers",
+        "/api/v1/workspaces/{workspace_id}/capabilities/mcp-tool-call-logs",
+    ],
+)
+def test_workspace_scoped_list_routes_reject_non_members(path_template: str) -> None:
+    client, session = _client()
+    owner, _ = _seed_workspace(session, role="owner")
+    _, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-owner@example.com",
+        slug="other-owner-space",
+    )
+
+    response = client.get(
+        path_template.format(workspace_id=other_workspace.id),
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 403
 
 
 def test_workspace_and_resource_api_enforces_scope_and_roles() -> None:
