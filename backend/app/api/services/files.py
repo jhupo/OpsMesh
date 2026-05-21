@@ -11,6 +11,7 @@ from backend.app.artifacts.models import Artifact
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.files.security import safe_filename
 from backend.app.files.storage import LocalStorage
+from backend.app.tasks.models import Task, TaskStep
 
 T = TypeVar("T")
 
@@ -105,6 +106,33 @@ class WorkspaceFileService:
             ).all()
         )
 
+    def list_final_output_artifact_history(
+        self,
+        *,
+        workspace_id: UUID,
+        task_id: UUID,
+    ) -> tuple[Task | None, list[str], list[Artifact]]:
+        task = self._session.get(Task, task_id)
+        if task is None or task.workspace_id != workspace_id:
+            return None, [], []
+
+        work_package_ids = self._final_output_work_package_ids(workspace_id, task_id)
+        if not work_package_ids:
+            return task, [], []
+
+        artifacts = list(
+            self._session.scalars(
+                select(Artifact)
+                .where(
+                    Artifact.workspace_id == workspace_id,
+                    Artifact.task_id == task_id,
+                    Artifact.work_package_id.in_(work_package_ids),
+                )
+                .order_by(Artifact.created_at.desc(), Artifact.version.desc(), Artifact.id.desc())
+            ).all()
+        )
+        return task, work_package_ids, artifacts
+
     def read_artifact(
         self,
         workspace_id: UUID,
@@ -150,3 +178,35 @@ class WorkspaceFileService:
         )
         rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
         return list(rows), int(total or 0)
+
+    def _final_output_work_package_ids(self, workspace_id: UUID, task_id: UUID) -> list[str]:
+        steps = self._session.scalars(
+            select(TaskStep)
+            .where(TaskStep.workspace_id == workspace_id, TaskStep.task_id == task_id)
+            .order_by(TaskStep.order_index.asc(), TaskStep.created_at.asc())
+        ).all()
+        package_ids: list[str] = []
+        seen: set[str] = set()
+        for step in steps:
+            package_id = step.work_package_id
+            if package_id is None or package_id in seen:
+                continue
+            if not _is_final_output_step(step):
+                continue
+            seen.add(package_id)
+            package_ids.append(package_id)
+        return package_ids
+
+
+def _is_final_output_step(step: TaskStep) -> bool:
+    review_policy = step.review_policy if isinstance(step.review_policy, dict) else {}
+    expected_artifacts = (
+        step.expected_artifacts if isinstance(step.expected_artifacts, list) else []
+    )
+    work_package_id = step.work_package_id or ""
+    return (
+        review_policy.get("mode") == "final_acceptance"
+        or work_package_id == "manager-summary"
+        or work_package_id.startswith("manager-summary-revision-")
+        or "final_delivery" in expected_artifacts
+    )

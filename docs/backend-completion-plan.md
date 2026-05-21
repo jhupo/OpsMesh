@@ -655,13 +655,14 @@ Build:
 - [x] Record supersedes relationships for subsequent work-package outputs.
 - [x] Expose artifact version metadata in artifact list responses, task observation, workspace memory, and export/import payloads.
 - [x] Expose dedicated artifact history for a work package.
-- Expose dedicated artifact history for final output.
+- [x] Expose dedicated artifact history for final output.
 
 API/data changes:
 
 - [x] Add `task_step_id`, `work_package_id`, `agent_profile_id`, `version`, `supersedes_artifact_id`, and `review_status` fields to artifacts.
 - [x] Add artifact version response fields.
 - [x] Add `GET /api/v1/workspaces/{workspace_id}/artifacts/history`.
+- [x] Add `GET /api/v1/workspaces/{workspace_id}/artifacts/final-output/history`.
 
 Tests:
 
@@ -669,6 +670,7 @@ Tests:
 - [x] subsequent output creates version 2 and preserves version 1
 - [x] artifact download/list authorization still works after versioning
 - [x] artifact history endpoint is workspace-scoped and returns newest version first
+- [x] final output artifact history is workspace-scoped and includes final-acceptance outputs only
 
 Acceptance:
 

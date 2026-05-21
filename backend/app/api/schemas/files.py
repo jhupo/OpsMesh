@@ -46,3 +46,13 @@ class ArtifactHistoryResponse(BaseModel):
     total: int
     latest_artifact_id: UUID | None
     latest_version: int | None
+
+
+class FinalOutputArtifactHistoryResponse(BaseModel):
+    task_id: UUID
+    final_output: dict[str, object] | None
+    final_work_package_ids: list[str]
+    items: list[ArtifactResponse]
+    total: int
+    latest_artifact_id: UUID | None
+    latest_version: int | None

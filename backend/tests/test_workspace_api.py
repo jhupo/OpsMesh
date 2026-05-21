@@ -1711,6 +1711,161 @@ def test_artifact_history_lists_versions_for_work_package_only() -> None:
     assert foreign_owned_response.json()["items"][0]["filename"] == "foreign.pdf"
 
 
+def test_final_output_artifact_history_lists_final_acceptance_outputs_only() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-final-artifacts@example.com",
+        slug="other-final-artifacts",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Final output artifact history",
+        final_output={"final_output": "Approved delivery"},
+    )
+    other_task = Task(
+        workspace_id=other_workspace.id,
+        created_by_user_id=other_owner.id,
+        title="Foreign final output artifact history",
+    )
+    session.add_all([task, other_task])
+    session.flush()
+    draft_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        work_package_id="draft",
+        title="Draft",
+        order_index=10,
+        expected_artifacts=["draft"],
+    )
+    summary_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        work_package_id="manager-summary",
+        title="Manager summary",
+        order_index=20,
+        expected_artifacts=["final_delivery"],
+        review_policy={"reviewer": "user", "mode": "final_acceptance"},
+    )
+    revision_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        work_package_id="manager-summary-revision-1",
+        title="Manager summary revision",
+        order_index=30,
+        expected_artifacts=["final_delivery"],
+        review_policy={"reviewer": "user", "mode": "final_acceptance"},
+    )
+    foreign_step = TaskStep(
+        workspace_id=other_workspace.id,
+        task_id=other_task.id,
+        work_package_id="manager-summary",
+        title="Foreign manager summary",
+        order_index=20,
+        expected_artifacts=["final_delivery"],
+        review_policy={"reviewer": "user", "mode": "final_acceptance"},
+    )
+    session.add_all([draft_step, summary_step, revision_step, foreign_step])
+    session.flush()
+    first_final = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=summary_step.id,
+        work_package_id="manager-summary",
+        version=1,
+        artifact_type="document",
+        filename="final-v1.pdf",
+        content_type="application/pdf",
+        size_bytes=10,
+        checksum_sha256="1" * 64,
+        storage_key="final-v1",
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    revision_final = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=revision_step.id,
+        work_package_id="manager-summary-revision-1",
+        version=1,
+        artifact_type="document",
+        filename="final-v2.pdf",
+        content_type="application/pdf",
+        size_bytes=12,
+        checksum_sha256="2" * 64,
+        storage_key="final-v2",
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    draft = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=draft_step.id,
+        work_package_id="draft",
+        version=7,
+        artifact_type="document",
+        filename="draft.pdf",
+        content_type="application/pdf",
+        size_bytes=12,
+        checksum_sha256="3" * 64,
+        storage_key="draft",
+        created_at=datetime(2026, 1, 3, tzinfo=UTC),
+    )
+    foreign = Artifact(
+        workspace_id=other_workspace.id,
+        task_id=other_task.id,
+        task_step_id=foreign_step.id,
+        work_package_id="manager-summary",
+        version=1,
+        artifact_type="document",
+        filename="foreign-final.pdf",
+        content_type="application/pdf",
+        size_bytes=12,
+        checksum_sha256="4" * 64,
+        storage_key="foreign-final",
+        created_at=datetime(2026, 1, 4, tzinfo=UTC),
+    )
+    session.add_all([first_final, revision_final, draft, foreign])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/artifacts/final-output/history"
+        f"?task_id={task.id}",
+        headers=_headers(owner.id),
+    )
+    foreign_task_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/artifacts/final-output/history"
+        f"?task_id={task.id}",
+        headers=_headers(other_owner.id),
+    )
+    foreign_owned_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/artifacts/final-output/history"
+        f"?task_id={other_task.id}",
+        headers=_headers(other_owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["final_output"] == {"final_output": "Approved delivery"}
+    assert payload["final_work_package_ids"] == [
+        "manager-summary",
+        "manager-summary-revision-1",
+    ]
+    assert payload["total"] == 2
+    assert payload["latest_artifact_id"] == str(revision_final.id)
+    assert payload["latest_version"] == 1
+    assert [item["filename"] for item in payload["items"]] == [
+        "final-v2.pdf",
+        "final-v1.pdf",
+    ]
+    assert foreign_task_response.status_code == 200
+    assert foreign_task_response.json()["total"] == 0
+    assert foreign_task_response.json()["final_output"] is None
+    assert foreign_owned_response.status_code == 200
+    assert foreign_owned_response.json()["items"][0]["filename"] == "foreign-final.pdf"
+
+
 def test_create_workspace_assigns_owner_membership() -> None:
     client, session = _client()
     user = User(email="new-owner@example.com", display_name="New Owner")

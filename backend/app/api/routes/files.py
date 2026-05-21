@@ -8,6 +8,7 @@ from backend.app.api.pagination import PageParams, PageResponse, pagination_para
 from backend.app.api.schemas.files import (
     ArtifactHistoryResponse,
     ArtifactResponse,
+    FinalOutputArtifactHistoryResponse,
     WorkspaceFileResponse,
 )
 from backend.app.api.services.files import WorkspaceFileService
@@ -109,6 +110,31 @@ async def get_artifact_history(
     return ArtifactHistoryResponse(
         task_id=task_id,
         work_package_id=work_package_id,
+        items=[ArtifactResponse.model_validate(item) for item in items],
+        total=len(items),
+        latest_artifact_id=latest.id if latest is not None else None,
+        latest_version=latest.version if latest is not None else None,
+    )
+
+
+@router.get(
+    "/artifacts/final-output/history",
+    response_model=FinalOutputArtifactHistoryResponse,
+)
+async def get_final_output_artifact_history(
+    task_id: UUID = Query(),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    service: WorkspaceFileService = Depends(file_service),
+) -> FinalOutputArtifactHistoryResponse:
+    task, work_package_ids, items = service.list_final_output_artifact_history(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+    )
+    latest = items[0] if items else None
+    return FinalOutputArtifactHistoryResponse(
+        task_id=task_id,
+        final_output=task.final_output if task is not None else None,
+        final_work_package_ids=work_package_ids,
         items=[ArtifactResponse.model_validate(item) for item in items],
         total=len(items),
         latest_artifact_id=latest.id if latest is not None else None,
