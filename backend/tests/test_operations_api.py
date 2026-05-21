@@ -1424,6 +1424,54 @@ def test_operations_lists_runtime_leases_by_workspace() -> None:
     assert other_response.json()["items"][0]["workspace_runtime_id"] == str(other_runtime.id)
 
 
+def test_operations_runtime_leases_reject_foreign_runtime_space_filter() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    _, other_workspace = _seed_workspace_with_role(
+        session,
+        email="foreign-runtime-lease@example.com",
+        slug="foreign-runtime-lease",
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=other_workspace.id,
+        name="Foreign Runtime Space",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.flush()
+    runtime = WorkspaceRuntime(
+        workspace_id=other_workspace.id,
+        runtime_space_id=runtime_space.id,
+        name="foreign-runtime",
+        docker_container_id="foreign-container",
+    )
+    session.add(runtime)
+    session.flush()
+    session.add(
+        RuntimeLease(
+            workspace_id=other_workspace.id,
+            workspace_runtime_id=runtime.id,
+            runtime_space_id=runtime_space.id,
+            docker_container_id="foreign-container",
+            status="running",
+            lease_metadata={"secret": "foreign"},
+            acquired_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/runtime-leases"
+        f"?status=running&runtime_space_id={runtime_space.id}",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
+    assert response.json()["items"] == []
+
+
 def test_operator_can_use_operations_but_viewer_cannot() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

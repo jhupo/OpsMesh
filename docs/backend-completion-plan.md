@@ -744,6 +744,7 @@ Build:
 - Add negative tests for forged IDs, stale snapshots, disabled credentials, revoked self-hosted runtimes, and public source skill misuse.
   - [x] Disabled explicit model-provider credential override is rejected.
   - [x] Artifact history does not leak artifacts when a foreign task ID is supplied.
+  - [x] Runtime lease listing does not leak foreign runtime-space leases.
 - Add property-style tests for workspace ID mismatch where practical.
 
 Tests:
