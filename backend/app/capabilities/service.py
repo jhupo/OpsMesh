@@ -354,6 +354,59 @@ class CapabilityService:
         self._session.refresh(allow)
         return allow
 
+    def disable_mcp_server(
+        self,
+        workspace_id: UUID,
+        mcp_server_id: UUID,
+        actor_user_id: UUID | None = None,
+    ) -> McpServer:
+        server = self._require_server(workspace_id, mcp_server_id)
+        server.status = "disabled"
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="mcp_server.disabled",
+                target_type="mcp_server",
+                target_id=server.id,
+                metadata={"name": server.name},
+            )
+        self._session.commit()
+        self._session.refresh(server)
+        return server
+
+    def disable_mcp_tool(
+        self,
+        workspace_id: UUID,
+        mcp_server_id: UUID,
+        allowlist_id: UUID,
+        actor_user_id: UUID | None = None,
+    ) -> McpToolAllowlist:
+        self._require_server(workspace_id, mcp_server_id)
+        allow = self._session.get(McpToolAllowlist, allowlist_id)
+        if (
+            allow is None
+            or allow.workspace_id != workspace_id
+            or allow.mcp_server_id != mcp_server_id
+        ):
+            raise ValueError("MCP tool allowlist entry not found")
+        allow.status = "disabled"
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="mcp_tool.disabled",
+                target_type="mcp_tool_allowlist",
+                target_id=allow.id,
+                metadata={
+                    "mcp_server_id": str(mcp_server_id),
+                    "tool_name": allow.tool_name,
+                },
+            )
+        self._session.commit()
+        self._session.refresh(allow)
+        return allow
+
     def list_allowed_mcp_tools(
         self,
         workspace_id: UUID,

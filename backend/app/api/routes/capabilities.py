@@ -290,6 +290,45 @@ async def allow_mcp_tool(
     return McpToolAllowResponse.model_validate(allow)
 
 
+@router.post("/mcp-servers/{mcp_server_id}/disable", response_model=McpServerResponse)
+async def disable_mcp_server(
+    mcp_server_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> McpServerResponse:
+    try:
+        server = CapabilityService(session).disable_mcp_server(
+            context.workspace.id,
+            mcp_server_id,
+            context.user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return McpServerResponse.model_validate(server)
+
+
+@router.post(
+    "/mcp-servers/{mcp_server_id}/tools/{allowlist_id}/disable",
+    response_model=McpToolAllowResponse,
+)
+async def disable_mcp_tool(
+    mcp_server_id: UUID,
+    allowlist_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> McpToolAllowResponse:
+    try:
+        allow = CapabilityService(session).disable_mcp_tool(
+            context.workspace.id,
+            mcp_server_id,
+            allowlist_id,
+            context.user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return McpToolAllowResponse.model_validate(allow)
+
+
 @router.get("/mcp-tools", response_model=list[McpToolDescriptor])
 async def list_mapped_mcp_tools(
     agent_profile_id: UUID | None = Query(default=None),
