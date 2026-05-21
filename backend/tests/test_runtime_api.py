@@ -52,6 +52,9 @@ class FakeDockerClient(DockerRuntimeClient):
     def remove_container(self, container_id: str) -> None:
         self.removed.append(container_id)
 
+    def remove_volume(self, volume_name: str) -> None:
+        return None
+
     def exec_command(
         self,
         container_id: str,

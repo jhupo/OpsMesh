@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy import create_engine, select
@@ -24,6 +25,7 @@ from backend.app.runtimes.models import (
     RuntimeTemplate,
     WorkspaceRuntime,
 )
+from backend.app.security.models import SecurityEvent
 from backend.app.workspaces.models import Workspace
 
 
@@ -33,6 +35,7 @@ class FakeDockerClient(DockerRuntimeClient):
         self.started: list[str] = []
         self.stopped: list[str] = []
         self.removed: list[str] = []
+        self.removed_volumes: list[str] = []
         self.executed: list[tuple[str, list[str], int]] = []
 
     def create_container(self, request: RuntimeCreateRequest) -> str:
@@ -47,6 +50,9 @@ class FakeDockerClient(DockerRuntimeClient):
 
     def remove_container(self, container_id: str) -> None:
         self.removed.append(container_id)
+
+    def remove_volume(self, volume_name: str) -> None:
+        self.removed_volumes.append(volume_name)
 
     def exec_command(
         self,
@@ -243,6 +249,128 @@ def test_cleanup_stale_runtime_records_failure_evidence() -> None:
     assert event is not None
     assert event.event_metadata["cleanup"]["success"] is False
     assert event.event_metadata["cleanup"]["error"] == "docker daemon unavailable"
+
+
+def test_cleanup_stale_runtime_removes_managed_host_resources(tmp_path: Path) -> None:
+    session = _session()
+    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme-host-cleanup", settings={})
+    template = RuntimeTemplate(
+        name="python",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.commit()
+    managed_root = tmp_path / "runtimes"
+    temp_dir = managed_root / "runtime-1" / "tmp"
+    staged_file = managed_root / "runtime-1" / "input.txt"
+    temp_dir.mkdir(parents=True)
+    staged_file.write_text("payload", encoding="utf-8")
+    docker = FakeDockerClient()
+    runtime = RuntimeManager(
+        session,
+        docker,
+        managed_host_roots=[managed_root],
+    ).create_runtime(
+        workspace_id=workspace.id,
+        template=template,
+        name="analysis",
+        limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
+    )
+    runtime.status = "stopped"
+    runtime.capabilities = {
+        "managed_resources": {
+            "temp_dirs": [str(temp_dir)],
+            "staged_files": [str(staged_file)],
+            "docker_volumes": ["chaincloud-runtime-1"],
+        }
+    }
+    session.commit()
+
+    RuntimeManager(
+        session,
+        docker,
+        managed_host_roots=[managed_root],
+    ).cleanup_stale_runtime(runtime)
+
+    cleanup_event = session.scalar(
+        select(RuntimeEvent).where(
+            RuntimeEvent.workspace_runtime_id == runtime.id,
+            RuntimeEvent.event_type == "runtime.cleanup",
+        )
+    )
+    assert runtime.status == "deleted"
+    assert not temp_dir.exists()
+    assert not staged_file.exists()
+    assert docker.removed_volumes == ["chaincloud-runtime-1"]
+    assert cleanup_event is not None
+    cleanup = cleanup_event.event_metadata["cleanup"]
+    assert cleanup["success"] is True
+    host_resources = cleanup["host_resources"]
+    assert {item["status"] for item in host_resources} == {"deleted"}
+    assert session.query(SecurityEvent).count() == 0
+
+
+def test_cleanup_stale_runtime_rejects_unmanaged_host_resource(tmp_path: Path) -> None:
+    session = _session()
+    workspace = Workspace(
+        owner_user_id=uuid4(),
+        name="Acme",
+        slug="acme-unsafe-cleanup",
+        settings={},
+    )
+    template = RuntimeTemplate(
+        name="python",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.commit()
+    managed_root = tmp_path / "runtimes"
+    unmanaged_file = tmp_path / "outside.txt"
+    unmanaged_file.write_text("do not delete", encoding="utf-8")
+    docker = FakeDockerClient()
+    runtime = RuntimeManager(
+        session,
+        docker,
+        managed_host_roots=[managed_root],
+    ).create_runtime(
+        workspace_id=workspace.id,
+        template=template,
+        name="analysis",
+        limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
+    )
+    runtime.status = "stopped"
+    runtime.capabilities = {"managed_resources": {"staged_files": [str(unmanaged_file)]}}
+    session.commit()
+
+    RuntimeManager(
+        session,
+        docker,
+        managed_host_roots=[managed_root],
+    ).cleanup_stale_runtime(runtime)
+
+    event = session.scalar(
+        select(RuntimeEvent).where(
+            RuntimeEvent.workspace_runtime_id == runtime.id,
+            RuntimeEvent.event_type == "runtime.cleanup_failed",
+        )
+    )
+    security_event = session.scalar(
+        select(SecurityEvent).where(SecurityEvent.action == "runtime.cleanup.failed")
+    )
+    assert unmanaged_file.exists()
+    assert runtime.status == "cleanup_failed"
+    assert event is not None
+    assert event.event_metadata["cleanup"]["success"] is False
+    assert event.event_metadata["cleanup"]["host_resources"][0]["status"] == "unsafe_path"
+    assert security_event is not None
+    assert security_event.workspace_id == workspace.id
+    assert security_event.severity == "critical"
 
 
 def test_runtime_manager_rejects_single_runtime_over_workspace_quota() -> None:

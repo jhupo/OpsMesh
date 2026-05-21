@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import Select, func, select
@@ -27,7 +28,11 @@ class RuntimeControlService:
         settings: Settings,
     ) -> None:
         self._session = session
-        self._manager = RuntimeManager(session, docker_client)
+        self._manager = RuntimeManager(
+            session,
+            docker_client,
+            managed_host_roots=[Path(settings.storage_root).resolve() / "runtimes"],
+        )
         self._safety = RuntimeSafetyPolicy(
             tuple(settings.runtime_allowed_images),
             PlatformPolicyService(session).risky_execution_policy(),

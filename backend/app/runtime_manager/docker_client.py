@@ -37,6 +37,9 @@ class DockerCliRuntimeClient(DockerRuntimeClient):
     def remove_container(self, container_id: str) -> None:
         self._run(["docker", "rm", "-f", container_id], timeout_seconds=30)
 
+    def remove_volume(self, volume_name: str) -> None:
+        self._run(["docker", "volume", "rm", "-f", volume_name], timeout_seconds=30)
+
     def exec_command(
         self,
         container_id: str,
@@ -75,4 +78,3 @@ class DockerCliRuntimeClient(DockerRuntimeClient):
             stdout=completed.stdout,
             stderr=completed.stderr,
         )
-

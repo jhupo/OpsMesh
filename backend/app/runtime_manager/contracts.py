@@ -35,6 +35,8 @@ class DockerRuntimeClient(Protocol):
 
     def remove_container(self, container_id: str) -> None: ...
 
+    def remove_volume(self, volume_name: str) -> None: ...
+
     def exec_command(
         self,
         container_id: str,

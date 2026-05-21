@@ -1,4 +1,7 @@
+from collections.abc import Iterable
 from datetime import UTC, datetime
+from pathlib import Path
+from shutil import rmtree
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -17,12 +20,22 @@ from backend.app.runtimes.models import (
     RuntimeTemplate,
     WorkspaceRuntime,
 )
+from backend.app.security.models import SecurityEvent
 
 
 class RuntimeManager:
-    def __init__(self, session: Session, docker_client: DockerRuntimeClient) -> None:
+    def __init__(
+        self,
+        session: Session,
+        docker_client: DockerRuntimeClient,
+        *,
+        managed_host_roots: Iterable[Path | str] | None = None,
+    ) -> None:
         self._session = session
         self._docker = docker_client
+        self._managed_host_roots = tuple(
+            path.resolve() for path in (Path(root) for root in managed_host_roots or ())
+        )
 
     def create_runtime(
         self,
@@ -92,56 +105,84 @@ class RuntimeManager:
     def delete_runtime(self, runtime: WorkspaceRuntime) -> None:
         self._require_container(runtime)
         container_id = runtime.docker_container_id or ""
-        self._docker.remove_container(container_id)
-        runtime.status = "deleted"
+        try:
+            self._docker.remove_container(container_id)
+        except Exception as exc:
+            cleanup = self._cleanup_runtime_resources(
+                runtime,
+                action="delete",
+                container_id=container_id,
+                container_removed=False,
+                error=str(exc),
+            )
+            runtime.status = "cleanup_failed"
+            runtime.connection_status = "offline"
+            self._append_event(
+                runtime,
+                "runtime.cleanup_failed",
+                str(exc),
+                metadata=cleanup,
+            )
+            self._record_cleanup_security_event(runtime, cleanup, reason=str(exc))
+            self._session.commit()
+            raise
+        cleanup = self._cleanup_runtime_resources(
+            runtime,
+            action="delete",
+            container_id=container_id,
+            container_removed=True,
+        )
+        runtime.status = "deleted" if _cleanup_succeeded(cleanup) else "cleanup_failed"
         runtime.connection_status = "offline"
         self._append_event(
             runtime,
-            "runtime.deleted",
-            "",
-            metadata=_cleanup_evidence(
-                action="delete",
-                container_id=container_id,
-                success=True,
-            ),
+            "runtime.deleted" if runtime.status == "deleted" else "runtime.cleanup_failed",
+            "" if runtime.status == "deleted" else "Managed runtime resource cleanup failed",
+            metadata=cleanup,
         )
+        if runtime.status == "cleanup_failed":
+            self._record_cleanup_security_event(
+                runtime,
+                cleanup,
+                reason="Managed runtime resource cleanup failed",
+            )
         self._session.commit()
 
     def cleanup_stale_runtime(self, runtime: WorkspaceRuntime) -> None:
         if runtime.status not in {"stopped", "failed", "deleted"}:
             return
         container_id = runtime.docker_container_id
+        container_removed = True
+        error: str | None = None
         if container_id:
             try:
                 self._docker.remove_container(container_id)
             except Exception as exc:
-                runtime.status = "cleanup_failed"
-                runtime.connection_status = "offline"
-                self._append_event(
-                    runtime,
-                    "runtime.cleanup_failed",
-                    str(exc),
-                    metadata=_cleanup_evidence(
-                        action="stale_cleanup",
-                        container_id=container_id,
-                        success=False,
-                        error=str(exc),
-                    ),
-                )
-                self._session.commit()
-                return
-        runtime.status = "deleted"
+                container_removed = False
+                error = str(exc)
+        cleanup = self._cleanup_runtime_resources(
+            runtime,
+            action="stale_cleanup",
+            container_id=container_id,
+            container_removed=container_removed,
+            error=error,
+        )
+        runtime.status = "deleted" if _cleanup_succeeded(cleanup) else "cleanup_failed"
         runtime.connection_status = "offline"
         self._append_event(
             runtime,
-            "runtime.cleanup",
-            "",
-            metadata=_cleanup_evidence(
-                action="stale_cleanup",
-                container_id=container_id,
-                success=True,
-            ),
+            "runtime.cleanup" if runtime.status == "deleted" else "runtime.cleanup_failed",
+            ""
+            if runtime.status == "deleted"
+            else error or "Managed runtime resource cleanup failed",
+            metadata=cleanup,
         )
+        if runtime.status == "cleanup_failed":
+            self._record_cleanup_security_event(
+                runtime,
+                cleanup,
+                reason=error or "Managed runtime resource cleanup failed",
+            )
         self._session.commit()
 
     def execute_command(
@@ -227,6 +268,141 @@ class RuntimeManager:
         if not runtime.docker_container_id:
             raise ValueError("Runtime has no Docker container")
 
+    def _cleanup_runtime_resources(
+        self,
+        runtime: WorkspaceRuntime,
+        *,
+        action: str,
+        container_id: str | None,
+        container_removed: bool,
+        error: str | None = None,
+    ) -> dict[str, object]:
+        host_resource_results = self._cleanup_host_resources(runtime)
+        success = container_removed and all(
+            result.get("success") is not False for result in host_resource_results
+        )
+        evidence = _cleanup_evidence(
+            action=action,
+            container_id=container_id,
+            success=success,
+            error=error,
+        )
+        evidence["cleanup"]["container_removed"] = container_removed
+        evidence["cleanup"]["host_resources"] = host_resource_results
+        return evidence
+
+    def _cleanup_host_resources(self, runtime: WorkspaceRuntime) -> list[dict[str, object]]:
+        managed_resources = runtime.capabilities.get("managed_resources")
+        if not isinstance(managed_resources, dict):
+            return []
+        results: list[dict[str, object]] = []
+        for path_value in _string_items(managed_resources.get("temp_dirs")):
+            results.append(self._cleanup_host_path(path_value, resource_type="temp_dir"))
+        for path_value in _string_items(managed_resources.get("staged_files")):
+            results.append(self._cleanup_host_path(path_value, resource_type="staged_file"))
+        for volume in _string_items(managed_resources.get("docker_volumes")):
+            results.append(self._cleanup_docker_volume(volume))
+        return results
+
+    def _cleanup_docker_volume(self, volume_name: str) -> dict[str, object]:
+        try:
+            self._docker.remove_volume(volume_name)
+        except Exception as exc:
+            return _resource_result(
+                resource_type="docker_volume",
+                target=volume_name,
+                status="delete_failed",
+                success=False,
+                message=str(exc),
+            )
+        return _resource_result(
+            resource_type="docker_volume",
+            target=volume_name,
+            status="deleted",
+            success=True,
+        )
+
+    def _cleanup_host_path(self, raw_path: str, *, resource_type: str) -> dict[str, object]:
+        try:
+            path = Path(raw_path).resolve()
+        except OSError as exc:
+            return _resource_result(
+                resource_type=resource_type,
+                target=raw_path,
+                status="invalid_path",
+                success=False,
+                message=str(exc),
+            )
+        if not self._is_managed_host_path(path):
+            return _resource_result(
+                resource_type=resource_type,
+                target=str(path),
+                status="unsafe_path",
+                success=False,
+                message="Path is outside configured managed runtime roots.",
+            )
+        if not path.exists():
+            return _resource_result(
+                resource_type=resource_type,
+                target=str(path),
+                status="already_absent",
+                success=True,
+            )
+        try:
+            if path.is_dir():
+                rmtree(path)
+            else:
+                path.unlink()
+        except OSError as exc:
+            return _resource_result(
+                resource_type=resource_type,
+                target=str(path),
+                status="delete_failed",
+                success=False,
+                message=str(exc),
+            )
+        return _resource_result(
+            resource_type=resource_type,
+            target=str(path),
+            status="deleted",
+            success=not path.exists(),
+        )
+
+    def _is_managed_host_path(self, path: Path) -> bool:
+        return any(path == root or root in path.parents for root in self._managed_host_roots)
+
+    def _record_cleanup_security_event(
+        self,
+        runtime: WorkspaceRuntime,
+        cleanup: dict[str, object],
+        *,
+        reason: str,
+    ) -> None:
+        self._session.add(
+            SecurityEvent(
+                workspace_id=runtime.workspace_id,
+                user_id=None,
+                action="runtime.cleanup.failed",
+                outcome="failed",
+                severity="critical",
+                source_ip=None,
+                user_agent=None,
+                request_id=None,
+                path="runtime_manager",
+                method="SYSTEM",
+                reason=reason[:512],
+                event_metadata={
+                    "runtime_id": str(runtime.id),
+                    "runtime_space_id": str(runtime.runtime_space_id)
+                    if runtime.runtime_space_id
+                    else None,
+                    "docker_container_id": runtime.docker_container_id,
+                    **cleanup,
+                },
+                created_at=datetime.now(UTC),
+            )
+        )
+
 
 def _cleanup_evidence(
     *,
@@ -246,3 +422,33 @@ def _cleanup_evidence(
     if error is not None:
         evidence["cleanup"]["error"] = error
     return evidence
+
+
+def _cleanup_succeeded(evidence: dict[str, object]) -> bool:
+    cleanup = evidence.get("cleanup")
+    return isinstance(cleanup, dict) and cleanup.get("success") is True
+
+
+def _string_items(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item]
+
+
+def _resource_result(
+    *,
+    resource_type: str,
+    target: str,
+    status: str,
+    success: bool,
+    message: str | None = None,
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "type": resource_type,
+        "target": target,
+        "status": status,
+        "success": success,
+    }
+    if message is not None:
+        result["message"] = message
+    return result

@@ -46,6 +46,9 @@ class FakeDockerClient(DockerRuntimeClient):
     def remove_container(self, container_id: str) -> None:
         return None
 
+    def remove_volume(self, volume_name: str) -> None:
+        return None
+
     def exec_command(
         self,
         container_id: str,
