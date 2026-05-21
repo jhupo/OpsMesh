@@ -507,7 +507,8 @@ Tasks:
   - [x] Add admin/operator APIs for queues, dead-letter requeue, runtimes, runtime force-stop, and global risky-execution policy records.
   - [x] Enforce global risky-execution policy records inside Docker runtime, self-hosted runtime, and MCP execution paths.
   - [x] Model high-risk tool handling as `require_workspace_approval`, `allow`, or `block`; platform admins set guardrails, workspace owners approve task-level risk.
-  - [ ] Add PostgreSQL-level concurrent scheduler tests that prove runtime-space quotas cannot be over-reserved under parallel schedulers.
+  - [x] Add PostgreSQL-level concurrent scheduler tests that prove runtime-space quotas cannot be over-reserved under parallel schedulers.
+    - [x] Added an opt-in `CHAINCLOUD_TEST_POSTGRES_URL` test that creates a temporary schema, runs two schedulers concurrently, and proves runtime-space `active_runs` reservations stay capped under row-lock contention.
 - [x] Connect MCP skills to the real runtime execution path.
   - [x] Add internal MCP execution service with run snapshot authorization, adapter boundary, payload limits, logs, events, task messages, and blocked-call security evidence.
   - [x] Add workspace MCP catalog API that aggregates servers, allowed tools, credential status, execution mode, and agent-scoped availability.

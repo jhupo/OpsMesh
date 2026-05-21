@@ -182,6 +182,7 @@ class RunOrchestrationService:
                     [
                         RunStatus.QUEUED.value,
                         RunStatus.RUNNING.value,
+                        RunStatus.WAITING_RUNTIME.value,
                         RunStatus.WAITING_APPROVAL.value,
                     ]
                 ),
@@ -1534,6 +1535,7 @@ class RunOrchestrationService:
                     [
                         RunStatus.QUEUED.value,
                         RunStatus.RUNNING.value,
+                        RunStatus.WAITING_RUNTIME.value,
                         RunStatus.WAITING_APPROVAL.value,
                     ]
                 ),
@@ -1582,6 +1584,10 @@ class RunOrchestrationService:
         return run
 
     def _create_reserved_run_for_step(self, task: Task, step: TaskStep) -> AgentRun | None:
+        locked_step = self._lock_step_for_scheduling(task, step)
+        if locked_step is None:
+            return None
+        step = locked_step
         workspace_usage = self._workspace_resource_usage(task.workspace_id, step)
         workspace_reservation_result = WorkspaceQuotaService(self._session).reserve(
             workspace_id=task.workspace_id,
@@ -1612,6 +1618,25 @@ class RunOrchestrationService:
         if reservation is not None:
             RuntimeSpaceService(self._session).attach_reservation_to_run(reservation, run.id)
         return run
+
+    def _lock_step_for_scheduling(self, task: Task, step: TaskStep) -> TaskStep | None:
+        locked_step = self._session.scalar(
+            select(TaskStep)
+            .where(
+                TaskStep.workspace_id == task.workspace_id,
+                TaskStep.id == step.id,
+                TaskStep.task_id == task.id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if locked_step is None:
+            return None
+        if locked_step.status != STEP_STATUS_QUEUED:
+            return None
+        if self._step_has_active_run(locked_step):
+            return None
+        return locked_step
 
     def _reserve_runtime_space_for_step(
         self,
@@ -2116,6 +2141,7 @@ class RunOrchestrationService:
                     [
                         RunStatus.QUEUED.value,
                         RunStatus.RUNNING.value,
+                        RunStatus.WAITING_RUNTIME.value,
                         RunStatus.WAITING_APPROVAL.value,
                     ]
                 ),
@@ -2142,6 +2168,7 @@ class RunOrchestrationService:
                     [
                         RunStatus.QUEUED.value,
                         RunStatus.RUNNING.value,
+                        RunStatus.WAITING_RUNTIME.value,
                         RunStatus.WAITING_APPROVAL.value,
                     ]
                 ),
