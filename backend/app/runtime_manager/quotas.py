@@ -15,6 +15,7 @@ class RuntimeQuota:
     max_runtime_memory_mb: int = 8192
     max_runtime_disk_mb: int = 20_480
     max_runtime_timeout_seconds: int = 3600
+    max_runtime_output_bytes: int = 2_000_000
     max_active_runtimes: int = 8
     max_total_cpu: float = 16
     max_total_memory_mb: int = 32_768
@@ -72,6 +73,11 @@ class RuntimeQuotaPolicy:
                 raw_quota,
                 "max_runtime_timeout_seconds",
                 defaults.max_runtime_timeout_seconds,
+            ),
+            max_runtime_output_bytes=_int_setting(
+                raw_quota,
+                "max_runtime_output_bytes",
+                defaults.max_runtime_output_bytes,
             ),
             max_active_runtimes=_int_setting(
                 raw_quota,
@@ -139,6 +145,16 @@ class RuntimeQuotaPolicy:
             raise RuntimeQuotaExceededError(
                 "runtime_timeout_quota_exceeded",
                 "Runtime timeout exceeds quota",
+            )
+        if limits.max_output_bytes <= 0:
+            raise RuntimeQuotaExceededError(
+                "runtime_output_invalid",
+                "Runtime output limit must be positive",
+            )
+        if limits.max_output_bytes > quota.max_runtime_output_bytes:
+            raise RuntimeQuotaExceededError(
+                "runtime_output_quota_exceeded",
+                "Runtime output limit exceeds quota",
             )
 
     def _validate_total_usage(

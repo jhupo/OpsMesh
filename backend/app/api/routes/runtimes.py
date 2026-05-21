@@ -238,6 +238,7 @@ def _to_runtime_limits(request: RuntimeLimitsRequest | None) -> RuntimeLimits | 
         memory_mb=request.memory_mb,
         disk_mb=request.disk_mb,
         timeout_seconds=request.timeout_seconds,
+        max_output_bytes=request.max_output_bytes,
     )
 
 

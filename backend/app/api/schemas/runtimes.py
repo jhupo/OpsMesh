@@ -21,6 +21,7 @@ class RuntimeLimitsRequest(BaseModel):
     memory_mb: int = Field(ge=128, le=32_768)
     disk_mb: int = Field(ge=256, le=102_400)
     timeout_seconds: int = Field(ge=1, le=3_600)
+    max_output_bytes: int = Field(default=256_000, ge=1, le=2_000_000)
 
 
 class RuntimeCreateRequest(BaseModel):

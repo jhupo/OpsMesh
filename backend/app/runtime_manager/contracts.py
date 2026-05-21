@@ -8,6 +8,7 @@ class RuntimeLimits:
     memory_mb: int
     disk_mb: int
     timeout_seconds: int
+    max_output_bytes: int = 256_000
 
 
 @dataclass(frozen=True)

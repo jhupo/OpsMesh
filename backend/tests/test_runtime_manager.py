@@ -273,6 +273,69 @@ def test_runtime_manager_records_docker_exec_failure_without_raising() -> None:
     assert event.event_metadata["reason"] == "docker_exec_failed"
 
 
+def test_runtime_manager_limits_command_output_and_records_policy_event() -> None:
+    class NoisyDockerClient(FakeDockerClient):
+        def exec_command(
+            self,
+            container_id: str,
+            command: list[str],
+            timeout_seconds: int,
+        ) -> RuntimeCommandResult:
+            self.executed.append((container_id, command, timeout_seconds))
+            return RuntimeCommandResult(exit_code=0, stdout="abcdef", stderr="xyz")
+
+    session = _session()
+    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme-output", settings={})
+    template = RuntimeTemplate(
+        name="python",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.commit()
+    docker = NoisyDockerClient()
+    runtime = RuntimeManager(session, docker).create_runtime(
+        workspace_id=workspace.id,
+        template=template,
+        name="analysis",
+        limits=RuntimeLimits(
+            cpu_count=1,
+            memory_mb=256,
+            disk_mb=512,
+            timeout_seconds=10,
+            max_output_bytes=3,
+        ),
+    )
+
+    command = RuntimeManager(session, docker).execute_command(
+        workspace_id=workspace.id,
+        runtime=runtime,
+        command=["python", "noisy.py"],
+    )
+
+    event = session.scalar(
+        select(RuntimeEvent).where(
+            RuntimeEvent.workspace_runtime_id == runtime.id,
+            RuntimeEvent.event_type == "runtime.command.output_limited",
+        )
+    )
+    security_event = session.scalar(
+        select(SecurityEvent).where(SecurityEvent.action == "runtime.command.output_limited")
+    )
+    assert command.status == "completed"
+    assert command.stdout == "abc"
+    assert command.stderr == "xyz"
+    assert event is not None
+    assert event.event_metadata["max_output_bytes"] == 3
+    assert event.event_metadata["stdout_truncated"] is True
+    assert event.event_metadata["stderr_truncated"] is False
+    assert security_event is not None
+    assert security_event.outcome == "limited"
+    assert security_event.event_metadata["command_id"] == str(command.id)
+
+
 def test_cleanup_stale_runtime_removes_only_recorded_container() -> None:
     session = _session()
     workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme", settings={})

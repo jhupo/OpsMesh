@@ -212,6 +212,7 @@ class RuntimeControlService:
             memory_mb=_as_int(default_limits.get("memory_mb"), 512),
             disk_mb=_as_int(default_limits.get("disk_mb"), 1024),
             timeout_seconds=_as_int(default_limits.get("timeout_seconds"), 60),
+            max_output_bytes=_as_int(default_limits.get("max_output_bytes"), 256_000),
         )
 
 

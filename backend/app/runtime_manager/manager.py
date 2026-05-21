@@ -59,6 +59,7 @@ class RuntimeManager:
                 "memory_mb": limits.memory_mb,
                 "disk_mb": limits.disk_mb,
                 "timeout_seconds": limits.timeout_seconds,
+                "max_output_bytes": limits.max_output_bytes,
             },
             network_policy={"disabled": network_disabled},
             capabilities={},
@@ -242,18 +243,47 @@ class RuntimeManager:
                 metadata=_command_failure_metadata(record, "docker_exec_failed", str(exc)),
             )
         else:
-            self._complete_command(record, result)
+            self._complete_command(runtime, record, result)
             self._append_event(runtime, "runtime.command.completed", " ".join(command))
         self._session.commit()
         self._session.refresh(record)
         return record
 
-    def _complete_command(self, record: RuntimeCommand, result: RuntimeCommandResult) -> None:
+    def _complete_command(
+        self,
+        runtime: WorkspaceRuntime,
+        record: RuntimeCommand,
+        result: RuntimeCommandResult,
+    ) -> None:
         record.exit_code = result.exit_code
-        record.stdout = result.stdout
-        record.stderr = result.stderr
+        max_output_bytes = _positive_int_limit(runtime.limits.get("max_output_bytes"), 256_000)
+        stdout, stdout_truncated, stdout_bytes = _bounded_text(result.stdout, max_output_bytes)
+        stderr, stderr_truncated, stderr_bytes = _bounded_text(result.stderr, max_output_bytes)
+        record.stdout = stdout
+        record.stderr = stderr
         record.status = "completed" if result.exit_code == 0 else "failed"
         record.completed_at = datetime.now(UTC)
+        if stdout_truncated or stderr_truncated:
+            metadata = {
+                "command_id": str(record.id),
+                "max_output_bytes": max_output_bytes,
+                "stdout_bytes": stdout_bytes,
+                "stderr_bytes": stderr_bytes,
+                "stdout_truncated": stdout_truncated,
+                "stderr_truncated": stderr_truncated,
+            }
+            self._append_event(
+                runtime,
+                "runtime.command.output_limited",
+                "Command output exceeded runtime policy.",
+                metadata=metadata,
+            )
+            self._record_policy_security_event(
+                runtime,
+                action="runtime.command.output_limited",
+                reason="Runtime command output exceeded policy.",
+                metadata=metadata,
+            )
 
     def _fail_command(
         self,
@@ -446,6 +476,39 @@ class RuntimeManager:
             )
         )
 
+    def _record_policy_security_event(
+        self,
+        runtime: WorkspaceRuntime,
+        *,
+        action: str,
+        reason: str,
+        metadata: dict[str, object],
+    ) -> None:
+        self._session.add(
+            SecurityEvent(
+                workspace_id=runtime.workspace_id,
+                user_id=None,
+                action=action,
+                outcome="limited",
+                severity="warning",
+                source_ip=None,
+                user_agent=None,
+                request_id=None,
+                path="runtime_manager",
+                method="SYSTEM",
+                reason=reason[:512],
+                event_metadata={
+                    "runtime_id": str(runtime.id),
+                    "runtime_space_id": str(runtime.runtime_space_id)
+                    if runtime.runtime_space_id
+                    else None,
+                    "docker_container_id": runtime.docker_container_id,
+                    **metadata,
+                },
+                created_at=datetime.now(UTC),
+            )
+        )
+
 
 def _cleanup_evidence(
     *,
@@ -488,6 +551,20 @@ def _command_failure_metadata(
 def _bounded_error(exc: Exception) -> str:
     message = str(exc).strip() or exc.__class__.__name__
     return message[:2_000]
+
+
+def _positive_int_limit(value: object, fallback: int) -> int:
+    if isinstance(value, int) and value > 0:
+        return value
+    return fallback
+
+
+def _bounded_text(value: str, max_bytes: int) -> tuple[str, bool, int]:
+    encoded = value.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return value, False, len(encoded)
+    truncated = encoded[:max_bytes].decode("utf-8", errors="ignore")
+    return truncated, True, len(encoded)
 
 
 def _string_items(value: object) -> list[str]:

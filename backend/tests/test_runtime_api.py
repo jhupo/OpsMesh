@@ -106,6 +106,7 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
                 "memory_mb": 512,
                 "disk_mb": 1024,
                 "timeout_seconds": 20,
+                "max_output_bytes": 1024,
             },
         },
     )
@@ -113,6 +114,7 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
     runtime_id = created.json()["id"]
     assert created.json()["network_policy"] == {"disabled": True}
     assert created.json()["runtime_space_id"] == str(runtime_space.id)
+    assert created.json()["limits"]["max_output_bytes"] == 1024
     assert docker.created_requests[0].image == "python:3.12-slim"
     assert docker.created_requests[0].network_disabled is True
 
