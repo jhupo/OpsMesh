@@ -571,6 +571,16 @@ class WorkspaceExportService:
                         )
                     )
                     continue
+                if _string_field(item, "status", "active") != "active":
+                    skipped_counts["skill_installs"] += 1
+                    conflict_plan.append(
+                        _disabled_skill_install_conflict(
+                            source_id=source_id,
+                            installed_key=installed_key,
+                            status=_string_field(item, "status", "disabled"),
+                        )
+                    )
+                    continue
                 created_counts["skill_installs"] += 1
                 if request.dry_run:
                     id_map["skill_installs"][source_id] = source_id
@@ -1386,6 +1396,27 @@ def _unsupported_format_conflict(
     )
 
 
+def _disabled_skill_install_conflict(
+    *,
+    source_id: str,
+    installed_key: str,
+    status: str,
+) -> WorkspaceImportConflict:
+    return WorkspaceImportConflict(
+        collection="skill_installs",
+        source_id=source_id,
+        field="status",
+        source_value=status,
+        target_value="active",
+        strategy="reject",
+        severity="error",
+        message=(
+            f"Skill install {installed_key!r} is {status!r} in the source export; "
+            "importing it as active would change the source workspace safety policy."
+        ),
+    )
+
+
 def _checksum_conflict(
     *,
     collection: str,
@@ -1510,6 +1541,8 @@ def _allowed_resolution_actions(conflict: WorkspaceImportConflict) -> list[str]:
         return ["replace_archive_object", "exclude_object"]
     if conflict.field == "format_version":
         return ["export_supported_version", "cancel_import"]
+    if conflict.collection == "skill_installs" and conflict.field == "status":
+        return ["exclude_skill", "enable_in_source_and_reexport"]
     if conflict.strategy == "reject":
         return ["fix_source", "exclude_object"]
     return ["skip"]

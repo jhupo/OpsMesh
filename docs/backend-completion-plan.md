@@ -358,7 +358,7 @@ Current state:
 - Workspace metadata and archives can be imported.
 - Dry-run counts created/skipped resources and returns a structured `conflict_plan`.
 - Dedicated metadata/archive preview endpoints run as dry-runs and do not write database rows or storage blobs.
-- Existing-name conflicts, missing dependency skips, unsupported export formats, missing archive
+- Existing-name conflicts, missing dependency skips, disabled skill installs, unsupported export formats, missing archive
   bytes, checksum mismatches, oversized objects, and archive total byte limits are reported with
   collection, source ID, field, severity, and strategy.
 
@@ -368,7 +368,8 @@ Build:
 - [x] Detect name conflicts, missing dependencies, missing bytes, oversized objects, and archive total byte limits.
 - [x] Return suggested skip/reject strategies for currently supported conflict types.
 - [x] Detect unsupported format versions and checksum mismatches.
-- Detect disabled skills, missing runtime policies, and quota violations.
+- [x] Detect disabled skill installs that would otherwise be imported as active.
+- Detect missing runtime policies and quota violations.
 - Return richer suggested resolutions: rename, replace, install dependency, or reject with required user action.
 - Let committed import accept a preview token or explicit resolution map.
 

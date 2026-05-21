@@ -756,6 +756,114 @@ def test_workspace_metadata_export_import_preserves_runtime_spaces_and_skill_sna
     assert imported_step.runtime_space_id == imported_space.id
 
 
+def test_workspace_metadata_import_preview_rejects_disabled_skill_installs(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-disabled-skill@example.com",
+        slug="source-disabled-skill",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-disabled-skill@example.com",
+        slug="target-disabled-skill",
+    )
+    skill = Skill(
+        key="disabled-poster-maker",
+        name="Disabled Poster Maker",
+        version="1.0.0",
+        capability_keys=["image.generate"],
+        manifest={"tools": ["generate_image"]},
+        visibility="public",
+    )
+    session.add(skill)
+    session.flush()
+    install = WorkspaceSkillInstall(
+        workspace_id=source_workspace.id,
+        skill_id=skill.id,
+        installed_by_user_id=source_user.id,
+        installed_key="disabled-poster-maker",
+        installed_name="Disabled Poster Maker",
+        installed_version="1.0.0",
+        installed_capability_keys=["image.generate"],
+        installed_manifest={"tools": ["generate_image"]},
+        source_visibility="public",
+        source_checksum="sha256:disabled",
+        status="disabled",
+        disabled_at=datetime.now(UTC),
+    )
+    session.add(install)
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_agents": False,
+            "include_teams": False,
+            "include_tasks": False,
+            "include_runs": False,
+            "include_files": False,
+            "include_runtime_spaces": False,
+            "include_audit_events": False,
+        },
+    )
+    export_payload = json.loads(export_response.content)
+    preview = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import/preview",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": True},
+    )
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": False},
+    )
+
+    assert export_response.status_code == 200
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["created_counts"]["skill_installs"] == 0
+    assert body["skipped_counts"]["skill_installs"] == 1
+    assert body["conflict_plan"] == [
+        {
+            "collection": "skill_installs",
+            "source_id": str(install.id),
+            "field": "status",
+            "source_value": "disabled",
+            "target_value": "active",
+            "strategy": "reject",
+            "severity": "error",
+            "message": (
+                "Skill install 'disabled-poster-maker' is 'disabled' in the source export; "
+                "importing it as active would change the source workspace safety policy."
+            ),
+        }
+    ]
+    assert body["required_resolutions"] == [
+        {
+            "collection": "skill_installs",
+            "source_id": str(install.id),
+            "field": "status",
+            "reason": "reject",
+            "allowed_actions": ["exclude_skill", "enable_in_source_and_reexport"],
+            "message": body["conflict_plan"][0]["message"],
+        }
+    ]
+    resources_by_collection = {item["collection"]: item for item in body["resources"]}
+    assert resources_by_collection["skill_installs"]["action"] == "requires_resolution"
+    assert committed.status_code == 200
+    assert committed.json()["created_counts"]["skill_installs"] == 0
+    assert committed.json()["skipped_counts"]["skill_installs"] == 1
+    assert session.scalars(
+        select(WorkspaceSkillInstall).where(
+            WorkspaceSkillInstall.workspace_id == target_workspace.id
+        )
+    ).all() == []
+
+
 def test_workspace_archive_export_includes_metadata_and_file_bytes(tmp_path: Path) -> None:
     client, session = _client(tmp_path)
     owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
