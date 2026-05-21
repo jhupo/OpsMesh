@@ -44,7 +44,7 @@ from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNo
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
-from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.runtimes.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.self_hosted.models import (
     RuntimeCredential,
@@ -340,6 +340,21 @@ class OperationsService:
         if worker_id is not None:
             statement = statement.where(WorkerLease.worker_id == worker_id)
         return self._page(statement.order_by(WorkerLease.created_at.desc()), page)
+
+    def list_runtime_leases(
+        self,
+        workspace_id: UUID,
+        page: PageParams,
+        *,
+        status: str | None = None,
+        runtime_space_id: UUID | None = None,
+    ) -> tuple[list[RuntimeLease], int]:
+        statement = select(RuntimeLease).where(RuntimeLease.workspace_id == workspace_id)
+        if status is not None:
+            statement = statement.where(RuntimeLease.status == status)
+        if runtime_space_id is not None:
+            statement = statement.where(RuntimeLease.runtime_space_id == runtime_space_id)
+        return self._page(statement.order_by(RuntimeLease.created_at.desc()), page)
 
     def queue_metrics(
         self,

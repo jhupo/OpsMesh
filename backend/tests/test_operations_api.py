@@ -25,7 +25,7 @@ from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
-from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.runtimes.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.self_hosted.models import (
     RuntimeCredential,
@@ -1308,6 +1308,82 @@ def test_operations_lists_worker_leases_by_workspace() -> None:
     assert other_response.status_code == 200
     assert other_response.json()["total"] == 1
     assert other_response.json()["items"][0]["job_id"] == str(other_lease.job_id)
+
+
+def test_operations_lists_runtime_leases_by_workspace() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    other_user, other_workspace = _seed_workspace_with_role(
+        session,
+        email="other-runtime-lease@example.com",
+        slug="other-runtime-lease",
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Runtime Space",
+        scope="workspace",
+    )
+    other_runtime_space = RuntimeSpace(
+        workspace_id=other_workspace.id,
+        name="Other Runtime Space",
+        scope="workspace",
+    )
+    session.add_all([runtime_space, other_runtime_space])
+    session.flush()
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        name="owned-runtime",
+        docker_container_id="container-owned",
+    )
+    other_runtime = WorkspaceRuntime(
+        workspace_id=other_workspace.id,
+        runtime_space_id=other_runtime_space.id,
+        name="other-runtime",
+        docker_container_id="container-other",
+    )
+    session.add_all([runtime, other_runtime])
+    session.flush()
+    lease = RuntimeLease(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime.id,
+        runtime_space_id=runtime_space.id,
+        docker_container_id="container-owned",
+        status="running",
+        lease_metadata={"purpose": "owned"},
+        acquired_at=datetime.now(UTC),
+    )
+    other_lease = RuntimeLease(
+        workspace_id=other_workspace.id,
+        workspace_runtime_id=other_runtime.id,
+        runtime_space_id=other_runtime_space.id,
+        docker_container_id="container-other",
+        status="running",
+        lease_metadata={"purpose": "other"},
+        acquired_at=datetime.now(UTC),
+    )
+    session.add_all([lease, other_lease])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/runtime-leases"
+        f"?status=running&runtime_space_id={runtime_space.id}",
+        headers=_headers(owner.id),
+    )
+    other_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/operations/runtime-leases",
+        headers=_headers(other_user.id),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["workspace_runtime_id"] == str(runtime.id)
+    assert response.json()["items"][0]["docker_container_id"] == "container-owned"
+    assert response.json()["items"][0]["lease_metadata"] == {"purpose": "owned"}
+    assert other_response.status_code == 200
+    assert other_response.json()["total"] == 1
+    assert other_response.json()["items"][0]["workspace_runtime_id"] == str(other_runtime.id)
 
 
 def test_operator_can_use_operations_but_viewer_cannot() -> None:

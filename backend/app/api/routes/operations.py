@@ -26,6 +26,7 @@ from backend.app.api.schemas.operations import (
     RunEventFilterResponse,
     RuntimeCleanupResponse,
     RuntimeEventResponse,
+    RuntimeLeaseResponse,
     SecurityEventFilterResponse,
     SecurityEventResponse,
     WorkerHeartbeatRequest,
@@ -121,6 +122,28 @@ async def list_worker_leases(
     )
     return PageResponse(
         items=[WorkerLeaseResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.get("/runtime-leases", response_model=PageResponse[RuntimeLeaseResponse])
+async def list_runtime_leases(
+    page: PageParams = Depends(pagination_params),
+    status_filter: str | None = Query(default=None, alias="status"),
+    runtime_space_id: UUID | None = Query(default=None),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[RuntimeLeaseResponse]:
+    items, total = OperationsService(session).list_runtime_leases(
+        context.workspace.id,
+        page,
+        status=status_filter,
+        runtime_space_id=runtime_space_id,
+    )
+    return PageResponse(
+        items=[RuntimeLeaseResponse.model_validate(item) for item in items],
         total=total,
         limit=page.limit,
         offset=page.offset,

@@ -97,6 +97,7 @@ API/data changes:
 - Add `runtime_space_id` to runtime-origin file metadata where applicable.
 - [x] Add workspace APIs for runtime spaces.
 - [x] Add workspace APIs for operations aggregates.
+- [x] Add workspace operations API for Docker runtime leases.
 - [x] Add admin APIs under `/api/v1/admin/...` with platform-operator authentication.
 - [x] Add `platform_policies` and `platform_policy_events` for auditable operator policy changes.
 

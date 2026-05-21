@@ -85,6 +85,17 @@ class WorkerLeaseResponse(TimestampedModel):
     finished_at: datetime | None
 
 
+class RuntimeLeaseResponse(TimestampedModel):
+    workspace_id: UUID
+    workspace_runtime_id: UUID
+    runtime_space_id: UUID | None
+    docker_container_id: str | None
+    status: str
+    lease_metadata: dict[str, object]
+    acquired_at: datetime
+    released_at: datetime | None
+
+
 class QueueMetricsResponse(BaseModel):
     queue_name: str
     queued: int
