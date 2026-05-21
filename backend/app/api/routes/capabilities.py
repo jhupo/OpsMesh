@@ -349,6 +349,46 @@ async def create_mcp_credential_reference(
     return McpCredentialReferenceResponse.model_validate(credential)
 
 
+@router.get("/mcp-credentials", response_model=PageResponse[McpCredentialReferenceResponse])
+async def list_mcp_credential_references(
+    page: PageParams = Depends(pagination_params),
+    mcp_server_id: UUID | None = Query(default=None),
+    include_disabled: bool = Query(default=False),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[McpCredentialReferenceResponse]:
+    try:
+        items, total = CapabilityService(session).list_credential_references(
+            context.workspace.id,
+            page,
+            mcp_server_id=mcp_server_id,
+            include_disabled=include_disabled,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.post(
+    "/mcp-credentials/{credential_id}/disable",
+    response_model=McpCredentialReferenceResponse,
+)
+async def disable_mcp_credential_reference(
+    credential_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> McpCredentialReferenceResponse:
+    try:
+        credential = CapabilityService(session).disable_credential_reference(
+            context.workspace.id,
+            credential_id,
+            context.user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return McpCredentialReferenceResponse.model_validate(credential)
+
+
 @router.post(
     "/mcp-tool-call-logs",
     response_model=McpToolCallLogResponse,

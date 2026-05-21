@@ -123,7 +123,7 @@ Acceptance:
 
 Current state:
 
-- MCP servers, tools, credentials, visibility, and account-scoped authorization are represented in the backend.
+- MCP servers, tools, credentials, visibility, and account-scoped authorization are represented in the backend. Credential references can be listed, server-filtered, and disabled without exposing secret payloads.
 - Tool call logging exists, and hosted credentials can be encrypted or referenced through an external vault.
 - The execution service now resolves an MCP server/tool from the run authorization snapshot, injects workspace-owned credential references into an adapter, enforces payload policy, and records call logs, run events, task messages, and security events.
 - MCP execution also re-checks the runtime context tool set, sends explicitly approval-required tools into workspace approval, and writes authorization snapshot metadata into tool audit records.
@@ -158,6 +158,7 @@ Build:
 - [x] Normalize MCP errors without leaking secrets.
 - [x] Wire MCP execution into worker/OpenAI tool invocation through runtime tool executor and OpenAI function-tool bridge.
 - [x] Add optional approval hooks for high-risk and explicitly approval-required MCP tools.
+- [x] Add workspace MCP credential management APIs for listing, filtering, and disabling credential references.
 
 API/data changes:
 

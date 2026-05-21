@@ -195,6 +195,86 @@ def test_hosted_mcp_credentials_are_encrypted_and_not_returned() -> None:
     assert stored.secret_fingerprint == body["secret_fingerprint"]
 
 
+def test_mcp_credentials_can_be_listed_filtered_and_disabled() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "hosted-tools",
+            "server_type": "hosted",
+            "connection": {"transport": "http_jsonrpc", "url": "https://mcp.example.test/rpc"},
+        },
+    )
+    other_server = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers",
+        headers=_headers(other.id),
+        json={"name": "other-tools"},
+    )
+    allowed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "generate_image"},
+    )
+    credential = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "name": "image-key",
+            "provider": "hosted",
+            "secret_payload": {"api_key": "sk-test"},
+        },
+    )
+    denied_foreign_filter = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials"
+        f"?mcp_server_id={other_server.json()['id']}",
+        headers=_headers(owner.id),
+    )
+    listed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials"
+        f"?mcp_server_id={server.json()['id']}",
+        headers=_headers(owner.id),
+    )
+    disabled = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials/"
+        f"{credential.json()['id']}/disable",
+        headers=_headers(owner.id),
+    )
+    active_after_disable = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials",
+        headers=_headers(owner.id),
+    )
+    all_after_disable = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials?include_disabled=true",
+        headers=_headers(owner.id),
+    )
+    catalog = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
+        headers=_headers(owner.id),
+    )
+
+    assert server.status_code == 201
+    assert other_server.status_code == 201
+    assert allowed.status_code == 201
+    assert credential.status_code == 201
+    assert denied_foreign_filter.status_code == 404
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 1
+    assert listed.json()["items"][0]["name"] == "image-key"
+    assert listed.json()["items"][0]["secret_fingerprint"] is not None
+    assert "encrypted_secret_payload" not in listed.json()["items"][0]
+    assert disabled.status_code == 200
+    assert disabled.json()["status"] == "disabled"
+    assert active_after_disable.json()["items"] == []
+    assert all_after_disable.json()["items"][0]["status"] == "disabled"
+    assert catalog.json()["items"][0]["credential_status"] == "missing_required"
+    assert "missing_required_credentials" in catalog.json()["items"][0]["blocked_reasons"]
+
+
 def test_mcp_server_scope_is_enforced() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")

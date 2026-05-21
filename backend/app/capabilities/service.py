@@ -512,6 +512,59 @@ class CapabilityService:
         self._session.refresh(credential)
         return credential
 
+    def list_credential_references(
+        self,
+        workspace_id: UUID,
+        page: PageParams,
+        *,
+        mcp_server_id: UUID | None = None,
+        include_disabled: bool = False,
+    ) -> tuple[list[McpCredentialReference], int]:
+        if mcp_server_id is not None:
+            self._require_server(workspace_id, mcp_server_id)
+        statement = select(McpCredentialReference).where(
+            McpCredentialReference.workspace_id == workspace_id
+        )
+        if mcp_server_id is not None:
+            statement = statement.where(McpCredentialReference.mcp_server_id == mcp_server_id)
+        if not include_disabled:
+            statement = statement.where(McpCredentialReference.status == "active")
+        return self._page(
+            statement.order_by(
+                McpCredentialReference.status.asc(),
+                McpCredentialReference.created_at.desc(),
+            ),
+            page,
+        )
+
+    def disable_credential_reference(
+        self,
+        workspace_id: UUID,
+        credential_id: UUID,
+        actor_user_id: UUID | None = None,
+    ) -> McpCredentialReference:
+        credential = self._session.get(McpCredentialReference, credential_id)
+        if credential is None or credential.workspace_id != workspace_id:
+            raise ValueError("MCP credential reference not found")
+        credential.status = "disabled"
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="mcp_credential.disabled",
+                target_type="mcp_credential_reference",
+                target_id=credential.id,
+                metadata={
+                    "name": credential.name,
+                    "mcp_server_id": str(credential.mcp_server_id)
+                    if credential.mcp_server_id is not None
+                    else None,
+                },
+            )
+        self._session.commit()
+        self._session.refresh(credential)
+        return credential
+
     def log_mcp_tool_call(
         self,
         workspace_id: UUID,
