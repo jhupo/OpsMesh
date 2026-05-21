@@ -1851,6 +1851,99 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
     assert "debug.trace" not in {message.message_type for message in messages}
 
 
+def test_worker_persists_structured_task_progress_from_agent_output() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        domain_type="novel",
+        title="Draft chapter",
+        status=TaskStatus.QUEUED.value,
+        input={"outline": {"acts": 2}},
+        generic_state={"word_count": 1000, "nested": {"kept": True}},
+        domain_state={"chapters": [{"title": "Chapter 1", "status": "draft"}]},
+    )
+    agent = AgentProfile(workspace_id=workspace.id, name="Writer", role="writer")
+    session.add_all([task, agent])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        title="Write chapter",
+        work_package_id="chapter-1",
+        status="queued",
+    )
+    session.add(step)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    class ProgressRunner:
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            return AgentRunResult(
+                final_output=json.dumps(
+                    {
+                        "summary": "Chapter draft expanded.",
+                        "progress": 0.5,
+                        "generic_state": {
+                            "word_count": 2400,
+                            "nested": {"added": "yes"},
+                        },
+                        "domain_state": {
+                            "chapters": [{"title": "Chapter 1", "status": "revised"}],
+                            "continuity_notes": ["Keep the clue visible."],
+                        },
+                        "task_input": {"outline": {"acts": 3}},
+                    }
+                )
+            )
+
+    WorkerJobHandler(session, agent_runner=ProgressRunner()).handle(
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="structured-progress",
+        )
+    )
+
+    session.refresh(task)
+    progress_message = session.scalar(
+        select(TaskMessage).where(
+            TaskMessage.task_id == task.id,
+            TaskMessage.message_type == "task.progress.updated",
+        )
+    )
+
+    assert task.generic_state == {
+        "word_count": 2400,
+        "nested": {"kept": True, "added": "yes"},
+    }
+    assert task.domain_state["chapters"] == [{"title": "Chapter 1", "status": "revised"}]
+    assert task.domain_state["continuity_notes"] == ["Keep the clue visible."]
+    assert task.input == {"outline": {"acts": 3}}
+    assert progress_message is not None
+    assert progress_message.payload["changed_fields"] == [
+        "generic_state",
+        "domain_state",
+        "input",
+    ]
+    assert progress_message.payload["progress"] == 0.5
+    assert progress_message.payload["summary"] == "Chapter draft expanded."
+    assert step.status == "completed"
+
+
 def test_agent_request_includes_profile_tool_policy_context() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)

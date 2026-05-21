@@ -259,6 +259,7 @@ Current state:
 - Generic, AIGC, novel, research, and software views are composed from existing durable records and degrade gracefully when optional domain data is missing.
 - Task message payloads are sanitized before entering the observation response.
 - Observation now includes a quality section with revision history and risk flag cards composed from correction metadata, PM revision decisions, scheduler blockers, and approval/review payloads.
+- Worker run completion can now merge structured agent progress output into `Task.input`, `Task.generic_state`, and `Task.domain_state`, then emit a `task.progress.updated` message for observation.
 
 Build:
 
@@ -270,7 +271,7 @@ Build:
   - [x] Research: source list, claims, confidence, citations, extracted notes, report sections.
   - [x] Software: requirements, design tasks, branches/patches, tests, build status, review comments.
 - [x] Keep the API schema stable by returning `view_type`, `sections`, and typed `cards`.
-- Add richer persisted domain-specific progress writers from worker outputs.
+- [x] Add richer persisted domain-specific progress writers from worker outputs.
 - [x] Add revision history and risk flag cards from correction commands, PM revision decisions, scheduler blockers, and review payload risk metadata.
 
 API/data changes:
