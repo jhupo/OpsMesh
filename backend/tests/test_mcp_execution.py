@@ -100,6 +100,47 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
     assert messages[0].payload["response_sha256"]
 
 
+def test_mcp_execution_ignores_disabled_credentials() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace)
+    disabled = McpCredentialReference(
+        workspace_id=workspace.id,
+        mcp_server_id=server.id,
+        name="disabled-server-secret",
+        provider="hosted",
+        external_ref="",
+        encrypted_secret_payload="disabled-secret",
+        status="disabled",
+    )
+    active_workspace = McpCredentialReference(
+        workspace_id=workspace.id,
+        mcp_server_id=None,
+        name="active-workspace-secret",
+        provider="hosted",
+        external_ref="",
+        encrypted_secret_payload="active-secret",
+        status="active",
+    )
+    session.add_all([disabled, active_workspace])
+    session.commit()
+    adapter = RecordingAdapter({"ok": True})
+
+    result = McpToolExecutionService(session, adapter).execute(
+        McpExecutionRequest(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            mcp_server_id=server.id,
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+        )
+    )
+
+    assert result.status == "completed"
+    assert adapter.calls[0]["credential_names"] == ["active-workspace-secret"]
+    assert adapter.calls[0]["credential_secret_payloads"] == ["active-secret"]
+
+
 def test_mcp_execution_blocks_tool_not_in_run_snapshot_and_records_security_event() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
