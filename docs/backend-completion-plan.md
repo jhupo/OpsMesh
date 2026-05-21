@@ -178,7 +178,8 @@ Current state:
 
 - Skills have private/public visibility.
 - Public agents can be hired into a workspace as isolated copies.
-- Public skill installs now persist a workspace-local install snapshot with installed key, name, version, capability keys, manifest, source visibility, and source checksum.
+- Public skill installs now persist a workspace-local install snapshot with installed key, name,
+  version, capability keys, manifest, source visibility, source checksum, and disabled timestamp.
 - Run authorization snapshots include installed skill provenance for active workspace-local skill installs referenced by the agent profile.
 - Installed skills can now be upgraded to a newer installable source skill and disabled for future runs without mutating historical run snapshots.
 
@@ -192,10 +193,11 @@ Build:
 
 API/data changes:
 
-- `POST /api/v1/workspaces/{workspace_id}/skills/{public_skill_id}/install`
+- [x] `POST /api/v1/workspaces/{workspace_id}/capabilities/skills/{public_skill_id}/install`
 - [x] `POST /api/v1/workspaces/{workspace_id}/capabilities/workspace-skills/{installed_skill_id}/upgrade`
 - [x] `POST /api/v1/workspaces/{workspace_id}/capabilities/workspace-skills/{installed_skill_id}/disable`
-- Add `installed_from_skill_id`, `installed_version`, `source_checksum`, `installed_by_user_id`, and `disabled_at` fields if not already represented.
+- [x] Add `installed_from_skill_id`, `installed_version`, `source_checksum`,
+  `installed_by_user_id`, and `disabled_at` fields if not already represented.
 - [x] Extend run authorization snapshots with installed skill IDs, versions, and source checksums.
 - [x] Extend run authorization snapshots with installed skill MCP tool allowlists and
   credential references, excluding secret payloads and external refs.
@@ -207,6 +209,7 @@ Tests:
 - disabling a skill blocks new runs but does not mutate old run snapshots
 - source owner updates do not silently change installed skill behavior
 - cross-workspace direct use of public source skill is rejected
+- [x] disabled skill install history remains visible to management queries
 
 Acceptance:
 

@@ -22,6 +22,7 @@ from backend.app.api.schemas.capabilities import (
     SkillResponse,
     ToolGroupCreateRequest,
     ToolGroupResponse,
+    WorkspaceSkillInstallConfigRequest,
     WorkspaceSkillInstallRequest,
     WorkspaceSkillInstallResponse,
     WorkspaceSkillUpgradeRequest,
@@ -88,10 +89,15 @@ async def create_skill(
 @router.get("/workspace-skills", response_model=PageResponse[WorkspaceSkillInstallResponse])
 async def list_workspace_skills(
     page: PageParams = Depends(pagination_params),
+    include_disabled: bool = Query(default=False),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[WorkspaceSkillInstallResponse]:
-    items, total = CapabilityService(session).list_workspace_skills(context.workspace.id, page)
+    items, total = CapabilityService(session).list_workspace_skills(
+        context.workspace.id,
+        page,
+        include_disabled=include_disabled,
+    )
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
@@ -110,6 +116,31 @@ async def install_workspace_skill(
             context.workspace.id,
             context.user.user_id,
             request,
+        )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return WorkspaceSkillInstallResponse.model_validate(install)
+
+
+@router.post(
+    "/skills/{skill_id}/install",
+    response_model=WorkspaceSkillInstallResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def install_skill_by_id(
+    skill_id: UUID,
+    request: WorkspaceSkillInstallConfigRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceSkillInstallResponse:
+    try:
+        install = CapabilityService(session).install_skill_by_id(
+            workspace_id=context.workspace.id,
+            user_id=context.user.user_id,
+            skill_id=skill_id,
+            config=request.config,
         )
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc

@@ -85,6 +85,7 @@ class WorkspaceSkillInstall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source_checksum: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     config: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    disabled_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
 class ToolGroup(UUIDPrimaryKeyMixin, TimestampMixin, Base):

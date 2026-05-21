@@ -116,18 +116,27 @@ class CapabilityService:
         user_id: UUID,
         data: WorkspaceSkillInstallRequest,
     ) -> WorkspaceSkillInstall:
-        skill = self._session.get(Skill, data.skill_id)
-        if (
-            skill is None
-            or skill.status != "active"
-            or not self._can_use_skill(workspace_id, skill)
-        ):
-            raise ValueError("Skill not found")
+        return self.install_skill_by_id(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            skill_id=data.skill_id,
+            config=data.config,
+        )
+
+    def install_skill_by_id(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        skill_id: UUID,
+        config: dict[str, object] | None = None,
+    ) -> WorkspaceSkillInstall:
+        skill = self._require_installable_skill(workspace_id, skill_id)
         install = WorkspaceSkillInstall(
             workspace_id=workspace_id,
-            skill_id=data.skill_id,
+            skill_id=skill.id,
             installed_by_user_id=user_id,
-            config=data.config,
+            config=config or {},
         )
         self._copy_skill_snapshot(install, skill)
         self._session.add(install)
@@ -139,7 +148,7 @@ class CapabilityService:
                 target_type="workspace_skill_install",
                 target_id=install.id,
                 metadata={
-                    "skill_id": str(data.skill_id),
+                    "skill_id": str(skill.id),
                     "installed_key": install.installed_key,
                     "installed_version": install.installed_version,
                     "source_checksum": install.source_checksum,
@@ -163,6 +172,7 @@ class CapabilityService:
         if data.config is not None:
             install.config = data.config
         install.status = "active"
+        install.disabled_at = None
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -188,6 +198,7 @@ class CapabilityService:
     ) -> WorkspaceSkillInstall:
         install = self._require_workspace_install(workspace_id, install_id)
         install.status = "disabled"
+        install.disabled_at = datetime.now(UTC)
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -199,6 +210,7 @@ class CapabilityService:
                 "installed_key": install.installed_key,
                 "installed_version": install.installed_version,
                 "source_checksum": install.source_checksum,
+                "disabled_at": install.disabled_at.isoformat(),
             },
         )
         self._session.commit()
@@ -209,14 +221,17 @@ class CapabilityService:
         self,
         workspace_id: UUID,
         page: PageParams,
+        *,
+        include_disabled: bool = False,
     ) -> tuple[list[WorkspaceSkillInstall], int]:
-        statement = (
-            select(WorkspaceSkillInstall)
-            .where(
-                WorkspaceSkillInstall.workspace_id == workspace_id,
-                WorkspaceSkillInstall.status == "active",
-            )
-            .order_by(WorkspaceSkillInstall.created_at.desc())
+        statement = select(WorkspaceSkillInstall).where(
+            WorkspaceSkillInstall.workspace_id == workspace_id,
+        )
+        if not include_disabled:
+            statement = statement.where(WorkspaceSkillInstall.status == "active")
+        statement = statement.order_by(
+            WorkspaceSkillInstall.created_at.desc(),
+            WorkspaceSkillInstall.id.desc(),
         )
         return self._page(statement, page)
 

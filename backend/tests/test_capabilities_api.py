@@ -541,8 +541,10 @@ def test_workspace_skill_install_can_upgrade_and_disable_without_source_access()
     assert upgraded.json()["installed_version"] == "2.0.0"
     assert upgraded.json()["installed_manifest"] == {"prompt": "v2"}
     assert upgraded.json()["config"] == {"tone": "bold"}
+    assert upgraded.json()["disabled_at"] is None
     assert disabled.status_code == 200
     assert disabled.json()["status"] == "disabled"
+    assert disabled.json()["disabled_at"] is not None
     assert listed.status_code == 200
     assert listed.json()["items"] == []
     assert foreign_disable.status_code == 404
@@ -553,6 +555,63 @@ def test_workspace_skill_install_can_upgrade_and_disable_without_source_access()
     )
     actions = {item["action"] for item in audit.json()["items"]}
     assert {"skill_install.upgraded", "skill_install.disabled"} <= actions
+
+
+def test_skill_install_by_id_endpoint_and_disabled_history() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    skill = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+        json={
+            "key": "research-pack",
+            "name": "Research Pack",
+            "version": "1.0.0",
+            "manifest": {"tools": ["search_web"]},
+            "visibility": "public",
+        },
+    )
+    installed = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/skills/"
+        f"{skill.json()['id']}/install",
+        headers=_headers(other.id),
+        json={"config": {"region": "sg"}},
+    )
+    disabled = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills/"
+        f"{installed.json()['id']}/disable",
+        headers=_headers(other.id),
+    )
+    active_list = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills",
+        headers=_headers(other.id),
+    )
+    history_list = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills"
+        "?include_disabled=true",
+        headers=_headers(other.id),
+    )
+    duplicate = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/skills/"
+        f"{skill.json()['id']}/install",
+        headers=_headers(other.id),
+        json={},
+    )
+
+    assert installed.status_code == 201
+    assert installed.json()["installed_key"] == "research-pack"
+    assert installed.json()["config"] == {"region": "sg"}
+    assert installed.json()["disabled_at"] is None
+    assert disabled.status_code == 200
+    assert disabled.json()["disabled_at"] is not None
+    assert active_list.status_code == 200
+    assert active_list.json()["items"] == []
+    assert history_list.status_code == 200
+    assert history_list.json()["items"][0]["status"] == "disabled"
+    assert history_list.json()["items"][0]["disabled_at"] == disabled.json()["disabled_at"]
+    assert duplicate.status_code == 409
 
 
 def test_capability_conflicts_return_409_and_keep_session_usable() -> None:

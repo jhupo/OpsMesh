@@ -50,6 +50,10 @@ class WorkspaceSkillInstallRequest(BaseModel):
     config: dict[str, object] = Field(default_factory=dict)
 
 
+class WorkspaceSkillInstallConfigRequest(BaseModel):
+    config: dict[str, object] = Field(default_factory=dict)
+
+
 class WorkspaceSkillUpgradeRequest(BaseModel):
     skill_id: UUID
     config: dict[str, object] | None = None
@@ -70,6 +74,7 @@ class WorkspaceSkillInstallResponse(TimestampedModel):
     source_checksum: str
     config: dict[str, object]
     status: str
+    disabled_at: datetime | None
 
 
 class ToolGroupCreateRequest(BaseModel):
