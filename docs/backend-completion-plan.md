@@ -546,9 +546,9 @@ API/data changes:
 
 Tests:
 
-- agent-specific provider overrides workspace default
-- provider resolution snapshot excludes raw API keys and full base URLs
-- failed primary provider falls back only to allowed provider
+- [x] agent-specific provider overrides workspace default
+- [x] provider resolution snapshot excludes raw API keys and full base URLs
+- [x] failed primary provider falls back only to allowed provider
 - [x] fallback event records reason without leaking key/base URL secret
 - [x] provider usage audit API is workspace-scoped and redacts secrets
 - [x] disallowed fallback fails the run cleanly and records sanitized fallback-unavailable
