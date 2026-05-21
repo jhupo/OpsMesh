@@ -244,6 +244,38 @@ def test_disable_removes_credential_from_default_resolution() -> None:
     assert resolved.model == "gpt-4.1"
 
 
+def test_resolve_rejects_disabled_agent_override_credential() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Disabled",
+        provider="openai",
+        api_key="sk-disabled",
+        default_model="gpt-4.1",
+        base_url=None,
+        is_default=False,
+    )
+    service.disable(
+        workspace_id=workspace.id,
+        credential_id=credential.id,
+        actor_user_id=user.id,
+    )
+
+    try:
+        service.resolve_for_agent(
+            workspace_id=workspace.id,
+            agent_credential_id=credential.id,
+            agent_model="workspace-default",
+        )
+    except ValueError as exc:
+        assert "not found" in str(exc)
+    else:
+        raise AssertionError("Expected disabled explicit credential override to fail")
+
+
 def test_records_provider_health_success_and_failure() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)

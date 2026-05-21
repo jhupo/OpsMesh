@@ -1688,6 +1688,11 @@ def test_artifact_history_lists_versions_for_work_package_only() -> None:
         f"?task_id={task.id}&work_package_id=research-1",
         headers=_headers(other_owner.id),
     )
+    foreign_owned_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/artifacts/history"
+        f"?task_id={other_task.id}&work_package_id=research-1",
+        headers=_headers(other_owner.id),
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -1701,6 +1706,9 @@ def test_artifact_history_lists_versions_for_work_package_only() -> None:
     ]
     assert foreign_response.status_code == 200
     assert foreign_response.json()["total"] == 0
+    assert foreign_owned_response.status_code == 200
+    assert foreign_owned_response.json()["total"] == 1
+    assert foreign_owned_response.json()["items"][0]["filename"] == "foreign.pdf"
 
 
 def test_create_workspace_assigns_owner_membership() -> None:

@@ -708,11 +708,15 @@ Current state:
 
 - Many workspace isolation tests exist.
 - Account-scoped skill/tool invocation needs a broader adversarial test suite.
+- Negative coverage now includes disabled explicit model-provider overrides and artifact-history
+  foreign task IDs.
 
 Build:
 
 - Add dedicated security tests for MCP, skill install/provenance, files, artifacts, runtimes, model providers, self-hosted jobs, and marketplace installs.
 - Add negative tests for forged IDs, stale snapshots, disabled credentials, revoked self-hosted runtimes, and public source skill misuse.
+  - [x] Disabled explicit model-provider credential override is rejected.
+  - [x] Artifact history does not leak artifacts when a foreign task ID is supplied.
 - Add property-style tests for workspace ID mismatch where practical.
 
 Tests:
