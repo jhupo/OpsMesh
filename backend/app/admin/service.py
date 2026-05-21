@@ -12,13 +12,16 @@ from backend.app.admin.models import PlatformPolicy, PlatformPolicyEvent
 from backend.app.admin.policies import (
     RISKY_EXECUTION_POLICY_KEY,
     WORKER_CONTROL_POLICY_KEY,
+    WorkerControlPolicy,
     default_risky_execution_policy_value,
     default_worker_control_policy_value,
     normalize_risky_execution_policy_value,
+    normalize_worker_control_policy_value,
 )
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.operations import QueueMetricsResponse
 from backend.app.approvals.models import Approval
+from backend.app.core.errors import PolicyDeniedError
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
@@ -131,6 +134,14 @@ class AdminControlPlaneService:
         node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
         if node is None:
             return None
+        policy = self._worker_control_policy()
+        self._assert_worker_update_allowed(
+            policy,
+            status=status,
+            worker_type=worker_type,
+            queue_name=queue_name,
+            capacity=capacity,
+        )
         before = _worker_node_snapshot(node)
         changed_fields: list[str] = []
         if status is not None:
@@ -391,6 +402,8 @@ class AdminControlPlaneService:
         self._session.add(policy)
         self._session.flush([policy])
         self._append_policy_event(policy, "platform_policy.created", "Policy created", {})
+        self._session.commit()
+        self._session.refresh(policy)
         return policy
 
     def update_risky_execution_policy(
@@ -409,6 +422,28 @@ class AdminControlPlaneService:
             policy,
             "platform_policy.updated",
             "Risky execution policy updated",
+            {"value": policy.value, "updated_by": updated_by},
+        )
+        self._session.commit()
+        self._session.refresh(policy)
+        return policy
+
+    def update_worker_control_policy(
+        self,
+        *,
+        value: dict[str, object],
+        updated_by: str | None,
+        description: str | None = None,
+    ) -> PlatformPolicy:
+        policy = self.get_or_create_worker_control_policy()
+        policy.value = normalize_worker_control_policy_value(policy.value, value)
+        if description is not None:
+            policy.description = description
+        policy.updated_by = updated_by
+        self._append_policy_event(
+            policy,
+            "platform_policy.updated",
+            "Worker control policy updated",
             {"value": policy.value, "updated_by": updated_by},
         )
         self._session.commit()
@@ -437,6 +472,78 @@ class AdminControlPlaneService:
             self.get_or_create_risky_execution_policy().value,
             value,
         )
+
+    def _worker_control_policy(self) -> WorkerControlPolicy:
+        raw_policy = self.get_or_create_worker_control_policy()
+        normalized = normalize_worker_control_policy_value(raw_policy.value, {})
+        raw_policy.value = normalized
+        return WorkerControlPolicy(
+            managed_by=str(normalized["managed_by"]),
+            allow_status_updates=normalized["allow_status_updates"] is True,
+            allow_capacity_updates=normalized["allow_capacity_updates"] is True,
+            allow_queue_updates=normalized["allow_queue_updates"] is True,
+            allowed_statuses=tuple(
+                item for item in normalized["allowed_statuses"] if isinstance(item, str)
+            ),
+            allowed_worker_types=tuple(
+                item for item in normalized["allowed_worker_types"] if isinstance(item, str)
+            ),
+            max_capacity={
+                str(key): value
+                for key, value in dict(normalized["max_capacity"]).items()
+                if isinstance(value, int)
+            },
+        )
+
+    def _assert_worker_update_allowed(
+        self,
+        policy: WorkerControlPolicy,
+        *,
+        status: str | None,
+        worker_type: str | None,
+        queue_name: str | None,
+        capacity: dict[str, object] | None,
+    ) -> None:
+        if status is not None:
+            if not policy.allow_status_updates:
+                raise PolicyDeniedError(
+                    "Worker status updates are disabled by platform policy",
+                    code="worker_status_update_denied",
+                )
+            if status not in policy.allowed_statuses:
+                raise PolicyDeniedError(
+                    "Worker status is not allowed by platform policy",
+                    code="worker_status_not_allowed",
+                    details={"status": status, "allowed_statuses": list(policy.allowed_statuses)},
+                )
+        if worker_type is not None and worker_type not in policy.allowed_worker_types:
+            raise PolicyDeniedError(
+                "Worker type is not allowed by platform policy",
+                code="worker_type_not_allowed",
+                details={
+                    "worker_type": worker_type,
+                    "allowed_worker_types": list(policy.allowed_worker_types),
+                },
+            )
+        if queue_name is not None and not policy.allow_queue_updates:
+            raise PolicyDeniedError(
+                "Worker queue updates are disabled by platform policy",
+                code="worker_queue_update_denied",
+            )
+        if capacity is not None:
+            if not policy.allow_capacity_updates:
+                raise PolicyDeniedError(
+                    "Worker capacity updates are disabled by platform policy",
+                    code="worker_capacity_update_denied",
+                )
+            exceeded = _first_exceeded_capacity_cap(capacity, policy.capacity_caps())
+            if exceeded is not None:
+                key, requested, cap = exceeded
+                raise PolicyDeniedError(
+                    "Worker capacity exceeds platform policy",
+                    code="worker_capacity_exceeds_policy",
+                    details={"capacity_key": key, "requested": requested, "max_allowed": cap},
+                )
 
     def _append_policy_event(
         self,
@@ -614,6 +721,19 @@ def _positive_int(value: object, default: int) -> int:
     if isinstance(value, int) and value > 0:
         return value
     return default
+
+
+def _first_exceeded_capacity_cap(
+    capacity: dict[str, object],
+    caps: dict[str, int],
+) -> tuple[str, int, int] | None:
+    for key, cap in caps.items():
+        value = capacity.get(key)
+        if not isinstance(value, int) or isinstance(value, bool):
+            continue
+        if value > cap:
+            return key, value, cap
+    return None
 
 
 def _top_counts(counts: dict[str, int], limit: int) -> list[dict[str, object]]:

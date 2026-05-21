@@ -9,6 +9,7 @@ from redis import Redis
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
+from backend.app.admin.policies import PlatformPolicyService
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.operations import (
     ApprovalBacklogResponse,
@@ -152,6 +153,11 @@ class OperationsService:
     ) -> WorkerNode:
         node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
         now = last_seen_at or datetime.now(UTC)
+        normalized_capacity = _bounded_worker_capacity(
+            capacity,
+            worker_type,
+            PlatformPolicyService(self._session).worker_control_policy().capacity_caps(),
+        )
         if node is None:
             node = WorkerNode(
                 worker_id=worker_id,
@@ -160,7 +166,7 @@ class OperationsService:
                 queue_name=queue_name,
                 worker_version=worker_version,
                 hostname=hostname,
-                capacity=_worker_capacity(capacity, worker_type),
+                capacity=normalized_capacity,
                 details=details,
                 last_seen_at=now,
             )
@@ -171,7 +177,7 @@ class OperationsService:
             node.queue_name = queue_name
             node.worker_version = worker_version
             node.hostname = hostname
-            node.capacity = _worker_capacity(capacity, worker_type)
+            node.capacity = normalized_capacity
             node.details = details
             node.last_seen_at = now
         return node
@@ -1591,6 +1597,19 @@ def _positive_number_dict(value: object) -> dict[str, float]:
 def _worker_capacity(capacity: dict[str, object] | None, worker_type: str) -> dict[str, object]:
     normalized = dict(capacity or {})
     normalized.setdefault("worker_type", worker_type)
+    return normalized
+
+
+def _bounded_worker_capacity(
+    capacity: dict[str, object] | None,
+    worker_type: str,
+    caps: dict[str, int],
+) -> dict[str, object]:
+    normalized = _worker_capacity(capacity, worker_type)
+    for key, cap in caps.items():
+        value = normalized.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value > cap:
+            normalized[key] = cap
     return normalized
 
 

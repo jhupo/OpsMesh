@@ -22,6 +22,7 @@ from backend.app.api.schemas.admin import (
     AdminRuntimeSpaceResponse,
     AdminSecurityEventResponse,
     AdminSystemConfigurationResponse,
+    AdminWorkerControlPolicyUpdateRequest,
     AdminWorkerLeaseResponse,
     AdminWorkerNodeResponse,
     AdminWorkerUpdateRequest,
@@ -364,6 +365,33 @@ async def update_admin_risky_execution_policy(
     session: Session = Depends(get_db_session),
 ) -> AdminPlatformPolicyResponse:
     policy = AdminControlPlaneService(session).update_risky_execution_policy(
+        value=request.value,
+        updated_by=request.updated_by,
+        description=request.description,
+    )
+    return AdminPlatformPolicyResponse.model_validate(policy)
+
+
+@router.get(
+    "/platform-policies/worker-control",
+    response_model=AdminPlatformPolicyResponse,
+)
+async def get_admin_worker_control_policy(
+    session: Session = Depends(get_db_session),
+) -> AdminPlatformPolicyResponse:
+    policy = AdminControlPlaneService(session).get_or_create_worker_control_policy()
+    return AdminPlatformPolicyResponse.model_validate(policy)
+
+
+@router.patch(
+    "/platform-policies/worker-control",
+    response_model=AdminPlatformPolicyResponse,
+)
+async def update_admin_worker_control_policy(
+    request: AdminWorkerControlPolicyUpdateRequest,
+    session: Session = Depends(get_db_session),
+) -> AdminPlatformPolicyResponse:
+    policy = AdminControlPlaneService(session).update_worker_control_policy(
         value=request.value,
         updated_by=request.updated_by,
         description=request.description,

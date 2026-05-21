@@ -243,6 +243,121 @@ def test_admin_can_update_worker_governance_capacity_and_status() -> None:
     ]
 
 
+def test_admin_worker_control_policy_is_enforced_for_worker_updates() -> None:
+    client, session, _ = _client()
+    worker = WorkerNode(
+        worker_id="worker-policy",
+        worker_type="cloud",
+        status="online",
+        queue_name="agent_runs",
+        capacity={"max_jobs": 2, "memory_mb": 4096},
+        details={},
+        last_seen_at=datetime.now(UTC),
+    )
+    session.add(worker)
+    session.commit()
+
+    policy = client.patch(
+        "/api/v1/admin/platform-policies/worker-control",
+        headers=_admin_headers(),
+        json={
+            "value": {
+                "allow_status_updates": False,
+                "allow_capacity_updates": True,
+                "allow_queue_updates": False,
+                "allowed_statuses": ["online", "draining"],
+                "allowed_worker_types": ["cloud"],
+                "max_capacity": {"max_jobs": 4, "memory_mb": 8192},
+                "ignored": True,
+            },
+            "description": "Constrained worker updates",
+            "updated_by": "ops-admin",
+        },
+    )
+    denied_status = client.patch(
+        "/api/v1/admin/workers/worker-policy",
+        headers=_admin_headers(),
+        json={"status": "draining", "reason": "Try drain"},
+    )
+    denied_queue = client.patch(
+        "/api/v1/admin/workers/worker-policy",
+        headers=_admin_headers(),
+        json={"queue_name": "priority_runs", "reason": "Move queue"},
+    )
+    denied_capacity = client.patch(
+        "/api/v1/admin/workers/worker-policy",
+        headers=_admin_headers(),
+        json={"capacity": {"max_jobs": 5}, "reason": "Too large"},
+    )
+    accepted = client.patch(
+        "/api/v1/admin/workers/worker-policy",
+        headers=_admin_headers(),
+        json={"capacity": {"max_jobs": 4, "memory_mb": 8192}, "reason": "Allowed resize"},
+    )
+
+    session.refresh(worker)
+
+    assert policy.status_code == 200
+    assert policy.json()["policy_key"] == "global_worker_control"
+    assert policy.json()["description"] == "Constrained worker updates"
+    assert policy.json()["value"]["allow_status_updates"] is False
+    assert policy.json()["value"]["allow_queue_updates"] is False
+    assert policy.json()["value"]["allowed_statuses"] == ["online", "draining"]
+    assert policy.json()["value"]["allowed_worker_types"] == ["cloud"]
+    assert policy.json()["value"]["max_capacity"] == {"max_jobs": 4, "memory_mb": 8192}
+    assert "ignored" not in policy.json()["value"]
+    assert denied_status.status_code == 403
+    assert denied_status.json()["error"]["code"] == "worker_status_update_denied"
+    assert denied_queue.status_code == 403
+    assert denied_queue.json()["error"]["code"] == "worker_queue_update_denied"
+    assert denied_capacity.status_code == 403
+    assert denied_capacity.json()["error"]["code"] == "worker_capacity_exceeds_policy"
+    assert denied_capacity.json()["error"]["details"] == {
+        "capacity_key": "max_jobs",
+        "requested": 5,
+        "max_allowed": 4,
+    }
+    assert accepted.status_code == 200
+    assert accepted.json()["capacity"]["max_jobs"] == 4
+    assert worker.status == "online"
+    assert worker.queue_name == "agent_runs"
+    assert worker.capacity["max_jobs"] == 4
+
+
+def test_admin_worker_control_policy_rejects_disallowed_worker_type() -> None:
+    client, session, _ = _client()
+    worker = WorkerNode(
+        worker_id="worker-type-policy",
+        worker_type="cloud",
+        status="online",
+        queue_name="agent_runs",
+        capacity={},
+        details={},
+        last_seen_at=datetime.now(UTC),
+    )
+    session.add(worker)
+    session.commit()
+
+    policy = client.get(
+        "/api/v1/admin/platform-policies/worker-control",
+        headers=_admin_headers(),
+    )
+    denied = client.patch(
+        "/api/v1/admin/workers/worker-type-policy",
+        headers=_admin_headers(),
+        json={"worker_type": "gpu", "reason": "Unsupported pool"},
+    )
+
+    assert policy.status_code == 200
+    assert policy.json()["value"]["allowed_worker_types"] == ["cloud", "self_hosted"]
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "worker_type_not_allowed"
+    assert denied.json()["error"]["details"]["allowed_worker_types"] == [
+        "cloud",
+        "self_hosted",
+    ]
+
+
 def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> None:
     client, session, redis = _client()
     _, workspace = _seed_workspace(session)

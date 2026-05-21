@@ -138,3 +138,9 @@ class AdminRiskyExecutionPolicyUpdateRequest(BaseModel):
     value: dict[str, object]
     description: str | None = None
     updated_by: str | None = "platform_admin"
+
+
+class AdminWorkerControlPolicyUpdateRequest(BaseModel):
+    value: dict[str, object]
+    description: str | None = None
+    updated_by: str | None = "platform_admin"

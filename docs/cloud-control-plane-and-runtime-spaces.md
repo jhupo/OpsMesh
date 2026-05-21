@@ -142,6 +142,7 @@ Operator controls:
 - drain a worker
 - disable a worker version
 - rebalance queue assignment
+- read and update global worker-control policy for allowed statuses, worker types, queue changes, and capacity ceilings
 - inspect active leases and stuck jobs
 - detect duplicate execution attempts
 
@@ -414,8 +415,13 @@ Operator APIs should be separate from workspace user APIs and require platform o
 GET  /api/v1/admin/workspaces
 GET  /api/v1/admin/workers
 POST /api/v1/admin/workers/{worker_id}/drain
+PATCH /api/v1/admin/workers/{worker_id}
 GET  /api/v1/admin/runtime-spaces
 POST /api/v1/admin/runtime-spaces/{runtime_space_id}/quarantine
+GET  /api/v1/admin/platform-policies/risky-execution
+PATCH /api/v1/admin/platform-policies/risky-execution
+GET  /api/v1/admin/platform-policies/worker-control
+PATCH /api/v1/admin/platform-policies/worker-control
 GET  /api/v1/admin/docker/leases
 POST /api/v1/admin/docker/leases/{lease_id}/kill
 GET  /api/v1/admin/queues

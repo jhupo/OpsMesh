@@ -11,6 +11,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.admin.models import PlatformPolicy
 from backend.app.approvals.models import Approval
 from backend.app.audit.models import AuditEvent
 from backend.app.capabilities.models import McpServer
@@ -288,6 +289,50 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
         event_type="runtime.marked_offline",
     ).one()
     assert space_event.event_metadata["runtime_id"] == str(runtime.id)
+
+
+def test_worker_heartbeat_capacity_is_bounded_by_platform_policy() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    session.add(
+        PlatformPolicy(
+            policy_key="global_worker_control",
+            status="active",
+            value={
+                "managed_by": "platform_admin",
+                "allow_status_updates": True,
+                "allow_capacity_updates": True,
+                "allow_queue_updates": True,
+                "allowed_statuses": ["online", "draining"],
+                "allowed_worker_types": ["cloud"],
+                "max_capacity": {"max_jobs": 2, "memory_mb": 4096},
+            },
+            description="Cap self-reported workers",
+        )
+    )
+    session.commit()
+
+    heartbeat = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/worker-heartbeats",
+        headers=_headers(owner.id),
+        json={
+            "worker_id": "worker-capped",
+            "capacity": {"max_jobs": 8, "memory_mb": 16384, "disk_mb": 100000},
+            "details": {},
+        },
+    )
+
+    worker = session.scalar(select(WorkerNode).where(WorkerNode.worker_id == "worker-capped"))
+
+    assert heartbeat.status_code == 200
+    assert worker is not None
+    assert worker.capacity == {
+        "max_jobs": 2,
+        "memory_mb": 4096,
+        "disk_mb": 100000,
+        "worker_type": "cloud",
+    }
 
 
 def test_operations_overview_uses_workspace_scoped_short_cache() -> None:

@@ -505,6 +505,7 @@ Tasks:
   - [x] Enforce runtime-space `active_runs` quota when scheduling team task steps.
   - [x] Release runtime-space run reservations on completion, failure, stale-run recovery, and cancellation.
   - [x] Add admin/operator APIs for queues, dead-letter requeue, runtimes, runtime force-stop, and global risky-execution policy records.
+  - [x] Add global worker-control policy APIs and enforce allowed worker statuses, worker types, queue updates, and capacity ceilings on admin worker updates.
   - [x] Enforce global risky-execution policy records inside Docker runtime, self-hosted runtime, and MCP execution paths.
   - [x] Model high-risk tool handling as `require_workspace_approval`, `allow`, or `block`; platform admins set guardrails, workspace owners approve task-level risk.
   - [x] Add PostgreSQL-level concurrent scheduler tests that prove runtime-space quotas cannot be over-reserved under parallel schedulers.
