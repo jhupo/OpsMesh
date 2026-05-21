@@ -151,6 +151,7 @@ Build:
   - [x] Wire self-hosted MCP job dispatch into the runtime tool adapter with pending-result semantics for OpenAI tool calls.
   - [x] Add waiting-runtime run state and self-hosted MCP result handoff back to queued runs.
   - [x] Resume completed self-hosted MCP results through structured OpenAI tool continuations instead of mutating orchestration input text.
+  - [x] Persist OpenAI Agents SDK response/state continuation metadata in completed run raw output as a future migration hook.
   - [x] Expire stale self-hosted MCP jobs idempotently from the worker cleanup path.
   - [ ] Replace runner-level continuation rendering with SDK-native tool-call continuation when the OpenAI Agents SDK exposes a stable API for it.
   - [x] Add operations visibility for self-hosted MCP job backlog and tool distribution.

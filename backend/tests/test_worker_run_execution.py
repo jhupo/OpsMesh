@@ -2484,7 +2484,10 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
     assert backup.health_status == "healthy"
     assert backup.last_success_at is not None
     assert run.status == RunStatus.COMPLETED.value
-    assert run.output == {"final_output": "handled by backup-model"}
+    assert run.output == {
+        "final_output": "handled by backup-model",
+        "raw_output": {"model": "backup-model"},
+    }
     assert fallback_event.event_metadata["reason"]["code"] == "RuntimeError"
     assert fallback_event.event_metadata["failed_provider"] == {
         "model": "primary-model",

@@ -167,9 +167,27 @@ class OpenAIAgentsRunner:
 
     def _safe_raw_output(self, result: Any) -> dict[str, object]:
         payload: dict[str, object] = {"final_output": str(getattr(result, "final_output", ""))}
+        last_response_id = getattr(result, "last_response_id", None)
+        if isinstance(last_response_id, str) and last_response_id:
+            payload["last_response_id"] = last_response_id
         last_agent = getattr(result, "last_agent", None)
         if last_agent is not None:
             payload["last_agent"] = str(getattr(last_agent, "name", last_agent))
+        to_input_list = getattr(result, "to_input_list", None)
+        if callable(to_input_list):
+            try:
+                payload["resume_input"] = self._jsonable(to_input_list(mode="normalized"))
+            except Exception as exc:  # pragma: no cover - SDK internals are best-effort.
+                payload["resume_input_error"] = type(exc).__name__
+        to_state = getattr(result, "to_state", None)
+        if callable(to_state):
+            try:
+                state = to_state()
+                to_json = getattr(state, "to_json", None)
+                if callable(to_json):
+                    payload["run_state_json"] = str(to_json())
+            except Exception as exc:  # pragma: no cover - SDK internals are best-effort.
+                payload["run_state_error"] = type(exc).__name__
         usage = getattr(result, "usage", None)
         if usage is not None:
             payload["usage"] = self._jsonable(usage)

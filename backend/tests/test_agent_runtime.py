@@ -178,18 +178,33 @@ def test_openai_agents_runner_raw_output_is_json_safe() -> None:
             assert mode == "json"
             return {"requests": 1}
 
+    class State:
+        def to_json(self) -> str:
+            return '{"schema_version":"1.10"}'
+
     class Result:
         final_output = "done"
+        last_response_id = "resp_123"
         usage = Usage()
 
         class last_agent:
             name = "Researcher"
 
+        def to_input_list(self, *, mode: str) -> list[dict[str, object]]:
+            assert mode == "normalized"
+            return [{"role": "assistant", "content": "done"}]
+
+        def to_state(self) -> State:
+            return State()
+
     payload = OpenAIAgentsRunner()._safe_raw_output(Result())
 
     assert payload == {
         "final_output": "done",
+        "last_response_id": "resp_123",
         "last_agent": "Researcher",
+        "resume_input": [{"role": "assistant", "content": "done"}],
+        "run_state_json": '{"schema_version":"1.10"}',
         "usage": {"requests": 1},
     }
 

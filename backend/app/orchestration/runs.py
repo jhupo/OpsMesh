@@ -376,7 +376,7 @@ class RunOrchestrationService:
                 self._session.commit()
                 self._session.refresh(run)
                 return run
-            self._mark_run_completed(run, result.final_output, job.requested_by_user_id)
+            self._mark_run_completed(run, result, job.requested_by_user_id)
             self._session.commit()
             self._session.refresh(run)
             return run
@@ -420,12 +420,13 @@ class RunOrchestrationService:
     def _mark_run_completed(
         self,
         run: AgentRun,
-        final_output: str,
+        result: AgentRunResult,
         requested_by_user_id: UUID | None,
     ) -> None:
         require_run_transition(RunStatus(run.status), RunStatus.COMPLETED)
+        final_output = result.final_output
         run.status = RunStatus.COMPLETED.value
-        run.output = {"final_output": final_output}
+        run.output = _run_output_payload(result)
         run.completed_at = datetime.now(UTC)
         self._append_event(run, "run.completed", "Fake run completed")
         self._release_runtime_space_reservations(run, released_at=run.completed_at)
@@ -2997,6 +2998,27 @@ def _json_object_from_text(value: str) -> dict[str, object] | None:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _run_output_payload(result: AgentRunResult) -> dict[str, object]:
+    payload: dict[str, object] = {"final_output": result.final_output}
+    if result.raw_output is not None:
+        payload["raw_output"] = _json_safe_object(result.raw_output)
+    return payload
+
+
+def _json_safe_object(value: object) -> object:
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _json_safe_object(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_json_safe_object(item) for item in value]
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        dumped = model_dump(mode="json")
+        return _json_safe_object(dumped)
+    return str(value)
 
 
 def _normalize_pm_decision(value: object) -> str | None:
