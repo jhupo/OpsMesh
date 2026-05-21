@@ -29,6 +29,7 @@ from backend.app.api.schemas.teams import (
     AgentTeamCreateRequest,
     AgentTeamMemberCreateRequest,
     AgentTeamMemberResponse,
+    AgentTeamMemberUpdateRequest,
     AgentTeamResponse,
 )
 from backend.app.api.services.resources import WorkspaceResourceService
@@ -207,6 +208,37 @@ async def create_team_member(
             status_code=status.HTTP_409_CONFLICT,
             detail="Request with this Idempotency-Key is still processing",
         ) from exc
+    except ValueError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
+    return AgentTeamMemberResponse.model_validate(member)
+
+
+@router.patch(
+    "/teams/{team_id}/members/{member_id}",
+    response_model=AgentTeamMemberResponse,
+)
+async def update_team_member(
+    team_id: UUID,
+    member_id: UUID,
+    request: AgentTeamMemberUpdateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> AgentTeamMemberResponse:
+    try:
+        member = WorkspaceResourceService(session, settings).update_team_member(
+            context.workspace.id,
+            team_id,
+            member_id,
+            request,
+            context.user.user_id,
+        )
     except ValueError as exc:
         message = str(exc)
         code = (

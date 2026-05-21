@@ -546,7 +546,7 @@ Tasks:
 - [x] Fixed team organization model.
   - [x] Treat `AgentTeam` as a long-lived organization asset, not a per-task team.
   - [x] Enhance `AgentTeamMember` with role, department, position, responsibilities, skill weights, availability, max concurrency, and reporting line.
-  - [ ] Support adding or upgrading member skills over time.
+  - [x] Support adding or upgrading member skills over time.
   - [x] Support hiring public talent into an existing team.
 - [x] Task intake into existing teams.
   - [x] Require team-backed tasks to reference an existing `agent_team_id`.

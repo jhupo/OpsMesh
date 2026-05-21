@@ -281,6 +281,87 @@ def test_team_member_api_stores_persistent_org_metadata_and_reporting_line() -> 
     assert stored.reports_to_member_id == UUID(manager_member.json()["id"])
 
 
+def test_team_member_update_changes_future_snapshots_only() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Developer", "role": "frontend_engineer"},
+    )
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={"name": "Product Team", "team_type": "software"},
+    )
+    member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": agent.json()["id"],
+            "team_role": "frontend_engineer",
+            "skill_weights": {"react": 0.5},
+        },
+    )
+    first_task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={"title": "Before upgrade", "agent_team_id": team.json()["id"]},
+    )
+
+    updated = client.patch(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members/"
+        f"{member.json()['id']}",
+        headers=_headers(owner.id),
+        json={
+            "skill_weights": {"react": 0.9, "typescript": 0.85},
+            "responsibilities": ["Build UI", "Review frontend quality"],
+            "availability": {"timezone": "Asia/Shanghai", "weekly_hours": 30},
+            "max_concurrent_tasks": 3,
+        },
+    )
+    second_task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={"title": "After upgrade", "agent_team_id": team.json()["id"]},
+    )
+    audit = client.get(
+        f"/api/v1/workspaces/{workspace.id}/audit-events",
+        headers=_headers(owner.id),
+    )
+
+    assert member.status_code == 201
+    assert first_task.status_code == 201
+    assert updated.status_code == 200
+    assert updated.json()["skill_weights"] == {"react": 0.9, "typescript": 0.85}
+    assert updated.json()["responsibilities"] == ["Build UI", "Review frontend quality"]
+    assert updated.json()["availability"] == {
+        "timezone": "Asia/Shanghai",
+        "weekly_hours": 30,
+    }
+    assert updated.json()["max_concurrent_tasks"] == 3
+    assert second_task.status_code == 201
+    assert first_task.json()["team_snapshot"]["members"][0]["skill_weights"] == {"react": 0.5}
+    assert second_task.json()["team_snapshot"]["members"][0]["skill_weights"] == {
+        "react": 0.9,
+        "typescript": 0.85,
+    }
+    update_audit = next(
+        item for item in audit.json()["items"] if item["action"] == "team_member.updated"
+    )
+    assert update_audit["audit_metadata"]["changed_fields"] == [
+        "availability",
+        "max_concurrent_tasks",
+        "responsibilities",
+        "skill_weights",
+    ]
+    assert update_audit["audit_metadata"]["before"]["skill_weights"] == {"react": 0.5}
+    assert update_audit["audit_metadata"]["after"]["skill_weights"] == {
+        "react": 0.9,
+        "typescript": 0.85,
+    }
+
+
 def test_team_member_api_rejects_foreign_agent_and_reporting_member() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
@@ -335,10 +416,17 @@ def test_team_member_api_rejects_foreign_agent_and_reporting_member() -> None:
             "reports_to_member_id": foreign_member.json()["id"],
         },
     )
+    self_report = client.patch(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members/"
+        f"{local_member.json()['id']}",
+        headers=_headers(owner.id),
+        json={"reports_to_member_id": local_member.json()["id"]},
+    )
 
     assert local_member.status_code == 201
     assert bad_agent.status_code == 404
     assert bad_report.status_code == 404
+    assert self_report.status_code == 400
 
 
 def test_create_task_with_team_captures_workspace_team_snapshot() -> None:

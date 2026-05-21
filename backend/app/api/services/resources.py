@@ -12,7 +12,11 @@ from backend.app.api.schemas.tasks import (
     TaskPlanRegenerateRequest,
     TaskPlanRetryRequest,
 )
-from backend.app.api.schemas.teams import AgentTeamCreateRequest, AgentTeamMemberCreateRequest
+from backend.app.api.schemas.teams import (
+    AgentTeamCreateRequest,
+    AgentTeamMemberCreateRequest,
+    AgentTeamMemberUpdateRequest,
+)
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
 from backend.app.core.config import Settings
@@ -198,6 +202,46 @@ class WorkspaceResourceService:
                     "agent_profile_id": str(member.agent_profile_id),
                     "team_role": member.team_role,
                     "department": member.department,
+                },
+            )
+        self._session.commit()
+        self._session.refresh(member)
+        return member
+
+    def update_team_member(
+        self,
+        workspace_id: UUID,
+        team_id: UUID,
+        member_id: UUID,
+        data: AgentTeamMemberUpdateRequest,
+        actor_user_id: UUID | None = None,
+    ) -> AgentTeamMember:
+        member = self.get_team_member(workspace_id, team_id, member_id)
+        if member is None:
+            raise ValueError("Team member not found")
+        if data.reports_to_member_id is not None:
+            if data.reports_to_member_id == member.id:
+                raise ValueError("Team member cannot report to itself")
+            self._require_team_member(workspace_id, team_id, data.reports_to_member_id)
+
+        changes = data.model_dump(exclude_unset=True)
+        before = _team_member_update_snapshot(member, changes)
+        for field, value in changes.items():
+            setattr(member, field, value)
+        self._session.flush([member])
+        if actor_user_id is not None and changes:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="team_member.updated",
+                target_type="agent_team_member",
+                target_id=member.id,
+                metadata={
+                    "agent_team_id": str(team_id),
+                    "agent_profile_id": str(member.agent_profile_id),
+                    "changed_fields": sorted(changes),
+                    "before": before,
+                    "after": _team_member_update_snapshot(member, changes),
                 },
             )
         self._session.commit()
@@ -572,3 +616,19 @@ class WorkspaceResourceService:
         )
         if member is None:
             raise ValueError("Reporting manager team member not found")
+
+
+def _team_member_update_snapshot(
+    member: AgentTeamMember,
+    fields: dict[str, object],
+) -> dict[str, object]:
+    return {
+        field: _serializable_team_member_value(getattr(member, field))
+        for field in fields
+    }
+
+
+def _serializable_team_member_value(value: object) -> object:
+    if isinstance(value, UUID):
+        return str(value)
+    return value

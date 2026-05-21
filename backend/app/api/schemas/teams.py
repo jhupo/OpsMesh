@@ -42,6 +42,21 @@ class AgentTeamMemberCreateRequest(BaseModel):
     order_index: int = 0
 
 
+class AgentTeamMemberUpdateRequest(BaseModel):
+    reports_to_member_id: UUID | None = None
+    team_role: str | None = Field(default=None, min_length=1, max_length=80)
+    department: str | None = Field(default=None, max_length=120)
+    position_title: str | None = Field(default=None, max_length=160)
+    responsibilities: list[str] | None = None
+    skill_weights: dict[str, object] | None = None
+    availability: dict[str, object] | None = None
+    max_concurrent_tasks: int | None = Field(default=None, ge=1, le=100)
+    accepts_tasks: bool | None = None
+    is_required: bool | None = None
+    order_index: int | None = None
+    status: str | None = Field(default=None, pattern="^(active|inactive)$")
+
+
 class AgentTeamMemberResponse(ORMModel):
     id: UUID
     workspace_id: UUID
