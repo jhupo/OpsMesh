@@ -445,6 +445,28 @@ async def log_mcp_tool_call(
     return McpToolCallLogResponse.model_validate(log)
 
 
+@router.get("/mcp-tool-call-logs", response_model=PageResponse[McpToolCallLogResponse])
+async def list_mcp_tool_call_logs(
+    page: PageParams = Depends(pagination_params),
+    mcp_server_id: UUID | None = Query(default=None),
+    tool_name: str | None = Query(default=None, min_length=1, max_length=160),
+    status_filter: str | None = Query(default=None, alias="status", min_length=1, max_length=32),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[McpToolCallLogResponse]:
+    try:
+        items, total = CapabilityService(session).list_mcp_tool_call_logs(
+            context.workspace.id,
+            page,
+            mcp_server_id=mcp_server_id,
+            tool_name=tool_name,
+            status=status_filter,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
 def _mcp_catalog_response(item: object) -> McpCatalogServerResponse:
     server = item.server
     return McpCatalogServerResponse(

@@ -124,7 +124,7 @@ Acceptance:
 Current state:
 
 - MCP servers, tools, credentials, visibility, and account-scoped authorization are represented in the backend. Server/tool entries and credential references can be disabled without deleting audit history or exposing secret payloads.
-- Tool call logging exists, and hosted credentials can be encrypted or referenced through an external vault.
+- Tool call logging exists with workspace-scoped query APIs, and hosted credentials can be encrypted or referenced through an external vault.
 - The execution service now resolves an MCP server/tool from the run authorization snapshot, injects workspace-owned credential references into an adapter, enforces payload policy, and records call logs, run events, task messages, and security events.
 - MCP execution also re-checks the runtime context tool set, sends explicitly approval-required tools into workspace approval, and writes authorization snapshot metadata into tool audit records.
 - Worker-built agent requests now carry a backend tool executor, and the OpenAI Agents runner registers allowed MCP tools as SDK function tools that call back into the backend execution service.
@@ -160,6 +160,7 @@ Build:
 - [x] Add optional approval hooks for high-risk and explicitly approval-required MCP tools.
 - [x] Add workspace MCP credential management APIs for listing, filtering, and disabling credential references.
 - [x] Add workspace MCP server/tool disable APIs so unsafe or unhealthy integrations can be stopped without deletion.
+- [x] Add workspace MCP tool-call log query APIs with server, tool, and status filters.
 
 API/data changes:
 

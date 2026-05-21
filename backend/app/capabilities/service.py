@@ -645,6 +645,26 @@ class CapabilityService:
         self._session.refresh(log)
         return log
 
+    def list_mcp_tool_call_logs(
+        self,
+        workspace_id: UUID,
+        page: PageParams,
+        *,
+        mcp_server_id: UUID | None = None,
+        tool_name: str | None = None,
+        status: str | None = None,
+    ) -> tuple[list[McpToolCallLog], int]:
+        if mcp_server_id is not None:
+            self._require_server(workspace_id, mcp_server_id)
+        statement = select(McpToolCallLog).where(McpToolCallLog.workspace_id == workspace_id)
+        if mcp_server_id is not None:
+            statement = statement.where(McpToolCallLog.mcp_server_id == mcp_server_id)
+        if tool_name is not None:
+            statement = statement.where(McpToolCallLog.tool_name == tool_name)
+        if status is not None:
+            statement = statement.where(McpToolCallLog.status == status)
+        return self._page(statement.order_by(McpToolCallLog.created_at.desc()), page)
+
     def _can_use_skill(self, workspace_id: UUID, skill: Skill) -> bool:
         return skill.visibility == "public" or skill.owner_workspace_id == workspace_id
 

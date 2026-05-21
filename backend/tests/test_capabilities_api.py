@@ -581,6 +581,97 @@ def test_mcp_server_and_tool_can_be_disabled() -> None:
     assert "server_inactive" in body["blocked_reasons"]
 
 
+def test_mcp_tool_call_logs_can_be_listed_and_filtered() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={"name": "image-tools", "connection": {"command": "mcp-image"}},
+    )
+    other_server = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers",
+        headers=_headers(other.id),
+        json={"name": "other-tools"},
+    )
+    first_tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "generate_image"},
+    )
+    second_tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "upscale_image"},
+    )
+    completed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "tool_name": "generate_image",
+            "status": "completed",
+            "request": {"arguments_sha256": "ok"},
+            "response": {"result": {"ok": True}},
+        },
+    )
+    failed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "tool_name": "upscale_image",
+            "status": "failed",
+            "request": {"arguments_sha256": "failed"},
+            "error": {"code": "mcp_remote_error"},
+        },
+    )
+    all_logs = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
+        headers=_headers(owner.id),
+    )
+    failed_logs = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs?status=failed",
+        headers=_headers(owner.id),
+    )
+    tool_logs = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs"
+        "?tool_name=generate_image",
+        headers=_headers(owner.id),
+    )
+    server_logs = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs"
+        f"?mcp_server_id={server.json()['id']}",
+        headers=_headers(owner.id),
+    )
+    denied_foreign_filter = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs"
+        f"?mcp_server_id={other_server.json()['id']}",
+        headers=_headers(owner.id),
+    )
+
+    assert server.status_code == 201
+    assert other_server.status_code == 201
+    assert first_tool.status_code == 201
+    assert second_tool.status_code == 201
+    assert completed.status_code == 201
+    assert failed.status_code == 201
+    assert all_logs.status_code == 200
+    assert all_logs.json()["total"] == 2
+    assert all_logs.json()["items"][0]["status"] == "failed"
+    assert failed_logs.status_code == 200
+    assert failed_logs.json()["total"] == 1
+    assert failed_logs.json()["items"][0]["error_code"] == "mcp_remote_error"
+    assert tool_logs.status_code == 200
+    assert tool_logs.json()["total"] == 1
+    assert tool_logs.json()["items"][0]["tool_name"] == "generate_image"
+    assert server_logs.status_code == 200
+    assert server_logs.json()["total"] == 2
+    assert denied_foreign_filter.status_code == 404
+
+
 def test_operator_cannot_manage_capabilities() -> None:
     client, session = _client()
     operator, workspace = _seed_workspace(session, role="operator")
