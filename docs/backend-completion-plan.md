@@ -50,7 +50,9 @@ Incomplete or basic-only areas:
 - Runtime cleanup now marks stale runtimes offline, removes terminal runtime records, expires stale worker leases within the requesting workspace, and worker maintenance periodically performs cross-workspace stale runtime cleanup.
 - Import preview now returns a structured conflict plan for existing names, skipped dependencies,
   disabled skill installs, missing runtime policies, quota violations, checksum/version issues,
-  and archive byte limits; preview-token resolution workflows are still pending.
+  and archive byte limits; metadata and archive imports can now apply explicit resolution maps
+  for preview tokens, renames, dependency mappings, policy/quota decisions, disabled skills, and
+  checksum replacement.
 - Model provider selection exists. Queued runs now freeze per-agent/default provider resolution
   metadata without storing secrets, worker execution can use a workspace-scoped fallback policy,
   and provider credentials track health state plus last success/failure details.
