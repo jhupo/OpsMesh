@@ -672,6 +672,53 @@ def test_mcp_tool_call_logs_can_be_listed_and_filtered() -> None:
     assert denied_foreign_filter.status_code == 404
 
 
+def test_mcp_tool_call_log_rejects_foreign_server_reference() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    local_server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={"name": "local-tools"},
+    )
+    local_tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{local_server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "generate_image"},
+    )
+    foreign_server = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers",
+        headers=_headers(other.id),
+        json={"name": "foreign-tools"},
+    )
+    foreign_tool = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers/"
+        f"{foreign_server.json()['id']}/tools",
+        headers=_headers(other.id),
+        json={"tool_name": "generate_image"},
+    )
+    forged_log = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": foreign_server.json()["id"],
+            "tool_name": "generate_image",
+            "status": "completed",
+            "request": {"arguments_sha256": "forged"},
+            "response": {"result": {"ok": True}},
+        },
+    )
+
+    assert local_server.status_code == 201
+    assert local_tool.status_code == 201
+    assert foreign_server.status_code == 201
+    assert foreign_tool.status_code == 201
+    assert forged_log.status_code == 404
+    assert session.query(McpToolCallLog).count() == 0
+
+
 def test_operator_cannot_manage_capabilities() -> None:
     client, session = _client()
     operator, workspace = _seed_workspace(session, role="operator")

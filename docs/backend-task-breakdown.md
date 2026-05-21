@@ -577,7 +577,7 @@ Tasks:
   - [x] Run dependency-free packages in parallel after their prerequisites complete.
   - [x] Restrict each agent runtime request to the current task step context and the profile's allowed tools.
   - [x] Persist step outputs back to `TaskStep` summaries and final team orchestration output.
-  - [ ] Bind generated files/artifacts to the producing work package with version metadata.
+  - [x] Bind generated files/artifacts to the producing work package with version metadata.
 - [x] PM summary and acceptance.
   - [x] PM reviews completed packages through the final acceptance work package.
   - [x] PM reconciles completed package summaries into `Task.final_output`.
@@ -588,21 +588,21 @@ Tasks:
   - [x] PM can correct a task, step, or specific employee output through structured revision requests.
   - [x] Create revision steps instead of rerunning the whole task by default.
   - [x] Keep historical steps and create versioned follow-up work packages plus a PM re-review step.
-  - [ ] Add a user-facing generic revision endpoint outside domain-specific APIs.
+  - [x] Add a user-facing generic revision endpoint outside domain-specific APIs.
 - [x] Team communication records.
   - [x] Add structured task messages for step start, step completion, PM decisions, and follow-up work.
   - [x] Bind communication to task, step, run, and agent.
   - [x] Make the collaboration stream auditable and replayable with per-task sequence numbers.
   - [x] Add task message listing APIs.
   - [x] Include task messages in workspace export/import.
-  - [ ] Map OpenAI Agents handoff/tool events into task messages when runtime integrations expose them.
+  - [x] Map OpenAI Agents handoff/tool events into task messages when runtime integrations expose them.
 - [x] HR and marketplace loop.
   - [x] HR detects missing roles or skills from a project plan.
   - [x] HR recommends public agents from the talent market.
   - [x] Persist HR staffing recommendations into the task communication stream.
   - [x] User-confirmed hires join the persistent team.
   - [x] New hires affect future tasks without rewriting historical snapshots.
-  - [ ] Optionally regenerate a future-only project plan after a hire when the user asks.
+  - [x] Optionally regenerate a future-only project plan after a hire when the user asks.
 - [ ] Security and isolation.
   - [x] Scope teams, members, skills, files, tools, Docker runtimes, and self-hosted machines by workspace.
   - [x] Copy public agents into the user's workspace before use.
