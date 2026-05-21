@@ -788,6 +788,119 @@ def test_workspace_skill_install_snapshots_public_skill_source() -> None:
     assert body["config"] == {"quality": "high"}
 
 
+def test_workspace_skill_availability_reports_required_mcp_tool_state() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    skill = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+        json={
+            "key": "image-pack",
+            "name": "Image Pack",
+            "version": "1.0.0",
+            "manifest": {
+                "mcp_tools": [
+                    {"tool_name": "generate_image"},
+                    "upscale_image",
+                    "upscale_image",
+                ]
+            },
+            "visibility": "public",
+        },
+    )
+    installed = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills",
+        headers=_headers(other.id),
+        json={"skill_id": skill.json()["id"]},
+    )
+    server = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers",
+        headers=_headers(other.id),
+        json={
+            "name": "image-tools",
+            "server_type": "hosted",
+            "connection": {
+                "transport": "http_jsonrpc",
+                "url": "https://mcp.example.test/rpc",
+            },
+        },
+    )
+    allowed = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/tools",
+        headers=_headers(other.id),
+        json={"tool_name": "generate_image", "capability_key": "image.generate"},
+    )
+    missing_tool_availability = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills/"
+        f"{installed.json()['id']}/availability",
+        headers=_headers(other.id),
+    )
+    second_allowed = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/tools",
+        headers=_headers(other.id),
+        json={"tool_name": "upscale_image", "capability_key": "image.upscale"},
+    )
+    credential = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-credentials",
+        headers=_headers(other.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "name": "image-key",
+            "provider": "hosted",
+            "secret_payload": {"api_key": "sk-test"},
+        },
+    )
+    usable_availability = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills/"
+        f"{installed.json()['id']}/availability",
+        headers=_headers(other.id),
+    )
+    disabled = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills/"
+        f"{installed.json()['id']}/disable",
+        headers=_headers(other.id),
+    )
+    disabled_availability = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills/"
+        f"{installed.json()['id']}/availability",
+        headers=_headers(other.id),
+    )
+    foreign_availability = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/workspace-skills/"
+        f"{installed.json()['id']}/availability",
+        headers=_headers(owner.id),
+    )
+
+    assert skill.status_code == 201
+    assert installed.status_code == 201
+    assert server.status_code == 201
+    assert allowed.status_code == 201
+    assert missing_tool_availability.status_code == 200
+    missing_body = missing_tool_availability.json()
+    assert missing_body["required_tools"] == ["generate_image", "upscale_image"]
+    assert missing_body["usable"] is False
+    assert "missing_required_mcp_tools" in missing_body["blocked_reasons"]
+    tools = {item["tool_name"]: item for item in missing_body["tools"]}
+    assert tools["generate_image"]["blocked_reasons"] == ["missing_required_credentials"]
+    assert tools["upscale_image"]["blocked_reasons"] == ["tool_not_allowed"]
+    assert second_allowed.status_code == 201
+    assert credential.status_code == 201
+    assert usable_availability.status_code == 200
+    usable_body = usable_availability.json()
+    assert usable_body["usable"] is True
+    assert usable_body["blocked_reasons"] == []
+    assert all(item["available"] for item in usable_body["tools"])
+    assert disabled.status_code == 200
+    assert disabled_availability.status_code == 200
+    assert disabled_availability.json()["usable"] is False
+    assert "skill_install_disabled" in disabled_availability.json()["blocked_reasons"]
+    assert foreign_availability.status_code == 404
+
+
 def test_workspace_skill_install_can_upgrade_and_disable_without_source_access() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

@@ -77,6 +77,27 @@ class WorkspaceSkillInstallResponse(TimestampedModel):
     disabled_at: datetime | None
 
 
+class WorkspaceSkillToolAvailabilityResponse(BaseModel):
+    tool_name: str
+    available: bool
+    server_id: UUID | None = None
+    server_name: str | None = None
+    capability_key: str | None = None
+    requires_approval: bool = False
+    risk_level: str | None = None
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
+class WorkspaceSkillAvailabilityResponse(BaseModel):
+    install_id: UUID
+    installed_key: str
+    status: str
+    usable: bool
+    required_tools: list[str]
+    tools: list[WorkspaceSkillToolAvailabilityResponse]
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
 class ToolGroupCreateRequest(BaseModel):
     key: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=160)

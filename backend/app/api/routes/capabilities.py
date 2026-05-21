@@ -23,9 +23,11 @@ from backend.app.api.schemas.capabilities import (
     SkillResponse,
     ToolGroupCreateRequest,
     ToolGroupResponse,
+    WorkspaceSkillAvailabilityResponse,
     WorkspaceSkillInstallConfigRequest,
     WorkspaceSkillInstallRequest,
     WorkspaceSkillInstallResponse,
+    WorkspaceSkillToolAvailabilityResponse,
     WorkspaceSkillUpgradeRequest,
 )
 from backend.app.auth.context import WorkspaceContext
@@ -190,6 +192,45 @@ async def disable_workspace_skill(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return WorkspaceSkillInstallResponse.model_validate(install)
+
+
+@router.get(
+    "/workspace-skills/{install_id}/availability",
+    response_model=WorkspaceSkillAvailabilityResponse,
+)
+async def get_workspace_skill_availability(
+    install_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceSkillAvailabilityResponse:
+    try:
+        availability = CapabilityService(session).workspace_skill_availability(
+            context.workspace.id,
+            install_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return WorkspaceSkillAvailabilityResponse(
+        install_id=availability.install.id,
+        installed_key=availability.install.installed_key,
+        status=availability.install.status,
+        usable=availability.usable,
+        required_tools=availability.required_tools,
+        tools=[
+            WorkspaceSkillToolAvailabilityResponse(
+                tool_name=tool.tool_name,
+                available=tool.available,
+                server_id=tool.server_id,
+                server_name=tool.server_name,
+                capability_key=tool.capability_key,
+                requires_approval=tool.requires_approval,
+                risk_level=tool.risk_level,
+                blocked_reasons=tool.blocked_reasons,
+            )
+            for tool in availability.tools
+        ],
+        blocked_reasons=availability.blocked_reasons,
+    )
 
 
 @router.get("/tool-groups", response_model=PageResponse[ToolGroupResponse])

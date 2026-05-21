@@ -69,6 +69,27 @@ class McpCatalogServer:
     usage: McpCatalogUsage
 
 
+@dataclass(frozen=True)
+class WorkspaceSkillToolAvailability:
+    tool_name: str
+    available: bool
+    server_id: UUID | None
+    server_name: str | None
+    capability_key: str | None
+    requires_approval: bool
+    risk_level: str | None
+    blocked_reasons: list[str]
+
+
+@dataclass(frozen=True)
+class WorkspaceSkillAvailability:
+    install: WorkspaceSkillInstall
+    usable: bool
+    required_tools: list[str]
+    tools: list[WorkspaceSkillToolAvailability]
+    blocked_reasons: list[str]
+
+
 class CapabilityService:
     def __init__(
         self,
@@ -245,6 +266,57 @@ class CapabilityService:
             WorkspaceSkillInstall.id.desc(),
         )
         return self._page(statement, page)
+
+    def workspace_skill_availability(
+        self,
+        workspace_id: UUID,
+        install_id: UUID,
+    ) -> WorkspaceSkillAvailability:
+        install = self._require_workspace_install(workspace_id, install_id)
+        required_tools = _manifest_mcp_tools(install.installed_manifest)
+        allowed_tools = self.list_allowed_mcp_tools(workspace_id)
+        allowed_by_name: dict[str, tuple[McpToolAllowlist, McpServer]] = {}
+        for allow, server in allowed_tools:
+            allowed_by_name.setdefault(allow.tool_name, (allow, server))
+        credentials = self._session.scalars(
+            select(McpCredentialReference).where(
+                McpCredentialReference.workspace_id == workspace_id,
+                McpCredentialReference.status == "active",
+            )
+        ).all()
+        workspace_credential_count = sum(
+            1 for credential in credentials if credential.mcp_server_id is None
+        )
+        credential_counts: dict[UUID, int] = {}
+        for credential in credentials:
+            if credential.mcp_server_id is not None:
+                credential_counts[credential.mcp_server_id] = (
+                    credential_counts.get(credential.mcp_server_id, 0) + 1
+                )
+        tool_availability = [
+            _skill_tool_availability(
+                tool_name,
+                allowed_by_name.get(tool_name),
+                credential_count=credential_counts.get(allowed_by_name[tool_name][1].id, 0)
+                if tool_name in allowed_by_name
+                else 0,
+                workspace_credential_count=workspace_credential_count,
+            )
+            for tool_name in required_tools
+        ]
+        blocked_reasons: list[str] = []
+        if install.status != "active":
+            blocked_reasons.append("skill_install_disabled")
+        missing_tools = [item.tool_name for item in tool_availability if not item.available]
+        if missing_tools:
+            blocked_reasons.append("missing_required_mcp_tools")
+        return WorkspaceSkillAvailability(
+            install=install,
+            usable=not blocked_reasons,
+            required_tools=required_tools,
+            tools=tool_availability,
+            blocked_reasons=blocked_reasons,
+        )
 
     def _require_workspace_install(
         self,
@@ -874,6 +946,71 @@ def _mcp_log_failed(log: McpToolCallLog) -> bool:
         "error",
         "timeout",
     }
+
+
+def _manifest_mcp_tools(manifest: dict[str, object]) -> list[str]:
+    raw_tools = manifest.get("mcp_tools")
+    if raw_tools is None:
+        raw_tools = manifest.get("tools")
+    if not isinstance(raw_tools, list):
+        return []
+    tools: list[str] = []
+    seen: set[str] = set()
+    for item in raw_tools:
+        tool_name: str | None = None
+        if isinstance(item, str):
+            tool_name = item
+        elif isinstance(item, dict) and isinstance(item.get("tool_name"), str):
+            tool_name = item["tool_name"]
+        if tool_name is None or not tool_name.strip() or tool_name in seen:
+            continue
+        tools.append(tool_name)
+        seen.add(tool_name)
+    return tools
+
+
+def _skill_tool_availability(
+    tool_name: str,
+    allowed_tool: tuple[McpToolAllowlist, McpServer] | None,
+    *,
+    credential_count: int,
+    workspace_credential_count: int,
+) -> WorkspaceSkillToolAvailability:
+    if allowed_tool is None:
+        return WorkspaceSkillToolAvailability(
+            tool_name=tool_name,
+            available=False,
+            server_id=None,
+            server_name=None,
+            capability_key=None,
+            requires_approval=False,
+            risk_level=None,
+            blocked_reasons=["tool_not_allowed"],
+        )
+    allow, server = allowed_tool
+    blocked_reasons: list[str] = []
+    if server.health_status == "unhealthy":
+        blocked_reasons.append("server_unhealthy")
+    credential_status = _credential_status(
+        server,
+        credential_count=credential_count,
+        workspace_credential_count=workspace_credential_count,
+    )
+    if credential_status == "missing_required":
+        blocked_reasons.append("missing_required_credentials")
+    execution_mode = _execution_mode(server)
+    if execution_mode == "unsupported":
+        blocked_reasons.append("unsupported_server_type")
+    return WorkspaceSkillToolAvailability(
+        tool_name=tool_name,
+        available=not blocked_reasons,
+        server_id=server.id,
+        server_name=server.name,
+        capability_key=allow.capability_key,
+        requires_approval=allow.requires_approval,
+        risk_level=allow.risk_level,
+        blocked_reasons=blocked_reasons,
+    )
 
 
 def _credential_status(
