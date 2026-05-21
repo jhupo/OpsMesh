@@ -13,6 +13,7 @@ from backend.app.api.schemas.admin import (
     AdminForceStopRuntimeRequest,
     AdminOperationsSummaryResponse,
     AdminOverviewResponse,
+    AdminPlatformPolicyEventResponse,
     AdminPlatformPolicyResponse,
     AdminQuarantineRuntimeSpaceRequest,
     AdminQuarantineRuntimeSpaceResponse,
@@ -339,6 +340,32 @@ async def list_admin_platform_policies(
     items, total = AdminControlPlaneService(session).list_platform_policies(page, status=status)
     return PageResponse(
         items=[AdminPlatformPolicyResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.get(
+    "/platform-policies/{policy_key}/events",
+    response_model=PageResponse[AdminPlatformPolicyEventResponse],
+)
+async def list_admin_platform_policy_events(
+    policy_key: str,
+    page: PageParams = Depends(pagination_params),
+    event_type: str | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[AdminPlatformPolicyEventResponse]:
+    result = AdminControlPlaneService(session).list_platform_policy_events(
+        policy_key,
+        page,
+        event_type=event_type,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Platform policy not found")
+    items, total = result
+    return PageResponse(
+        items=[AdminPlatformPolicyEventResponse.model_validate(item) for item in items],
         total=total,
         limit=page.limit,
         offset=page.offset,

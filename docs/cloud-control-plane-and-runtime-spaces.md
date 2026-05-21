@@ -422,6 +422,7 @@ GET  /api/v1/admin/platform-policies/risky-execution
 PATCH /api/v1/admin/platform-policies/risky-execution
 GET  /api/v1/admin/platform-policies/worker-control
 PATCH /api/v1/admin/platform-policies/worker-control
+GET  /api/v1/admin/platform-policies/{policy_key}/events
 GET  /api/v1/admin/docker/leases
 POST /api/v1/admin/docker/leases/{lease_id}/kill
 GET  /api/v1/admin/queues

@@ -324,6 +324,49 @@ def test_admin_worker_control_policy_is_enforced_for_worker_updates() -> None:
     assert worker.capacity["max_jobs"] == 4
 
 
+def test_admin_can_list_platform_policy_events() -> None:
+    client, session, _ = _client()
+    policy = client.patch(
+        "/api/v1/admin/platform-policies/worker-control",
+        headers=_admin_headers(),
+        json={
+            "value": {"allow_queue_updates": False},
+            "description": "Audit worker policy",
+            "updated_by": "ops-admin",
+        },
+    )
+
+    events = client.get(
+        "/api/v1/admin/platform-policies/global_worker_control/events",
+        headers=_admin_headers(),
+    )
+    filtered = client.get(
+        "/api/v1/admin/platform-policies/global_worker_control/events"
+        "?event_type=platform_policy.updated",
+        headers=_admin_headers(),
+    )
+    missing = client.get(
+        "/api/v1/admin/platform-policies/missing-policy/events",
+        headers=_admin_headers(),
+    )
+
+    stored_policy = session.query(PlatformPolicy).filter_by(
+        policy_key="global_worker_control",
+    ).one()
+
+    assert policy.status_code == 200
+    assert events.status_code == 200
+    assert events.json()["total"] == 2
+    assert events.json()["items"][0]["platform_policy_id"] == str(stored_policy.id)
+    assert events.json()["items"][0]["event_type"] == "platform_policy.updated"
+    assert events.json()["items"][0]["event_metadata"]["updated_by"] == "ops-admin"
+    assert events.json()["items"][1]["event_type"] == "platform_policy.created"
+    assert filtered.status_code == 200
+    assert filtered.json()["total"] == 1
+    assert filtered.json()["items"][0]["event_type"] == "platform_policy.updated"
+    assert missing.status_code == 404
+
+
 def test_admin_worker_control_policy_rejects_disallowed_worker_type() -> None:
     client, session, _ = _client()
     worker = WorkerNode(

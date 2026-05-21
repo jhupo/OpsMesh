@@ -364,6 +364,25 @@ class AdminControlPlaneService:
             statement = statement.where(PlatformPolicy.status == status)
         return self._page(statement.order_by(PlatformPolicy.updated_at.desc()), page)
 
+    def list_platform_policy_events(
+        self,
+        policy_key: str,
+        page: PageParams,
+        *,
+        event_type: str | None = None,
+    ) -> tuple[list[PlatformPolicyEvent], int] | None:
+        policy = self._session.scalar(
+            select(PlatformPolicy).where(PlatformPolicy.policy_key == policy_key)
+        )
+        if policy is None:
+            return None
+        statement = select(PlatformPolicyEvent).where(
+            PlatformPolicyEvent.platform_policy_id == policy.id
+        )
+        if event_type is not None:
+            statement = statement.where(PlatformPolicyEvent.event_type == event_type)
+        return self._page(statement.order_by(PlatformPolicyEvent.created_at.desc()), page)
+
     def get_or_create_risky_execution_policy(self) -> PlatformPolicy:
         policy = self._session.scalar(
             select(PlatformPolicy).where(

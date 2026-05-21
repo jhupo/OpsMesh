@@ -134,6 +134,15 @@ class AdminPlatformPolicyResponse(TimestampedModel):
     updated_by: str | None
 
 
+class AdminPlatformPolicyEventResponse(ORMModel):
+    id: UUID
+    platform_policy_id: UUID
+    event_type: str
+    message: str
+    event_metadata: dict[str, object]
+    created_at: datetime
+
+
 class AdminRiskyExecutionPolicyUpdateRequest(BaseModel):
     value: dict[str, object]
     description: str | None = None
