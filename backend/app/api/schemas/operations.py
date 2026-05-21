@@ -323,6 +323,7 @@ class OperationsSelfHostedMachineResponse(BaseModel):
     capabilities: dict[str, object]
     warning_code: str | None = None
     warning_message: str | None = None
+    remediation_actions: list[dict[str, object]] = Field(default_factory=list)
 
 
 class OperationsSelfHostedMachinesResponse(BaseModel):

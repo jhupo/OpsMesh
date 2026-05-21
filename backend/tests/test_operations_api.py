@@ -1093,8 +1093,18 @@ def test_operations_self_hosted_machines_reports_trust_and_workload() -> None:
     assert by_machine["machine-active"]["queued_mcp_jobs"] == 1
     assert by_machine["machine-active"]["policy_summary"]["allowed_tools"] == ["generate_image"]
     assert by_machine["machine-active"]["warning_code"] is None
+    assert by_machine["machine-active"]["remediation_actions"] == []
     assert by_machine["machine-degraded"]["stale"] is True
     assert by_machine["machine-degraded"]["warning_code"] == "machine_degraded"
+    degraded_actions = {
+        item["code"]: item for item in by_machine["machine-degraded"]["remediation_actions"]
+    }
+    assert set(degraded_actions) == {
+        "check_runner_heartbeat",
+        "restart_runner",
+        "review_machine_policy",
+    }
+    assert degraded_actions["restart_runner"]["severity"] == "warning"
 
 
 def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:

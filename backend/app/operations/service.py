@@ -899,6 +899,10 @@ class OperationsService:
                     capabilities=worker.capabilities,
                     warning_code=warning_code,
                     warning_message=warning_message,
+                    remediation_actions=_self_hosted_remediation_actions(
+                        trust_state,
+                        stale=stale,
+                    ),
                 )
             )
         return OperationsSelfHostedMachinesResponse(
@@ -1518,6 +1522,80 @@ def _self_hosted_machine_warning(
     if stale:
         return "heartbeat_stale", "Machine heartbeat is stale."
     return None, None
+
+
+def _self_hosted_remediation_actions(
+    trust_state: str,
+    *,
+    stale: bool,
+) -> list[dict[str, object]]:
+    actions: list[dict[str, object]] = []
+    if stale:
+        actions.append(
+            {
+                "code": "check_runner_heartbeat",
+                "label": "Check runner heartbeat",
+                "severity": "warning",
+                "description": (
+                    "Verify the self-hosted runner process is online and can reach the API."
+                ),
+            }
+        )
+    if trust_state == "degraded":
+        actions.append(
+            {
+                "code": "restart_runner",
+                "label": "Restart runner",
+                "severity": "warning",
+                "description": (
+                    "Restart the local worker and confirm its policy capabilities match the "
+                    "workspace."
+                ),
+            }
+        )
+        actions.append(
+            {
+                "code": "review_machine_policy",
+                "label": "Review machine policy",
+                "severity": "warning",
+                "description": (
+                    "Check allowed tools, runtime spaces, network modes, and capacity limits."
+                ),
+            }
+        )
+    elif trust_state == "quarantined":
+        actions.append(
+            {
+                "code": "review_quarantine_reason",
+                "label": "Review quarantine",
+                "severity": "critical",
+                "description": (
+                    "Inspect security events and only restore the runner after the issue is "
+                    "resolved."
+                ),
+            }
+        )
+    elif trust_state == "revoked":
+        actions.append(
+            {
+                "code": "rotate_runtime_credential",
+                "label": "Rotate credential",
+                "severity": "critical",
+                "description": "Issue a new runtime credential and re-enroll the local machine.",
+            }
+        )
+    elif trust_state == "offline":
+        actions.append(
+            {
+                "code": "start_runner",
+                "label": "Start runner",
+                "severity": "warning",
+                "description": (
+                    "Start the local worker service or reconnect the machine to the network."
+                ),
+            }
+        )
+    return actions
 
 
 def _runtime_capacity_slots(runtime: WorkspaceRuntime) -> int:
