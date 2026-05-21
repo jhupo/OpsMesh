@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
-from zipfile import ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import fakeredis
 from fastapi.testclient import TestClient
@@ -530,6 +530,60 @@ def test_workspace_metadata_import_preview_returns_conflict_plan(tmp_path: Path)
     )
 
 
+def test_workspace_metadata_import_preview_rejects_unsupported_format_version(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-format@example.com",
+        slug="source-format",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-format@example.com",
+        slug="target-format",
+    )
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={"include_audit_events": False},
+    )
+    export_payload = json.loads(export_response.content)
+    export_payload["manifest"]["format_version"] = "workspace-export.v999"
+
+    preview = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import/preview",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": True},
+    )
+
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["created_counts"]["agents"] == 0
+    assert body["conflict_plan"] == [
+        {
+            "collection": "manifest",
+            "source_id": export_payload["manifest"]["workspace_id"],
+            "field": "format_version",
+            "source_value": "workspace-export.v999",
+            "target_value": "workspace-export.v1",
+            "strategy": "reject",
+            "severity": "error",
+            "message": (
+                "Workspace export format 'workspace-export.v999' is not supported; "
+                "expected 'workspace-export.v1'."
+            ),
+        }
+    ]
+    assert body["resources"][0]["collection"] == "manifest"
+    assert body["resources"][0]["action"] == "requires_resolution"
+    assert body["required_resolutions"][0]["allowed_actions"] == [
+        "export_supported_version",
+        "cancel_import",
+    ]
+
+
 def test_workspace_metadata_export_import_preserves_runtime_spaces_and_skill_snapshots(
     tmp_path: Path,
 ) -> None:
@@ -798,9 +852,9 @@ def test_workspace_archive_import_preview_reports_oversized_objects(tmp_path: Pa
     assert body["conflict_plan"][0]["strategy"] == "reject"
     assert body["conflict_plan"][0]["severity"] == "error"
     assert body["estimated_counts"]["required_resolution_total"] == 1
-    assert body["resources"][0]["collection"] == "files"
-    assert body["resources"][0]["action"] == "requires_resolution"
-    assert body["resources"][0]["required_resolution_count"] == 1
+    resources_by_collection = {item["collection"]: item for item in body["resources"]}
+    assert resources_by_collection["files"]["action"] == "requires_resolution"
+    assert resources_by_collection["files"]["required_resolution_count"] == 1
     assert body["required_resolutions"] == [
         {
             "collection": "files",
@@ -811,6 +865,76 @@ def test_workspace_archive_import_preview_reports_oversized_objects(tmp_path: Pa
             "message": body["conflict_plan"][0]["message"],
         }
     ]
+    assert session.scalars(
+        select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
+    ).all() == []
+
+
+def test_workspace_archive_import_preview_rejects_checksum_mismatch(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-checksum@example.com",
+        slug="source-checksum",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-checksum@example.com",
+        slug="target-checksum",
+    )
+    uploaded = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/files",
+        headers=_headers(source_user.id),
+        files={"file": ("brief.txt", b"original", "text/plain")},
+    )
+    archive_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
+        headers=_headers(source_user.id),
+        json={"include_audit_events": False},
+    )
+    tampered = BytesIO()
+    with (
+        ZipFile(BytesIO(archive_response.content)) as source_zip,
+        ZipFile(tampered, mode="w", compression=ZIP_DEFLATED) as target_zip,
+    ):
+        for name in source_zip.namelist():
+            content = source_zip.read(name)
+            if name == f"files/{uploaded.json()['id']}/brief.txt":
+                content = b"tampered"
+            target_zip.writestr(name, content)
+
+    preview = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import/preview",
+        headers=_headers(target_user.id),
+        files={"file": ("archive.zip", tampered.getvalue(), "application/zip")},
+    )
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import",
+        headers=_headers(target_user.id),
+        files={"file": ("archive.zip", tampered.getvalue(), "application/zip")},
+        data={"dry_run": "false"},
+    )
+
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["created_counts"]["files"] == 0
+    assert body["skipped_counts"]["files"] == 1
+    assert body["conflict_plan"][0]["collection"] == "files"
+    assert body["conflict_plan"][0]["field"] == "checksum_sha256"
+    assert body["conflict_plan"][0]["strategy"] == "reject"
+    assert body["required_resolutions"] == [
+        {
+            "collection": "files",
+            "source_id": uploaded.json()["id"],
+            "field": "checksum_sha256",
+            "reason": "reject",
+            "allowed_actions": ["replace_archive_object", "exclude_object"],
+            "message": body["conflict_plan"][0]["message"],
+        }
+    ]
+    assert committed.status_code == 200
+    assert committed.json()["created_counts"]["files"] == 0
+    assert committed.json()["skipped_counts"]["files"] == 1
     assert session.scalars(
         select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
     ).all() == []

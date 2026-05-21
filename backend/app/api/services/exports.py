@@ -41,6 +41,8 @@ from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace
 
+SUPPORTED_WORKSPACE_EXPORT_FORMAT = "workspace-export.v1"
+
 
 class WorkspaceExportService:
     def __init__(self, session: Session) -> None:
@@ -177,7 +179,7 @@ class WorkspaceExportService:
             manifest=WorkspaceExportManifest(
                 workspace_id=workspace.id,
                 exported_at=datetime.now(UTC),
-                format_version="workspace-export.v1",
+                format_version=SUPPORTED_WORKSPACE_EXPORT_FORMAT,
                 included_collections=included,
                 counts=counts,
             ),
@@ -459,6 +461,21 @@ class WorkspaceExportService:
         }
         warnings: list[str] = []
         conflict_plan: list[WorkspaceImportConflict] = []
+        unsupported_format = _unsupported_format_conflict(request.export)
+        if unsupported_format is not None:
+            conflict_plan.append(unsupported_format)
+            response = WorkspaceImportResponse(
+                dry_run=request.dry_run,
+                source_workspace_id=request.export.manifest.workspace_id,
+                target_workspace_id=workspace.id,
+                created_counts=created_counts,
+                skipped_counts=skipped_counts,
+                id_map=id_map,
+                warnings=["Unsupported workspace export format version"],
+                conflict_plan=conflict_plan,
+            )
+            _populate_import_preview(response, request.export)
+            return response
 
         if request.import_runtime_spaces:
             for item in request.export.runtime_spaces[: request.max_items_per_collection]:
@@ -999,17 +1016,20 @@ class WorkspaceExportService:
         )
         if content is None:
             return total_bytes
-        response.created_counts["files"] += 1
-        total_bytes += len(content)
-        if request.dry_run:
-            return total_bytes
         checksum_result = _validated_checksum(
             content=content,
             source_checksum=_string_field(item, "checksum_sha256"),
             source_id=source_id,
-            collection="file",
-            warnings=response.warnings,
+            collection="files",
+            response=response,
         )
+        if not checksum_result.matched:
+            response.skipped_counts["files"] += 1
+            return total_bytes
+        response.created_counts["files"] += 1
+        total_bytes += len(content)
+        if request.dry_run:
+            return total_bytes
         imported_filename = safe_filename(f"{request.name_prefix}{filename}")
         file = WorkspaceFile(
             workspace_id=workspace.id,
@@ -1061,6 +1081,16 @@ class WorkspaceExportService:
         )
         if content is None:
             return total_bytes
+        checksum_result = _validated_checksum(
+            content=content,
+            source_checksum=_string_field(item, "checksum_sha256"),
+            source_id=source_id,
+            collection="artifacts",
+            response=response,
+        )
+        if not checksum_result.matched:
+            response.skipped_counts["artifacts"] += 1
+            return total_bytes
         response.created_counts["artifacts"] += 1
         total_bytes += len(content)
         if request.dry_run:
@@ -1083,13 +1113,6 @@ class WorkspaceExportService:
             response.warnings.append(
                 f"Imported artifact {source_id} without a mapped run"
             )
-        checksum_result = _validated_checksum(
-            content=content,
-            source_checksum=_string_field(item, "checksum_sha256"),
-            source_id=source_id,
-            collection="artifact",
-            warnings=response.warnings,
-        )
         imported_filename = safe_filename(f"{request.name_prefix}{filename}")
         artifact = Artifact(
             workspace_id=workspace.id,
@@ -1343,6 +1366,48 @@ def _missing_dependency_conflict(
     )
 
 
+def _unsupported_format_conflict(
+    export: WorkspaceExportResponse,
+) -> WorkspaceImportConflict | None:
+    if export.manifest.format_version == SUPPORTED_WORKSPACE_EXPORT_FORMAT:
+        return None
+    return WorkspaceImportConflict(
+        collection="manifest",
+        source_id=str(export.manifest.workspace_id),
+        field="format_version",
+        source_value=export.manifest.format_version,
+        target_value=SUPPORTED_WORKSPACE_EXPORT_FORMAT,
+        strategy="reject",
+        severity="error",
+        message=(
+            f"Workspace export format {export.manifest.format_version!r} is not supported; "
+            f"expected {SUPPORTED_WORKSPACE_EXPORT_FORMAT!r}."
+        ),
+    )
+
+
+def _checksum_conflict(
+    *,
+    collection: str,
+    source_id: str,
+    source_checksum: str,
+    actual_checksum: str,
+) -> WorkspaceImportConflict:
+    return WorkspaceImportConflict(
+        collection=collection,
+        source_id=source_id,
+        field="checksum_sha256",
+        source_value=source_checksum,
+        target_value=actual_checksum,
+        strategy="reject",
+        severity="error",
+        message=(
+            f"{collection[:-1].replace('_', ' ').title()} checksum mismatch for "
+            f"{source_id}: expected {source_checksum}, got {actual_checksum}."
+        ),
+    )
+
+
 def _populate_import_preview(
     response: WorkspaceImportResponse,
     export: WorkspaceExportResponse,
@@ -1381,6 +1446,7 @@ def _preview_collections(
     response: WorkspaceImportResponse,
 ) -> list[str]:
     collections = [
+        "manifest",
         "runtime_spaces",
         "runtime_space_quotas",
         "skill_installs",
@@ -1403,6 +1469,8 @@ def _preview_collections(
 
 
 def _source_count(export: WorkspaceExportResponse, collection: str) -> int:
+    if collection == "manifest":
+        return 1
     value = getattr(export, collection, None)
     return len(value) if isinstance(value, list) else 0
 
@@ -1438,6 +1506,10 @@ def _allowed_resolution_actions(conflict: WorkspaceImportConflict) -> list[str]:
         return ["increase_max_bytes_per_object", "exclude_object"]
     if conflict.field == "total_bytes":
         return ["increase_max_total_bytes", "exclude_object"]
+    if conflict.field == "checksum_sha256":
+        return ["replace_archive_object", "exclude_object"]
+    if conflict.field == "format_version":
+        return ["export_supported_version", "cancel_import"]
     if conflict.strategy == "reject":
         return ["fix_source", "exclude_object"]
     return ["skip"]
@@ -1819,10 +1891,20 @@ def _validated_checksum(
     source_checksum: str,
     source_id: str,
     collection: str,
-    warnings: list[str],
+    response: WorkspaceImportResponse,
 ) -> _ChecksumResult:
     actual_checksum = sha256(content).hexdigest()
     matched = not source_checksum or source_checksum == actual_checksum
     if not matched:
-        warnings.append(f"Imported {collection} {source_id} with checksum mismatch")
+        response.warnings.append(
+            f"Skipped {collection[:-1]} {source_id}: checksum mismatch"
+        )
+        response.conflict_plan.append(
+            _checksum_conflict(
+                collection=collection,
+                source_id=source_id,
+                source_checksum=source_checksum,
+                actual_checksum=actual_checksum,
+            )
+        )
     return _ChecksumResult(checksum_sha256=actual_checksum, matched=matched)
