@@ -122,10 +122,12 @@ Current state:
 - MCP execution also re-checks the runtime context tool set, sends explicitly approval-required tools into workspace approval, and writes authorization snapshot metadata into tool audit records.
 - Worker-built agent requests now carry a backend tool executor, and the OpenAI Agents runner registers allowed MCP tools as SDK function tools that call back into the backend execution service.
 - HTTP JSON-RPC, remote SSE, and remote hosted MCP servers can now be executed through the adapter resolver. Stdio MCP has a Docker-runtime-only adapter, but it is not selected by the default resolver; callers must explicitly bind it to a workspace runtime so the API host never executes stdio commands directly. Self-hosted runtimes now have an auditable MCP job queue for poll, claim, and completion callbacks, and OpenAI tool calls can submit stdio jobs with an explicit `waiting_self_hosted` result. Completed self-hosted MCP jobs now move waiting runs back to queued, persist pending tool results, and resume through structured tool continuations rendered at the OpenAI runtime boundary.
+- A workspace MCP catalog API now summarizes each server's visibility, allowed tools, credential readiness, execution mode, connection summary, and agent-scoped availability.
 
 Build:
 
 - [x] Add an MCP execution service that resolves a requested server/tool from the run authorization snapshot.
+- [x] Add a workspace MCP catalog endpoint for product and control-plane views.
 - [ ] Support stdio, HTTP/SSE, and hosted MCP adapters behind one internal interface.
   - [x] Add HTTP JSON-RPC adapter with credential header injection and sanitized remote errors.
   - [x] Add SSE adapter.

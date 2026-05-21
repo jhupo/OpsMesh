@@ -510,6 +510,7 @@ Tasks:
   - [ ] Add PostgreSQL-level concurrent scheduler tests that prove runtime-space quotas cannot be over-reserved under parallel schedulers.
 - [ ] Connect MCP skills to the real runtime execution path.
   - [x] Add internal MCP execution service with run snapshot authorization, adapter boundary, payload limits, logs, events, task messages, and blocked-call security evidence.
+  - [x] Add workspace MCP catalog API that aggregates servers, allowed tools, credential status, execution mode, and agent-scoped availability.
   - [ ] Add real stdio, HTTP/SSE, and hosted MCP protocol adapters.
     - [x] Add HTTP JSON-RPC MCP adapter and adapter resolver.
     - [ ] Add SSE and hosted MCP adapters.

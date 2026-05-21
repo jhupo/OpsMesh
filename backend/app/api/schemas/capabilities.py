@@ -156,6 +156,37 @@ class McpToolDescriptor(BaseModel):
     policy: dict[str, object]
 
 
+class McpCatalogToolResponse(BaseModel):
+    id: UUID
+    tool_name: str
+    capability_key: str | None
+    requires_approval: bool
+    risk_level: str
+    policy: dict[str, object]
+    status: str
+
+
+class McpCatalogServerResponse(BaseModel):
+    id: UUID
+    name: str
+    server_type: str
+    visibility: str
+    status: str
+    health_status: str
+    last_health_check_at: datetime | None
+    last_error: str | None
+    execution_mode: str
+    executable: bool
+    blocked_reasons: list[str]
+    credential_status: str
+    credential_count: int
+    workspace_credential_count: int
+    connection_summary: dict[str, object]
+    tools: list[McpCatalogToolResponse]
+    created_at: datetime
+    updated_at: datetime
+
+
 class McpToolCallLogRequest(BaseModel):
     mcp_server_id: UUID | None = None
     agent_run_id: UUID | None = None

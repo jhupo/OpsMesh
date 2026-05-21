@@ -216,6 +216,156 @@ def test_mcp_server_scope_is_enforced() -> None:
     assert denied.status_code == 404
 
 
+def test_mcp_catalog_summarizes_tools_credentials_and_agent_scope() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    image_server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "image-tools",
+            "server_type": "hosted",
+            "connection": {
+                "transport": "http_jsonrpc",
+                "url": "https://mcp.example.test/rpc",
+                "requires_credentials": True,
+            },
+            "visibility": "private",
+        },
+    )
+    research_server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "research-tools",
+            "server_type": "sse",
+            "connection": {"url": "https://research.example.test/sse"},
+            "visibility": "public",
+        },
+    )
+    foreign_server = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers",
+        headers=_headers(other.id),
+        json={"name": "foreign-tools"},
+    )
+    assert image_server.status_code == 201
+    assert research_server.status_code == 201
+    assert foreign_server.status_code == 201
+
+    image_tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{image_server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={
+            "tool_name": "generate_image",
+            "capability_key": "image.generate",
+            "requires_approval": True,
+            "risk_level": "medium",
+        },
+    )
+    research_tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{research_server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "search_web", "capability_key": "web.search"},
+    )
+    credential = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": image_server.json()["id"],
+            "name": "image-key",
+            "provider": "hosted",
+            "secret_payload": {"api_key": "sk-test"},
+        },
+    )
+    assert image_tool.status_code == 201
+    assert research_tool.status_code == 201
+    assert credential.status_code == 201
+
+    agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Designer",
+            "role": "designer",
+            "instructions": "Create visual assets.",
+            "tool_policy": {"mcp_tools": ["generate_image"]},
+        },
+    )
+    catalog = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
+        headers=_headers(owner.id),
+    )
+    scoped_catalog = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog"
+        f"?agent_profile_id={agent.json()['id']}",
+        headers=_headers(owner.id),
+    )
+
+    assert agent.status_code == 201
+    assert catalog.status_code == 200
+    by_name = {item["name"]: item for item in catalog.json()["items"]}
+    assert set(by_name) == {"image-tools", "research-tools"}
+    assert by_name["image-tools"]["execution_mode"] == "hosted"
+    assert by_name["image-tools"]["credential_status"] == "server_configured"
+    assert by_name["image-tools"]["credential_count"] == 1
+    assert by_name["image-tools"]["executable"] is True
+    assert by_name["image-tools"]["connection_summary"] == {
+        "requires_credentials": True,
+        "transport": "http_jsonrpc",
+        "remote_host": "mcp.example.test",
+        "has_remote_url": True,
+        "has_stdio_command": False,
+    }
+    assert by_name["image-tools"]["tools"][0]["tool_name"] == "generate_image"
+    assert by_name["image-tools"]["tools"][0]["requires_approval"] is True
+    assert by_name["research-tools"]["execution_mode"] == "remote_sse"
+    assert by_name["research-tools"]["credential_status"] == "not_required"
+    assert by_name["research-tools"]["tools"][0]["tool_name"] == "search_web"
+    assert scoped_catalog.status_code == 200
+    scoped_by_name = {item["name"]: item for item in scoped_catalog.json()["items"]}
+    assert [tool["tool_name"] for tool in scoped_by_name["image-tools"]["tools"]] == [
+        "generate_image"
+    ]
+    assert scoped_by_name["research-tools"]["tools"] == []
+    assert scoped_by_name["research-tools"]["executable"] is False
+    assert "no_allowed_tools" in scoped_by_name["research-tools"]["blocked_reasons"]
+
+
+def test_mcp_catalog_flags_missing_required_credentials() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "hosted-tools",
+            "server_type": "hosted",
+            "connection": {"transport": "http_jsonrpc", "url": "https://example.test/mcp"},
+        },
+    )
+    allowed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "create_asset"},
+    )
+    catalog = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
+        headers=_headers(owner.id),
+    )
+
+    assert server.status_code == 201
+    assert allowed.status_code == 201
+    body = catalog.json()["items"][0]
+    assert body["credential_status"] == "missing_required"
+    assert body["executable"] is False
+    assert "missing_required_credentials" in body["blocked_reasons"]
+
+
 def test_operator_cannot_manage_capabilities() -> None:
     client, session = _client()
     operator, workspace = _seed_workspace(session, role="operator")

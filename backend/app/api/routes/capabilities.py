@@ -7,6 +7,8 @@ from backend.app.api.pagination import PageParams, PageResponse, pagination_para
 from backend.app.api.schemas.capabilities import (
     CapabilityCreateRequest,
     CapabilityResponse,
+    McpCatalogServerResponse,
+    McpCatalogToolResponse,
     McpCredentialReferenceCreateRequest,
     McpCredentialReferenceResponse,
     McpServerCreateRequest,
@@ -208,6 +210,29 @@ async def create_mcp_server(
     return McpServerResponse.model_validate(server)
 
 
+@router.get("/mcp-catalog", response_model=PageResponse[McpCatalogServerResponse])
+async def list_mcp_catalog(
+    page: PageParams = Depends(pagination_params),
+    agent_profile_id: UUID | None = Query(default=None),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[McpCatalogServerResponse]:
+    try:
+        items, total = CapabilityService(session).list_mcp_catalog(
+            context.workspace.id,
+            page,
+            agent_profile_id=agent_profile_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return PageResponse(
+        items=[_mcp_catalog_response(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
 @router.post(
     "/mcp-servers/{mcp_server_id}/tools",
     response_model=McpToolAllowResponse,
@@ -307,3 +332,38 @@ async def log_mcp_tool_call(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return McpToolCallLogResponse.model_validate(log)
+
+
+def _mcp_catalog_response(item: object) -> McpCatalogServerResponse:
+    server = item.server
+    return McpCatalogServerResponse(
+        id=server.id,
+        name=server.name,
+        server_type=server.server_type,
+        visibility=server.visibility,
+        status=server.status,
+        health_status=server.health_status,
+        last_health_check_at=server.last_health_check_at,
+        last_error=server.last_error,
+        execution_mode=item.execution_mode,
+        executable=item.executable,
+        blocked_reasons=item.blocked_reasons,
+        credential_status=item.credential_status,
+        credential_count=item.credential_count,
+        workspace_credential_count=item.workspace_credential_count,
+        connection_summary=item.connection_summary,
+        tools=[
+            McpCatalogToolResponse(
+                id=tool.allowlist.id,
+                tool_name=tool.allowlist.tool_name,
+                capability_key=tool.allowlist.capability_key,
+                requires_approval=tool.allowlist.requires_approval,
+                risk_level=tool.allowlist.risk_level,
+                policy=tool.allowlist.policy,
+                status=tool.allowlist.status,
+            )
+            for tool in item.tools
+        ],
+        created_at=server.created_at,
+        updated_at=server.updated_at,
+    )

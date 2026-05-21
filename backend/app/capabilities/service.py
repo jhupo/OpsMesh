@@ -1,7 +1,9 @@
 import hashlib
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TypeVar
+from urllib.parse import urlparse
 from uuid import UUID
 
 from sqlalchemy import Select, func, or_, select
@@ -35,6 +37,24 @@ from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_confl
 from backend.app.secrets.service import SecretEncryptionService
 
 T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class McpCatalogTool:
+    allowlist: McpToolAllowlist
+
+
+@dataclass(frozen=True)
+class McpCatalogServer:
+    server: McpServer
+    tools: list[McpCatalogTool]
+    credential_count: int
+    workspace_credential_count: int
+    credential_status: str
+    execution_mode: str
+    executable: bool
+    blocked_reasons: list[str]
+    connection_summary: dict[str, object]
 
 
 class CapabilityService:
@@ -323,6 +343,81 @@ class CapabilityService:
         )
         return [(row[0], row[1]) for row in self._session.execute(statement).all()]
 
+    def list_mcp_catalog(
+        self,
+        workspace_id: UUID,
+        page: PageParams,
+        agent_profile_id: UUID | None = None,
+    ) -> tuple[list[McpCatalogServer], int]:
+        allowed_names: set[str] | None = None
+        if agent_profile_id is not None:
+            agent = self._session.get(AgentProfile, agent_profile_id)
+            if agent is None or agent.workspace_id != workspace_id:
+                raise ValueError("Agent profile not found")
+            allowed_names = self._agent_allowed_mcp_tool_names(agent)
+
+        servers, total = self.list_mcp_servers(workspace_id, page)
+        server_ids = [server.id for server in servers]
+        if not server_ids:
+            return [], total
+
+        tool_statement = (
+            select(McpToolAllowlist)
+            .where(
+                McpToolAllowlist.workspace_id == workspace_id,
+                McpToolAllowlist.mcp_server_id.in_(server_ids),
+                McpToolAllowlist.status == "active",
+            )
+            .order_by(McpToolAllowlist.tool_name.asc())
+        )
+        if allowed_names is not None:
+            if not allowed_names:
+                tool_rows: list[McpToolAllowlist] = []
+            else:
+                tool_rows = list(
+                    self._session.scalars(
+                        tool_statement.where(McpToolAllowlist.tool_name.in_(allowed_names))
+                    )
+                )
+        else:
+            tool_rows = list(self._session.scalars(tool_statement))
+
+        credentials = self._session.scalars(
+            select(McpCredentialReference).where(
+                McpCredentialReference.workspace_id == workspace_id,
+                McpCredentialReference.status == "active",
+                or_(
+                    McpCredentialReference.mcp_server_id.in_(server_ids),
+                    McpCredentialReference.mcp_server_id.is_(None),
+                ),
+            )
+        ).all()
+
+        tools_by_server: dict[UUID, list[McpCatalogTool]] = {
+            server_id: [] for server_id in server_ids
+        }
+        for allow in tool_rows:
+            tools_by_server.setdefault(allow.mcp_server_id, []).append(McpCatalogTool(allow))
+
+        credential_counts: dict[UUID, int] = {server_id: 0 for server_id in server_ids}
+        workspace_credential_count = 0
+        for credential in credentials:
+            if credential.mcp_server_id is None:
+                workspace_credential_count += 1
+                continue
+            if credential.mcp_server_id in credential_counts:
+                credential_counts[credential.mcp_server_id] += 1
+
+        return [
+            self._catalog_entry(
+                server,
+                tools_by_server.get(server.id, []),
+                credential_counts.get(server.id, 0),
+                workspace_credential_count,
+            )
+            for server in servers
+        ], total
+
     def mcp_tools_for_agent(
         self,
         workspace_id: UUID,
@@ -429,6 +524,35 @@ class CapabilityService:
             return set(configured)
         return set()
 
+    def _catalog_entry(
+        self,
+        server: McpServer,
+        tools: list[McpCatalogTool],
+        credential_count: int,
+        workspace_credential_count: int,
+    ) -> McpCatalogServer:
+        credential_status = _credential_status(
+            server,
+            credential_count=credential_count,
+            workspace_credential_count=workspace_credential_count,
+        )
+        blocked_reasons = _mcp_blocked_reasons(
+            server,
+            tools=tools,
+            credential_status=credential_status,
+        )
+        return McpCatalogServer(
+            server=server,
+            tools=tools,
+            credential_count=credential_count,
+            workspace_credential_count=workspace_credential_count,
+            credential_status=credential_status,
+            execution_mode=_execution_mode(server),
+            executable=not blocked_reasons,
+            blocked_reasons=blocked_reasons,
+            connection_summary=_connection_summary(server),
+        )
+
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
         total = self._session.scalar(
             select(func.count()).select_from(statement.order_by(None).subquery())
@@ -452,3 +576,105 @@ def _skill_checksum(skill: Skill) -> str:
     }
     normalized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return f"sha256:{hashlib.sha256(normalized.encode('utf-8')).hexdigest()}"
+
+
+def _credential_status(
+    server: McpServer,
+    *,
+    credential_count: int,
+    workspace_credential_count: int,
+) -> str:
+    if credential_count > 0:
+        return "server_configured"
+    if workspace_credential_count > 0:
+        return "workspace_configured"
+    if _requires_credentials(server):
+        return "missing_required"
+    return "not_required"
+
+
+def _requires_credentials(server: McpServer) -> bool:
+    configured = server.connection.get("requires_credentials")
+    if isinstance(configured, bool):
+        return configured
+    return server.server_type.lower().strip() == "hosted"
+
+
+def _execution_mode(server: McpServer) -> str:
+    server_type = server.server_type.lower().strip()
+    if server_type == "stdio":
+        runtime = server.connection.get("runtime")
+        if runtime == "self_hosted":
+            return "self_hosted_stdio"
+        return "isolated_runtime_stdio"
+    if server_type in {"http", "https", "http_jsonrpc", "jsonrpc"}:
+        return "remote_http"
+    if server_type in {"sse", "http_sse"}:
+        return "remote_sse"
+    if server_type == "hosted":
+        return "hosted"
+    return "unsupported"
+
+
+def _mcp_blocked_reasons(
+    server: McpServer,
+    *,
+    tools: list[McpCatalogTool],
+    credential_status: str,
+) -> list[str]:
+    reasons: list[str] = []
+    if server.status != "active":
+        reasons.append("server_inactive")
+    if server.health_status == "unhealthy":
+        reasons.append("server_unhealthy")
+    if not tools:
+        reasons.append("no_allowed_tools")
+    if credential_status == "missing_required":
+        reasons.append("missing_required_credentials")
+    if _execution_mode(server) == "unsupported":
+        reasons.append("unsupported_server_type")
+    if server.server_type.lower().strip() == "stdio" and not _has_stdio_command(server):
+        reasons.append("missing_stdio_command")
+    remote_server_types = {"http", "https", "http_jsonrpc", "jsonrpc", "sse", "http_sse"}
+    if server.server_type.lower().strip() in remote_server_types and not _has_remote_url(server):
+        reasons.append("missing_remote_url")
+    if server.server_type.lower().strip() == "hosted":
+        transport = str(server.connection.get("transport") or "").lower().strip()
+        if transport not in {"http", "https", "http_jsonrpc", "jsonrpc", "sse", "http_sse"}:
+            reasons.append("unsupported_hosted_transport")
+        if not _has_remote_url(server):
+            reasons.append("missing_remote_url")
+    return reasons
+
+
+def _connection_summary(server: McpServer) -> dict[str, object]:
+    connection = server.connection
+    summary: dict[str, object] = {
+        "requires_credentials": _requires_credentials(server),
+    }
+    transport = connection.get("transport")
+    if isinstance(transport, str) and transport:
+        summary["transport"] = transport
+    url = connection.get("url") or connection.get("endpoint")
+    if isinstance(url, str) and url:
+        parsed = urlparse(url)
+        summary["remote_host"] = parsed.netloc or None
+        summary["has_remote_url"] = True
+    else:
+        summary["has_remote_url"] = False
+    summary["has_stdio_command"] = _has_stdio_command(server)
+    return summary
+
+
+def _has_stdio_command(server: McpServer) -> bool:
+    command = server.connection.get("command")
+    if isinstance(command, str):
+        return bool(command.strip())
+    if isinstance(command, list):
+        return any(isinstance(item, str) and bool(item.strip()) for item in command)
+    return False
+
+
+def _has_remote_url(server: McpServer) -> bool:
+    url = server.connection.get("url") or server.connection.get("endpoint")
+    return isinstance(url, str) and url.lower().startswith(("https://", "http://"))
