@@ -94,6 +94,9 @@ class WorkspaceFileService:
         task_id: UUID,
         work_package_id: str,
     ) -> list[Artifact]:
+        task = self._session.get(Task, task_id)
+        if task is None or task.workspace_id != workspace_id:
+            return []
         return list(
             self._session.scalars(
                 select(Artifact)

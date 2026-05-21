@@ -1735,7 +1735,20 @@ def test_artifact_history_lists_versions_for_work_package_only() -> None:
         storage_key="foreign",
         created_at=datetime.now(UTC),
     )
-    session.add_all([second, other_package, foreign])
+    mismatched_task = Artifact(
+        workspace_id=other_workspace.id,
+        task_id=task.id,
+        work_package_id="research-1",
+        version=100,
+        artifact_type="document",
+        filename="mismatched-task.pdf",
+        content_type="application/pdf",
+        size_bytes=12,
+        checksum_sha256="1" * 64,
+        storage_key="mismatched-task",
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([second, other_package, foreign, mismatched_task])
     session.commit()
 
     response = client.get(

@@ -788,6 +788,7 @@ Build:
   - [x] Disabled MCP servers and tool allowlist entries are rejected by execution.
   - [x] Forged MCP tool-call log server references are rejected.
   - [x] Planning retry/regenerate/history routes hide foreign task IDs.
+  - [x] Artifact history ignores dirty artifacts linked to foreign task IDs.
 - Add property-style tests for workspace ID mismatch where practical.
 
 Tests:
