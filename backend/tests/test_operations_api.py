@@ -340,6 +340,44 @@ def test_operations_overview_uses_workspace_scoped_short_cache() -> None:
     assert refreshed_response.json()["failed_runs"] == 1
 
 
+def test_operations_capacity_uses_workspace_scoped_short_cache() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+
+    first_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/capacity",
+        headers=_headers(owner.id),
+    )
+    assert first_response.status_code == 200
+    assert first_response.json()["runtime_spaces"] == []
+
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Cached Space",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.commit()
+
+    cached_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/capacity",
+        headers=_headers(owner.id),
+    )
+    assert cached_response.status_code == 200
+    assert cached_response.json()["runtime_spaces"] == []
+
+    redis.delete(f"chaincloud:cache:api:capacity:{workspace.id}:agent_runs")
+    refreshed_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/capacity",
+        headers=_headers(owner.id),
+    )
+    assert refreshed_response.status_code == 200
+    assert refreshed_response.json()["runtime_spaces"][0]["runtime_space_id"] == str(
+        runtime_space.id
+    )
+
+
 def test_operations_capacity_reports_queue_workers_and_runtime_space_saturation() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

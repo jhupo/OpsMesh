@@ -559,7 +559,7 @@ Build:
 - [x] Add outcomes aggregate for run failure rate, failure reasons, and approval backlog.
 - [x] Support time windows and workspace scope.
 - [x] Cache overview aggregate in Redis with short TTL and workspace-scoped cache keys.
-- Cache future expensive scheduler/runtime aggregates in Redis with short TTL.
+- [x] Cache scheduler/runtime/control-plane aggregates in Redis with short TTL.
 - Keep raw drill-down endpoints separate from summary endpoints.
 
 API/data changes:
@@ -579,7 +579,7 @@ Tests:
 - [x] failed/running/queued seeded data produces expected counts
 - [x] control-plane summary emits stable issue codes for capacity, scheduler, approvals, and MCP
   health
-- cache key includes workspace and time window
+- [x] cache key includes workspace and time window
 
 Acceptance:
 

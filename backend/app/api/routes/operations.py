@@ -348,17 +348,26 @@ async def operations_control_plane(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
+    cache: RedisJsonCache = Depends(get_cache_service),
     settings: Settings = Depends(get_settings),
 ) -> OperationsControlPlaneResponse:
-    return OperationsService(
-        session,
-        redis,
-        RedisKeyBuilder(settings.redis_key_prefix),
-    ).control_plane_payload(
-        context.workspace.id,
-        queue_name,
-        window_seconds=window_seconds,
+    cache_key = f"control-plane:{context.workspace.id}:{queue_name}:{window_seconds}"
+    cached = cache.get_or_set(
+        cache_key,
+        lambda: OperationsService(
+            session,
+            redis,
+            RedisKeyBuilder(settings.redis_key_prefix),
+        )
+        .control_plane_payload(
+            context.workspace.id,
+            queue_name,
+            window_seconds=window_seconds,
+        )
+        .model_dump(mode="json"),
+        ttl_seconds=10,
     )
+    return OperationsControlPlaneResponse(**cached.value)
 
 
 @router.get("/capacity", response_model=OperationsCapacityResponse)
@@ -367,29 +376,56 @@ async def operations_capacity(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
+    cache: RedisJsonCache = Depends(get_cache_service),
     settings: Settings = Depends(get_settings),
 ) -> OperationsCapacityResponse:
-    return OperationsService(
-        session,
-        redis,
-        RedisKeyBuilder(settings.redis_key_prefix),
-    ).capacity_payload(context.workspace.id, queue_name)
+    cache_key = f"capacity:{context.workspace.id}:{queue_name}"
+    cached = cache.get_or_set(
+        cache_key,
+        lambda: OperationsService(
+            session,
+            redis,
+            RedisKeyBuilder(settings.redis_key_prefix),
+        )
+        .capacity_payload(context.workspace.id, queue_name)
+        .model_dump(mode="json"),
+        ttl_seconds=10,
+    )
+    return OperationsCapacityResponse(**cached.value)
 
 
 @router.get("/runtime-capacity", response_model=OperationsRuntimeCapacityResponse)
 async def operations_runtime_capacity(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
+    cache: RedisJsonCache = Depends(get_cache_service),
 ) -> OperationsRuntimeCapacityResponse:
-    return OperationsService(session).runtime_capacity_payload(context.workspace.id)
+    cache_key = f"runtime-capacity:{context.workspace.id}"
+    cached = cache.get_or_set(
+        cache_key,
+        lambda: OperationsService(session)
+        .runtime_capacity_payload(context.workspace.id)
+        .model_dump(mode="json"),
+        ttl_seconds=10,
+    )
+    return OperationsRuntimeCapacityResponse(**cached.value)
 
 
 @router.get("/mcp-jobs", response_model=OperationsMcpJobsResponse)
 async def operations_mcp_jobs(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
+    cache: RedisJsonCache = Depends(get_cache_service),
 ) -> OperationsMcpJobsResponse:
-    return OperationsService(session).mcp_jobs_payload(context.workspace.id)
+    cache_key = f"mcp-jobs:{context.workspace.id}"
+    cached = cache.get_or_set(
+        cache_key,
+        lambda: OperationsService(session)
+        .mcp_jobs_payload(context.workspace.id)
+        .model_dump(mode="json"),
+        ttl_seconds=10,
+    )
+    return OperationsMcpJobsResponse(**cached.value)
 
 
 @router.get("/self-hosted-machines", response_model=OperationsSelfHostedMachinesResponse)
@@ -397,19 +433,37 @@ async def operations_self_hosted_machines(
     stale_after_seconds: int = Query(default=600, ge=60, le=86_400),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
+    cache: RedisJsonCache = Depends(get_cache_service),
 ) -> OperationsSelfHostedMachinesResponse:
-    return OperationsService(session).self_hosted_machines_payload(
-        context.workspace.id,
-        stale_after_seconds=stale_after_seconds,
+    cache_key = f"self-hosted-machines:{context.workspace.id}:{stale_after_seconds}"
+    cached = cache.get_or_set(
+        cache_key,
+        lambda: OperationsService(session)
+        .self_hosted_machines_payload(
+            context.workspace.id,
+            stale_after_seconds=stale_after_seconds,
+        )
+        .model_dump(mode="json"),
+        ttl_seconds=10,
     )
+    return OperationsSelfHostedMachinesResponse(**cached.value)
 
 
 @router.get("/scheduler", response_model=OperationsSchedulerResponse)
 async def operations_scheduler(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
+    cache: RedisJsonCache = Depends(get_cache_service),
 ) -> OperationsSchedulerResponse:
-    return OperationsService(session).scheduler_payload(context.workspace.id)
+    cache_key = f"scheduler:{context.workspace.id}"
+    cached = cache.get_or_set(
+        cache_key,
+        lambda: OperationsService(session)
+        .scheduler_payload(context.workspace.id)
+        .model_dump(mode="json"),
+        ttl_seconds=10,
+    )
+    return OperationsSchedulerResponse(**cached.value)
 
 
 @router.get("/outcomes", response_model=OperationsOutcomesResponse)
@@ -417,8 +471,17 @@ async def operations_outcomes(
     window_seconds: int = Query(default=86_400, ge=60, le=2_592_000),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
+    cache: RedisJsonCache = Depends(get_cache_service),
 ) -> OperationsOutcomesResponse:
-    return OperationsService(session).outcomes_payload(
-        context.workspace.id,
-        window_seconds=window_seconds,
+    cache_key = f"outcomes:{context.workspace.id}:{window_seconds}"
+    cached = cache.get_or_set(
+        cache_key,
+        lambda: OperationsService(session)
+        .outcomes_payload(
+            context.workspace.id,
+            window_seconds=window_seconds,
+        )
+        .model_dump(mode="json"),
+        ttl_seconds=10,
     )
+    return OperationsOutcomesResponse(**cached.value)
