@@ -1288,6 +1288,32 @@ class OperationsService:
                     count=worker_capacity.workers_draining,
                 )
             )
+        if scheduler.policy.paused:
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="warning",
+                    code="scheduler_paused",
+                    message="Workspace scheduling is paused.",
+                    metadata={"pause_reason": scheduler.policy.pause_reason},
+                )
+            )
+        paused_spaces = [
+            space for space in runtime_capacity.runtime_spaces if space.status == "paused"
+        ]
+        if paused_spaces:
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="warning",
+                    code="runtime_spaces_paused",
+                    message="Runtime spaces are paused and will not accept new runs.",
+                    count=len(paused_spaces),
+                    metadata={
+                        "runtime_space_ids": [
+                            str(space.runtime_space_id) for space in paused_spaces
+                        ]
+                    },
+                )
+            )
         saturated_spaces = [
             space for space in runtime_capacity.runtime_spaces if space.saturated
         ]

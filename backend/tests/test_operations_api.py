@@ -747,6 +747,7 @@ def test_operations_control_plane_summarizes_capacity_and_health_issues() -> Non
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)
     owner, workspace = _seed_workspace(session)
+    workspace.settings = {"scheduler": {"paused": True, "pause_reason": "maintenance"}}
     keys = RedisKeyBuilder("chaincloud")
     queued_job = JobPayload(
         workspace_id=workspace.id,
@@ -762,6 +763,7 @@ def test_operations_control_plane_summarizes_capacity_and_health_issues() -> Non
         workspace_id=workspace.id,
         name="Control Space",
         scope="workspace",
+        status="paused",
     )
     session.add(runtime_space)
     session.flush()
@@ -815,9 +817,10 @@ def test_operations_control_plane_summarizes_capacity_and_health_issues() -> Non
         title="Blocked step",
         status="queued",
         order_index=0,
+        runtime_space_id=runtime_space.id,
         dependencies={
             "scheduling_status": "blocked",
-            "blocked_reason": "runtime_space_saturated",
+            "blocked_reason": "runtime_space_paused",
         },
     )
     quota = RuntimeSpaceQuota(
@@ -889,6 +892,8 @@ def test_operations_control_plane_summarizes_capacity_and_health_issues() -> Non
     assert {
         "queue_latency_high",
         "worker_capacity_exhausted",
+        "scheduler_paused",
+        "runtime_spaces_paused",
         "runtime_space_saturated",
         "runtime_provider_degraded",
         "scheduler_blocked_steps",
