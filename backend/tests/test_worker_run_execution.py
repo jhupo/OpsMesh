@@ -856,6 +856,69 @@ def test_workspace_scheduler_starts_higher_priority_task_first() -> None:
     assert low_step.dependencies["blocked_reason"] == "workspace_run_quota_exceeded"
 
 
+def test_workspace_scheduler_boosts_starved_lower_priority_task() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    workspace.settings = {
+        "scheduler": {
+            "max_active_runs": 1,
+            "starvation_boost_after_seconds": 60,
+        }
+    }
+    low_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Old low priority",
+        priority=1,
+        status=TaskStatus.QUEUED.value,
+    )
+    high_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Fresh high priority",
+        priority=10,
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add_all([low_task, high_task])
+    session.flush()
+    low_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=low_task.id,
+        title="Old low step",
+        status="queued",
+        order_index=0,
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    high_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=high_task.id,
+        title="Fresh high step",
+        status="queued",
+        order_index=0,
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([low_step, high_step])
+    session.flush()
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+
+    runs = RunOrchestrationService(session, queue).schedule_workspace_steps(
+        workspace_id=workspace.id,
+        requested_by_user_id=user.id,
+    )
+
+    assert [run.task_id for run in runs] == [low_task.id]
+    assert queue.count_queued(workspace_id=workspace.id) == 1
+    queued_job = queue.dequeue()
+    assert queued_job is not None
+    assert queued_job.priority == 1
+    assert high_step.dependencies["blocked_reason"] == "workspace_run_quota_exceeded"
+    assert high_step.dependencies["priority_score"] == 10
+
+
 def test_pm_summary_acceptance_completes_task_with_structured_decision() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
