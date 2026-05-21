@@ -5,8 +5,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
 from backend.app.api.schemas.runtime_spaces import (
+    RuntimeSpaceControlResponse,
     RuntimeSpaceCreateRequest,
     RuntimeSpaceEventResponse,
+    RuntimeSpacePauseRequest,
     RuntimeSpaceResponse,
     RuntimeSpaceUpdateRequest,
 )
@@ -124,6 +126,51 @@ async def reset_runtime_space(
     if runtime_space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime space not found")
     return RuntimeSpaceResponse.model_validate(runtime_space)
+
+
+@router.post(
+    "/runtime-spaces/{runtime_space_id}/pause",
+    response_model=RuntimeSpaceControlResponse,
+)
+async def pause_runtime_space(
+    runtime_space_id: UUID,
+    request: RuntimeSpacePauseRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+) -> RuntimeSpaceControlResponse:
+    runtime_space = RuntimeSpaceService(session).pause_runtime_space(
+        workspace_id=context.workspace.id,
+        runtime_space_id=runtime_space_id,
+        reason=request.reason,
+    )
+    if runtime_space is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime space not found")
+    return RuntimeSpaceControlResponse(
+        runtime_space=RuntimeSpaceResponse.model_validate(runtime_space),
+        cleared_blocked_steps=0,
+    )
+
+
+@router.post(
+    "/runtime-spaces/{runtime_space_id}/resume",
+    response_model=RuntimeSpaceControlResponse,
+)
+async def resume_runtime_space(
+    runtime_space_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+) -> RuntimeSpaceControlResponse:
+    result = RuntimeSpaceService(session).resume_runtime_space(
+        workspace_id=context.workspace.id,
+        runtime_space_id=runtime_space_id,
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime space not found")
+    runtime_space, cleared = result
+    return RuntimeSpaceControlResponse(
+        runtime_space=RuntimeSpaceResponse.model_validate(runtime_space),
+        cleared_blocked_steps=cleared,
+    )
 
 
 @router.get(

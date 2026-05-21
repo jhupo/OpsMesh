@@ -15,7 +15,7 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceReservation,
 )
 from backend.app.runtimes.models import RuntimeTemplate
-from backend.app.tasks.models import Task
+from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 
 TARGET_TYPES_BY_SCOPE = {
@@ -196,6 +196,61 @@ class RuntimeSpaceService:
         self._session.commit()
         self._session.refresh(runtime_space)
         return runtime_space
+
+    def pause_runtime_space(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime_space_id: UUID,
+        reason: str | None,
+    ) -> RuntimeSpace | None:
+        runtime_space = self.get_runtime_space(workspace_id, runtime_space_id)
+        if runtime_space is None:
+            return None
+        old_status = runtime_space.status
+        runtime_space.status = "paused"
+        self._append_event(
+            runtime_space,
+            "runtime_space.paused",
+            f"Runtime space {runtime_space.name} paused",
+            {
+                "before_status": old_status,
+                "after_status": runtime_space.status,
+                "reason": _non_empty_string_or_none(reason) or "operator_paused",
+            },
+        )
+        self._session.commit()
+        self._session.refresh(runtime_space)
+        return runtime_space
+
+    def resume_runtime_space(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime_space_id: UUID,
+    ) -> tuple[RuntimeSpace, int] | None:
+        runtime_space = self.get_runtime_space(workspace_id, runtime_space_id)
+        if runtime_space is None:
+            return None
+        old_status = runtime_space.status
+        runtime_space.status = "active"
+        cleared = self._clear_runtime_space_pause_blocks(
+            workspace_id=workspace_id,
+            runtime_space_id=runtime_space_id,
+        )
+        self._append_event(
+            runtime_space,
+            "runtime_space.resumed",
+            f"Runtime space {runtime_space.name} resumed",
+            {
+                "before_status": old_status,
+                "after_status": runtime_space.status,
+                "cleared_blocked_steps": cleared,
+            },
+        )
+        self._session.commit()
+        self._session.refresh(runtime_space)
+        return runtime_space, cleared
 
     def list_events(
         self,
@@ -488,6 +543,43 @@ class RuntimeSpaceService:
         for quota in existing_by_key.values():
             quota.status = "disabled"
 
+    def _clear_runtime_space_pause_blocks(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime_space_id: UUID,
+    ) -> int:
+        steps = self._session.scalars(
+            select(TaskStep)
+            .join(Task, Task.id == TaskStep.task_id)
+            .where(
+                TaskStep.workspace_id == workspace_id,
+                Task.workspace_id == workspace_id,
+                TaskStep.status == "queued",
+                (
+                    (TaskStep.runtime_space_id == runtime_space_id)
+                    | (
+                        TaskStep.runtime_space_id.is_(None)
+                        & (Task.runtime_space_id == runtime_space_id)
+                    )
+                ),
+            )
+        ).all()
+        cleared = 0
+        for step in steps:
+            dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
+            if dependencies.get("scheduling_status") != "blocked":
+                continue
+            if dependencies.get("blocked_reason") != "runtime_space_paused":
+                continue
+            updated = dict(dependencies)
+            updated.pop("scheduling_status", None)
+            updated.pop("blocked_reason", None)
+            updated.pop("priority_score", None)
+            step.dependencies = updated
+            cleared += 1
+        return cleared
+
     def _append_event(
         self,
         runtime_space: RuntimeSpace,
@@ -538,3 +630,10 @@ class RuntimeSpaceService:
         )
         rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
         return list(rows), int(total or 0)
+
+
+def _non_empty_string_or_none(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None

@@ -58,6 +58,10 @@ class RuntimeSpaceUpdateRequest(BaseModel):
         return value
 
 
+class RuntimeSpacePauseRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=240)
+
+
 class RuntimeSpaceResponse(TimestampedModel):
     workspace_id: UUID
     created_by_user_id: UUID | None
@@ -69,6 +73,11 @@ class RuntimeSpaceResponse(TimestampedModel):
     network_policy: dict[str, object]
     storage_policy: dict[str, object]
     cleanup_policy: dict[str, object]
+
+
+class RuntimeSpaceControlResponse(BaseModel):
+    runtime_space: RuntimeSpaceResponse
+    cleared_blocked_steps: int = 0
 
 
 class RuntimeSpaceEventResponse(ORMModel):

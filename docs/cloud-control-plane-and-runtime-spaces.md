@@ -398,6 +398,8 @@ POST /api/v1/workspaces/{workspace_id}/runtime-spaces
 GET  /api/v1/workspaces/{workspace_id}/runtime-spaces/{runtime_space_id}
 PATCH /api/v1/workspaces/{workspace_id}/runtime-spaces/{runtime_space_id}
 POST /api/v1/workspaces/{workspace_id}/runtime-spaces/{runtime_space_id}/reset
+POST /api/v1/workspaces/{workspace_id}/runtime-spaces/{runtime_space_id}/pause
+POST /api/v1/workspaces/{workspace_id}/runtime-spaces/{runtime_space_id}/resume
 GET  /api/v1/workspaces/{workspace_id}/runtime-spaces/{runtime_space_id}/events
 GET  /api/v1/workspaces/{workspace_id}/operations/overview
 GET  /api/v1/workspaces/{workspace_id}/operations/scheduler

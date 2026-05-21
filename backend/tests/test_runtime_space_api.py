@@ -25,6 +25,7 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
 )
+from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
@@ -212,6 +213,81 @@ def test_runtime_space_rejects_cross_workspace_team_binding() -> None:
     assert response.status_code == 400
     assert "Team not found" in response.json()["error"]["message"]
     assert forbidden.status_code == 201
+
+
+def test_runtime_space_pause_and_resume_clears_blocked_steps() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    viewer = User(email="viewer@example.com", display_name="Viewer")
+    session.add(viewer)
+    session.add(WorkspaceMember(workspace=workspace, user=viewer, role="viewer"))
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Team space",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        title="Blocked task",
+        status="queued",
+        runtime_space_id=runtime_space.id,
+    )
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Blocked step",
+        status="queued",
+        runtime_space_id=runtime_space.id,
+        dependencies={
+            "scheduling_status": "blocked",
+            "blocked_reason": "runtime_space_paused",
+            "priority_score": 8,
+        },
+    )
+    session.add(step)
+    session.commit()
+
+    paused = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtime-spaces/{runtime_space.id}/pause",
+        headers=_headers(owner.id),
+        json={"reason": "maintenance"},
+    )
+    denied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtime-spaces/{runtime_space.id}/resume",
+        headers=_headers(viewer.id),
+    )
+    resumed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtime-spaces/{runtime_space.id}/resume",
+        headers=_headers(owner.id),
+    )
+
+    session.refresh(runtime_space)
+    session.refresh(step)
+    events = session.scalars(
+        select(RuntimeSpaceEvent)
+        .where(RuntimeSpaceEvent.runtime_space_id == runtime_space.id)
+        .order_by(RuntimeSpaceEvent.created_at.asc())
+    ).all()
+
+    assert paused.status_code == 200
+    assert paused.json()["runtime_space"]["status"] == "paused"
+    assert paused.json()["cleared_blocked_steps"] == 0
+    assert denied.status_code == 403
+    assert resumed.status_code == 200
+    assert resumed.json()["runtime_space"]["status"] == "active"
+    assert resumed.json()["cleared_blocked_steps"] == 1
+    assert runtime_space.status == "active"
+    assert step.dependencies == {}
+    assert [event.event_type for event in events] == [
+        "runtime_space.paused",
+        "runtime_space.resumed",
+    ]
+    assert events[0].event_metadata["reason"] == "maintenance"
+    assert events[1].event_metadata["cleared_blocked_steps"] == 1
 
 
 def test_viewer_cannot_manage_runtime_spaces() -> None:
