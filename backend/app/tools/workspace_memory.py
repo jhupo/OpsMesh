@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from backend.app.artifacts.models import Artifact
 from backend.app.domains.models import DomainItem
 from backend.app.files.models import WorkspaceFile
+from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
 _TOKEN_PATTERN = re.compile(r"[\w.-]+", re.UNICODE)
@@ -64,12 +65,51 @@ class WorkspaceMemorySearchService:
 
     def _candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:
         return [
+            *self._explicit_memory_candidates(workspace_id),
             *self._file_candidates(workspace_id),
             *self._artifact_candidates(workspace_id),
             *self._task_candidates(workspace_id),
             *self._task_step_candidates(workspace_id),
             *self._task_message_candidates(workspace_id),
             *self._domain_item_candidates(workspace_id),
+        ]
+
+    def _explicit_memory_candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:
+        entries = self._session.scalars(
+            select(WorkspaceMemoryEntry)
+            .where(
+                WorkspaceMemoryEntry.workspace_id == workspace_id,
+                WorkspaceMemoryEntry.status == "active",
+            )
+            .order_by(
+                WorkspaceMemoryEntry.importance.desc(),
+                WorkspaceMemoryEntry.updated_at.desc(),
+            )
+            .limit(_SOURCE_LIMIT)
+        ).all()
+        return [
+            _MemoryCandidate(
+                source_type="workspace_memory",
+                source_id=entry.id,
+                title=entry.title,
+                text=_join_text(
+                    entry.title,
+                    entry.content,
+                    entry.entry_type,
+                    _json_text(entry.tags),
+                    _json_text(entry.memory_metadata),
+                ),
+                created_at=entry.created_at,
+                metadata={
+                    "entry_type": entry.entry_type,
+                    "tags": entry.tags,
+                    "visibility_scope": entry.visibility_scope,
+                    "importance": entry.importance,
+                    "source_type": entry.source_type,
+                    "source_id": entry.source_id,
+                },
+            )
+            for entry in entries
         ]
 
     def _file_candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:

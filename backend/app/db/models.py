@@ -24,6 +24,7 @@ from backend.app.marketplace.models import (
     TalentListingReview,
     WorkspaceAgentInstall,
 )
+from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.planning.models import TaskPlanningAttempt
@@ -112,6 +113,7 @@ __all__ = [
     "WorkspaceExportJob",
     "WorkspaceFile",
     "WorkspaceMember",
+    "WorkspaceMemoryEntry",
     "WorkspaceQuota",
     "WorkspaceReservation",
     "WorkspaceRuntime",

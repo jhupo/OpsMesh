@@ -49,7 +49,8 @@ Incomplete or basic-only areas:
   and provider credentials track health state plus last success/failure details.
 - Operations APIs expose short-cached overview, capacity, scheduler, outcomes, runtime capacity,
   MCP job, and unified control-plane health aggregates.
-- The memory search tool is still a placeholder and needs a real workspace memory/index implementation.
+- Workspace memory now has explicit durable memory entries plus workspace-scoped lexical search
+  across operational data; full-text/vector indexing remains a future upgrade.
 - Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, reusable maintenance runner, HTTP metrics, domain error mapping, production config guardrails, Redis distributed locks, structured idempotency states, feature flags, Redis cache abstraction, admin-visible core configuration summaries, blocking executor snapshots, database pool snapshots, and Redis pool snapshots are implemented.
 
 ## P0: Cloud Control Plane And Runtime Spaces
@@ -564,6 +565,8 @@ Acceptance:
 Current state:
 
 - `search_workspace_memory` now performs workspace-scoped lexical search across tasks, task steps, task messages, files, artifacts, and domain items.
+- Agents can write explicit durable workspace memory entries through `remember_workspace_memory`,
+  and archived entries stop appearing in search results.
 - It is intentionally lightweight and keeps a clean service boundary for later indexing/vector upgrades.
 
 Build:
@@ -571,22 +574,25 @@ Build:
 - [x] Define initial workspace memory sources: task summaries/final outputs, task steps, task messages, artifacts metadata, file metadata, and domain items.
 - [x] Replace placeholder implementation with a workspace-scoped lexical search service.
 - [x] Enforce workspace authorization at query time by filtering every source by `workspace_id`.
-- Add a memory indexing service with deterministic text chunks and metadata.
+- Add a memory indexing service with deterministic text chunks and metadata. (Initial durable
+  memory entry source is in place; chunk/index worker remains pending.)
 - Start with Postgres full-text search; leave a clean interface for vector search later.
-- Enforce workspace, file, and task authorization at indexing and query time.
+- [x] Enforce workspace, file, and task authorization at query time.
 - Add freshness rules when tasks/artifacts change.
 
 API/data changes:
 
-- Add `workspace_memory_entries` table with source type, source ID, text, metadata, visibility, checksum, and indexed_at.
+- [x] Add `workspace_memory_entries` table with source type, source ID, text, metadata,
+  visibility, tags, importance, and status.
 - Add internal indexing jobs.
 - [x] Replace placeholder implementation with real search ranked by text relevance and recency.
+- [x] Add internal tool operations to create and archive explicit memory entries.
 
 Tests:
 
 - [x] task summary appears in workspace memory search
 - [x] private workspace memory is not visible cross-workspace
-- deleted/disabled source stops appearing
+- [x] archived explicit memory stops appearing
 - search respects max results and source filters
 
 Acceptance:

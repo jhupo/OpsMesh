@@ -183,6 +183,86 @@ def test_workspace_memory_search_returns_workspace_scoped_matches() -> None:
     }
 
 
+def test_workspace_memory_entries_can_be_written_searched_and_archived() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, slug="acme")
+    _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Task")
+    run = AgentRun(workspace_id=workspace.id, task_id=task.id)
+    session.add_all([task, run])
+    session.commit()
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        allowed_tools=frozenset(
+            {
+                "remember_workspace_memory",
+                "search_workspace_memory",
+                "archive_workspace_memory",
+            }
+        ),
+    )
+    other_context = ToolContext(
+        workspace_id=other_workspace.id,
+        task_id=None,
+        agent_run_id=None,
+        allowed_tools=frozenset({"search_workspace_memory"}),
+    )
+    service = ProductToolService(session)
+
+    entry = service.remember_workspace_memory(
+        context,
+        title="Customer renewal playbook",
+        content="Enterprise customers with onboarding blockers need executive follow-up.",
+        entry_type="lesson",
+        tags=["Customer", "Renewal", "customer"],
+        source_type="task",
+        source_id=str(task.id),
+        importance=77,
+        metadata={"segment": "enterprise"},
+    )
+    session.commit()
+
+    results = service.search_workspace_memory(context, "renewal blockers")
+    other_results = service.search_workspace_memory(other_context, "renewal blockers")
+    archived = service.archive_workspace_memory(context, entry.id)
+    session.commit()
+    archived_results = service.search_workspace_memory(context, "renewal blockers")
+
+    assert entry.workspace_id == workspace.id
+    assert entry.tags == ["customer", "renewal"]
+    assert entry.importance == 77
+    assert results[0]["source_type"] == "workspace_memory"
+    assert results[0]["source_id"] == str(entry.id)
+    assert results[0]["metadata"]["entry_type"] == "lesson"
+    assert other_results == []
+    assert archived.status == "archived"
+    assert all(item["source_id"] != str(entry.id) for item in archived_results)
+
+
+def test_workspace_memory_write_requires_tool_permission() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=None,
+        agent_run_id=None,
+        allowed_tools=frozenset({"search_workspace_memory"}),
+    )
+
+    try:
+        ProductToolService(session).remember_workspace_memory(
+            context,
+            title="Nope",
+            content="Should not be stored.",
+        )
+    except ToolPermissionError as exc:
+        assert "not allowed" in str(exc)
+    else:
+        raise AssertionError("Expected missing memory write permission to fail")
+
+
 def test_write_artifact_versions_are_bound_to_work_package() -> None:
     session = _session()
     user, workspace = _seed_workspace(session, slug="acme")

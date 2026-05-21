@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.artifacts.models import Artifact
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.security import safe_filename
+from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import TaskStep
 from backend.app.tools.context import ToolContext
@@ -88,6 +89,66 @@ class ProductToolService:
         self._append_tool_event(context, "tool.completed", "search_workspace_memory")
         return results
 
+    def remember_workspace_memory(
+        self,
+        context: ToolContext,
+        *,
+        title: str,
+        content: str,
+        entry_type: str = "note",
+        tags: list[str] | None = None,
+        source_type: str | None = None,
+        source_id: str | None = None,
+        visibility_scope: str = "workspace",
+        importance: int = 0,
+        metadata: dict[str, object] | None = None,
+    ) -> WorkspaceMemoryEntry:
+        context.require_tool("remember_workspace_memory")
+        self._append_tool_event(context, "tool.called", "remember_workspace_memory")
+        run = self._run_for_context(context)
+        entry = WorkspaceMemoryEntry(
+            workspace_id=context.workspace_id,
+            created_by_agent_profile_id=run.agent_profile_id if run is not None else None,
+            created_by_agent_run_id=context.agent_run_id,
+            source_type=_bounded_optional(source_type, 80),
+            source_id=_bounded_optional(source_id, 120),
+            entry_type=_bounded_text(entry_type, 80, "note"),
+            title=_bounded_text(title, 240, "Untitled memory"),
+            content=content.strip(),
+            tags=_normalized_tags(tags),
+            visibility_scope=_bounded_text(visibility_scope, 32, "workspace"),
+            importance=max(0, min(100, importance)),
+            status="active",
+            memory_metadata=metadata or {},
+        )
+        self._session.add(entry)
+        self._session.flush()
+        self._append_tool_event(context, "tool.completed", "remember_workspace_memory")
+        return entry
+
+    def archive_workspace_memory(
+        self,
+        context: ToolContext,
+        memory_entry_id: UUID,
+    ) -> WorkspaceMemoryEntry:
+        context.require_tool("archive_workspace_memory")
+        self._append_tool_event(context, "tool.called", "archive_workspace_memory")
+        entry = self._session.get(WorkspaceMemoryEntry, memory_entry_id)
+        if entry is None or entry.workspace_id != context.workspace_id:
+            raise ToolResourceNotFoundError("Workspace memory entry not found")
+        entry.status = "archived"
+        self._session.flush([entry])
+        self._append_tool_event(context, "tool.completed", "archive_workspace_memory")
+        return entry
+
+    def _run_for_context(self, context: ToolContext) -> AgentRun | None:
+        if context.agent_run_id is None:
+            return None
+        run = self._session.get(AgentRun, context.agent_run_id)
+        if run is None or run.workspace_id != context.workspace_id:
+            return None
+        return run
+
     def _append_tool_event(self, context: ToolContext, event_type: str, tool_name: str) -> None:
         if context.agent_run_id is None:
             return
@@ -150,3 +211,33 @@ class ProductToolService:
             )
             .order_by(Artifact.version.desc(), Artifact.created_at.desc())
         )
+
+
+def _bounded_text(value: str, max_length: int, default: str) -> str:
+    text = value.strip()
+    if not text:
+        text = default
+    return text[:max_length]
+
+
+def _bounded_optional(value: str | None, max_length: int) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    return text[:max_length] if text else None
+
+
+def _normalized_tags(tags: list[str] | None) -> list[str]:
+    if not tags:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for tag in tags:
+        text = tag.strip().lower()[:64]
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        normalized.append(text)
+        if len(normalized) >= 20:
+            break
+    return normalized
