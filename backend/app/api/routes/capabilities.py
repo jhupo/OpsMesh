@@ -9,6 +9,7 @@ from backend.app.api.schemas.capabilities import (
     CapabilityResponse,
     McpCatalogServerResponse,
     McpCatalogToolResponse,
+    McpCatalogUsageResponse,
     McpCredentialReferenceCreateRequest,
     McpCredentialReferenceResponse,
     McpServerCreateRequest,
@@ -383,6 +384,7 @@ def _mcp_catalog_response(item: object) -> McpCatalogServerResponse:
         credential_count=item.credential_count,
         workspace_credential_count=item.workspace_credential_count,
         connection_summary=item.connection_summary,
+        usage=_mcp_catalog_usage_response(item.usage),
         tools=[
             McpCatalogToolResponse(
                 id=tool.allowlist.id,
@@ -392,9 +394,20 @@ def _mcp_catalog_response(item: object) -> McpCatalogServerResponse:
                 risk_level=tool.allowlist.risk_level,
                 policy=tool.allowlist.policy,
                 status=tool.allowlist.status,
+                usage=_mcp_catalog_usage_response(tool.usage),
             )
             for tool in item.tools
         ],
         created_at=server.created_at,
         updated_at=server.updated_at,
+    )
+
+
+def _mcp_catalog_usage_response(item: object) -> McpCatalogUsageResponse:
+    return McpCatalogUsageResponse(
+        call_count=item.call_count,
+        failed_call_count=item.failed_call_count,
+        last_call_at=item.last_call_at,
+        last_call_status=item.last_call_status,
+        last_error_code=item.last_error_code,
     )

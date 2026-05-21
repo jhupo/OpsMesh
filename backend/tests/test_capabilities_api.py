@@ -366,6 +366,77 @@ def test_mcp_catalog_flags_missing_required_credentials() -> None:
     assert "missing_required_credentials" in body["blocked_reasons"]
 
 
+def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "image-tools",
+            "server_type": "http_jsonrpc",
+            "connection": {"url": "https://mcp.example.test/rpc"},
+        },
+    )
+    first_tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "generate_image"},
+    )
+    second_tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "upscale_image"},
+    )
+    succeeded = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "tool_name": "generate_image",
+            "status": "completed",
+            "request": {"arguments_sha256": "args-ok"},
+            "response": {"result": {"ok": True}},
+        },
+    )
+    failed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "tool_name": "upscale_image",
+            "status": "failed",
+            "request": {"arguments_sha256": "args-fail"},
+            "error": {"code": "mcp_remote_error", "message": "Remote tool failed"},
+        },
+    )
+
+    catalog = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
+        headers=_headers(owner.id),
+    )
+
+    assert server.status_code == 201
+    assert first_tool.status_code == 201
+    assert second_tool.status_code == 201
+    assert succeeded.status_code == 201
+    assert failed.status_code == 201
+    assert catalog.status_code == 200
+    body = catalog.json()["items"][0]
+    assert body["usage"]["call_count"] == 2
+    assert body["usage"]["failed_call_count"] == 1
+    assert body["usage"]["last_call_status"] == "failed"
+    assert body["usage"]["last_error_code"] == "mcp_remote_error"
+    tools = {tool["tool_name"]: tool for tool in body["tools"]}
+    assert tools["generate_image"]["usage"]["call_count"] == 1
+    assert tools["generate_image"]["usage"]["failed_call_count"] == 0
+    assert tools["generate_image"]["usage"]["last_call_status"] == "completed"
+    assert tools["upscale_image"]["usage"]["call_count"] == 1
+    assert tools["upscale_image"]["usage"]["failed_call_count"] == 1
+    assert tools["upscale_image"]["usage"]["last_error_code"] == "mcp_remote_error"
+
+
 def test_operator_cannot_manage_capabilities() -> None:
     client, session = _client()
     operator, workspace = _seed_workspace(session, role="operator")

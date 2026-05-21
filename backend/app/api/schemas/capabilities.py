@@ -161,6 +161,14 @@ class McpToolDescriptor(BaseModel):
     policy: dict[str, object]
 
 
+class McpCatalogUsageResponse(BaseModel):
+    call_count: int
+    failed_call_count: int
+    last_call_at: datetime | None
+    last_call_status: str | None
+    last_error_code: str | None
+
+
 class McpCatalogToolResponse(BaseModel):
     id: UUID
     tool_name: str
@@ -169,6 +177,7 @@ class McpCatalogToolResponse(BaseModel):
     risk_level: str
     policy: dict[str, object]
     status: str
+    usage: McpCatalogUsageResponse
 
 
 class McpCatalogServerResponse(BaseModel):
@@ -187,6 +196,7 @@ class McpCatalogServerResponse(BaseModel):
     credential_count: int
     workspace_credential_count: int
     connection_summary: dict[str, object]
+    usage: McpCatalogUsageResponse
     tools: list[McpCatalogToolResponse]
     created_at: datetime
     updated_at: datetime

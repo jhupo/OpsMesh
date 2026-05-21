@@ -41,8 +41,18 @@ T = TypeVar("T")
 
 
 @dataclass(frozen=True)
+class McpCatalogUsage:
+    call_count: int
+    failed_call_count: int
+    last_call_at: datetime | None
+    last_call_status: str | None
+    last_error_code: str | None
+
+
+@dataclass(frozen=True)
 class McpCatalogTool:
     allowlist: McpToolAllowlist
+    usage: McpCatalogUsage
 
 
 @dataclass(frozen=True)
@@ -56,6 +66,7 @@ class McpCatalogServer:
     executable: bool
     blocked_reasons: list[str]
     connection_summary: dict[str, object]
+    usage: McpCatalogUsage
 
 
 class CapabilityService:
@@ -408,12 +419,21 @@ class CapabilityService:
                 ),
             )
         ).all()
+        usage_by_server_tool = self._mcp_usage_by_server_tool(workspace_id, server_ids)
 
         tools_by_server: dict[UUID, list[McpCatalogTool]] = {
             server_id: [] for server_id in server_ids
         }
         for allow in tool_rows:
-            tools_by_server.setdefault(allow.mcp_server_id, []).append(McpCatalogTool(allow))
+            tools_by_server.setdefault(allow.mcp_server_id, []).append(
+                McpCatalogTool(
+                    allow,
+                    usage_by_server_tool.get(
+                        (allow.mcp_server_id, allow.tool_name),
+                        _empty_mcp_usage(),
+                    ),
+                )
+            )
 
         credential_counts: dict[UUID, int] = {server_id: 0 for server_id in server_ids}
         workspace_credential_count = 0
@@ -430,6 +450,7 @@ class CapabilityService:
                 tools_by_server.get(server.id, []),
                 credential_counts.get(server.id, 0),
                 workspace_credential_count,
+                _rollup_mcp_usage(server.id, usage_by_server_tool),
             )
             for server in servers
         ], total
@@ -553,6 +574,7 @@ class CapabilityService:
         tools: list[McpCatalogTool],
         credential_count: int,
         workspace_credential_count: int,
+        usage: McpCatalogUsage,
     ) -> McpCatalogServer:
         credential_status = _credential_status(
             server,
@@ -574,7 +596,29 @@ class CapabilityService:
             executable=not blocked_reasons,
             blocked_reasons=blocked_reasons,
             connection_summary=_connection_summary(server),
+            usage=usage,
         )
+
+    def _mcp_usage_by_server_tool(
+        self,
+        workspace_id: UUID,
+        server_ids: list[UUID],
+    ) -> dict[tuple[UUID, str], McpCatalogUsage]:
+        logs = self._session.scalars(
+            select(McpToolCallLog)
+            .where(
+                McpToolCallLog.workspace_id == workspace_id,
+                McpToolCallLog.mcp_server_id.in_(server_ids),
+            )
+            .order_by(McpToolCallLog.created_at.asc())
+        ).all()
+        states: dict[tuple[UUID, str], _McpUsageState] = {}
+        for log in logs:
+            if log.mcp_server_id is None:
+                continue
+            key = (log.mcp_server_id, log.tool_name)
+            states.setdefault(key, _McpUsageState()).add(log)
+        return {key: state.to_usage() for key, state in states.items()}
 
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
         total = self._session.scalar(
@@ -637,6 +681,73 @@ def _error_code_from_payload(payload: dict[str, object] | None) -> str | None:
         return None
     code = payload.get("code")
     return code if isinstance(code, str) else None
+
+
+@dataclass
+class _McpUsageState:
+    call_count: int = 0
+    failed_call_count: int = 0
+    last_call_at: datetime | None = None
+    last_call_status: str | None = None
+    last_error_code: str | None = None
+
+    def add(self, log: McpToolCallLog) -> None:
+        self.call_count += 1
+        if _mcp_log_failed(log):
+            self.failed_call_count += 1
+        if self.last_call_at is None or log.created_at >= self.last_call_at:
+            self.last_call_at = log.created_at
+            self.last_call_status = log.status
+            self.last_error_code = log.error_code
+
+    def merge(self, usage: McpCatalogUsage) -> None:
+        self.call_count += usage.call_count
+        self.failed_call_count += usage.failed_call_count
+        if usage.last_call_at is None:
+            return
+        if self.last_call_at is None or usage.last_call_at >= self.last_call_at:
+            self.last_call_at = usage.last_call_at
+            self.last_call_status = usage.last_call_status
+            self.last_error_code = usage.last_error_code
+
+    def to_usage(self) -> McpCatalogUsage:
+        return McpCatalogUsage(
+            call_count=self.call_count,
+            failed_call_count=self.failed_call_count,
+            last_call_at=self.last_call_at,
+            last_call_status=self.last_call_status,
+            last_error_code=self.last_error_code,
+        )
+
+
+def _empty_mcp_usage() -> McpCatalogUsage:
+    return McpCatalogUsage(
+        call_count=0,
+        failed_call_count=0,
+        last_call_at=None,
+        last_call_status=None,
+        last_error_code=None,
+    )
+
+
+def _rollup_mcp_usage(
+    server_id: UUID,
+    usage_by_server_tool: dict[tuple[UUID, str], McpCatalogUsage],
+) -> McpCatalogUsage:
+    state = _McpUsageState()
+    for (candidate_server_id, _tool_name), usage in usage_by_server_tool.items():
+        if candidate_server_id == server_id:
+            state.merge(usage)
+    return state.to_usage()
+
+
+def _mcp_log_failed(log: McpToolCallLog) -> bool:
+    return log.error_code is not None or log.status in {
+        "blocked",
+        "failed",
+        "error",
+        "timeout",
+    }
 
 
 def _credential_status(
