@@ -480,8 +480,8 @@ Tasks:
 - [x] Store each step result for task observation and correction.
 - [x] Build final task output from completed step summaries.
 - [x] Add local unit tests for manager -> specialists -> manager summary orchestration.
-- [ ] Add later support for parallel specialist branches.
-- [ ] Add later support for manager-generated dynamic plans.
+- [x] Add later support for parallel specialist branches.
+- [x] Add later support for manager-generated dynamic plans.
 
 Deliverables:
 
@@ -495,7 +495,7 @@ Goal: close the gaps needed before this can feel like a mature commercial backen
 
 Tasks:
 
-- [ ] Add cloud control plane and runtime spaces.
+- [x] Add cloud control plane and runtime spaces.
   - [x] Document the managed control plane objects, runtime space model, worker fleet controls, quota reservations, operator APIs, and concurrency rules.
   - [x] Add runtime space data model for workspace, team, and task scopes.
   - [x] Bind teams, tasks, runs, Docker runtimes, and runtime commands to runtime spaces.
@@ -516,22 +516,22 @@ Tasks:
     - [x] Add SSE and hosted MCP adapters.
     - [x] Add stdio adapter through Docker/self-hosted runtime safety boundary.
   - [x] Wire MCP execution into worker/OpenAI tool invocation through runtime tool executor and OpenAI function-tool bridge.
-- [ ] Add private/public skill marketplace workflows beyond catalog visibility.
+- [x] Add private/public skill marketplace workflows beyond catalog visibility.
   - [x] Persist workspace-local skill install snapshots with installed metadata and source checksum.
   - [x] Include installed skill provenance in run authorization snapshots.
   - [x] Add skill upgrade and disable workflows.
-- [ ] Add task observation APIs for different team domains such as AIGC, novels, research, and software.
-- [ ] Add structured correction flows that can target one step, one agent, or the whole task.
-- [ ] Improve self-hosted machine policy controls, quotas, and revocation audit trails.
-- [ ] Add import conflict previews for workspace archives.
-- [ ] Add stricter Docker runtime quota enforcement and cleanup verification.
-- [ ] Add per-agent model provider audit events and fallback handling.
+- [x] Add task observation APIs for different team domains such as AIGC, novels, research, and software.
+- [x] Add structured correction flows that can target one step, one agent, or the whole task.
+- [x] Improve self-hosted machine policy controls, quotas, and revocation audit trails.
+- [x] Add import conflict previews for workspace archives.
+- [x] Add stricter Docker runtime quota enforcement and cleanup verification.
+- [x] Add per-agent model provider audit events and fallback handling.
   - [x] Freeze provider resolution metadata into queued run authorization snapshots.
   - [x] Emit `model_provider.resolved` run events without raw API keys or full base URLs.
   - [x] Add workspace-scoped provider fallback policy.
   - [x] Emit fallback selection and final provider-used run events.
   - [x] Track provider health and last failure reason.
-- [ ] Add operations dashboards APIs for worker capacity, queue latency, and runtime saturation.
+- [x] Add operations dashboards APIs for worker capacity, queue latency, and runtime saturation.
   - [x] Add `/operations/capacity` aggregate for queue age, worker slots, and runtime space quotas.
   - [x] Add scheduler-specific backlog and fairness aggregate.
   - [x] Add failure-rate and approval-backlog aggregate.
@@ -557,7 +557,7 @@ Tasks:
   - [x] Let the PM agent inspect the task and team roster.
   - [x] Generate a structured project plan.
   - [x] Validate generated plans before execution.
-  - [ ] Handle failed planning with retry or human review.
+  - [x] Handle failed planning with retry or human review.
 - [x] Work package model.
   - [x] Extend `TaskStep` with required role, required skills, expected artifacts, acceptance criteria, and review policy.
   - [x] Represent task execution as a dependency DAG.
@@ -603,7 +603,7 @@ Tasks:
   - [x] User-confirmed hires join the persistent team.
   - [x] New hires affect future tasks without rewriting historical snapshots.
   - [x] Optionally regenerate a future-only project plan after a hire when the user asks.
-- [ ] Security and isolation.
+- [x] Security and isolation.
   - [x] Scope teams, members, skills, files, tools, Docker runtimes, and self-hosted machines by workspace.
   - [x] Copy public agents into the user's workspace before use.
   - [x] Build every run with an isolated authorization context.
