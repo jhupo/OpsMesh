@@ -576,6 +576,146 @@ def test_operations_runtime_capacity_reports_provider_and_worker_slots() -> None
     assert other_response.json()["runtime_spaces"] == []
 
 
+def test_operations_control_plane_summarizes_capacity_and_health_issues() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    keys = RedisKeyBuilder("chaincloud")
+    queued_job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="old-control-plane-job",
+        priority=9,
+        created_at=datetime.now(UTC) - timedelta(seconds=400),
+    )
+    redis.rpush(keys.queue("agent_runs"), queued_job.model_dump_json())
+
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Control Space",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.flush()
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        runtime_provider="self_hosted",
+        runtime_type="self_hosted",
+        name="local",
+        status="active",
+        connection_status="degraded",
+        capabilities={"max_concurrent_jobs": 1},
+    )
+    blocked_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Blocked",
+        status="queued",
+        priority=9,
+    )
+    session.add_all([runtime, blocked_task])
+    session.flush()
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="tools",
+        server_type="stdio",
+        connection={},
+    )
+    run = AgentRun(
+        workspace_id=workspace.id,
+        runtime_id=runtime.id,
+        status="waiting_runtime",
+    )
+    session.add_all([server, run])
+    session.flush()
+    blocked_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=blocked_task.id,
+        title="Blocked step",
+        status="queued",
+        order_index=0,
+        dependencies={
+            "scheduling_status": "blocked",
+            "blocked_reason": "runtime_space_saturated",
+        },
+    )
+    quota = RuntimeSpaceQuota(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="active_runs",
+        limit_value=1,
+        reserved_value=1,
+        unit="count",
+    )
+    worker = WorkerNode(
+        worker_id="worker-full",
+        worker_type="cloud",
+        status="online",
+        queue_name="agent_runs",
+        capacity={"max_jobs": 1},
+        details={},
+        last_seen_at=datetime.now(UTC),
+    )
+    lease = WorkerLease(
+        workspace_id=workspace.id,
+        worker_id="worker-full",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=queued_job.resource_id,
+        status="running",
+        attempt=0,
+        lease_metadata={},
+        started_at=datetime.now(UTC),
+    )
+    approval = Approval(
+        workspace_id=workspace.id,
+        approval_type="mcp.tool",
+        risk_level="high",
+        payload={"tool_name": "deploy"},
+        status="pending",
+        created_at=datetime.now(UTC) - timedelta(seconds=120),
+    )
+    mcp_job = SelfHostedMcpJob(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime.id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+        request_payload={},
+        status="failed",
+    )
+    session.add_all([blocked_step, quota, worker, lease, approval, mcp_job])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/control-plane?window_seconds=600",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    issue_codes = {issue["code"] for issue in payload["issues"]}
+    assert payload["health"] == "critical"
+    assert payload["queue"]["queued"] == 1
+    assert payload["queue"]["oldest_age_seconds"] >= 390
+    assert payload["worker_capacity"]["available_slots"] == 0
+    assert payload["scheduler"]["backlog"]["blocked_steps"] == 1
+    assert payload["outcomes"]["approvals"]["high_risk_pending"] == 1
+    assert payload["mcp_jobs"]["failed"] == 1
+    assert {
+        "queue_latency_high",
+        "worker_capacity_exhausted",
+        "runtime_space_saturated",
+        "runtime_provider_degraded",
+        "scheduler_blocked_steps",
+        "high_risk_approval_backlog",
+        "mcp_jobs_failed",
+    } <= issue_codes
+
+
 def test_operations_mcp_jobs_reports_self_hosted_tool_queue() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

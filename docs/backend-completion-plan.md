@@ -47,7 +47,8 @@ Incomplete or basic-only areas:
 - Model provider selection exists. Queued runs now freeze per-agent/default provider resolution
   metadata without storing secrets, worker execution can use a workspace-scoped fallback policy,
   and provider credentials track health state plus last success/failure details.
-- Operations APIs exist and overview now uses short Redis caching, but capacity, queue latency, and saturation dashboards need richer aggregate endpoints.
+- Operations APIs expose short-cached overview, capacity, scheduler, outcomes, runtime capacity,
+  MCP job, and unified control-plane health aggregates.
 - The memory search tool is still a placeholder and needs a real workspace memory/index implementation.
 - Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, reusable maintenance runner, HTTP metrics, domain error mapping, production config guardrails, Redis distributed locks, structured idempotency states, feature flags, Redis cache abstraction, admin-visible core configuration summaries, blocking executor snapshots, database pool snapshots, and Redis pool snapshots are implemented.
 
@@ -88,7 +89,7 @@ API/data changes:
 - [x] Add `runtime_space_id` to teams, tasks, task steps, runs, workspace runtimes, runtime commands, and runtime events.
 - Add `runtime_space_id` to runtime-origin file metadata where applicable.
 - [x] Add workspace APIs for runtime spaces.
-- Add workspace APIs for operations aggregates.
+- [x] Add workspace APIs for operations aggregates.
 - [x] Add admin APIs under `/api/v1/admin/...` with platform-operator authentication.
 - [x] Add `platform_policies` and `platform_policy_events` for auditable operator policy changes.
 
@@ -518,16 +519,19 @@ Policy shape:
 Current state:
 
 - Operations APIs expose queue metrics, failed runs, runtime events, audit filters, security events,
-  and a dashboard capacity aggregate for queue latency, worker slots, and runtime space saturation.
+  dashboard capacity aggregates, scheduler backlog, outcomes, MCP job status, runtime capacity,
+  and a unified control-plane health summary.
 
 Build:
 
-- Add aggregate endpoints for worker fleet health, queue latency percentiles, queued/running/completed counts by priority, runtime saturation, Docker/self-hosted capacity, failure rates, and approval backlog.
+- [x] Add aggregate endpoints for worker fleet health, queue latency, queued/running counts by
+  priority, runtime saturation, Docker/self-hosted capacity, failure rates, approval backlog, MCP
+  jobs, and control-plane issue summaries.
 - [x] Add capacity aggregate for queue age, worker slot utilization, and runtime space quota saturation.
 - [x] Add scheduler aggregate for backlog, priority buckets, blocked reasons, active runs, and
   effective workspace scheduler policy.
 - [x] Add outcomes aggregate for run failure rate, failure reasons, and approval backlog.
-- Support time windows and workspace scope.
+- [x] Support time windows and workspace scope.
 - [x] Cache overview aggregate in Redis with short TTL and workspace-scoped cache keys.
 - Cache future expensive scheduler/runtime aggregates in Redis with short TTL.
 - Keep raw drill-down endpoints separate from summary endpoints.
@@ -539,12 +543,16 @@ API/data changes:
 - `GET /api/v1/workspaces/{workspace_id}/operations/scheduler`
 - `GET /api/v1/workspaces/{workspace_id}/operations/outcomes`
 - [x] `GET /api/v1/workspaces/{workspace_id}/operations/runtime-capacity`
+- [x] `GET /api/v1/workspaces/{workspace_id}/operations/mcp-jobs`
+- [x] `GET /api/v1/workspaces/{workspace_id}/operations/control-plane`
 
 Tests:
 
-- aggregates are workspace-scoped
+- [x] aggregates are workspace-scoped
 - empty workspace returns zeroed metrics
-- failed/running/queued seeded data produces expected counts
+- [x] failed/running/queued seeded data produces expected counts
+- [x] control-plane summary emits stable issue codes for capacity, scheduler, approvals, and MCP
+  health
 - cache key includes workspace and time window
 
 Acceptance:

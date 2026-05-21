@@ -14,6 +14,7 @@ from backend.app.api.schemas.operations import (
     DeadLetterJobsResponse,
     FailedJobInspectionResponse,
     OperationsCapacityResponse,
+    OperationsControlPlaneResponse,
     OperationsMcpJobsResponse,
     OperationsOutcomesResponse,
     OperationsOverviewResponse,
@@ -304,6 +305,26 @@ async def operations_overview(
         ttl_seconds=10,
     )
     return OperationsOverviewResponse(**cached.value)
+
+
+@router.get("/control-plane", response_model=OperationsControlPlaneResponse)
+async def operations_control_plane(
+    queue_name: str = Query(default="agent_runs"),
+    window_seconds: int = Query(default=86_400, ge=60, le=2_592_000),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> OperationsControlPlaneResponse:
+    return OperationsService(
+        session,
+        redis,
+        RedisKeyBuilder(settings.redis_key_prefix),
+    ).control_plane_payload(
+        context.workspace.id,
+        queue_name,
+        window_seconds=window_seconds,
+    )
 
 
 @router.get("/capacity", response_model=OperationsCapacityResponse)

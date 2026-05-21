@@ -16,6 +16,8 @@ from backend.app.api.schemas.operations import (
     McpJobStatusBucketResponse,
     McpJobToolBucketResponse,
     OperationsCapacityResponse,
+    OperationsControlPlaneIssueResponse,
+    OperationsControlPlaneResponse,
     OperationsMcpJobsResponse,
     OperationsOutcomesResponse,
     OperationsRuntimeCapacityResponse,
@@ -716,6 +718,40 @@ class OperationsService:
             ],
         )
 
+    def control_plane_payload(
+        self,
+        workspace_id: UUID,
+        queue_name: str,
+        *,
+        window_seconds: int,
+    ) -> OperationsControlPlaneResponse:
+        now = datetime.now(UTC)
+        queue = self._queue_latency(queue_name, workspace_id)
+        worker_capacity = self._worker_capacity_aggregate()
+        runtime_capacity = self.runtime_capacity_payload(workspace_id)
+        scheduler = self.scheduler_payload(workspace_id)
+        outcomes = self.outcomes_payload(workspace_id, window_seconds=window_seconds)
+        mcp_jobs = self.mcp_jobs_payload(workspace_id)
+        issues = self._control_plane_issues(
+            queue=queue,
+            worker_capacity=worker_capacity,
+            runtime_capacity=runtime_capacity,
+            scheduler=scheduler,
+            outcomes=outcomes,
+            mcp_jobs=mcp_jobs,
+        )
+        return OperationsControlPlaneResponse(
+            generated_at=now,
+            health=_control_plane_health(issues),
+            queue=queue,
+            worker_capacity=worker_capacity,
+            runtime_capacity=runtime_capacity,
+            scheduler=scheduler,
+            outcomes=outcomes,
+            mcp_jobs=mcp_jobs,
+            issues=issues,
+        )
+
     def _queue_latency(self, queue_name: str, workspace_id: UUID) -> QueueLatencyResponse:
         if self._redis is None:
             return QueueLatencyResponse(
@@ -924,6 +960,152 @@ class OperationsService:
             for worker_type, values in sorted(grouped.items())
         ]
 
+    def _control_plane_issues(
+        self,
+        *,
+        queue: QueueLatencyResponse,
+        worker_capacity: WorkerCapacityAggregateResponse,
+        runtime_capacity: OperationsRuntimeCapacityResponse,
+        scheduler: OperationsSchedulerResponse,
+        outcomes: OperationsOutcomesResponse,
+        mcp_jobs: OperationsMcpJobsResponse,
+    ) -> list[OperationsControlPlaneIssueResponse]:
+        issues: list[OperationsControlPlaneIssueResponse] = []
+        if queue.oldest_age_seconds is not None and queue.oldest_age_seconds >= 300:
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="warning",
+                    code="queue_latency_high",
+                    message="Queued jobs have waited longer than 5 minutes.",
+                    count=queue.queued,
+                    metadata={"oldest_age_seconds": queue.oldest_age_seconds},
+                )
+            )
+        if worker_capacity.workers_total == 0:
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="critical",
+                    code="worker_fleet_empty",
+                    message="No workers are registered for job execution.",
+                )
+            )
+        elif worker_capacity.available_slots == 0 and queue.queued > 0:
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="critical",
+                    code="worker_capacity_exhausted",
+                    message="Queued jobs exist but the worker fleet has no free slots.",
+                    count=queue.queued,
+                    metadata={
+                        "running_jobs": worker_capacity.running_jobs,
+                        "max_jobs": worker_capacity.max_jobs,
+                    },
+                )
+            )
+        if worker_capacity.workers_draining > 0:
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="info",
+                    code="workers_draining",
+                    message="Some workers are draining and will not accept new jobs.",
+                    count=worker_capacity.workers_draining,
+                )
+            )
+        saturated_spaces = [
+            space for space in runtime_capacity.runtime_spaces if space.saturated
+        ]
+        if saturated_spaces:
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="warning",
+                    code="runtime_space_saturated",
+                    message="Runtime space quotas are saturated.",
+                    count=len(saturated_spaces),
+                    metadata={
+                        "runtime_space_ids": [
+                            str(space.runtime_space_id) for space in saturated_spaces
+                        ]
+                    },
+                )
+            )
+        degraded_providers = [
+            provider for provider in runtime_capacity.providers if provider.degraded > 0
+        ]
+        if degraded_providers:
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="warning",
+                    code="runtime_provider_degraded",
+                    message="Runtime providers have degraded capacity.",
+                    count=sum(provider.degraded for provider in degraded_providers),
+                    metadata={
+                        "providers": [
+                            f"{provider.provider}:{provider.runtime_type}"
+                            for provider in degraded_providers
+                        ]
+                    },
+                )
+            )
+        if scheduler.backlog.blocked_steps > 0:
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="warning",
+                    code="scheduler_blocked_steps",
+                    message="Some queued steps are blocked by scheduler policy.",
+                    count=scheduler.backlog.blocked_steps,
+                    metadata={
+                        "blocked_reasons": [
+                            reason.model_dump() for reason in scheduler.blocked_reasons
+                        ]
+                    },
+                )
+            )
+        if outcomes.runs.failure_rate >= 0.2 and outcomes.runs.total_runs >= 5:
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="warning",
+                    code="run_failure_rate_high",
+                    message="Recent run failure rate is elevated.",
+                    count=outcomes.runs.failed_runs,
+                    metadata={"failure_rate": outcomes.runs.failure_rate},
+                )
+            )
+        if outcomes.approvals.high_risk_pending > 0:
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="warning",
+                    code="high_risk_approval_backlog",
+                    message="High-risk approvals are waiting for operator review.",
+                    count=outcomes.approvals.high_risk_pending,
+                    metadata={
+                        "oldest_pending_age_seconds": outcomes.approvals.oldest_pending_age_seconds
+                    },
+                )
+            )
+        if mcp_jobs.failed > 0:
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="warning",
+                    code="mcp_jobs_failed",
+                    message="MCP tool jobs have failed.",
+                    count=mcp_jobs.failed,
+                )
+            )
+        if (
+            mcp_jobs.oldest_queued_age_seconds is not None
+            and mcp_jobs.oldest_queued_age_seconds >= 300
+        ):
+            issues.append(
+                OperationsControlPlaneIssueResponse(
+                    severity="warning",
+                    code="mcp_queue_latency_high",
+                    message="MCP tool jobs have waited longer than 5 minutes.",
+                    count=mcp_jobs.queued,
+                    metadata={"oldest_queued_age_seconds": mcp_jobs.oldest_queued_age_seconds},
+                )
+            )
+        return issues
+
     def _scheduler_policy(self, workspace_id: UUID) -> SchedulerPolicyResponse:
         workspace = self._session.get(Workspace, workspace_id)
         settings = workspace.settings if workspace is not None else {}
@@ -1058,6 +1240,15 @@ def _runtime_space_quota_usage(quota: RuntimeSpaceQuota) -> RuntimeSpaceQuotaUsa
         utilization=utilization,
         saturated=quota.limit_value > 0 and quota.reserved_value >= quota.limit_value,
     )
+
+
+def _control_plane_health(issues: list[OperationsControlPlaneIssueResponse]) -> str:
+    severities = {issue.severity for issue in issues}
+    if "critical" in severities:
+        return "critical"
+    if "warning" in severities:
+        return "warning"
+    return "healthy"
 
 
 def _aware_datetime(value: datetime) -> datetime:

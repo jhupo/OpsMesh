@@ -289,6 +289,26 @@ class OperationsMcpJobsResponse(BaseModel):
     tools: list[McpJobToolBucketResponse]
 
 
+class OperationsControlPlaneIssueResponse(BaseModel):
+    severity: str
+    code: str
+    message: str
+    count: int = 1
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class OperationsControlPlaneResponse(BaseModel):
+    generated_at: datetime
+    health: str
+    queue: QueueLatencyResponse
+    worker_capacity: WorkerCapacityAggregateResponse
+    runtime_capacity: OperationsRuntimeCapacityResponse
+    scheduler: OperationsSchedulerResponse
+    outcomes: OperationsOutcomesResponse
+    mcp_jobs: OperationsMcpJobsResponse
+    issues: list[OperationsControlPlaneIssueResponse]
+
+
 class AuditEventFilterResponse(BaseModel):
     items: list[AuditEventResponse]
     total: int
