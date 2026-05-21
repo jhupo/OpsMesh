@@ -6,6 +6,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
+from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.secrets.service import SecretEncryptionService
@@ -88,6 +89,34 @@ class ModelProviderCredentialService:
             .where(ModelProviderCredential.workspace_id == workspace_id)
             .order_by(ModelProviderCredential.created_at.desc())
         )
+        total = self._session.scalar(
+            select(func.count()).select_from(statement.order_by(None).subquery())
+        )
+        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
+        return list(rows), int(total or 0)
+
+    def list_usage_audit(
+        self,
+        workspace_id: UUID,
+        page: PageParams,
+        *,
+        action: str | None = None,
+    ) -> tuple[list[AuditEvent], int]:
+        from sqlalchemy import func
+
+        allowed_actions = {
+            "model_provider.used",
+            "model_provider.fallback_unavailable",
+        }
+        statement = select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace_id,
+            AuditEvent.action.in_(allowed_actions),
+        )
+        if action is not None:
+            if action not in allowed_actions:
+                return [], 0
+            statement = statement.where(AuditEvent.action == action)
+        statement = statement.order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
         total = self._session.scalar(
             select(func.count()).select_from(statement.order_by(None).subquery())
         )

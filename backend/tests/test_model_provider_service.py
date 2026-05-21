@@ -1,9 +1,12 @@
+from datetime import UTC, datetime
+
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.api.pagination import PageParams
 from backend.app.audit.models import AuditEvent
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -272,6 +275,79 @@ def test_records_provider_health_success_and_failure() -> None:
     assert credential.last_success_at is not None
     assert credential.last_failure_code is None
     assert credential.last_failure_message is None
+
+
+def test_usage_audit_lists_only_sanitized_provider_events_for_workspace() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
+    _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+    session.add_all(
+        [
+            AuditEvent(
+                workspace_id=workspace.id,
+                actor_type="user",
+                actor_id=str(user.id),
+                user_id=user.id,
+                action="model_provider.used",
+                target_type="agent_run",
+                target_id="run-1",
+                created_at=datetime.now(UTC),
+                audit_metadata={
+                    "task_id": "task-1",
+                    "task_step_id": "step-1",
+                    "agent_profile_id": "agent-1",
+                    "model": "gpt-4.1-mini",
+                    "credential_id": "credential-1",
+                    "fallback_selected": True,
+                    "api_key": "sk-secret",
+                    "base_url": "https://secret.example.test/v1",
+                },
+            ),
+            AuditEvent(
+                workspace_id=workspace.id,
+                actor_type="user",
+                actor_id=str(user.id),
+                user_id=user.id,
+                action="model_provider.fallback_unavailable",
+                target_type="agent_run",
+                target_id="run-2",
+                created_at=datetime.now(UTC),
+                audit_metadata={
+                    "reason": {"code": "RuntimeError", "message": "primary failed"},
+                    "failed_provider": {
+                        "model": "primary",
+                        "credential_id": "credential-1",
+                        "api_key": "sk-secret",
+                        "base_url": "https://secret.example.test/v1",
+                    },
+                },
+            ),
+            AuditEvent(
+                workspace_id=other_workspace.id,
+                actor_type="user",
+                actor_id=str(user.id),
+                user_id=user.id,
+                action="model_provider.used",
+                target_type="agent_run",
+                target_id="foreign-run",
+                created_at=datetime.now(UTC),
+                audit_metadata={"model": "foreign"},
+            ),
+        ]
+    )
+    session.commit()
+
+    rows, total = _service(session).list_usage_audit(workspace.id, PageParams())
+    fallback_rows, fallback_total = _service(session).list_usage_audit(
+        workspace.id,
+        PageParams(),
+        action="model_provider.fallback_unavailable",
+    )
+
+    assert total == 2
+    assert {row.target_id for row in rows} == {"run-1", "run-2"}
+    assert fallback_total == 1
+    assert fallback_rows[0].target_id == "run-2"
 
 
 def _service(session: Session) -> ModelProviderCredentialService:

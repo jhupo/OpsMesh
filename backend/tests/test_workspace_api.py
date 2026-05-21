@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.artifacts.models import Artifact
+from backend.app.audit.models import AuditEvent
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
@@ -814,6 +815,103 @@ def test_model_provider_credentials_can_be_updated_rotated_defaulted_and_disable
     assert by_id[first.json()["id"]]["is_default"] is False
     assert by_id[first.json()["id"]]["status"] == "disabled"
     assert by_id[second.json()["id"]]["is_default"] is True
+
+
+def test_model_provider_usage_audit_api_is_scoped_and_redacted() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-provider@example.com",
+        slug="other-provider",
+    )
+    session.add_all(
+        [
+            AuditEvent(
+                workspace_id=workspace.id,
+                actor_type="user",
+                actor_id=str(owner.id),
+                user_id=owner.id,
+                action="model_provider.used",
+                target_type="agent_run",
+                target_id="run-1",
+                created_at=datetime.now(UTC),
+                audit_metadata={
+                    "task_id": "task-1",
+                    "task_step_id": "step-1",
+                    "agent_profile_id": "agent-1",
+                    "model": "backup-model",
+                    "credential_id": "credential-1",
+                    "fallback_selected": True,
+                    "api_key": "sk-secret",
+                    "base_url": "https://secret.example.test/v1",
+                },
+            ),
+            AuditEvent(
+                workspace_id=workspace.id,
+                actor_type="user",
+                actor_id=str(owner.id),
+                user_id=owner.id,
+                action="model_provider.fallback_unavailable",
+                target_type="agent_run",
+                target_id="run-2",
+                created_at=datetime.now(UTC),
+                audit_metadata={
+                    "reason": {"code": "RuntimeError", "message": "primary unavailable"},
+                    "failed_provider": {
+                        "model": "primary-model",
+                        "credential_id": "credential-2",
+                        "api_key": "sk-primary",
+                        "base_url": "https://primary.example.test/v1",
+                    },
+                },
+            ),
+            AuditEvent(
+                workspace_id=other_workspace.id,
+                actor_type="user",
+                actor_id=str(other_owner.id),
+                user_id=other_owner.id,
+                action="model_provider.used",
+                target_type="agent_run",
+                target_id="foreign-run",
+                created_at=datetime.now(UTC),
+                audit_metadata={"model": "foreign-model"},
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials/usage-audit",
+        headers=_headers(owner.id),
+    )
+    fallback_only = client.get(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials/usage-audit"
+        "?action=model_provider.fallback_unavailable",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    assert {item["run_id"] for item in payload["items"]} == {"run-1", "run-2"}
+    serialized = str(payload)
+    assert "sk-secret" not in serialized
+    assert "sk-primary" not in serialized
+    assert "secret.example.test" not in serialized
+    assert "primary.example.test" not in serialized
+    used = next(item for item in payload["items"] if item["run_id"] == "run-1")
+    assert used["model"] == "backup-model"
+    assert used["credential_id"] == "credential-1"
+    assert used["fallback_selected"] is True
+    assert fallback_only.status_code == 200
+    assert fallback_only.json()["total"] == 1
+    assert fallback_only.json()["items"][0]["run_id"] == "run-2"
+    assert fallback_only.json()["items"][0]["failed_provider"] == {
+        "model": "primary-model",
+        "credential_id": "credential-2",
+    }
 
 
 def test_task_idempotency_key_is_scoped_by_workspace() -> None:

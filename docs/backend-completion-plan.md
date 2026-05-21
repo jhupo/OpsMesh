@@ -457,6 +457,8 @@ Current state:
   enforcement.
 - Provider credentials expose `health_status`, `last_success_at`, `last_failure_at`,
   `last_failure_code`, and `last_failure_message`.
+- Workspaces expose a sanitized provider usage audit API for selected provider, fallback
+  decisions, failed provider reference, and reason metadata.
 
 Build:
 
@@ -477,13 +479,16 @@ API/data changes:
 - Add provider health status and last failure reason. (Done.)
 - Add audit action for provider selection and fallback. (Done with `model_provider.used`
   audit events that mark whether fallback was selected.)
+- Add workspace usage audit endpoint for provider selection and fallback history. (Done with
+  `GET /api/v1/workspaces/{workspace_id}/model-provider-credentials/usage-audit`.)
 
 Tests:
 
 - agent-specific provider overrides workspace default
 - provider resolution snapshot excludes raw API keys and full base URLs
 - failed primary provider falls back only to allowed provider
-- fallback event records reason without leaking key/base URL secret
+- [x] fallback event records reason without leaking key/base URL secret
+- [x] provider usage audit API is workspace-scoped and redacts secrets
 - [x] disallowed fallback fails the run cleanly and records sanitized fallback-unavailable
   run/audit evidence
 
