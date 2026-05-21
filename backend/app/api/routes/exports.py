@@ -65,7 +65,7 @@ async def preview_workspace_metadata_import(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceImportResponse:
-    preview_request = request.model_copy(update={"dry_run": True})
+    preview_request = request.model_copy(update={"dry_run": True, "preview_token": None})
     return WorkspaceExportService(session).import_metadata(
         workspace=context.workspace,
         user_id=context.user.user_id,

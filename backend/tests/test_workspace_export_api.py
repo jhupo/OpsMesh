@@ -621,6 +621,157 @@ def test_workspace_metadata_import_can_rename_existing_agent_conflict(
     assert imported is not None
 
 
+def test_workspace_metadata_import_accepts_matching_preview_token(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-preview-token@example.com",
+        slug="source-preview-token",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-preview-token@example.com",
+        slug="target-preview-token",
+    )
+    source_agent = AgentProfile(
+        workspace_id=source_workspace.id,
+        name="Researcher",
+        role="researcher",
+    )
+    session.add(source_agent)
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_teams": False,
+            "include_tasks": False,
+            "include_runs": False,
+            "include_files": False,
+            "include_runtime_spaces": False,
+            "include_skill_installs": False,
+            "include_audit_events": False,
+        },
+    )
+    export_payload = json.loads(export_response.content)
+    preview = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import/preview",
+        headers=_headers(target_user.id),
+        json={"export": export_payload},
+    )
+    preview_body = preview.json()
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={
+            "export": export_payload,
+            "dry_run": False,
+            "preview_token": preview_body["preview_token"],
+        },
+    )
+
+    assert export_response.status_code == 200
+    assert preview.status_code == 200
+    assert preview_body["preview_token"]
+    assert preview_body["dry_run"] is True
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["preview_token"] == preview_body["preview_token"]
+    assert body["created_counts"]["agents"] == 1
+    assert body["required_resolutions"] == []
+    imported = session.scalar(
+        select(AgentProfile).where(
+            AgentProfile.workspace_id == target_workspace.id,
+            AgentProfile.name == "Imported Researcher",
+        )
+    )
+    assert imported is not None
+
+
+def test_workspace_metadata_import_rejects_mismatched_preview_token(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-bad-preview-token@example.com",
+        slug="source-bad-preview-token",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-bad-preview-token@example.com",
+        slug="target-bad-preview-token",
+    )
+    session.add(
+        AgentProfile(
+            workspace_id=source_workspace.id,
+            name="Researcher",
+            role="researcher",
+        )
+    )
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_teams": False,
+            "include_tasks": False,
+            "include_runs": False,
+            "include_files": False,
+            "include_runtime_spaces": False,
+            "include_skill_installs": False,
+            "include_audit_events": False,
+        },
+    )
+    export_payload = json.loads(export_response.content)
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={
+            "export": export_payload,
+            "dry_run": False,
+            "preview_token": "stale-preview-token",
+        },
+    )
+
+    assert export_response.status_code == 200
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["created_counts"]["agents"] == 0
+    assert body["skipped_counts"]["agents"] == 0
+    assert body["conflict_plan"] == [
+        {
+            "collection": "manifest",
+            "source_id": str(source_workspace.id),
+            "field": "preview_token",
+            "source_value": "stale-preview-token",
+            "target_value": None,
+            "strategy": "reject",
+            "severity": "error",
+            "message": "Import preview token does not match the supplied metadata payload.",
+        }
+    ]
+    assert body["required_resolutions"] == [
+        {
+            "collection": "manifest",
+            "source_id": str(source_workspace.id),
+            "field": "preview_token",
+            "reason": "reject",
+            "allowed_actions": ["rerun_preview", "commit_without_token"],
+            "message": "Import preview token does not match the supplied metadata payload.",
+        }
+    ]
+    assert body["resources"][0]["action"] == "requires_resolution"
+    assert body["estimated_counts"]["required_resolution_total"] == 1
+    assert session.scalar(
+        select(AgentProfile).where(AgentProfile.workspace_id == target_workspace.id)
+    ) is None
+
+
 def test_workspace_metadata_import_preview_rejects_unsupported_format_version(
     tmp_path: Path,
 ) -> None:

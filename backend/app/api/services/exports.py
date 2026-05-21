@@ -462,6 +462,28 @@ class WorkspaceExportService:
         }
         warnings: list[str] = []
         conflict_plan: list[WorkspaceImportConflict] = []
+        preview_token = _metadata_preview_token(request)
+        if request.preview_token is not None and request.preview_token != preview_token:
+            conflict_plan.append(
+                _preview_token_conflict(
+                    source_id=str(request.export.manifest.workspace_id),
+                    supplied_token=request.preview_token,
+                )
+            )
+            response = WorkspaceImportResponse(
+                dry_run=request.dry_run,
+                source_workspace_id=request.export.manifest.workspace_id,
+                target_workspace_id=workspace.id,
+                preview_token=preview_token,
+                created_counts=created_counts,
+                skipped_counts=skipped_counts,
+                id_map=id_map,
+                warnings=["Import preview token does not match this metadata payload"],
+                conflict_plan=conflict_plan,
+            )
+            _populate_import_preview(response, request.export)
+            return response
+
         unsupported_format = _unsupported_format_conflict(request.export)
         if unsupported_format is not None:
             conflict_plan.append(unsupported_format)
@@ -469,6 +491,7 @@ class WorkspaceExportService:
                 dry_run=request.dry_run,
                 source_workspace_id=request.export.manifest.workspace_id,
                 target_workspace_id=workspace.id,
+                preview_token=preview_token,
                 created_counts=created_counts,
                 skipped_counts=skipped_counts,
                 id_map=id_map,
@@ -931,6 +954,7 @@ class WorkspaceExportService:
             dry_run=request.dry_run,
             source_workspace_id=request.export.manifest.workspace_id,
             target_workspace_id=workspace.id,
+            preview_token=preview_token,
             created_counts=created_counts,
             skipped_counts=skipped_counts,
             id_map=id_map,
@@ -1523,6 +1547,23 @@ def _checksum_conflict(
     )
 
 
+def _preview_token_conflict(
+    *,
+    source_id: str,
+    supplied_token: str,
+) -> WorkspaceImportConflict:
+    return WorkspaceImportConflict(
+        collection="manifest",
+        source_id=source_id,
+        field="preview_token",
+        source_value=supplied_token,
+        target_value=None,
+        strategy="reject",
+        severity="error",
+        message="Import preview token does not match the supplied metadata payload.",
+    )
+
+
 def _populate_import_preview(
     response: WorkspaceImportResponse,
     export: WorkspaceExportResponse,
@@ -1640,6 +1681,8 @@ def _suggested_resolutions(
 def _allowed_resolution_actions(conflict: WorkspaceImportConflict) -> list[str]:
     if conflict.strategy == "skip_existing" and conflict.field in {"name", "title"}:
         return ["rename", "skip"]
+    if conflict.field == "preview_token":
+        return ["rerun_preview", "commit_without_token"]
     if conflict.field == "size_bytes":
         return ["increase_max_bytes_per_object", "exclude_object"]
     if conflict.field == "total_bytes":
@@ -1687,6 +1730,26 @@ def _resolved_import_name(
     if not isinstance(new_name, str) or not new_name.strip():
         return fallback
     return new_name.strip()[:160]
+
+
+def _metadata_preview_token(request: WorkspaceImportRequest) -> str:
+    payload = {
+        "export": request.export.model_dump(mode="json"),
+        "import_agents": request.import_agents,
+        "import_teams": request.import_teams,
+        "import_tasks": request.import_tasks,
+        "import_runtime_spaces": request.import_runtime_spaces,
+        "import_skill_installs": request.import_skill_installs,
+        "max_items_per_collection": request.max_items_per_collection,
+        "name_prefix": request.name_prefix,
+    }
+    content = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return sha256(content.encode("utf-8")).hexdigest()
 
 
 def _workspace_payload(workspace: Workspace) -> dict[str, object]:

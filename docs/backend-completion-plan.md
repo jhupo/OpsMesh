@@ -375,8 +375,10 @@ Build:
 - [x] Let committed metadata imports accept an explicit rename resolution map for existing-name
   conflicts on agents, teams, tasks, and runtime spaces.
 - [x] Return richer suggested resolutions for rename-capable conflicts and required user actions.
+- [x] Let committed metadata imports accept and validate a preview token for the same export
+  payload and import scope.
 - Return richer suggested resolutions for replace and install-dependency workflows.
-- Let committed import accept a preview token and broaden explicit resolution maps beyond rename.
+- Broaden explicit resolution maps beyond rename.
 
 API/data changes:
 
@@ -384,6 +386,8 @@ API/data changes:
 - [x] `POST /api/v1/workspaces/{workspace_id}/exports/archive/import/preview`
 - [x] Add `conflict_plan` response schema with `collection`, `source_id`, `field`, `source_value`, `target_value`, `strategy`, `severity`, and `message`.
 - [x] Add richer preview response sections: `resources`, `estimated_counts`, and `required_resolutions`.
+- [x] Add `preview_token` to metadata import preview responses and committed metadata import
+  requests.
 
 Tests:
 
@@ -393,6 +397,8 @@ Tests:
 - [x] checksum mismatches and unsupported format versions are reported before commit
 - [x] preview does not write database rows or storage blobs
 - [x] committed metadata import honors selected rename resolutions
+- [x] committed metadata import accepts matching preview tokens and rejects stale tokens without
+  writes
 
 Acceptance:
 

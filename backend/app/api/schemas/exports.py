@@ -82,6 +82,7 @@ class WorkspaceExportJobResponse(ORMModel):
 class WorkspaceImportRequest(BaseModel):
     export: WorkspaceExportResponse
     dry_run: bool = True
+    preview_token: str | None = Field(default=None, max_length=128)
     import_agents: bool = True
     import_teams: bool = True
     import_tasks: bool = True
@@ -145,6 +146,7 @@ class WorkspaceImportResponse(BaseModel):
     dry_run: bool
     source_workspace_id: UUID
     target_workspace_id: UUID
+    preview_token: str | None = None
     created_counts: dict[str, int]
     skipped_counts: dict[str, int]
     id_map: dict[str, dict[str, str]]
