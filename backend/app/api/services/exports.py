@@ -543,6 +543,18 @@ class WorkspaceExportService:
                         )
                     )
                     continue
+                if _int_field(item, "reserved_value", 0) > _int_field(item, "limit_value", 0):
+                    skipped_counts["runtime_space_quotas"] += 1
+                    conflict_plan.append(
+                        _quota_violation_conflict(
+                            collection="runtime_space_quotas",
+                            source_id=source_id,
+                            quota_key=_string_field(item, "quota_key"),
+                            limit_value=_int_field(item, "limit_value", 0),
+                            reserved_value=_int_field(item, "reserved_value", 0),
+                        )
+                    )
+                    continue
                 created_counts["runtime_space_quotas"] += 1
                 if request.dry_run:
                     id_map["runtime_space_quotas"][source_id] = source_id
@@ -1445,6 +1457,29 @@ def _missing_runtime_policy_conflict(
     )
 
 
+def _quota_violation_conflict(
+    *,
+    collection: str,
+    source_id: str,
+    quota_key: str,
+    limit_value: int,
+    reserved_value: int,
+) -> WorkspaceImportConflict:
+    return WorkspaceImportConflict(
+        collection=collection,
+        source_id=source_id,
+        field="reserved_value",
+        source_value=str(reserved_value),
+        target_value=str(limit_value),
+        strategy="reject",
+        severity="error",
+        message=(
+            f"Quota {quota_key!r} reserves {reserved_value}, which exceeds its limit "
+            f"{limit_value}; import requires a consistent quota before commit."
+        ),
+    )
+
+
 def _checksum_conflict(
     *,
     collection: str,
@@ -1573,6 +1608,8 @@ def _allowed_resolution_actions(conflict: WorkspaceImportConflict) -> list[str]:
         return ["exclude_skill", "enable_in_source_and_reexport"]
     if conflict.collection == "runtime_spaces" and conflict.field == "policy":
         return ["add_runtime_policy", "exclude_runtime_space"]
+    if conflict.field == "reserved_value":
+        return ["increase_quota_limit", "release_source_reservations", "exclude_quota"]
     if conflict.strategy == "reject":
         return ["fix_source", "exclude_object"]
     return ["skip"]

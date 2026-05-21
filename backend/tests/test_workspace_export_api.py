@@ -962,6 +962,111 @@ def test_workspace_metadata_import_preview_rejects_runtime_space_without_policy(
     ).all() == []
 
 
+def test_workspace_metadata_import_preview_rejects_quota_reserved_over_limit(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-quota-violation@example.com",
+        slug="source-quota-violation",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-quota-violation@example.com",
+        slug="target-quota-violation",
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        name="Quota Runtime",
+        scope="team",
+        policy={"runtime_modes": ["docker"]},
+    )
+    session.add(runtime_space)
+    session.flush()
+    quota = RuntimeSpaceQuota(
+        workspace_id=source_workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="active_runs",
+        limit_value=1,
+        reserved_value=2,
+        unit="count",
+    )
+    session.add(quota)
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_agents": False,
+            "include_teams": False,
+            "include_tasks": False,
+            "include_runs": False,
+            "include_files": False,
+            "include_skill_installs": False,
+            "include_audit_events": False,
+        },
+    )
+    export_payload = json.loads(export_response.content)
+    preview = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import/preview",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": True},
+    )
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": False},
+    )
+
+    assert export_response.status_code == 200
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["created_counts"]["runtime_spaces"] == 1
+    assert body["created_counts"]["runtime_space_quotas"] == 0
+    assert body["skipped_counts"]["runtime_space_quotas"] == 1
+    quota_conflict = body["conflict_plan"][0]
+    assert quota_conflict == {
+        "collection": "runtime_space_quotas",
+        "source_id": str(quota.id),
+        "field": "reserved_value",
+        "source_value": "2",
+        "target_value": "1",
+        "strategy": "reject",
+        "severity": "error",
+        "message": (
+            "Quota 'active_runs' reserves 2, which exceeds its limit 1; "
+            "import requires a consistent quota before commit."
+        ),
+    }
+    assert body["required_resolutions"] == [
+        {
+            "collection": "runtime_space_quotas",
+            "source_id": str(quota.id),
+            "field": "reserved_value",
+            "reason": "reject",
+            "allowed_actions": [
+                "increase_quota_limit",
+                "release_source_reservations",
+                "exclude_quota",
+            ],
+            "message": quota_conflict["message"],
+        }
+    ]
+    assert committed.status_code == 200
+    assert committed.json()["created_counts"]["runtime_spaces"] == 1
+    assert committed.json()["created_counts"]["runtime_space_quotas"] == 0
+    assert committed.json()["skipped_counts"]["runtime_space_quotas"] == 1
+    assert session.scalar(
+        select(RuntimeSpace).where(RuntimeSpace.workspace_id == target_workspace.id)
+    ) is not None
+    assert session.scalars(
+        select(RuntimeSpaceQuota).where(RuntimeSpaceQuota.workspace_id == target_workspace.id)
+    ).all() == []
+
+
 def test_workspace_archive_export_includes_metadata_and_file_bytes(tmp_path: Path) -> None:
     client, session = _client(tmp_path)
     owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
