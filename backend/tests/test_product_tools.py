@@ -12,6 +12,8 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
+from backend.app.memory.indexing import WorkspaceMemoryIndexingService
+from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tools.context import ToolContext
@@ -305,6 +307,71 @@ def test_workspace_memory_search_respects_limit_and_source_filters() -> None:
     assert files_only
     assert {item["source_type"] for item in files_only} == {"workspace_file"}
     assert none == []
+
+
+def test_workspace_memory_indexing_refreshes_deterministic_chunks() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, slug="acme")
+    _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Renewal research",
+        description="alpha " * 260,
+        final_output={"summary": "customer renewal blockers"},
+    )
+    other_task = Task(
+        workspace_id=other_workspace.id,
+        created_by_user_id=user.id,
+        title="Secret renewal research",
+        description="secret renewal data",
+    )
+    session.add_all([task, other_task])
+    session.commit()
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=None,
+        allowed_tools=frozenset({"search_workspace_memory"}),
+    )
+    service = WorkspaceMemoryIndexingService(session)
+
+    first = service.refresh_task(workspace_id=workspace.id, task_id=task.id)
+    task.description = "beta customer renewal action plan"
+    session.commit()
+    second = service.refresh_task(workspace_id=workspace.id, task_id=task.id)
+    service.refresh_task(workspace_id=other_workspace.id, task_id=other_task.id)
+    session.commit()
+
+    results = ProductToolService(session).search_workspace_memory(
+        context,
+        "beta renewal",
+        source_types={"task"},
+    )
+    stale_results = ProductToolService(session).search_workspace_memory(
+        context,
+        "alpha",
+        source_types={"task"},
+    )
+    chunks = session.scalars(
+        select(WorkspaceMemoryEntry).where(
+            WorkspaceMemoryEntry.workspace_id == workspace.id,
+            WorkspaceMemoryEntry.source_type == "task",
+            WorkspaceMemoryEntry.source_id == str(task.id),
+        )
+    ).all()
+
+    assert first.source_type == "task"
+    assert first.indexed_chunks >= 2
+    assert first.archived_chunks == 0
+    assert second.indexed_chunks == 1
+    assert second.archived_chunks == first.indexed_chunks
+    assert results
+    assert results[0]["source_type"] == "task"
+    assert results[0]["metadata"]["indexed"] is True
+    assert all("secret" not in item["title"].lower() for item in results)
+    assert stale_results == []
+    assert {entry.status for entry in chunks} == {"active", "archived"}
 
 
 def test_workspace_memory_write_requires_tool_permission() -> None:

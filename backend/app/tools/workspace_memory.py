@@ -49,8 +49,14 @@ class WorkspaceMemorySearchService:
             return []
 
         results: list[tuple[int, _MemoryCandidate]] = []
+        indexed_sources = self._indexed_sources(workspace_id)
         for candidate in self._candidates(workspace_id):
             if source_types is not None and candidate.source_type not in source_types:
+                continue
+            if (
+                candidate.source_type,
+                str(candidate.source_id),
+            ) in indexed_sources and not candidate.metadata.get("indexed"):
                 continue
             score = _score(candidate, terms, query)
             if score > 0:
@@ -77,6 +83,22 @@ class WorkspaceMemorySearchService:
             *self._domain_item_candidates(workspace_id),
         ]
 
+    def _indexed_sources(self, workspace_id: UUID) -> set[tuple[str, str]]:
+        rows = self._session.scalars(
+            select(WorkspaceMemoryEntry).where(
+                WorkspaceMemoryEntry.workspace_id == workspace_id,
+                WorkspaceMemoryEntry.entry_type == "indexed_chunk",
+                WorkspaceMemoryEntry.status == "active",
+                WorkspaceMemoryEntry.source_type.is_not(None),
+                WorkspaceMemoryEntry.source_id.is_not(None),
+            )
+        ).all()
+        return {
+            (entry.source_type, entry.source_id)
+            for entry in rows
+            if entry.source_type is not None and entry.source_id is not None
+        }
+
     def _explicit_memory_candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:
         entries = self._session.scalars(
             select(WorkspaceMemoryEntry)
@@ -92,8 +114,8 @@ class WorkspaceMemorySearchService:
         ).all()
         return [
             _MemoryCandidate(
-                source_type="workspace_memory",
-                source_id=entry.id,
+                source_type=_memory_entry_source_type(entry),
+                source_id=_memory_entry_source_id(entry),
                 title=entry.title,
                 text=_join_text(
                     entry.title,
@@ -110,6 +132,7 @@ class WorkspaceMemorySearchService:
                     "importance": entry.importance,
                     "source_type": entry.source_type,
                     "source_id": entry.source_id,
+                    **entry.memory_metadata,
                 },
             )
             for entry in entries
@@ -374,6 +397,21 @@ def _json_text(value: object) -> str:
 
 def _str_or_none(value: object) -> str | None:
     return str(value) if value is not None else None
+
+
+def _memory_entry_source_type(entry: WorkspaceMemoryEntry) -> str:
+    if entry.entry_type == "indexed_chunk" and entry.source_type:
+        return entry.source_type
+    return "workspace_memory"
+
+
+def _memory_entry_source_id(entry: WorkspaceMemoryEntry) -> UUID:
+    if entry.entry_type == "indexed_chunk" and entry.source_id:
+        try:
+            return UUID(entry.source_id)
+        except ValueError:
+            return entry.id
+    return entry.id
 
 
 def _created_at_sort_key(value: datetime | None) -> float:
