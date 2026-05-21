@@ -22,6 +22,7 @@ from backend.app.api.schemas.self_hosted import (
     SelfHostedJobResponse,
     SelfHostedMcpJobResponse,
     SelfHostedWorkerCleanupResponse,
+    SelfHostedWorkerTrustResponse,
     WorkerHeartbeatRequest,
     WorkerHeartbeatResponse,
 )
@@ -134,6 +135,45 @@ async def cleanup_self_hosted_workers(
         degraded=result.degraded,
         quarantined=result.quarantined,
     )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/self-hosted/workers/trust",
+    response_model=list[SelfHostedWorkerTrustResponse],
+)
+async def list_self_hosted_worker_trust(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> list[SelfHostedWorkerTrustResponse]:
+    snapshots = SelfHostedRuntimeService(session, settings).list_worker_trust(
+        context.workspace.id,
+    )
+    return [
+        SelfHostedWorkerTrustResponse(
+            worker_id=snapshot.worker.id,
+            workspace_runtime_id=snapshot.worker.workspace_runtime_id,
+            runtime_space_id=snapshot.runtime.runtime_space_id,
+            name=snapshot.worker.name,
+            machine_id=snapshot.worker.machine_id,
+            version=snapshot.worker.version,
+            trust_state=snapshot.trust_state,
+            worker_status=snapshot.worker.status,
+            runtime_status=snapshot.runtime.status,
+            connection_status=snapshot.runtime.connection_status,
+            credential_status=snapshot.credential.status if snapshot.credential else None,
+            last_heartbeat_at=snapshot.worker.last_heartbeat_at,
+            credential_last_used_at=snapshot.credential.last_used_at
+            if snapshot.credential
+            else None,
+            credential_revoked_at=snapshot.credential.revoked_at
+            if snapshot.credential
+            else None,
+            policy_summary=snapshot.policy_summary,
+            capabilities=snapshot.worker.capabilities,
+        )
+        for snapshot in snapshots
+    ]
 
 
 @router.get("/self-hosted/jobs/next", response_model=SelfHostedJobResponse | None)

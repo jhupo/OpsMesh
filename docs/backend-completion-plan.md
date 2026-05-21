@@ -42,7 +42,7 @@ Incomplete or basic-only areas:
 - Task observation now has a stable backend API with generic and domain-specific sections for AIGC, novel writing, research, and software tasks. The first implementation composes existing task, step, message, run event, and artifact data; richer domain persistence can be added behind the same response shape.
 - Correction/revision is supported through a generic user-facing endpoint that targets tasks, steps, agents, artifacts, or final output and records follow-up work plus task messages.
 - Scheduling supports per-member concurrency, workspace active run quotas, per-tick resource-limit prechecks, durable workspace usage reservations, blocked reasons, cross-task priority ordering, and starvation prevention. Docker/self-hosted execution slot usage still needs deeper completion.
-- Docker runtime cleanup now records container and managed host-resource evidence and emits critical security events on cleanup failure. Self-hosted runtimes enforce worker concurrency/artifact limits and revocation evidence; broader machine trust workflows still need completion.
+- Docker runtime cleanup now records container and managed host-resource evidence and emits critical security events on cleanup failure. Self-hosted runtimes enforce worker concurrency/artifact limits, revocation evidence, and workspace-visible machine trust snapshots; broader manual remediation workflows still need completion.
 - Import preview now returns a structured conflict plan for existing names, skipped dependencies, and archive byte limits; preview-token resolution workflows are still pending.
 - Model provider selection exists. Queued runs now freeze per-agent/default provider resolution
   metadata without storing secrets, worker execution can use a workspace-scoped fallback policy,
@@ -406,7 +406,8 @@ Current state:
 
 - Users can enroll a self-hosted runtime, heartbeat, poll jobs, update progress, upload artifacts, and revoke credentials.
 - Workers enforce `max_concurrent_jobs`, artifact upload byte limits, runtime-space allowlists, allowed tools, network mode expectations, supported model lists, supported runtime lists, degraded/quarantined stale-machine transitions, and credential revocation that records actor/reason/final heartbeat/affected jobs while blocking future API use.
-- Broader trust-state review and manual remediation UX still needs more depth.
+- Workspace runtime managers can list self-hosted worker trust snapshots with trust state, runtime/credential state, policy summary, capabilities, and last heartbeat.
+- Broader manual remediation UX still needs more depth.
 
 Build:
 
@@ -415,10 +416,10 @@ Build:
   - [x] Enforce max artifact bytes.
   - [x] Enforce runtime-space allowlists.
   - [x] Enforce allowed tools, network expectations, and supported models/runtimes.
-- Add machine trust state: active, degraded, quarantined, revoked.
+- [x] Add machine trust state snapshots: active, degraded, quarantined, revoked, and offline.
   - [x] Mark worker/runtime revoked when credentials are revoked.
   - [x] Add degraded/quarantined trust automation.
-- Enforce job assignment only to compatible trusted machines.
+- [x] Enforce job assignment only to compatible trusted machines.
   - [x] Block offline/revoked/quarantined workers from polling or claiming jobs.
 - Record revocation reason, actor, affected jobs, credential rotation evidence, and final heartbeat state.
   - [x] Record credential revocation evidence in runtime and runtime-space events.
@@ -427,16 +428,18 @@ Build:
 
 API/data changes:
 
-- Extend self-hosted runtime policy schema.
-- Add revocation event metadata and machine trust status.
+- [x] Extend self-hosted runtime policy schema through worker capability policy summaries.
+- [x] Add revocation event metadata and machine trust status.
 - Add operations endpoints for stale/degraded machines. (Initial cleanup endpoint now returns degraded/quarantined counts.)
+- [x] Add workspace API for self-hosted machine trust snapshots.
 
 Tests:
 
-- incompatible job is not assigned to a self-hosted runtime
-- revoked runtime cannot poll or upload artifacts
+- [x] incompatible job is not assigned to a self-hosted runtime
+- [x] revoked runtime cannot poll or upload artifacts
 - [x] stale heartbeat moves machine to degraded/quarantined state
 - [x] revocation audit contains actor, reason, and affected job IDs
+- [x] trust snapshot exposes active, degraded, and revoked states with policy summaries
 
 Acceptance:
 

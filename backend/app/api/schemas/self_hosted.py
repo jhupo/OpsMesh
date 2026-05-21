@@ -53,6 +53,25 @@ class SelfHostedWorkerCleanupResponse(BaseModel):
     marked_offline: int = 0
 
 
+class SelfHostedWorkerTrustResponse(BaseModel):
+    worker_id: UUID
+    workspace_runtime_id: UUID
+    runtime_space_id: UUID | None
+    name: str
+    machine_id: str
+    version: str
+    trust_state: str
+    worker_status: str
+    runtime_status: str
+    connection_status: str
+    credential_status: str | None
+    last_heartbeat_at: datetime | None
+    credential_last_used_at: datetime | None
+    credential_revoked_at: datetime | None
+    policy_summary: dict[str, object]
+    capabilities: dict[str, object]
+
+
 class RuntimeCredentialRevokeRequest(BaseModel):
     reason: str = Field(default="", max_length=500)
 

@@ -829,6 +829,150 @@ def test_self_hosted_revoke_records_runtime_evidence_and_blocks_jobs() -> None:
     assert space_event.event_metadata["affected_run_ids"] == [str(run.id)]
 
 
+def test_self_hosted_worker_trust_view_summarizes_machine_policy_and_state() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    runtime_space = RuntimeSpace(workspace_id=workspace.id, name="Local", scope="workspace")
+    session.add(runtime_space)
+    session.commit()
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-trust",
+            "version": "0.2.0",
+            "capabilities": {
+                "runtime_space_id": str(runtime_space.id),
+                "allowed_runtime_space_ids": [str(runtime_space.id)],
+                "allowed_tools": ["generate_image"],
+                "supported_models": ["gpt-4.1-mini"],
+                "supported_runtimes": ["self_hosted"],
+                "supported_network_modes": ["none"],
+                "max_concurrent_jobs": 2,
+                "max_concurrent_mcp_jobs": 1,
+                "max_artifact_bytes": 4096,
+            },
+        },
+    )
+    trust = client.get(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/workers/trust",
+        headers=_headers(owner.id),
+    )
+
+    assert trust.status_code == 200
+    payload = trust.json()
+    assert len(payload) == 1
+    item = payload[0]
+    assert item["worker_id"] == registered.json()["worker_id"]
+    assert item["workspace_runtime_id"] == registered.json()["workspace_runtime_id"]
+    assert item["runtime_space_id"] == str(runtime_space.id)
+    assert item["name"] == "node"
+    assert item["machine_id"] == "machine-trust"
+    assert item["version"] == "0.2.0"
+    assert item["trust_state"] == "active"
+    assert item["worker_status"] == "online"
+    assert item["runtime_status"] == "active"
+    assert item["connection_status"] == "online"
+    assert item["credential_status"] == "active"
+    assert item["last_heartbeat_at"] is not None
+    assert item["credential_last_used_at"] is not None
+    assert item["credential_revoked_at"] is None
+    assert item["policy_summary"] == {
+        "allowed_tools": ["generate_image"],
+        "supported_models": ["gpt-4.1-mini"],
+        "supported_runtimes": ["self_hosted"],
+        "supported_network_modes": ["none"],
+        "allowed_runtime_space_ids": [str(runtime_space.id)],
+        "max_concurrent_jobs": 2,
+        "max_concurrent_mcp_jobs": 1,
+        "max_artifact_bytes": 4096,
+    }
+    assert item["capabilities"] == {
+        "runtime_space_id": str(runtime_space.id),
+        "allowed_runtime_space_ids": [str(runtime_space.id)],
+        "allowed_tools": ["generate_image"],
+        "supported_models": ["gpt-4.1-mini"],
+        "supported_runtimes": ["self_hosted"],
+        "supported_network_modes": ["none"],
+        "max_concurrent_jobs": 2,
+        "max_concurrent_mcp_jobs": 1,
+        "max_artifact_bytes": 4096,
+    }
+
+
+def test_self_hosted_worker_trust_view_reflects_degraded_and_revoked_states() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    first = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "degraded-node"},
+    )
+    first_registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": first.json()["token"],
+            "name": "degraded-node",
+            "machine_id": "machine-degraded",
+        },
+    )
+    second = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "revoked-node"},
+    )
+    second_registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": second.json()["token"],
+            "name": "revoked-node",
+            "machine_id": "machine-revoked",
+        },
+    )
+    degraded_runtime = session.get(
+        WorkspaceRuntime,
+        UUID(first_registered.json()["workspace_runtime_id"]),
+    )
+    degraded_worker = (
+        session.query(SelfHostedWorker)
+        .filter_by(workspace_runtime_id=UUID(first_registered.json()["workspace_runtime_id"]))
+        .one()
+    )
+    assert degraded_runtime is not None
+    degraded_worker.status = "degraded"
+    degraded_runtime.connection_status = "degraded"
+    session.commit()
+    credential = (
+        session.query(RuntimeCredential)
+        .filter_by(workspace_runtime_id=UUID(second_registered.json()["workspace_runtime_id"]))
+        .one()
+    )
+    revoked = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/credentials/{credential.id}/revoke",
+        headers=_headers(owner.id),
+        json={"reason": "rotated"},
+    )
+
+    trust = client.get(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/workers/trust",
+        headers=_headers(owner.id),
+    )
+    states = {item["machine_id"]: item["trust_state"] for item in trust.json()}
+
+    assert revoked.status_code == 204
+    assert trust.status_code == 200
+    assert states == {
+        "machine-degraded": "degraded",
+        "machine-revoked": "revoked",
+    }
+
+
 def _client(settings: Settings | None = None) -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(

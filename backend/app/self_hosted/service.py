@@ -66,6 +66,15 @@ class WorkerTrustCleanupResult:
     quarantined: int = 0
 
 
+@dataclass(frozen=True)
+class WorkerTrustSnapshot:
+    worker: SelfHostedWorker
+    runtime: WorkspaceRuntime
+    credential: RuntimeCredential | None
+    trust_state: str
+    policy_summary: dict[str, object]
+
+
 class SelfHostedRuntimeService:
     def __init__(self, session: Session, settings: Settings) -> None:
         self._session = session
@@ -618,6 +627,34 @@ class SelfHostedRuntimeService:
         self._session.commit()
         return WorkerTrustCleanupResult(degraded=degraded, quarantined=quarantined)
 
+    def list_worker_trust(self, workspace_id: UUID) -> list[WorkerTrustSnapshot]:
+        rows = self._session.scalars(
+            select(SelfHostedWorker)
+            .where(SelfHostedWorker.workspace_id == workspace_id)
+            .order_by(SelfHostedWorker.updated_at.desc(), SelfHostedWorker.name)
+        ).all()
+        snapshots: list[WorkerTrustSnapshot] = []
+        for worker in rows:
+            runtime = self._session.get(WorkspaceRuntime, worker.workspace_runtime_id)
+            if runtime is None or runtime.workspace_id != workspace_id:
+                continue
+            credential = self._session.scalar(
+                select(RuntimeCredential)
+                .where(RuntimeCredential.workspace_runtime_id == runtime.id)
+                .order_by(RuntimeCredential.created_at.desc())
+                .limit(1)
+            )
+            snapshots.append(
+                WorkerTrustSnapshot(
+                    worker=worker,
+                    runtime=runtime,
+                    credential=credential,
+                    trust_state=_worker_trust_state(worker, runtime, credential),
+                    policy_summary=_worker_policy_summary(worker.capabilities),
+                )
+            )
+        return snapshots
+
     def _consume_enrollment_token(self, raw_token: str) -> RuntimeEnrollmentToken:
         token = self._session.scalar(
             select(RuntimeEnrollmentToken).where(
@@ -889,3 +926,36 @@ def _uuid_from_capabilities(capabilities: dict[str, object], key: str) -> UUID |
         return UUID(value)
     except ValueError:
         return None
+
+
+def _worker_trust_state(
+    worker: SelfHostedWorker,
+    runtime: WorkspaceRuntime,
+    credential: RuntimeCredential | None,
+) -> str:
+    if credential is not None and credential.status == "revoked":
+        return "revoked"
+    if worker.status == "revoked" or runtime.status == "revoked":
+        return "revoked"
+    if worker.status == "quarantined" or runtime.status == "quarantined":
+        return "quarantined"
+    if worker.status == "degraded" or runtime.connection_status == "degraded":
+        return "degraded"
+    if worker.status in {"offline", "disabled"} or runtime.connection_status == "offline":
+        return "offline"
+    return "active"
+
+
+def _worker_policy_summary(capabilities: dict[str, object]) -> dict[str, object]:
+    return {
+        "allowed_tools": _string_list(capabilities.get("allowed_tools")),
+        "supported_models": _string_list(capabilities.get("supported_models")),
+        "supported_runtimes": _string_list(capabilities.get("supported_runtimes"))
+        or _string_list(capabilities.get("runtime_types")),
+        "supported_network_modes": _string_list(capabilities.get("supported_network_modes"))
+        or _string_list(capabilities.get("network_modes")),
+        "allowed_runtime_space_ids": _string_list(capabilities.get("allowed_runtime_space_ids")),
+        "max_concurrent_jobs": _positive_int(capabilities.get("max_concurrent_jobs")),
+        "max_concurrent_mcp_jobs": _positive_int(capabilities.get("max_concurrent_mcp_jobs")),
+        "max_artifact_bytes": _positive_int(capabilities.get("max_artifact_bytes")),
+    }
