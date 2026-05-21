@@ -22,7 +22,8 @@ from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_spaces.models import RuntimeSpace
+from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
 from backend.app.workers.jobs import JobPayload, JobType
@@ -573,6 +574,76 @@ def test_worker_runner_maintenance_expires_stale_worker_leases() -> None:
         assert lease.lease_metadata["expired_by"] == "worker_maintenance"
 
 
+def test_worker_runner_maintenance_cleans_stale_runtimes_across_workspaces() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, _, _ = _seed_run(session_factory, slug="stale-runtime-a")
+    other_workspace_id, _, _ = _seed_run(session_factory, slug="stale-runtime-b")
+    with session_factory() as session:
+        runtime_space = RuntimeSpace(
+            workspace_id=workspace_id,
+            name="Runtime Space",
+            scope="workspace",
+        )
+        session.add(runtime_space)
+        session.flush()
+        stale_runtime = WorkspaceRuntime(
+            workspace_id=workspace_id,
+            runtime_space_id=runtime_space.id,
+            name="stale",
+            status="running",
+            connection_status="online",
+            last_heartbeat_at=datetime.now(UTC) - timedelta(seconds=3_600),
+        )
+        terminal_runtime = WorkspaceRuntime(
+            workspace_id=other_workspace_id,
+            name="terminal",
+            status="stopped",
+            connection_status="offline",
+        )
+        fresh_runtime = WorkspaceRuntime(
+            workspace_id=workspace_id,
+            name="fresh",
+            status="running",
+            connection_status="online",
+            last_heartbeat_at=datetime.now(UTC),
+        )
+        session.add_all([stale_runtime, terminal_runtime, fresh_runtime])
+        session.commit()
+        stale_runtime_id = stale_runtime.id
+        terminal_runtime_id = terminal_runtime.id
+        runtime_space_id = runtime_space.id
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(
+            worker_id="worker-runtime-maintenance",
+            queue_name="agent_runs",
+            run_lease_seconds=60,
+        ),
+    )
+
+    maintenance = runner.run_maintenance()
+
+    assert maintenance.stale_runtimes == 1
+    assert maintenance.deleted_runtime_records == 1
+    with session_factory() as session:
+        stale_runtime = session.get(WorkspaceRuntime, stale_runtime_id)
+        terminal_runtime = session.get(WorkspaceRuntime, terminal_runtime_id)
+        space_event = session.scalar(
+            select(RuntimeSpaceEvent).where(
+                RuntimeSpaceEvent.runtime_space_id == runtime_space_id,
+                RuntimeSpaceEvent.event_type == "runtime.marked_offline",
+            )
+        )
+        assert stale_runtime is not None
+        assert terminal_runtime is not None
+        assert stale_runtime.connection_status == "offline"
+        assert terminal_runtime.status == "deleted"
+        assert space_event is not None
+        assert space_event.event_metadata["source"] == "worker.maintenance"
+
+
 def test_worker_runner_summary_includes_maintenance_recovery() -> None:
     session_factory = _session_factory()
     queue = _queue()
@@ -604,6 +675,8 @@ def test_worker_runner_summary_includes_maintenance_recovery() -> None:
     assert summary.failed == 0
     assert summary.recovered_runs == 1
     assert summary.expired_leases == 0
+    assert summary.stale_runtimes == 0
+    assert summary.deleted_runtime_records == 0
     with session_factory() as session:
         run = session.get(AgentRun, run_id)
         heartbeat = session.scalar(
@@ -616,6 +689,8 @@ def test_worker_runner_summary_includes_maintenance_recovery() -> None:
         assert heartbeat is not None
         assert heartbeat.details["recovered_runs"] == 1
         assert heartbeat.details["expired_leases"] == 0
+        assert heartbeat.details["stale_runtimes"] == 0
+        assert heartbeat.details["deleted_runtime_records"] == 0
 
 
 def test_agent_run_jobs_include_runtime_space_routing_requirements() -> None:

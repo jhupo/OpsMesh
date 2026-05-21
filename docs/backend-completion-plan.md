@@ -48,7 +48,7 @@ Incomplete or basic-only areas:
   runtimes enforce worker concurrency/artifact limits, revocation evidence, and
   workspace-visible machine trust snapshots; broader manual remediation workflows still need
   completion.
-- Runtime cleanup now marks stale runtimes offline, removes terminal runtime records, and expires stale worker leases within the requesting workspace.
+- Runtime cleanup now marks stale runtimes offline, removes terminal runtime records, expires stale worker leases within the requesting workspace, and worker maintenance periodically performs cross-workspace stale runtime cleanup.
 - Import preview now returns a structured conflict plan for existing names, skipped dependencies, and archive byte limits; preview-token resolution workflows are still pending.
 - Model provider selection exists. Queued runs now freeze per-agent/default provider resolution
   metadata without storing secrets, worker execution can use a workspace-scoped fallback policy,
@@ -404,7 +404,7 @@ Build:
 - [x] Emit security events when cleanup fails.
 - [x] Record Docker command timeout and exec failure as terminal command states with runtime events.
 - [x] Emit security events when command output exceeds policy.
-- Add periodic sweeper for abandoned containers and stale runtime leases. (The workspace operations cleanup endpoint now expires stale worker leases idempotently.)
+- [x] Add periodic sweeper for stale runtime records and worker leases. Abandoned container cleanup evidence is still handled by runtime manager cleanup paths.
 
 API/data changes:
 
@@ -419,7 +419,7 @@ Tests:
 - [x] timed-out command is killed and marked failed
 - cleanup success records evidence
 - [x] simulated cleanup failure emits a security event
-- sweeper cleans stale leases idempotently
+- [x] sweeper cleans stale leases idempotently
 
 Acceptance:
 

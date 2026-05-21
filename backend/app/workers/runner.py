@@ -48,6 +48,8 @@ class WorkerRunSummary:
     idle_polls: int
     recovered_runs: int
     expired_leases: int
+    stale_runtimes: int
+    deleted_runtime_records: int
     stopped: bool
 
 
@@ -55,6 +57,8 @@ class WorkerRunSummary:
 class WorkerMaintenanceSummary:
     recovered_runs: int
     expired_leases: int
+    stale_runtimes: int = 0
+    deleted_runtime_records: int = 0
 
 
 class WorkerRunner:
@@ -144,6 +148,8 @@ class WorkerRunner:
         idle_polls = 0
         recovered_runs = 0
         expired_leases = 0
+        stale_runtimes = 0
+        deleted_runtime_records = 0
         last_error: str | None = None
         next_heartbeat_at = 0.0
         next_maintenance_at = 0.0
@@ -159,6 +165,8 @@ class WorkerRunner:
                         idle_polls=idle_polls,
                         recovered_runs=recovered_runs,
                         expired_leases=expired_leases,
+                        stale_runtimes=stale_runtimes,
+                        deleted_runtime_records=deleted_runtime_records,
                         last_error=last_error,
                     ),
                 )
@@ -167,6 +175,8 @@ class WorkerRunner:
                 maintenance = self.run_maintenance()
                 recovered_runs += maintenance.recovered_runs
                 expired_leases += maintenance.expired_leases
+                stale_runtimes += maintenance.stale_runtimes
+                deleted_runtime_records += maintenance.deleted_runtime_records
                 next_maintenance_at = now + self._config.maintenance_interval_seconds
 
             try:
@@ -183,6 +193,8 @@ class WorkerRunner:
                         idle_polls=idle_polls,
                         recovered_runs=recovered_runs,
                         expired_leases=expired_leases,
+                        stale_runtimes=stale_runtimes,
+                        deleted_runtime_records=deleted_runtime_records,
                         last_error=last_error,
                     ),
                 )
@@ -207,6 +219,8 @@ class WorkerRunner:
                 idle_polls=idle_polls,
                 recovered_runs=recovered_runs,
                 expired_leases=expired_leases,
+                stale_runtimes=stale_runtimes,
+                deleted_runtime_records=deleted_runtime_records,
                 last_error=last_error,
             ),
         )
@@ -216,6 +230,8 @@ class WorkerRunner:
             idle_polls=idle_polls,
             recovered_runs=recovered_runs,
             expired_leases=expired_leases,
+            stale_runtimes=stale_runtimes,
+            deleted_runtime_records=deleted_runtime_records,
             stopped=self._is_stopped(stop_event),
         )
 
@@ -257,9 +273,16 @@ class WorkerRunner:
                 expired_leases = OperationsService(session).expire_stale_worker_leases(
                     stale_after_seconds=self._config.run_lease_seconds,
                 )
+                stale_runtimes, deleted_runtime_records = OperationsService(
+                    session
+                ).cleanup_stale_runtimes_across_workspaces(
+                    stale_after_seconds=self._config.run_lease_seconds,
+                )
                 return WorkerMaintenanceSummary(
                     recovered_runs=summary.recovered_runs,
                     expired_leases=expired_leases,
+                    stale_runtimes=stale_runtimes,
+                    deleted_runtime_records=deleted_runtime_records,
                 )
         except Exception:
             logger.exception("Failed to run worker maintenance")
@@ -276,6 +299,8 @@ class WorkerRunner:
         idle_polls: int,
         recovered_runs: int,
         expired_leases: int,
+        stale_runtimes: int,
+        deleted_runtime_records: int,
         last_error: str | None,
     ) -> dict[str, object]:
         details: dict[str, object] = {
@@ -284,6 +309,8 @@ class WorkerRunner:
             "idle_polls": idle_polls,
             "recovered_runs": recovered_runs,
             "expired_leases": expired_leases,
+            "stale_runtimes": stale_runtimes,
+            "deleted_runtime_records": deleted_runtime_records,
             "capacity": {
                 "max_jobs": self._config.max_jobs,
             },

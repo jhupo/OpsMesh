@@ -490,6 +490,33 @@ class OperationsService:
         self._session.commit()
         return len(stale_runtimes), deleted_records
 
+    def cleanup_stale_runtimes_across_workspaces(
+        self,
+        *,
+        stale_after_seconds: int = 600,
+    ) -> tuple[int, int]:
+        cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
+        stale_runtimes = self._session.scalars(
+            select(WorkspaceRuntime).where(
+                WorkspaceRuntime.connection_status == "online",
+                WorkspaceRuntime.last_heartbeat_at.is_not(None),
+                WorkspaceRuntime.last_heartbeat_at < cutoff,
+            )
+        ).all()
+        now = datetime.now(UTC)
+        for runtime in stale_runtimes:
+            runtime.connection_status = "offline"
+            self._append_runtime_space_event(
+                runtime,
+                "runtime.marked_offline",
+                "Runtime heartbeat is stale",
+                {"source": "worker.maintenance"},
+                created_at=now,
+            )
+        deleted_records = self._mark_deleted_terminal_runtimes(source="worker.maintenance")
+        self._session.commit()
+        return len(stale_runtimes), deleted_records
+
     def overview(self, workspace_id: UUID, queue_name: str) -> dict[str, Any]:
         return self.overview_payload(workspace_id, queue_name)
 
@@ -1312,13 +1339,18 @@ class OperationsService:
             resource_limits=_positive_number_dict(scheduler.get("resource_limits")),
         )
 
-    def _mark_deleted_terminal_runtimes(self, workspace_id: UUID) -> int:
-        terminal = self._session.scalars(
-            select(WorkspaceRuntime).where(
-                WorkspaceRuntime.workspace_id == workspace_id,
-                WorkspaceRuntime.status.in_(["stopped", "failed"]),
-            )
-        ).all()
+    def _mark_deleted_terminal_runtimes(
+        self,
+        workspace_id: UUID | None = None,
+        *,
+        source: str = "operations.cleanup",
+    ) -> int:
+        statement = select(WorkspaceRuntime).where(
+            WorkspaceRuntime.status.in_(["stopped", "failed"])
+        )
+        if workspace_id is not None:
+            statement = statement.where(WorkspaceRuntime.workspace_id == workspace_id)
+        terminal = self._session.scalars(statement).all()
         now = datetime.now(UTC)
         for runtime in terminal:
             runtime.status = "deleted"
@@ -1327,7 +1359,7 @@ class OperationsService:
                 runtime,
                 "runtime.record_deleted",
                 "Terminal runtime record marked deleted",
-                {"source": "operations.cleanup"},
+                {"source": source},
                 created_at=now,
             )
         return len(terminal)
