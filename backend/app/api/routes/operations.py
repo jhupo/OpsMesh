@@ -216,14 +216,24 @@ async def list_runtime_events(
 @router.post("/runtime-cleanup", response_model=RuntimeCleanupResponse)
 async def cleanup_runtimes(
     stale_after_seconds: int = Query(default=600, ge=60, le=86_400),
+    stale_lease_after_seconds: int = Query(default=900, ge=60, le=86_400),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> RuntimeCleanupResponse:
-    stale, deleted = OperationsService(session).cleanup_stale_runtimes(
+    service = OperationsService(session)
+    stale, deleted = service.cleanup_stale_runtimes(
         context.workspace.id,
         stale_after_seconds=stale_after_seconds,
     )
-    return RuntimeCleanupResponse(stale_marked_offline=stale, deleted_records=deleted)
+    expired_leases = service.expire_stale_worker_leases(
+        workspace_id=context.workspace.id,
+        stale_after_seconds=stale_lease_after_seconds,
+    )
+    return RuntimeCleanupResponse(
+        stale_marked_offline=stale,
+        deleted_records=deleted,
+        expired_worker_leases=expired_leases,
+    )
 
 
 @router.get("/failed-runs", response_model=FailedJobInspectionResponse)

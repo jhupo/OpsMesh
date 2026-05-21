@@ -294,14 +294,20 @@ class OperationsService:
         )
         return int(running or 0)
 
-    def expire_stale_worker_leases(self, *, stale_after_seconds: int = 900) -> int:
+    def expire_stale_worker_leases(
+        self,
+        *,
+        workspace_id: UUID | None = None,
+        stale_after_seconds: int = 900,
+    ) -> int:
         cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
-        stale_leases = self._session.scalars(
-            select(WorkerLease).where(
-                WorkerLease.status.in_(RUNNING_LEASE_STATUSES),
-                WorkerLease.started_at < cutoff,
-            )
-        ).all()
+        statement = select(WorkerLease).where(
+            WorkerLease.status.in_(RUNNING_LEASE_STATUSES),
+            WorkerLease.started_at < cutoff,
+        )
+        if workspace_id is not None:
+            statement = statement.where(WorkerLease.workspace_id == workspace_id)
+        stale_leases = self._session.scalars(statement).all()
         expired_at = datetime.now(UTC)
         for lease in stale_leases:
             lease.status = "expired"

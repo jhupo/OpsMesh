@@ -43,6 +43,7 @@ Incomplete or basic-only areas:
 - Correction/revision is supported through a generic user-facing endpoint that targets tasks, steps, agents, artifacts, or final output and records follow-up work plus task messages.
 - Scheduling supports per-member concurrency, workspace active run quotas, per-tick resource-limit prechecks, durable workspace usage reservations, blocked reasons, cross-task priority ordering, and starvation prevention. Docker/self-hosted execution slot usage still needs deeper completion.
 - Docker runtime cleanup now records container and managed host-resource evidence and emits critical security events on cleanup failure. Self-hosted runtimes enforce worker concurrency/artifact limits, revocation evidence, and workspace-visible machine trust snapshots; broader manual remediation workflows still need completion.
+- Runtime cleanup now marks stale runtimes offline, removes terminal runtime records, and expires stale worker leases within the requesting workspace.
 - Import preview now returns a structured conflict plan for existing names, skipped dependencies, and archive byte limits; preview-token resolution workflows are still pending.
 - Model provider selection exists. Queued runs now freeze per-agent/default provider resolution
   metadata without storing secrets, worker execution can use a workspace-scoped fallback policy,
@@ -387,13 +388,13 @@ Build:
 - [x] Verify volume, temp directory, and staged file cleanup for managed runtime resources.
 - [x] Emit security events when cleanup fails.
 - Emit security events when a container exceeds policy.
-- Add periodic sweeper for abandoned containers and stale runtime leases.
+- Add periodic sweeper for abandoned containers and stale runtime leases. (The workspace operations cleanup endpoint now expires stale worker leases idempotently.)
 
 API/data changes:
 
 - Add runtime lease records or extend runtime events with lease IDs.
 - [x] Add cleanup status and evidence metadata to runtime events.
-- Add operations endpoint for leaked/stale runtime resources.
+- [x] Add operations endpoint coverage for leaked/stale runtime resources and stale worker leases.
 
 Tests:
 

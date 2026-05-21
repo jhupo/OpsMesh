@@ -105,6 +105,7 @@ class RequeueDeadLetterResponse(BaseModel):
 class RuntimeCleanupResponse(BaseModel):
     stale_marked_offline: int
     deleted_records: int
+    expired_worker_leases: int = 0
 
 
 class FailedJobInspectionResponse(BaseModel):

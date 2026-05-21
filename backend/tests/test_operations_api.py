@@ -99,8 +99,34 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     )
     session.add_all([runtime, failed_run])
     session.flush()
+    stale_lease = WorkerLease(
+        workspace_id=workspace.id,
+        worker_id="worker-stale",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=uuid4(),
+        status="running",
+        attempt=0,
+        lease_metadata={"scope": "owned"},
+        started_at=datetime.now(UTC) - timedelta(seconds=1_000),
+    )
+    other_workspace_stale_lease = WorkerLease(
+        workspace_id=uuid4(),
+        worker_id="worker-other-stale",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=uuid4(),
+        status="running",
+        attempt=0,
+        lease_metadata={"scope": "other"},
+        started_at=datetime.now(UTC) - timedelta(seconds=1_000),
+    )
     session.add_all(
         [
+            stale_lease,
+            other_workspace_stale_lease,
             RuntimeEvent(
                 workspace_id=workspace.id,
                 workspace_runtime_id=runtime.id,
@@ -229,13 +255,29 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert audit.json()["total"] == 1
 
     cleanup = client.post(
-        f"/api/v1/workspaces/{workspace.id}/operations/runtime-cleanup?stale_after_seconds=60",
+        f"/api/v1/workspaces/{workspace.id}/operations/runtime-cleanup"
+        "?stale_after_seconds=60&stale_lease_after_seconds=60",
+        headers=_headers(owner.id),
+    )
+    cleanup_again = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/runtime-cleanup"
+        "?stale_after_seconds=60&stale_lease_after_seconds=60",
         headers=_headers(owner.id),
     )
     assert cleanup.status_code == 200
     assert cleanup.json()["stale_marked_offline"] == 1
+    assert cleanup.json()["expired_worker_leases"] == 1
+    assert cleanup_again.status_code == 200
+    assert cleanup_again.json()["expired_worker_leases"] == 0
     session.refresh(runtime)
+    session.refresh(stale_lease)
+    session.refresh(other_workspace_stale_lease)
     assert runtime.connection_status == "offline"
+    assert stale_lease.status == "expired"
+    assert stale_lease.finished_at is not None
+    assert stale_lease.lease_metadata["scope"] == "owned"
+    assert stale_lease.lease_metadata["expired_by"] == "worker_maintenance"
+    assert other_workspace_stale_lease.status == "running"
     space_event = session.query(RuntimeSpaceEvent).filter_by(
         runtime_space_id=runtime_space.id,
         event_type="runtime.marked_offline",
