@@ -1764,7 +1764,7 @@ class RunOrchestrationService:
             "tool_policy": _dict_copy(tool_policy),
             "installed_skills": installed_skills,
             "model_provider": model_provider,
-            "runtime_policy": _dict_copy(runtime_policy),
+            "runtime_policy": _runtime_policy_snapshot(runtime_policy),
             "memory_policy": _dict_copy(memory_policy),
             "approval_policy": _dict_copy(approval_policy),
             "file_scope": {
@@ -2679,6 +2679,30 @@ def _dict_or_empty(value: object) -> dict[str, object]:
 
 def _dict_copy(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _runtime_policy_snapshot(value: object) -> dict[str, object]:
+    policy = _dict_copy(value)
+    raw_mcp = policy.get("mcp")
+    mcp_policy = _dict_copy(raw_mcp)
+    network_mode = mcp_policy.get("network_mode")
+    if not isinstance(network_mode, str) or not network_mode:
+        network = policy.get("network")
+        network_mode = network if isinstance(network, str) and network else "restricted"
+    policy["mcp"] = {
+        "network_mode": network_mode,
+        "timeout_seconds": _positive_int_or_default(mcp_policy.get("timeout_seconds"), 30),
+        "max_input_bytes": _positive_int_or_default(mcp_policy.get("max_input_bytes"), 64_000),
+        "max_output_bytes": _positive_int_or_default(
+            mcp_policy.get("max_output_bytes"),
+            256_000,
+        ),
+    }
+    return policy
+
+
+def _positive_int_or_default(value: object, default: int) -> int:
+    return value if isinstance(value, int) and value > 0 else default
 
 
 def _task_progress_from_output(final_output: str) -> TaskProgressUpdate | None:

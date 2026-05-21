@@ -1068,7 +1068,11 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
         role="designer",
         instructions="Design assets.",
         tool_policy={"allowed_tools": ["generate_image"]},
-        runtime_policy={"provider": "docker", "network": "disabled"},
+        runtime_policy={
+            "provider": "docker",
+            "network": "disabled",
+            "mcp": {"timeout_seconds": 45, "max_output_bytes": 512_000},
+        },
         approval_policy={"required_tools": ["write_artifact"]},
     )
     team = AgentTeam(workspace_id=workspace.id, name="Design Team", team_type="design")
@@ -1239,7 +1243,16 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     ]
     assert "encrypted-secret" not in str(snapshot["installed_skills"])
     assert "vault://do-not-freeze" not in str(snapshot["installed_skills"])
-    assert snapshot["runtime_policy"] == {"provider": "docker", "network": "disabled"}
+    assert snapshot["runtime_policy"] == {
+        "provider": "docker",
+        "network": "disabled",
+        "mcp": {
+            "network_mode": "disabled",
+            "timeout_seconds": 45,
+            "max_input_bytes": 64_000,
+            "max_output_bytes": 512_000,
+        },
+    }
     assert snapshot["approval_policy"] == {"required_tools": ["write_artifact"]}
     assert request.context.allowed_tools == ("generate_image",)
     assert request.tool_executor is not None
