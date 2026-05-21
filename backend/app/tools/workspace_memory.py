@@ -4,6 +4,7 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import select
@@ -30,38 +31,32 @@ class _MemoryCandidate:
     metadata: dict[str, object]
 
 
-class WorkspaceMemorySearchService:
-    """Lightweight workspace-scoped lexical search across operational memory."""
-
-    def __init__(self, session: Session) -> None:
-        self._session = session
-
-    def search(
+class WorkspaceMemoryRanker(Protocol):
+    def rank(
         self,
+        candidates: list[_MemoryCandidate],
         *,
-        workspace_id: UUID,
         query: str,
-        limit: int = 10,
-        source_types: set[str] | None = None,
+        limit: int,
+    ) -> list[dict[str, object]]: ...
+
+
+class LexicalMemoryRanker:
+    def rank(
+        self,
+        candidates: list[_MemoryCandidate],
+        *,
+        query: str,
+        limit: int,
     ) -> list[dict[str, object]]:
         terms = _query_terms(query)
         if not terms or limit <= 0:
             return []
-
         results: list[tuple[int, _MemoryCandidate]] = []
-        indexed_sources = self._indexed_sources(workspace_id)
-        for candidate in self._candidates(workspace_id):
-            if source_types is not None and candidate.source_type not in source_types:
-                continue
-            if (
-                candidate.source_type,
-                str(candidate.source_id),
-            ) in indexed_sources and not candidate.metadata.get("indexed"):
-                continue
+        for candidate in candidates:
             score = _score(candidate, terms, query)
             if score > 0:
                 results.append((score, candidate))
-
         results.sort(
             key=lambda item: (
                 item[0],
@@ -71,6 +66,38 @@ class WorkspaceMemorySearchService:
             reverse=True,
         )
         return [_result_payload(candidate, score, terms) for score, candidate in results[:limit]]
+
+
+class WorkspaceMemorySearchService:
+    """Lightweight workspace-scoped lexical search across operational memory."""
+
+    def __init__(self, session: Session, ranker: WorkspaceMemoryRanker | None = None) -> None:
+        self._session = session
+        self._ranker = ranker or LexicalMemoryRanker()
+
+    def search(
+        self,
+        *,
+        workspace_id: UUID,
+        query: str,
+        limit: int = 10,
+        source_types: set[str] | None = None,
+    ) -> list[dict[str, object]]:
+        if limit <= 0:
+            return []
+
+        indexed_sources = self._indexed_sources(workspace_id)
+        candidates: list[_MemoryCandidate] = []
+        for candidate in self._candidates(workspace_id):
+            if source_types is not None and candidate.source_type not in source_types:
+                continue
+            if (
+                candidate.source_type,
+                str(candidate.source_id),
+            ) in indexed_sources and not candidate.metadata.get("indexed"):
+                continue
+            candidates.append(candidate)
+        return self._ranker.rank(candidates, query=query, limit=limit)
 
     def _candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:
         return [

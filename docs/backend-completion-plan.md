@@ -635,7 +635,8 @@ Build:
 - [x] Replace placeholder implementation with a workspace-scoped lexical search service.
 - [x] Enforce workspace authorization at query time by filtering every source by `workspace_id`.
 - [x] Add a memory indexing service with deterministic text chunks and metadata.
-- Start with Postgres full-text search; leave a clean interface for vector search later.
+- [x] Keep search ranking behind a clean ranker interface so Postgres full-text or vector search
+  can replace the lexical ranker later.
 - [x] Enforce workspace, file, and task authorization at query time.
 - [x] Add initial freshness rules: when indexed chunks exist for a source, search uses active
   chunks instead of the raw stale source candidate.
