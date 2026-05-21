@@ -106,6 +106,7 @@ class WorkspaceArchiveImportRequest(BaseModel):
     max_items_per_collection: int = Field(default=500, ge=1, le=5_000)
     max_bytes_per_object: int = Field(default=25 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
     max_total_bytes: int = Field(default=100 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
+    resolutions: dict[str, dict[str, object]] = Field(default_factory=dict)
 
 
 class WorkspaceImportConflict(BaseModel):

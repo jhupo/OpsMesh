@@ -2045,6 +2045,98 @@ def test_workspace_archive_import_preview_rejects_checksum_mismatch(tmp_path: Pa
     ).all() == []
 
 
+def test_workspace_archive_import_can_replace_checksum_mismatch_with_resolution(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-replace-checksum@example.com",
+        slug="source-replace-checksum",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-replace-checksum@example.com",
+        slug="target-replace-checksum",
+    )
+    uploaded = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/files",
+        headers=_headers(source_user.id),
+        files={"file": ("brief.txt", b"original", "text/plain")},
+    )
+    archive_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
+        headers=_headers(source_user.id),
+        json={"include_audit_events": False},
+    )
+    tampered = BytesIO()
+    with (
+        ZipFile(BytesIO(archive_response.content)) as source_zip,
+        ZipFile(tampered, mode="w", compression=ZIP_DEFLATED) as target_zip,
+    ):
+        for name in source_zip.namelist():
+            content = source_zip.read(name)
+            if name == f"files/{uploaded.json()['id']}/brief.txt":
+                content = b"replacement"
+            target_zip.writestr(name, content)
+
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import",
+        headers=_headers(target_user.id),
+        files={"file": ("archive.zip", tampered.getvalue(), "application/zip")},
+        data={
+            "dry_run": "false",
+            "resolutions": json.dumps(
+                {
+                    f"files:{uploaded.json()['id']}": {
+                        "action": "replace_archive_object"
+                    }
+                }
+            ),
+        },
+    )
+
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["created_counts"]["files"] == 1
+    assert body["skipped_counts"]["files"] == 0
+    assert body["required_resolutions"] == []
+    imported_file = session.scalar(
+        select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
+    )
+    assert imported_file is not None
+    assert imported_file.checksum_sha256 == sha256(b"replacement").hexdigest()
+
+
+def test_workspace_archive_import_rejects_invalid_resolution_json(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-invalid-archive-resolution@example.com",
+        slug="source-invalid-archive-resolution",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-invalid-archive-resolution@example.com",
+        slug="target-invalid-archive-resolution",
+    )
+    archive_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
+        headers=_headers(source_user.id),
+        json={"include_audit_events": False},
+    )
+
+    response = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import",
+        headers=_headers(target_user.id),
+        files={"file": ("archive.zip", archive_response.content, "application/zip")},
+        data={"dry_run": "false", "resolutions": "{not json"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "Archive import resolutions must be valid JSON"
+
+
 def test_workspace_archive_import_restores_metadata_and_file_bytes(tmp_path: Path) -> None:
     client, session = _client(tmp_path)
     source_user, source_workspace = _seed_workspace(

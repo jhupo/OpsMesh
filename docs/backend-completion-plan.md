@@ -381,9 +381,12 @@ Build:
   policies, invalid quota reservations, and disabled skill exclusions.
 - [x] Let committed metadata imports map skipped dependency objects to validated existing target
   workspace resources for team members, task steps, and task messages.
+- [x] Let committed archive imports accept multipart JSON resolutions for object exclusion and
+  checksum replacement.
 - [x] Return richer suggested resolutions with recommended actions and resolution templates for
   replace-object and install-dependency workflows.
-- Broaden explicit resolution maps for archive object replacement flows.
+- Broaden explicit resolution maps for additional archive replacement and dependency-install
+  edge cases.
 
 API/data changes:
 
@@ -394,6 +397,7 @@ API/data changes:
 - [x] Add `preview_token` to metadata import preview responses and committed metadata import
   requests.
 - [x] Add `recommended_action` and `resolution_template` to suggested import resolutions.
+- [x] Add `resolutions` JSON form field to archive import and archive import preview.
 
 Tests:
 
@@ -409,6 +413,7 @@ Tests:
 - [x] preview suggests concrete resolution templates for rename, dependency, policy, and archive
   checksum conflicts
 - [x] committed metadata import honors selected dependency mappings to existing target resources
+- [x] committed archive import honors selected checksum replacement resolutions
 
 Acceptance:
 

@@ -169,6 +169,7 @@ async def import_workspace_archive(
     max_items_per_collection: int = Form(default=500),
     max_bytes_per_object: int = Form(default=25 * 1024 * 1024),
     max_total_bytes: int = Form(default=100 * 1024 * 1024),
+    resolutions: str | None = Form(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
@@ -185,6 +186,7 @@ async def import_workspace_archive(
         max_items_per_collection=max_items_per_collection,
         max_bytes_per_object=max_bytes_per_object,
         max_total_bytes=max_total_bytes,
+        resolutions=_parse_archive_resolutions(resolutions),
     )
     try:
         return WorkspaceExportService(session).import_archive(
@@ -210,6 +212,7 @@ async def preview_workspace_archive_import(
     max_items_per_collection: int = Form(default=500),
     max_bytes_per_object: int = Form(default=25 * 1024 * 1024),
     max_total_bytes: int = Form(default=100 * 1024 * 1024),
+    resolutions: str | None = Form(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
@@ -226,6 +229,7 @@ async def preview_workspace_archive_import(
         max_items_per_collection=max_items_per_collection,
         max_bytes_per_object=max_bytes_per_object,
         max_total_bytes=max_total_bytes,
+        resolutions=_parse_archive_resolutions(resolutions),
     )
     try:
         return WorkspaceExportService(session).import_archive(
@@ -237,3 +241,25 @@ async def preview_workspace_archive_import(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+def _parse_archive_resolutions(value: str | None) -> dict[str, dict[str, object]]:
+    if value is None or not value.strip():
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Archive import resolutions must be valid JSON",
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Archive import resolutions must be a JSON object",
+        )
+    return {
+        str(key): value
+        for key, value in parsed.items()
+        if isinstance(value, dict)
+    }

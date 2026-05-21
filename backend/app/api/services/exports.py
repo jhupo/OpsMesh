@@ -1170,6 +1170,9 @@ class WorkspaceExportService:
         total_bytes: int,
     ) -> int:
         source_id = _string_field(item, "id")
+        if _archive_resolution_action(request, "files", source_id) == "exclude_object":
+            response.skipped_counts["files"] += 1
+            return total_bytes
         filename = safe_filename(_string_field(item, "filename", "file.bin"))
         archive_name = f"files/{source_id}/{filename}"
         content = self._read_import_blob(
@@ -1190,6 +1193,12 @@ class WorkspaceExportService:
             source_id=source_id,
             collection="files",
             response=response,
+            allow_replace=_archive_resolution_action(
+                request,
+                "files",
+                source_id,
+            )
+            == "replace_archive_object",
         )
         if not checksum_result.matched:
             response.skipped_counts["files"] += 1
@@ -1235,6 +1244,9 @@ class WorkspaceExportService:
         total_bytes: int,
     ) -> int:
         source_id = _string_field(item, "id")
+        if _archive_resolution_action(request, "artifacts", source_id) == "exclude_object":
+            response.skipped_counts["artifacts"] += 1
+            return total_bytes
         filename = safe_filename(_string_field(item, "filename", "artifact.bin"))
         archive_name = f"artifacts/{source_id}/{filename}"
         content = self._read_import_blob(
@@ -1255,6 +1267,12 @@ class WorkspaceExportService:
             source_id=source_id,
             collection="artifacts",
             response=response,
+            allow_replace=_archive_resolution_action(
+                request,
+                "artifacts",
+                source_id,
+            )
+            == "replace_archive_object",
         )
         if not checksum_result.matched:
             response.skipped_counts["artifacts"] += 1
@@ -1992,6 +2010,18 @@ def _resolved_quota_reserved_for_validation(
     return _int_field(item, "reserved_value", 0)
 
 
+def _archive_resolution_action(
+    request: WorkspaceArchiveImportRequest,
+    collection: str,
+    source_id: str,
+) -> str | None:
+    resolution = request.resolutions.get(f"{collection}:{source_id}")
+    if not isinstance(resolution, dict):
+        return None
+    action = resolution.get("action")
+    return action if isinstance(action, str) else None
+
+
 def _metadata_preview_token(request: WorkspaceImportRequest) -> str:
     payload = {
         "export": request.export.model_dump(mode="json"),
@@ -2394,9 +2424,15 @@ def _validated_checksum(
     source_id: str,
     collection: str,
     response: WorkspaceImportResponse,
+    allow_replace: bool = False,
 ) -> _ChecksumResult:
     actual_checksum = sha256(content).hexdigest()
     matched = not source_checksum or source_checksum == actual_checksum
+    if not matched and allow_replace:
+        response.warnings.append(
+            f"Imported {collection[:-1]} {source_id}: checksum replaced by resolution"
+        )
+        return _ChecksumResult(checksum_sha256=actual_checksum, matched=True)
     if not matched:
         response.warnings.append(
             f"Skipped {collection[:-1]} {source_id}: checksum mismatch"
