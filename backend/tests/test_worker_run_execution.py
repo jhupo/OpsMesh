@@ -1805,6 +1805,25 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
                         },
                     ),
                     AgentRuntimeEvent(
+                        event_type="tool.call.blocked",
+                        message="Tool blocked by policy",
+                        payload={
+                            "tool_name": "deploy",
+                            "reason": "approval_required",
+                            "authorization": "Bearer hidden",
+                        },
+                    ),
+                    AgentRuntimeEvent(
+                        event_type="run.waiting_runtime",
+                        message="Waiting for self-hosted MCP result",
+                        payload={"worker_id": "local-1", "external_ref": "secret-ref"},
+                    ),
+                    AgentRuntimeEvent(
+                        event_type="model.fallback.selected",
+                        message="Using backup model",
+                        payload={"model": "backup", "base_url": "https://secret.example"},
+                    ),
+                    AgentRuntimeEvent(
                         event_type="debug.trace",
                         message="Noisy internal event",
                         payload={"secret": "still-hidden"},
@@ -1837,16 +1856,29 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
     runtime_messages = [
         message
         for message in messages
-        if message.message_type in {"tool.requested", "agent.handoff"}
+        if message.message_type
+        in {
+            "tool.requested",
+            "agent.handoff",
+            "tool.blocked",
+            "runtime.waiting",
+            "model.fallback",
+        }
     ]
     assert [message.message_type for message in runtime_messages] == [
         "tool.requested",
         "agent.handoff",
+        "tool.blocked",
+        "runtime.waiting",
+        "model.fallback",
     ]
     assert runtime_messages[0].payload["tool_name"] == "search"
     assert runtime_messages[0].payload["api_key"] == "[redacted]"
     assert runtime_messages[0].payload["work_package_id"] == "research-1"
     assert runtime_messages[1].payload["token"] == "[redacted]"
+    assert runtime_messages[2].payload["authorization"] == "[redacted]"
+    assert runtime_messages[3].payload["external_ref"] == "[redacted]"
+    assert runtime_messages[4].payload["base_url"] == "[redacted]"
     assert "debug.trace" in event_types
     assert "debug.trace" not in {message.message_type for message in messages}
 

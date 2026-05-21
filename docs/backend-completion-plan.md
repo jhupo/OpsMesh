@@ -674,18 +674,20 @@ Current state:
 
 - Product run events and task messages exist.
 - Step start/completion, PM decisions, and staffing events are persisted.
-- Low-level OpenAI Agents handoff/tool events are not mapped into the user-visible task communication stream.
+- Low-level OpenAI Agents handoff/tool/runtime-wait/fallback events are mapped into the
+  user-visible task communication stream with secret redaction.
 
 Build:
 
 - [x] Add an event mapper from runtime event types to normalized task message types.
 - [x] Filter noisy internal events.
-- Group related low-level events into readable milestones where appropriate.
+- [x] Group related low-level events into readable milestones where appropriate.
 - [x] Preserve raw run events for debugging while exposing concise task messages for users.
 
 API/data changes:
 
 - [x] Add message types for agent handoff, tool request, tool result summary, approval wait, and model fallback.
+- [x] Add message types for blocked tools and runtime-wait/self-hosted handoff states.
 - [x] Add mapper configuration to runtime contract.
 
 Tests:
@@ -693,6 +695,7 @@ Tests:
 - [x] tool event creates a task message with sanitized payload
 - [x] handoff event creates a message linked to source/target agents
 - [x] secret-bearing event fields are redacted
+- [x] blocked tool, runtime wait, and fallback event aliases create sanitized task messages
 - [x] raw run events remain available separately
 
 Acceptance:

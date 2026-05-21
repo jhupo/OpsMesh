@@ -59,16 +59,38 @@ def _message_type(event_type: str) -> str | None:
     normalized = event_type.strip().lower().replace("_", ".")
     mapping = {
         "agent.handoff": "agent.handoff",
+        "agent.handoff.started": "agent.handoff",
+        "agent.handoff.completed": "agent.handoff",
         "handoff": "agent.handoff",
+        "handoff.started": "agent.handoff",
+        "handoff.completed": "agent.handoff",
+        "handoff_requested": "agent.handoff",
+        "handoff_occurred": "agent.handoff",
         "tool.called": "tool.requested",
         "tool.call": "tool.requested",
+        "tool.call.created": "tool.requested",
+        "tool.call.started": "tool.requested",
         "tool.requested": "tool.requested",
         "tool.completed": "tool.completed",
         "tool.result": "tool.completed",
+        "tool.call.completed": "tool.completed",
+        "tool.output": "tool.completed",
         "tool.failed": "tool.failed",
+        "tool.call.failed": "tool.failed",
+        "tool.error": "tool.failed",
+        "tool.blocked": "tool.blocked",
+        "tool.call.blocked": "tool.blocked",
         "approval.requested": "approval.requested",
+        "approval.waiting": "approval.requested",
+        "approval.required": "approval.requested",
+        "run.waiting.runtime": "runtime.waiting",
+        "run.waiting_runtime": "runtime.waiting",
+        "runtime.waiting": "runtime.waiting",
+        "self.hosted.mcp.waiting": "runtime.waiting",
+        "self_hosted_mcp.waiting": "runtime.waiting",
         "model.provider.fallback.selected": "model.fallback",
         "model_provider.fallback_selected": "model.fallback",
+        "model.fallback.selected": "model.fallback",
     }
     return mapping.get(normalized)
 
@@ -79,7 +101,9 @@ def _default_body(message_type: str) -> str:
         "tool.requested": "Tool requested.",
         "tool.completed": "Tool completed.",
         "tool.failed": "Tool failed.",
+        "tool.blocked": "Tool blocked.",
         "approval.requested": "Approval requested.",
+        "runtime.waiting": "Runtime is waiting for external work.",
         "model.fallback": "Model provider fallback selected.",
     }.get(message_type, "Runtime event.")
 
