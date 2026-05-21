@@ -89,6 +89,7 @@ class WorkspaceImportRequest(BaseModel):
     import_skill_installs: bool = True
     name_prefix: str = Field(default="Imported ", max_length=80)
     max_items_per_collection: int = Field(default=500, ge=1, le=5_000)
+    resolutions: dict[str, dict[str, object]] = Field(default_factory=dict)
 
 
 class WorkspaceArchiveImportRequest(BaseModel):

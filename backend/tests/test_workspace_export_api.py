@@ -530,6 +530,85 @@ def test_workspace_metadata_import_preview_returns_conflict_plan(tmp_path: Path)
     )
 
 
+def test_workspace_metadata_import_can_rename_existing_agent_conflict(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-rename@example.com",
+        slug="source-rename",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-rename@example.com",
+        slug="target-rename",
+    )
+    source_agent = AgentProfile(
+        workspace_id=source_workspace.id,
+        name="Researcher",
+        role="researcher",
+    )
+    existing_agent = AgentProfile(
+        workspace_id=target_workspace.id,
+        name="Imported Researcher",
+        role="researcher",
+    )
+    session.add_all([source_agent, existing_agent])
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_teams": False,
+            "include_tasks": False,
+            "include_runs": False,
+            "include_files": False,
+            "include_runtime_spaces": False,
+            "include_skill_installs": False,
+            "include_audit_events": False,
+        },
+    )
+    export_payload = json.loads(export_response.content)
+    preview = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import/preview",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": True},
+    )
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={
+            "export": export_payload,
+            "dry_run": False,
+            "resolutions": {
+                f"agents:{source_agent.id}": {
+                    "action": "rename",
+                    "new_name": "Imported Researcher 2",
+                }
+            },
+        },
+    )
+
+    assert export_response.status_code == 200
+    assert preview.status_code == 200
+    assert preview.json()["required_resolutions"] == []
+    assert preview.json()["conflict_plan"][0]["strategy"] == "skip_existing"
+    assert preview.json()["conflict_plan"][0]["target_value"] == "Imported Researcher"
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["created_counts"]["agents"] == 1
+    assert body["skipped_counts"]["agents"] == 0
+    imported = session.scalar(
+        select(AgentProfile).where(
+            AgentProfile.workspace_id == target_workspace.id,
+            AgentProfile.name == "Imported Researcher 2",
+        )
+    )
+    assert imported is not None
+
+
 def test_workspace_metadata_import_preview_rejects_unsupported_format_version(
     tmp_path: Path,
 ) -> None:

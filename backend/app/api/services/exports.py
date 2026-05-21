@@ -480,7 +480,12 @@ class WorkspaceExportService:
         if request.import_runtime_spaces:
             for item in request.export.runtime_spaces[: request.max_items_per_collection]:
                 source_id = _string_field(item, "id")
-                imported_name = f"{request.name_prefix}{_string_field(item, 'name')}"
+                imported_name = _resolved_import_name(
+                    request,
+                    collection="runtime_spaces",
+                    source_id=source_id,
+                    fallback=f"{request.name_prefix}{_string_field(item, 'name')}",
+                )
                 if self._runtime_space_exists(workspace.id, imported_name):
                     skipped_counts["runtime_spaces"] += 1
                     conflict_plan.append(
@@ -645,7 +650,12 @@ class WorkspaceExportService:
         if request.import_agents:
             for item in request.export.agents[: request.max_items_per_collection]:
                 source_id = _string_field(item, "id")
-                imported_name = f"{request.name_prefix}{_string_field(item, 'name')}"
+                imported_name = _resolved_import_name(
+                    request,
+                    collection="agents",
+                    source_id=source_id,
+                    fallback=f"{request.name_prefix}{_string_field(item, 'name')}",
+                )
                 if self._agent_exists(workspace.id, imported_name):
                     skipped_counts["agents"] += 1
                     conflict_plan.append(
@@ -690,7 +700,12 @@ class WorkspaceExportService:
         if request.import_teams:
             for item in request.export.teams[: request.max_items_per_collection]:
                 source_id = _string_field(item, "id")
-                imported_name = f"{request.name_prefix}{_string_field(item, 'name')}"
+                imported_name = _resolved_import_name(
+                    request,
+                    collection="teams",
+                    source_id=source_id,
+                    fallback=f"{request.name_prefix}{_string_field(item, 'name')}",
+                )
                 if self._team_exists(workspace.id, imported_name):
                     skipped_counts["teams"] += 1
                     conflict_plan.append(
@@ -782,7 +797,12 @@ class WorkspaceExportService:
         if request.import_tasks:
             for item in request.export.tasks[: request.max_items_per_collection]:
                 source_id = _string_field(item, "id")
-                imported_title = f"{request.name_prefix}{_string_field(item, 'title')}"
+                imported_title = _resolved_import_name(
+                    request,
+                    collection="tasks",
+                    source_id=source_id,
+                    fallback=f"{request.name_prefix}{_string_field(item, 'title')}",
+                )
                 if self._task_exists(workspace.id, imported_title):
                     skipped_counts["tasks"] += 1
                     conflict_plan.append(
@@ -1596,6 +1616,8 @@ def _required_resolutions(
 
 
 def _allowed_resolution_actions(conflict: WorkspaceImportConflict) -> list[str]:
+    if conflict.strategy == "skip_existing" and conflict.field in {"name", "title"}:
+        return ["rename", "skip"]
     if conflict.field == "size_bytes":
         return ["increase_max_bytes_per_object", "exclude_object"]
     if conflict.field == "total_bytes":
@@ -1625,6 +1647,24 @@ def _preview_action(create_count: int, skip_count: int, required_count: int) -> 
     if skip_count > 0:
         return "skip"
     return "none"
+
+
+def _resolved_import_name(
+    request: WorkspaceImportRequest,
+    *,
+    collection: str,
+    source_id: str,
+    fallback: str,
+) -> str:
+    resolution = request.resolutions.get(f"{collection}:{source_id}")
+    if not isinstance(resolution, dict):
+        return fallback
+    if resolution.get("action") != "rename":
+        return fallback
+    new_name = resolution.get("new_name")
+    if not isinstance(new_name, str) or not new_name.strip():
+        return fallback
+    return new_name.strip()[:160]
 
 
 def _workspace_payload(workspace: Workspace) -> dict[str, object]:

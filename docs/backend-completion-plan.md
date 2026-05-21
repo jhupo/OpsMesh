@@ -372,8 +372,10 @@ Build:
 - [x] Detect disabled skill installs that would otherwise be imported as active.
 - [x] Detect missing runtime policies before creating runtime spaces.
 - [x] Detect runtime quota violations where reserved usage exceeds configured limits.
-- Return richer suggested resolutions: rename, replace, install dependency, or reject with required user action.
-- Let committed import accept a preview token or explicit resolution map.
+- [x] Let committed metadata imports accept an explicit rename resolution map for existing-name
+  conflicts on agents, teams, tasks, and runtime spaces.
+- Return richer suggested resolutions: replace, install dependency, or reject with required user action.
+- Let committed import accept a preview token and broaden explicit resolution maps beyond rename.
 
 API/data changes:
 
@@ -389,7 +391,7 @@ Tests:
 - [x] oversized blobs are reported before commit
 - [x] checksum mismatches and unsupported format versions are reported before commit
 - [x] preview does not write database rows or storage blobs
-- committed import honors selected resolutions
+- [x] committed metadata import honors selected rename resolutions
 
 Acceptance:
 
