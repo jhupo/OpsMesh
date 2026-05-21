@@ -374,7 +374,8 @@ Build:
 - [x] Detect runtime quota violations where reserved usage exceeds configured limits.
 - [x] Let committed metadata imports accept an explicit rename resolution map for existing-name
   conflicts on agents, teams, tasks, and runtime spaces.
-- Return richer suggested resolutions: replace, install dependency, or reject with required user action.
+- [x] Return richer suggested resolutions for rename-capable conflicts and required user actions.
+- Return richer suggested resolutions for replace and install-dependency workflows.
 - Let committed import accept a preview token and broaden explicit resolution maps beyond rename.
 
 API/data changes:

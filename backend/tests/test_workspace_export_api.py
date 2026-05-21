@@ -596,6 +596,18 @@ def test_workspace_metadata_import_can_rename_existing_agent_conflict(
     assert preview.json()["required_resolutions"] == []
     assert preview.json()["conflict_plan"][0]["strategy"] == "skip_existing"
     assert preview.json()["conflict_plan"][0]["target_value"] == "Imported Researcher"
+    assert preview.json()["suggested_resolutions"] == [
+        {
+            "collection": "agents",
+            "source_id": str(source_agent.id),
+            "field": "name",
+            "reason": "skip_existing",
+            "allowed_actions": ["rename", "skip"],
+            "message": "Agent 'Imported Researcher' already exists in target workspace.",
+            "resolution_key": f"agents:{source_agent.id}",
+        }
+    ]
+    assert preview.json()["estimated_counts"]["suggested_resolution_total"] == 1
     assert committed.status_code == 200
     body = committed.json()
     assert body["created_counts"]["agents"] == 1

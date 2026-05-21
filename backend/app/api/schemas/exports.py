@@ -137,6 +137,10 @@ class WorkspaceImportRequiredResolution(BaseModel):
     message: str
 
 
+class WorkspaceImportSuggestedResolution(WorkspaceImportRequiredResolution):
+    resolution_key: str
+
+
 class WorkspaceImportResponse(BaseModel):
     dry_run: bool
     source_workspace_id: UUID
@@ -149,3 +153,4 @@ class WorkspaceImportResponse(BaseModel):
     resources: list[WorkspaceImportResourcePreview] = Field(default_factory=list)
     estimated_counts: dict[str, int] = Field(default_factory=dict)
     required_resolutions: list[WorkspaceImportRequiredResolution] = Field(default_factory=list)
+    suggested_resolutions: list[WorkspaceImportSuggestedResolution] = Field(default_factory=list)

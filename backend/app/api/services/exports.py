@@ -23,6 +23,7 @@ from backend.app.api.schemas.exports import (
     WorkspaceImportRequiredResolution,
     WorkspaceImportResourcePreview,
     WorkspaceImportResponse,
+    WorkspaceImportSuggestedResolution,
 )
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
@@ -1528,7 +1529,9 @@ def _populate_import_preview(
 ) -> None:
     conflict_counts = _conflict_counts(response.conflict_plan)
     required_resolutions = _required_resolutions(response.conflict_plan)
+    suggested_resolutions = _suggested_resolutions(response.conflict_plan)
     response.required_resolutions = required_resolutions
+    response.suggested_resolutions = suggested_resolutions
     required_counts = _conflict_counts(required_resolutions)
     response.resources = [
         WorkspaceImportResourcePreview(
@@ -1552,6 +1555,7 @@ def _populate_import_preview(
         "skip_total": sum(item.skip_count for item in response.resources),
         "conflict_total": len(response.conflict_plan),
         "required_resolution_total": len(required_resolutions),
+        "suggested_resolution_total": len(suggested_resolutions),
     }
 
 
@@ -1612,6 +1616,24 @@ def _required_resolutions(
         )
         for conflict in conflicts
         if conflict.severity == "error" or conflict.strategy == "reject"
+    ]
+
+
+def _suggested_resolutions(
+    conflicts: list[WorkspaceImportConflict],
+) -> list[WorkspaceImportSuggestedResolution]:
+    return [
+        WorkspaceImportSuggestedResolution(
+            collection=conflict.collection,
+            source_id=conflict.source_id,
+            field=conflict.field,
+            reason=conflict.strategy,
+            allowed_actions=_allowed_resolution_actions(conflict),
+            message=conflict.message,
+            resolution_key=f"{conflict.collection}:{conflict.source_id}",
+        )
+        for conflict in conflicts
+        if _allowed_resolution_actions(conflict) != ["skip"]
     ]
 
 
