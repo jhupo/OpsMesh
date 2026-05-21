@@ -141,6 +141,58 @@ def test_mcp_execution_ignores_disabled_credentials() -> None:
     assert adapter.calls[0]["credential_secret_payloads"] == ["active-secret"]
 
 
+def test_mcp_execution_rejects_disabled_server_or_tool_allowlist() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace)
+    adapter = RecordingAdapter({"ok": True})
+    server.status = "disabled"
+    session.commit()
+
+    try:
+        McpToolExecutionService(session, adapter).execute(
+            McpExecutionRequest(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                arguments={},
+            )
+        )
+    except ToolPermissionError as exc:
+        assert "blocked" in str(exc)
+    else:
+        raise AssertionError("Expected disabled MCP server to be blocked")
+
+    server.status = "active"
+    allow = session.scalar(
+        select(McpToolAllowlist).where(McpToolAllowlist.mcp_server_id == server.id)
+    )
+    assert allow is not None
+    allow.status = "disabled"
+    session.commit()
+
+    try:
+        McpToolExecutionService(session, adapter).execute(
+            McpExecutionRequest(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                arguments={},
+            )
+        )
+    except ToolPermissionError as exc:
+        assert "blocked" in str(exc)
+    else:
+        raise AssertionError("Expected disabled MCP tool allowlist to be blocked")
+
+    logs = session.scalars(select(McpToolCallLog).order_by(McpToolCallLog.created_at)).all()
+    assert [log.status for log in logs] == ["blocked", "blocked"]
+    assert [log.error_code for log in logs] == ["mcp_tool_not_allowed", "mcp_tool_not_allowed"]
+    assert adapter.calls == []
+
+
 def test_mcp_execution_blocks_tool_not_in_run_snapshot_and_records_security_event() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)

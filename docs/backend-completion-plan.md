@@ -754,6 +754,7 @@ Build:
   - [x] Artifact history does not leak artifacts when a foreign task ID is supplied.
   - [x] Runtime lease listing does not leak foreign runtime-space leases.
   - [x] Disabled MCP credentials are not injected into tool execution.
+  - [x] Disabled MCP servers and tool allowlist entries are rejected by execution.
 - Add property-style tests for workspace ID mismatch where practical.
 
 Tests:
