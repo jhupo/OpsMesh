@@ -230,6 +230,10 @@ class SchedulerBlockedReasonResponse(BaseModel):
     count: int
 
 
+class SchedulerPauseRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=240)
+
+
 class SchedulerPolicyResponse(BaseModel):
     paused: bool = False
     pause_reason: str | None = None
@@ -246,6 +250,14 @@ class OperationsSchedulerResponse(BaseModel):
     backlog: SchedulerBacklogResponse
     priority_buckets: list[SchedulerPriorityBucketResponse]
     blocked_reasons: list[SchedulerBlockedReasonResponse]
+    policy: SchedulerPolicyResponse
+
+
+class SchedulerControlResponse(BaseModel):
+    workspace_id: UUID
+    paused: bool
+    pause_reason: str | None = None
+    cleared_blocked_steps: int = 0
     policy: SchedulerPolicyResponse
 
 

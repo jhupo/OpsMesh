@@ -401,6 +401,8 @@ POST /api/v1/workspaces/{workspace_id}/runtime-spaces/{runtime_space_id}/reset
 GET  /api/v1/workspaces/{workspace_id}/runtime-spaces/{runtime_space_id}/events
 GET  /api/v1/workspaces/{workspace_id}/operations/overview
 GET  /api/v1/workspaces/{workspace_id}/operations/scheduler
+POST /api/v1/workspaces/{workspace_id}/operations/scheduler/pause
+POST /api/v1/workspaces/{workspace_id}/operations/scheduler/resume
 GET  /api/v1/workspaces/{workspace_id}/operations/runtime-capacity
 ```
 

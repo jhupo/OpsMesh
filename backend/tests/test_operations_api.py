@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import fakeredis
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
@@ -1296,6 +1296,76 @@ def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:
         "starvation_boost_after_seconds": 60,
         "resource_limits": {"cpu": 4.0},
     }
+
+
+def test_operations_scheduler_pause_and_resume_control_policy() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    viewer = User(email="viewer@example.com", display_name="Viewer")
+    session.add(viewer)
+    session.add(WorkspaceMember(workspace=workspace, user=viewer, role="viewer"))
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Queued work",
+        status="queued",
+        priority=3,
+    )
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Queued step",
+        status="queued",
+        order_index=0,
+        dependencies={
+            "scheduling_status": "blocked",
+            "blocked_reason": "maintenance",
+            "priority_score": 10,
+        },
+    )
+    session.add(step)
+    session.commit()
+
+    paused = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/scheduler/pause",
+        headers=_headers(owner.id),
+        json={"reason": "maintenance"},
+    )
+    denied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/scheduler/resume",
+        headers=_headers(viewer.id),
+    )
+    resumed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/scheduler/resume",
+        headers=_headers(owner.id),
+    )
+
+    session.refresh(workspace)
+    session.refresh(step)
+    events = session.scalars(
+        select(AuditEvent)
+        .where(AuditEvent.workspace_id == workspace.id)
+        .order_by(AuditEvent.created_at.asc())
+    ).all()
+
+    assert paused.status_code == 200
+    assert paused.json()["paused"] is True
+    assert paused.json()["pause_reason"] == "maintenance"
+    assert denied.status_code == 403
+    assert resumed.status_code == 200
+    assert resumed.json()["paused"] is False
+    assert resumed.json()["cleared_blocked_steps"] == 1
+    assert workspace.settings["scheduler"]["paused"] is False
+    assert "pause_reason" not in workspace.settings["scheduler"]
+    assert step.dependencies == {}
+    assert [event.action for event in events] == [
+        "workspace.scheduler_paused",
+        "workspace.scheduler_resumed",
+    ]
+    assert events[1].audit_metadata["cleared_blocked_steps"] == 1
 
 
 def test_operations_outcomes_reports_failure_rate_and_approval_backlog() -> None:

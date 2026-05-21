@@ -27,6 +27,8 @@ from backend.app.api.schemas.operations import (
     RuntimeCleanupResponse,
     RuntimeEventResponse,
     RuntimeLeaseResponse,
+    SchedulerControlResponse,
+    SchedulerPauseRequest,
     SecurityEventFilterResponse,
     SecurityEventResponse,
     WorkerHeartbeatRequest,
@@ -464,6 +466,36 @@ async def operations_scheduler(
         ttl_seconds=10,
     )
     return OperationsSchedulerResponse(**cached.value)
+
+
+@router.post("/scheduler/pause", response_model=SchedulerControlResponse)
+async def pause_scheduler(
+    request: SchedulerPauseRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> SchedulerControlResponse:
+    response = OperationsService(session).pause_scheduler(
+        workspace_id=context.workspace.id,
+        actor_user_id=context.user.user_id,
+        reason=request.reason,
+    )
+    if response is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return response
+
+
+@router.post("/scheduler/resume", response_model=SchedulerControlResponse)
+async def resume_scheduler(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> SchedulerControlResponse:
+    response = OperationsService(session).resume_scheduler(
+        workspace_id=context.workspace.id,
+        actor_user_id=context.user.user_id,
+    )
+    if response is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return response
 
 
 @router.get("/outcomes", response_model=OperationsOutcomesResponse)
