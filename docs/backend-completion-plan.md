@@ -379,9 +379,11 @@ Build:
   payload and import scope.
 - [x] Let committed metadata imports apply explicit non-rename resolutions for missing runtime
   policies, invalid quota reservations, and disabled skill exclusions.
+- [x] Let committed metadata imports map skipped dependency objects to validated existing target
+  workspace resources for team members, task steps, and task messages.
 - [x] Return richer suggested resolutions with recommended actions and resolution templates for
   replace-object and install-dependency workflows.
-- Broaden explicit resolution maps for archive object replacement and dependency-install flows.
+- Broaden explicit resolution maps for archive object replacement flows.
 
 API/data changes:
 
@@ -406,6 +408,7 @@ Tests:
 - [x] committed metadata import honors selected policy, quota, and disabled-skill resolutions
 - [x] preview suggests concrete resolution templates for rename, dependency, policy, and archive
   checksum conflicts
+- [x] committed metadata import honors selected dependency mappings to existing target resources
 
 Acceptance:
 

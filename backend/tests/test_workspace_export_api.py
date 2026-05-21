@@ -638,6 +638,199 @@ def test_workspace_metadata_import_can_rename_existing_agent_conflict(
     assert imported is not None
 
 
+def test_workspace_metadata_import_can_map_existing_team_member_dependencies(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-existing-deps@example.com",
+        slug="source-existing-deps",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-existing-deps@example.com",
+        slug="target-existing-deps",
+    )
+    source_agent = AgentProfile(
+        workspace_id=source_workspace.id,
+        name="Researcher",
+        role="researcher",
+    )
+    source_team = AgentTeam(
+        workspace_id=source_workspace.id,
+        name="Research Team",
+        team_type="research",
+    )
+    session.add_all([source_agent, source_team])
+    session.flush()
+    source_member = AgentTeamMember(
+        workspace_id=source_workspace.id,
+        agent_team_id=source_team.id,
+        agent_profile_id=source_agent.id,
+        team_role="researcher",
+    )
+    target_agent = AgentProfile(
+        workspace_id=target_workspace.id,
+        name="Imported Researcher",
+        role="researcher",
+    )
+    target_team = AgentTeam(
+        workspace_id=target_workspace.id,
+        name="Imported Research Team",
+        team_type="research",
+    )
+    session.add_all([source_member, target_agent, target_team])
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_tasks": False,
+            "include_runs": False,
+            "include_files": False,
+            "include_runtime_spaces": False,
+            "include_skill_installs": False,
+            "include_audit_events": False,
+        },
+    )
+    export_payload = json.loads(export_response.content)
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={
+            "export": export_payload,
+            "dry_run": False,
+            "resolutions": {
+                f"team_members:{source_member.id}": {
+                    "action": "import_dependency",
+                    "dependencies": {
+                        "agent_team_id": str(target_team.id),
+                        "agent_profile_id": str(target_agent.id),
+                    },
+                }
+            },
+        },
+    )
+
+    assert export_response.status_code == 200
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["created_counts"]["agents"] == 0
+    assert body["created_counts"]["teams"] == 0
+    assert body["created_counts"]["team_members"] == 1
+    assert body["skipped_counts"]["agents"] == 1
+    assert body["skipped_counts"]["teams"] == 1
+    assert body["required_resolutions"] == []
+    imported_member = session.scalar(
+        select(AgentTeamMember).where(
+            AgentTeamMember.workspace_id == target_workspace.id,
+            AgentTeamMember.agent_team_id == target_team.id,
+            AgentTeamMember.agent_profile_id == target_agent.id,
+        )
+    )
+    assert imported_member is not None
+
+
+def test_workspace_metadata_import_can_map_existing_task_dependencies(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-existing-task-deps@example.com",
+        slug="source-existing-task-deps",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-existing-task-deps@example.com",
+        slug="target-existing-task-deps",
+    )
+    source_task = Task(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        title="Q2 Research",
+    )
+    session.add(source_task)
+    session.flush()
+    source_step = TaskStep(
+        workspace_id=source_workspace.id,
+        task_id=source_task.id,
+        title="Research",
+    )
+    source_message = TaskMessage(
+        workspace_id=source_workspace.id,
+        task_id=source_task.id,
+        message_type="note",
+        sequence=1,
+        body="Ready",
+    )
+    target_task = Task(
+        workspace_id=target_workspace.id,
+        created_by_user_id=target_user.id,
+        title="Imported Q2 Research",
+    )
+    session.add_all([source_step, source_message, target_task])
+    session.commit()
+
+    export_response = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_agents": False,
+            "include_teams": False,
+            "include_runs": False,
+            "include_files": False,
+            "include_runtime_spaces": False,
+            "include_skill_installs": False,
+            "include_audit_events": False,
+        },
+    )
+    export_payload = json.loads(export_response.content)
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={
+            "export": export_payload,
+            "dry_run": False,
+            "resolutions": {
+                f"task_steps:{source_step.id}": {
+                    "action": "import_dependency",
+                    "dependencies": {"task_id": str(target_task.id)},
+                },
+                f"task_messages:{source_message.id}": {
+                    "action": "import_dependency",
+                    "dependencies": {"task_id": str(target_task.id)},
+                },
+            },
+        },
+    )
+
+    assert export_response.status_code == 200
+    assert committed.status_code == 200
+    body = committed.json()
+    assert body["created_counts"]["tasks"] == 0
+    assert body["created_counts"]["task_steps"] == 1
+    assert body["created_counts"]["task_messages"] == 1
+    assert body["skipped_counts"]["tasks"] == 1
+    assert body["required_resolutions"] == []
+    imported_step = session.scalar(
+        select(TaskStep).where(
+            TaskStep.workspace_id == target_workspace.id,
+            TaskStep.task_id == target_task.id,
+        )
+    )
+    imported_message = session.scalar(
+        select(TaskMessage).where(
+            TaskMessage.workspace_id == target_workspace.id,
+            TaskMessage.task_id == target_task.id,
+        )
+    )
+    assert imported_step is not None
+    assert imported_message is not None
+
+
 def test_workspace_metadata_import_accepts_matching_preview_token(
     tmp_path: Path,
 ) -> None:

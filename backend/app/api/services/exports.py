@@ -788,8 +788,26 @@ class WorkspaceExportService:
 
             for item in request.export.team_members[: request.max_items_per_collection]:
                 source_id = _string_field(item, "id")
-                team_id = id_map["teams"].get(_string_field(item, "agent_team_id"))
-                agent_id = id_map["agents"].get(_string_field(item, "agent_profile_id"))
+                team_id = self._resolved_dependency_id(
+                    workspace_id=workspace.id,
+                    request=request,
+                    collection="team_members",
+                    source_id=source_id,
+                    source_dependency_id=_string_field(item, "agent_team_id"),
+                    dependency_field="agent_team_id",
+                    id_map=id_map["teams"],
+                    model=AgentTeam,
+                )
+                agent_id = self._resolved_dependency_id(
+                    workspace_id=workspace.id,
+                    request=request,
+                    collection="team_members",
+                    source_id=source_id,
+                    source_dependency_id=_string_field(item, "agent_profile_id"),
+                    dependency_field="agent_profile_id",
+                    id_map=id_map["agents"],
+                    model=AgentProfile,
+                )
                 reports_to_id = id_map["team_members"].get(
                     _string_field(item, "reports_to_member_id")
                 )
@@ -891,7 +909,16 @@ class WorkspaceExportService:
 
             for item in request.export.task_steps[: request.max_items_per_collection]:
                 source_id = _string_field(item, "id")
-                task_id = id_map["tasks"].get(_string_field(item, "task_id"))
+                task_id = self._resolved_dependency_id(
+                    workspace_id=workspace.id,
+                    request=request,
+                    collection="task_steps",
+                    source_id=source_id,
+                    source_dependency_id=_string_field(item, "task_id"),
+                    dependency_field="task_id",
+                    id_map=id_map["tasks"],
+                    model=Task,
+                )
                 if task_id is None:
                     skipped_counts["task_steps"] += 1
                     warnings.append("Skipped task step with missing imported task")
@@ -908,9 +935,25 @@ class WorkspaceExportService:
                 if request.dry_run:
                     id_map["task_steps"][source_id] = source_id
                     continue
-                agent_id = id_map["agents"].get(_string_field(item, "assigned_agent_profile_id"))
-                runtime_space_id = id_map["runtime_spaces"].get(
-                    _string_field(item, "runtime_space_id")
+                agent_id = self._resolved_dependency_id(
+                    workspace_id=workspace.id,
+                    request=request,
+                    collection="task_steps",
+                    source_id=source_id,
+                    source_dependency_id=_string_field(item, "assigned_agent_profile_id"),
+                    dependency_field="assigned_agent_profile_id",
+                    id_map=id_map["agents"],
+                    model=AgentProfile,
+                )
+                runtime_space_id = self._resolved_dependency_id(
+                    workspace_id=workspace.id,
+                    request=request,
+                    collection="task_steps",
+                    source_id=source_id,
+                    source_dependency_id=_string_field(item, "runtime_space_id"),
+                    dependency_field="runtime_space_id",
+                    id_map=id_map["runtime_spaces"],
+                    model=RuntimeSpace,
                 )
                 step = TaskStep(
                     workspace_id=workspace.id,
@@ -936,7 +979,16 @@ class WorkspaceExportService:
 
             for item in request.export.task_messages[: request.max_items_per_collection]:
                 source_id = _string_field(item, "id")
-                task_id = id_map["tasks"].get(_string_field(item, "task_id"))
+                task_id = self._resolved_dependency_id(
+                    workspace_id=workspace.id,
+                    request=request,
+                    collection="task_messages",
+                    source_id=source_id,
+                    source_dependency_id=_string_field(item, "task_id"),
+                    dependency_field="task_id",
+                    id_map=id_map["tasks"],
+                    model=Task,
+                )
                 if task_id is None:
                     skipped_counts["task_messages"] += 1
                     warnings.append("Skipped task message with missing imported task")
@@ -955,12 +1007,32 @@ class WorkspaceExportService:
                     continue
                 source_step_id = _string_field(item, "task_step_id")
                 source_agent_id = _string_field(item, "agent_profile_id")
+                step_id = self._resolved_dependency_id(
+                    workspace_id=workspace.id,
+                    request=request,
+                    collection="task_messages",
+                    source_id=source_id,
+                    source_dependency_id=source_step_id,
+                    dependency_field="task_step_id",
+                    id_map=id_map["task_steps"],
+                    model=TaskStep,
+                )
+                agent_id = self._resolved_dependency_id(
+                    workspace_id=workspace.id,
+                    request=request,
+                    collection="task_messages",
+                    source_id=source_id,
+                    source_dependency_id=source_agent_id,
+                    dependency_field="agent_profile_id",
+                    id_map=id_map["agents"],
+                    model=AgentProfile,
+                )
                 message = TaskMessage(
                     workspace_id=workspace.id,
                     task_id=UUID(task_id),
-                    task_step_id=_uuid_or_none(id_map["task_steps"].get(source_step_id)),
+                    task_step_id=_uuid_or_none(step_id),
                     agent_run_id=None,
-                    agent_profile_id=_uuid_or_none(id_map["agents"].get(source_agent_id)),
+                    agent_profile_id=_uuid_or_none(agent_id),
                     message_type=_string_field(item, "message_type", "note"),
                     sequence=_int_field(item, "sequence", 1),
                     body=_string_field(item, "body"),
@@ -1412,6 +1484,41 @@ class WorkspaceExportService:
                 WorkspaceSkillInstall.installed_key == installed_key,
             )
         ) is not None
+
+    def _resolved_dependency_id(
+        self,
+        *,
+        workspace_id: UUID,
+        request: WorkspaceImportRequest,
+        collection: str,
+        source_id: str,
+        source_dependency_id: str,
+        dependency_field: str,
+        id_map: dict[str, str],
+        model: type[Any],
+    ) -> str | None:
+        if not source_dependency_id:
+            return None
+        mapped_id = id_map.get(source_dependency_id)
+        if mapped_id is not None:
+            return mapped_id
+        resolution = _resolution(request, collection, source_id)
+        dependencies = resolution.get("dependencies")
+        if resolution.get("action") != "import_dependency" or not isinstance(
+            dependencies,
+            dict,
+        ):
+            return None
+        target_id = dependencies.get(dependency_field)
+        if not isinstance(target_id, str) or not _is_valid_uuid(target_id):
+            return None
+        exists = self._session.scalar(
+            select(model.id).where(
+                model.workspace_id == workspace_id,
+                model.id == UUID(target_id),
+            )
+        )
+        return target_id if exists is not None else None
 
 
 @dataclass(frozen=True)
@@ -2270,6 +2377,14 @@ def _uuid_or_none(value: str | None) -> UUID | None:
     if not value:
         return None
     return UUID(value)
+
+
+def _is_valid_uuid(value: str) -> bool:
+    try:
+        UUID(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _validated_checksum(
