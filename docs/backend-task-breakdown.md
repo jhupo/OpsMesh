@@ -541,6 +541,7 @@ Tasks:
   - [x] Add scheduler-specific backlog and fairness aggregate.
   - [x] Add failure-rate and approval-backlog aggregate.
 - [x] Add security review tests around account-scoped skill/tool invocation.
+  - [x] Redact raw MCP credential external references from credential API responses.
 
 ## Phase 22: Persistent AI Organization Architecture
 

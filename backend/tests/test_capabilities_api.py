@@ -91,6 +91,9 @@ def test_capability_skill_and_mcp_control_plane() -> None:
         },
     )
     assert credential.status_code == 201
+    assert "external_ref" not in credential.json()
+    assert credential.json()["external_ref_configured"] is True
+    assert credential.json()["external_ref_kind"] == "secret"
     assert credential.json()["secret_fingerprint"] is None
     assert credential.json()["encryption_key_id"] is None
     blocked_tool = client.post(
@@ -183,7 +186,9 @@ def test_hosted_mcp_credentials_are_encrypted_and_not_returned() -> None:
     assert credential.status_code == 201
     body = credential.json()
     assert body["provider"] == "hosted"
-    assert body["external_ref"] == ""
+    assert "external_ref" not in body
+    assert body["external_ref_configured"] is False
+    assert body["external_ref_kind"] is None
     assert body["secret_fingerprint"].startswith("sha256:")
     assert body["encryption_key_id"] == "test"
     assert "secret_payload" not in body
@@ -265,6 +270,8 @@ def test_mcp_credentials_can_be_listed_filtered_and_disabled() -> None:
     assert listed.status_code == 200
     assert listed.json()["total"] == 1
     assert listed.json()["items"][0]["name"] == "image-key"
+    assert "external_ref" not in listed.json()["items"][0]
+    assert listed.json()["items"][0]["external_ref_configured"] is False
     assert listed.json()["items"][0]["secret_fingerprint"] is not None
     assert "encrypted_secret_payload" not in listed.json()["items"][0]
     assert disabled.status_code == 200

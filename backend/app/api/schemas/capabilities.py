@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
 
@@ -165,11 +165,29 @@ class McpCredentialReferenceResponse(TimestampedModel):
     mcp_server_id: UUID | None
     name: str
     provider: str
-    external_ref: str
+    external_ref: str = Field(exclude=True, repr=False)
     secret_fingerprint: str | None
     encryption_key_id: str | None
     scopes: list[str]
     status: str
+
+    @computed_field
+    @property
+    def external_ref_configured(self) -> bool:
+        raw_value = getattr(self, "external_ref", None)
+        return isinstance(raw_value, str) and bool(raw_value)
+
+    @computed_field
+    @property
+    def external_ref_kind(self) -> str | None:
+        raw_value = getattr(self, "external_ref", None)
+        if not isinstance(raw_value, str) or not raw_value:
+            return None
+        if ":" in raw_value:
+            return raw_value.split(":", 1)[0]
+        if "/" in raw_value:
+            return raw_value.split("/", 1)[0]
+        return "reference"
 
 
 class McpToolDescriptor(BaseModel):
