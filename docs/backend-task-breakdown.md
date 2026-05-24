@@ -543,6 +543,7 @@ Tasks:
 - [x] Add security review tests around account-scoped skill/tool invocation.
   - [x] Redact raw MCP credential external references from credential API responses.
   - [x] Redact MCP server connection secrets and full remote URLs from API responses.
+  - [x] Hide raw Docker container IDs from workspace runtime responses while keeping admin metadata.
 
 ## Phase 22: Persistent AI Organization Architecture
 

@@ -74,7 +74,7 @@ class AdminRequeueDeadLetterResponse(BaseModel):
 
 
 class AdminWorkspaceRuntimeResponse(WorkspaceRuntimeResponse):
-    pass
+    docker_container_id: str | None = None
 
 
 class AdminWorkspaceResponse(WorkspaceResponse):

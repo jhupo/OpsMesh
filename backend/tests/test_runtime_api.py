@@ -115,6 +115,8 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
     runtime_id = created.json()["id"]
     assert created.json()["network_policy"] == {"disabled": True}
     assert created.json()["runtime_space_id"] == str(runtime_space.id)
+    assert created.json()["has_docker_container"] is True
+    assert "docker_container_id" not in created.json()
     assert created.json()["limits"]["max_output_bytes"] == 1024
     assert created.json()["limits"]["max_processes"] == 64
     assert docker.created_requests[0].image == "python:3.12-slim"
@@ -154,6 +156,8 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
 
     assert started.status_code == 200
     assert started.json()["status"] == "running"
+    assert started.json()["has_docker_container"] is True
+    assert "docker_container_id" not in started.json()
     assert command.status_code == 201
     assert command.json()["stdout"] == "ok\n"
     assert commands.status_code == 200

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
 
@@ -42,11 +42,16 @@ class WorkspaceRuntimeResponse(TimestampedModel):
     name: str
     status: str
     connection_status: str
-    docker_container_id: str | None
+    docker_container_id: str | None = Field(exclude=True, repr=False)
     limits: dict[str, object]
     network_policy: dict[str, object]
     capabilities: dict[str, object]
     last_heartbeat_at: datetime | None
+
+    @computed_field
+    @property
+    def has_docker_container(self) -> bool:
+        return self.docker_container_id is not None
 
 
 class RuntimeCommandRequest(BaseModel):
