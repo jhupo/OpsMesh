@@ -2336,6 +2336,8 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
     assert created.status_code == 202
     job_id = created.json()["id"]
     assert created.json()["status"] == "queued"
+    assert "storage_key" not in created.json()
+    assert created.json()["has_storage_object"] is False
     runner = WorkerRunner(
         queue=queue,
         session_factory=session_factory,
@@ -2362,6 +2364,8 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
     assert status_body["status"] == "completed"
     assert status_body["size_bytes"] > 0
     assert status_body["checksum_sha256"]
+    assert "storage_key" not in status_body
+    assert status_body["has_storage_object"] is True
     assert download.status_code == 200
     with ZipFile(BytesIO(download.content)) as archive:
         names = set(archive.namelist())

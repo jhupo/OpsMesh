@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from backend.app.api.schemas.common import ORMModel
 
@@ -66,7 +66,7 @@ class WorkspaceExportJobResponse(ORMModel):
     export_type: str
     status: str
     request: dict[str, object]
-    storage_key: str | None
+    storage_key: str | None = Field(exclude=True, repr=False)
     filename: str | None
     content_type: str | None
     size_bytes: int | None
@@ -77,6 +77,11 @@ class WorkspaceExportJobResponse(ORMModel):
     job_metadata: dict[str, object]
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def has_storage_object(self) -> bool:
+        return self.storage_key is not None
 
 
 class WorkspaceImportRequest(BaseModel):
