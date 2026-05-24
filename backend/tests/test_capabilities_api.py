@@ -657,8 +657,12 @@ def test_mcp_tool_call_logs_can_be_listed_and_filtered() -> None:
             "mcp_server_id": server.json()["id"],
             "tool_name": "generate_image",
             "status": "completed",
-            "request": {"arguments_sha256": "ok"},
-            "response": {"result": {"ok": True}},
+            "request": {
+                "arguments_sha256": "ok",
+                "api_key": "sk-secret",
+                "nested": {"authorization": "Bearer secret-token"},
+            },
+            "response": {"result": {"ok": True, "token": "secret-token"}},
         },
     )
     failed = client.post(
@@ -701,6 +705,9 @@ def test_mcp_tool_call_logs_can_be_listed_and_filtered() -> None:
     assert first_tool.status_code == 201
     assert second_tool.status_code == 201
     assert completed.status_code == 201
+    assert completed.json()["request"]["api_key"] == "[redacted]"
+    assert completed.json()["request"]["nested"]["authorization"] == "[redacted]"
+    assert completed.json()["response"]["result"]["token"] == "[redacted]"
     assert failed.status_code == 201
     assert all_logs.status_code == 200
     assert all_logs.json()["total"] == 2
@@ -711,6 +718,8 @@ def test_mcp_tool_call_logs_can_be_listed_and_filtered() -> None:
     assert tool_logs.status_code == 200
     assert tool_logs.json()["total"] == 1
     assert tool_logs.json()["items"][0]["tool_name"] == "generate_image"
+    assert tool_logs.json()["items"][0]["request"]["api_key"] == "[redacted]"
+    assert tool_logs.json()["items"][0]["response"]["result"]["token"] == "[redacted]"
     assert server_logs.status_code == 200
     assert server_logs.json()["total"] == 2
     assert denied_foreign_filter.status_code == 404

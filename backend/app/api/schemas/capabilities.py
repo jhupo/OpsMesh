@@ -277,6 +277,21 @@ class McpToolCallLogResponse(ORMModel):
     error: dict[str, object] | None
     created_at: datetime
 
+    @field_serializer("request")
+    def _serialize_request(self, request: dict[str, object]) -> dict[str, object]:
+        return _redacted_payload(request)
+
+    @field_serializer("response")
+    def _serialize_response(
+        self,
+        response: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        return _redacted_payload(response) if response is not None else None
+
+    @field_serializer("error")
+    def _serialize_error(self, error: dict[str, object] | None) -> dict[str, object] | None:
+        return _redacted_payload(error) if error is not None else None
+
 
 _SENSITIVE_CONNECTION_KEYS = {
     "api_key",
@@ -313,6 +328,29 @@ def _redacted_connection(connection: dict[str, object]) -> dict[str, object]:
 def _redacted_connection_item(value: object) -> object:
     if isinstance(value, dict):
         return _redacted_connection(value)
+    return value
+
+
+def _redacted_payload(payload: dict[str, object]) -> dict[str, object]:
+    redacted: dict[str, object] = {}
+    for key, value in payload.items():
+        key_text = str(key)
+        if _is_sensitive_connection_key(key_text):
+            redacted[key_text] = "[redacted]"
+            continue
+        if isinstance(value, dict):
+            redacted[key_text] = _redacted_payload(value)
+            continue
+        if isinstance(value, list):
+            redacted[key_text] = [_redacted_payload_item(item) for item in value]
+            continue
+        redacted[key_text] = value
+    return redacted
+
+
+def _redacted_payload_item(value: object) -> object:
+    if isinstance(value, dict):
+        return _redacted_payload(value)
     return value
 
 
