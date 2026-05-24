@@ -1,9 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 
 
 class TaskCreateRequest(BaseModel):
@@ -57,6 +58,39 @@ class TaskResponse(TimestampedModel):
     final_output: dict[str, object] | None
     completed_at: datetime | None
 
+    @field_serializer("input")
+    def _serialize_input(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("generic_state")
+    def _serialize_generic_state(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("domain_state")
+    def _serialize_domain_state(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("team_snapshot")
+    def _serialize_team_snapshot(
+        self,
+        value: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
+
+    @field_serializer("project_plan")
+    def _serialize_project_plan(
+        self,
+        value: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
+
+    @field_serializer("final_output")
+    def _serialize_final_output(
+        self,
+        value: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
+
 
 class TaskMessageResponse(TimestampedModel):
     workspace_id: UUID
@@ -68,6 +102,10 @@ class TaskMessageResponse(TimestampedModel):
     sequence: int
     body: str
     payload: dict[str, object]
+
+    @field_serializer("payload")
+    def _serialize_payload(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class TaskPlanningAttemptResponse(ORMModel):

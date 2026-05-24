@@ -1262,7 +1262,11 @@ def test_task_messages_api_lists_filters_and_enforces_workspace_scope() -> None:
                 message_type="step.started",
                 sequence=1,
                 body="Started",
-                payload={"work_package_id": "research"},
+                payload={
+                    "work_package_id": "research",
+                    "api_key": "sk-hidden",
+                    "nested": {"authorization": "Bearer hidden"},
+                },
             ),
             TaskMessage(
                 workspace_id=workspace.id,
@@ -1292,11 +1296,60 @@ def test_task_messages_api_lists_filters_and_enforces_workspace_scope() -> None:
 
     assert listed.status_code == 200
     assert [item["sequence"] for item in listed.json()["items"]] == [1, 2]
-    assert listed.json()["items"][0]["payload"] == {"work_package_id": "research"}
+    assert listed.json()["items"][0]["payload"] == {
+        "work_package_id": "research",
+        "api_key": "[redacted]",
+        "nested": {"authorization": "[redacted]"},
+    }
     assert filtered.status_code == 200
     assert filtered.json()["total"] == 1
     assert filtered.json()["items"][0]["message_type"] == "step.completed"
     assert foreign.status_code == 404
+
+
+def test_run_api_redacts_sensitive_payloads() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    run = AgentRun(
+        workspace_id=workspace.id,
+        status=RunStatus.FAILED.value,
+        input={"prompt": "draft", "api_key": "sk-hidden"},
+        output={"result": {"token": "hidden-token"}},
+        error={"message": "failed", "authorization": "Bearer hidden"},
+    )
+    session.add(run)
+    session.flush()
+    event = RunEvent(
+        workspace_id=workspace.id,
+        agent_run_id=run.id,
+        event_type="run.failed",
+        sequence=1,
+        message="Failed",
+        event_metadata={"secret": "hidden", "safe": "ok"},
+        created_at=datetime.now(UTC),
+    )
+    session.add(event)
+    session.commit()
+
+    runs = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runs",
+        headers=_headers(owner.id),
+    )
+    events = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runs/{run.id}/events",
+        headers=_headers(owner.id),
+    )
+
+    assert runs.status_code == 200
+    payload = runs.json()["items"][0]
+    assert payload["input"]["api_key"] == "[redacted]"
+    assert payload["output"]["result"]["token"] == "[redacted]"
+    assert payload["error"]["authorization"] == "[redacted]"
+    assert events.status_code == 200
+    assert events.json()["items"][0]["event_metadata"] == {
+        "secret": "[redacted]",
+        "safe": "ok",
+    }
 
 
 def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> None:

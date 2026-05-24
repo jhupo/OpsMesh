@@ -1,7 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
+from pydantic import field_serializer
+
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 
 
 class AgentRunResponse(TimestampedModel):
@@ -19,6 +22,18 @@ class AgentRunResponse(TimestampedModel):
     started_at: datetime | None
     completed_at: datetime | None
 
+    @field_serializer("input")
+    def _serialize_input(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("output")
+    def _serialize_output(self, value: dict[str, object] | None) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
+
+    @field_serializer("error")
+    def _serialize_error(self, value: dict[str, object] | None) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
+
 
 class RunEventResponse(ORMModel):
     id: UUID
@@ -29,3 +44,7 @@ class RunEventResponse(ORMModel):
     message: str
     event_metadata: dict[str, object]
     created_at: datetime
+
+    @field_serializer("event_metadata")
+    def _serialize_event_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
