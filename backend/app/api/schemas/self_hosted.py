@@ -147,6 +147,10 @@ class LocalFileReferenceResponse(TimestampedModel):
     file_metadata: dict[str, object]
     status: str
 
+    @field_serializer("file_metadata")
+    def _serialize_file_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
 
 class ArtifactUploadRequest(BaseModel):
     agent_run_id: UUID | None = None
@@ -165,3 +169,7 @@ class ArtifactUploadResponse(TimestampedModel):
     checksum_sha256: str | None
     artifact_metadata: dict[str, object]
     status: str
+
+    @field_serializer("artifact_metadata")
+    def _serialize_artifact_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)

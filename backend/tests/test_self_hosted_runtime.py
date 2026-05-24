@@ -123,11 +123,18 @@ def test_self_hosted_runtime_registration_and_job_flow() -> None:
     local_file = client.post(
         "/api/v1/self-hosted/local-files",
         headers=_runtime_headers(credential),
-        json={"task_id": str(task.id), "path": "/Users/me/data.csv", "label": "private data"},
+        json={
+            "task_id": str(task.id),
+            "path": "/Users/me/data.csv",
+            "label": "private data",
+            "metadata": {"token": "local-file-token"},
+        },
     )
     assert local_file.status_code == 201
     assert local_file.json()["file_metadata"]["runtime_space_id"] == str(runtime_space.id)
     assert local_file.json()["file_metadata"]["workspace_runtime_id"] == str(runtime_id)
+    assert local_file.json()["file_metadata"]["token"] == "[redacted]"
+    assert "local-file-token" not in str(local_file.json())
 
     artifact = client.post(
         "/api/v1/self-hosted/artifact-uploads",
@@ -137,11 +144,14 @@ def test_self_hosted_runtime_registration_and_job_flow() -> None:
             "filename": "result.png",
             "storage_key": f"workspaces/{workspace.id}/self-hosted/result.png",
             "checksum_sha256": "a" * 64,
+            "metadata": {"base_url": "https://artifact.example.test/private"},
         },
     )
     assert artifact.status_code == 201
     assert artifact.json()["artifact_metadata"]["runtime_space_id"] == str(runtime_space.id)
     assert artifact.json()["artifact_metadata"]["workspace_runtime_id"] == str(runtime_id)
+    assert artifact.json()["artifact_metadata"]["base_url"] == "[redacted]"
+    assert "artifact.example.test/private" not in str(artifact.json())
     assert session.query(RunEvent).count() == 2
 
     runtime_credential = session.query(RuntimeCredential).one()

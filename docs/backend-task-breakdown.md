@@ -553,6 +553,7 @@ Tasks:
   - [x] Redact sensitive workspace settings and domain task extension metadata in API responses.
   - [x] Redact self-hosted operations aggregate metadata and platform policy event metadata.
   - [x] Redact archive export job metadata while hiding storage keys.
+  - [x] Redact self-hosted local-file and artifact upload metadata in worker-facing responses.
 
 ## Phase 22: Persistent AI Organization Architecture
 
