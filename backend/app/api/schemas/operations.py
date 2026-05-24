@@ -146,6 +146,36 @@ class QueueLatencyResponse(BaseModel):
     highest_priority: int | None
 
 
+class QueuePriorityBucketResponse(BaseModel):
+    priority: int
+    queued: int
+    dead_letter: int
+    oldest_queued_age_seconds: int | None
+
+
+class QueueJobTypeBucketResponse(BaseModel):
+    job_type: str
+    queued: int
+    dead_letter: int
+    highest_priority: int | None
+    oldest_queued_age_seconds: int | None
+
+
+class OperationsQueueInsightsResponse(BaseModel):
+    generated_at: datetime
+    queue_name: str
+    scan_limit: int
+    queued_total: int
+    dead_letter_total: int
+    queued_scanned: int
+    dead_letter_scanned: int
+    truncated: bool
+    oldest_queued_age_seconds: int | None
+    highest_priority: int | None
+    priority_buckets: list[QueuePriorityBucketResponse]
+    job_type_buckets: list[QueueJobTypeBucketResponse]
+
+
 class WorkerCapacityAggregateResponse(BaseModel):
     workers_total: int
     workers_online: int

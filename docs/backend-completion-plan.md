@@ -57,7 +57,7 @@ Incomplete or basic-only areas:
   metadata without storing secrets, worker execution can use a workspace-scoped fallback policy,
   and provider credentials track health state plus last success/failure details.
 - Operations APIs expose short-cached overview, capacity, scheduler, outcomes, runtime capacity,
-  MCP job, and unified control-plane health aggregates.
+  MCP job, queue insight, and unified control-plane health aggregates.
 - Workspace memory now has explicit durable memory entries plus workspace-scoped lexical search
   across operational data; full-text/vector indexing remains a future upgrade.
 - Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, reusable maintenance runner, HTTP metrics, domain error mapping, production config guardrails, Redis distributed locks, structured idempotency states, feature flags, Redis cache abstraction, admin-visible core configuration summaries, blocking executor snapshots, database pool snapshots, and Redis pool snapshots are implemented.
@@ -277,7 +277,7 @@ API/data changes:
 - [x] Add workspace quota settings and current usage counters.
 - [x] Add quota change audit events and over-reserved quota visibility.
 - [x] Add `scheduling_status`, `blocked_reason`, `scheduled_at`, and `priority_score` scheduling metadata to task step dependencies.
-- Add operations endpoints for queue depth by priority and blocked scheduling reasons.
+- [x] Add operations endpoints for queue depth by priority and blocked scheduling reasons.
 
 Tests:
 
@@ -621,6 +621,7 @@ API/data changes:
 - [x] `GET /api/v1/workspaces/{workspace_id}/operations/outcomes`
 - [x] `GET /api/v1/workspaces/{workspace_id}/operations/runtime-capacity`
 - [x] `GET /api/v1/workspaces/{workspace_id}/operations/mcp-jobs`
+- [x] `GET /api/v1/workspaces/{workspace_id}/operations/queue-insights`
 - [x] `GET /api/v1/workspaces/{workspace_id}/operations/control-plane`
 
 Tests:
@@ -631,6 +632,7 @@ Tests:
 - [x] control-plane summary emits stable issue codes for capacity, scheduler, approvals, and MCP
   health
 - [x] cache key includes workspace and time window
+- [x] queue insight buckets are workspace-scoped and expose priority/job-type depth without raw payloads
 
 Acceptance:
 

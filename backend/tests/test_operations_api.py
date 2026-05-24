@@ -505,6 +505,151 @@ def test_operations_aggregates_return_zero_metrics_for_empty_workspace() -> None
     ]
 
 
+def test_operations_queue_insights_reports_priority_and_type_buckets() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    keys = RedisKeyBuilder("chaincloud")
+    now = datetime.now(UTC)
+    old_high = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="queue-insights:high-old",
+        priority=8,
+        created_at=now - timedelta(seconds=120),
+    )
+    new_high = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="queue-insights:high-new",
+        priority=8,
+        created_at=now - timedelta(seconds=20),
+    )
+    memory_job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.MEMORY_INDEX,
+        resource_id=uuid4(),
+        idempotency_key="queue-insights:memory",
+        priority=2,
+        created_at=now - timedelta(seconds=60),
+    )
+    dead_letter = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="queue-insights:dead",
+        priority=8,
+        attempt=3,
+        max_attempts=3,
+    )
+    other_workspace = JobPayload(
+        workspace_id=uuid4(),
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="queue-insights:other",
+        priority=99,
+    )
+    redis.rpush(
+        keys.queue("agent_runs"),
+        old_high.model_dump_json(),
+        new_high.model_dump_json(),
+        memory_job.model_dump_json(),
+        other_workspace.model_dump_json(),
+    )
+    redis.rpush(
+        keys.dead_letter_queue("agent_runs"),
+        dead_letter.model_dump_json(),
+        other_workspace.model_dump_json(),
+    )
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/queue-insights",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["queue_name"] == "agent_runs"
+    assert payload["queued_total"] == 3
+    assert payload["dead_letter_total"] == 1
+    assert payload["queued_scanned"] == 3
+    assert payload["dead_letter_scanned"] == 1
+    assert payload["truncated"] is False
+    assert payload["highest_priority"] == 8
+    assert 100 <= payload["oldest_queued_age_seconds"] <= 130
+    assert payload["priority_buckets"] == [
+        {
+            "priority": 8,
+            "queued": 2,
+            "dead_letter": 1,
+            "oldest_queued_age_seconds": payload["priority_buckets"][0][
+                "oldest_queued_age_seconds"
+            ],
+        },
+        {
+            "priority": 2,
+            "queued": 1,
+            "dead_letter": 0,
+            "oldest_queued_age_seconds": payload["priority_buckets"][1][
+                "oldest_queued_age_seconds"
+            ],
+        },
+    ]
+    assert 100 <= payload["priority_buckets"][0]["oldest_queued_age_seconds"] <= 130
+    assert 40 <= payload["priority_buckets"][1]["oldest_queued_age_seconds"] <= 80
+    assert payload["job_type_buckets"] == [
+        {
+            "job_type": "agent.run",
+            "queued": 2,
+            "dead_letter": 1,
+            "highest_priority": 8,
+            "oldest_queued_age_seconds": payload["job_type_buckets"][0][
+                "oldest_queued_age_seconds"
+            ],
+        },
+        {
+            "job_type": "memory.index",
+            "queued": 1,
+            "dead_letter": 0,
+            "highest_priority": 2,
+            "oldest_queued_age_seconds": payload["job_type_buckets"][1][
+                "oldest_queued_age_seconds"
+            ],
+        },
+    ]
+
+
+def test_operations_queue_insights_marks_truncated_scan() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    keys = RedisKeyBuilder("chaincloud")
+    for index in range(3):
+        redis.rpush(
+            keys.queue("agent_runs"),
+            JobPayload(
+                workspace_id=workspace.id,
+                job_type=JobType.AGENT_RUN,
+                resource_id=uuid4(),
+                idempotency_key=f"queue-insights:truncated:{index}",
+                priority=index,
+            ).model_dump_json(),
+        )
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/queue-insights?scan_limit=2",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["queued_total"] == 3
+    assert payload["queued_scanned"] == 2
+    assert payload["truncated"] is True
+
+
 def test_operations_capacity_reports_queue_workers_and_runtime_space_saturation() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

@@ -21,12 +21,15 @@ from backend.app.api.schemas.operations import (
     OperationsControlPlaneResponse,
     OperationsMcpJobsResponse,
     OperationsOutcomesResponse,
+    OperationsQueueInsightsResponse,
     OperationsRuntimeCapacityResponse,
     OperationsSchedulerResponse,
     OperationsSelfHostedMachineResponse,
     OperationsSelfHostedMachinesResponse,
+    QueueJobTypeBucketResponse,
     QueueLatencyResponse,
     QueueMetricsResponse,
+    QueuePriorityBucketResponse,
     RunFailureReasonResponse,
     RunOutcomeWindowResponse,
     RuntimeProviderCapacityResponse,
@@ -473,6 +476,143 @@ class OperationsService:
             queued=queued,
             dead_letter=dead,
             idempotency_keys=idempotency_keys,
+        )
+
+    def queue_insights(
+        self,
+        *,
+        workspace_id: UUID,
+        queue_name: str,
+        scan_limit: int = 500,
+    ) -> OperationsQueueInsightsResponse:
+        scan_limit = max(1, min(scan_limit, 5_000))
+        now = datetime.now(UTC)
+        if self._redis is None:
+            return OperationsQueueInsightsResponse(
+                generated_at=now,
+                queue_name=queue_name,
+                scan_limit=scan_limit,
+                queued_total=0,
+                dead_letter_total=0,
+                queued_scanned=0,
+                dead_letter_scanned=0,
+                truncated=False,
+                oldest_queued_age_seconds=None,
+                highest_priority=None,
+                priority_buckets=[],
+                job_type_buckets=[],
+            )
+
+        queue = RedisQueue(self._redis, self._keys, queue_name)
+        queued_total = queue.count_queued(workspace_id=workspace_id)
+        dead_letter_total = queue.count_dead_letters(workspace_id=workspace_id)
+        queued_jobs = [
+            job for job in queue.peek(limit=scan_limit) if job.workspace_id == workspace_id
+        ]
+        dead_letter_jobs = queue.list_dead_letters(scan_limit, workspace_id=workspace_id)
+
+        priority_buckets: dict[int, dict[str, int | None]] = {}
+        job_type_buckets: dict[str, dict[str, int | None]] = {}
+        oldest_queued_age_seconds: int | None = None
+        highest_priority: int | None = None
+
+        for job in queued_jobs:
+            age_seconds = max(0, int((now - _aware_datetime(job.created_at)).total_seconds()))
+            oldest_queued_age_seconds = (
+                age_seconds
+                if oldest_queued_age_seconds is None
+                else max(oldest_queued_age_seconds, age_seconds)
+            )
+            highest_priority = (
+                job.priority
+                if highest_priority is None
+                else max(highest_priority, job.priority)
+            )
+            priority_bucket = priority_buckets.setdefault(
+                job.priority,
+                {"queued": 0, "dead_letter": 0, "oldest_queued_age_seconds": None},
+            )
+            priority_bucket["queued"] = int(priority_bucket["queued"] or 0) + 1
+            priority_bucket["oldest_queued_age_seconds"] = _max_optional_int(
+                priority_bucket["oldest_queued_age_seconds"],
+                age_seconds,
+            )
+
+            job_type = str(job.job_type)
+            type_bucket = job_type_buckets.setdefault(
+                job_type,
+                {
+                    "queued": 0,
+                    "dead_letter": 0,
+                    "highest_priority": None,
+                    "oldest_queued_age_seconds": None,
+                },
+            )
+            type_bucket["queued"] = int(type_bucket["queued"] or 0) + 1
+            type_bucket["highest_priority"] = _max_optional_int(
+                type_bucket["highest_priority"],
+                job.priority,
+            )
+            type_bucket["oldest_queued_age_seconds"] = _max_optional_int(
+                type_bucket["oldest_queued_age_seconds"],
+                age_seconds,
+            )
+
+        for job in dead_letter_jobs:
+            priority_bucket = priority_buckets.setdefault(
+                job.priority,
+                {"queued": 0, "dead_letter": 0, "oldest_queued_age_seconds": None},
+            )
+            priority_bucket["dead_letter"] = int(priority_bucket["dead_letter"] or 0) + 1
+
+            job_type = str(job.job_type)
+            type_bucket = job_type_buckets.setdefault(
+                job_type,
+                {
+                    "queued": 0,
+                    "dead_letter": 0,
+                    "highest_priority": None,
+                    "oldest_queued_age_seconds": None,
+                },
+            )
+            type_bucket["dead_letter"] = int(type_bucket["dead_letter"] or 0) + 1
+
+        return OperationsQueueInsightsResponse(
+            generated_at=now,
+            queue_name=queue_name,
+            scan_limit=scan_limit,
+            queued_total=queued_total,
+            dead_letter_total=dead_letter_total,
+            queued_scanned=len(queued_jobs),
+            dead_letter_scanned=len(dead_letter_jobs),
+            truncated=queued_total > len(queued_jobs) or dead_letter_total > len(dead_letter_jobs),
+            oldest_queued_age_seconds=oldest_queued_age_seconds,
+            highest_priority=highest_priority,
+            priority_buckets=[
+                QueuePriorityBucketResponse(
+                    priority=priority,
+                    queued=int(counts["queued"] or 0),
+                    dead_letter=int(counts["dead_letter"] or 0),
+                    oldest_queued_age_seconds=cast(
+                        int | None,
+                        counts["oldest_queued_age_seconds"],
+                    ),
+                )
+                for priority, counts in sorted(priority_buckets.items(), reverse=True)
+            ],
+            job_type_buckets=[
+                QueueJobTypeBucketResponse(
+                    job_type=job_type,
+                    queued=int(counts["queued"] or 0),
+                    dead_letter=int(counts["dead_letter"] or 0),
+                    highest_priority=cast(int | None, counts["highest_priority"]),
+                    oldest_queued_age_seconds=cast(
+                        int | None,
+                        counts["oldest_queued_age_seconds"],
+                    ),
+                )
+                for job_type, counts in sorted(job_type_buckets.items())
+            ],
         )
 
     def list_dead_letters(
@@ -1578,6 +1718,10 @@ def _positive_int_or_none(value: object) -> int | None:
     if isinstance(value, int) and value > 0:
         return value
     return None
+
+
+def _max_optional_int(current: object, candidate: int) -> int:
+    return candidate if not isinstance(current, int) else max(current, candidate)
 
 
 def _scheduler_settings(settings: dict[str, object]) -> dict[str, object]:
