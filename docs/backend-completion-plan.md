@@ -241,6 +241,8 @@ Current state:
 - Blocked queued steps record a scheduling status and blocked reason in step dependencies for observation and operations.
 - Runnable selected steps record a scheduling timestamp and priority score snapshot for later
   debugging and observation.
+- Worker queues select the highest-priority compatible job within the scan window, preserving FIFO
+  order for priority ties.
 - Workspace active run, CPU, memory, storage-style quota usage, Docker runtime slots, and
   self-hosted job slots have durable reservation and release at run lifecycle boundaries.
 - Workspace quota limits are now manageable through authenticated workspace APIs, including

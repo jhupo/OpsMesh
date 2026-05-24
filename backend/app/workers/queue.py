@@ -36,10 +36,7 @@ class RedisQueue:
 
     def dequeue(self) -> JobPayload | None:
         if self.blocking_timeout_seconds <= 0:
-            raw_payload = self.redis.lpop(self.keys.queue(self.queue_name))
-            if raw_payload is None:
-                return None
-            return self._deserialize(raw_payload)
+            return self._pop_best_matching(lambda _: True)
 
         result = self.redis.blpop(
             [self.keys.queue(self.queue_name)],
@@ -48,7 +45,8 @@ class RedisQueue:
         if result is None:
             return None
         _, raw_payload = cast(tuple[str, bytes | str], result)
-        return self._deserialize(raw_payload)
+        self.redis.lpush(self.keys.queue(self.queue_name), raw_payload)
+        return self._pop_best_matching(lambda _: True)
 
     def dequeue_matching(
         self,
@@ -56,15 +54,8 @@ class RedisQueue:
         *,
         scan_limit: int = 50,
     ) -> JobPayload | None:
-        queue_key = self.keys.queue(self.queue_name)
-        limit = max(1, scan_limit)
-        for raw_payload in self.redis.lrange(queue_key, 0, limit - 1):
-            job = self._deserialize(raw_payload)
-            if not predicate(job):
-                continue
-            removed = self.redis.lrem(queue_key, 1, raw_payload)
-            if int(removed) == 0:
-                continue
+        job = self._pop_best_matching(predicate, scan_limit=scan_limit)
+        if job is not None:
             return job
         if self.blocking_timeout_seconds > 0:
             return self.dequeue()
@@ -160,6 +151,28 @@ class RedisQueue:
         if isinstance(raw_payload, bytes):
             raw_payload = raw_payload.decode("utf-8")
         return JobPayload.model_validate(json.loads(raw_payload))
+
+    def _pop_best_matching(
+        self,
+        predicate: Callable[[JobPayload], bool],
+        *,
+        scan_limit: int = 50,
+    ) -> JobPayload | None:
+        queue_key = self.keys.queue(self.queue_name)
+        best: tuple[int, int, bytes | str, JobPayload] | None = None
+        raw_payloads = self.redis.lrange(queue_key, 0, max(1, scan_limit) - 1)
+        for index, raw_payload in enumerate(raw_payloads):
+            job = self._deserialize(raw_payload)
+            if not predicate(job):
+                continue
+            candidate = (job.priority, -index, raw_payload, job)
+            if best is None or candidate[:2] > best[:2]:
+                best = candidate
+        if best is None:
+            return None
+        _, _, raw_payload, job = best
+        removed = self.redis.lrem(queue_key, 1, raw_payload)
+        return job if int(removed) > 0 else None
 
 
 def consume_once(queue: RedisQueue, handler: JobHandler) -> bool:

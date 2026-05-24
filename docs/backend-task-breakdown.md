@@ -575,6 +575,7 @@ Tasks:
   - [x] Support priority scheduling across multiple tasks.
     - [x] Start higher-priority task steps first across a workspace.
     - [x] Add starvation prevention for lower-priority work.
+    - [x] Make worker queue dequeue highest-priority compatible jobs while preserving FIFO ties.
   - [x] Persist blocked scheduling reason on queued steps.
   - [x] Persist selected scheduling timestamp and priority score on runnable steps.
 - [x] Multi-agent collaborative execution.

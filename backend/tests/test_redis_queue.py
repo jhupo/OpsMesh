@@ -48,16 +48,20 @@ def test_dequeue_matching_skips_unmatched_head_job_without_dropping_it() -> None
     assert queue.dequeue() is None
 
 
-def test_job_payload_round_trips_priority() -> None:
+def test_dequeue_selects_highest_priority_job_and_preserves_fifo_ties() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
-    job = _job(priority=42)
+    low = _job(priority=1)
+    first_high = _job(priority=42)
+    second_high = _job(priority=42)
 
-    assert queue.enqueue(job) is True
-    stored = queue.dequeue()
+    assert queue.enqueue(low) is True
+    assert queue.enqueue(first_high) is True
+    assert queue.enqueue(second_high) is True
 
-    assert stored is not None
-    assert stored.priority == 42
+    assert queue.dequeue() == first_high
+    assert queue.dequeue() == second_high
+    assert queue.dequeue() == low
 
 
 def test_peek_returns_jobs_without_removing_them() -> None:
@@ -72,7 +76,26 @@ def test_peek_returns_jobs_without_removing_them() -> None:
 
     assert peeked == [first]
     assert queue.count_queued() == 2
-    assert queue.dequeue() == first
+    assert queue.dequeue() == second
+
+
+def test_dequeue_matching_selects_highest_priority_compatible_job() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
+    low = _job(priority=1, routing={"runtime_modes": ["self_hosted"]})
+    incompatible = _job(priority=99, routing={"runtime_modes": ["docker"]})
+    high = _job(priority=10, routing={"runtime_modes": ["self_hosted"]})
+    queue.enqueue(low)
+    queue.enqueue(incompatible)
+    queue.enqueue(high)
+
+    matched = queue.dequeue_matching(
+        lambda job: job.routing.get("runtime_modes") == ["self_hosted"],
+    )
+
+    assert matched == high
+    assert queue.dequeue() == incompatible
+    assert queue.dequeue() == low
 
 
 def test_run_lock_allows_one_holder() -> None:
