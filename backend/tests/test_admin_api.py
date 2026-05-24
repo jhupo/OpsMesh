@@ -441,6 +441,16 @@ def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> N
         capabilities={},
     )
     session.add(runtime)
+    session.flush()
+    runtime_lease = RuntimeLease(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime.id,
+        docker_container_id="container-123",
+        status="running",
+        lease_metadata={"purpose": "admin-test"},
+        acquired_at=datetime.now(UTC),
+    )
+    session.add(runtime_lease)
     session.commit()
     queue = RedisQueue(redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
     queued = JobPayload(
@@ -494,6 +504,7 @@ def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> N
     )
 
     session.refresh(runtime)
+    session.refresh(runtime_lease)
     runtime_event = session.query(RuntimeEvent).filter_by(workspace_runtime_id=runtime.id).one()
 
     assert metrics.status_code == 200
@@ -511,7 +522,13 @@ def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> N
     assert stopped.json()["status"] == "stopped"
     assert runtime.status == "stopped"
     assert runtime.connection_status == "offline"
+    assert runtime_lease.status == "released"
+    assert runtime_lease.released_at is not None
+    assert runtime_lease.lease_metadata["released_by"] == "platform_admin"
+    assert runtime_lease.lease_metadata["release_reason"] == "Operator safety stop"
     assert runtime_event.event_type == "runtime.force_stopped"
+    assert runtime_event.event_metadata["runtime_lease_id"] == str(runtime_lease.id)
+    assert runtime_event.event_metadata["runtime_lease_released"] is True
     assert policy.status_code == 200
     assert policy.json()["policy_key"] == "global_risky_execution"
     assert updated_policy.status_code == 200

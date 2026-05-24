@@ -356,8 +356,20 @@ class AdminControlPlaneService:
         )
         if runtime is None:
             return None
+        now = datetime.now(UTC)
         runtime.status = "stopped"
         runtime.connection_status = "offline"
+        lease = self._session.scalar(
+            select(RuntimeLease).where(RuntimeLease.workspace_runtime_id == runtime.id)
+        )
+        if lease is not None and lease.status in {"running", "acquired"}:
+            lease.status = "released"
+            lease.released_at = now
+            lease.lease_metadata = {
+                **lease.lease_metadata,
+                "released_by": "platform_admin",
+                "release_reason": reason,
+            }
         self._session.add(
             RuntimeEvent(
                 workspace_id=runtime.workspace_id,
@@ -365,8 +377,12 @@ class AdminControlPlaneService:
                 runtime_space_id=runtime.runtime_space_id,
                 event_type="runtime.force_stopped",
                 message=reason,
-                event_metadata={"source": "platform_admin"},
-                created_at=datetime.now(UTC),
+                event_metadata={
+                    "source": "platform_admin",
+                    "runtime_lease_id": str(lease.id) if lease is not None else None,
+                    "runtime_lease_released": lease is not None,
+                },
+                created_at=now,
             )
         )
         self._session.commit()
