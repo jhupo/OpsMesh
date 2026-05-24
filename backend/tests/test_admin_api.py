@@ -158,6 +158,47 @@ def test_admin_api_exposes_global_control_plane_metadata() -> None:
     assert workspaces.json()["total"] == 2
 
 
+def test_admin_security_event_response_redacts_sensitive_metadata() -> None:
+    client, session, _ = _client()
+    _, workspace = _seed_workspace(session)
+    session.add(
+        SecurityEvent(
+            workspace_id=workspace.id,
+            user_id=None,
+            action="runtime.policy.violation",
+            outcome="denied",
+            severity="critical",
+            path="/api/v1/workspaces/x/runtimes",
+            method="POST",
+            reason="policy",
+            event_metadata={
+                "token": "runtime-token",
+                "request_headers": {"authorization": "Bearer hidden"},
+                "provider": {"base_url": "https://router.example.test/private"},
+                "safe": "visible",
+            },
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        "/api/v1/admin/security-events?action=runtime.policy.violation",
+        headers=_admin_headers(),
+    )
+
+    assert response.status_code == 200
+    metadata = response.json()["items"][0]["event_metadata"]
+    assert metadata == {
+        "token": "[redacted]",
+        "request_headers": "[redacted]",
+        "provider": {"base_url": "[redacted]"},
+        "safe": "visible",
+    }
+    assert "runtime-token" not in str(metadata)
+    assert "router.example.test/private" not in str(metadata)
+
+
 def test_admin_can_drain_worker_and_quarantine_runtime_space() -> None:
     client, session, _ = _client()
     _, workspace = _seed_workspace(session)

@@ -1,9 +1,12 @@
 SENSITIVE_PAYLOAD_KEYS = {
     "api_key",
     "authorization",
+    "base_url",
     "cookie",
+    "endpoint_url",
     "headers",
     "password",
+    "remote_url",
     "secret",
     "token",
 }

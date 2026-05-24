@@ -540,10 +540,12 @@ Tasks:
   - [x] Add `/operations/capacity` aggregate for queue age, worker slots, and runtime space quotas.
   - [x] Add scheduler-specific backlog and fairness aggregate.
   - [x] Add failure-rate and approval-backlog aggregate.
+  - [x] Add queue insight aggregate for workspace-scoped priority and job-type depth without raw payloads.
 - [x] Add security review tests around account-scoped skill/tool invocation.
   - [x] Redact raw MCP credential external references from credential API responses.
   - [x] Redact MCP server connection secrets and full remote URLs from API responses.
   - [x] Hide raw Docker container IDs from workspace runtime responses while keeping admin metadata.
+  - [x] Redact sensitive security-event metadata in workspace and admin API responses.
 
 ## Phase 22: Persistent AI Organization Architecture
 

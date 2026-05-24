@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
 from backend.app.api.schemas.operations import (
@@ -10,6 +10,7 @@ from backend.app.api.schemas.operations import (
     WorkerLeaseResponse,
     WorkerNodeResponse,
 )
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.api.schemas.runtime_spaces import RuntimeSpaceResponse
 from backend.app.api.schemas.runtimes import WorkspaceRuntimeResponse
 from backend.app.api.schemas.workspaces import WorkspaceResponse
@@ -101,6 +102,10 @@ class AdminSecurityEventResponse(ORMModel):
     reason: str
     event_metadata: dict[str, object]
     created_at: datetime
+
+    @field_serializer("event_metadata")
+    def _serialize_event_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class AdminQuarantineRuntimeSpaceRequest(BaseModel):

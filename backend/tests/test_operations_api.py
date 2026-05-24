@@ -1893,6 +1893,49 @@ def test_security_events_are_recorded_and_queryable_for_workspace_denials() -> N
     assert payload["items"][0]["event_metadata"]["required_action"] == "operate"
 
 
+def test_workspace_security_event_response_redacts_sensitive_metadata() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    session.add(
+        SecurityEvent(
+            workspace_id=workspace.id,
+            user_id=owner.id,
+            action="mcp_tool.blocked",
+            outcome="denied",
+            severity="warning",
+            path="/api/v1/workspaces/x/mcp",
+            method="POST",
+            reason="policy",
+            event_metadata={
+                "authorization": "Bearer secret-token",
+                "headers": {"x-api-key": "sk-secret"},
+                "nested": {"base_url": "https://router.example.test/private"},
+                "safe": "visible",
+            },
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/security-events"
+        "?action=mcp_tool.blocked",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    metadata = response.json()["items"][0]["event_metadata"]
+    assert metadata == {
+        "authorization": "[redacted]",
+        "headers": "[redacted]",
+        "nested": {"base_url": "[redacted]"},
+        "safe": "visible",
+    }
+    assert "secret-token" not in str(metadata)
+    assert "router.example.test/private" not in str(metadata)
+
+
 def test_invalid_internal_token_records_security_event() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, seed_session = _client(redis)
