@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
 from backend.app.api.schemas.operations import (
     QueueMetricsResponse,
+    RuntimeLeaseResponse,
     WorkerLeaseResponse,
     WorkerNodeResponse,
 )
@@ -39,6 +40,10 @@ class AdminWorkerNodeResponse(WorkerNodeResponse):
 
 class AdminWorkerLeaseResponse(WorkerLeaseResponse):
     pass
+
+
+class AdminRuntimeLeaseResponse(RuntimeLeaseResponse):
+    docker_container_id: str | None = None
 
 
 class AdminQueueMetricsResponse(QueueMetricsResponse):

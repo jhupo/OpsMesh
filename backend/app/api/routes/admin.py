@@ -20,6 +20,7 @@ from backend.app.api.schemas.admin import (
     AdminQueueMetricsResponse,
     AdminRequeueDeadLetterResponse,
     AdminRiskyExecutionPolicyUpdateRequest,
+    AdminRuntimeLeaseResponse,
     AdminRuntimeSpaceResponse,
     AdminSecurityEventResponse,
     AdminSystemConfigurationResponse,
@@ -190,6 +191,30 @@ async def list_admin_worker_leases(
     )
     return PageResponse(
         items=[AdminWorkerLeaseResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.get("/runtime-leases", response_model=PageResponse[AdminRuntimeLeaseResponse])
+async def list_admin_runtime_leases(
+    page: PageParams = Depends(pagination_params),
+    status: str | None = Query(default=None),
+    workspace_id: UUID | None = Query(default=None),
+    runtime_space_id: UUID | None = Query(default=None),
+    workspace_runtime_id: UUID | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[AdminRuntimeLeaseResponse]:
+    items, total = AdminControlPlaneService(session).list_runtime_leases(
+        page,
+        status=status,
+        workspace_id=workspace_id,
+        runtime_space_id=runtime_space_id,
+        workspace_runtime_id=workspace_runtime_id,
+    )
+    return PageResponse(
+        items=[AdminRuntimeLeaseResponse.model_validate(item) for item in items],
         total=total,
         limit=page.limit,
         offset=page.offset,

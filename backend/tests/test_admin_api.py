@@ -24,7 +24,7 @@ from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
-from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.runtimes.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType
@@ -93,6 +93,23 @@ def test_admin_api_exposes_global_control_plane_metadata() -> None:
         lease_metadata={},
         started_at=datetime.now(UTC),
     )
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        name="team-runtime",
+        docker_container_id="container-admin-visible",
+    )
+    session.add(runtime)
+    session.flush()
+    runtime_lease = RuntimeLease(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime.id,
+        runtime_space_id=runtime_space.id,
+        docker_container_id="container-admin-visible",
+        status="running",
+        lease_metadata={"scope": "admin"},
+        acquired_at=datetime.now(UTC),
+    )
     security_event = SecurityEvent(
         workspace_id=other_workspace.id,
         user_id=None,
@@ -105,12 +122,16 @@ def test_admin_api_exposes_global_control_plane_metadata() -> None:
         event_metadata={},
         created_at=datetime.now(UTC),
     )
-    session.add_all([runtime_space, worker, lease, security_event])
+    session.add_all([runtime_space, worker, lease, runtime_lease, security_event])
     session.commit()
 
     overview = client.get("/api/v1/admin/overview", headers=_admin_headers())
     workers = client.get("/api/v1/admin/workers", headers=_admin_headers())
     leases = client.get("/api/v1/admin/worker-leases", headers=_admin_headers())
+    runtime_leases = client.get(
+        f"/api/v1/admin/runtime-leases?workspace_id={workspace.id}",
+        headers=_admin_headers(),
+    )
     spaces = client.get("/api/v1/admin/runtime-spaces", headers=_admin_headers())
     events = client.get("/api/v1/admin/security-events?severity=critical", headers=_admin_headers())
     workspaces = client.get("/api/v1/admin/workspaces", headers=_admin_headers())
@@ -124,6 +145,11 @@ def test_admin_api_exposes_global_control_plane_metadata() -> None:
     assert workers.json()["items"][0]["worker_id"] == "worker-1"
     assert leases.status_code == 200
     assert leases.json()["items"][0]["workspace_id"] == str(workspace.id)
+    assert runtime_leases.status_code == 200
+    assert runtime_leases.json()["total"] == 1
+    assert runtime_leases.json()["items"][0]["workspace_runtime_id"] == str(runtime.id)
+    assert runtime_leases.json()["items"][0]["docker_container_id"] == "container-admin-visible"
+    assert runtime_leases.json()["items"][0]["has_docker_container"] is True
     assert spaces.status_code == 200
     assert spaces.json()["items"][0]["id"] == str(runtime_space.id)
     assert events.status_code == 200

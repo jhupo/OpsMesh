@@ -26,7 +26,7 @@ from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
-from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.runtimes.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload
@@ -239,6 +239,26 @@ class AdminControlPlaneService:
         if worker_id is not None:
             statement = statement.where(WorkerLease.worker_id == worker_id)
         return self._page(statement.order_by(WorkerLease.created_at.desc()), page)
+
+    def list_runtime_leases(
+        self,
+        page: PageParams,
+        *,
+        status: str | None = None,
+        workspace_id: UUID | None = None,
+        runtime_space_id: UUID | None = None,
+        workspace_runtime_id: UUID | None = None,
+    ) -> tuple[list[RuntimeLease], int]:
+        statement = select(RuntimeLease)
+        if status is not None:
+            statement = statement.where(RuntimeLease.status == status)
+        if workspace_id is not None:
+            statement = statement.where(RuntimeLease.workspace_id == workspace_id)
+        if runtime_space_id is not None:
+            statement = statement.where(RuntimeLease.runtime_space_id == runtime_space_id)
+        if workspace_runtime_id is not None:
+            statement = statement.where(RuntimeLease.workspace_runtime_id == workspace_runtime_id)
+        return self._page(statement.order_by(RuntimeLease.created_at.desc()), page)
 
     def queue_metrics(self, queue_name: str) -> QueueMetricsResponse:
         if self._redis is None:
