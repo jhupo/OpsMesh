@@ -25,7 +25,7 @@ from backend.app.runtime_manager.contracts import (
 )
 from backend.app.runtime_manager.dependencies import get_docker_runtime_client
 from backend.app.runtime_spaces.models import RuntimeSpace
-from backend.app.runtimes.models import RuntimeTemplate
+from backend.app.runtimes.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -243,6 +243,49 @@ def test_runtime_api_rejects_cross_workspace_runtime_space() -> None:
     assert response.status_code == 400
     assert "Runtime space not found" in response.json()["error"]["message"]
     assert docker.created_requests == []
+
+
+def test_runtime_events_redact_sensitive_metadata() -> None:
+    client, session, _ = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="runtime",
+        docker_container_id="container-secret",
+    )
+    session.add(runtime)
+    session.flush()
+    session.add(
+        RuntimeEvent(
+            workspace_id=workspace.id,
+            workspace_runtime_id=runtime.id,
+            event_type="runtime.cleanup",
+            message="cleanup",
+            event_metadata={
+                "cleanup": {
+                    "container_id": "container-secret",
+                    "headers": {"authorization": "Bearer hidden"},
+                },
+                "safe": "visible",
+            },
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runtimes/{runtime.id}/events",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    metadata = response.json()["items"][0]["event_metadata"]
+    assert metadata == {
+        "cleanup": {"container_id": "[redacted]", "headers": "[redacted]"},
+        "safe": "visible",
+    }
+    assert "container-secret" not in str(metadata)
+    assert "Bearer hidden" not in str(metadata)
 
 
 def test_runtime_api_allows_network_when_template_allows_it() -> None:

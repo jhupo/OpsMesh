@@ -291,6 +291,56 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert space_event.event_metadata["runtime_id"] == str(runtime.id)
 
 
+def test_operations_runtime_events_redact_sensitive_metadata() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="runtime",
+        docker_container_id="container-secret",
+    )
+    session.add(runtime)
+    session.flush()
+    session.add(
+        RuntimeEvent(
+            workspace_id=workspace.id,
+            workspace_runtime_id=runtime.id,
+            event_type="runtime.cleanup",
+            message="cleanup",
+            event_metadata={
+                "cleanup": {
+                    "container_id": "container-secret",
+                    "base_url": "https://runtime.example.test/private",
+                    "success": True,
+                },
+                "safe": "visible",
+            },
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/runtime-events"
+        "?event_type=runtime.cleanup",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    metadata = response.json()["items"][0]["event_metadata"]
+    assert metadata == {
+        "cleanup": {
+            "container_id": "[redacted]",
+            "base_url": "[redacted]",
+            "success": True,
+        },
+        "safe": "visible",
+    }
+    assert "container-secret" not in str(metadata)
+    assert "runtime.example.test/private" not in str(metadata)
+
+
 def test_worker_heartbeat_capacity_is_bounded_by_platform_policy() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

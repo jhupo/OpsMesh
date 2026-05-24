@@ -1,9 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 
 
 class RuntimeTemplateResponse(ORMModel):
@@ -81,3 +82,7 @@ class RuntimeEventResponse(ORMModel):
     message: str
     event_metadata: dict[str, object]
     created_at: datetime
+
+    @field_serializer("event_metadata")
+    def _serialize_event_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)

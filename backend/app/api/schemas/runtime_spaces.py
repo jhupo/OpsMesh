@@ -2,9 +2,10 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 
 RuntimeSpaceScope = Literal["workspace", "team", "task"]
 RuntimeSpaceStatus = Literal["active", "paused", "disabled", "quarantined", "archived"]
@@ -88,3 +89,7 @@ class RuntimeSpaceEventResponse(ORMModel):
     message: str
     event_metadata: dict[str, object]
     created_at: datetime
+
+    @field_serializer("event_metadata")
+    def _serialize_event_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)

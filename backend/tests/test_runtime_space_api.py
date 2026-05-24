@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import UTC, datetime
 from uuid import UUID
 
 import fakeredis
@@ -288,6 +289,48 @@ def test_runtime_space_pause_and_resume_clears_blocked_steps() -> None:
     ]
     assert events[0].event_metadata["reason"] == "maintenance"
     assert events[1].event_metadata["cleared_blocked_steps"] == 1
+
+
+def test_runtime_space_events_redact_sensitive_metadata() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Team space",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.flush()
+    session.add(
+        RuntimeSpaceEvent(
+            workspace_id=workspace.id,
+            runtime_space_id=runtime_space.id,
+            event_type="runtime.cleanup",
+            message="cleanup",
+            event_metadata={
+                "container_id": "container-secret",
+                "nested": {"base_url": "https://runtime.example.test/private"},
+                "safe": "visible",
+            },
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runtime-spaces/{runtime_space.id}/events",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    metadata = response.json()["items"][0]["event_metadata"]
+    assert metadata == {
+        "container_id": "[redacted]",
+        "nested": {"base_url": "[redacted]"},
+        "safe": "visible",
+    }
+    assert "container-secret" not in str(metadata)
+    assert "runtime.example.test/private" not in str(metadata)
 
 
 def test_viewer_cannot_manage_runtime_spaces() -> None:

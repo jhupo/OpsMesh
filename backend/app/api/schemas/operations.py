@@ -19,6 +19,10 @@ class RuntimeEventResponse(BaseModel):
     event_metadata: dict[str, object]
     created_at: datetime
 
+    @field_serializer("event_metadata")
+    def _serialize_event_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
 
 class SecurityEventResponse(ORMModel):
     id: UUID

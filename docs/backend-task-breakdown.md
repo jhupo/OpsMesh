@@ -546,6 +546,7 @@ Tasks:
   - [x] Redact MCP server connection secrets and full remote URLs from API responses.
   - [x] Hide raw Docker container IDs from workspace runtime responses while keeping admin metadata.
   - [x] Redact sensitive security-event metadata in workspace and admin API responses.
+  - [x] Redact sensitive runtime and runtime-space event metadata in workspace API responses.
 
 ## Phase 22: Persistent AI Organization Architecture
 
