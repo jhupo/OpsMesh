@@ -1359,6 +1359,44 @@ def test_run_api_redacts_sensitive_payloads() -> None:
     }
 
 
+def test_audit_event_api_redacts_sensitive_metadata() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    session.add(
+        AuditEvent(
+            workspace_id=workspace.id,
+            actor_type="user",
+            actor_id=str(owner.id),
+            user_id=owner.id,
+            action="model_provider.used",
+            target_type="agent_run",
+            target_id=str(uuid4()),
+            audit_metadata={
+                "api_key": "sk-hidden",
+                "provider": {"base_url": "https://router.example.test/private"},
+                "safe": "visible",
+            },
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/audit-events?action=model_provider.used",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    metadata = response.json()["items"][0]["audit_metadata"]
+    assert metadata == {
+        "api_key": "[redacted]",
+        "provider": {"base_url": "[redacted]"},
+        "safe": "visible",
+    }
+    assert "sk-hidden" not in str(metadata)
+    assert "router.example.test/private" not in str(metadata)
+
+
 def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

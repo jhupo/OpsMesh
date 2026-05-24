@@ -350,6 +350,46 @@ def test_operations_runtime_events_redact_sensitive_metadata() -> None:
     assert "runtime.example.test/private" not in str(metadata)
 
 
+def test_operations_audit_events_redact_sensitive_metadata() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    session.add(
+        AuditEvent(
+            workspace_id=workspace.id,
+            actor_type="user",
+            actor_id=str(owner.id),
+            user_id=owner.id,
+            action="workspace.audit_sensitive",
+            target_type="workspace",
+            target_id=str(workspace.id),
+            audit_metadata={
+                "token": "audit-token",
+                "nested": {"headers": {"authorization": "Bearer hidden"}},
+                "safe": "visible",
+            },
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/audit-events"
+        "?action=workspace.audit_sensitive",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    metadata = response.json()["items"][0]["audit_metadata"]
+    assert metadata == {
+        "token": "[redacted]",
+        "nested": {"headers": "[redacted]"},
+        "safe": "visible",
+    }
+    assert "audit-token" not in str(metadata)
+    assert "Bearer hidden" not in str(metadata)
+
+
 def test_worker_heartbeat_capacity_is_bounded_by_platform_policy() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

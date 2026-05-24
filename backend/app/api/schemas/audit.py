@@ -1,7 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
+from pydantic import field_serializer
+
 from backend.app.api.schemas.common import ORMModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 
 
 class AuditEventResponse(ORMModel):
@@ -17,3 +20,6 @@ class AuditEventResponse(ORMModel):
     audit_metadata: dict[str, object]
     created_at: datetime
 
+    @field_serializer("audit_metadata")
+    def _serialize_audit_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
