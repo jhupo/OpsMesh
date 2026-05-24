@@ -1,9 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 
 
 class WorkspaceExportRequest(BaseModel):
@@ -82,6 +83,10 @@ class WorkspaceExportJobResponse(ORMModel):
     @property
     def has_storage_object(self) -> bool:
         return self.storage_key is not None
+
+    @field_serializer("job_metadata")
+    def _serialize_job_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class WorkspaceImportRequest(BaseModel):

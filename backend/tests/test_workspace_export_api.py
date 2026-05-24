@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+from uuid import UUID
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import fakeredis
@@ -23,6 +24,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
+from backend.app.exports.models import WorkspaceExportJob
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.storage import LocalStorage
 from backend.app.identity.models import User
@@ -2350,6 +2352,14 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
         ),
     )
     assert runner.run_once() is True
+    export_job = session.get(WorkspaceExportJob, UUID(job_id))
+    assert export_job is not None
+    export_job.job_metadata = {
+        **export_job.job_metadata,
+        "api_key": "sk-export",
+        "nested": {"base_url": "https://export.example.test/private"},
+    }
+    session.commit()
     status_response = client.get(
         f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}",
         headers=_headers(owner.id),
@@ -2366,6 +2376,10 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
     assert status_body["checksum_sha256"]
     assert "storage_key" not in status_body
     assert status_body["has_storage_object"] is True
+    assert status_body["job_metadata"]["api_key"] == "[redacted]"
+    assert status_body["job_metadata"]["nested"]["base_url"] == "[redacted]"
+    assert "sk-export" not in str(status_body)
+    assert "export.example.test/private" not in str(status_body)
     assert download.status_code == 200
     with ZipFile(BytesIO(download.content)) as archive:
         names = set(archive.namelist())
