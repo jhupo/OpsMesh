@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -68,7 +69,8 @@ class ModelProviderCredentialService:
             metadata={
                 "name": credential.name,
                 "provider": credential.provider,
-                "base_url": credential.base_url,
+                "base_url_configured": bool(credential.base_url),
+                "base_url_host": _base_url_host(credential.base_url),
                 "default_model": credential.default_model,
                 "is_default": credential.is_default,
             },
@@ -338,7 +340,8 @@ class ModelProviderCredentialService:
             metadata={
                 "name": credential.name,
                 "provider": credential.provider,
-                "base_url": credential.base_url,
+                "base_url_configured": bool(credential.base_url),
+                "base_url_host": _base_url_host(credential.base_url),
                 "default_model": credential.default_model,
                 "is_default": credential.is_default,
                 "status": credential.status,
@@ -354,3 +357,10 @@ class ModelProviderCredentialService:
             )
             .values(is_default=False)
         )
+
+
+def _base_url_host(base_url: str | None) -> str | None:
+    if not base_url:
+        return None
+    parsed = urlparse(base_url)
+    return parsed.netloc or None

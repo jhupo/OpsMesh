@@ -45,6 +45,9 @@ def test_create_encrypts_api_key_and_records_audit() -> None:
     assert credential.is_default is True
     assert audit is not None
     assert audit.audit_metadata["name"] == "OpenAI"
+    assert audit.audit_metadata["base_url_configured"] is True
+    assert audit.audit_metadata["base_url_host"] == "api.openai.com"
+    assert "base_url" not in audit.audit_metadata
 
 
 def test_setting_new_default_unsets_previous_default_in_same_workspace() -> None:
@@ -210,6 +213,44 @@ def test_rotate_key_updates_secret_material_without_changing_metadata() -> None:
     assert rotated.api_key_fingerprint != old_fingerprint
     assert resolved.api_key == "sk-new"
     assert resolved.model == "gpt-4.1"
+
+
+def test_update_audit_redacts_full_base_url() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Router",
+        provider="openai-compatible",
+        api_key="sk-router",
+        default_model="router/default",
+        base_url="https://router.example.test/v1/private-path?token=secret",
+        is_default=False,
+    )
+
+    service.update(
+        workspace_id=workspace.id,
+        credential_id=credential.id,
+        actor_user_id=user.id,
+        default_model="router/new",
+        base_url="https://new-router.example.test/v1/private-path?token=secret",
+    )
+
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "model_provider_credential.updated",
+        )
+    )
+
+    assert audit is not None
+    assert audit.audit_metadata["base_url_configured"] is True
+    assert audit.audit_metadata["base_url_host"] == "new-router.example.test"
+    assert "base_url" not in audit.audit_metadata
+    assert "private-path" not in str(audit.audit_metadata)
+    assert "secret" not in str(audit.audit_metadata)
 
 
 def test_disable_removes_credential_from_default_resolution() -> None:

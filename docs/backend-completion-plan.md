@@ -786,12 +786,15 @@ Current state:
 - Account-scoped skill/tool invocation needs a broader adversarial test suite.
 - Negative coverage now includes disabled explicit model-provider overrides and artifact-history
   foreign task IDs.
+- Model provider management audit now stores only base URL host/configured flags instead of full
+  URLs.
 
 Build:
 
 - Add dedicated security tests for MCP, skill install/provenance, files, artifacts, runtimes, model providers, self-hosted jobs, and marketplace installs.
 - Add negative tests for forged IDs, stale snapshots, disabled credentials, revoked self-hosted runtimes, and public source skill misuse.
   - [x] Disabled explicit model-provider credential override is rejected.
+  - [x] Model-provider credential audit events redact full base URLs.
   - [x] Artifact history does not leak artifacts when a foreign task ID is supplied.
   - [x] Runtime lease listing does not leak foreign runtime-space leases.
   - [x] Disabled MCP credentials are not injected into tool execution.

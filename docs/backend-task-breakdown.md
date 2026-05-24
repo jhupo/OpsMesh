@@ -535,6 +535,7 @@ Tasks:
   - [x] Add workspace-scoped provider fallback policy.
   - [x] Emit fallback selection and final provider-used run events.
   - [x] Track provider health and last failure reason.
+  - [x] Redact full model-provider base URLs from credential management audit events.
 - [x] Add operations dashboards APIs for worker capacity, queue latency, and runtime saturation.
   - [x] Add `/operations/capacity` aggregate for queue age, worker slots, and runtime space quotas.
   - [x] Add scheduler-specific backlog and fairness aggregate.
