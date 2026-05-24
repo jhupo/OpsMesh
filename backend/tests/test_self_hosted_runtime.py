@@ -1102,6 +1102,8 @@ def test_self_hosted_worker_trust_view_summarizes_machine_policy_and_state() -> 
                 "max_concurrent_jobs": 2,
                 "max_concurrent_mcp_jobs": 1,
                 "max_artifact_bytes": 4096,
+                "token": "machine-secret",
+                "headers": {"authorization": "Bearer hidden"},
             },
         },
     )
@@ -1148,7 +1150,11 @@ def test_self_hosted_worker_trust_view_summarizes_machine_policy_and_state() -> 
         "max_concurrent_jobs": 2,
         "max_concurrent_mcp_jobs": 1,
         "max_artifact_bytes": 4096,
+        "token": "[redacted]",
+        "headers": "[redacted]",
     }
+    assert "machine-secret" not in str(item)
+    assert "Bearer hidden" not in str(item)
 
 
 def test_self_hosted_worker_trust_view_reflects_degraded_and_revoked_states() -> None:

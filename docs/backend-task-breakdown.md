@@ -547,6 +547,7 @@ Tasks:
   - [x] Hide raw Docker container IDs from workspace runtime responses while keeping admin metadata.
   - [x] Redact sensitive security-event metadata in workspace and admin API responses.
   - [x] Redact sensitive runtime and runtime-space event metadata in workspace API responses.
+  - [x] Redact worker metadata, lease metadata, and self-hosted capability metadata in control-plane responses.
 
 ## Phase 22: Persistent AI Organization Architecture
 

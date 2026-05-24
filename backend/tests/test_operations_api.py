@@ -169,11 +169,12 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
             "worker_id": "worker-1",
             "worker_version": "2026.05.19",
             "hostname": "host-a",
-            "capacity": {"max_jobs": 2},
-            "details": {"pid": 123},
+            "capacity": {"max_jobs": 2, "token": "capacity-secret"},
+            "details": {"pid": 123, "headers": {"authorization": "Bearer hidden"}},
         },
     )
     assert heartbeat.status_code == 200
+    assert heartbeat.json()["details"] == {"pid": 123, "headers": "[redacted]"}
     workers = client.get(
         f"/api/v1/workspaces/{workspace.id}/operations/workers",
         headers=_headers(owner.id),
@@ -181,7 +182,15 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert workers.status_code == 200
     assert workers.json()["total"] == 1
     assert workers.json()["items"][0]["worker_id"] == "worker-1"
-    assert workers.json()["items"][0]["capacity"] == {"max_jobs": 2, "worker_type": "cloud"}
+    assert workers.json()["items"][0]["capacity"] == {
+        "max_jobs": 2,
+        "token": "[redacted]",
+        "worker_type": "cloud",
+    }
+    assert workers.json()["items"][0]["details"] == {
+        "pid": 123,
+        "headers": "[redacted]",
+    }
 
     drain = client.post(
         f"/api/v1/workspaces/{workspace.id}/operations/workers/worker-1/drain",
@@ -1724,7 +1733,7 @@ def test_operations_lists_worker_leases_by_workspace() -> None:
         resource_id=uuid4(),
         status="running",
         attempt=0,
-        lease_metadata={"task": "owned"},
+        lease_metadata={"task": "owned", "token": "worker-lease-token"},
         started_at=datetime.now(UTC),
     )
     other_lease = WorkerLease(
@@ -1754,6 +1763,10 @@ def test_operations_lists_worker_leases_by_workspace() -> None:
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["job_id"] == str(lease.job_id)
+    assert response.json()["items"][0]["lease_metadata"] == {
+        "task": "owned",
+        "token": "[redacted]",
+    }
     assert other_response.status_code == 200
     assert other_response.json()["total"] == 1
     assert other_response.json()["items"][0]["job_id"] == str(other_lease.job_id)
@@ -1800,7 +1813,7 @@ def test_operations_lists_runtime_leases_by_workspace() -> None:
         runtime_space_id=runtime_space.id,
         docker_container_id="container-owned",
         status="running",
-        lease_metadata={"purpose": "owned"},
+        lease_metadata={"purpose": "owned", "docker_container_id": "container-owned"},
         acquired_at=datetime.now(UTC),
     )
     other_lease = RuntimeLease(
@@ -1830,7 +1843,10 @@ def test_operations_lists_runtime_leases_by_workspace() -> None:
     assert response.json()["items"][0]["workspace_runtime_id"] == str(runtime.id)
     assert "docker_container_id" not in response.json()["items"][0]
     assert response.json()["items"][0]["has_docker_container"] is True
-    assert response.json()["items"][0]["lease_metadata"] == {"purpose": "owned"}
+    assert response.json()["items"][0]["lease_metadata"] == {
+        "purpose": "owned",
+        "docker_container_id": "[redacted]",
+    }
     assert other_response.status_code == 200
     assert other_response.json()["total"] == 1
     assert other_response.json()["items"][0]["workspace_runtime_id"] == str(other_runtime.id)

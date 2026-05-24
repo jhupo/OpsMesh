@@ -1,9 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.api.schemas.common import TimestampedModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 
 
 class EnrollmentTokenCreateRequest(BaseModel):
@@ -71,6 +72,10 @@ class SelfHostedWorkerTrustResponse(BaseModel):
     credential_revoked_at: datetime | None
     policy_summary: dict[str, object]
     capabilities: dict[str, object]
+
+    @field_serializer("policy_summary", "capabilities")
+    def _serialize_worker_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class RuntimeCredentialRevokeRequest(BaseModel):

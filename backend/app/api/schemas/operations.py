@@ -66,6 +66,10 @@ class WorkerHeartbeatResponse(TimestampedModel):
     details: dict[str, object]
     last_seen_at: datetime
 
+    @field_serializer("details")
+    def _serialize_details(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
 
 class WorkerNodeResponse(TimestampedModel):
     worker_id: str
@@ -78,6 +82,10 @@ class WorkerNodeResponse(TimestampedModel):
     details: dict[str, object]
     drain_requested_at: datetime | None
     last_seen_at: datetime
+
+    @field_serializer("capacity", "details")
+    def _serialize_worker_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class WorkerLeaseResponse(TimestampedModel):
@@ -92,6 +100,10 @@ class WorkerLeaseResponse(TimestampedModel):
     lease_metadata: dict[str, object]
     started_at: datetime
     finished_at: datetime | None
+
+    @field_serializer("lease_metadata")
+    def _serialize_lease_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class RuntimeLeaseResponse(TimestampedModel):
@@ -108,6 +120,10 @@ class RuntimeLeaseResponse(TimestampedModel):
     @property
     def has_docker_container(self) -> bool:
         return self.docker_container_id is not None
+
+    @field_serializer("lease_metadata")
+    def _serialize_lease_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class QueueMetricsResponse(BaseModel):
