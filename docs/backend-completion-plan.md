@@ -243,6 +243,8 @@ Current state:
   debugging and observation.
 - Worker queues select the highest-priority compatible job within the scan window, preserving FIFO
   order for priority ties.
+- Worker claim control respects operator-held `draining`, `maintenance`, `offline`, and `disabled`
+  node states even when workers continue to heartbeat.
 - Workspace active run, CPU, memory, storage-style quota usage, Docker runtime slots, and
   self-hosted job slots have durable reservation and release at run lifecycle boundaries.
 - Workspace quota limits are now manageable through authenticated workspace APIs, including

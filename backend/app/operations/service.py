@@ -173,7 +173,7 @@ class OperationsService:
             self._session.add(node)
         else:
             node.worker_type = worker_type
-            node.status = "draining" if node.drain_requested_at is not None else status
+            node.status = _next_worker_node_status(node, status)
             node.queue_name = queue_name
             node.worker_version = worker_version
             node.hostname = hostname
@@ -290,6 +290,16 @@ class OperationsService:
         default_max_jobs: int = 1,
     ) -> WorkerCapacitySnapshot:
         node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
+        if node is not None and _worker_status_blocks_claims(node):
+            return WorkerCapacitySnapshot(
+                worker_id=worker_id,
+                max_jobs=_positive_int(node.capacity.get("max_jobs"), default_max_jobs),
+                running_jobs=self._running_leases_for_worker(worker_id),
+                available_slots=0,
+                accepting=False,
+                reason=f"worker_{node.status}",
+                capacity=dict(node.capacity),
+            )
         if node is not None and node.drain_requested_at is not None:
             return WorkerCapacitySnapshot(
                 worker_id=worker_id,
@@ -1598,6 +1608,22 @@ def _worker_capacity(capacity: dict[str, object] | None, worker_type: str) -> di
     normalized = dict(capacity or {})
     normalized.setdefault("worker_type", worker_type)
     return normalized
+
+
+def _next_worker_node_status(node: WorkerNode, heartbeat_status: str) -> str:
+    if node.drain_requested_at is not None:
+        return "draining"
+    if node.status in {"offline", "maintenance", "disabled"}:
+        return node.status
+    return heartbeat_status
+
+
+def _worker_status_blocks_claims(node: WorkerNode) -> bool:
+    return node.drain_requested_at is not None or node.status in {
+        "offline",
+        "maintenance",
+        "disabled",
+    }
 
 
 def _bounded_worker_capacity(

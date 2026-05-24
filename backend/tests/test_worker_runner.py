@@ -206,6 +206,49 @@ def test_worker_runner_drain_prevents_new_job_claims() -> None:
         assert session.query(WorkerLease).count() == 0
 
 
+def test_worker_runner_maintenance_status_prevents_new_job_claims() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, run_id, user_id = _seed_run(session_factory)
+    queue.enqueue(
+        JobPayload(
+            workspace_id=workspace_id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run_id,
+            requested_by_user_id=user_id,
+            idempotency_key=f"agent.run:{workspace_id}:{run_id}",
+        )
+    )
+    with session_factory() as session:
+        session.add(
+            WorkerNode(
+                worker_id="worker-maintenance",
+                worker_type="cloud",
+                status="maintenance",
+                queue_name="agent_runs",
+                capacity={"max_jobs": 10},
+                details={},
+                last_seen_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="worker-maintenance", queue_name="agent_runs"),
+    )
+
+    assert runner.run_once() is False
+    assert queue.count_queued(workspace_id=workspace_id) == 1
+    with session_factory() as session:
+        node = session.scalar(
+            select(WorkerNode).where(WorkerNode.worker_id == "worker-maintenance")
+        )
+        assert node is not None
+        assert node.status == "maintenance"
+        assert session.query(WorkerLease).count() == 0
+
+
 def test_worker_runner_capacity_prevents_new_job_claims_when_full() -> None:
     session_factory = _session_factory()
     queue = _queue()

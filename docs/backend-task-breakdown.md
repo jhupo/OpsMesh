@@ -507,6 +507,7 @@ Tasks:
   - [x] Add admin/operator APIs for queues, dead-letter requeue, runtimes, runtime force-stop, and global risky-execution policy records.
   - [x] Add global worker-control policy APIs and enforce allowed worker statuses, worker types, queue updates, and capacity ceilings on admin worker updates.
   - [x] Add platform policy event listing for auditable admin control-plane changes.
+  - [x] Make operator-held worker maintenance/offline/disabled states block new job claims despite ongoing heartbeats.
   - [x] Enforce global risky-execution policy records inside Docker runtime, self-hosted runtime, and MCP execution paths.
   - [x] Model high-risk tool handling as `require_workspace_approval`, `allow`, or `block`; platform admins set guardrails, workspace owners approve task-level risk.
   - [x] Add PostgreSQL-level concurrent scheduler tests that prove runtime-space quotas cannot be over-reserved under parallel schedulers.
