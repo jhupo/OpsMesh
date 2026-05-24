@@ -100,6 +100,83 @@ def test_task_view_returns_domain_state_comments_and_revisions() -> None:
     assert str(job.resource_id) == task_id
 
 
+def test_task_view_redacts_sensitive_domain_metadata() -> None:
+    queue = _queue()
+    client, session = _client(queue)
+    owner, workspace = _seed_workspace(session)
+
+    task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={"title": "Domain metadata", "domain_type": "research"},
+    )
+    assert task.status_code == 201
+    task_id = task.json()["id"]
+    project = client.post(
+        f"/api/v1/workspaces/{workspace.id}/domain-projects",
+        headers=_headers(owner.id),
+        json={
+            "domain_type": "research",
+            "name": "Research",
+            "state": {"api_key": "sk-domain", "safe": "visible"},
+        },
+    )
+    assert project.status_code == 201
+    item = client.post(
+        f"/api/v1/workspaces/{workspace.id}/domain-items",
+        headers=_headers(owner.id),
+        json={
+            "domain_project_id": project.json()["id"],
+            "task_id": task_id,
+            "item_type": "note",
+            "title": "Note",
+            "content": {"base_url": "https://domain.example.test/private"},
+            "state": {"headers": {"authorization": "Bearer hidden"}},
+        },
+    )
+    assert item.status_code == 201
+    comment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/review-comments",
+        headers=_headers(owner.id),
+        json={
+            "domain_item_id": item.json()["id"],
+            "body": "Review",
+            "metadata": {"token": "comment-token"},
+        },
+    )
+    assert comment.status_code == 201
+    revision = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/revision-requests",
+        headers=_headers(owner.id),
+        json={
+            "domain_item_id": item.json()["id"],
+            "instruction": "Revise",
+            "payload": {"password": "hidden-password"},
+        },
+    )
+    assert revision.status_code == 201
+
+    view = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/view",
+        headers=_headers(owner.id),
+    )
+
+    assert view.status_code == 200
+    body = view.json()
+    assert body["domain_project"]["state"] == {
+        "api_key": "[redacted]",
+        "safe": "visible",
+    }
+    assert body["domain_items"][0]["content"] == {"base_url": "[redacted]"}
+    assert body["domain_items"][0]["state"] == {"headers": "[redacted]"}
+    assert body["review_comments"][0]["metadata"] == {"token": "[redacted]"}
+    assert body["revision_requests"][0]["payload"] == {"password": "[redacted]"}
+    assert "sk-domain" not in str(body)
+    assert "domain.example.test/private" not in str(body)
+    assert "comment-token" not in str(body)
+    assert "hidden-password" not in str(body)
+
+
 def test_domain_item_cannot_be_used_across_workspaces() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")

@@ -1,9 +1,10 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_serializer, field_validator
 
 from backend.app.api.schemas.common import TimestampedModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 
 
 class WorkspaceCreateRequest(BaseModel):
@@ -45,6 +46,10 @@ class WorkspaceResponse(TimestampedModel):
     slug: str
     status: str
     settings: dict[str, object]
+
+    @field_serializer("settings")
+    def _serialize_settings(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class WorkspaceMemberResponse(TimestampedModel):

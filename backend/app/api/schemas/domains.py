@@ -1,9 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.api.schemas.common import TimestampedModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.api.schemas.tasks import TaskResponse
 
 
@@ -23,6 +24,10 @@ class DomainProjectResponse(TimestampedModel):
     description: str
     status: str
     state: dict[str, object]
+
+    @field_serializer("state")
+    def _serialize_state(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class DomainItemCreateRequest(BaseModel):
@@ -49,6 +54,10 @@ class DomainItemResponse(TimestampedModel):
     content: dict[str, object]
     state: dict[str, object]
 
+    @field_serializer("content", "state")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
 
 class ReviewCommentCreateRequest(BaseModel):
     domain_item_id: UUID | None = None
@@ -65,6 +74,10 @@ class ReviewCommentResponse(TimestampedModel):
     body: str
     status: str
     metadata: dict[str, object] = Field(validation_alias="metadata_")
+
+    @field_serializer("metadata")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class RevisionRequestCreateRequest(BaseModel):
@@ -84,6 +97,10 @@ class RevisionRequestResponse(TimestampedModel):
     status: str
     payload: dict[str, object]
     resolved_at: datetime | None
+
+    @field_serializer("payload")
+    def _serialize_payload(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class TaskViewResponse(BaseModel):

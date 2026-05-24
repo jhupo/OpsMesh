@@ -2234,7 +2234,11 @@ def test_workspace_update_can_pause_scheduler_and_records_audit() -> None:
                 "scheduler": {
                     "paused": True,
                     "pause_reason": "maintenance",
-                }
+                },
+                "model_provider": {
+                    "api_key": "sk-workspace",
+                    "base_url": "https://workspace.example.test/private",
+                },
             },
         },
     )
@@ -2249,6 +2253,12 @@ def test_workspace_update_can_pause_scheduler_and_records_audit() -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "paused"
     assert response.json()["settings"]["scheduler"]["paused"] is True
+    assert response.json()["settings"]["model_provider"] == {
+        "api_key": "[redacted]",
+        "base_url": "[redacted]",
+    }
+    assert "sk-workspace" not in str(response.json())
+    assert "workspace.example.test/private" not in str(response.json())
     assert actions == ["workspace.status_updated", "workspace.scheduler_policy_updated"]
     assert events[0].audit_metadata["before"] == "active"
     assert events[0].audit_metadata["after"] == "paused"
