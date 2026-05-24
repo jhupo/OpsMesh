@@ -208,6 +208,48 @@ def test_create_agent_and_team_are_idempotent_within_workspace() -> None:
     assert actions.count("team.created") == 1
 
 
+def test_agent_profile_response_redacts_sensitive_metadata() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Sensitive Agent",
+            "role": "researcher",
+            "model_settings": {
+                "temperature": 0.2,
+                "api_key": "sk-agent",
+                "provider": {"base_url": "https://router.example.test/private"},
+            },
+            "capabilities": {"headers": {"authorization": "Bearer hidden"}},
+            "tool_policy": {"token": "tool-token"},
+            "runtime_policy": {"docker_container_id": "container-secret"},
+        },
+    )
+    listed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+    )
+
+    assert created.status_code == 201
+    body = created.json()
+    assert body["model_settings"] == {
+        "temperature": 0.2,
+        "api_key": "[redacted]",
+        "provider": {"base_url": "[redacted]"},
+    }
+    assert body["capabilities"] == {"headers": "[redacted]"}
+    assert body["tool_policy"] == {"token": "[redacted]"}
+    assert body["runtime_policy"] == {"docker_container_id": "[redacted]"}
+    assert listed.status_code == 200
+    serialized = str(listed.json())
+    assert "sk-agent" not in serialized
+    assert "router.example.test/private" not in serialized
+    assert "container-secret" not in serialized
+
+
 def test_team_member_api_stores_persistent_org_metadata_and_reporting_line() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

@@ -1,8 +1,9 @@
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.api.schemas.common import TimestampedModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 
 
 class AgentProfileCreateRequest(BaseModel):
@@ -38,3 +39,15 @@ class AgentProfileResponse(TimestampedModel):
     approval_policy: dict[str, object]
     version: int
     status: str
+
+    @field_serializer(
+        "model_settings",
+        "capabilities",
+        "skills",
+        "tool_policy",
+        "runtime_policy",
+        "memory_policy",
+        "approval_policy",
+    )
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)

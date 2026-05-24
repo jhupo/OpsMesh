@@ -1,9 +1,10 @@
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.api.schemas.agents import AgentProfileResponse
 from backend.app.api.schemas.common import TimestampedModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 
 
 class TalentListingCreateRequest(BaseModel):
@@ -38,6 +39,10 @@ class TalentListingResponse(TimestampedModel):
     rating_sum: int
     average_rating: float
     status: str
+
+    @field_serializer("listing_metadata")
+    def _serialize_listing_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class HireTalentRequest(BaseModel):

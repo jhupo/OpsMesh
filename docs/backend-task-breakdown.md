@@ -549,6 +549,7 @@ Tasks:
   - [x] Redact sensitive runtime and runtime-space event metadata in workspace API responses.
   - [x] Redact worker metadata, lease metadata, and self-hosted capability metadata in control-plane responses.
   - [x] Redact sensitive audit metadata in workspace and operations audit-event responses.
+  - [x] Redact sensitive agent profile metadata and public talent listing metadata in API responses.
 
 ## Phase 22: Persistent AI Organization Architecture
 

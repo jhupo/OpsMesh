@@ -63,15 +63,25 @@ def test_owner_can_publish_and_another_workspace_can_hire_agent_into_team() -> N
             "capability_tags": ["web.search"],
             "required_tools": ["search"],
             "default_team_role": "research_specialist",
+            "metadata": {
+                "token": "listing-token",
+                "nested": {"base_url": "https://listing.example.test/private"},
+                "safe": "visible",
+            },
         },
     )
     assert published.status_code == 201
     listing_id = published.json()["id"]
+    assert published.json()["listing_metadata"]["token"] == "[redacted]"
+    assert published.json()["listing_metadata"]["nested"]["base_url"] == "[redacted]"
 
     market = client.get("/api/v1/talent-market?skill=research")
     assert market.status_code == 200
     assert market.json()["total"] == 1
     assert market.json()["items"][0]["id"] == listing_id
+    assert market.json()["items"][0]["listing_metadata"]["token"] == "[redacted]"
+    assert "listing-token" not in str(market.json())
+    assert "listing.example.test/private" not in str(market.json())
 
     hired = client.post(
         f"/api/v1/workspaces/{buyer_workspace.id}/talent-market/{listing_id}/hire",
