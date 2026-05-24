@@ -282,6 +282,43 @@ def test_mcp_credentials_can_be_listed_filtered_and_disabled() -> None:
     assert "missing_required_credentials" in catalog.json()["items"][0]["blocked_reasons"]
 
 
+def test_mcp_server_response_redacts_connection_secrets_and_url_details() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "remote-tools",
+            "server_type": "http_jsonrpc",
+            "connection": {
+                "url": "https://mcp.example.test/private/rpc?token=secret",
+                "headers": {"Authorization": "Bearer secret-token"},
+                "nested": {"api_key": "sk-secret"},
+                "transport": "http_jsonrpc",
+            },
+        },
+    )
+    listed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+    )
+
+    assert created.status_code == 201
+    assert "private/rpc" not in str(created.json())
+    assert "secret" not in str(created.json())
+    assert created.json()["connection"] == {
+        "url_configured": True,
+        "url_host": "mcp.example.test",
+        "headers": "[redacted]",
+        "nested": {"api_key": "[redacted]"},
+        "transport": "http_jsonrpc",
+    }
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["connection"]["url_host"] == "mcp.example.test"
+
+
 def test_mcp_server_scope_is_enforced() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")

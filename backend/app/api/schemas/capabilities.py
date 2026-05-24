@@ -1,7 +1,8 @@
 from datetime import datetime
+from urllib.parse import urlparse
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
 
@@ -130,6 +131,10 @@ class McpServerResponse(TimestampedModel):
     health_status: str
     last_health_check_at: datetime | None
     last_error: str | None
+
+    @field_serializer("connection")
+    def _serialize_connection(self, connection: dict[str, object]) -> dict[str, object]:
+        return _redacted_connection(connection)
 
 
 class McpToolAllowRequest(BaseModel):
@@ -271,3 +276,51 @@ class McpToolCallLogResponse(ORMModel):
     response: dict[str, object] | None
     error: dict[str, object] | None
     created_at: datetime
+
+
+_SENSITIVE_CONNECTION_KEYS = {
+    "api_key",
+    "authorization",
+    "cookie",
+    "headers",
+    "password",
+    "secret",
+    "token",
+}
+
+
+def _redacted_connection(connection: dict[str, object]) -> dict[str, object]:
+    redacted: dict[str, object] = {}
+    for key, value in connection.items():
+        key_text = str(key)
+        if _is_sensitive_connection_key(key_text):
+            redacted[key_text] = "[redacted]"
+            continue
+        if key_text in {"url", "endpoint"} and isinstance(value, str):
+            redacted[f"{key_text}_configured"] = bool(value)
+            redacted[f"{key_text}_host"] = _url_host(value)
+            continue
+        if isinstance(value, dict):
+            redacted[key_text] = _redacted_connection(value)
+            continue
+        if isinstance(value, list):
+            redacted[key_text] = [_redacted_connection_item(item) for item in value]
+            continue
+        redacted[key_text] = value
+    return redacted
+
+
+def _redacted_connection_item(value: object) -> object:
+    if isinstance(value, dict):
+        return _redacted_connection(value)
+    return value
+
+
+def _is_sensitive_connection_key(key: str) -> bool:
+    normalized = key.lower().replace("-", "_")
+    return any(sensitive in normalized for sensitive in _SENSITIVE_CONNECTION_KEYS)
+
+
+def _url_host(url: str) -> str | None:
+    parsed = urlparse(url)
+    return parsed.netloc or None

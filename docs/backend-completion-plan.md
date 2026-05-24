@@ -130,6 +130,8 @@ Current state:
 - Tool call logging exists with workspace-scoped query APIs, and hosted credentials can be encrypted or referenced through an external vault.
 - MCP credential API responses expose only secret fingerprints and external-reference status/kind,
   never raw external references or hosted secret payloads.
+- MCP server API responses redact sensitive connection fields and expose remote URL hosts rather
+  than full URLs.
 - The execution service now resolves an MCP server/tool from the run authorization snapshot, injects workspace-owned credential references into an adapter, enforces payload policy, and records call logs, run events, task messages, and security events.
 - MCP execution also re-checks the runtime context tool set, sends explicitly approval-required tools into workspace approval, and writes authorization snapshot metadata into tool audit records.
 - Worker-built agent requests now carry a backend tool executor, and the OpenAI Agents runner registers allowed MCP tools as SDK function tools that call back into the backend execution service.
@@ -801,6 +803,7 @@ Build:
   - [x] Runtime lease listing does not leak foreign runtime-space leases.
   - [x] Disabled MCP credentials are not injected into tool execution.
   - [x] MCP credential responses redact raw external references.
+  - [x] MCP server responses redact connection secrets and full URLs.
   - [x] Disabled MCP servers and tool allowlist entries are rejected by execution.
   - [x] Forged MCP tool-call log server references are rejected.
   - [x] Planning retry/regenerate/history routes hide foreign task IDs.
