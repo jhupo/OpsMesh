@@ -298,7 +298,7 @@ class SelfHostedRuntimeService:
         self._require_worker_accepting_jobs(auth)
         if not self._worker_mcp_capacity_allows(auth):
             return None
-        job = self._session.scalar(
+        jobs = self._session.scalars(
             select(SelfHostedMcpJob)
             .where(
                 SelfHostedMcpJob.workspace_id == auth.worker.workspace_id,
@@ -306,11 +306,9 @@ class SelfHostedRuntimeService:
                 SelfHostedMcpJob.status == "queued",
             )
             .order_by(SelfHostedMcpJob.created_at.asc())
-            .limit(1)
+            .limit(50)
         )
-        if job is not None and not self._worker_can_accept_mcp_job(auth, job):
-            return None
-        return job
+        return next((job for job in jobs if self._worker_can_accept_mcp_job(auth, job)), None)
 
     def claim_mcp_job(self, auth: AuthenticatedWorker, mcp_job_id: UUID) -> SelfHostedMcpJob:
         self._require_self_hosted_enabled()

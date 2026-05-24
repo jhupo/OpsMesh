@@ -721,6 +721,60 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
     ]
 
 
+def test_self_hosted_mcp_job_poll_skips_incompatible_head_of_queue() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-mcp-skip",
+            "capabilities": {"allowed_tools": ["generate_image"]},
+        },
+    )
+    credential = registered.json()["credential_token"]
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="image-tools",
+        server_type="stdio",
+        connection={"command": "mcp-image"},
+    )
+    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="waiting_runtime")
+    session.add_all([server, run])
+    session.flush()
+    blocked_job = SelfHostedMcpJob(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime_id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="delete_image",
+        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+    )
+    compatible_job = SelfHostedMcpJob(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime_id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+    )
+    session.add_all([blocked_job, compatible_job])
+    session.commit()
+
+    next_job = client.get("/api/v1/self-hosted/mcp-jobs/next", headers=_runtime_headers(credential))
+
+    assert next_job.status_code == 200
+    assert next_job.json()["id"] == str(compatible_job.id)
+    assert next_job.json()["tool_name"] == "generate_image"
+
+
 def test_self_hosted_worker_cleanup_expires_stale_mcp_jobs_idempotently() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
