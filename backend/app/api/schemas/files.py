@@ -1,9 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, computed_field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 
 
 class WorkspaceFileResponse(TimestampedModel):
@@ -13,9 +14,18 @@ class WorkspaceFileResponse(TimestampedModel):
     content_type: str
     size_bytes: int
     checksum_sha256: str
-    storage_key: str
+    storage_key: str = Field(exclude=True, repr=False)
     status: str
     file_metadata: dict[str, object]
+
+    @computed_field
+    @property
+    def has_storage_object(self) -> bool:
+        return bool(self.storage_key)
+
+    @field_serializer("file_metadata")
+    def _serialize_file_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class ArtifactResponse(ORMModel):
@@ -34,9 +44,18 @@ class ArtifactResponse(ORMModel):
     content_type: str
     size_bytes: int
     checksum_sha256: str
-    storage_key: str
+    storage_key: str = Field(exclude=True, repr=False)
     artifact_metadata: dict[str, object]
     created_at: datetime
+
+    @computed_field
+    @property
+    def has_storage_object(self) -> bool:
+        return bool(self.storage_key)
+
+    @field_serializer("artifact_metadata")
+    def _serialize_artifact_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class ArtifactHistoryResponse(BaseModel):

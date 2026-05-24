@@ -1829,6 +1829,8 @@ def test_artifact_list_includes_work_package_version_metadata() -> None:
     assert item["task_step_id"] is None
     assert item["agent_profile_id"] is None
     assert item["supersedes_artifact_id"] is None
+    assert "storage_key" not in item
+    assert item["has_storage_object"] is True
 
 
 def test_artifact_history_lists_versions_for_work_package_only() -> None:

@@ -34,6 +34,8 @@ def test_file_upload_download_and_cross_workspace_denial(tmp_path: Path) -> None
     assert uploaded.status_code == 201
     file_id = uploaded.json()["id"]
     assert uploaded.json()["checksum_sha256"]
+    assert "storage_key" not in uploaded.json()
+    assert uploaded.json()["has_storage_object"] is True
 
     downloaded = client.get(
         f"/api/v1/workspaces/{workspace.id}/files/{file_id}/download",
