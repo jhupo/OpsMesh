@@ -311,12 +311,14 @@ class WorkspaceScheduler:
         return ordered
 
     def _mark_runnable(self, steps: list[TaskStep]) -> None:
+        scheduled_at = datetime.now(UTC).isoformat()
         for step in steps:
             dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
             dependencies.pop("scheduling_status", None)
             dependencies.pop("blocked_reason", None)
             dependencies.pop("blocked_resource_keys", None)
-            dependencies.pop("priority_score", None)
+            dependencies["scheduled_at"] = scheduled_at
+            dependencies["priority_score"] = self._step_priority_score(step)
             step.dependencies = dependencies
 
     def _mark_blocked(self, steps: list[TaskStep], reason: str) -> None:
@@ -324,6 +326,7 @@ class WorkspaceScheduler:
             dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
             dependencies["scheduling_status"] = "blocked"
             dependencies["blocked_reason"] = reason
+            dependencies.pop("scheduled_at", None)
             dependencies["priority_score"] = self._step_priority_score(step)
             step.dependencies = dependencies
 

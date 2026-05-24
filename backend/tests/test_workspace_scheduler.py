@@ -49,7 +49,8 @@ def test_workspace_scheduler_orders_steps_by_task_priority_and_run_quota() -> No
     assert [step.task_id for step in decision.runnable_steps] == [high_task.id]
     assert [step.task_id for step in decision.blocked_steps] == [low_task.id]
     assert low_step.dependencies["blocked_reason"] == "workspace_run_quota_exceeded"
-    assert high_step.dependencies == {}
+    assert high_step.dependencies["priority_score"] == 10
+    assert high_step.dependencies["scheduled_at"]
 
 
 def test_workspace_scheduler_round_robins_between_tasks_before_extra_parallel_steps() -> None:
@@ -181,7 +182,8 @@ def test_workspace_scheduler_boosts_long_waiting_lower_priority_work() -> None:
 
     assert decision.runnable_steps == (low_step,)
     assert decision.blocked_steps == (high_step,)
-    assert "priority_score" not in low_step.dependencies
+    assert low_step.dependencies["priority_score"] > high_step.dependencies["priority_score"]
+    assert low_step.dependencies["scheduled_at"]
     assert high_step.dependencies["priority_score"] == 10
 
 
@@ -219,7 +221,9 @@ def test_workspace_scheduler_blocks_steps_exceeding_tick_resource_limits() -> No
     assert decision.runnable_steps == (first_step,)
     assert decision.blocked_steps == (second_step,)
     assert decision.blocked_reason == "workspace_resource_quota_exceeded"
-    assert first_step.dependencies == {"resource_requirements": {"memory_mb": 3072, "cpu": 2}}
+    assert first_step.dependencies["resource_requirements"] == {"memory_mb": 3072, "cpu": 2}
+    assert first_step.dependencies["priority_score"] == 10
+    assert first_step.dependencies["scheduled_at"]
     assert second_step.dependencies["blocked_reason"] == "workspace_resource_quota_exceeded"
     assert second_step.dependencies["blocked_resource_keys"] == ["memory_mb"]
     assert {first_task.id, second_task.id} == {step.task_id for step in [first_step, second_step]}
@@ -308,7 +312,8 @@ def test_run_orchestration_reserves_runtime_space_capacity_before_enqueue() -> N
     assert len(reservations) == 1
     assert reservations[0].agent_run_id == runs[0].id
     assert reservations[0].status == "active"
-    assert first_step.dependencies == {}
+    assert first_step.dependencies["priority_score"] == 10
+    assert first_step.dependencies["scheduled_at"]
     assert second_step.dependencies["scheduling_status"] == "blocked"
     assert second_step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded:active_runs"
 
@@ -408,7 +413,9 @@ def test_run_orchestration_reserves_runtime_space_resource_requirements() -> Non
     assert memory_quota.reserved_value == 4096
     assert cpu_quota.reserved_value == 3
     assert reservations[0].resource_usage == {"active_runs": 1, "memory_mb": 4096, "cpu": 3}
-    assert first_step.dependencies == {"resource_requirements": {"cpu": 3}}
+    assert first_step.dependencies["resource_requirements"] == {"cpu": 3}
+    assert first_step.dependencies["priority_score"] == 10
+    assert first_step.dependencies["scheduled_at"]
     assert second_step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded:memory_mb"
 
     RunOrchestrationService(session)._mark_run_cancelled(

@@ -576,6 +576,7 @@ Tasks:
     - [x] Start higher-priority task steps first across a workspace.
     - [x] Add starvation prevention for lower-priority work.
   - [x] Persist blocked scheduling reason on queued steps.
+  - [x] Persist selected scheduling timestamp and priority score on runnable steps.
 - [x] Multi-agent collaborative execution.
   - [x] Create `AgentRun` records from assigned work packages.
   - [x] Run dependency-free packages in parallel after their prerequisites complete.

@@ -239,6 +239,8 @@ Current state:
 - Runtime capacity is considered during member matching.
 - Workspace-level active run limits and cross-task priority scheduling are now enforced by the workspace scheduler.
 - Blocked queued steps record a scheduling status and blocked reason in step dependencies for observation and operations.
+- Runnable selected steps record a scheduling timestamp and priority score snapshot for later
+  debugging and observation.
 - Workspace active run, CPU, memory, storage-style quota usage, Docker runtime slots, and
   self-hosted job slots have durable reservation and release at run lifecycle boundaries.
 - Workspace quota limits are now manageable through authenticated workspace APIs, including
@@ -264,7 +266,7 @@ API/data changes:
 
 - [x] Add workspace quota settings and current usage counters.
 - [x] Add quota change audit events and over-reserved quota visibility.
-- Add `scheduling_status`, `blocked_reason`, `scheduled_at`, and `priority_score` to task steps or a scheduling table.
+- [x] Add `scheduling_status`, `blocked_reason`, `scheduled_at`, and `priority_score` scheduling metadata to task step dependencies.
 - Add operations endpoints for queue depth by priority and blocked scheduling reasons.
 
 Tests:
