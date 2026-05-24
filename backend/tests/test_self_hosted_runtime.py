@@ -354,6 +354,78 @@ def test_self_hosted_worker_is_limited_to_allowed_runtime_spaces() -> None:
     }
 
 
+def test_self_hosted_runtime_rejects_foreign_runtime_space_capabilities() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other_user = User(email="other-runtime-space@example.com", display_name="other")
+    other_workspace = Workspace(owner=other_user, name="Other", slug="other-runtime-space")
+    other_membership = WorkspaceMember(
+        workspace=other_workspace,
+        user=other_user,
+        role="owner",
+    )
+    session.add_all([other_user, other_workspace, other_membership])
+    session.flush()
+    foreign_space = RuntimeSpace(
+        workspace_id=other_workspace.id,
+        name="Foreign",
+        scope="workspace",
+    )
+    session.add(foreign_space)
+    session.commit()
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-foreign-space",
+            "capabilities": {"allowed_runtime_space_ids": [str(foreign_space.id)]},
+        },
+    )
+
+    assert registered.status_code == 400
+    assert "unavailable runtime spaces" in registered.json()["error"]["message"]
+
+
+def test_self_hosted_heartbeat_cannot_change_runtime_space_binding() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    first_space = RuntimeSpace(workspace_id=workspace.id, name="First", scope="workspace")
+    second_space = RuntimeSpace(workspace_id=workspace.id, name="Second", scope="workspace")
+    session.add_all([first_space, second_space])
+    session.commit()
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-rebind",
+            "capabilities": {"runtime_space_id": str(first_space.id)},
+        },
+    )
+
+    heartbeat = client.post(
+        "/api/v1/self-hosted/heartbeat",
+        headers=_runtime_headers(registered.json()["credential_token"]),
+        json={"status": "online", "capabilities": {"runtime_space_id": str(second_space.id)}},
+    )
+
+    assert registered.status_code == 201
+    assert heartbeat.status_code == 409
+    assert "binding cannot be changed" in heartbeat.json()["error"]["message"]
+
+
 def test_self_hosted_worker_cleanup_marks_stale_workers_degraded() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

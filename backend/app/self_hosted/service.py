@@ -105,15 +105,20 @@ class SelfHostedRuntimeService:
         self._require_self_hosted_enabled()
         token = self._consume_enrollment_token(data.enrollment_token)
         now = datetime.now(UTC)
+        capabilities = self._validated_capabilities(
+            token.workspace_id,
+            data.capabilities,
+        )
+        runtime_space_id = self._registration_runtime_space_id(token.workspace_id, capabilities)
         runtime = WorkspaceRuntime(
             workspace_id=token.workspace_id,
-            runtime_space_id=self._registration_runtime_space_id(token.workspace_id, data),
+            runtime_space_id=runtime_space_id,
             runtime_provider="self_hosted",
             runtime_type="self_hosted",
             name=data.name,
             status="active",
             connection_status="online",
-            capabilities=data.capabilities,
+            capabilities=capabilities,
             last_heartbeat_at=now,
         )
         self._session.add(runtime)
@@ -131,7 +136,7 @@ class SelfHostedRuntimeService:
             name=data.name,
             machine_id=data.machine_id,
             version=data.version,
-            capabilities=data.capabilities,
+            capabilities=capabilities,
             last_heartbeat_at=now,
         )
         token.status = "used"
@@ -177,11 +182,16 @@ class SelfHostedRuntimeService:
         now = datetime.now(UTC)
         if auth.worker.status == "quarantined" or auth.runtime.status == "quarantined":
             raise ValueError("Self-hosted worker is quarantined")
+        capabilities = self._validated_capabilities(
+            auth.worker.workspace_id,
+            data.capabilities or auth.worker.capabilities,
+            bound_runtime_space_id=auth.runtime.runtime_space_id,
+        )
         auth.worker.status = data.status
-        auth.worker.capabilities = data.capabilities or auth.worker.capabilities
+        auth.worker.capabilities = capabilities
         auth.worker.last_heartbeat_at = now
         auth.runtime.connection_status = "online" if data.status == "online" else data.status
-        auth.runtime.capabilities = auth.worker.capabilities
+        auth.runtime.capabilities = capabilities
         auth.runtime.last_heartbeat_at = now
         self._append_runtime_event(auth.runtime, "self_hosted.heartbeat", data.status)
         self._append_runtime_space_event(auth.runtime, "self_hosted.heartbeat", data.status)
@@ -765,9 +775,9 @@ class SelfHostedRuntimeService:
     def _registration_runtime_space_id(
         self,
         workspace_id: UUID,
-        data: RuntimeRegistrationRequest,
+        capabilities: dict[str, object],
     ) -> UUID | None:
-        runtime_space_id = _uuid_from_capabilities(data.capabilities, "runtime_space_id")
+        runtime_space_id = _uuid_from_capabilities(capabilities, "runtime_space_id")
         if runtime_space_id is None:
             return None
         runtime_space = self._session.get(RuntimeSpace, runtime_space_id)
@@ -778,6 +788,51 @@ class SelfHostedRuntimeService:
         ):
             raise ValueError("Runtime space not found")
         return runtime_space_id
+
+    def _validated_capabilities(
+        self,
+        workspace_id: UUID,
+        capabilities: dict[str, object],
+        *,
+        bound_runtime_space_id: UUID | None = None,
+    ) -> dict[str, object]:
+        normalized = dict(capabilities)
+        referenced_ids, invalid_values = _capability_runtime_space_references(normalized)
+        if invalid_values:
+            raise ValueError(
+                "Self-hosted capabilities include invalid runtime space IDs: "
+                + ", ".join(invalid_values)
+            )
+        runtime_space_id = _uuid_from_capabilities(normalized, "runtime_space_id")
+        if (
+            runtime_space_id is not None
+            and bound_runtime_space_id is not None
+            and runtime_space_id != bound_runtime_space_id
+        ):
+            raise ValueError("Self-hosted runtime space binding cannot be changed by heartbeat")
+        if bound_runtime_space_id is not None:
+            referenced_ids.discard(bound_runtime_space_id)
+        if not referenced_ids:
+            return normalized
+        active_space_ids = {
+            runtime_space_id
+            for runtime_space_id in self._session.scalars(
+                select(RuntimeSpace.id).where(
+                    RuntimeSpace.workspace_id == workspace_id,
+                    RuntimeSpace.id.in_(referenced_ids),
+                    RuntimeSpace.status == "active",
+                )
+            ).all()
+        }
+        invalid_ids = sorted(
+            str(runtime_space_id) for runtime_space_id in referenced_ids - active_space_ids
+        )
+        if invalid_ids:
+            raise ValueError(
+                "Self-hosted capabilities reference unavailable runtime spaces: "
+                + ", ".join(invalid_ids)
+            )
+        return normalized
 
     def _runtime_space_allowed(self, auth: AuthenticatedWorker, run: AgentRun) -> bool:
         if run.runtime_space_id is None:
@@ -983,6 +1038,37 @@ def _uuid_from_capabilities(capabilities: dict[str, object], key: str) -> UUID |
         return UUID(value)
     except ValueError:
         return None
+
+
+def _capability_runtime_space_references(
+    capabilities: dict[str, object],
+) -> tuple[set[UUID], list[str]]:
+    ids: set[UUID] = set()
+    invalid_values: list[str] = []
+    raw_runtime_space_id = capabilities.get("runtime_space_id")
+    if raw_runtime_space_id is not None:
+        if not isinstance(raw_runtime_space_id, str):
+            invalid_values.append(str(raw_runtime_space_id))
+        else:
+            try:
+                ids.add(UUID(raw_runtime_space_id))
+            except ValueError:
+                invalid_values.append(raw_runtime_space_id)
+    raw_allowed_ids = capabilities.get("allowed_runtime_space_ids")
+    if raw_allowed_ids is None:
+        return ids, invalid_values
+    if not isinstance(raw_allowed_ids, list):
+        invalid_values.append(str(raw_allowed_ids))
+        return ids, invalid_values
+    for raw_id in raw_allowed_ids:
+        if not isinstance(raw_id, str):
+            invalid_values.append(str(raw_id))
+            continue
+        try:
+            ids.add(UUID(raw_id))
+        except ValueError:
+            invalid_values.append(raw_id)
+    return ids, invalid_values
 
 
 def _worker_trust_state(
