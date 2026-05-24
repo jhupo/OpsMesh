@@ -138,7 +138,11 @@ async def upsert_workspace_quotas(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
 ) -> list[WorkspaceQuotaResponse]:
-    quotas = WorkspaceService(session).upsert_quotas(context.workspace.id, request)
+    quotas = WorkspaceService(session).upsert_quotas(
+        context.workspace.id,
+        request,
+        actor_user_id=context.user.user_id,
+    )
     return [WorkspaceQuotaResponse.model_validate(quota) for quota in quotas]
 
 
@@ -148,7 +152,11 @@ async def disable_workspace_quota(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceQuotaResponse:
-    quota = WorkspaceService(session).disable_quota(context.workspace.id, quota_key)
+    quota = WorkspaceService(session).disable_quota(
+        context.workspace.id,
+        quota_key,
+        actor_user_id=context.user.user_id,
+    )
     if quota is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

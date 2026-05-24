@@ -243,6 +243,8 @@ Current state:
   self-hosted job slots have durable reservation and release at run lifecycle boundaries.
 - Workspace quota limits are now manageable through authenticated workspace APIs, including
   active run, Docker runtime, self-hosted job, CPU, memory, and storage-style quota keys.
+- Workspace quota responses expose saturated and over-reserved state, and quota changes are
+  recorded as workspace audit events with before/after metadata.
 
 Build:
 
@@ -261,6 +263,7 @@ Build:
 API/data changes:
 
 - [x] Add workspace quota settings and current usage counters.
+- [x] Add quota change audit events and over-reserved quota visibility.
 - Add `scheduling_status`, `blocked_reason`, `scheduled_at`, and `priority_score` to task steps or a scheduling table.
 - Add operations endpoints for queue depth by priority and blocked scheduling reasons.
 

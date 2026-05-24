@@ -2158,6 +2158,11 @@ def test_workspace_quota_api_manages_runtime_limits() -> None:
     memory_quota.reserved_value = 1024
     session.commit()
 
+    tightened = client.put(
+        f"/api/v1/workspaces/{workspace.id}/quotas",
+        headers=_headers(owner.id),
+        json={"quotas": [{"quota_key": "memory_mb", "limit_value": 512, "unit": "mb"}]},
+    )
     listed = client.get(f"/api/v1/workspaces/{workspace.id}/quotas", headers=_headers(owner.id))
     denied = client.put(
         f"/api/v1/workspaces/{workspace.id}/quotas",
@@ -2176,16 +2181,38 @@ def test_workspace_quota_api_manages_runtime_limits() -> None:
         "memory_mb",
         "self_hosted_jobs",
     ]
+    assert tightened.status_code == 200
+    assert tightened.json()[0]["quota_key"] == "memory_mb"
+    assert tightened.json()[0]["reserved_value"] == 1024
+    assert tightened.json()[0]["available_value"] == 0
+    assert tightened.json()[0]["utilization"] == 2.0
+    assert tightened.json()[0]["saturated"] is True
+    assert tightened.json()[0]["over_reserved"] is True
     assert listed.status_code == 200
     quota_by_key = {item["quota_key"]: item for item in listed.json()["items"]}
     assert quota_by_key["memory_mb"]["reserved_value"] == 1024
-    assert quota_by_key["memory_mb"]["available_value"] == 3072
-    assert quota_by_key["memory_mb"]["utilization"] == 0.25
-    assert quota_by_key["memory_mb"]["saturated"] is False
+    assert quota_by_key["memory_mb"]["available_value"] == 0
+    assert quota_by_key["memory_mb"]["utilization"] == 2.0
+    assert quota_by_key["memory_mb"]["saturated"] is True
+    assert quota_by_key["memory_mb"]["over_reserved"] is True
     assert denied.status_code == 403
     assert disabled.status_code == 200
     assert disabled.json()["quota_key"] == "docker_runtimes"
     assert disabled.json()["status"] == "disabled"
+    audit_events = (
+        session.query(AuditEvent)
+        .filter(AuditEvent.workspace_id == workspace.id)
+        .order_by(AuditEvent.created_at)
+        .all()
+    )
+    assert [event.action for event in audit_events] == [
+        "workspace.quotas_upserted",
+        "workspace.quotas_upserted",
+        "workspace.quota_disabled",
+    ]
+    assert audit_events[1].audit_metadata["quotas"][0]["before"]["reserved_value"] == 1024
+    assert audit_events[1].audit_metadata["quotas"][0]["after"]["limit_value"] == 512
+    assert audit_events[2].audit_metadata["quota_key"] == "docker_runtimes"
 
 
 def test_duplicate_workspace_slug_returns_conflict_error() -> None:

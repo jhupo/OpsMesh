@@ -571,6 +571,7 @@ Tasks:
   - [x] Enforce workspace-level task/run/runtime limits.
     - [x] Enforce active run quota from `workspace.settings.scheduler.max_active_runs`.
     - [x] Enforce runtime, self-hosted job, CPU, memory, and storage quotas in scheduler decisions.
+    - [x] Add workspace quota management audit events and expose over-reserved quota state.
   - [x] Support priority scheduling across multiple tasks.
     - [x] Start higher-priority task steps first across a workspace.
     - [x] Add starvation prevention for lower-priority work.

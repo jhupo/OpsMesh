@@ -119,6 +119,8 @@ class WorkspaceService:
         self,
         workspace_id: UUID,
         data: WorkspaceQuotaUpsertRequest,
+        *,
+        actor_user_id: UUID | None = None,
     ) -> list[WorkspaceQuota]:
         existing = {
             quota.quota_key: quota
@@ -129,6 +131,7 @@ class WorkspaceService:
             ).all()
         }
         updated: list[WorkspaceQuota] = []
+        audit_items: list[dict[str, object]] = []
         for item in data.quotas:
             quota = existing.get(item.quota_key)
             if quota is None:
@@ -139,17 +142,46 @@ class WorkspaceService:
                     unit=item.unit,
                 )
                 self._session.add(quota)
+                before: dict[str, object] | None = None
             else:
+                before = _quota_snapshot(quota)
                 quota.limit_value = item.limit_value
                 quota.unit = item.unit
                 quota.status = "active"
             updated.append(quota)
+            audit_items.append(
+                {
+                    "quota_key": item.quota_key,
+                    "before": before,
+                    "after": {
+                        "quota_key": item.quota_key,
+                        "limit_value": item.limit_value,
+                        "unit": item.unit,
+                        "status": "active",
+                    },
+                }
+            )
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="workspace.quotas_upserted",
+                target_type="workspace",
+                target_id=workspace_id,
+                metadata={"quotas": audit_items},
+            )
         self._session.commit()
         for quota in updated:
             self._session.refresh(quota)
         return sorted(updated, key=lambda quota: quota.quota_key)
 
-    def disable_quota(self, workspace_id: UUID, quota_key: str) -> WorkspaceQuota | None:
+    def disable_quota(
+        self,
+        workspace_id: UUID,
+        quota_key: str,
+        *,
+        actor_user_id: UUID | None = None,
+    ) -> WorkspaceQuota | None:
         quota = self._session.scalar(
             select(WorkspaceQuota)
             .where(
@@ -160,7 +192,22 @@ class WorkspaceService:
         )
         if quota is None:
             return None
+        before = _quota_snapshot(quota)
         quota.status = "disabled"
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="workspace.quota_disabled",
+                target_type="workspace_quota",
+                target_id=quota.id,
+                metadata={
+                    "quota_key": quota.quota_key,
+                    "before": before,
+                    "after": _quota_snapshot(quota),
+                    "over_reserved": quota.reserved_value > quota.limit_value,
+                },
+            )
         self._session.commit()
         self._session.refresh(quota)
         return quota
@@ -178,3 +225,13 @@ def _scheduler_settings(settings: dict[str, object]) -> dict[str, object]:
     if not isinstance(raw_scheduler, dict):
         return {}
     return dict(raw_scheduler)
+
+
+def _quota_snapshot(quota: WorkspaceQuota) -> dict[str, object]:
+    return {
+        "quota_key": quota.quota_key,
+        "limit_value": quota.limit_value,
+        "reserved_value": quota.reserved_value,
+        "unit": quota.unit,
+        "status": quota.status,
+    }

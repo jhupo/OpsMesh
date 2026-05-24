@@ -88,3 +88,8 @@ class WorkspaceQuotaResponse(TimestampedModel):
     @property
     def saturated(self) -> bool:
         return self.limit_value > 0 and self.reserved_value >= self.limit_value
+
+    @computed_field
+    @property
+    def over_reserved(self) -> bool:
+        return self.reserved_value > self.limit_value
