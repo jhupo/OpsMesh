@@ -2225,7 +2225,6 @@ def _file_payload(file: WorkspaceFile) -> dict[str, object]:
         "content_type": file.content_type,
         "size_bytes": file.size_bytes,
         "checksum_sha256": file.checksum_sha256,
-        "storage_key": file.storage_key,
         "status": file.status,
         "metadata": file.file_metadata,
         "created_at": _dt(file.created_at),
@@ -2250,7 +2249,6 @@ def _artifact_payload(artifact: Artifact) -> dict[str, object]:
         "content_type": artifact.content_type,
         "size_bytes": artifact.size_bytes,
         "checksum_sha256": artifact.checksum_sha256,
-        "storage_key": artifact.storage_key,
         "metadata": artifact.artifact_metadata,
         "created_at": _dt(artifact.created_at),
     }

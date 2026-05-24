@@ -1875,6 +1875,7 @@ def test_workspace_archive_export_includes_metadata_and_file_bytes(tmp_path: Pat
         assert archive.read(file_name) == b"hello archive"
         metadata = json.loads(archive.read("metadata.json"))
         assert metadata["manifest"]["counts"]["files"] == 1
+        assert "storage_key" not in metadata["files"][0]
 
 
 def test_workspace_archive_export_skips_large_objects(tmp_path: Path) -> None:
@@ -2267,6 +2268,9 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
         headers=_headers(source_user.id),
         json={"include_audit_events": False},
     )
+    with ZipFile(BytesIO(archive_response.content)) as archive:
+        metadata = json.loads(archive.read("metadata.json"))
+        assert "storage_key" not in metadata["artifacts"][0]
 
     committed = client.post(
         f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import",
