@@ -274,7 +274,7 @@ def test_admin_can_update_worker_governance_capacity_and_status() -> None:
                 "capabilities": ["code.execute", "image.generate"],
                 "memory_mb": 8192,
             },
-            "details": {"region": "sg", "pool": "premium"},
+            "details": {"region": "sg", "pool": "premium", "token": "detail-token"},
             "reason": "Resize worker pool",
             "updated_by": "ops-admin",
         },
@@ -296,7 +296,7 @@ def test_admin_can_update_worker_governance_capacity_and_status() -> None:
     assert updated.json()["capacity"]["worker_type"] == "self_hosted"
     assert updated.json()["capacity"]["runtime_modes"] == ["self_hosted", "docker"]
     assert worker.drain_requested_at is None
-    assert worker.details == {"region": "sg", "pool": "premium"}
+    assert worker.details == {"region": "sg", "pool": "premium", "token": "detail-token"}
     assert [event.event_type for event in events] == ["platform_policy.created", "worker.updated"]
     assert events[-1].event_metadata["reason"] == "Resize worker pool"
     assert events[-1].event_metadata["updated_by"] == "ops-admin"
@@ -308,6 +308,15 @@ def test_admin_can_update_worker_governance_capacity_and_status() -> None:
         "capacity",
         "details",
     ]
+
+    event_response = client.get(
+        f"/api/v1/admin/platform-policies/{policy.policy_key}/events?event_type=worker.updated",
+        headers=_admin_headers(),
+    )
+    assert event_response.status_code == 200
+    metadata = event_response.json()["items"][0]["event_metadata"]
+    assert metadata["after"]["details"]["token"] == "[redacted]"
+    assert "detail-token" not in str(metadata)
 
 
 def test_admin_worker_control_policy_is_enforced_for_worker_updates() -> None:

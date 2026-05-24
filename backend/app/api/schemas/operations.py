@@ -399,6 +399,17 @@ class OperationsSelfHostedMachineResponse(BaseModel):
     warning_message: str | None = None
     remediation_actions: list[dict[str, object]] = Field(default_factory=list)
 
+    @field_serializer("policy_summary", "capabilities")
+    def _serialize_machine_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("remediation_actions")
+    def _serialize_remediation_actions(
+        self,
+        value: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
 
 class OperationsSelfHostedMachinesResponse(BaseModel):
     generated_at: datetime
@@ -421,6 +432,10 @@ class OperationsControlPlaneIssueResponse(BaseModel):
     message: str
     count: int = 1
     metadata: dict[str, object] = Field(default_factory=dict)
+
+    @field_serializer("metadata")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class OperationsControlPlaneResponse(BaseModel):

@@ -1356,6 +1356,8 @@ def test_operations_self_hosted_machines_reports_trust_and_workload() -> None:
             "supported_runtimes": ["self_hosted"],
             "max_concurrent_jobs": 2,
             "max_concurrent_mcp_jobs": 1,
+            "token": "machine-token",
+            "headers": {"authorization": "Bearer hidden"},
         },
         last_heartbeat_at=datetime.now(UTC) - timedelta(seconds=120),
     )
@@ -1468,6 +1470,10 @@ def test_operations_self_hosted_machines_reports_trust_and_workload() -> None:
     assert by_machine["machine-active"]["active_mcp_jobs"] == 1
     assert by_machine["machine-active"]["queued_mcp_jobs"] == 1
     assert by_machine["machine-active"]["policy_summary"]["allowed_tools"] == ["generate_image"]
+    assert by_machine["machine-active"]["capabilities"]["token"] == "[redacted]"
+    assert by_machine["machine-active"]["capabilities"]["headers"] == "[redacted]"
+    assert "machine-token" not in str(payload)
+    assert "Bearer hidden" not in str(payload)
     assert by_machine["machine-active"]["warning_code"] is None
     assert by_machine["machine-active"]["remediation_actions"] == []
     assert by_machine["machine-degraded"]["stale"] is True
