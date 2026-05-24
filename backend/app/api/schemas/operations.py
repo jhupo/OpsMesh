@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
@@ -89,11 +89,16 @@ class RuntimeLeaseResponse(TimestampedModel):
     workspace_id: UUID
     workspace_runtime_id: UUID
     runtime_space_id: UUID | None
-    docker_container_id: str | None
+    docker_container_id: str | None = Field(exclude=True, repr=False)
     status: str
     lease_metadata: dict[str, object]
     acquired_at: datetime
     released_at: datetime | None
+
+    @computed_field
+    @property
+    def has_docker_container(self) -> bool:
+        return self.docker_container_id is not None
 
 
 class QueueMetricsResponse(BaseModel):

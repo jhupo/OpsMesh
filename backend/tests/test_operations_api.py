@@ -1633,7 +1633,8 @@ def test_operations_lists_runtime_leases_by_workspace() -> None:
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["workspace_runtime_id"] == str(runtime.id)
-    assert response.json()["items"][0]["docker_container_id"] == "container-owned"
+    assert "docker_container_id" not in response.json()["items"][0]
+    assert response.json()["items"][0]["has_docker_container"] is True
     assert response.json()["items"][0]["lease_metadata"] == {"purpose": "owned"}
     assert other_response.status_code == 200
     assert other_response.json()["total"] == 1
