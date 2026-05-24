@@ -1,7 +1,8 @@
 from datetime import datetime
+from urllib.parse import urlparse
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, computed_field
 
 from backend.app.api.schemas.common import ORMModel
 
@@ -33,7 +34,7 @@ class ModelProviderCredentialResponse(ORMModel):
     created_by_user_id: UUID | None
     name: str
     provider: str
-    base_url: str | None
+    base_url: str | None = Field(exclude=True, repr=False)
     default_model: str
     api_key_fingerprint: str
     encryption_key_id: str
@@ -46,6 +47,19 @@ class ModelProviderCredentialResponse(ORMModel):
     last_failure_message: str | None
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def base_url_configured(self) -> bool:
+        return bool(self.base_url)
+
+    @computed_field
+    @property
+    def base_url_host(self) -> str | None:
+        if not self.base_url:
+            return None
+        parsed = urlparse(self.base_url)
+        return parsed.netloc or None
 
 
 class ModelProviderUsageAuditResponse(BaseModel):

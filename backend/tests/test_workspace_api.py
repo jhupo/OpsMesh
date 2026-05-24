@@ -907,7 +907,11 @@ def test_model_provider_credentials_are_created_without_returning_secret() -> No
     assert body["last_failure_message"] is None
     assert "api_key" not in body
     assert "encrypted_api_key" not in body
+    assert body["base_url_configured"] is True
+    assert body["base_url_host"] == "api.openai.com"
     assert listed.status_code == 200
+    assert listed.json()["items"][0]["base_url_configured"] is True
+    assert listed.json()["items"][0]["base_url_host"] == "api.openai.com"
     assert listed.json()["total"] == 1
 
 
@@ -1013,6 +1017,8 @@ def test_model_provider_credentials_can_be_updated_rotated_defaulted_and_disable
 
     assert updated.status_code == 200
     assert updated.json()["name"] == "Second Updated"
+    assert updated.json()["base_url_configured"] is True
+    assert updated.json()["base_url_host"] == "llm.example.test"
     assert rotated.status_code == 200
     assert rotated.json()["api_key_fingerprint"] != second.json()["api_key_fingerprint"]
     assert "api_key" not in rotated.json()
@@ -1024,6 +1030,7 @@ def test_model_provider_credentials_can_be_updated_rotated_defaulted_and_disable
     assert by_id[first.json()["id"]]["is_default"] is False
     assert by_id[first.json()["id"]]["status"] == "disabled"
     assert by_id[second.json()["id"]]["is_default"] is True
+    assert by_id[second.json()["id"]]["base_url_host"] == "llm.example.test"
 
 
 def test_model_provider_usage_audit_api_is_scoped_and_redacted() -> None:
