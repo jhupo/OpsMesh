@@ -1238,6 +1238,140 @@ def test_self_hosted_revoke_records_runtime_evidence_and_blocks_jobs() -> None:
     assert space_event.event_metadata["affected_run_ids"] == [str(run.id)]
 
 
+def test_self_hosted_worker_control_quarantines_resumes_and_revokes_machine() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-control",
+        },
+    )
+    credential_token = registered.json()["credential_token"]
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    worker_id = UUID(registered.json()["worker_id"])
+    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    session.add(run)
+    session.commit()
+    claimed = client.post(
+        f"/api/v1/self-hosted/jobs/{run.id}/claim",
+        headers=_runtime_headers(credential_token),
+    )
+    assert claimed.status_code == 200
+
+    quarantined = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/workers/{worker_id}/quarantine",
+        headers=_headers(owner.id),
+        json={"reason": "suspicious output"},
+    )
+    denied_poll = client.get(
+        "/api/v1/self-hosted/jobs/next",
+        headers=_runtime_headers(credential_token),
+    )
+    resumed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/workers/{worker_id}/resume",
+        headers=_headers(owner.id),
+        json={"reason": "reviewed"},
+    )
+    revoked = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/workers/{worker_id}/revoke",
+        headers=_headers(owner.id),
+        json={"reason": "rotated"},
+    )
+
+    session.refresh(run)
+    worker = session.get(SelfHostedWorker, worker_id)
+    runtime = session.get(WorkspaceRuntime, runtime_id)
+    credential = session.query(RuntimeCredential).one()
+    claim = session.query(SelfHostedJobClaim).one()
+    assert quarantined.status_code == 200
+    assert quarantined.json()["worker_status"] == "quarantined"
+    assert quarantined.json()["runtime_status"] == "quarantined"
+    assert quarantined.json()["affected_claims"] == 1
+    assert quarantined.json()["affected_runs"] == 1
+    assert denied_poll.status_code == 400
+    assert "quarantined" in denied_poll.json()["error"]["message"]
+    assert resumed.status_code == 200
+    assert resumed.json()["worker_status"] == "online"
+    assert resumed.json()["runtime_status"] == "active"
+    assert revoked.status_code == 200
+    assert revoked.json()["worker_status"] == "revoked"
+    assert revoked.json()["runtime_status"] == "revoked"
+    assert worker is not None
+    assert runtime is not None
+    assert worker.status == "revoked"
+    assert runtime.status == "revoked"
+    assert credential.status == "revoked"
+    assert claim.status == "quarantined"
+    assert run.status == "failed"
+    assert run.error is not None
+    assert run.error["code"] == "self_hosted_worker_quarantined"
+
+
+def test_self_hosted_worker_cleanup_expires_stale_job_claims_idempotently() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-stale-claim",
+        },
+    )
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    credential_token = registered.json()["credential_token"]
+    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    session.add(run)
+    session.commit()
+    claimed = client.post(
+        f"/api/v1/self-hosted/jobs/{run.id}/claim",
+        headers=_runtime_headers(credential_token),
+    )
+    assert claimed.status_code == 200
+    claim = session.query(SelfHostedJobClaim).one()
+    claim.claimed_at = datetime.now(UTC) - timedelta(hours=2)
+    run.started_at = claim.claimed_at
+    session.commit()
+
+    cleanup = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/worker-cleanup"
+        "?stale_after_seconds=86400&job_claim_stale_after_seconds=60",
+        headers=_headers(owner.id),
+    )
+    cleanup_again = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/worker-cleanup"
+        "?stale_after_seconds=86400&job_claim_stale_after_seconds=60",
+        headers=_headers(owner.id),
+    )
+
+    session.refresh(claim)
+    session.refresh(run)
+    event = session.query(RunEvent).filter_by(event_type="self_hosted.job_claim_expired").one()
+    assert cleanup.status_code == 200
+    assert cleanup.json()["expired_job_claims"] == 1
+    assert cleanup_again.status_code == 200
+    assert cleanup_again.json()["expired_job_claims"] == 0
+    assert claim.status == "expired"
+    assert claim.completed_at is not None
+    assert run.status == "failed"
+    assert run.error is not None
+    assert run.error["code"] == "self_hosted_job_claim_expired"
+    assert event.event_metadata["claim_id"] == str(claim.id)
+
+
 def test_self_hosted_worker_trust_view_summarizes_machine_policy_and_state() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
@@ -1304,6 +1438,7 @@ def test_self_hosted_worker_trust_view_summarizes_machine_policy_and_state() -> 
         "max_concurrent_mcp_jobs": 1,
         "max_artifact_bytes": 4096,
     }
+    assert item["policy_diagnostics"] == []
     assert item["capabilities"] == {
         "runtime_space_id": str(runtime_space.id),
         "allowed_runtime_space_ids": [str(runtime_space.id)],
@@ -1319,6 +1454,41 @@ def test_self_hosted_worker_trust_view_summarizes_machine_policy_and_state() -> 
     }
     assert "machine-secret" not in str(item)
     assert "Bearer hidden" not in str(item)
+
+
+def test_self_hosted_worker_trust_view_reports_policy_diagnostics() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-policy-diff",
+            "capabilities": {"allowed_tools": ["generate_image"], "token": "hidden"},
+        },
+    )
+    runtime = session.get(WorkspaceRuntime, UUID(registered.json()["workspace_runtime_id"]))
+    assert runtime is not None
+    runtime.capabilities = {"allowed_tools": ["read_file"], "token": "runtime-hidden"}
+    session.commit()
+
+    trust = client.get(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/workers/trust",
+        headers=_headers(owner.id),
+    )
+
+    assert trust.status_code == 200
+    diagnostics = trust.json()[0]["policy_diagnostics"]
+    assert diagnostics[0]["code"] == "policy_summary_mismatch"
+    assert diagnostics[0]["severity"] == "warning"
+    assert "hidden" not in str(diagnostics)
+    assert "runtime-hidden" not in str(diagnostics)
 
 
 def test_self_hosted_worker_trust_view_reflects_degraded_and_revoked_states() -> None:

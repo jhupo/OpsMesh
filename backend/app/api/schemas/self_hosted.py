@@ -52,7 +52,23 @@ class SelfHostedWorkerCleanupResponse(BaseModel):
     degraded: int
     quarantined: int
     marked_offline: int = 0
+    expired_job_claims: int = 0
     expired_mcp_jobs: int = 0
+
+
+class SelfHostedWorkerControlRequest(BaseModel):
+    reason: str = Field(default="", max_length=500)
+
+
+class SelfHostedWorkerControlResponse(BaseModel):
+    worker_id: UUID
+    workspace_runtime_id: UUID
+    action: str
+    worker_status: str
+    runtime_status: str
+    connection_status: str
+    affected_claims: int
+    affected_runs: int
 
 
 class SelfHostedWorkerTrustResponse(BaseModel):
@@ -71,11 +87,19 @@ class SelfHostedWorkerTrustResponse(BaseModel):
     credential_last_used_at: datetime | None
     credential_revoked_at: datetime | None
     policy_summary: dict[str, object]
+    policy_diagnostics: list[dict[str, object]]
     capabilities: dict[str, object]
 
     @field_serializer("policy_summary", "capabilities")
     def _serialize_worker_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+    @field_serializer("policy_diagnostics")
+    def _serialize_policy_diagnostics(
+        self,
+        value: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
 
 
 class RuntimeCredentialRevokeRequest(BaseModel):

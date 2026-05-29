@@ -67,7 +67,17 @@ class AuthenticatedWorker:
 class WorkerTrustCleanupResult:
     degraded: int = 0
     quarantined: int = 0
+    expired_job_claims: int = 0
     expired_mcp_jobs: int = 0
+
+
+@dataclass(frozen=True)
+class WorkerControlResult:
+    worker: SelfHostedWorker
+    runtime: WorkspaceRuntime
+    action: str
+    affected_claims: int
+    affected_runs: int
 
 
 @dataclass(frozen=True)
@@ -77,6 +87,7 @@ class WorkerTrustSnapshot:
     credential: RuntimeCredential | None
     trust_state: str
     policy_summary: dict[str, object]
+    policy_diagnostics: list[dict[str, object]]
 
 
 class SelfHostedRuntimeService:
@@ -624,6 +635,127 @@ class SelfHostedRuntimeService:
         self._session.refresh(credential)
         return credential
 
+    def control_worker(
+        self,
+        workspace_id: UUID,
+        worker_id: UUID,
+        *,
+        action: str,
+        actor_user_id: UUID | None = None,
+        reason: str = "",
+    ) -> WorkerControlResult | None:
+        worker = self._session.get(SelfHostedWorker, worker_id)
+        if worker is None or worker.workspace_id != workspace_id:
+            return None
+        runtime = self._session.get(WorkspaceRuntime, worker.workspace_runtime_id)
+        if runtime is None or runtime.workspace_id != workspace_id:
+            return None
+        now = datetime.now(UTC)
+        normalized_action = action.strip().lower()
+        affected_claims = 0
+        affected_runs = 0
+        metadata = {
+            "worker_id": str(worker.id),
+            "actor_user_id": str(actor_user_id) if actor_user_id is not None else None,
+            "reason": reason,
+            "previous_worker_status": worker.status,
+            "previous_runtime_status": runtime.status,
+            "previous_connection_status": runtime.connection_status,
+        }
+
+        if normalized_action == "quarantine":
+            worker.status = "quarantined"
+            runtime.status = "quarantined"
+            runtime.connection_status = "offline"
+            affected_claims, affected_runs = self._close_active_claims_for_worker(
+                worker,
+                claim_status="quarantined",
+                error_code="self_hosted_worker_quarantined",
+                error_message="Self-hosted worker was quarantined by an operator.",
+                event_type="self_hosted.run_failed_by_quarantine",
+                event_message="Self-hosted worker was quarantined.",
+                now=now,
+                reason=reason,
+            )
+        elif normalized_action == "resume":
+            if worker.status == "revoked" or runtime.status == "revoked":
+                raise ValueError("Revoked self-hosted workers cannot be resumed")
+            worker.status = "online"
+            runtime.status = "active"
+            runtime.connection_status = _connection_status_after_resume(
+                worker.last_heartbeat_at,
+                now,
+            )
+        elif normalized_action == "revoke":
+            credential = self._latest_credential_for_runtime(runtime.id)
+            if credential is not None and credential.status != "revoked":
+                active_claims = self._active_claims_for_worker(worker)
+                affected_claims = len(active_claims)
+                affected_runs = len({claim.agent_run_id for claim in active_claims})
+                revoked = self.revoke_credential(
+                    workspace_id,
+                    credential.id,
+                    actor_user_id=actor_user_id,
+                    reason=reason,
+                )
+                if revoked is None:
+                    return None
+                worker = self._session.get(SelfHostedWorker, worker_id) or worker
+                runtime = self._session.get(WorkspaceRuntime, runtime.id) or runtime
+                return WorkerControlResult(
+                    worker=worker,
+                    runtime=runtime,
+                    action=normalized_action,
+                    affected_claims=affected_claims,
+                    affected_runs=affected_runs,
+                )
+            worker.status = "revoked"
+            runtime.status = "revoked"
+            runtime.connection_status = "offline"
+            affected_claims, affected_runs = self._close_active_claims_for_worker(
+                worker,
+                claim_status="revoked",
+                error_code="self_hosted_worker_revoked",
+                error_message="Self-hosted worker was revoked by an operator.",
+                event_type="self_hosted.run_failed_by_revoke",
+                event_message="Self-hosted worker was revoked.",
+                now=now,
+                reason=reason,
+            )
+        else:
+            raise ValueError("Unsupported self-hosted worker control action")
+
+        metadata |= {
+            "action": normalized_action,
+            "worker_status": worker.status,
+            "runtime_status": runtime.status,
+            "connection_status": runtime.connection_status,
+            "affected_claims": affected_claims,
+            "affected_runs": affected_runs,
+        }
+        self._append_runtime_event(
+            runtime,
+            f"self_hosted.worker_{normalized_action}",
+            reason or worker.machine_id,
+            metadata,
+        )
+        self._append_runtime_space_event(
+            runtime,
+            f"self_hosted.worker_{normalized_action}",
+            reason or worker.machine_id,
+            metadata,
+        )
+        self._session.commit()
+        self._session.refresh(worker)
+        self._session.refresh(runtime)
+        return WorkerControlResult(
+            worker=worker,
+            runtime=runtime,
+            action=normalized_action,
+            affected_claims=affected_claims,
+            affected_runs=affected_runs,
+        )
+
     def _require_self_hosted_enabled(self) -> None:
         policy = PlatformPolicyService(self._session).risky_execution_policy()
         if not policy.allow_self_hosted_runtimes:
@@ -635,10 +767,12 @@ class SelfHostedRuntimeService:
         *,
         stale_after_seconds: int = 600,
         quarantine_after_seconds: int | None = None,
+        job_claim_stale_after_seconds: int = 900,
         mcp_job_stale_after_seconds: int = 900,
     ) -> WorkerTrustCleanupResult:
         now = datetime.now(UTC)
         degraded_cutoff = now - timedelta(seconds=stale_after_seconds)
+        job_claim_cutoff = now - timedelta(seconds=job_claim_stale_after_seconds)
         mcp_job_cutoff = now - timedelta(seconds=mcp_job_stale_after_seconds)
         quarantine_after_seconds = quarantine_after_seconds or stale_after_seconds * 3
         quarantine_after_seconds = max(quarantine_after_seconds, stale_after_seconds)
@@ -709,11 +843,13 @@ class SelfHostedRuntimeService:
                     worker.machine_id,
                     metadata,
                 )
+        expired_job_claims = self._expire_stale_job_claims(workspace_id, job_claim_cutoff, now)
         expired_mcp_jobs = self._expire_stale_mcp_jobs(workspace_id, mcp_job_cutoff, now)
         self._session.commit()
         return WorkerTrustCleanupResult(
             degraded=degraded,
             quarantined=quarantined,
+            expired_job_claims=expired_job_claims,
             expired_mcp_jobs=expired_mcp_jobs,
         )
 
@@ -741,6 +877,7 @@ class SelfHostedRuntimeService:
                     credential=credential,
                     trust_state=_worker_trust_state(worker, runtime, credential),
                     policy_summary=_worker_policy_summary(worker.capabilities),
+                    policy_diagnostics=_worker_policy_diagnostics(worker, runtime),
                 )
             )
         return snapshots
@@ -1097,6 +1234,62 @@ class SelfHostedRuntimeService:
             ).all()
         )
 
+    def _latest_credential_for_runtime(self, runtime_id: UUID) -> RuntimeCredential | None:
+        return self._session.scalar(
+            select(RuntimeCredential)
+            .where(RuntimeCredential.workspace_runtime_id == runtime_id)
+            .order_by(RuntimeCredential.created_at.desc())
+            .limit(1)
+        )
+
+    def _close_active_claims_for_worker(
+        self,
+        worker: SelfHostedWorker,
+        *,
+        claim_status: str,
+        error_code: str,
+        error_message: str,
+        event_type: str,
+        event_message: str,
+        now: datetime,
+        reason: str,
+    ) -> tuple[int, int]:
+        affected_claims = 0
+        affected_runs = 0
+        for claim in self._active_claims_for_worker(worker):
+            affected_claims += 1
+            claim.status = claim_status
+            claim.completed_at = now
+            run = self._session.get(AgentRun, claim.agent_run_id)
+            if run is None or run.workspace_id != worker.workspace_id:
+                continue
+            affected_runs += 1
+            if run.status in {
+                RunStatus.QUEUED.value,
+                RunStatus.RUNNING.value,
+                RunStatus.WAITING_APPROVAL.value,
+            }:
+                run.status = RunStatus.FAILED.value
+                run.completed_at = now
+                run.error = {
+                    "code": error_code,
+                    "message": error_message,
+                    "retryable": claim_status != "revoked",
+                }
+                self._mark_task_failed_from_self_hosted_run(run)
+                self._append_run_event(
+                    run,
+                    event_type,
+                    event_message,
+                    {
+                        "worker_id": str(worker.id),
+                        "claim_id": str(claim.id),
+                        "reason": reason,
+                    },
+                )
+            self._release_run_reservations(run, released_at=now)
+        return affected_claims, affected_runs
+
     def _require_mcp_job(self, auth: AuthenticatedWorker, mcp_job_id: UUID) -> SelfHostedMcpJob:
         job = self._session.get(SelfHostedMcpJob, mcp_job_id)
         if (
@@ -1106,6 +1299,53 @@ class SelfHostedRuntimeService:
         ):
             raise ValueError("Self-hosted MCP job not found")
         return job
+
+    def _expire_stale_job_claims(
+        self,
+        workspace_id: UUID,
+        cutoff: datetime,
+        now: datetime,
+    ) -> int:
+        stale_claims = self._session.scalars(
+            select(SelfHostedJobClaim).where(
+                SelfHostedJobClaim.workspace_id == workspace_id,
+                SelfHostedJobClaim.status == "claimed",
+                SelfHostedJobClaim.claimed_at < cutoff,
+            )
+        ).all()
+        expired = 0
+        for claim in stale_claims:
+            expired += 1
+            claim.status = "expired"
+            claim.completed_at = now
+            run = self._session.get(AgentRun, claim.agent_run_id)
+            if run is None or run.workspace_id != workspace_id:
+                continue
+            if run.status in {
+                RunStatus.QUEUED.value,
+                RunStatus.RUNNING.value,
+                RunStatus.WAITING_APPROVAL.value,
+            }:
+                run.status = RunStatus.FAILED.value
+                run.completed_at = now
+                run.error = {
+                    "code": "self_hosted_job_claim_expired",
+                    "message": "Self-hosted job claim expired before completion.",
+                    "retryable": True,
+                }
+                self._mark_task_failed_from_self_hosted_run(run)
+                self._append_run_event(
+                    run,
+                    "self_hosted.job_claim_expired",
+                    "Self-hosted job claim expired before completion.",
+                    {
+                        "claim_id": str(claim.id),
+                        "worker_id": str(claim.worker_id),
+                        "expired_at": now.isoformat(),
+                    },
+                )
+            self._release_run_reservations(run, released_at=now)
+        return expired
 
     def _expire_stale_mcp_jobs(
         self,
@@ -1294,3 +1534,55 @@ def _worker_policy_summary(capabilities: dict[str, object]) -> dict[str, object]
         "max_concurrent_mcp_jobs": _positive_int(capabilities.get("max_concurrent_mcp_jobs")),
         "max_artifact_bytes": _positive_int(capabilities.get("max_artifact_bytes")),
     }
+
+
+def _worker_policy_diagnostics(
+    worker: SelfHostedWorker,
+    runtime: WorkspaceRuntime,
+) -> list[dict[str, object]]:
+    diagnostics: list[dict[str, object]] = []
+    worker_policy = _worker_policy_summary(worker.capabilities)
+    runtime_policy = _worker_policy_summary(runtime.capabilities)
+    if worker_policy != runtime_policy:
+        diagnostics.append(
+            {
+                "code": "policy_summary_mismatch",
+                "severity": "warning",
+                "message": "Worker and runtime policy summaries differ.",
+                "worker_policy": worker_policy,
+                "runtime_policy": runtime_policy,
+            }
+        )
+    worker_runtime_space_id = _uuid_from_capabilities(worker.capabilities, "runtime_space_id")
+    if (
+        worker_runtime_space_id is not None
+        and runtime.runtime_space_id is not None
+        and worker_runtime_space_id != runtime.runtime_space_id
+    ):
+        diagnostics.append(
+            {
+                "code": "runtime_space_mismatch",
+                "severity": "critical",
+                "message": "Worker capability runtime space does not match runtime space.",
+                "worker_runtime_space_id": str(worker_runtime_space_id),
+                "runtime_space_id": str(runtime.runtime_space_id),
+            }
+        )
+    if worker.status != "revoked" and runtime.status == "revoked":
+        diagnostics.append(
+            {
+                "code": "runtime_revoked_worker_not_revoked",
+                "severity": "critical",
+                "message": "Runtime is revoked but worker record is not revoked.",
+            }
+        )
+    return diagnostics
+
+
+def _connection_status_after_resume(last_heartbeat_at: datetime | None, now: datetime) -> str:
+    heartbeat_at = _as_utc(last_heartbeat_at)
+    if heartbeat_at is None:
+        return "offline"
+    if heartbeat_at < now - timedelta(minutes=5):
+        return "offline"
+    return "online"

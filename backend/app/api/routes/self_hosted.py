@@ -24,6 +24,8 @@ from backend.app.api.schemas.self_hosted import (
     SelfHostedJobResponse,
     SelfHostedMcpJobResponse,
     SelfHostedWorkerCleanupResponse,
+    SelfHostedWorkerControlRequest,
+    SelfHostedWorkerControlResponse,
     SelfHostedWorkerTrustResponse,
     WorkerHeartbeatRequest,
     WorkerHeartbeatResponse,
@@ -124,6 +126,7 @@ async def heartbeat(
 async def cleanup_self_hosted_workers(
     stale_after_seconds: int = Query(default=600, ge=60, le=86_400),
     quarantine_after_seconds: int | None = Query(default=None, ge=60, le=604_800),
+    job_claim_stale_after_seconds: int = Query(default=900, ge=60, le=86_400),
     mcp_job_stale_after_seconds: int = Query(default=900, ge=60, le=86_400),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
@@ -133,12 +136,77 @@ async def cleanup_self_hosted_workers(
         context.workspace.id,
         stale_after_seconds=stale_after_seconds,
         quarantine_after_seconds=quarantine_after_seconds,
+        job_claim_stale_after_seconds=job_claim_stale_after_seconds,
         mcp_job_stale_after_seconds=mcp_job_stale_after_seconds,
     )
     return SelfHostedWorkerCleanupResponse(
         degraded=result.degraded,
         quarantined=result.quarantined,
+        expired_job_claims=result.expired_job_claims,
         expired_mcp_jobs=result.expired_mcp_jobs,
+    )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/self-hosted/workers/{worker_id}/quarantine",
+    response_model=SelfHostedWorkerControlResponse,
+)
+async def quarantine_self_hosted_worker(
+    worker_id: UUID,
+    request: SelfHostedWorkerControlRequest | None = None,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> SelfHostedWorkerControlResponse:
+    return _control_self_hosted_worker(
+        worker_id,
+        request,
+        context,
+        session,
+        settings,
+        action="quarantine",
+    )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/self-hosted/workers/{worker_id}/resume",
+    response_model=SelfHostedWorkerControlResponse,
+)
+async def resume_self_hosted_worker(
+    worker_id: UUID,
+    request: SelfHostedWorkerControlRequest | None = None,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> SelfHostedWorkerControlResponse:
+    return _control_self_hosted_worker(
+        worker_id,
+        request,
+        context,
+        session,
+        settings,
+        action="resume",
+    )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/self-hosted/workers/{worker_id}/revoke",
+    response_model=SelfHostedWorkerControlResponse,
+)
+async def revoke_self_hosted_worker(
+    worker_id: UUID,
+    request: SelfHostedWorkerControlRequest | None = None,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> SelfHostedWorkerControlResponse:
+    return _control_self_hosted_worker(
+        worker_id,
+        request,
+        context,
+        session,
+        settings,
+        action="revoke",
     )
 
 
@@ -175,6 +243,7 @@ async def list_self_hosted_worker_trust(
             if snapshot.credential
             else None,
             policy_summary=snapshot.policy_summary,
+            policy_diagnostics=snapshot.policy_diagnostics,
             capabilities=snapshot.worker.capabilities,
         )
         for snapshot in snapshots
@@ -395,3 +464,36 @@ async def revoke_runtime_credential(
     )
     if revoked is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Credential not found")
+
+
+def _control_self_hosted_worker(
+    worker_id: UUID,
+    request: SelfHostedWorkerControlRequest | None,
+    context: WorkspaceContext,
+    session: Session,
+    settings: Settings,
+    *,
+    action: str,
+) -> SelfHostedWorkerControlResponse:
+    try:
+        result = SelfHostedRuntimeService(session, settings).control_worker(
+            context.workspace.id,
+            worker_id,
+            action=action,
+            actor_user_id=context.user.user_id,
+            reason=request.reason if request is not None else "",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker not found")
+    return SelfHostedWorkerControlResponse(
+        worker_id=result.worker.id,
+        workspace_runtime_id=result.runtime.id,
+        action=result.action,
+        worker_status=result.worker.status,
+        runtime_status=result.runtime.status,
+        connection_status=result.runtime.connection_status,
+        affected_claims=result.affected_claims,
+        affected_runs=result.affected_runs,
+    )
