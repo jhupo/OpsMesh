@@ -20,9 +20,9 @@ Frontend remains out of scope. Billing remains out of scope.
 | --- | --- | --- | --- | --- |
 | 1 | P0 | Scheduler blocked-step explain API with stable reason codes | Done | `/operations/blocked-steps`, scheduler blocked reason `code/message/resource_key`, tests in `test_operations_api.py` |
 | 2 | P0 | Scheduler blocked-step unblock API | Done | `/operations/blocked-steps/unblock`, audit event, filter-required guard, tests in `test_operations_api.py` |
-| 3 | P0 | Runtime-space diagnostics view | Next | API returns quota usage, active reservations, blocked steps, linked runtime/worker metadata without secrets |
-| 4 | P0 | Runtime-space operator resolution workflow | In progress foundation | pause/resume/reset and force-release reservations exist; next add explain/reset diagnostics and forced reservation detail view |
-| 5 | P0 | Scheduler quota and concurrency hardening | Pending | tests prove concurrent schedulers cannot oversell workspace/runtime-space quota; fairness tests cover high-priority insert and low-priority starvation boost |
+| 3 | P0 | Runtime-space diagnostics view | Done | `/runtime-spaces/{id}/diagnostics` returns quota usage, active reservations, blocked steps, linked runtime metadata, and redacts secrets/container IDs |
+| 4 | P0 | Runtime-space operator resolution workflow | Next | pause/resume/reset, force-release reservations, and diagnostics exist; next add reset outcome diagnostics and blocked-step resolution linkage |
+| 5 | P0 | Scheduler quota and concurrency hardening | In progress | quota release and high-priority reordering tests exist; next add true concurrent scheduler oversell tests for workspace/runtime-space quotas |
 | 6 | P0 | Worker long-task recovery | Pending | stale queued/running/waiting_runtime runs and worker leases can be diagnosed and recovered or failed closed |
 | 7 | P1 | Self-hosted machine operations hardening | Pending | quarantine/resume/revoke, reconnect behavior, policy diff diagnostics, stale claim cleanup |
 | 8 | P1 | Memory indexing abstraction | Pending | lexical fallback remains; backend abstraction supports Postgres full-text or vector adapter; search stays workspace-scoped |
@@ -31,8 +31,7 @@ Frontend remains out of scope. Billing remains out of scope.
 
 ## Immediate Implementation Queue
 
-1. Build runtime-space diagnostics response and endpoint.
-2. Add tests for quota usage, reservation details, blocked steps, and redaction.
-3. Commit and push.
-4. Add scheduler concurrency/fairness tests around quota release and unblock paths.
-5. Commit and push.
+1. Add true concurrent scheduler oversell tests for workspace/runtime-space quotas.
+2. Commit and push.
+3. Add worker long-task stale-state diagnostics and recovery controls.
+4. Commit and push.

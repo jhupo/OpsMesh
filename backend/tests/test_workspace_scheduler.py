@@ -329,6 +329,8 @@ def test_run_orchestration_reserves_runtime_space_capacity_before_enqueue() -> N
     assert _runtime_space_quota(session, runtime_space.id).reserved_value == 1
     assert len(next_runs) == 1
     assert next_runs[0].task_id == second_task.id
+    assert "blocked_reason" not in second_step.dependencies
+    assert second_step.dependencies["scheduled_at"]
     cancelled_step = session.get(TaskStep, first_step.id)
     assert cancelled_step is not None
     assert cancelled_step.status == "cancelled"
@@ -697,6 +699,59 @@ def test_run_orchestration_enforces_workspace_runtime_slot_quotas() -> None:
     assert released.status == "released"
     assert _workspace_quota(session, workspace.id, "docker_runtimes").reserved_value == 1
     assert _workspace_quota(session, workspace.id, "self_hosted_jobs").reserved_value == 1
+
+
+def test_run_orchestration_reorders_released_quota_with_new_high_priority_task() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(
+        session,
+        settings={"scheduler": {"max_active_runs": 10}},
+    )
+    runtime_space = _seed_runtime_space(session, workspace, active_runs=1)
+    running_task, running_step = _seed_task_step(
+        session,
+        workspace,
+        title="Running",
+        priority=5,
+        runtime_space_id=runtime_space.id,
+    )
+    low_task, low_step = _seed_task_step(
+        session,
+        workspace,
+        title="Low",
+        priority=1,
+        runtime_space_id=runtime_space.id,
+    )
+
+    first_runs = RunOrchestrationService(session).schedule_workspace_steps(
+        workspace_id=workspace.id,
+    )
+
+    assert len(first_runs) == 1
+    assert first_runs[0].task_id == running_task.id
+    assert low_step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded:active_runs"
+
+    high_task, high_step = _seed_task_step(
+        session,
+        workspace,
+        title="Urgent",
+        priority=20,
+        runtime_space_id=runtime_space.id,
+    )
+    RunOrchestrationService(session)._mark_run_cancelled(
+        first_runs[0],
+        completed_at=datetime.now(UTC),
+    )
+    next_runs = RunOrchestrationService(session).schedule_workspace_steps(
+        workspace_id=workspace.id,
+    )
+
+    assert len(next_runs) == 1
+    assert next_runs[0].task_id == high_task.id
+    assert "blocked_reason" not in high_step.dependencies
+    assert high_step.dependencies["scheduled_at"]
+    assert low_step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded:active_runs"
+    assert running_step.status == "cancelled"
 
 
 def test_workspace_quota_reservation_releases_when_runtime_space_blocks() -> None:
