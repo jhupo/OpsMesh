@@ -128,6 +128,11 @@ def test_openai_agents_runner_renders_tool_continuations_at_runtime_boundary() -
                 status="completed",
                 result={"asset_id": "img_123"},
             ),
+            AgentRuntimeToolContinuation(
+                tool_name="search_web",
+                status="failed",
+                error={"code": "timeout"},
+            ),
         ),
     )
 
@@ -137,6 +142,8 @@ def test_openai_agents_runner_renders_tool_continuations_at_runtime_boundary() -
     assert "Completed runtime tool results:" in rendered
     assert '"tool_name": "generate_image"' in rendered
     assert '"asset_id": "img_123"' in rendered
+    assert '"tool_name": "search_web"' in rendered
+    assert '"code": "timeout"' in rendered
 
 
 def test_fake_agent_runner_returns_deterministic_output() -> None:
@@ -206,6 +213,14 @@ def test_openai_agents_runner_raw_output_is_json_safe() -> None:
         "resume_input": [{"role": "assistant", "content": "done"}],
         "run_state_json": '{"schema_version":"1.10"}',
         "usage": {"requests": 1},
+        "sdk_continuation": {
+            "provider": "openai_agents",
+            "mode": "runner_level_fallback",
+            "native_tool_call_continuation": False,
+            "last_response_id": "resp_123",
+            "resume_input": [{"role": "assistant", "content": "done"}],
+            "run_state_json": '{"schema_version":"1.10"}',
+        },
     }
 
 

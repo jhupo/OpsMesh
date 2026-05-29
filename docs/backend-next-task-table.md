@@ -26,12 +26,12 @@ Frontend remains out of scope. Billing remains out of scope.
 | 6 | P0 | Worker long-task recovery | Done | `/operations/stale-runs` diagnoses stale queued/running/waiting_runtime runs with lease metadata; `/operations/stale-runs/recover` requeues stale queued runs, fails closed stale running/waiting_runtime runs, expires linked worker leases, and audits the action |
 | 7 | P1 | Self-hosted machine operations hardening | Done | Machine-level quarantine/resume/revoke endpoints, stale job-claim cleanup, reconnect-aware resume state, and trust-view policy diagnostics are covered by `test_self_hosted_runtime.py` |
 | 8 | P1 | Memory indexing abstraction | Done | Memory search now uses a pluggable backend protocol with lexical fallback, Postgres full-text adapter support, backend metadata in results, and workspace-scoped tests proving no cross-workspace leakage |
-| 9 | P1 | MCP/OpenAI Agents continuation compatibility | Pending | current continuation remains; SDK response/state metadata compatibility layer is documented and tested |
+| 9 | P1 | MCP/OpenAI Agents continuation compatibility | Done | Runner-level continuation rendering remains; OpenAI raw output now persists stable `sdk_continuation` metadata for future SDK-native migration, and MCP/self-hosted continuation tests cover completed and failed tool results |
 | 10 | P1 | Continuous redaction audit | Ongoing | new dict/list metadata API fields have tests proving token/base_url/header/container/container_id redaction |
 
 ## Immediate Implementation Queue
 
-1. Add MCP/OpenAI Agents continuation compatibility tests/documentation.
+1. Continue continuous redaction audit on newly added metadata responses.
 2. Commit and push.
-3. Continue continuous redaction audit on newly added metadata responses.
-4. Commit and push.
+3. Re-scan the task table for any remaining backend reliability gaps.
+4. Commit and push if new gaps are closed.
