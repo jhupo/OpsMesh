@@ -11,6 +11,7 @@ from backend.app.api.pagination import PageParams, PageResponse, pagination_para
 from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.operations import (
     AuditEventFilterResponse,
+    BlockedStepExplanationResponse,
     DeadLetterJobsResponse,
     FailedJobInspectionResponse,
     OperationsCapacityResponse,
@@ -532,6 +533,26 @@ async def operations_scheduler(
         ttl_seconds=10,
     )
     return OperationsSchedulerResponse(**cached.value)
+
+
+@router.get("/blocked-steps", response_model=PageResponse[BlockedStepExplanationResponse])
+async def operations_blocked_steps(
+    page: PageParams = Depends(pagination_params),
+    code: str | None = Query(default=None),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[BlockedStepExplanationResponse]:
+    items, total = OperationsService(session).list_blocked_steps(
+        context.workspace.id,
+        page,
+        code=code,
+    )
+    return PageResponse(
+        items=items,
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 @router.post("/scheduler/pause", response_model=SchedulerControlResponse)

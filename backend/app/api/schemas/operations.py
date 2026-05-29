@@ -323,7 +323,27 @@ class SchedulerPriorityBucketResponse(BaseModel):
 
 class SchedulerBlockedReasonResponse(BaseModel):
     reason: str
+    code: str
+    message: str
+    resource_key: str | None = None
     count: int
+
+
+class BlockedStepExplanationResponse(BaseModel):
+    task_step_id: UUID
+    task_id: UUID
+    task_title: str
+    step_title: str
+    status: str
+    reason: str
+    code: str
+    message: str
+    resource_key: str | None = None
+    runtime_space_id: UUID | None = None
+    blocked_resource_keys: list[str] = Field(default_factory=list)
+    priority_score: int | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class SchedulerPauseRequest(BaseModel):

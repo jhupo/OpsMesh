@@ -1776,8 +1776,14 @@ def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:
         f"/api/v1/workspaces/{workspace.id}/operations/scheduler",
         headers=_headers(owner.id),
     )
+    blocked_steps = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/blocked-steps"
+        "?code=workspace_quota_exceeded",
+        headers=_headers(owner.id),
+    )
 
     assert response.status_code == 200
+    assert blocked_steps.status_code == 200
     payload = response.json()
     assert payload["backlog"]["queued_steps"] == 2
     assert payload["backlog"]["running_steps"] == 1
@@ -1792,8 +1798,22 @@ def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:
         "blocked_steps": 1,
     }
     assert payload["blocked_reasons"] == [
-        {"reason": "workspace_run_quota_exceeded", "count": 1}
+        {
+            "reason": "workspace_run_quota_exceeded",
+            "code": "workspace_quota_exceeded",
+            "message": "Workspace quota is exhausted.",
+            "resource_key": None,
+            "count": 1,
+        }
     ]
+    blocked_payload = blocked_steps.json()
+    assert blocked_payload["total"] == 1
+    assert blocked_payload["items"][0]["task_step_id"] == str(blocked_step.id)
+    assert blocked_payload["items"][0]["task_title"] == "High priority"
+    assert blocked_payload["items"][0]["step_title"] == "Blocked step"
+    assert blocked_payload["items"][0]["reason"] == "workspace_run_quota_exceeded"
+    assert blocked_payload["items"][0]["code"] == "workspace_quota_exceeded"
+    assert blocked_payload["items"][0]["message"] == "Workspace quota is exhausted."
     assert payload["policy"] == {
         "paused": True,
         "pause_reason": "maintenance",

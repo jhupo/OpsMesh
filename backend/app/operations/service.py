@@ -13,6 +13,7 @@ from backend.app.admin.policies import PlatformPolicyService
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.operations import (
     ApprovalBacklogResponse,
+    BlockedStepExplanationResponse,
     DeadLetterJobsResponse,
     McpJobStatusBucketResponse,
     McpJobToolBucketResponse,
@@ -49,6 +50,7 @@ from backend.app.approvals.models import Approval
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
+from backend.app.orchestration.blocked_reasons import explain_blocked_reason
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
@@ -1078,11 +1080,65 @@ class OperationsService:
                 for priority, counts in sorted(priority_buckets.items(), reverse=True)
             ],
             blocked_reasons=[
-                SchedulerBlockedReasonResponse(reason=reason, count=count)
+                SchedulerBlockedReasonResponse(
+                    reason=explanation.reason,
+                    code=explanation.code,
+                    message=explanation.message,
+                    resource_key=explanation.resource_key,
+                    count=count,
+                )
                 for reason, count in sorted(blocked_reasons.items())
+                for explanation in [explain_blocked_reason(reason)]
             ],
             policy=self._scheduler_policy(workspace_id),
         )
+
+    def list_blocked_steps(
+        self,
+        workspace_id: UUID,
+        page: PageParams,
+        *,
+        code: str | None = None,
+    ) -> tuple[list[BlockedStepExplanationResponse], int]:
+        rows = self._session.execute(
+            select(TaskStep, Task)
+            .join(Task, Task.id == TaskStep.task_id)
+            .where(
+                TaskStep.workspace_id == workspace_id,
+                Task.workspace_id == workspace_id,
+                TaskStep.status == "queued",
+            )
+            .order_by(TaskStep.created_at.asc(), TaskStep.id.asc())
+        ).all()
+        blocked: list[BlockedStepExplanationResponse] = []
+        for step, task in rows:
+            dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
+            if dependencies.get("scheduling_status") != "blocked":
+                continue
+            explanation = explain_blocked_reason(dependencies.get("blocked_reason"))
+            if code is not None and explanation.code != code:
+                continue
+            blocked.append(
+                BlockedStepExplanationResponse(
+                    task_step_id=step.id,
+                    task_id=task.id,
+                    task_title=task.title,
+                    step_title=step.title,
+                    status=step.status,
+                    reason=explanation.reason,
+                    code=explanation.code,
+                    message=explanation.message,
+                    resource_key=explanation.resource_key,
+                    runtime_space_id=step.runtime_space_id or task.runtime_space_id,
+                    blocked_resource_keys=_string_list(
+                        dependencies.get("blocked_resource_keys")
+                    ),
+                    priority_score=_positive_int_or_none(dependencies.get("priority_score")),
+                    created_at=step.created_at,
+                    updated_at=step.updated_at,
+                )
+            )
+        return blocked[page.offset : page.offset + page.limit], len(blocked)
 
     def outcomes_payload(
         self,
