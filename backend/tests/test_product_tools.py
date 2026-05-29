@@ -14,11 +14,13 @@ from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.memory.indexing import WorkspaceMemoryIndexingService
 from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.memory.search import MemorySearchHit, MemorySearchRequest
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolPermissionError, ToolResourceNotFoundError
 from backend.app.tools.product_tools import ProductToolService
+from backend.app.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 
@@ -183,6 +185,85 @@ def test_workspace_memory_search_returns_workspace_scoped_matches() -> None:
         "content_type": "text/plain",
         "size_bytes": 120,
     }
+    assert all(item["search_backend"] == "lexical" for item in results)
+    assert all(item["resource_type"] == item["source_type"] for item in results)
+    assert all(item["resource_id"] == item["source_id"] for item in results)
+
+
+def test_workspace_memory_search_uses_pluggable_backend_with_workspace_scope() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, slug="acme")
+    _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Renewal research",
+        description="Customer renewal blockers.",
+    )
+    other_task = Task(
+        workspace_id=other_workspace.id,
+        created_by_user_id=user.id,
+        title="Secret renewal research",
+        description="Secret renewal blockers.",
+    )
+    session.add_all([task, other_task])
+    session.commit()
+    backend = _RecordingMemoryBackend()
+
+    results = WorkspaceMemorySearchService(session, ranker=backend).search(
+        workspace_id=workspace.id,
+        query="renewal",
+        limit=5,
+        source_types={"task"},
+    )
+
+    assert backend.request is not None
+    assert backend.request.workspace_id == workspace.id
+    assert backend.request.source_types == {"task"}
+    assert all(document.source_type == "task" for document in backend.request.documents)
+    assert all(document.source_id != other_task.id for document in backend.request.documents)
+    assert results == [
+        {
+            "source_type": "task",
+            "source_id": str(task.id),
+            "resource_type": "task",
+            "resource_id": str(task.id),
+            "title": "Renewal research",
+            "snippet": "backend snippet",
+            "score": 0.91,
+            "search_backend": "vector_test",
+            "created_at": task.created_at.isoformat(),
+            "metadata": {
+                "status": "draft",
+                "domain_type": "general",
+                "agent_team_id": None,
+            },
+        }
+    ]
+
+
+def test_workspace_memory_search_falls_back_to_lexical_when_backend_has_no_hits() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, slug="acme")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Renewal fallback",
+        description="Customer renewal blockers.",
+    )
+    session.add(task)
+    session.commit()
+
+    results = WorkspaceMemorySearchService(session, ranker=_EmptyMemoryBackend()).search(
+        workspace_id=workspace.id,
+        query="renewal",
+        limit=5,
+        source_types={"task"},
+    )
+
+    assert results
+    assert results[0]["source_type"] == "task"
+    assert results[0]["search_backend"] == "lexical"
 
 
 def test_workspace_memory_entries_can_be_written_searched_and_archived() -> None:
@@ -486,6 +567,33 @@ def _seed_workspace(
     session.add_all([user, workspace, membership])
     session.commit()
     return user, workspace
+
+
+class _RecordingMemoryBackend:
+    backend_name = "vector_test"
+
+    def __init__(self) -> None:
+        self.request: MemorySearchRequest | None = None
+
+    def search(self, request: MemorySearchRequest) -> list[MemorySearchHit]:
+        self.request = request
+        if not request.documents:
+            return []
+        return [
+            MemorySearchHit(
+                document=request.documents[0],
+                score=0.91,
+                snippet="backend snippet",
+                backend_name=self.backend_name,
+            )
+        ]
+
+
+class _EmptyMemoryBackend:
+    backend_name = "postgres_full_text"
+
+    def search(self, request: MemorySearchRequest) -> list[MemorySearchHit]:
+        return []
 
 
 def _patch_portable_types_for_sqlite() -> None:

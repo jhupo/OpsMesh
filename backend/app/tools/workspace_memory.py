@@ -1,10 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import select
@@ -14,66 +10,29 @@ from backend.app.artifacts.models import Artifact
 from backend.app.domains.models import DomainItem
 from backend.app.files.models import WorkspaceFile
 from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.memory.search import (
+    LexicalMemorySearchBackend,
+    MemorySearchBackend,
+    MemorySearchDocument,
+    MemorySearchHit,
+    MemorySearchRequest,
+)
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
-_TOKEN_PATTERN = re.compile(r"[\w.-]+", re.UNICODE)
-_SNIPPET_LENGTH = 220
 _SOURCE_LIMIT = 80
 
 
-@dataclass(frozen=True)
-class _MemoryCandidate:
-    source_type: str
-    source_id: UUID
-    title: str
-    text: str
-    created_at: datetime | None
-    metadata: dict[str, object]
-
-
-class WorkspaceMemoryRanker(Protocol):
-    def rank(
-        self,
-        candidates: list[_MemoryCandidate],
-        *,
-        query: str,
-        limit: int,
-    ) -> list[dict[str, object]]: ...
-
-
-class LexicalMemoryRanker:
-    def rank(
-        self,
-        candidates: list[_MemoryCandidate],
-        *,
-        query: str,
-        limit: int,
-    ) -> list[dict[str, object]]:
-        terms = _query_terms(query)
-        if not terms or limit <= 0:
-            return []
-        results: list[tuple[int, _MemoryCandidate]] = []
-        for candidate in candidates:
-            score = _score(candidate, terms, query)
-            if score > 0:
-                results.append((score, candidate))
-        results.sort(
-            key=lambda item: (
-                item[0],
-                _created_at_sort_key(item[1].created_at),
-                item[1].title.lower(),
-            ),
-            reverse=True,
-        )
-        return [_result_payload(candidate, score, terms) for score, candidate in results[:limit]]
+WorkspaceMemoryRanker = MemorySearchBackend
+LexicalMemoryRanker = LexicalMemorySearchBackend
 
 
 class WorkspaceMemorySearchService:
-    """Lightweight workspace-scoped lexical search across operational memory."""
+    """Workspace-scoped search across operational memory with pluggable backends."""
 
     def __init__(self, session: Session, ranker: WorkspaceMemoryRanker | None = None) -> None:
         self._session = session
-        self._ranker = ranker or LexicalMemoryRanker()
+        self._backend = ranker or LexicalMemoryRanker()
+        self._fallback_backend = LexicalMemoryRanker()
 
     def search(
         self,
@@ -87,7 +46,7 @@ class WorkspaceMemorySearchService:
             return []
 
         indexed_sources = self._indexed_sources(workspace_id)
-        candidates: list[_MemoryCandidate] = []
+        candidates: list[MemorySearchDocument] = []
         for candidate in self._candidates(workspace_id):
             if source_types is not None and candidate.source_type not in source_types:
                 continue
@@ -97,9 +56,19 @@ class WorkspaceMemorySearchService:
             ) in indexed_sources and not candidate.metadata.get("indexed"):
                 continue
             candidates.append(candidate)
-        return self._ranker.rank(candidates, query=query, limit=limit)
+        request = MemorySearchRequest(
+            workspace_id=workspace_id,
+            query=query,
+            limit=limit,
+            source_types=source_types,
+            documents=candidates,
+        )
+        hits = self._backend.search(request)
+        if not hits and self._backend.backend_name != self._fallback_backend.backend_name:
+            hits = self._fallback_backend.search(request)
+        return [_result_payload(hit) for hit in hits[:limit]]
 
-    def _candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:
+    def _candidates(self, workspace_id: UUID) -> list[MemorySearchDocument]:
         return [
             *self._explicit_memory_candidates(workspace_id),
             *self._file_candidates(workspace_id),
@@ -126,7 +95,7 @@ class WorkspaceMemorySearchService:
             if entry.source_type is not None and entry.source_id is not None
         }
 
-    def _explicit_memory_candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:
+    def _explicit_memory_candidates(self, workspace_id: UUID) -> list[MemorySearchDocument]:
         entries = self._session.scalars(
             select(WorkspaceMemoryEntry)
             .where(
@@ -140,7 +109,7 @@ class WorkspaceMemorySearchService:
             .limit(_SOURCE_LIMIT)
         ).all()
         return [
-            _MemoryCandidate(
+            MemorySearchDocument(
                 source_type=_memory_entry_source_type(entry),
                 source_id=_memory_entry_source_id(entry),
                 title=entry.title,
@@ -165,7 +134,7 @@ class WorkspaceMemorySearchService:
             for entry in entries
         ]
 
-    def _file_candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:
+    def _file_candidates(self, workspace_id: UUID) -> list[MemorySearchDocument]:
         files = self._session.scalars(
             select(WorkspaceFile)
             .where(
@@ -176,7 +145,7 @@ class WorkspaceMemorySearchService:
             .limit(_SOURCE_LIMIT)
         ).all()
         return [
-            _MemoryCandidate(
+            MemorySearchDocument(
                 source_type="workspace_file",
                 source_id=file.id,
                 title=file.filename,
@@ -195,7 +164,7 @@ class WorkspaceMemorySearchService:
             for file in files
         ]
 
-    def _artifact_candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:
+    def _artifact_candidates(self, workspace_id: UUID) -> list[MemorySearchDocument]:
         artifacts = self._session.scalars(
             select(Artifact)
             .where(Artifact.workspace_id == workspace_id)
@@ -203,7 +172,7 @@ class WorkspaceMemorySearchService:
             .limit(_SOURCE_LIMIT)
         ).all()
         return [
-            _MemoryCandidate(
+            MemorySearchDocument(
                 source_type="artifact",
                 source_id=artifact.id,
                 title=artifact.filename,
@@ -232,7 +201,7 @@ class WorkspaceMemorySearchService:
             for artifact in artifacts
         ]
 
-    def _task_candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:
+    def _task_candidates(self, workspace_id: UUID) -> list[MemorySearchDocument]:
         tasks = self._session.scalars(
             select(Task)
             .where(Task.workspace_id == workspace_id)
@@ -240,7 +209,7 @@ class WorkspaceMemorySearchService:
             .limit(_SOURCE_LIMIT)
         ).all()
         return [
-            _MemoryCandidate(
+            MemorySearchDocument(
                 source_type="task",
                 source_id=task.id,
                 title=task.title,
@@ -264,7 +233,7 @@ class WorkspaceMemorySearchService:
             for task in tasks
         ]
 
-    def _task_step_candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:
+    def _task_step_candidates(self, workspace_id: UUID) -> list[MemorySearchDocument]:
         steps = self._session.scalars(
             select(TaskStep)
             .where(TaskStep.workspace_id == workspace_id)
@@ -272,7 +241,7 @@ class WorkspaceMemorySearchService:
             .limit(_SOURCE_LIMIT)
         ).all()
         return [
-            _MemoryCandidate(
+            MemorySearchDocument(
                 source_type="task_step",
                 source_id=step.id,
                 title=step.title,
@@ -297,7 +266,7 @@ class WorkspaceMemorySearchService:
             for step in steps
         ]
 
-    def _task_message_candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:
+    def _task_message_candidates(self, workspace_id: UUID) -> list[MemorySearchDocument]:
         messages = self._session.scalars(
             select(TaskMessage)
             .where(TaskMessage.workspace_id == workspace_id)
@@ -305,7 +274,7 @@ class WorkspaceMemorySearchService:
             .limit(_SOURCE_LIMIT)
         ).all()
         return [
-            _MemoryCandidate(
+            MemorySearchDocument(
                 source_type="task_message",
                 source_id=message.id,
                 title=f"{message.message_type} #{message.sequence}",
@@ -323,7 +292,7 @@ class WorkspaceMemorySearchService:
             for message in messages
         ]
 
-    def _domain_item_candidates(self, workspace_id: UUID) -> list[_MemoryCandidate]:
+    def _domain_item_candidates(self, workspace_id: UUID) -> list[MemorySearchDocument]:
         items = self._session.scalars(
             select(DomainItem)
             .where(DomainItem.workspace_id == workspace_id)
@@ -331,7 +300,7 @@ class WorkspaceMemorySearchService:
             .limit(_SOURCE_LIMIT)
         ).all()
         return [
-            _MemoryCandidate(
+            MemorySearchDocument(
                 source_type="domain_item",
                 source_id=item.id,
                 title=item.title,
@@ -354,62 +323,20 @@ class WorkspaceMemorySearchService:
             for item in items
         ]
 
-
-def _query_terms(query: str) -> list[str]:
-    seen: set[str] = set()
-    terms: list[str] = []
-    for token in _TOKEN_PATTERN.findall(query.lower()):
-        if len(token) < 2 or token in seen:
-            continue
-        seen.add(token)
-        terms.append(token)
-    return terms
-
-
-def _score(candidate: _MemoryCandidate, terms: list[str], query: str) -> int:
-    title = candidate.title.lower()
-    text = candidate.text.lower()
-    phrase = " ".join(_query_terms(query))
-    score = 0
-    if phrase and phrase in title:
-        score += 30
-    elif phrase and phrase in text:
-        score += 16
-    for term in terms:
-        if term in title:
-            score += 10
-        if term in text:
-            score += 3
-    return score
-
-
-def _result_payload(
-    candidate: _MemoryCandidate,
-    score: int,
-    terms: list[str],
-) -> dict[str, object]:
+def _result_payload(hit: MemorySearchHit) -> dict[str, object]:
+    document = hit.document
     return {
-        "source_type": candidate.source_type,
-        "source_id": str(candidate.source_id),
-        "title": candidate.title,
-        "snippet": _snippet(candidate.text, terms),
-        "score": score,
-        "created_at": candidate.created_at.isoformat() if candidate.created_at else None,
-        "metadata": candidate.metadata,
+        "source_type": document.source_type,
+        "source_id": str(document.source_id),
+        "resource_type": document.source_type,
+        "resource_id": str(document.source_id),
+        "title": document.title,
+        "snippet": hit.snippet,
+        "score": hit.score,
+        "search_backend": hit.backend_name,
+        "created_at": document.created_at.isoformat() if document.created_at else None,
+        "metadata": document.metadata,
     }
-
-
-def _snippet(text: str, terms: list[str]) -> str:
-    collapsed = " ".join(text.split())
-    lower = collapsed.lower()
-    positions = [lower.find(term) for term in terms if term in lower]
-    start = max(0, min(positions) - 60) if positions else 0
-    snippet = collapsed[start : start + _SNIPPET_LENGTH]
-    if start > 0:
-        snippet = f"...{snippet}"
-    if start + _SNIPPET_LENGTH < len(collapsed):
-        snippet = f"{snippet}..."
-    return snippet
 
 
 def _join_text(*parts: object) -> str:
@@ -439,9 +366,3 @@ def _memory_entry_source_id(entry: WorkspaceMemoryEntry) -> UUID:
         except ValueError:
             return entry.id
     return entry.id
-
-
-def _created_at_sort_key(value: datetime | None) -> float:
-    if value is None:
-        return 0
-    return value.timestamp()
