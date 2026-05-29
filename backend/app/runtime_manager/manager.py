@@ -14,8 +14,9 @@ from backend.app.runtime_manager.contracts import (
     RuntimeCreateRequest,
     RuntimeLimits,
 )
-from backend.app.runtime_manager.quotas import RuntimeQuotaPolicy
+from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
 from backend.app.runtime_spaces.models import RuntimeSpaceEvent
+from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeEvent,
@@ -69,16 +70,40 @@ class RuntimeManager:
         )
         self._session.add(runtime)
         self._session.flush()
-
-        container_id = self._docker.create_container(
-            RuntimeCreateRequest(
-                image=template.image,
-                name=f"chaincloud-{workspace_id}-{runtime.id}",
-                workspace_id=str(workspace_id),
-                limits=limits,
-                network_disabled=network_disabled,
+        reservation_key = _runtime_space_reservation_key(runtime)
+        if runtime_space_id is not None:
+            reservation_result = RuntimeSpaceService(self._session).reserve_run_capacity(
+                workspace_id=workspace_id,
+                runtime_space_id=runtime_space_id,
+                task_id=None,
+                task_step_id=None,
+                reservation_key=reservation_key,
+                resource_usage=_runtime_space_usage_for_runtime(limits),
             )
-        )
+            if reservation_result.reservation is None:
+                self._session.delete(runtime)
+                self._session.flush()
+                blocked_reason = reservation_result.blocked_reason or "runtime_space_quota_exceeded"
+                raise RuntimeQuotaExceededError(
+                    blocked_reason,
+                    "Runtime space quota blocks Docker runtime creation",
+                )
+
+        try:
+            container_id = self._docker.create_container(
+                RuntimeCreateRequest(
+                    image=template.image,
+                    name=f"chaincloud-{workspace_id}-{runtime.id}",
+                    workspace_id=str(workspace_id),
+                    limits=limits,
+                    network_disabled=network_disabled,
+                )
+            )
+        except Exception:
+            self._release_runtime_space_reservation(runtime)
+            self._session.delete(runtime)
+            self._session.flush()
+            raise
         runtime.docker_container_id = container_id
         runtime.status = "created"
         lease = self._ensure_runtime_lease(
@@ -89,6 +114,9 @@ class RuntimeManager:
                 "image": template.image,
                 "limits": dict(runtime.limits),
                 "network_policy": dict(runtime.network_policy),
+                "runtime_space_reservation_key": reservation_key
+                if runtime_space_id is not None
+                else None,
             },
         )
         self._append_event(runtime, "runtime.created", container_id)
@@ -148,6 +176,7 @@ class RuntimeManager:
             )
             self._record_cleanup_security_event(runtime, cleanup, reason=str(exc))
             self._set_runtime_lease_status(runtime, "cleanup_failed", released_at=datetime.now(UTC))
+            self._release_runtime_space_reservation(runtime)
             self._session.commit()
             raise
         cleanup = self._cleanup_runtime_resources(
@@ -175,6 +204,7 @@ class RuntimeManager:
             "released" if runtime.status == "deleted" else "cleanup_failed",
             released_at=datetime.now(UTC),
         )
+        self._release_runtime_space_reservation(runtime)
         self._session.commit()
 
     def cleanup_stale_runtime(self, runtime: WorkspaceRuntime) -> None:
@@ -217,6 +247,7 @@ class RuntimeManager:
             "released" if runtime.status == "deleted" else "cleanup_failed",
             released_at=datetime.now(UTC),
         )
+        self._release_runtime_space_reservation(runtime)
         self._session.commit()
 
     def execute_command(
@@ -425,6 +456,16 @@ class RuntimeManager:
             lease.released_at = released_at
         self._session.flush([lease])
         return lease
+
+    def _release_runtime_space_reservation(self, runtime: WorkspaceRuntime) -> bool:
+        if runtime.runtime_space_id is None:
+            return False
+        return RuntimeSpaceService(self._session).release_reservation_by_key(
+            workspace_id=runtime.workspace_id,
+            runtime_space_id=runtime.runtime_space_id,
+            reservation_key=_runtime_space_reservation_key(runtime),
+            released_at=datetime.now(UTC),
+        )
 
     def _cleanup_runtime_resources(
         self,
@@ -640,6 +681,26 @@ def _bounded_error(exc: Exception) -> str:
 
 def _lease_metadata(lease: RuntimeLease | None) -> dict[str, object]:
     return {"runtime_lease_id": str(lease.id)} if lease is not None else {}
+
+
+def _runtime_space_reservation_key(runtime: WorkspaceRuntime) -> str:
+    return f"workspace_runtime:{runtime.id}:docker"
+
+
+def _runtime_space_usage_for_runtime(limits: RuntimeLimits) -> dict[str, int]:
+    return {
+        "docker_runtimes": 1,
+        "cpu": _ceil_positive_int(limits.cpu_count),
+        "memory_mb": limits.memory_mb,
+        "storage_mb": limits.disk_mb,
+    }
+
+
+def _ceil_positive_int(value: float) -> int:
+    integer_value = int(value)
+    if value > integer_value:
+        integer_value += 1
+    return max(1, integer_value)
 
 
 def _positive_int_limit(value: object, fallback: int) -> int:

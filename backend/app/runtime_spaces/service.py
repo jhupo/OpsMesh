@@ -455,6 +455,60 @@ class RuntimeSpaceService:
         self._session.flush([*reservations, *quotas.values()])
         return len(reservations)
 
+    def release_reservation_by_key(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime_space_id: UUID,
+        reservation_key: str,
+        released_at: datetime | None = None,
+    ) -> bool:
+        release_time = released_at or datetime.now(UTC)
+        reservation = self._session.scalar(
+            select(RuntimeSpaceReservation)
+            .where(
+                RuntimeSpaceReservation.workspace_id == workspace_id,
+                RuntimeSpaceReservation.runtime_space_id == runtime_space_id,
+                RuntimeSpaceReservation.reservation_key == reservation_key,
+                RuntimeSpaceReservation.status == "active",
+            )
+            .with_for_update()
+        )
+        if reservation is None:
+            return False
+        usage = self._reservation_usage(reservation)
+        quotas = {
+            quota.quota_key: quota
+            for quota in self._session.scalars(
+                select(RuntimeSpaceQuota)
+                .where(
+                    RuntimeSpaceQuota.workspace_id == workspace_id,
+                    RuntimeSpaceQuota.runtime_space_id == runtime_space_id,
+                    RuntimeSpaceQuota.quota_key.in_(usage),
+                )
+                .with_for_update()
+            ).all()
+        }
+        for quota_key, amount in usage.items():
+            quota = quotas.get(quota_key)
+            if quota is not None:
+                quota.reserved_value = max(0, quota.reserved_value - amount)
+        reservation.status = "released"
+        reservation.released_at = release_time
+        runtime_space = self.get_runtime_space(workspace_id, runtime_space_id)
+        if runtime_space is not None:
+            self._append_event(
+                runtime_space,
+                "runtime_space.reservation_released",
+                f"Released runtime space capacity for {reservation_key}",
+                {
+                    "reservation_key": reservation_key,
+                    "resource_usage": dict(usage),
+                },
+            )
+        self._session.flush([reservation, *quotas.values()])
+        return True
+
     def _normalize_target_id(
         self,
         *,

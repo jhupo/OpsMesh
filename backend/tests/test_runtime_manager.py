@@ -19,7 +19,12 @@ from backend.app.runtime_manager.contracts import (
 )
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtime_spaces.models import (
+    RuntimeSpace,
+    RuntimeSpaceEvent,
+    RuntimeSpaceQuota,
+    RuntimeSpaceReservation,
+)
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeEvent,
@@ -150,15 +155,208 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     assert events[-1].event_metadata["cleanup"]["container_id"] == "container-123"
     assert events[-1].event_metadata["cleanup"]["success"] is True
     assert [event.event_type for event in space_events] == [
+        "runtime_space.reserved",
         "runtime.created",
         "runtime.lease_acquired",
         "runtime.started",
         "runtime.command.completed",
         "runtime.stopped",
         "runtime.deleted",
+        "runtime_space.reservation_released",
     ]
-    assert space_events[0].event_metadata["runtime_id"] == str(runtime.id)
-    assert space_events[0].event_metadata["runtime_status"] == "created"
+    assert space_events[1].event_metadata["runtime_id"] == str(runtime.id)
+    assert space_events[1].event_metadata["runtime_status"] == "created"
+
+
+def test_runtime_manager_reserves_and_releases_runtime_space_docker_usage() -> None:
+    session = _session()
+    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme-slots", settings={})
+    template = RuntimeTemplate(
+        name="python-slots",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.flush()
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Docker Slots",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.flush()
+    session.add_all(
+        [
+            RuntimeSpaceQuota(
+                workspace_id=workspace.id,
+                runtime_space_id=runtime_space.id,
+                quota_key="docker_runtimes",
+                limit_value=1,
+            ),
+            RuntimeSpaceQuota(
+                workspace_id=workspace.id,
+                runtime_space_id=runtime_space.id,
+                quota_key="cpu",
+                limit_value=2,
+            ),
+            RuntimeSpaceQuota(
+                workspace_id=workspace.id,
+                runtime_space_id=runtime_space.id,
+                quota_key="memory_mb",
+                limit_value=1024,
+            ),
+            RuntimeSpaceQuota(
+                workspace_id=workspace.id,
+                runtime_space_id=runtime_space.id,
+                quota_key="storage_mb",
+                limit_value=2048,
+            ),
+        ]
+    )
+    session.commit()
+    manager = RuntimeManager(session, FakeDockerClient())
+
+    runtime = manager.create_runtime(
+        workspace_id=workspace.id,
+        template=template,
+        name="analysis",
+        limits=RuntimeLimits(cpu_count=1.5, memory_mb=512, disk_mb=1024, timeout_seconds=10),
+        runtime_space_id=runtime_space.id,
+    )
+    quotas_after_create = _runtime_space_quotas(session, runtime_space.id)
+    reservation = session.query(RuntimeSpaceReservation).one()
+
+    assert quotas_after_create == {
+        "docker_runtimes": 1,
+        "cpu": 2,
+        "memory_mb": 512,
+        "storage_mb": 1024,
+    }
+    assert reservation.status == "active"
+    assert reservation.reservation_key == f"workspace_runtime:{runtime.id}:docker"
+    assert reservation.resource_usage == {
+        "docker_runtimes": 1,
+        "cpu": 2,
+        "memory_mb": 512,
+        "storage_mb": 1024,
+    }
+
+    manager.delete_runtime(runtime)
+
+    session.refresh(reservation)
+    assert _runtime_space_quotas(session, runtime_space.id) == {
+        "docker_runtimes": 0,
+        "cpu": 0,
+        "memory_mb": 0,
+        "storage_mb": 0,
+    }
+    assert reservation.status == "released"
+    assert reservation.released_at is not None
+
+
+def test_runtime_manager_releases_runtime_space_reservation_when_docker_create_fails() -> None:
+    class FailingCreateDockerClient(FakeDockerClient):
+        def create_container(self, request: RuntimeCreateRequest) -> str:
+            self.created_requests.append(request)
+            raise RuntimeError("docker create failed")
+
+    session = _session()
+    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme-create-fail", settings={})
+    template = RuntimeTemplate(
+        name="python-create-fail",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.flush()
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Docker Slots",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.flush()
+    session.add(
+        RuntimeSpaceQuota(
+            workspace_id=workspace.id,
+            runtime_space_id=runtime_space.id,
+            quota_key="docker_runtimes",
+            limit_value=1,
+        )
+    )
+    session.commit()
+    docker = FailingCreateDockerClient()
+
+    try:
+        RuntimeManager(session, docker).create_runtime(
+            workspace_id=workspace.id,
+            template=template,
+            name="analysis",
+            limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
+            runtime_space_id=runtime_space.id,
+        )
+    except RuntimeError as exc:
+        assert "docker create failed" in str(exc)
+    else:
+        raise AssertionError("Expected Docker create failure")
+
+    reservation = session.query(RuntimeSpaceReservation).one()
+    assert docker.created_requests
+    assert session.query(WorkspaceRuntime).count() == 0
+    assert _runtime_space_quotas(session, runtime_space.id) == {"docker_runtimes": 0}
+    assert reservation.status == "released"
+
+
+def test_runtime_manager_rejects_runtime_space_docker_quota_before_container_create() -> None:
+    session = _session()
+    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme-quota-block", settings={})
+    template = RuntimeTemplate(
+        name="python-quota-block",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.flush()
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Docker Slots",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.flush()
+    session.add(
+        RuntimeSpaceQuota(
+            workspace_id=workspace.id,
+            runtime_space_id=runtime_space.id,
+            quota_key="docker_runtimes",
+            limit_value=0,
+        )
+    )
+    session.commit()
+    docker = FakeDockerClient()
+
+    try:
+        RuntimeManager(session, docker).create_runtime(
+            workspace_id=workspace.id,
+            template=template,
+            name="analysis",
+            limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
+            runtime_space_id=runtime_space.id,
+        )
+    except RuntimeQuotaExceededError as exc:
+        assert exc.code == "runtime_space_quota_exceeded:docker_runtimes"
+    else:
+        raise AssertionError("Expected runtime-space Docker quota failure")
+
+    assert docker.created_requests == []
+    assert session.query(WorkspaceRuntime).count() == 0
+    assert session.query(RuntimeSpaceReservation).count() == 0
 
 
 def test_runtime_manager_rejects_cross_workspace_command() -> None:
@@ -767,6 +965,17 @@ def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch
     assert container_id == "container-abc"
     assert command[command.index("--pids-limit") + 1] == "96"
     assert command[command.index("--storage-opt") + 1] == "size=2048m"
+
+
+def _runtime_space_quotas(session: Session, runtime_space_id: object) -> dict[str, int]:
+    return {
+        quota.quota_key: quota.reserved_value
+        for quota in session.scalars(
+            select(RuntimeSpaceQuota).where(
+                RuntimeSpaceQuota.runtime_space_id == runtime_space_id,
+            )
+        ).all()
+    }
 
 
 def _session() -> Session:
