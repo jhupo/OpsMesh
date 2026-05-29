@@ -1825,6 +1825,33 @@ def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:
         "resource_limits": {"cpu": 4.0},
     }
 
+    unblocked = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/blocked-steps/unblock",
+        headers=_headers(owner.id),
+        json={"code": "workspace_quota_exceeded", "limit": 10},
+    )
+    bad_unblock = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/blocked-steps/unblock",
+        headers=_headers(owner.id),
+        json={},
+    )
+
+    session.refresh(blocked_step)
+    audit_event = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "scheduler.blocked_steps_unblocked",
+        )
+    )
+    assert unblocked.status_code == 200
+    assert unblocked.json()["unblocked_steps"] == 1
+    assert bad_unblock.status_code == 400
+    assert "scheduling_status" not in blocked_step.dependencies
+    assert "blocked_reason" not in blocked_step.dependencies
+    assert audit_event is not None
+    assert audit_event.audit_metadata["code"] == "workspace_quota_exceeded"
+    assert audit_event.audit_metadata["unblocked_steps"] == 1
+
 
 def test_operations_scheduler_pause_and_resume_control_policy() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)

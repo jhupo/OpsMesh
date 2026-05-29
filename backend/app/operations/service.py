@@ -14,6 +14,7 @@ from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.operations import (
     ApprovalBacklogResponse,
     BlockedStepExplanationResponse,
+    BlockedStepUnblockResponse,
     DeadLetterJobsResponse,
     McpJobStatusBucketResponse,
     McpJobToolBucketResponse,
@@ -1139,6 +1140,72 @@ class OperationsService:
                 )
             )
         return blocked[page.offset : page.offset + page.limit], len(blocked)
+
+    def unblock_steps(
+        self,
+        *,
+        workspace_id: UUID,
+        actor_user_id: UUID,
+        code: str | None,
+        reason: str | None,
+        runtime_space_id: UUID | None,
+        limit: int,
+    ) -> BlockedStepUnblockResponse:
+        normalized_code = _non_empty_string_or_none(code)
+        normalized_reason = _non_empty_string_or_none(reason)
+        if normalized_code is None and normalized_reason is None and runtime_space_id is None:
+            raise ValueError("At least one unblock filter is required")
+        rows = self._session.execute(
+            select(TaskStep, Task)
+            .join(Task, Task.id == TaskStep.task_id)
+            .where(
+                TaskStep.workspace_id == workspace_id,
+                Task.workspace_id == workspace_id,
+                TaskStep.status == "queued",
+            )
+            .order_by(TaskStep.created_at.asc(), TaskStep.id.asc())
+        ).all()
+        unblocked = 0
+        for step, task in rows:
+            if unblocked >= limit:
+                break
+            dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
+            if dependencies.get("scheduling_status") != "blocked":
+                continue
+            explanation = explain_blocked_reason(dependencies.get("blocked_reason"))
+            effective_runtime_space_id = step.runtime_space_id or task.runtime_space_id
+            if normalized_code is not None and explanation.code != normalized_code:
+                continue
+            if normalized_reason is not None and explanation.reason != normalized_reason:
+                continue
+            if runtime_space_id is not None and effective_runtime_space_id != runtime_space_id:
+                continue
+            updated = dict(dependencies)
+            updated.pop("scheduling_status", None)
+            updated.pop("blocked_reason", None)
+            updated.pop("blocked_resource_keys", None)
+            updated.pop("priority_score", None)
+            step.dependencies = updated
+            unblocked += 1
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=actor_user_id,
+            action="scheduler.blocked_steps_unblocked",
+            target_type="workspace",
+            target_id=workspace_id,
+            metadata={
+                "code": normalized_code,
+                "reason": normalized_reason,
+                "runtime_space_id": str(runtime_space_id) if runtime_space_id else None,
+                "limit": limit,
+                "unblocked_steps": unblocked,
+            },
+        )
+        self._session.commit()
+        return BlockedStepUnblockResponse(
+            workspace_id=workspace_id,
+            unblocked_steps=unblocked,
+        )
 
     def outcomes_payload(
         self,

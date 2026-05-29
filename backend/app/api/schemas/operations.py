@@ -346,6 +346,18 @@ class BlockedStepExplanationResponse(BaseModel):
     updated_at: datetime
 
 
+class BlockedStepUnblockRequest(BaseModel):
+    code: str | None = Field(default=None, max_length=120)
+    reason: str | None = Field(default=None, max_length=240)
+    runtime_space_id: UUID | None = None
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+class BlockedStepUnblockResponse(BaseModel):
+    workspace_id: UUID
+    unblocked_steps: int
+
+
 class SchedulerPauseRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=240)
 

@@ -12,6 +12,8 @@ from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.operations import (
     AuditEventFilterResponse,
     BlockedStepExplanationResponse,
+    BlockedStepUnblockRequest,
+    BlockedStepUnblockResponse,
     DeadLetterJobsResponse,
     FailedJobInspectionResponse,
     OperationsCapacityResponse,
@@ -553,6 +555,25 @@ async def operations_blocked_steps(
         limit=page.limit,
         offset=page.offset,
     )
+
+
+@router.post("/blocked-steps/unblock", response_model=BlockedStepUnblockResponse)
+async def unblock_blocked_steps(
+    request: BlockedStepUnblockRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> BlockedStepUnblockResponse:
+    try:
+        return OperationsService(session).unblock_steps(
+            workspace_id=context.workspace.id,
+            actor_user_id=context.user.user_id,
+            code=request.code,
+            reason=request.reason,
+            runtime_space_id=request.runtime_space_id,
+            limit=request.limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/scheduler/pause", response_model=SchedulerControlResponse)
