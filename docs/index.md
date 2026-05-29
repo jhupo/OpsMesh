@@ -99,6 +99,10 @@ The backend must provide:
 
    Detailed list of backend areas that are incomplete or only implemented as a basic foundation, with implementation tasks and acceptance criteria.
 
+20. [Backend Next Task Table](backend-next-task-table.md)
+
+   Active execution checklist for the next backend phase.
+
 ## Non-Negotiable Backend Rules
 
 - Workspace isolation is mandatory.

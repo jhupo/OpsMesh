@@ -7,6 +7,7 @@ from backend.app.api.pagination import PageParams, PageResponse, pagination_para
 from backend.app.api.schemas.runtime_spaces import (
     RuntimeSpaceControlResponse,
     RuntimeSpaceCreateRequest,
+    RuntimeSpaceDiagnosticsResponse,
     RuntimeSpaceEventResponse,
     RuntimeSpaceForceReleaseRequest,
     RuntimeSpaceForceReleaseResponse,
@@ -90,6 +91,24 @@ async def get_runtime_space(
     if runtime_space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime space not found")
     return RuntimeSpaceResponse.model_validate(runtime_space)
+
+
+@router.get(
+    "/runtime-spaces/{runtime_space_id}/diagnostics",
+    response_model=RuntimeSpaceDiagnosticsResponse,
+)
+async def get_runtime_space_diagnostics(
+    runtime_space_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+) -> RuntimeSpaceDiagnosticsResponse:
+    diagnostics = RuntimeSpaceService(session).diagnostics(
+        context.workspace.id,
+        runtime_space_id,
+    )
+    if diagnostics is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime space not found")
+    return diagnostics
 
 
 @router.patch("/runtime-spaces/{runtime_space_id}", response_model=RuntimeSpaceResponse)

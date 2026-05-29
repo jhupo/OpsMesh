@@ -27,6 +27,7 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
+from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 from backend.app.workers.dependencies import get_worker_queue
@@ -365,6 +366,100 @@ def test_runtime_space_force_release_reservations_updates_quota_and_events() -> 
     ]
     assert events[0].event_metadata["released_reservations"] == 1
     assert events[0].event_metadata["reason"] == "stale worker lease"
+
+
+def test_runtime_space_diagnostics_reports_quota_reservations_runtimes_and_blocks() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Diagnostics space",
+        scope="workspace",
+        policy={"api_key": "sk-space"},
+    )
+    session.add(runtime_space)
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        title="Blocked task",
+        status="queued",
+        runtime_space_id=runtime_space.id,
+    )
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Blocked step",
+        status="queued",
+        runtime_space_id=runtime_space.id,
+        dependencies={
+            "scheduling_status": "blocked",
+            "blocked_reason": "runtime_space_quota_exceeded:memory_mb",
+            "blocked_resource_keys": ["memory_mb"],
+            "priority_score": 12,
+        },
+    )
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        name="runtime",
+        status="running",
+        connection_status="online",
+        docker_container_id="container-secret",
+        limits={"memory_mb": 4096, "token": "runtime-token"},
+        network_policy={"base_url": "https://runtime.example.test/private"},
+        capabilities={"headers": {"authorization": "Bearer hidden"}, "tools": ["python"]},
+    )
+    quota = RuntimeSpaceQuota(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="memory_mb",
+        limit_value=4096,
+        reserved_value=4096,
+        unit="mb",
+    )
+    reservation = RuntimeSpaceReservation(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        reservation_key="task:blocked",
+        resource_usage={"memory_mb": 4096},
+        status="active",
+    )
+    session.add_all([step, runtime, quota, reservation])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runtime-spaces/{runtime_space.id}/diagnostics",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["runtime_space"]["policy"]["api_key"] == "[redacted]"
+    assert payload["quotas"] == [
+        {
+            "quota_key": "memory_mb",
+            "limit_value": 4096,
+            "reserved_value": 4096,
+            "unit": "mb",
+            "utilization": 1.0,
+            "saturated": True,
+        }
+    ]
+    assert payload["active_reservations"][0]["reservation_key"] == "task:blocked"
+    assert payload["active_reservations"][0]["resource_usage"] == {"memory_mb": 4096}
+    assert payload["runtimes"][0]["has_docker_container"] is True
+    assert "container-secret" not in str(payload)
+    assert payload["runtimes"][0]["limits"]["token"] == "[redacted]"
+    assert payload["runtimes"][0]["network_policy"]["base_url"] == "[redacted]"
+    assert payload["runtimes"][0]["capabilities"]["headers"] == "[redacted]"
+    assert payload["blocked_steps"][0]["task_step_id"] == str(step.id)
+    assert payload["blocked_steps"][0]["code"] == "runtime_space_quota_exceeded"
+    assert payload["blocked_steps"][0]["resource_key"] == "memory_mb"
+    assert payload["blocked_steps"][0]["blocked_resource_keys"] == ["memory_mb"]
 
 
 def test_runtime_space_events_redact_sensitive_metadata() -> None:

@@ -95,6 +95,66 @@ class RuntimeSpaceForceReleaseResponse(BaseModel):
     released_reservations: int
 
 
+class RuntimeSpaceQuotaDiagnosticResponse(BaseModel):
+    quota_key: str
+    limit_value: int
+    reserved_value: int
+    unit: str
+    utilization: float
+    saturated: bool
+
+
+class RuntimeSpaceReservationDiagnosticResponse(BaseModel):
+    id: UUID
+    reservation_key: str
+    task_id: UUID | None
+    task_step_id: UUID | None
+    agent_run_id: UUID | None
+    resource_usage: dict[str, object]
+    created_at: datetime
+    expires_at: datetime | None
+
+
+class RuntimeSpaceRuntimeDiagnosticResponse(BaseModel):
+    id: UUID
+    name: str
+    runtime_provider: str
+    runtime_type: str
+    status: str
+    connection_status: str
+    has_docker_container: bool
+    limits: dict[str, object]
+    network_policy: dict[str, object]
+    capabilities: dict[str, object]
+    last_heartbeat_at: datetime | None
+
+    @field_serializer("limits", "network_policy", "capabilities")
+    def _serialize_runtime_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
+class RuntimeSpaceBlockedStepDiagnosticResponse(BaseModel):
+    task_step_id: UUID
+    task_id: UUID
+    task_title: str
+    step_title: str
+    reason: str
+    code: str
+    message: str
+    resource_key: str | None = None
+    blocked_resource_keys: list[str] = Field(default_factory=list)
+    priority_score: int | None = None
+    created_at: datetime
+
+
+class RuntimeSpaceDiagnosticsResponse(BaseModel):
+    runtime_space: RuntimeSpaceResponse
+    quotas: list[RuntimeSpaceQuotaDiagnosticResponse]
+    active_reservations: list[RuntimeSpaceReservationDiagnosticResponse]
+    runtimes: list[RuntimeSpaceRuntimeDiagnosticResponse]
+    blocked_steps: list[RuntimeSpaceBlockedStepDiagnosticResponse]
+
+
 class RuntimeSpaceEventResponse(ORMModel):
     id: UUID
     workspace_id: UUID
