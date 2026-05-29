@@ -37,6 +37,7 @@ from backend.app.api.schemas.operations import (
     WorkerHeartbeatResponse,
     WorkerLeaseResponse,
     WorkerNodeResponse,
+    WorkerStatusUpdateRequest,
 )
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
 from backend.app.auth.context import WorkspaceContext
@@ -105,6 +106,25 @@ async def drain_worker(
     session: Session = Depends(get_db_session),
 ) -> WorkerNodeResponse:
     node = OperationsService(session).request_worker_drain(worker_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    return WorkerNodeResponse.model_validate(node)
+
+
+@router.post("/workers/{worker_id}/status", response_model=WorkerNodeResponse)
+async def update_worker_status(
+    worker_id: str,
+    request: WorkerStatusUpdateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> WorkerNodeResponse:
+    node = OperationsService(session).set_worker_status(
+        workspace_id=context.workspace.id,
+        actor_user_id=context.user.user_id,
+        worker_id=worker_id,
+        status=request.status,
+        reason=request.reason,
+    )
     if node is None:
         raise HTTPException(status_code=404, detail="Worker not found")
     return WorkerNodeResponse.model_validate(node)

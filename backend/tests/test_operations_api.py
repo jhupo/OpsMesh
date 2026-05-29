@@ -434,6 +434,66 @@ def test_worker_heartbeat_capacity_is_bounded_by_platform_policy() -> None:
     }
 
 
+def test_operations_worker_status_control_quarantines_and_resumes_worker() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    worker = WorkerNode(
+        worker_id="worker-control",
+        worker_type="cloud",
+        status="online",
+        queue_name="agent_runs",
+        capacity={"max_jobs": 2, "token": "hidden"},
+        details={"headers": {"authorization": "Bearer hidden"}},
+        last_seen_at=datetime.now(UTC),
+    )
+    session.add(worker)
+    session.commit()
+
+    quarantined = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/workers/worker-control/status",
+        headers=_headers(owner.id),
+        json={"status": "quarantined", "reason": "suspicious runtime output"},
+    )
+    heartbeat = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/worker-heartbeats",
+        headers=_headers(owner.id),
+        json={"worker_id": "worker-control", "status": "online", "details": {}},
+    )
+    assert quarantined.status_code == 200
+    assert quarantined.json()["status"] == "quarantined"
+    assert quarantined.json()["capacity"]["token"] == "[redacted]"
+    assert quarantined.json()["details"]["headers"] == "[redacted]"
+    assert heartbeat.status_code == 200
+    session.refresh(worker)
+    assert worker.status == "quarantined"
+
+    resumed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/workers/worker-control/status",
+        headers=_headers(owner.id),
+        json={"status": "online", "reason": "operator reviewed"},
+    )
+    missing = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/workers/missing/status",
+        headers=_headers(owner.id),
+        json={"status": "disabled"},
+    )
+
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "online"
+    assert missing.status_code == 404
+    audit_events = session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "worker.status_updated",
+        )
+    ).all()
+    assert [event.audit_metadata["status"] for event in audit_events] == [
+        "quarantined",
+        "online",
+    ]
+
+
 def test_operations_overview_uses_workspace_scoped_short_cache() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

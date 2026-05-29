@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, computed_field, field_serializer
@@ -86,6 +87,21 @@ class WorkerNodeResponse(TimestampedModel):
     @field_serializer("capacity", "details")
     def _serialize_worker_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+
+WorkerControlStatus = Literal[
+    "online",
+    "offline",
+    "maintenance",
+    "disabled",
+    "quarantined",
+    "draining",
+]
+
+
+class WorkerStatusUpdateRequest(BaseModel):
+    status: WorkerControlStatus
+    reason: str | None = Field(default=None, max_length=240)
 
 
 class WorkerLeaseResponse(TimestampedModel):
