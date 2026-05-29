@@ -259,6 +259,85 @@ def test_worker_runner_maintenance_status_prevents_new_job_claims() -> None:
         assert session.query(WorkerLease).count() == 0
 
 
+def test_worker_runner_quarantined_status_prevents_new_job_claims() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, run_id, user_id = _seed_run(session_factory)
+    queue.enqueue(
+        JobPayload(
+            workspace_id=workspace_id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run_id,
+            requested_by_user_id=user_id,
+            idempotency_key=f"agent.run:{workspace_id}:{run_id}",
+        )
+    )
+    with session_factory() as session:
+        session.add(
+            WorkerNode(
+                worker_id="worker-quarantined",
+                worker_type="cloud",
+                status="quarantined",
+                queue_name="agent_runs",
+                capacity={"max_jobs": 10},
+                details={},
+                last_seen_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="worker-quarantined", queue_name="agent_runs"),
+    )
+
+    assert runner.run_once() is False
+    assert queue.count_queued(workspace_id=workspace_id) == 1
+    with session_factory() as session:
+        node = session.scalar(
+            select(WorkerNode).where(WorkerNode.worker_id == "worker-quarantined")
+        )
+        assert node is not None
+        assert node.status == "quarantined"
+        assert session.query(WorkerLease).count() == 0
+
+
+def test_worker_heartbeat_does_not_clear_quarantine() -> None:
+    session_factory = _session_factory()
+    workspace_id, _, _ = _seed_run(session_factory, slug="worker-quarantine")
+    with session_factory() as session:
+        session.add(
+            WorkerNode(
+                worker_id="worker-quarantine-heartbeat",
+                worker_type="cloud",
+                status="quarantined",
+                queue_name="agent_runs",
+                capacity={"max_jobs": 1},
+                details={},
+                last_seen_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+
+    with session_factory() as session:
+        OperationsService(session).record_worker_heartbeat(
+            workspace_id=workspace_id,
+            worker_id="worker-quarantine-heartbeat",
+            worker_type="cloud",
+            status="online",
+            queue_name="agent_runs",
+            details={},
+            capacity={"max_jobs": 1},
+        )
+
+    with session_factory() as session:
+        node = session.scalar(
+            select(WorkerNode).where(WorkerNode.worker_id == "worker-quarantine-heartbeat")
+        )
+        assert node is not None
+        assert node.status == "quarantined"
+
+
 def test_worker_runner_capacity_prevents_new_job_claims_when_full() -> None:
     session_factory = _session_factory()
     queue = _queue()

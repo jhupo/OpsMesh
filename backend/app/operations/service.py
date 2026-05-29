@@ -2007,7 +2007,7 @@ def _worker_capacity(capacity: dict[str, object] | None, worker_type: str) -> di
 def _next_worker_node_status(node: WorkerNode, heartbeat_status: str) -> str:
     if node.drain_requested_at is not None:
         return "draining"
-    if node.status in {"offline", "maintenance", "disabled"}:
+    if node.status in {"offline", "maintenance", "disabled", "quarantined"}:
         return node.status
     return heartbeat_status
 
@@ -2017,6 +2017,7 @@ def _worker_status_blocks_claims(node: WorkerNode) -> bool:
         "offline",
         "maintenance",
         "disabled",
+        "quarantined",
     }
 
 
