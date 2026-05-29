@@ -300,6 +300,145 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert space_event.event_metadata["runtime_id"] == str(runtime.id)
 
 
+def test_operations_stale_runs_diagnostics_and_recovery_are_workspace_scoped() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    _, other_workspace = _seed_workspace_with_role(
+        session,
+        email="other-stale-runs@example.com",
+        slug="other-stale-runs",
+    )
+    now = datetime.now(UTC)
+    old = now - timedelta(hours=2)
+    fresh = now - timedelta(seconds=30)
+    queued_run = AgentRun(
+        workspace_id=workspace.id,
+        status="queued",
+        input={"token": "queued-secret-token"},
+        created_at=old,
+        updated_at=old,
+    )
+    running_run = AgentRun(
+        workspace_id=workspace.id,
+        status="running",
+        input={"base_url": "https://secret.example.test"},
+        started_at=old,
+        created_at=old,
+        updated_at=old,
+    )
+    waiting_run = AgentRun(
+        workspace_id=workspace.id,
+        status="waiting_runtime",
+        input={"headers": {"authorization": "Bearer secret"}},
+        started_at=old,
+        created_at=old,
+        updated_at=old,
+    )
+    fresh_run = AgentRun(
+        workspace_id=workspace.id,
+        status="running",
+        started_at=fresh,
+        created_at=fresh,
+        updated_at=fresh,
+    )
+    other_run = AgentRun(
+        workspace_id=other_workspace.id,
+        status="running",
+        started_at=old,
+        created_at=old,
+        updated_at=old,
+    )
+    session.add_all([queued_run, running_run, waiting_run, fresh_run, other_run])
+    session.flush()
+    running_lease = WorkerLease(
+        workspace_id=workspace.id,
+        worker_id="worker-stale-run",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type=JobType.AGENT_RUN.value,
+        resource_id=running_run.id,
+        status="running",
+        attempt=1,
+        lease_metadata={
+            "token": "lease-secret-token",
+            "container_id": "container-secret",
+        },
+        started_at=old,
+    )
+    session.add(running_lease)
+    session.commit()
+
+    diagnostics = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/stale-runs"
+        "?stale_after_seconds=900",
+        headers=_headers(owner.id),
+    )
+
+    assert diagnostics.status_code == 200
+    payload = diagnostics.json()
+    assert payload["total"] == 3
+    run_ids = {item["run_id"] for item in payload["items"]}
+    assert run_ids == {str(queued_run.id), str(running_run.id), str(waiting_run.id)}
+    assert str(fresh_run.id) not in run_ids
+    assert str(other_run.id) not in run_ids
+    assert "queued-secret-token" not in str(payload)
+    assert "secret.example.test" not in str(payload)
+    assert "lease-secret-token" not in str(payload)
+    assert "container-secret" not in str(payload)
+    running_item = next(item for item in payload["items"] if item["run_id"] == str(running_run.id))
+    assert running_item["worker_id"] == "worker-stale-run"
+    assert running_item["worker_lease_status"] == "running"
+
+    recovered = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/stale-runs/recover",
+        headers=_headers(owner.id),
+        json={
+            "stale_after_seconds": 900,
+            "statuses": ["queued", "running", "waiting_runtime"],
+            "limit": 10,
+            "reason": "operator stale recovery",
+        },
+    )
+
+    assert recovered.status_code == 200
+    recovered_payload = recovered.json()
+    assert recovered_payload["scanned_runs"] == 3
+    assert recovered_payload["requeued_runs"] == 1
+    assert recovered_payload["failed_closed_runs"] == 2
+    assert recovered_payload["expired_worker_leases"] == 1
+    keys = RedisKeyBuilder("chaincloud")
+    assert redis.llen(keys.queue("agent_runs")) == 1
+    session.expire_all()
+    stored_running = session.get(AgentRun, running_run.id)
+    stored_waiting = session.get(AgentRun, waiting_run.id)
+    stored_queued = session.get(AgentRun, queued_run.id)
+    stored_fresh = session.get(AgentRun, fresh_run.id)
+    stored_other = session.get(AgentRun, other_run.id)
+    stored_lease = session.get(WorkerLease, running_lease.id)
+    assert stored_running is not None
+    assert stored_waiting is not None
+    assert stored_queued is not None
+    assert stored_fresh is not None
+    assert stored_other is not None
+    assert stored_lease is not None
+    assert stored_running.status == "failed"
+    assert stored_waiting.status == "failed"
+    assert stored_queued.status == "queued"
+    assert stored_fresh.status == "running"
+    assert stored_other.status == "running"
+    assert stored_lease.status == "expired"
+    assert stored_lease.lease_metadata["expired_by"] == "stale_run_recovery"
+    audit_event = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "worker.stale_runs_recovered",
+        )
+    )
+    assert audit_event is not None
+    assert audit_event.audit_metadata["scanned_runs"] == 3
+
+
 def test_operations_runtime_events_redact_sensitive_metadata() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

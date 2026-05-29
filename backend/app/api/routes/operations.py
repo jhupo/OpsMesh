@@ -36,6 +36,10 @@ from backend.app.api.schemas.operations import (
     SchedulerPauseRequest,
     SecurityEventFilterResponse,
     SecurityEventResponse,
+    StaleRunRecoverStatus,
+    StaleRunRecoveryRequest,
+    StaleRunRecoveryResponse,
+    StaleRunsDiagnosticsResponse,
     WorkerHeartbeatRequest,
     WorkerHeartbeatResponse,
     WorkerLeaseResponse,
@@ -305,6 +309,51 @@ async def cleanup_runtimes(
         deleted_records=deleted,
         expired_worker_leases=expired_leases,
     )
+
+
+@router.get("/stale-runs", response_model=StaleRunsDiagnosticsResponse)
+async def stale_runs_diagnostics(
+    stale_after_seconds: int = Query(default=900, ge=60, le=86_400),
+    statuses: list[StaleRunRecoverStatus] | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> StaleRunsDiagnosticsResponse:
+    try:
+        return OperationsService(session).stale_runs_diagnostics(
+            context.workspace.id,
+            stale_after_seconds=stale_after_seconds,
+            statuses=list(statuses) if statuses else None,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/stale-runs/recover", response_model=StaleRunRecoveryResponse)
+async def recover_stale_runs(
+    request: StaleRunRecoveryRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> StaleRunRecoveryResponse:
+    try:
+        return OperationsService(
+            session,
+            redis,
+            RedisKeyBuilder(settings.redis_key_prefix),
+        ).recover_stale_runs(
+            context.workspace.id,
+            actor_user_id=context.user.user_id,
+            stale_after_seconds=request.stale_after_seconds,
+            statuses=list(request.statuses),
+            limit=request.limit,
+            queue_name=request.queue_name,
+            reason=request.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/failed-runs", response_model=FailedJobInspectionResponse)

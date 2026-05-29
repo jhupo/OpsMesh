@@ -318,6 +318,45 @@ class RunOrchestrationService:
         self._session.commit()
         return StaleRunRecoverySummary(recovered_runs=len(stale_runs))
 
+    def requeue_stale_run(
+        self,
+        run: AgentRun,
+        *,
+        requested_by_user_id: UUID | None,
+        reason: str | None = None,
+    ) -> bool:
+        if RunStatus(run.status) != RunStatus.QUEUED:
+            raise ValueError("Only queued runs can be requeued")
+        run.error = None
+        enqueued = self.enqueue_run(run, requested_by_user_id)
+        self._append_event(
+            run,
+            "run.requeued",
+            "Requeued by stale run recovery control",
+            {
+                "reason": reason,
+                "enqueued": enqueued,
+            },
+        )
+        return enqueued
+
+    def fail_recovered_run(
+        self,
+        run: AgentRun,
+        *,
+        code: str = "stale_worker_run",
+        message: str = "Worker stopped reporting before the run completed",
+        retryable: bool = True,
+        event_message: str = "Marked failed after worker lease expired",
+    ) -> None:
+        self._mark_run_recovered_failed(
+            run,
+            code=code,
+            message=message,
+            retryable=retryable,
+            event_message=event_message,
+        )
+
     async def run_agent(self, job: JobPayload) -> AgentRun:
         run = self._session.get(AgentRun, job.resource_id)
         if run is None:
@@ -519,19 +558,27 @@ class RunOrchestrationService:
             if step is not None and step.workspace_id == run.workspace_id:
                 step.status = STEP_STATUS_FAILED
 
-    def _mark_run_recovered_failed(self, run: AgentRun) -> None:
+    def _mark_run_recovered_failed(
+        self,
+        run: AgentRun,
+        *,
+        code: str = "stale_worker_run",
+        message: str = "Worker stopped reporting before the run completed",
+        retryable: bool = True,
+        event_message: str = "Marked failed after worker lease expired",
+    ) -> None:
         require_run_transition(RunStatus(run.status), RunStatus.FAILED)
         run.status = RunStatus.FAILED.value
         run.error = {
-            "code": "stale_worker_run",
-            "message": "Worker stopped reporting before the run completed",
-            "retryable": True,
+            "code": code,
+            "message": message,
+            "retryable": retryable,
         }
         run.completed_at = datetime.now(UTC)
         self._append_event(
             run,
             "run.recovered_failed",
-            "Marked failed after worker lease expired",
+            event_message,
         )
         self._release_runtime_space_reservations(run, released_at=run.completed_at)
 

@@ -165,6 +165,65 @@ class RuntimeCleanupResponse(BaseModel):
     expired_worker_leases: int = 0
 
 
+StaleRunRecoverStatus = Literal["queued", "running", "waiting_runtime"]
+
+
+class StaleRunDiagnosticResponse(BaseModel):
+    run_id: UUID
+    status: StaleRunRecoverStatus
+    stale_reason_code: str
+    stale_reason_message: str
+    age_seconds: int
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    task_id: UUID | None
+    task_step_id: UUID | None
+    agent_profile_id: UUID | None
+    runtime_id: UUID | None
+    runtime_space_id: UUID | None
+    worker_id: str | None = None
+    worker_lease_status: str | None = None
+    worker_lease_started_at: datetime | None = None
+    worker_lease_age_seconds: int | None = None
+
+
+class StaleRunsDiagnosticsResponse(BaseModel):
+    generated_at: datetime
+    stale_after_seconds: int
+    total: int
+    items: list[StaleRunDiagnosticResponse]
+
+
+class StaleRunRecoveryRequest(BaseModel):
+    stale_after_seconds: int = Field(default=900, ge=60, le=86_400)
+    statuses: list[StaleRunRecoverStatus] = Field(
+        default_factory=lambda: ["queued", "running", "waiting_runtime"],
+        min_length=1,
+        max_length=3,
+    )
+    limit: int = Field(default=100, ge=1, le=500)
+    queue_name: str = Field(default="agent_runs", min_length=1, max_length=120)
+    reason: str | None = Field(default=None, max_length=240)
+
+
+class StaleRunRecoveryItemResponse(BaseModel):
+    run_id: UUID
+    previous_status: StaleRunRecoverStatus
+    action: Literal["requeued", "failed_closed"]
+    enqueued: bool = False
+
+
+class StaleRunRecoveryResponse(BaseModel):
+    workspace_id: UUID
+    stale_after_seconds: int
+    scanned_runs: int
+    requeued_runs: int
+    failed_closed_runs: int
+    expired_worker_leases: int
+    items: list[StaleRunRecoveryItemResponse]
+
+
 class FailedJobInspectionResponse(BaseModel):
     runs: list[AgentRunResponse]
     total: int
