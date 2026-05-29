@@ -22,7 +22,7 @@ Frontend remains out of scope. Billing remains out of scope.
 | 2 | P0 | Scheduler blocked-step unblock API | Done | `/operations/blocked-steps/unblock`, audit event, filter-required guard, tests in `test_operations_api.py` |
 | 3 | P0 | Runtime-space diagnostics view | Done | `/runtime-spaces/{id}/diagnostics` returns quota usage, active reservations, blocked steps, linked runtime metadata, and redacts secrets/container IDs |
 | 4 | P0 | Runtime-space operator resolution workflow | Next | pause/resume/reset, force-release reservations, and diagnostics exist; next add reset outcome diagnostics and blocked-step resolution linkage |
-| 5 | P0 | Scheduler quota and concurrency hardening | In progress | quota release and high-priority reordering tests exist; next add true concurrent scheduler oversell tests for workspace/runtime-space quotas |
+| 5 | P0 | Scheduler quota and concurrency hardening | Done | workspace/runtime-space quota increments are atomic; concurrent session tests prove one reservation wins and the other is blocked without oversell |
 | 6 | P0 | Worker long-task recovery | Pending | stale queued/running/waiting_runtime runs and worker leases can be diagnosed and recovered or failed closed |
 | 7 | P1 | Self-hosted machine operations hardening | Pending | quarantine/resume/revoke, reconnect behavior, policy diff diagnostics, stale claim cleanup |
 | 8 | P1 | Memory indexing abstraction | Pending | lexical fallback remains; backend abstraction supports Postgres full-text or vector adapter; search stays workspace-scoped |
@@ -31,7 +31,7 @@ Frontend remains out of scope. Billing remains out of scope.
 
 ## Immediate Implementation Queue
 
-1. Add true concurrent scheduler oversell tests for workspace/runtime-space quotas.
+1. Add worker long-task stale-state diagnostics and recovery controls.
 2. Commit and push.
-3. Add worker long-task stale-state diagnostics and recovery controls.
+3. Add self-hosted machine operations hardening.
 4. Commit and push.

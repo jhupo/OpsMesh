@@ -1,4 +1,6 @@
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from threading import Barrier, Lock, Thread
 from uuid import UUID, uuid4
 
 from sqlalchemy import create_engine, select
@@ -507,6 +509,60 @@ def test_runtime_space_reservation_rejects_same_key_with_different_usage() -> No
     assert len(_runtime_space_reservations(session, runtime_space.id)) == 1
 
 
+def test_runtime_space_reservations_do_not_oversell_across_concurrent_sessions(
+    tmp_path: Path,
+) -> None:
+    session_factory = _file_session_factory(tmp_path)
+    seed_session = session_factory()
+    _, workspace = _seed_workspace(seed_session)
+    runtime_space = _seed_runtime_space(seed_session, workspace, active_runs=1)
+    seed_session.commit()
+    workspace_id = workspace.id
+    runtime_space_id = runtime_space.id
+    seed_session.close()
+
+    barrier = Barrier(2)
+    lock = Lock()
+    outcomes: list[str] = []
+
+    def reserve(index: int) -> None:
+        session = session_factory()
+        try:
+            barrier.wait()
+            result = RuntimeSpaceService(session).reserve_run_capacity(
+                workspace_id=workspace_id,
+                runtime_space_id=runtime_space_id,
+                task_id=None,
+                task_step_id=None,
+                reservation_key=f"runtime-concurrent:{index}",
+            )
+            if result.reservation is None:
+                session.rollback()
+                outcome = result.blocked_reason or "blocked"
+            else:
+                session.commit()
+                outcome = "reserved"
+            with lock:
+                outcomes.append(outcome)
+        finally:
+            session.close()
+
+    threads = [Thread(target=reserve, args=(index,)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    verify_session = session_factory()
+    quota = _runtime_space_quota(verify_session, runtime_space_id)
+    reservations = _runtime_space_reservations(verify_session, runtime_space_id)
+
+    assert sorted(outcomes) == ["reserved", "runtime_space_quota_exceeded:active_runs"]
+    assert quota.reserved_value == 1
+    assert len([reservation for reservation in reservations if reservation.status == "active"]) == 1
+    verify_session.close()
+
+
 def test_run_orchestration_reserves_and_releases_workspace_quota() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
@@ -612,6 +668,65 @@ def test_workspace_quota_reservation_rejects_same_key_with_different_usage() -> 
     assert _workspace_quota(session, workspace.id, "active_runs").reserved_value == 1
     assert _workspace_quota(session, workspace.id, "memory_mb").reserved_value == 1024
     assert len(_workspace_reservations(session, workspace.id)) == 1
+
+
+def test_workspace_quota_reservations_do_not_oversell_across_concurrent_sessions(
+    tmp_path: Path,
+) -> None:
+    session_factory = _file_session_factory(tmp_path)
+    seed_session = session_factory()
+    _, workspace = _seed_workspace(seed_session)
+    seed_session.add(
+        WorkspaceQuota(
+            workspace_id=workspace.id,
+            quota_key="active_runs",
+            limit_value=1,
+        )
+    )
+    seed_session.commit()
+    workspace_id = workspace.id
+    seed_session.close()
+
+    barrier = Barrier(2)
+    lock = Lock()
+    outcomes: list[str] = []
+
+    def reserve(index: int) -> None:
+        session = session_factory()
+        try:
+            barrier.wait()
+            result = WorkspaceQuotaService(session).reserve(
+                workspace_id=workspace_id,
+                task_id=None,
+                task_step_id=None,
+                reservation_key=f"concurrent:{index}",
+                resource_usage={"active_runs": 1},
+            )
+            if result.reservation is None:
+                session.rollback()
+                outcome = result.blocked_reason or "blocked"
+            else:
+                session.commit()
+                outcome = "reserved"
+            with lock:
+                outcomes.append(outcome)
+        finally:
+            session.close()
+
+    threads = [Thread(target=reserve, args=(index,)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    verify_session = session_factory()
+    quota = _workspace_quota(verify_session, workspace_id, "active_runs")
+    reservations = _workspace_reservations(verify_session, workspace_id)
+
+    assert sorted(outcomes) == ["reserved", "workspace_quota_exceeded:active_runs"]
+    assert quota.reserved_value == 1
+    assert len([reservation for reservation in reservations if reservation.status == "active"]) == 1
+    verify_session.close()
 
 
 def test_run_orchestration_enforces_workspace_runtime_slot_quotas() -> None:
@@ -929,6 +1044,18 @@ def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
+
+
+def _file_session_factory(tmp_path: Path) -> sessionmaker[Session]:
+    _patch_portable_types_for_sqlite()
+    db_path = tmp_path / f"{uuid4()}.db"
+    engine = create_engine(
+        f"sqlite+pysqlite:///{db_path}",
+        future=True,
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def _seed_workspace(

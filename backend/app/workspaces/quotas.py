@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.workspaces.models import WorkspaceQuota, WorkspaceReservation
@@ -71,10 +71,18 @@ class WorkspaceQuotaService:
                 blocked_reason=f"workspace_quota_exceeded:{exceeded.quota_key}",
             )
 
+        incremented: list[tuple[WorkspaceQuota, int]] = []
         for quota_key, amount in usage.items():
             quota = quotas.get(quota_key)
-            if quota is not None:
-                quota.reserved_value += amount
+            if quota is None:
+                continue
+            if not self._try_increment_quota(quota, amount):
+                self._rollback_quota_increments(incremented)
+                return WorkspaceReservationResult(
+                    reservation=None,
+                    blocked_reason=f"workspace_quota_exceeded:{quota.quota_key}",
+                )
+            incremented.append((quota, amount))
 
         if reservation is None:
             reservation = WorkspaceReservation(
@@ -95,6 +103,29 @@ class WorkspaceQuotaService:
             reservation.expires_at = None
         self._session.flush([reservation, *quotas.values()])
         return WorkspaceReservationResult(reservation=reservation)
+
+    def _try_increment_quota(self, quota: WorkspaceQuota, amount: int) -> bool:
+        result = self._session.execute(
+            update(WorkspaceQuota)
+            .where(
+                WorkspaceQuota.id == quota.id,
+                WorkspaceQuota.reserved_value + amount <= WorkspaceQuota.limit_value,
+            )
+            .values(reserved_value=WorkspaceQuota.reserved_value + amount)
+        )
+        if result.rowcount != 1:
+            return False
+        self._session.expire(quota, ["reserved_value"])
+        return True
+
+    def _rollback_quota_increments(self, increments: list[tuple[WorkspaceQuota, int]]) -> None:
+        for quota, amount in reversed(increments):
+            self._session.execute(
+                update(WorkspaceQuota)
+                .where(WorkspaceQuota.id == quota.id)
+                .values(reserved_value=WorkspaceQuota.reserved_value - amount)
+            )
+            self._session.expire(quota, ["reserved_value"])
 
     def attach_reservation_to_run(
         self,
