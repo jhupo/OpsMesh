@@ -252,6 +252,88 @@ class RuntimeSpaceService:
         self._session.refresh(runtime_space)
         return runtime_space, cleared
 
+    def force_release_reservations(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime_space_id: UUID,
+        reservation_key: str | None,
+        reason: str | None,
+    ) -> tuple[RuntimeSpace, int] | None:
+        runtime_space = self.get_runtime_space(workspace_id, runtime_space_id)
+        if runtime_space is None:
+            return None
+        statement = (
+            select(RuntimeSpaceReservation)
+            .where(
+                RuntimeSpaceReservation.workspace_id == workspace_id,
+                RuntimeSpaceReservation.runtime_space_id == runtime_space_id,
+                RuntimeSpaceReservation.status == "active",
+            )
+            .with_for_update()
+        )
+        normalized_key = _non_empty_string_or_none(reservation_key)
+        if normalized_key is not None:
+            statement = statement.where(RuntimeSpaceReservation.reservation_key == normalized_key)
+        reservations = self._session.scalars(statement).all()
+        if not reservations:
+            self._append_event(
+                runtime_space,
+                "runtime_space.reservations_force_release_noop",
+                f"No active runtime space reservations found for {runtime_space.name}",
+                {
+                    "reservation_key": normalized_key,
+                    "reason": _non_empty_string_or_none(reason),
+                },
+            )
+            self._session.commit()
+            self._session.refresh(runtime_space)
+            return runtime_space, 0
+
+        quota_keys = {
+            quota_key
+            for reservation in reservations
+            for quota_key in self._reservation_usage(reservation)
+        }
+        quotas: dict[str, RuntimeSpaceQuota] = {}
+        if quota_keys:
+            quotas = {
+                quota.quota_key: quota
+                for quota in self._session.scalars(
+                    select(RuntimeSpaceQuota)
+                    .where(
+                        RuntimeSpaceQuota.workspace_id == workspace_id,
+                        RuntimeSpaceQuota.runtime_space_id == runtime_space_id,
+                        RuntimeSpaceQuota.quota_key.in_(quota_keys),
+                    )
+                    .with_for_update()
+                ).all()
+            }
+        released_at = datetime.now(UTC)
+        released_keys: list[str] = []
+        for reservation in reservations:
+            released_keys.append(reservation.reservation_key)
+            for quota_key, amount in self._reservation_usage(reservation).items():
+                quota = quotas.get(quota_key)
+                if quota is not None:
+                    quota.reserved_value = max(0, quota.reserved_value - amount)
+            reservation.status = "released"
+            reservation.released_at = released_at
+        self._append_event(
+            runtime_space,
+            "runtime_space.reservations_force_released",
+            f"Force released {len(reservations)} runtime space reservations",
+            {
+                "reservation_key": normalized_key,
+                "released_reservations": len(reservations),
+                "released_keys": released_keys,
+                "reason": _non_empty_string_or_none(reason),
+            },
+        )
+        self._session.commit()
+        self._session.refresh(runtime_space)
+        return runtime_space, len(reservations)
+
     def list_events(
         self,
         workspace_id: UUID,

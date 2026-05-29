@@ -8,6 +8,8 @@ from backend.app.api.schemas.runtime_spaces import (
     RuntimeSpaceControlResponse,
     RuntimeSpaceCreateRequest,
     RuntimeSpaceEventResponse,
+    RuntimeSpaceForceReleaseRequest,
+    RuntimeSpaceForceReleaseResponse,
     RuntimeSpacePauseRequest,
     RuntimeSpaceResponse,
     RuntimeSpaceUpdateRequest,
@@ -170,6 +172,31 @@ async def resume_runtime_space(
     return RuntimeSpaceControlResponse(
         runtime_space=RuntimeSpaceResponse.model_validate(runtime_space),
         cleared_blocked_steps=cleared,
+    )
+
+
+@router.post(
+    "/runtime-spaces/{runtime_space_id}/reservations/force-release",
+    response_model=RuntimeSpaceForceReleaseResponse,
+)
+async def force_release_runtime_space_reservations(
+    runtime_space_id: UUID,
+    request: RuntimeSpaceForceReleaseRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+) -> RuntimeSpaceForceReleaseResponse:
+    result = RuntimeSpaceService(session).force_release_reservations(
+        workspace_id=context.workspace.id,
+        runtime_space_id=runtime_space_id,
+        reservation_key=request.reservation_key,
+        reason=request.reason,
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime space not found")
+    runtime_space, released = result
+    return RuntimeSpaceForceReleaseResponse(
+        runtime_space=RuntimeSpaceResponse.model_validate(runtime_space),
+        released_reservations=released,
     )
 
 

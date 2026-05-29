@@ -63,6 +63,11 @@ class RuntimeSpacePauseRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=240)
 
 
+class RuntimeSpaceForceReleaseRequest(BaseModel):
+    reservation_key: str | None = Field(default=None, min_length=1, max_length=240)
+    reason: str | None = Field(default=None, max_length=240)
+
+
 class RuntimeSpaceResponse(TimestampedModel):
     workspace_id: UUID
     created_by_user_id: UUID | None
@@ -83,6 +88,11 @@ class RuntimeSpaceResponse(TimestampedModel):
 class RuntimeSpaceControlResponse(BaseModel):
     runtime_space: RuntimeSpaceResponse
     cleared_blocked_steps: int = 0
+
+
+class RuntimeSpaceForceReleaseResponse(BaseModel):
+    runtime_space: RuntimeSpaceResponse
+    released_reservations: int
 
 
 class RuntimeSpaceEventResponse(ORMModel):

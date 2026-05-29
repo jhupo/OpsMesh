@@ -25,6 +25,7 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceBinding,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
+    RuntimeSpaceReservation,
 )
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
@@ -300,6 +301,70 @@ def test_runtime_space_pause_and_resume_clears_blocked_steps() -> None:
     ]
     assert events[0].event_metadata["reason"] == "maintenance"
     assert events[1].event_metadata["cleared_blocked_steps"] == 1
+
+
+def test_runtime_space_force_release_reservations_updates_quota_and_events() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Quota space",
+        scope="workspace",
+    )
+    session.add(runtime_space)
+    session.flush()
+    quota = RuntimeSpaceQuota(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="active_runs",
+        limit_value=3,
+        reserved_value=3,
+    )
+    reservation = RuntimeSpaceReservation(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        reservation_key="task:owned",
+        resource_usage={"active_runs": 2},
+        status="active",
+    )
+    other_reservation = RuntimeSpaceReservation(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        reservation_key="task:other",
+        resource_usage={"active_runs": 1},
+        status="active",
+    )
+    session.add_all([quota, reservation, other_reservation])
+    session.commit()
+
+    released = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtime-spaces/"
+        f"{runtime_space.id}/reservations/force-release",
+        headers=_headers(owner.id),
+        json={"reservation_key": "task:owned", "reason": "stale worker lease"},
+    )
+
+    session.refresh(quota)
+    session.refresh(reservation)
+    session.refresh(other_reservation)
+    events = session.scalars(
+        select(RuntimeSpaceEvent)
+        .where(RuntimeSpaceEvent.runtime_space_id == runtime_space.id)
+        .order_by(RuntimeSpaceEvent.created_at.asc())
+    ).all()
+
+    assert released.status_code == 200
+    assert released.json()["released_reservations"] == 1
+    assert released.json()["runtime_space"]["status"] == "active"
+    assert quota.reserved_value == 1
+    assert reservation.status == "released"
+    assert reservation.released_at is not None
+    assert other_reservation.status == "active"
+    assert [event.event_type for event in events] == [
+        "runtime_space.reservations_force_released"
+    ]
+    assert events[0].event_metadata["released_reservations"] == 1
+    assert events[0].event_metadata["reason"] == "stale worker lease"
 
 
 def test_runtime_space_events_redact_sensitive_metadata() -> None:
