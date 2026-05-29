@@ -21,7 +21,7 @@ Frontend remains out of scope. Billing remains out of scope.
 | 1 | P0 | Scheduler blocked-step explain API with stable reason codes | Done | `/operations/blocked-steps`, scheduler blocked reason `code/message/resource_key`, tests in `test_operations_api.py` |
 | 2 | P0 | Scheduler blocked-step unblock API | Done | `/operations/blocked-steps/unblock`, audit event, filter-required guard, tests in `test_operations_api.py` |
 | 3 | P0 | Runtime-space diagnostics view | Done | `/runtime-spaces/{id}/diagnostics` returns quota usage, active reservations, blocked steps, linked runtime metadata, and redacts secrets/container IDs |
-| 4 | P0 | Runtime-space operator resolution workflow | Next | pause/resume/reset, force-release reservations, and diagnostics exist; next add reset outcome diagnostics and blocked-step resolution linkage |
+| 4 | P0 | Runtime-space operator resolution workflow | Done | Reset now returns outcome diagnostics, releases active reservations, clears runtime-space blocked steps, and records affected runtimes; force-release also reports cleared blocked steps and links the resolution in runtime-space events |
 | 5 | P0 | Scheduler quota and concurrency hardening | Done | workspace/runtime-space quota increments are atomic; concurrent session tests prove one reservation wins and the other is blocked without oversell |
 | 6 | P0 | Worker long-task recovery | Done | `/operations/stale-runs` diagnoses stale queued/running/waiting_runtime runs with lease metadata; `/operations/stale-runs/recover` requeues stale queued runs, fails closed stale running/waiting_runtime runs, expires linked worker leases, and audits the action |
 | 7 | P1 | Self-hosted machine operations hardening | Done | Machine-level quarantine/resume/revoke endpoints, stale job-claim cleanup, reconnect-aware resume state, and trust-view policy diagnostics are covered by `test_self_hosted_runtime.py` |
@@ -31,6 +31,6 @@ Frontend remains out of scope. Billing remains out of scope.
 
 ## Immediate Implementation Queue
 
-1. Re-scan the task table for any remaining backend reliability gaps.
+1. Current backend reliability task table is complete.
 2. Keep future new metadata fields under the same redaction test rule.
 3. Start the next backend reliability task list when new gaps are identified.

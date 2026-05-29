@@ -335,7 +335,28 @@ def test_runtime_space_force_release_reservations_updates_quota_and_events() -> 
         resource_usage={"active_runs": 1},
         status="active",
     )
-    session.add_all([quota, reservation, other_reservation])
+    task = Task(
+        workspace_id=workspace.id,
+        title="Blocked by quota",
+        status="queued",
+        runtime_space_id=runtime_space.id,
+    )
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Quota step",
+        status="queued",
+        runtime_space_id=runtime_space.id,
+        dependencies={
+            "scheduling_status": "blocked",
+            "blocked_reason": "runtime_space_quota_exceeded:active_runs",
+            "blocked_resource_keys": ["active_runs"],
+            "priority_score": 10,
+        },
+    )
+    session.add_all([quota, reservation, other_reservation, step])
     session.commit()
 
     released = client.post(
@@ -348,6 +369,7 @@ def test_runtime_space_force_release_reservations_updates_quota_and_events() -> 
     session.refresh(quota)
     session.refresh(reservation)
     session.refresh(other_reservation)
+    session.refresh(step)
     events = session.scalars(
         select(RuntimeSpaceEvent)
         .where(RuntimeSpaceEvent.runtime_space_id == runtime_space.id)
@@ -356,16 +378,108 @@ def test_runtime_space_force_release_reservations_updates_quota_and_events() -> 
 
     assert released.status_code == 200
     assert released.json()["released_reservations"] == 1
+    assert released.json()["cleared_blocked_steps"] == 1
     assert released.json()["runtime_space"]["status"] == "active"
     assert quota.reserved_value == 1
     assert reservation.status == "released"
     assert reservation.released_at is not None
     assert other_reservation.status == "active"
+    assert "scheduling_status" not in step.dependencies
+    assert "blocked_reason" not in step.dependencies
+    assert "blocked_resource_keys" not in step.dependencies
     assert [event.event_type for event in events] == [
         "runtime_space.reservations_force_released"
     ]
     assert events[0].event_metadata["released_reservations"] == 1
+    assert events[0].event_metadata["cleared_blocked_steps"] == 1
     assert events[0].event_metadata["reason"] == "stale worker lease"
+
+
+def test_runtime_space_reset_releases_reservations_and_clears_blocks() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Reset space",
+        scope="workspace",
+        status="paused",
+    )
+    session.add(runtime_space)
+    session.flush()
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        name="runtime",
+        status="running",
+        connection_status="online",
+    )
+    quota = RuntimeSpaceQuota(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="memory_mb",
+        limit_value=4096,
+        reserved_value=2048,
+        unit="mb",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        title="Blocked reset task",
+        status="queued",
+        runtime_space_id=runtime_space.id,
+    )
+    session.add_all([runtime, quota, task])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Reset step",
+        status="queued",
+        runtime_space_id=runtime_space.id,
+        dependencies={
+            "scheduling_status": "blocked",
+            "blocked_reason": "runtime_space_unavailable",
+            "priority_score": 20,
+        },
+    )
+    reservation = RuntimeSpaceReservation(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        reservation_key="task:reset",
+        resource_usage={"memory_mb": 2048},
+        status="active",
+    )
+    session.add_all([step, reservation])
+    session.commit()
+
+    reset = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtime-spaces/{runtime_space.id}/reset",
+        headers=_headers(owner.id),
+    )
+
+    session.refresh(runtime_space)
+    session.refresh(quota)
+    session.refresh(reservation)
+    session.refresh(step)
+    event = session.query(RuntimeSpaceEvent).filter_by(
+        runtime_space_id=runtime_space.id,
+        event_type="runtime_space.reset_requested",
+    ).one()
+    assert reset.status_code == 200
+    assert reset.json()["runtime_space"]["status"] == "active"
+    assert reset.json()["released_reservations"] == 1
+    assert reset.json()["cleared_blocked_steps"] == 1
+    assert reset.json()["affected_runtimes"] == 1
+    assert runtime_space.status == "active"
+    assert quota.reserved_value == 0
+    assert reservation.status == "released"
+    assert "scheduling_status" not in step.dependencies
+    assert event.event_metadata["before_status"] == "paused"
+    assert event.event_metadata["after_status"] == "active"
+    assert event.event_metadata["released_reservations"] == 1
+    assert event.event_metadata["cleared_blocked_steps"] == 1
+    assert event.event_metadata["affected_runtime_ids"] == [str(runtime.id)]
 
 
 def test_runtime_space_diagnostics_reports_quota_reservations_runtimes_and_blocks() -> None:

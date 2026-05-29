@@ -12,6 +12,7 @@ from backend.app.api.schemas.runtime_spaces import (
     RuntimeSpaceForceReleaseRequest,
     RuntimeSpaceForceReleaseResponse,
     RuntimeSpacePauseRequest,
+    RuntimeSpaceResetResponse,
     RuntimeSpaceResponse,
     RuntimeSpaceUpdateRequest,
 )
@@ -134,19 +135,25 @@ async def update_runtime_space(
     return RuntimeSpaceResponse.model_validate(runtime_space)
 
 
-@router.post("/runtime-spaces/{runtime_space_id}/reset", response_model=RuntimeSpaceResponse)
+@router.post("/runtime-spaces/{runtime_space_id}/reset", response_model=RuntimeSpaceResetResponse)
 async def reset_runtime_space(
     runtime_space_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-) -> RuntimeSpaceResponse:
-    runtime_space = RuntimeSpaceService(session).reset_runtime_space(
+) -> RuntimeSpaceResetResponse:
+    result = RuntimeSpaceService(session).reset_runtime_space(
         context.workspace.id,
         runtime_space_id,
     )
-    if runtime_space is None:
+    if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime space not found")
-    return RuntimeSpaceResponse.model_validate(runtime_space)
+    runtime_space, released, cleared, affected_runtimes = result
+    return RuntimeSpaceResetResponse(
+        runtime_space=RuntimeSpaceResponse.model_validate(runtime_space),
+        released_reservations=released,
+        cleared_blocked_steps=cleared,
+        affected_runtimes=affected_runtimes,
+    )
 
 
 @router.post(
@@ -212,10 +219,11 @@ async def force_release_runtime_space_reservations(
     )
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime space not found")
-    runtime_space, released = result
+    runtime_space, released, cleared = result
     return RuntimeSpaceForceReleaseResponse(
         runtime_space=RuntimeSpaceResponse.model_validate(runtime_space),
         released_reservations=released,
+        cleared_blocked_steps=cleared,
     )
 
 

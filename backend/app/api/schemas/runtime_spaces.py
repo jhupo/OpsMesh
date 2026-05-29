@@ -90,9 +90,17 @@ class RuntimeSpaceControlResponse(BaseModel):
     cleared_blocked_steps: int = 0
 
 
+class RuntimeSpaceResetResponse(BaseModel):
+    runtime_space: RuntimeSpaceResponse
+    released_reservations: int
+    cleared_blocked_steps: int
+    affected_runtimes: int
+
+
 class RuntimeSpaceForceReleaseResponse(BaseModel):
     runtime_space: RuntimeSpaceResponse
     released_reservations: int
+    cleared_blocked_steps: int = 0
 
 
 class RuntimeSpaceQuotaDiagnosticResponse(BaseModel):
