@@ -19,6 +19,7 @@ from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
+from backend.app.operations.service import OperationsService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
@@ -107,6 +108,12 @@ def test_worker_runner_loop_records_heartbeat_and_summary() -> None:
         assert node.status == "online"
         assert lease.status == "completed"
         assert lease.lease_metadata["priority"] == 7
+        assert [event["type"] for event in lease.lease_metadata["lifecycle_events"]] == [
+            "claimed",
+            "started",
+            "completed",
+        ]
+        assert lease.lease_metadata["last_lifecycle_event"]["type"] == "completed"
         assert heartbeat.details["processed"] == 1
         assert heartbeat.details["failed"] == 0
 
@@ -166,6 +173,9 @@ def test_worker_runner_continues_after_job_failure() -> None:
         assert heartbeat.details["failed"] == 1
         assert "workspace mismatch" in str(heartbeat.details["last_error"])
         assert {lease.status for lease in leases} == {"failed", "completed"}
+        failed_lease = next(lease for lease in leases if lease.status == "failed")
+        assert failed_lease.lease_metadata["last_lifecycle_event"]["type"] == "failed"
+        assert "workspace mismatch" in failed_lease.lease_metadata["error"]
 
 
 def test_worker_runner_drain_prevents_new_job_claims() -> None:
@@ -664,6 +674,47 @@ def test_worker_runner_maintenance_expires_stale_worker_leases() -> None:
         assert lease.status == "expired"
         assert lease.finished_at is not None
         assert lease.lease_metadata["expired_by"] == "worker_maintenance"
+        assert lease.lease_metadata["last_lifecycle_event"]["type"] == "expired"
+
+
+def test_worker_heartbeat_appends_running_lease_lifecycle_event() -> None:
+    session_factory = _session_factory()
+    workspace_id, run_id, _ = _seed_run(session_factory, slug="lease-heartbeat")
+    job_id = uuid4()
+    with session_factory() as session:
+        session.add(
+            WorkerLease(
+                workspace_id=workspace_id,
+                worker_id="worker-heartbeat",
+                queue_name="agent_runs",
+                job_id=job_id,
+                job_type=JobType.AGENT_RUN.value,
+                resource_id=run_id,
+                status="running",
+                attempt=0,
+                lease_metadata={},
+                started_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+
+    with session_factory() as session:
+        OperationsService(session).record_worker_heartbeat(
+            workspace_id=workspace_id,
+            worker_id="worker-heartbeat",
+            worker_type="cloud",
+            status="online",
+            queue_name="agent_runs",
+            details={},
+            capacity={"max_jobs": 1},
+        )
+
+    with session_factory() as session:
+        lease = session.scalar(select(WorkerLease).where(WorkerLease.job_id == job_id))
+        assert lease is not None
+        assert lease.status == "running"
+        assert lease.lease_metadata["last_lifecycle_event"]["type"] == "heartbeat"
+        assert lease.lease_metadata["last_lifecycle_event"]["status"] == "online"
 
 
 def test_worker_runner_maintenance_cleans_stale_runtimes_across_workspaces() -> None:

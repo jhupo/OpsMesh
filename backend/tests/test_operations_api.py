@@ -1032,6 +1032,154 @@ def test_operations_runtime_capacity_reports_provider_and_worker_slots() -> None
     assert other_response.json()["runtime_spaces"] == []
 
 
+def test_operations_worker_lifecycle_reports_backlog_failure_and_latency() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    _, other_workspace = _seed_workspace_with_role(
+        session,
+        email="other-worker-lifecycle@example.com",
+        slug="other-worker-lifecycle",
+    )
+    keys = RedisKeyBuilder("chaincloud")
+    redis.rpush(
+        keys.queue("agent_runs"),
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=uuid4(),
+            idempotency_key="cloud-worker-lifecycle",
+            routing={"worker_types": ["cloud"]},
+            created_at=datetime.now(UTC) - timedelta(seconds=90),
+        ).model_dump_json(),
+    )
+    redis.rpush(
+        keys.queue("agent_runs"),
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=uuid4(),
+            idempotency_key="unrouted-worker-lifecycle",
+            created_at=datetime.now(UTC) - timedelta(seconds=30),
+        ).model_dump_json(),
+    )
+    redis.rpush(
+        keys.queue("agent_runs"),
+        JobPayload(
+            workspace_id=other_workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=uuid4(),
+            idempotency_key="other-worker-lifecycle",
+            routing={"worker_types": ["cloud"]},
+            created_at=datetime.now(UTC) - timedelta(seconds=600),
+        ).model_dump_json(),
+    )
+    worker = WorkerNode(
+        worker_id="worker-lifecycle-cloud",
+        worker_type="cloud",
+        status="online",
+        queue_name="agent_runs",
+        capacity={"max_jobs": 3},
+        details={},
+        last_seen_at=datetime.now(UTC),
+    )
+    running_lease = WorkerLease(
+        workspace_id=workspace.id,
+        worker_id="worker-lifecycle-cloud",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=uuid4(),
+        status="running",
+        attempt=0,
+        lease_metadata={},
+        started_at=datetime.now(UTC) - timedelta(seconds=120),
+    )
+    completed_lease = WorkerLease(
+        workspace_id=workspace.id,
+        worker_id="worker-lifecycle-cloud",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=uuid4(),
+        status="completed",
+        attempt=0,
+        lease_metadata={},
+        started_at=datetime.now(UTC) - timedelta(seconds=80),
+        finished_at=datetime.now(UTC) - timedelta(seconds=20),
+    )
+    failed_lease = WorkerLease(
+        workspace_id=workspace.id,
+        worker_id="worker-lifecycle-cloud",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=uuid4(),
+        status="failed",
+        attempt=1,
+        lease_metadata={},
+        started_at=datetime.now(UTC) - timedelta(seconds=70),
+        finished_at=datetime.now(UTC) - timedelta(seconds=10),
+    )
+    retrying_lease = WorkerLease(
+        workspace_id=workspace.id,
+        worker_id="worker-lifecycle-cloud",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=uuid4(),
+        status="retrying",
+        attempt=1,
+        lease_metadata={},
+        started_at=datetime.now(UTC) - timedelta(seconds=30),
+        finished_at=datetime.now(UTC) - timedelta(seconds=5),
+    )
+    other_lease = WorkerLease(
+        workspace_id=other_workspace.id,
+        worker_id="worker-lifecycle-cloud",
+        queue_name="agent_runs",
+        job_id=uuid4(),
+        job_type="agent.run",
+        resource_id=uuid4(),
+        status="failed",
+        attempt=0,
+        lease_metadata={},
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+    )
+    session.add_all(
+        [
+            worker,
+            running_lease,
+            completed_lease,
+            failed_lease,
+            retrying_lease,
+            other_lease,
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/worker-lifecycle",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    worker_types = {item["worker_type"]: item for item in payload["worker_types"]}
+    assert worker_types["cloud"]["queued_jobs"] == 1
+    assert worker_types["cloud"]["running_jobs"] == 1
+    assert worker_types["cloud"]["completed_jobs"] == 1
+    assert worker_types["cloud"]["failed_jobs"] == 1
+    assert worker_types["cloud"]["retried_jobs"] == 1
+    assert worker_types["cloud"]["failure_rate"] == 0.5
+    assert worker_types["cloud"]["average_duration_seconds"] == 60
+    assert worker_types["cloud"]["oldest_queued_age_seconds"] >= 80
+    assert worker_types["cloud"]["oldest_running_age_seconds"] >= 110
+    assert worker_types["unrouted"]["queued_jobs"] == 1
+    assert "other-worker-lifecycle" not in str(payload)
+
+
 def test_operations_control_plane_summarizes_capacity_and_health_issues() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

@@ -26,6 +26,7 @@ from backend.app.api.schemas.operations import (
     OperationsSchedulerResponse,
     OperationsSelfHostedMachineResponse,
     OperationsSelfHostedMachinesResponse,
+    OperationsWorkerLifecycleResponse,
     QueueJobTypeBucketResponse,
     QueueLatencyResponse,
     QueueMetricsResponse,
@@ -41,6 +42,7 @@ from backend.app.api.schemas.operations import (
     SchedulerPolicyResponse,
     SchedulerPriorityBucketResponse,
     WorkerCapacityAggregateResponse,
+    WorkerLifecycleBucketResponse,
     WorkerTypeCapacityResponse,
 )
 from backend.app.approvals.models import Approval
@@ -65,6 +67,8 @@ from backend.app.workspaces.models import Workspace
 
 T = TypeVar("T")
 RUNNING_LEASE_STATUSES = {"running"}
+TERMINAL_LEASE_STATUSES = {"completed", "failed", "expired"}
+LIFECYCLE_EVENTS_LIMIT = 50
 
 
 @dataclass(frozen=True)
@@ -136,6 +140,12 @@ class OperationsService:
             hostname=hostname,
             capacity=_worker_capacity(capacity, worker_type),
             last_seen_at=now,
+        )
+        self._record_running_worker_lease_heartbeat(
+            worker_id=worker_id,
+            queue_name=queue_name,
+            status=status,
+            at=now,
         )
         self._session.commit()
         self._session.refresh(heartbeat)
@@ -350,16 +360,29 @@ class OperationsService:
                 resource_id=job.resource_id,
                 status="running",
                 attempt=job.attempt,
-                lease_metadata=metadata or {},
+                lease_metadata=_append_worker_lifecycle_events(
+                    metadata or {},
+                    [
+                        _worker_lifecycle_event("claimed", now, attempt=job.attempt),
+                        _worker_lifecycle_event("started", now, attempt=job.attempt),
+                    ],
+                ),
                 started_at=now,
             )
             self._session.add(lease)
         else:
+            existing_metadata = dict(lease.lease_metadata or {})
             lease.worker_id = worker_id
             lease.queue_name = queue_name
             lease.status = "running"
             lease.attempt = job.attempt
-            lease.lease_metadata = metadata or {}
+            lease.lease_metadata = _append_worker_lifecycle_events(
+                existing_metadata | (metadata or {}),
+                [
+                    _worker_lifecycle_event("claimed", now, attempt=job.attempt),
+                    _worker_lifecycle_event("started", now, attempt=job.attempt),
+                ],
+            )
             lease.started_at = now
             lease.finished_at = None
         self._session.commit()
@@ -376,10 +399,20 @@ class OperationsService:
         lease = self._session.scalar(select(WorkerLease).where(WorkerLease.job_id == job_id))
         if lease is None:
             return None
+        finished_at = datetime.now(UTC)
         lease.status = status
-        lease.finished_at = datetime.now(UTC)
-        if metadata:
-            lease.lease_metadata = lease.lease_metadata | metadata
+        lease.finished_at = finished_at
+        lease.lease_metadata = _append_worker_lifecycle_events(
+            dict(lease.lease_metadata or {}) | (metadata or {}),
+            [
+                _worker_lifecycle_event(
+                    _worker_finish_lifecycle_event(status),
+                    finished_at,
+                    attempt=lease.attempt,
+                    status=status,
+                )
+            ],
+        )
         self._session.commit()
         self._session.refresh(lease)
         return lease
@@ -394,6 +427,34 @@ class OperationsService:
             )
         )
         return int(running or 0)
+
+    def _record_running_worker_lease_heartbeat(
+        self,
+        *,
+        worker_id: str,
+        queue_name: str,
+        status: str,
+        at: datetime,
+    ) -> None:
+        leases = self._session.scalars(
+            select(WorkerLease).where(
+                WorkerLease.worker_id == worker_id,
+                WorkerLease.queue_name == queue_name,
+                WorkerLease.status.in_(RUNNING_LEASE_STATUSES),
+            )
+        ).all()
+        for lease in leases:
+            lease.lease_metadata = _append_worker_lifecycle_events(
+                dict(lease.lease_metadata or {}),
+                [
+                    _worker_lifecycle_event(
+                        "heartbeat",
+                        at,
+                        attempt=lease.attempt,
+                        status=status,
+                    )
+                ],
+            )
 
     def expire_stale_worker_leases(
         self,
@@ -413,10 +474,21 @@ class OperationsService:
         for lease in stale_leases:
             lease.status = "expired"
             lease.finished_at = expired_at
-            lease.lease_metadata = lease.lease_metadata | {
-                "expired_by": "worker_maintenance",
-                "expired_at": expired_at.isoformat(),
-            }
+            lease.lease_metadata = _append_worker_lifecycle_events(
+                dict(lease.lease_metadata or {})
+                | {
+                    "expired_by": "worker_maintenance",
+                    "expired_at": expired_at.isoformat(),
+                },
+                [
+                    _worker_lifecycle_event(
+                        "expired",
+                        expired_at,
+                        attempt=lease.attempt,
+                        status="expired",
+                    )
+                ],
+            )
         self._session.commit()
         return len(stale_leases)
 
@@ -813,6 +885,82 @@ class OperationsService:
             providers=self._runtime_provider_capacity(workspace_id),
             worker_types=self._worker_type_capacity(),
             runtime_spaces=self._runtime_space_saturation(workspace_id),
+        )
+
+    def worker_lifecycle_payload(
+        self,
+        workspace_id: UUID,
+        queue_name: str,
+    ) -> OperationsWorkerLifecycleResponse:
+        now = datetime.now(UTC)
+        buckets: dict[str, dict[str, int | list[int] | None]] = {}
+        if self._redis is not None:
+            queue = RedisQueue(self._redis, self._keys, queue_name)
+            for job in queue.peek(limit=1_000):
+                if job.workspace_id != workspace_id:
+                    continue
+                age_seconds = max(
+                    0,
+                    int((now - _aware_datetime(job.created_at)).total_seconds()),
+                )
+                for worker_type in _job_worker_types(job):
+                    bucket = _worker_lifecycle_bucket(buckets, worker_type)
+                    bucket["queued_jobs"] = int(bucket["queued_jobs"]) + 1
+                    bucket["oldest_queued_age_seconds"] = _max_optional_int(
+                        bucket.get("oldest_queued_age_seconds"),
+                        age_seconds,
+                    )
+
+        nodes_by_worker_id = {
+            node.worker_id: node for node in self._session.scalars(select(WorkerNode)).all()
+        }
+        leases = self._session.scalars(
+            select(WorkerLease).where(WorkerLease.workspace_id == workspace_id)
+        ).all()
+        for lease in leases:
+            worker_type = _lease_worker_type(lease, nodes_by_worker_id)
+            bucket = _worker_lifecycle_bucket(buckets, worker_type)
+            if lease.status == "running":
+                bucket["running_jobs"] = int(bucket["running_jobs"]) + 1
+                running_age_seconds = max(
+                    0,
+                    int((now - _aware_datetime(lease.started_at)).total_seconds()),
+                )
+                bucket["oldest_running_age_seconds"] = _max_optional_int(
+                    bucket.get("oldest_running_age_seconds"),
+                    running_age_seconds,
+                )
+                continue
+            if lease.status == "completed":
+                bucket["completed_jobs"] = int(bucket["completed_jobs"]) + 1
+            elif lease.status == "failed":
+                bucket["failed_jobs"] = int(bucket["failed_jobs"]) + 1
+            elif lease.status == "retrying":
+                bucket["retried_jobs"] = int(bucket["retried_jobs"]) + 1
+            elif lease.status == "expired":
+                bucket["expired_jobs"] = int(bucket["expired_jobs"]) + 1
+            if lease.status in TERMINAL_LEASE_STATUSES and lease.finished_at is not None:
+                durations = bucket["durations"]
+                if isinstance(durations, list):
+                    durations.append(
+                        max(
+                            0,
+                            int(
+                                (
+                                    _aware_datetime(lease.finished_at)
+                                    - _aware_datetime(lease.started_at)
+                                ).total_seconds()
+                            ),
+                        )
+                    )
+
+        return OperationsWorkerLifecycleResponse(
+            generated_at=now,
+            queue_name=queue_name,
+            worker_types=[
+                _worker_lifecycle_response(worker_type, values)
+                for worker_type, values in sorted(buckets.items())
+            ],
         )
 
     def scheduler_payload(self, workspace_id: UUID) -> OperationsSchedulerResponse:
@@ -1712,6 +1860,108 @@ def _positive_int(value: object, fallback: int) -> int:
             return max(1, fallback)
         return parsed if parsed > 0 else max(1, fallback)
     return max(1, fallback)
+
+
+def _append_worker_lifecycle_events(
+    metadata: dict[str, object],
+    events: list[dict[str, object]],
+) -> dict[str, object]:
+    existing = metadata.get("lifecycle_events")
+    lifecycle_events = list(existing) if isinstance(existing, list) else []
+    lifecycle_events.extend(events)
+    metadata["lifecycle_events"] = lifecycle_events[-LIFECYCLE_EVENTS_LIMIT:]
+    if events:
+        metadata["last_lifecycle_event"] = events[-1]
+    return metadata
+
+
+def _worker_lifecycle_event(
+    event_type: str,
+    at: datetime,
+    *,
+    attempt: int,
+    status: str | None = None,
+) -> dict[str, object]:
+    event: dict[str, object] = {
+        "type": event_type,
+        "at": at.isoformat(),
+        "attempt": attempt,
+    }
+    if status is not None:
+        event["status"] = status
+    return event
+
+
+def _worker_finish_lifecycle_event(status: str) -> str:
+    if status == "retrying":
+        return "requeued"
+    if status == "failed":
+        return "failed"
+    if status == "expired":
+        return "expired"
+    return "completed"
+
+
+def _job_worker_types(job: JobPayload) -> list[str]:
+    worker_types = _string_list(job.routing.get("worker_types"))
+    return worker_types or ["unrouted"]
+
+
+def _lease_worker_type(lease: WorkerLease, nodes_by_worker_id: dict[str, WorkerNode]) -> str:
+    node = nodes_by_worker_id.get(lease.worker_id)
+    if node is not None:
+        return node.worker_type
+    metadata_worker_type = lease.lease_metadata.get("worker_type")
+    return metadata_worker_type if isinstance(metadata_worker_type, str) else "unknown"
+
+
+def _worker_lifecycle_bucket(
+    buckets: dict[str, dict[str, int | list[int] | None]],
+    worker_type: str,
+) -> dict[str, int | list[int] | None]:
+    return buckets.setdefault(
+        worker_type,
+        {
+            "queued_jobs": 0,
+            "running_jobs": 0,
+            "completed_jobs": 0,
+            "failed_jobs": 0,
+            "retried_jobs": 0,
+            "expired_jobs": 0,
+            "oldest_queued_age_seconds": None,
+            "oldest_running_age_seconds": None,
+            "durations": [],
+        },
+    )
+
+
+def _worker_lifecycle_response(
+    worker_type: str,
+    values: dict[str, int | list[int] | None],
+) -> WorkerLifecycleBucketResponse:
+    terminal_jobs = (
+        int(values["completed_jobs"])
+        + int(values["failed_jobs"])
+        + int(values["expired_jobs"])
+    )
+    unsuccessful_jobs = int(values["failed_jobs"]) + int(values["expired_jobs"])
+    durations = values["durations"]
+    duration_values = durations if isinstance(durations, list) else []
+    return WorkerLifecycleBucketResponse(
+        worker_type=worker_type,
+        queued_jobs=int(values["queued_jobs"]),
+        running_jobs=int(values["running_jobs"]),
+        completed_jobs=int(values["completed_jobs"]),
+        failed_jobs=int(values["failed_jobs"]),
+        retried_jobs=int(values["retried_jobs"]),
+        expired_jobs=int(values["expired_jobs"]),
+        failure_rate=round(unsuccessful_jobs / terminal_jobs, 4) if terminal_jobs > 0 else 0.0,
+        average_duration_seconds=int(sum(duration_values) / len(duration_values))
+        if duration_values
+        else None,
+        oldest_queued_age_seconds=cast(int | None, values["oldest_queued_age_seconds"]),
+        oldest_running_age_seconds=cast(int | None, values["oldest_running_age_seconds"]),
+    )
 
 
 def _positive_int_or_none(value: object) -> int | None:

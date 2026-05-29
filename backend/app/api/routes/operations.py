@@ -22,6 +22,7 @@ from backend.app.api.schemas.operations import (
     OperationsRuntimeCapacityResponse,
     OperationsSchedulerResponse,
     OperationsSelfHostedMachinesResponse,
+    OperationsWorkerLifecycleResponse,
     QueueMetricsResponse,
     RequeueDeadLetterResponse,
     RunEventFilterResponse,
@@ -432,6 +433,30 @@ async def operations_runtime_capacity(
         ttl_seconds=10,
     )
     return OperationsRuntimeCapacityResponse(**cached.value)
+
+
+@router.get("/worker-lifecycle", response_model=OperationsWorkerLifecycleResponse)
+async def operations_worker_lifecycle(
+    queue_name: str = Query(default="agent_runs"),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    cache: RedisJsonCache = Depends(get_cache_service),
+    settings: Settings = Depends(get_settings),
+) -> OperationsWorkerLifecycleResponse:
+    cache_key = f"worker-lifecycle:{context.workspace.id}:{queue_name}"
+    cached = cache.get_or_set(
+        cache_key,
+        lambda: OperationsService(
+            session,
+            redis,
+            RedisKeyBuilder(settings.redis_key_prefix),
+        )
+        .worker_lifecycle_payload(context.workspace.id, queue_name)
+        .model_dump(mode="json"),
+        ttl_seconds=10,
+    )
+    return OperationsWorkerLifecycleResponse(**cached.value)
 
 
 @router.get("/mcp-jobs", response_model=OperationsMcpJobsResponse)

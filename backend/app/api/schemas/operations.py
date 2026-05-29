@@ -261,6 +261,26 @@ class WorkerTypeCapacityResponse(BaseModel):
     utilization: float
 
 
+class WorkerLifecycleBucketResponse(BaseModel):
+    worker_type: str
+    queued_jobs: int
+    running_jobs: int
+    completed_jobs: int
+    failed_jobs: int
+    retried_jobs: int
+    expired_jobs: int
+    failure_rate: float
+    average_duration_seconds: int | None
+    oldest_queued_age_seconds: int | None
+    oldest_running_age_seconds: int | None
+
+
+class OperationsWorkerLifecycleResponse(BaseModel):
+    generated_at: datetime
+    queue_name: str
+    worker_types: list[WorkerLifecycleBucketResponse]
+
+
 class OperationsRuntimeCapacityResponse(BaseModel):
     generated_at: datetime
     providers: list[RuntimeProviderCapacityResponse]
