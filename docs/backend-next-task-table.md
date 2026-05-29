@@ -27,11 +27,10 @@ Frontend remains out of scope. Billing remains out of scope.
 | 7 | P1 | Self-hosted machine operations hardening | Done | Machine-level quarantine/resume/revoke endpoints, stale job-claim cleanup, reconnect-aware resume state, and trust-view policy diagnostics are covered by `test_self_hosted_runtime.py` |
 | 8 | P1 | Memory indexing abstraction | Done | Memory search now uses a pluggable backend protocol with lexical fallback, Postgres full-text adapter support, backend metadata in results, and workspace-scoped tests proving no cross-workspace leakage |
 | 9 | P1 | MCP/OpenAI Agents continuation compatibility | Done | Runner-level continuation rendering remains; OpenAI raw output now persists stable `sdk_continuation` metadata for future SDK-native migration, and MCP/self-hosted continuation tests cover completed and failed tool results |
-| 10 | P1 | Continuous redaction audit | Ongoing | new dict/list metadata API fields have tests proving token/base_url/header/container/container_id redaction |
+| 10 | P1 | Continuous redaction audit | Done for current phase | New metadata surfaces from this phase are covered: runtime/stale/self-hosted diagnostics avoid sensitive fields, policy diagnostics redact nested metadata, and run API output redacts `sdk_continuation` token/base_url/header values |
 
 ## Immediate Implementation Queue
 
-1. Continue continuous redaction audit on newly added metadata responses.
-2. Commit and push.
-3. Re-scan the task table for any remaining backend reliability gaps.
-4. Commit and push if new gaps are closed.
+1. Re-scan the task table for any remaining backend reliability gaps.
+2. Keep future new metadata fields under the same redaction test rule.
+3. Start the next backend reliability task list when new gaps are identified.

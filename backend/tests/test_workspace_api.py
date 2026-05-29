@@ -1363,7 +1363,20 @@ def test_run_api_redacts_sensitive_payloads() -> None:
         workspace_id=workspace.id,
         status=RunStatus.FAILED.value,
         input={"prompt": "draft", "api_key": "sk-hidden"},
-        output={"result": {"token": "hidden-token"}},
+        output={
+            "result": {"token": "hidden-token"},
+            "sdk_continuation": {
+                "provider": "openai_agents",
+                "mode": "runner_level_fallback",
+                "resume_input": [
+                    {
+                        "role": "tool",
+                        "base_url": "https://router.example.test/private",
+                        "headers": {"authorization": "Bearer hidden"},
+                    }
+                ],
+            },
+        },
         error={"message": "failed", "authorization": "Bearer hidden"},
     )
     session.add(run)
@@ -1393,7 +1406,11 @@ def test_run_api_redacts_sensitive_payloads() -> None:
     payload = runs.json()["items"][0]
     assert payload["input"]["api_key"] == "[redacted]"
     assert payload["output"]["result"]["token"] == "[redacted]"
+    assert payload["output"]["sdk_continuation"]["resume_input"][0]["base_url"] == "[redacted]"
+    assert payload["output"]["sdk_continuation"]["resume_input"][0]["headers"] == "[redacted]"
     assert payload["error"]["authorization"] == "[redacted]"
+    assert "router.example.test/private" not in str(payload)
+    assert "Bearer hidden" not in str(payload)
     assert events.status_code == 200
     assert events.json()["items"][0]["event_metadata"] == {
         "secret": "[redacted]",
