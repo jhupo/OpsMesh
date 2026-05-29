@@ -28,8 +28,9 @@ class WorkspaceQuotaService:
         task_step_id: UUID | None,
         reservation_key: str,
         resource_usage: dict[str, int],
+        ensure_active_run: bool = True,
     ) -> WorkspaceReservationResult:
-        usage = _normalize_usage(resource_usage)
+        usage = _normalize_usage(resource_usage, ensure_active_run=ensure_active_run)
         reservation = self._session.scalar(
             select(WorkspaceReservation)
             .where(
@@ -102,6 +103,25 @@ class WorkspaceQuotaService:
     ) -> None:
         reservation.agent_run_id = agent_run_id
         self._session.flush([reservation])
+
+    def active_reservation_usage_for_run(
+        self,
+        *,
+        workspace_id: UUID,
+        agent_run_id: UUID,
+    ) -> dict[str, int]:
+        usage: dict[str, int] = {}
+        reservations = self._session.scalars(
+            select(WorkspaceReservation).where(
+                WorkspaceReservation.workspace_id == workspace_id,
+                WorkspaceReservation.agent_run_id == agent_run_id,
+                WorkspaceReservation.status == "active",
+            )
+        ).all()
+        for reservation in reservations:
+            for quota_key, amount in _reservation_usage(reservation).items():
+                usage[quota_key] = usage.get(quota_key, 0) + amount
+        return usage
 
     def release_reservation(
         self,
@@ -177,9 +197,14 @@ class WorkspaceQuotaService:
         return len(reservations)
 
 
-def _normalize_usage(resource_usage: dict[str, int]) -> dict[str, int]:
+def _normalize_usage(
+    resource_usage: dict[str, int],
+    *,
+    ensure_active_run: bool,
+) -> dict[str, int]:
     usage = {key: value for key, value in resource_usage.items() if value > 0}
-    usage[ACTIVE_RUNS_QUOTA_KEY] = max(1, usage.get(ACTIVE_RUNS_QUOTA_KEY, 1))
+    if ensure_active_run:
+        usage[ACTIVE_RUNS_QUOTA_KEY] = max(1, usage.get(ACTIVE_RUNS_QUOTA_KEY, 1))
     return usage
 
 

@@ -10,6 +10,8 @@ from backend.app.api.schemas.self_hosted import (
     EnrollmentTokenCreateRequest,
     EnrollmentTokenCreateResponse,
     JobClaimResponse,
+    JobCompleteRequest,
+    JobCompleteResponse,
     LocalFileReferenceRequest,
     LocalFileReferenceResponse,
     McpJobClaimResponse,
@@ -221,6 +223,35 @@ async def claim_job(
         agent_run_id=claim.agent_run_id,
         status=claim.status,
         claimed_at=claim.claimed_at,
+    )
+
+
+@router.post("/self-hosted/jobs/{agent_run_id}/complete", response_model=JobCompleteResponse)
+async def complete_job(
+    agent_run_id: UUID,
+    request: JobCompleteRequest,
+    auth: AuthenticatedWorker = Depends(get_authenticated_worker),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> JobCompleteResponse:
+    try:
+        claim = SelfHostedRuntimeService(session, settings).complete_job(
+            auth,
+            agent_run_id,
+            request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if claim.completed_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Self-hosted job completion failed",
+        )
+    return JobCompleteResponse(
+        claim_id=claim.id,
+        agent_run_id=claim.agent_run_id,
+        status=claim.status,
+        completed_at=claim.completed_at,
     )
 
 

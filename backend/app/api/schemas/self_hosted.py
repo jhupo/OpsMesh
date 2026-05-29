@@ -106,6 +106,19 @@ class JobClaimResponse(BaseModel):
     claimed_at: datetime
 
 
+class JobCompleteRequest(BaseModel):
+    status: str = Field(pattern="^(completed|failed)$")
+    output: dict[str, object] | None = None
+    error: dict[str, object] | None = None
+
+
+class JobCompleteResponse(BaseModel):
+    claim_id: UUID
+    agent_run_id: UUID
+    status: str
+    completed_at: datetime
+
+
 class McpJobClaimResponse(BaseModel):
     id: UUID
     status: str

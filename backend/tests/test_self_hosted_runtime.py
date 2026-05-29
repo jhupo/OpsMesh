@@ -20,7 +20,12 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtime_spaces.models import (
+    RuntimeSpace,
+    RuntimeSpaceEvent,
+    RuntimeSpaceQuota,
+    RuntimeSpaceReservation,
+)
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.self_hosted.models import (
     RuntimeCredential,
@@ -31,7 +36,7 @@ from backend.app.self_hosted.models import (
 from backend.app.self_hosted.service import SelfHostedRuntimeService
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.workspaces.models import Workspace, WorkspaceMember, WorkspaceQuota
 
 TOKEN = "test-token"
 
@@ -362,6 +367,155 @@ def test_self_hosted_worker_is_limited_to_allowed_runtime_spaces() -> None:
         "self_hosted.registered",
         "self_hosted.job_claimed",
     }
+
+
+def test_self_hosted_job_claim_and_completion_reserve_and_release_slots() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    runtime_space = RuntimeSpace(workspace_id=workspace.id, name="Local", scope="workspace")
+    session.add(runtime_space)
+    session.flush()
+    session.add_all(
+        [
+            RuntimeSpaceQuota(
+                workspace_id=workspace.id,
+                runtime_space_id=runtime_space.id,
+                quota_key="self_hosted_jobs",
+                limit_value=1,
+            ),
+            WorkspaceQuota(
+                workspace_id=workspace.id,
+                quota_key="self_hosted_jobs",
+                limit_value=1,
+            ),
+        ]
+    )
+    session.commit()
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-slots",
+            "capabilities": {"runtime_space_id": str(runtime_space.id)},
+        },
+    )
+    credential = registered.json()["credential_token"]
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    run = AgentRun(
+        workspace_id=workspace.id,
+        runtime_id=runtime_id,
+        runtime_space_id=runtime_space.id,
+        status="queued",
+    )
+    session.add(run)
+    session.commit()
+
+    claim = client.post(
+        f"/api/v1/self-hosted/jobs/{run.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+    repeated_claim = client.post(
+        f"/api/v1/self-hosted/jobs/{run.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+    completed = client.post(
+        f"/api/v1/self-hosted/jobs/{run.id}/complete",
+        headers=_runtime_headers(credential),
+        json={"status": "completed", "output": {"summary": "done"}},
+    )
+
+    session.refresh(run)
+    claim_record = session.query(SelfHostedJobClaim).one()
+    runtime_space_reservation = session.query(RuntimeSpaceReservation).one()
+    workspace_quota = session.query(WorkspaceQuota).one()
+    runtime_space_quota = session.query(RuntimeSpaceQuota).one()
+    events = session.query(RuntimeSpaceEvent).filter_by(runtime_space_id=runtime_space.id).all()
+
+    assert claim.status_code == 200
+    assert repeated_claim.status_code == 200
+    assert repeated_claim.json()["claim_id"] == claim.json()["claim_id"]
+    assert completed.status_code == 200
+    assert claim_record.status == "completed"
+    assert claim_record.completed_at is not None
+    assert run.status == "completed"
+    assert run.output == {"summary": "done"}
+    assert workspace_quota.reserved_value == 0
+    assert runtime_space_quota.reserved_value == 0
+    assert runtime_space_reservation.status == "released"
+    assert {event.event_type for event in events} >= {
+        "runtime_space.reserved",
+        "runtime_space.reservation_released",
+        "self_hosted.job_claimed",
+        "self_hosted.job_completed",
+    }
+
+
+def test_self_hosted_job_claim_rejects_runtime_space_slot_exhaustion() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    runtime_space = RuntimeSpace(workspace_id=workspace.id, name="Local", scope="workspace")
+    session.add(runtime_space)
+    session.flush()
+    session.add_all(
+        [
+            RuntimeSpaceQuota(
+                workspace_id=workspace.id,
+                runtime_space_id=runtime_space.id,
+                quota_key="self_hosted_jobs",
+                limit_value=0,
+            ),
+            WorkspaceQuota(
+                workspace_id=workspace.id,
+                quota_key="self_hosted_jobs",
+                limit_value=1,
+            ),
+        ]
+    )
+    session.commit()
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-slot-block",
+            "capabilities": {"runtime_space_id": str(runtime_space.id)},
+        },
+    )
+    credential = registered.json()["credential_token"]
+    run = AgentRun(
+        workspace_id=workspace.id,
+        runtime_id=UUID(registered.json()["workspace_runtime_id"]),
+        runtime_space_id=runtime_space.id,
+        status="queued",
+    )
+    session.add(run)
+    session.commit()
+
+    rejected = client.post(
+        f"/api/v1/self-hosted/jobs/{run.id}/claim",
+        headers=_runtime_headers(credential),
+    )
+
+    session.refresh(run)
+    workspace_quota = session.query(WorkspaceQuota).one()
+    runtime_space_quota = session.query(RuntimeSpaceQuota).one()
+    assert rejected.status_code == 409
+    assert "runtime_space_quota_exceeded:self_hosted_jobs" in rejected.json()["error"]["message"]
+    assert run.status == "queued"
+    assert session.query(SelfHostedJobClaim).count() == 0
+    assert workspace_quota.reserved_value == 0
+    assert runtime_space_quota.reserved_value == 0
 
 
 def test_self_hosted_runtime_rejects_foreign_runtime_space_capabilities() -> None:

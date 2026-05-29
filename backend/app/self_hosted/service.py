@@ -11,6 +11,7 @@ from backend.app.admin.policies import PlatformPolicyService
 from backend.app.api.schemas.self_hosted import (
     ArtifactUploadRequest,
     EnrollmentTokenCreateRequest,
+    JobCompleteRequest,
     LocalFileReferenceRequest,
     McpJobCompleteRequest,
     ProgressEventRequest,
@@ -23,6 +24,7 @@ from backend.app.files.security import safe_filename, validate_storage_key
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.self_hosted.models import (
     LocalFileReference,
@@ -37,6 +39,7 @@ from backend.app.self_hosted.policy import evaluate_worker_job_policy
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
+from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 
 @dataclass(frozen=True)
@@ -231,10 +234,16 @@ class SelfHostedRuntimeService:
         policy_decision = self._worker_job_policy_decision(auth, run)
         if not policy_decision.allowed:
             raise ValueError(policy_decision.reason or "Agent run is not compatible with worker")
+        existing_claim = self._job_claim_for_run(run)
+        if existing_claim is not None:
+            if existing_claim.worker_id == auth.worker.id and existing_claim.status == "claimed":
+                return existing_claim
+            raise ValueError("Agent run is already claimed")
         if not self._worker_capacity_allows(auth):
             raise ValueError("Self-hosted worker has reached max concurrent jobs")
         if run.status != RunStatus.QUEUED.value:
             raise ValueError("Agent run is not queued")
+        self._ensure_self_hosted_job_slot(auth, run)
         now = datetime.now(UTC)
         run.status = RunStatus.RUNNING.value
         run.started_at = now
@@ -255,6 +264,58 @@ class SelfHostedRuntimeService:
             "self_hosted.job_claimed",
             str(run.id),
             {"agent_run_id": str(run.id)},
+        )
+        self._session.commit()
+        self._session.refresh(claim)
+        return claim
+
+    def complete_job(
+        self,
+        auth: AuthenticatedWorker,
+        agent_run_id: UUID,
+        data: JobCompleteRequest,
+    ) -> SelfHostedJobClaim:
+        run = self._require_worker_run(auth, agent_run_id)
+        claim = self._job_claim_for_run(run)
+        if claim is None or claim.worker_id != auth.worker.id:
+            raise ValueError("Self-hosted job is not claimed by this worker")
+        if claim.status in {"completed", "failed"}:
+            if claim.status != data.status:
+                raise ValueError("Self-hosted job was already completed with a different status")
+            return claim
+        if claim.status != "claimed":
+            raise ValueError("Self-hosted job is not active")
+        now = datetime.now(UTC)
+        claim.status = data.status
+        claim.completed_at = now
+        run.completed_at = now
+        if data.status == "completed":
+            run.status = RunStatus.COMPLETED.value
+            run.output = data.output or {}
+            self._mark_task_completed_from_self_hosted_run(run, data.output)
+        else:
+            run.status = RunStatus.FAILED.value
+            run.error = data.error or {
+                "code": "self_hosted_job_failed",
+                "message": "Self-hosted job failed",
+            }
+            self._mark_task_failed_from_self_hosted_run(run)
+        self._release_run_reservations(run, released_at=now)
+        self._append_run_event(
+            run,
+            f"self_hosted.job_{data.status}",
+            f"Self-hosted job {data.status}",
+            {
+                "claim_id": str(claim.id),
+                "worker_id": str(auth.worker.id),
+                "runtime_id": str(auth.runtime.id),
+            },
+        )
+        self._append_runtime_space_event(
+            auth.runtime,
+            f"self_hosted.job_{data.status}",
+            str(run.id),
+            {"agent_run_id": str(run.id), "claim_id": str(claim.id)},
         )
         self._session.commit()
         self._session.refresh(claim)
@@ -524,6 +585,7 @@ class SelfHostedRuntimeService:
                         "reason": reason,
                     },
                 )
+            self._release_run_reservations(run, released_at=now)
         if worker is not None:
             worker.status = "revoked"
         if runtime is not None:
@@ -906,6 +968,124 @@ class SelfHostedRuntimeService:
         )
         return int(running_jobs or 0) < max_concurrent_jobs
 
+    def _ensure_self_hosted_job_slot(
+        self,
+        auth: AuthenticatedWorker,
+        run: AgentRun,
+    ) -> None:
+        workspace_quota = WorkspaceQuotaService(self._session)
+        workspace_usage = workspace_quota.active_reservation_usage_for_run(
+            workspace_id=run.workspace_id,
+            agent_run_id=run.id,
+        )
+        workspace_reservation = None
+        if workspace_usage.get("self_hosted_jobs", 0) <= 0:
+            workspace_result = workspace_quota.reserve(
+                workspace_id=run.workspace_id,
+                task_id=run.task_id,
+                task_step_id=run.task_step_id,
+                reservation_key=f"self_hosted_job:{run.id}:workspace",
+                resource_usage={"self_hosted_jobs": 1},
+                ensure_active_run=False,
+            )
+            if workspace_result.reservation is None:
+                raise ValueError(workspace_result.blocked_reason or "workspace_quota_exceeded")
+            workspace_reservation = workspace_result.reservation
+
+        runtime_space_id = run.runtime_space_id or auth.runtime.runtime_space_id
+        if runtime_space_id is None:
+            if workspace_reservation is not None:
+                workspace_quota.attach_reservation_to_run(workspace_reservation, run.id)
+            return
+
+        runtime_space_service = RuntimeSpaceService(self._session)
+        runtime_space_usage = runtime_space_service.active_reservation_usage_for_run(
+            workspace_id=run.workspace_id,
+            agent_run_id=run.id,
+        )
+        runtime_space_reservation = None
+        if runtime_space_usage.get("self_hosted_jobs", 0) <= 0:
+            runtime_space_result = runtime_space_service.reserve_run_capacity(
+                workspace_id=run.workspace_id,
+                runtime_space_id=runtime_space_id,
+                task_id=run.task_id,
+                task_step_id=run.task_step_id,
+                reservation_key=f"self_hosted_job:{run.id}:runtime_space",
+                resource_usage={"self_hosted_jobs": 1},
+            )
+            if runtime_space_result.reservation is None:
+                if workspace_reservation is not None:
+                    workspace_quota.release_reservation(
+                        workspace_reservation,
+                        released_at=datetime.now(UTC),
+                    )
+                raise ValueError(
+                    runtime_space_result.blocked_reason or "runtime_space_quota_exceeded"
+                )
+            runtime_space_reservation = runtime_space_result.reservation
+
+        if workspace_reservation is not None:
+            workspace_quota.attach_reservation_to_run(workspace_reservation, run.id)
+        if runtime_space_reservation is not None:
+            runtime_space_service.attach_reservation_to_run(runtime_space_reservation, run.id)
+
+    def _release_run_reservations(
+        self,
+        run: AgentRun,
+        *,
+        released_at: datetime | None = None,
+    ) -> None:
+        WorkspaceQuotaService(self._session).release_reservations_for_run(
+            workspace_id=run.workspace_id,
+            agent_run_id=run.id,
+            released_at=released_at,
+        )
+        RuntimeSpaceService(self._session).release_reservations_for_run(
+            workspace_id=run.workspace_id,
+            agent_run_id=run.id,
+            released_at=released_at,
+        )
+
+    def _job_claim_for_run(self, run: AgentRun) -> SelfHostedJobClaim | None:
+        return self._session.scalar(
+            select(SelfHostedJobClaim).where(
+                SelfHostedJobClaim.workspace_id == run.workspace_id,
+                SelfHostedJobClaim.agent_run_id == run.id,
+            )
+        )
+
+    def _mark_task_completed_from_self_hosted_run(
+        self,
+        run: AgentRun,
+        output: dict[str, object] | None,
+    ) -> None:
+        if run.task_step_id is not None:
+            step = self._session.get(TaskStep, run.task_step_id)
+            if step is not None and step.workspace_id == run.workspace_id:
+                step.status = "completed"
+                step.result_summary = _summary_from_payload(output)
+        if run.task_id is None:
+            return
+        task = self._session.get(Task, run.task_id)
+        if task is not None and task.workspace_id == run.workspace_id:
+            TaskStateService().transition(
+                task,
+                TaskStatus.COMPLETED,
+                completed_at=run.completed_at,
+                final_output=output or {},
+            )
+
+    def _mark_task_failed_from_self_hosted_run(self, run: AgentRun) -> None:
+        if run.task_step_id is not None:
+            step = self._session.get(TaskStep, run.task_step_id)
+            if step is not None and step.workspace_id == run.workspace_id:
+                step.status = "failed"
+        if run.task_id is None:
+            return
+        task = self._session.get(Task, run.task_id)
+        if task is not None and task.workspace_id == run.workspace_id:
+            TaskStateService().transition(task, TaskStatus.FAILED, completed_at=run.completed_at)
+
     def _active_claims_for_worker(self, worker: SelfHostedWorker) -> list[SelfHostedJobClaim]:
         return list(
             self._session.scalars(
@@ -1028,6 +1208,18 @@ def _as_utc(value: datetime | None) -> datetime | None:
 def _dt_iso(value: datetime | None) -> str | None:
     utc_value = _as_utc(value)
     return utc_value.isoformat() if utc_value is not None else None
+
+
+def _summary_from_payload(payload: dict[str, object] | None) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    summary = payload.get("summary")
+    if isinstance(summary, str) and summary:
+        return summary
+    final_output = payload.get("final_output")
+    if isinstance(final_output, str) and final_output:
+        return final_output
+    return None
 
 
 def _uuid_from_capabilities(capabilities: dict[str, object], key: str) -> UUID | None:
