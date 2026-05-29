@@ -75,6 +75,10 @@ class RuntimeSpaceResponse(TimestampedModel):
     storage_policy: dict[str, object]
     cleanup_policy: dict[str, object]
 
+    @field_serializer("policy", "network_policy", "storage_policy", "cleanup_policy")
+    def _serialize_policies(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
 
 class RuntimeSpaceControlResponse(BaseModel):
     runtime_space: RuntimeSpaceResponse

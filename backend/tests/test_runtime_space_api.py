@@ -51,7 +51,13 @@ def test_runtime_space_api_lifecycle_and_workspace_scope() -> None:
         json={
             "name": "Research runtime space",
             "scope": "workspace",
+            "policy": {
+                "resource_requirements": {"memory_mb": 1024},
+                "api_key": "sk-space",
+            },
             "network_policy": {"mode": "none"},
+            "storage_policy": {"remote_url": "https://storage.example.test/private"},
+            "cleanup_policy": {"headers": {"authorization": "Bearer cleanup"}},
             "quota_limits": {"active_runs": 2, "memory_mb": 2048},
         },
     )
@@ -61,6 +67,11 @@ def test_runtime_space_api_lifecycle_and_workspace_scope() -> None:
     assert created.json()["workspace_id"] == str(workspace.id)
     assert created.json()["created_by_user_id"] == str(owner.id)
     assert created.json()["network_policy"] == {"mode": "none"}
+    assert created.json()["policy"]["api_key"] == "[redacted]"
+    assert created.json()["storage_policy"]["remote_url"] == "[redacted]"
+    assert created.json()["cleanup_policy"]["headers"] == "[redacted]"
+    assert "sk-space" not in str(created.json())
+    assert "storage.example.test/private" not in str(created.json())
 
     forbidden_read = client.get(
         f"/api/v1/workspaces/{other_workspace.id}/runtime-spaces/{runtime_space_id}",

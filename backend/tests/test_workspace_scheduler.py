@@ -29,6 +29,7 @@ from backend.app.workspaces.models import (
     WorkspaceQuota,
     WorkspaceReservation,
 )
+from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 
 def test_workspace_scheduler_orders_steps_by_task_priority_and_run_quota() -> None:
@@ -468,6 +469,42 @@ def test_runtime_space_reservation_is_idempotent_for_same_key() -> None:
     assert len(_runtime_space_reservations(session, runtime_space.id)) == 1
 
 
+def test_runtime_space_reservation_rejects_same_key_with_different_usage() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    runtime_space = _seed_runtime_space(
+        session,
+        workspace,
+        active_runs=2,
+        quota_limits={"memory_mb": 4096},
+    )
+
+    service = RuntimeSpaceService(session)
+    first = service.reserve_run_capacity(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        task_id=None,
+        task_step_id=None,
+        reservation_key="task_step:stable:run",
+        resource_usage={"active_runs": 1, "memory_mb": 1024},
+    )
+    second = service.reserve_run_capacity(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        task_id=None,
+        task_step_id=None,
+        reservation_key="task_step:stable:run",
+        resource_usage={"active_runs": 1, "memory_mb": 2048},
+    )
+
+    assert first.reservation is not None
+    assert second.reservation is None
+    assert second.blocked_reason == "runtime_space_reservation_conflict"
+    assert _runtime_space_quota(session, runtime_space.id, "active_runs").reserved_value == 1
+    assert _runtime_space_quota(session, runtime_space.id, "memory_mb").reserved_value == 1024
+    assert len(_runtime_space_reservations(session, runtime_space.id)) == 1
+
+
 def test_run_orchestration_reserves_and_releases_workspace_quota() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
@@ -530,6 +567,49 @@ def test_run_orchestration_reserves_and_releases_workspace_quota() -> None:
     ][0]
     assert released.status == "released"
     assert released.released_at is not None
+
+
+def test_workspace_quota_reservation_rejects_same_key_with_different_usage() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    session.add_all(
+        [
+            WorkspaceQuota(
+                workspace_id=workspace.id,
+                quota_key="active_runs",
+                limit_value=2,
+            ),
+            WorkspaceQuota(
+                workspace_id=workspace.id,
+                quota_key="memory_mb",
+                limit_value=4096,
+            ),
+        ]
+    )
+    session.flush()
+
+    service = WorkspaceQuotaService(session)
+    first = service.reserve(
+        workspace_id=workspace.id,
+        task_id=None,
+        task_step_id=None,
+        reservation_key="task_step:stable:workspace_run",
+        resource_usage={"active_runs": 1, "memory_mb": 1024},
+    )
+    second = service.reserve(
+        workspace_id=workspace.id,
+        task_id=None,
+        task_step_id=None,
+        reservation_key="task_step:stable:workspace_run",
+        resource_usage={"active_runs": 1, "memory_mb": 2048},
+    )
+
+    assert first.reservation is not None
+    assert second.reservation is None
+    assert second.blocked_reason == "workspace_reservation_conflict"
+    assert _workspace_quota(session, workspace.id, "active_runs").reserved_value == 1
+    assert _workspace_quota(session, workspace.id, "memory_mb").reserved_value == 1024
+    assert len(_workspace_reservations(session, workspace.id)) == 1
 
 
 def test_run_orchestration_enforces_workspace_runtime_slot_quotas() -> None:

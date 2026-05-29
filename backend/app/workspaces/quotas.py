@@ -39,6 +39,16 @@ class WorkspaceQuotaService:
             .with_for_update()
         )
         if reservation is not None and reservation.status == "active":
+            if not _active_reservation_matches(
+                reservation=reservation,
+                task_id=task_id,
+                task_step_id=task_step_id,
+                resource_usage=usage,
+            ):
+                return WorkspaceReservationResult(
+                    reservation=None,
+                    blocked_reason="workspace_reservation_conflict",
+                )
             return WorkspaceReservationResult(reservation=reservation)
 
         quotas = {
@@ -190,3 +200,22 @@ def _first_exceeded_quota(
         if quota is not None and quota.reserved_value + amount > quota.limit_value:
             return quota
     return None
+
+
+def _active_reservation_matches(
+    *,
+    reservation: WorkspaceReservation,
+    task_id: UUID | None,
+    task_step_id: UUID | None,
+    resource_usage: dict[str, int],
+) -> bool:
+    if reservation.task_id != task_id:
+        return False
+    if reservation.task_step_id != task_step_id:
+        return False
+    existing_usage = {
+        key: value
+        for key, value in reservation.resource_usage.items()
+        if isinstance(value, int) and value > 0
+    }
+    return existing_usage == resource_usage

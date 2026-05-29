@@ -16,6 +16,10 @@ class RuntimeTemplateResponse(ORMModel):
     status: str
     created_at: datetime
 
+    @field_serializer("default_limits", "default_network_policy")
+    def _serialize_template_policies(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
 
 class RuntimeLimitsRequest(BaseModel):
     cpu_count: float = Field(gt=0, le=8)
@@ -53,6 +57,10 @@ class WorkspaceRuntimeResponse(TimestampedModel):
     @property
     def has_docker_container(self) -> bool:
         return self.docker_container_id is not None
+
+    @field_serializer("limits", "network_policy", "capabilities")
+    def _serialize_runtime_policies(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class RuntimeCommandRequest(BaseModel):

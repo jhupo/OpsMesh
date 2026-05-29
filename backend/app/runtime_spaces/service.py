@@ -311,6 +311,16 @@ class RuntimeSpaceService:
             .with_for_update()
         )
         if reservation is not None and reservation.status == "active":
+            if not _active_reservation_matches(
+                reservation=reservation,
+                task_id=task_id,
+                task_step_id=task_step_id,
+                resource_usage=usage,
+            ):
+                return RuntimeSpaceReservationResult(
+                    reservation=None,
+                    blocked_reason="runtime_space_reservation_conflict",
+                )
             return RuntimeSpaceReservationResult(reservation=reservation)
 
         quotas = {
@@ -637,3 +647,22 @@ def _non_empty_string_or_none(value: object) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _active_reservation_matches(
+    *,
+    reservation: RuntimeSpaceReservation,
+    task_id: UUID | None,
+    task_step_id: UUID | None,
+    resource_usage: dict[str, int],
+) -> bool:
+    if reservation.task_id != task_id:
+        return False
+    if reservation.task_step_id != task_step_id:
+        return False
+    existing_usage = {
+        key: value
+        for key, value in reservation.resource_usage.items()
+        if isinstance(value, int) and value > 0
+    }
+    return existing_usage == resource_usage

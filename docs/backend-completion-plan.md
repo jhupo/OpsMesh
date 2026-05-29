@@ -60,6 +60,12 @@ Incomplete or basic-only areas:
   MCP job, queue insight, and unified control-plane health aggregates.
 - Workspace memory now has explicit durable memory entries plus workspace-scoped lexical search
   across operational data; full-text/vector indexing remains a future upgrade.
+- Runtime, runtime-space, workspace-domain, marketplace, audit, security, worker, export, and
+  self-hosted API schemas redact sensitive policy/metadata fields while keeping underlying
+  durable evidence intact.
+- Workspace and runtime-space reservation services now reject active reservation-key reuse when
+  the caller supplies different task or resource-usage data, preventing silent quota-accounting
+  drift under retries or concurrent scheduling.
 - Core lifecycle, Redis pooling, machine-aware defaults, database transaction retry helpers, structured log context, split health probes, reusable maintenance runner, HTTP metrics, domain error mapping, production config guardrails, Redis distributed locks, structured idempotency states, feature flags, Redis cache abstraction, admin-visible core configuration summaries, blocking executor snapshots, database pool snapshots, and Redis pool snapshots are implemented.
 
 ## P0: Cloud Control Plane And Runtime Spaces

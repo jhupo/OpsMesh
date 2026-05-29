@@ -288,6 +288,56 @@ def test_runtime_events_redact_sensitive_metadata() -> None:
     assert "Bearer hidden" not in str(metadata)
 
 
+def test_runtime_responses_redact_sensitive_policy_fields() -> None:
+    client, session, _ = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    template = _seed_template(session)
+    template.default_limits = {
+        "cpu_count": 1,
+        "api_key": "sk-template",
+        "nested": {"base_url": "https://template.example.test/private"},
+    }
+    template.default_network_policy = {
+        "mode": "restricted",
+        "headers": {"authorization": "Bearer template"},
+    }
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_template_id=template.id,
+        name="runtime",
+        docker_container_id="container-secret",
+        limits={"memory_mb": 512, "token": "runtime-token"},
+        network_policy={"remote_url": "https://runtime.example.test/private"},
+        capabilities={"mcp": {"headers": {"authorization": "Bearer runtime"}}},
+    )
+    session.add(runtime)
+    session.commit()
+
+    templates = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runtime-templates",
+        headers=_headers(owner.id),
+    )
+    runtimes = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runtimes",
+        headers=_headers(owner.id),
+    )
+
+    assert templates.status_code == 200
+    template_body = templates.json()[0]
+    assert template_body["default_limits"]["api_key"] == "[redacted]"
+    assert template_body["default_limits"]["nested"]["base_url"] == "[redacted]"
+    assert template_body["default_network_policy"]["headers"] == "[redacted]"
+    assert runtimes.status_code == 200
+    runtime_body = runtimes.json()["items"][0]
+    assert runtime_body["limits"]["token"] == "[redacted]"
+    assert runtime_body["network_policy"]["remote_url"] == "[redacted]"
+    assert runtime_body["capabilities"]["mcp"]["headers"] == "[redacted]"
+    assert "docker_container_id" not in runtime_body
+    assert "sk-template" not in str(template_body)
+    assert "runtime-token" not in str(runtime_body)
+    assert "Bearer runtime" not in str(runtime_body)
+
+
 def test_runtime_api_allows_network_when_template_allows_it() -> None:
     client, session, docker = _client(allowed_images=["python:3.12-slim"])
     owner, workspace = _seed_workspace(session, role="owner")
