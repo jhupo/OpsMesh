@@ -14,6 +14,7 @@ from backend.app.agent_runtime.contracts import AgentRunner
 from backend.app.capabilities.execution import McpToolAdapter, McpToolAdapterResolver
 from backend.app.core.config import Settings
 from backend.app.core.request_context import log_context
+from backend.app.files.storage import LocalStorage
 from backend.app.operations.service import OperationsService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.workers.handlers import WorkerJobHandler
@@ -55,6 +56,8 @@ class WorkerRunSummary:
     lifecycle_backup_jobs_skipped: int
     lifecycle_retention_runs_applied: int
     lifecycle_retention_runs_skipped: int
+    lifecycle_restore_drills_completed: int
+    lifecycle_restore_drills_skipped: int
     stopped: bool
 
 
@@ -68,6 +71,8 @@ class WorkerMaintenanceSummary:
     lifecycle_backup_jobs_skipped: int = 0
     lifecycle_retention_runs_applied: int = 0
     lifecycle_retention_runs_skipped: int = 0
+    lifecycle_restore_drills_completed: int = 0
+    lifecycle_restore_drills_skipped: int = 0
 
 
 class WorkerRunner:
@@ -163,6 +168,8 @@ class WorkerRunner:
         lifecycle_backup_jobs_skipped = 0
         lifecycle_retention_runs_applied = 0
         lifecycle_retention_runs_skipped = 0
+        lifecycle_restore_drills_completed = 0
+        lifecycle_restore_drills_skipped = 0
         last_error: str | None = None
         next_heartbeat_at = 0.0
         next_maintenance_at = 0.0
@@ -184,6 +191,10 @@ class WorkerRunner:
                         lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
                         lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
                         lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
+                        lifecycle_restore_drills_completed=(
+                            lifecycle_restore_drills_completed
+                        ),
+                        lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
                         last_error=last_error,
                     ),
                 )
@@ -205,6 +216,12 @@ class WorkerRunner:
                 )
                 lifecycle_retention_runs_skipped += (
                     maintenance.lifecycle_retention_runs_skipped
+                )
+                lifecycle_restore_drills_completed += (
+                    maintenance.lifecycle_restore_drills_completed
+                )
+                lifecycle_restore_drills_skipped += (
+                    maintenance.lifecycle_restore_drills_skipped
                 )
                 next_maintenance_at = now + self._config.maintenance_interval_seconds
 
@@ -228,6 +245,10 @@ class WorkerRunner:
                         lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
                         lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
                         lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
+                        lifecycle_restore_drills_completed=(
+                            lifecycle_restore_drills_completed
+                        ),
+                        lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
                         last_error=last_error,
                     ),
                 )
@@ -258,6 +279,8 @@ class WorkerRunner:
                 lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
                 lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
                 lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
+                lifecycle_restore_drills_completed=lifecycle_restore_drills_completed,
+                lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
                 last_error=last_error,
             ),
         )
@@ -273,6 +296,8 @@ class WorkerRunner:
             lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
             lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
             lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
+            lifecycle_restore_drills_completed=lifecycle_restore_drills_completed,
+            lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
             stopped=self._is_stopped(stop_event),
         )
 
@@ -323,6 +348,11 @@ class WorkerRunner:
                     session
                 ).run_scheduled_lifecycle(
                     queue=self._queue,
+                    storage=(
+                        LocalStorage(self._settings.storage_root)
+                        if self._settings is not None
+                        else None
+                    ),
                     limit=self._config.recovery_batch_size,
                 )
                 return WorkerMaintenanceSummary(
@@ -341,6 +371,12 @@ class WorkerRunner:
                     ),
                     lifecycle_retention_runs_skipped=(
                         lifecycle_summary.retention_runs_skipped
+                    ),
+                    lifecycle_restore_drills_completed=(
+                        lifecycle_summary.restore_drills_completed
+                    ),
+                    lifecycle_restore_drills_skipped=(
+                        lifecycle_summary.restore_drills_skipped
                     ),
                 )
         except Exception:
@@ -364,6 +400,8 @@ class WorkerRunner:
         lifecycle_backup_jobs_skipped: int,
         lifecycle_retention_runs_applied: int,
         lifecycle_retention_runs_skipped: int,
+        lifecycle_restore_drills_completed: int,
+        lifecycle_restore_drills_skipped: int,
         last_error: str | None,
     ) -> dict[str, object]:
         details: dict[str, object] = {
@@ -378,6 +416,8 @@ class WorkerRunner:
             "lifecycle_backup_jobs_skipped": lifecycle_backup_jobs_skipped,
             "lifecycle_retention_runs_applied": lifecycle_retention_runs_applied,
             "lifecycle_retention_runs_skipped": lifecycle_retention_runs_skipped,
+            "lifecycle_restore_drills_completed": lifecycle_restore_drills_completed,
+            "lifecycle_restore_drills_skipped": lifecycle_restore_drills_skipped,
             "capacity": {
                 "max_jobs": self._config.max_jobs,
             },

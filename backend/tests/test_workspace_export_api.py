@@ -3577,6 +3577,91 @@ def test_worker_maintenance_applies_due_workspace_retention(tmp_path: Path) -> N
     assert automation["latest_event"]["action"] == "workspace.retention_applied"
 
 
+def test_worker_maintenance_runs_due_workspace_restore_drill(tmp_path: Path) -> None:
+    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-scheduled-restore-drill@example.com",
+        slug="owner-scheduled-restore-drill",
+    )
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {"enabled": True, "target_type": "manual_export"},
+            "restore_drill": {
+                "enabled": True,
+                "schedule": "daily",
+                "request": {
+                    "import_file_bytes": False,
+                    "import_artifact_bytes": False,
+                },
+            },
+        }
+    }
+    session.commit()
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
+        headers=_headers(owner.id),
+        json={
+            "include_audit_events": False,
+            "include_file_bytes": False,
+            "include_artifact_bytes": False,
+        },
+    )
+    assert created.status_code == 202
+    job_id = created.json()["id"]
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="restore-drill-worker", queue_name="agent_runs"),
+        settings=Settings(
+            environment="test",
+            log_format="text",
+            internal_api_token=TOKEN,
+            storage_root=str(tmp_path),
+        ),
+    )
+    assert runner.run_once() is True
+
+    maintenance = runner.run_maintenance()
+
+    assert maintenance.lifecycle_restore_drills_completed == 1
+    drill_audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "workspace.archive_restore_drill.completed",
+        )
+    )
+    lifecycle_audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "workspace.lifecycle.restore_drill_completed",
+        )
+    )
+    assert drill_audit is not None
+    assert drill_audit.audit_metadata["source_export_job_id"] == job_id
+    assert lifecycle_audit is not None
+    assert lifecycle_audit.audit_metadata["source_export_job_id"] == job_id
+
+    diagnostics = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/lifecycle-diagnostics",
+        headers=_headers(owner.id),
+    )
+    assert diagnostics.status_code == 200
+    automation = diagnostics.json()["automation"]["scheduled_restore_drill"]
+    assert automation["enabled"] is True
+    assert automation["configured"] is True
+    assert automation["interval_hours"] == 24
+    assert automation["latest_successful_archive_export_job_id"] == job_id
+    assert automation["latest_run_at"] is not None
+    assert automation["next_due_at"] is not None
+    assert automation["due"] is False
+    assert automation["latest_event"]["action"] == "workspace.lifecycle.restore_drill_completed"
+    assert "storage_key" not in str(automation)
+
+    second_maintenance = runner.run_maintenance()
+    assert second_maintenance.lifecycle_restore_drills_completed == 0
+
+
 def test_workspace_archive_export_job_download_requires_completion(tmp_path: Path) -> None:
     client, session, _, _ = _client_with_worker_queue(tmp_path)
     owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
