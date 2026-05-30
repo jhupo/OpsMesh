@@ -337,6 +337,7 @@ class TaskManagerQueueItemResponse(BaseModel):
 
 class TaskManagerQueueResponse(BaseModel):
     workspace_id: UUID
+    team_id: UUID | None = None
     generated_at: datetime
     total: int
     limit: int

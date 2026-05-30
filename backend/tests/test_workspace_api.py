@@ -27,7 +27,7 @@ from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.status import TaskStatus
-from backend.app.teams.models import AgentTeamMember
+from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember, WorkspaceQuota
@@ -2394,9 +2394,29 @@ def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope(
     )
     session.add_all([manager, developer])
     session.flush()
+    delivery_team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Delivery Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+    )
+    support_team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Support Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+    )
+    foreign_team = AgentTeam(
+        workspace_id=other_workspace.id,
+        name="Foreign Team",
+        team_type="software",
+    )
+    session.add_all([delivery_team, support_team, foreign_team])
+    session.flush()
     needs_follow_up = Task(
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
+        agent_team_id=delivery_team.id,
         title="Needs manager follow up",
         status="running",
         priority=8,
@@ -2407,6 +2427,7 @@ def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope(
     healthy = Task(
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
+        agent_team_id=support_team.id,
         title="Approved delivery",
         status="completed",
         priority=1,
@@ -2417,6 +2438,7 @@ def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope(
     foreign_task = Task(
         workspace_id=other_workspace.id,
         created_by_user_id=other_owner.id,
+        agent_team_id=foreign_team.id,
         title="Foreign manager queue task",
         status="running",
     )
@@ -2547,6 +2569,21 @@ def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope(
         "?include_healthy=true&status=completed",
         headers=_headers(owner.id),
     )
+    delivery_filtered = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/manager-queue"
+        f"?include_healthy=true&team_id={delivery_team.id}",
+        headers=_headers(owner.id),
+    )
+    support_filtered = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/manager-queue"
+        f"?include_healthy=true&team_id={support_team.id}",
+        headers=_headers(owner.id),
+    )
+    foreign_team_filtered = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/manager-queue"
+        f"?include_healthy=true&team_id={foreign_team.id}",
+        headers=_headers(owner.id),
+    )
     foreign_response = client.get(
         f"/api/v1/workspaces/{other_workspace.id}/tasks/manager-queue?include_healthy=true",
         headers=_headers(other_owner.id),
@@ -2578,6 +2615,15 @@ def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope(
     assert by_title["Approved delivery"]["pending_phase"] == "none"
     assert status_filtered.status_code == 200
     assert status_filtered.json()["items"][0]["task_id"] == str(healthy.id)
+    assert delivery_filtered.status_code == 200
+    assert delivery_filtered.json()["team_id"] == str(delivery_team.id)
+    assert delivery_filtered.json()["total"] == 1
+    assert delivery_filtered.json()["items"][0]["task_id"] == str(needs_follow_up.id)
+    assert support_filtered.status_code == 200
+    assert support_filtered.json()["team_id"] == str(support_team.id)
+    assert support_filtered.json()["total"] == 1
+    assert support_filtered.json()["items"][0]["task_id"] == str(healthy.id)
+    assert foreign_team_filtered.status_code == 404
     assert foreign_response.status_code == 200
     assert foreign_response.json()["total"] == 1
     assert foreign_response.json()["items"][0]["title"] == "Foreign manager queue task"

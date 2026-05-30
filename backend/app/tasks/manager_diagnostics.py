@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.teams.models import AgentTeam
 
 
 class TaskManagerDiagnosticsService:
@@ -98,9 +99,15 @@ class TaskManagerDiagnosticsService:
         limit: int,
         offset: int,
         status: str | None = None,
+        team_id: UUID | None = None,
         include_healthy: bool = False,
     ) -> dict[str, object]:
         statement = select(Task).where(Task.workspace_id == workspace_id)
+        if team_id is not None:
+            team = self._session.get(AgentTeam, team_id)
+            if team is None or team.workspace_id != workspace_id:
+                raise ValueError("Team not found")
+            statement = statement.where(Task.agent_team_id == team_id)
         if status is not None:
             statement = statement.where(Task.status == status)
         tasks = list(
@@ -123,6 +130,7 @@ class TaskManagerDiagnosticsService:
         paged_items = items[offset : offset + limit]
         return {
             "workspace_id": workspace_id,
+            "team_id": team_id,
             "generated_at": datetime.now(UTC),
             "total": total,
             "limit": limit,
