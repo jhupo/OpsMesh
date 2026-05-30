@@ -611,7 +611,17 @@ def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:
     first_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "generate_image"},
+        json={
+            "tool_name": "generate_image",
+            "policy": {
+                "timeout_seconds": 10,
+                "max_input_bytes": 123,
+                "max_output_bytes": 456,
+                "max_calls_per_run": 1,
+                "max_calls_per_hour": 2,
+                "headers": {"authorization": "Bearer hidden"},
+            },
+        },
     )
     second_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
@@ -649,6 +659,7 @@ def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:
     assert server.status_code == 201
     assert first_tool.status_code == 201
     assert second_tool.status_code == 201
+    assert first_tool.json()["policy"]["headers"] == "[redacted]"
     assert succeeded.status_code == 201
     assert failed.status_code == 201
     assert catalog.status_code == 200
@@ -661,9 +672,23 @@ def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:
     assert tools["generate_image"]["usage"]["call_count"] == 1
     assert tools["generate_image"]["usage"]["failed_call_count"] == 0
     assert tools["generate_image"]["usage"]["last_call_status"] == "completed"
+    assert tools["generate_image"]["policy_summary"] == {
+        "timeout_seconds": 10,
+        "max_input_bytes": 123,
+        "max_output_bytes": 456,
+        "max_calls_per_run": 1,
+        "max_calls_per_hour": 2,
+        "current_hour_call_count": 1,
+        "hourly_limit_remaining": 1,
+        "limit_window_seconds": 3600,
+    }
     assert tools["upscale_image"]["usage"]["call_count"] == 1
     assert tools["upscale_image"]["usage"]["failed_call_count"] == 1
     assert tools["upscale_image"]["usage"]["last_error_code"] == "mcp_remote_error"
+    assert tools["upscale_image"]["policy_summary"]["timeout_seconds"] == 30
+    assert tools["upscale_image"]["policy_summary"]["max_calls_per_hour"] is None
+    assert tools["upscale_image"]["policy_summary"]["current_hour_call_count"] == 1
+    assert "Bearer hidden" not in str(body)
 
 
 def test_mcp_server_and_tool_can_be_disabled() -> None:

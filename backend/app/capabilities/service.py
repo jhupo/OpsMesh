@@ -43,6 +43,12 @@ from backend.app.secrets.service import SecretEncryptionService
 
 T = TypeVar("T")
 MCP_HEALTH_CHECK_STALE_AFTER = timedelta(hours=24)
+MCP_LIMIT_COUNTED_STATUSES = (
+    "completed",
+    "failed",
+    "waiting_approval",
+    "waiting_self_hosted",
+)
 
 
 @dataclass(frozen=True)
@@ -58,6 +64,7 @@ class McpCatalogUsage:
 class McpCatalogTool:
     allowlist: McpToolAllowlist
     usage: McpCatalogUsage
+    policy_summary: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -1004,11 +1011,17 @@ class CapabilityService:
             )
         ).all()
         usage_by_server_tool = self._mcp_usage_by_server_tool(workspace_id, server_ids)
+        hourly_limit_counts = self._mcp_call_limit_counts(
+            workspace_id,
+            server_ids,
+            since=datetime.now(UTC) - timedelta(hours=1),
+        )
 
         tools_by_server: dict[UUID, list[McpCatalogTool]] = {
             server_id: [] for server_id in server_ids
         }
         for allow in tool_rows:
+            hourly_count = hourly_limit_counts.get((allow.mcp_server_id, allow.tool_name), 0)
             tools_by_server.setdefault(allow.mcp_server_id, []).append(
                 McpCatalogTool(
                     allow,
@@ -1016,6 +1029,7 @@ class CapabilityService:
                         (allow.mcp_server_id, allow.tool_name),
                         _empty_mcp_usage(),
                     ),
+                    _mcp_tool_policy_summary(allow.policy, hourly_count=hourly_count),
                 )
             )
 
@@ -1449,6 +1463,28 @@ class CapabilityService:
             states.setdefault(key, _McpUsageState()).add(log)
         return {key: state.to_usage() for key, state in states.items()}
 
+    def _mcp_call_limit_counts(
+        self,
+        workspace_id: UUID,
+        server_ids: list[UUID],
+        *,
+        since: datetime,
+    ) -> dict[tuple[UUID, str], int]:
+        logs = self._session.scalars(
+            select(McpToolCallLog).where(
+                McpToolCallLog.workspace_id == workspace_id,
+                McpToolCallLog.mcp_server_id.in_(server_ids),
+                McpToolCallLog.status.in_(MCP_LIMIT_COUNTED_STATUSES),
+                McpToolCallLog.created_at >= since,
+            )
+        ).all()
+        counts: Counter[tuple[UUID, str]] = Counter()
+        for log in logs:
+            if log.mcp_server_id is None:
+                continue
+            counts[(log.mcp_server_id, log.tool_name)] += 1
+        return dict(counts)
+
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
         total = self._session.scalar(
             select(func.count()).select_from(statement.order_by(None).subquery())
@@ -1651,6 +1687,38 @@ def _mcp_log_failed(log: McpToolCallLog) -> bool:
         "error",
         "timeout",
     }
+
+
+def _mcp_tool_policy_summary(
+    policy: dict[str, object],
+    *,
+    hourly_count: int,
+) -> dict[str, object]:
+    max_calls_per_hour = _optional_positive_int(policy, "max_calls_per_hour")
+    return {
+        "timeout_seconds": _positive_int(policy, "timeout_seconds", 30),
+        "max_input_bytes": _positive_int(policy, "max_input_bytes", 64_000),
+        "max_output_bytes": _positive_int(policy, "max_output_bytes", 256_000),
+        "max_calls_per_run": _optional_positive_int(policy, "max_calls_per_run"),
+        "max_calls_per_hour": max_calls_per_hour,
+        "current_hour_call_count": hourly_count,
+        "hourly_limit_remaining": (
+            max(max_calls_per_hour - hourly_count, 0)
+            if max_calls_per_hour is not None
+            else None
+        ),
+        "limit_window_seconds": 3600,
+    }
+
+
+def _positive_int(policy: dict[str, object], key: str, default: int) -> int:
+    value = policy.get(key)
+    return value if isinstance(value, int) and value > 0 else default
+
+
+def _optional_positive_int(policy: dict[str, object], key: str) -> int | None:
+    value = policy.get(key)
+    return value if isinstance(value, int) and value > 0 else None
 
 
 def _manifest_mcp_tools(manifest: dict[str, object]) -> list[str]:

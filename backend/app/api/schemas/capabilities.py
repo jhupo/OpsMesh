@@ -315,6 +315,10 @@ class McpToolAllowResponse(TimestampedModel):
     policy: dict[str, object]
     status: str
 
+    @field_serializer("policy")
+    def _serialize_policy(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
 
 class McpCredentialReferenceCreateRequest(BaseModel):
     mcp_server_id: UUID | None = None
@@ -364,6 +368,10 @@ class McpToolDescriptor(BaseModel):
     risk_level: str
     policy: dict[str, object]
 
+    @field_serializer("policy")
+    def _serialize_policy(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
 
 class McpCatalogUsageResponse(BaseModel):
     call_count: int
@@ -373,6 +381,17 @@ class McpCatalogUsageResponse(BaseModel):
     last_error_code: str | None
 
 
+class McpCatalogToolPolicySummaryResponse(BaseModel):
+    timeout_seconds: int
+    max_input_bytes: int
+    max_output_bytes: int
+    max_calls_per_run: int | None
+    max_calls_per_hour: int | None
+    current_hour_call_count: int
+    hourly_limit_remaining: int | None
+    limit_window_seconds: int
+
+
 class McpCatalogToolResponse(BaseModel):
     id: UUID
     tool_name: str
@@ -380,8 +399,13 @@ class McpCatalogToolResponse(BaseModel):
     requires_approval: bool
     risk_level: str
     policy: dict[str, object]
+    policy_summary: McpCatalogToolPolicySummaryResponse
     status: str
     usage: McpCatalogUsageResponse
+
+    @field_serializer("policy")
+    def _serialize_policy(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class McpCatalogServerResponse(BaseModel):

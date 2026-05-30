@@ -9,6 +9,7 @@ from backend.app.api.schemas.capabilities import (
     CapabilityCreateRequest,
     CapabilityResponse,
     McpCatalogServerResponse,
+    McpCatalogToolPolicySummaryResponse,
     McpCatalogToolResponse,
     McpCatalogUsageResponse,
     McpCredentialReferenceCreateRequest,
@@ -670,6 +671,9 @@ def _mcp_catalog_response(item: object) -> McpCatalogServerResponse:
                 requires_approval=tool.allowlist.requires_approval,
                 risk_level=tool.allowlist.risk_level,
                 policy=tool.allowlist.policy,
+                policy_summary=McpCatalogToolPolicySummaryResponse.model_validate(
+                    tool.policy_summary,
+                ),
                 status=tool.allowlist.status,
                 usage=_mcp_catalog_usage_response(tool.usage),
             )
