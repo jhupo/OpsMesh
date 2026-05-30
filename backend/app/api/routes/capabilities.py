@@ -26,6 +26,8 @@ from backend.app.api.schemas.capabilities import (
     SkillResponse,
     ToolGroupCreateRequest,
     ToolGroupResponse,
+    WorkspaceCapabilityGovernanceApplyRequest,
+    WorkspaceCapabilityGovernanceApplyResponse,
     WorkspaceCapabilityGovernanceResponse,
     WorkspaceSkillAvailabilityResponse,
     WorkspaceSkillImpactResponse,
@@ -105,6 +107,32 @@ async def get_workspace_capability_governance(
         context.workspace.id,
     )
     return WorkspaceCapabilityGovernanceResponse.model_validate(diagnostics)
+
+
+@router.post(
+    "/governance/actions/apply",
+    response_model=WorkspaceCapabilityGovernanceApplyResponse,
+)
+async def apply_workspace_capability_governance_actions(
+    request: WorkspaceCapabilityGovernanceApplyRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceCapabilityGovernanceApplyResponse:
+    try:
+        response = CapabilityService(session).apply_workspace_capability_governance_actions(
+            workspace_id=context.workspace.id,
+            actor_user_id=context.user.user_id,
+            dry_run=request.dry_run,
+            actions=request.actions,
+            install_ids=request.install_ids,
+            mcp_server_ids=request.mcp_server_ids,
+            max_items=request.max_items,
+            reason=request.reason,
+            metadata=request.metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return WorkspaceCapabilityGovernanceApplyResponse.model_validate(response)
 
 
 @router.get("/workspace-skills", response_model=PageResponse[WorkspaceSkillInstallResponse])

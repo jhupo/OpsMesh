@@ -49,6 +49,25 @@ MCP_LIMIT_COUNTED_STATUSES = (
     "waiting_approval",
     "waiting_self_hosted",
 )
+GOVERNANCE_APPLY_ACTIONS = {
+    "disable_unusable_skill_installs",
+    "disable_blocked_mcp_servers",
+}
+DEFAULT_GOVERNANCE_APPLY_ACTIONS = [
+    "disable_unusable_skill_installs",
+    "disable_blocked_mcp_servers",
+]
+SKILL_INSTALL_GOVERNANCE_DISABLE_REASONS = {
+    "missing_required_mcp_tools",
+}
+MCP_SERVER_GOVERNANCE_DISABLE_REASONS = {
+    "health_check_stale",
+    "missing_remote_url",
+    "missing_stdio_command",
+    "server_unhealthy",
+    "unsupported_hosted_transport",
+    "unsupported_server_type",
+}
 
 
 @dataclass(frozen=True)
@@ -746,6 +765,242 @@ class CapabilityService:
             "agents": agent_items,
             "mcp_servers": server_items,
         }
+
+    def apply_workspace_capability_governance_actions(
+        self,
+        *,
+        workspace_id: UUID,
+        actor_user_id: UUID,
+        dry_run: bool = True,
+        actions: list[str] | None = None,
+        install_ids: list[UUID] | None = None,
+        mcp_server_ids: list[UUID] | None = None,
+        max_items: int = 50,
+        reason: str | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        requested_actions = _governance_actions(actions)
+        unsupported_actions = sorted(set(requested_actions) - GOVERNANCE_APPLY_ACTIONS)
+        if unsupported_actions:
+            raise ValueError(f"Unsupported governance action: {unsupported_actions[0]}")
+
+        remaining = max_items
+        results: list[dict[str, object]] = []
+        skipped: list[dict[str, object]] = []
+        if "disable_unusable_skill_installs" in requested_actions and remaining > 0:
+            action_results, action_skipped = self._apply_disable_unusable_skill_installs(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                dry_run=dry_run,
+                install_ids=set(install_ids or []),
+                limit=remaining,
+                reason=reason,
+            )
+            results.extend(action_results)
+            skipped.extend(action_skipped)
+            remaining -= len(action_results)
+        if "disable_blocked_mcp_servers" in requested_actions and remaining > 0:
+            action_results, action_skipped = self._apply_disable_blocked_mcp_servers(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                dry_run=dry_run,
+                mcp_server_ids=set(mcp_server_ids or []),
+                limit=remaining,
+                reason=reason,
+            )
+            results.extend(action_results)
+            skipped.extend(action_skipped)
+            remaining -= len(action_results)
+
+        summary = {
+            "disabled_skill_install_count": sum(
+                1 for item in results if item["resource_type"] == "workspace_skill_install"
+            ),
+            "disabled_mcp_server_count": sum(
+                1 for item in results if item["resource_type"] == "mcp_server"
+            ),
+            "metadata_keys": sorted((metadata or {}).keys()),
+        }
+        if not dry_run:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="capability_governance.actions_applied",
+                target_type="workspace",
+                target_id=workspace_id,
+                metadata={
+                    "requested_actions": requested_actions,
+                    "applied_count": len(results),
+                    "skipped_count": len(skipped),
+                    "summary": summary,
+                    "reason": reason,
+                },
+            )
+            self._session.commit()
+
+        return {
+            "workspace_id": workspace_id,
+            "generated_at": datetime.now(UTC),
+            "dry_run": dry_run,
+            "status": "dry_run" if dry_run else "applied" if results else "noop",
+            "requested_actions": requested_actions,
+            "eligible_action_count": len(results),
+            "applied_count": 0 if dry_run else len(results),
+            "skipped_count": len(skipped),
+            "summary": summary,
+            "results": results,
+            "skipped": skipped,
+        }
+
+    def _apply_disable_unusable_skill_installs(
+        self,
+        *,
+        workspace_id: UUID,
+        actor_user_id: UUID,
+        dry_run: bool,
+        install_ids: set[UUID],
+        limit: int,
+        reason: str | None,
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+        statement = (
+            select(WorkspaceSkillInstall)
+            .where(
+                WorkspaceSkillInstall.workspace_id == workspace_id,
+                WorkspaceSkillInstall.status == "active",
+            )
+            .order_by(WorkspaceSkillInstall.installed_key.asc(), WorkspaceSkillInstall.id.asc())
+        )
+        if install_ids:
+            statement = statement.where(WorkspaceSkillInstall.id.in_(install_ids))
+        installs = self._session.scalars(statement).all()
+        results: list[dict[str, object]] = []
+        skipped: list[dict[str, object]] = []
+        for install in installs:
+            availability = self.workspace_skill_availability(workspace_id, install.id)
+            blocked_reasons = availability.blocked_reasons
+            if not _skill_install_should_be_disabled(blocked_reasons):
+                skipped.append(
+                    _governance_skipped(
+                        action="disable_unusable_skill_installs",
+                        resource_type="workspace_skill_install",
+                        resource_id=install.id,
+                        resource_name=install.installed_key,
+                        reason="skill_install_not_governance_disabled",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            if len(results) >= limit:
+                skipped.append(
+                    _governance_skipped(
+                        action="disable_unusable_skill_installs",
+                        resource_type="workspace_skill_install",
+                        resource_id=install.id,
+                        resource_name=install.installed_key,
+                        reason="max_items_reached",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            if not dry_run:
+                install.status = "disabled"
+                install.disabled_at = datetime.now(UTC)
+                AuditService(self._session).record_user_action(
+                    workspace_id=workspace_id,
+                    user_id=actor_user_id,
+                    action="capability_governance.skill_install_disabled",
+                    target_type="workspace_skill_install",
+                    target_id=install.id,
+                    metadata={
+                        "installed_key": install.installed_key,
+                        "blocked_reasons": blocked_reasons,
+                        "reason": reason,
+                    },
+                )
+            results.append(
+                _governance_result(
+                    action="disable_unusable_skill_installs",
+                    resource_type="workspace_skill_install",
+                    resource_id=install.id,
+                    resource_name=install.installed_key,
+                    status="would_apply" if dry_run else "applied",
+                    blocked_reasons=blocked_reasons,
+                )
+            )
+        return results, skipped
+
+    def _apply_disable_blocked_mcp_servers(
+        self,
+        *,
+        workspace_id: UUID,
+        actor_user_id: UUID,
+        dry_run: bool,
+        mcp_server_ids: set[UUID],
+        limit: int,
+        reason: str | None,
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+        catalog_items, _ = self.list_mcp_catalog(
+            workspace_id,
+            PageParams(limit=10_000, offset=0),
+        )
+        results: list[dict[str, object]] = []
+        skipped: list[dict[str, object]] = []
+        for item in catalog_items:
+            server = item.server
+            if server.status != "active":
+                continue
+            if mcp_server_ids and server.id not in mcp_server_ids:
+                continue
+            blocked_reasons = item.blocked_reasons
+            if not _mcp_server_should_be_governance_disabled(blocked_reasons):
+                skipped.append(
+                    _governance_skipped(
+                        action="disable_blocked_mcp_servers",
+                        resource_type="mcp_server",
+                        resource_id=server.id,
+                        resource_name=server.name,
+                        reason="mcp_server_not_governance_disabled",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            if len(results) >= limit:
+                skipped.append(
+                    _governance_skipped(
+                        action="disable_blocked_mcp_servers",
+                        resource_type="mcp_server",
+                        resource_id=server.id,
+                        resource_name=server.name,
+                        reason="max_items_reached",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            if not dry_run:
+                server.status = "disabled"
+                AuditService(self._session).record_user_action(
+                    workspace_id=workspace_id,
+                    user_id=actor_user_id,
+                    action="capability_governance.mcp_server_disabled",
+                    target_type="mcp_server",
+                    target_id=server.id,
+                    metadata={
+                        "name": server.name,
+                        "blocked_reasons": blocked_reasons,
+                        "reason": reason,
+                    },
+                )
+            results.append(
+                _governance_result(
+                    action="disable_blocked_mcp_servers",
+                    resource_type="mcp_server",
+                    resource_id=server.id,
+                    resource_name=server.name,
+                    status="would_apply" if dry_run else "applied",
+                    blocked_reasons=blocked_reasons,
+                )
+            )
+        return results, skipped
 
     def _require_workspace_install(
         self,
@@ -1929,6 +2184,69 @@ def _mcp_server_governance_actions(
     if failed_call_count > 0:
         actions.append("inspect_failed_mcp_calls")
     return actions
+
+
+def _governance_actions(actions: list[str] | None) -> list[str]:
+    if not actions:
+        return list(DEFAULT_GOVERNANCE_APPLY_ACTIONS)
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for action in actions:
+        if not isinstance(action, str):
+            continue
+        item = action.strip()
+        if not item or item in seen:
+            continue
+        normalized.append(item)
+        seen.add(item)
+    return normalized or list(DEFAULT_GOVERNANCE_APPLY_ACTIONS)
+
+
+def _skill_install_should_be_disabled(blocked_reasons: list[str]) -> bool:
+    return bool(set(blocked_reasons) & SKILL_INSTALL_GOVERNANCE_DISABLE_REASONS)
+
+
+def _mcp_server_should_be_governance_disabled(blocked_reasons: list[str]) -> bool:
+    return bool(set(blocked_reasons) & MCP_SERVER_GOVERNANCE_DISABLE_REASONS)
+
+
+def _governance_result(
+    *,
+    action: str,
+    resource_type: str,
+    resource_id: UUID,
+    resource_name: str,
+    status: str,
+    blocked_reasons: list[str],
+) -> dict[str, object]:
+    return {
+        "action": action,
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "resource_name": resource_name,
+        "status": status,
+        "blocked_reasons": blocked_reasons,
+    }
+
+
+def _governance_skipped(
+    *,
+    action: str,
+    resource_type: str,
+    resource_id: UUID,
+    resource_name: str,
+    reason: str,
+    blocked_reasons: list[str],
+) -> dict[str, object]:
+    return {
+        "action": action,
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "resource_name": resource_name,
+        "status": "skipped",
+        "reason": reason,
+        "blocked_reasons": blocked_reasons,
+    }
 
 
 def _health_check_stale(server: McpServer) -> bool:

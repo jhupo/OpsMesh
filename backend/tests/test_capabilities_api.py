@@ -1702,6 +1702,168 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
     assert "foreign.example.test" not in serialized
 
 
+def test_workspace_capability_governance_actions_apply_safe_quarantine() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, _ = _seed_workspace(
+        session,
+        email="other-governance-actions@example.com",
+        slug="other-governance-actions",
+    )
+
+    skill = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+        json={
+            "key": "broken-image-pack",
+            "name": "Broken Image Pack",
+            "version": "1.0.0",
+            "manifest": {
+                "mcp_tools": ["generate_image"],
+                "api_key": "sk-governance-skill",
+            },
+            "visibility": "public",
+        },
+    )
+    installed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/workspace-skills",
+        headers=_headers(owner.id),
+        json={"skill_id": skill.json()["id"], "config": {"token": "hidden-install-token"}},
+    )
+    broken_server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "broken-http",
+            "server_type": "http_jsonrpc",
+            "connection": {"headers": {"Authorization": "Bearer hidden-server-token"}},
+        },
+    )
+    safe_repairable_server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "needs-credential",
+            "server_type": "hosted",
+            "connection": {
+                "transport": "http_jsonrpc",
+                "url": "https://mcp.example.test/private?token=hidden",
+                "requires_credentials": True,
+            },
+        },
+    )
+    broken_tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{broken_server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "broken_search", "risk_level": "low"},
+    )
+    repairable_tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{safe_repairable_server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "repairable_search", "risk_level": "low"},
+    )
+    assert skill.status_code == 201
+    assert installed.status_code == 201
+    assert broken_server.status_code == 201
+    assert safe_repairable_server.status_code == 201
+    assert broken_tool.status_code == 201
+    assert repairable_tool.status_code == 201
+
+    dry_run = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": True,
+            "metadata": {"token": "hidden-governance-dry-run"},
+        },
+    )
+    assert dry_run.status_code == 200
+    dry_body = dry_run.json()
+    assert dry_body["status"] == "dry_run"
+    assert dry_body["eligible_action_count"] == 2
+    assert dry_body["applied_count"] == 0
+    assert {item["resource_type"] for item in dry_body["results"]} == {
+        "workspace_skill_install",
+        "mcp_server",
+    }
+    assert any(
+        item["resource_id"] == safe_repairable_server.json()["id"]
+        and item["reason"] == "mcp_server_not_governance_disabled"
+        for item in dry_body["skipped"]
+    )
+    assert "hidden-governance-dry-run" not in str(dry_body)
+
+    still_active = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/workspace-skills?include_disabled=true",
+        headers=_headers(owner.id),
+    )
+    assert still_active.json()["items"][0]["status"] == "active"
+
+    forbidden = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
+        headers=_headers(other.id),
+        json={"dry_run": True},
+    )
+    unsupported = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
+        headers=_headers(owner.id),
+        json={"dry_run": True, "actions": ["delete_everything"]},
+    )
+    assert forbidden.status_code == 403
+    assert unsupported.status_code == 400
+
+    applied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": False,
+            "reason": "quarantine broken MCP governance",
+            "metadata": {"api_key": "sk-governance-apply"},
+        },
+    )
+    assert applied.status_code == 200
+    body = applied.json()
+    assert body["status"] == "applied"
+    assert body["eligible_action_count"] == 2
+    assert body["applied_count"] == 2
+    assert body["summary"]["disabled_skill_install_count"] == 1
+    assert body["summary"]["disabled_mcp_server_count"] == 1
+    serialized = str(body)
+    assert "sk-governance-apply" not in serialized
+    assert "sk-governance-skill" not in serialized
+    assert "hidden-install-token" not in serialized
+    assert "hidden-server-token" not in serialized
+
+    skills_after = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/workspace-skills?include_disabled=true",
+        headers=_headers(owner.id),
+    )
+    servers_after = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+    )
+    assert skills_after.json()["items"][0]["status"] == "disabled"
+    server_statuses = {item["name"]: item["status"] for item in servers_after.json()["items"]}
+    assert server_statuses == {
+        "broken-http": "disabled",
+        "needs-credential": "active",
+    }
+
+    audit_actions = {
+        event.action
+        for event in session.query(AuditEvent)
+        .filter(AuditEvent.workspace_id == workspace.id)
+        .all()
+    }
+    assert {
+        "capability_governance.actions_applied",
+        "capability_governance.skill_install_disabled",
+        "capability_governance.mcp_server_disabled",
+    } <= audit_actions
+
+
 def test_workspace_skill_install_can_upgrade_and_disable_without_source_access() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

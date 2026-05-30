@@ -254,6 +254,41 @@ class WorkspaceCapabilityGovernanceResponse(BaseModel):
         return redact_sensitive_payload(value)
 
 
+class WorkspaceCapabilityGovernanceApplyRequest(BaseModel):
+    dry_run: bool = True
+    actions: list[str] = Field(default_factory=list, max_length=5)
+    install_ids: list[UUID] = Field(default_factory=list, max_length=100)
+    mcp_server_ids: list[UUID] = Field(default_factory=list, max_length=100)
+    max_items: int = Field(default=50, ge=1, le=200)
+    reason: str | None = Field(default=None, max_length=1_000)
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class WorkspaceCapabilityGovernanceApplyResponse(BaseModel):
+    workspace_id: UUID
+    generated_at: datetime
+    dry_run: bool
+    status: str
+    requested_actions: list[str]
+    eligible_action_count: int
+    applied_count: int
+    skipped_count: int
+    summary: dict[str, object]
+    results: list[dict[str, object]]
+    skipped: list[dict[str, object]]
+
+    @field_serializer("summary")
+    def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("results", "skipped")
+    def _serialize_items(
+        self,
+        value: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
+
 class ToolGroupCreateRequest(BaseModel):
     key: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=160)
