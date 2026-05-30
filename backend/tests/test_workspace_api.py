@@ -691,6 +691,38 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert actions["add_or_hire_team_member"]["task_ids"] == [str(running_task.id)]
     assert actions["monitor_specialist_execution"]["task_ids"] == [str(running_task.id)]
     assert actions["request_manager_review"]["task_ids"] == [str(running_task.id)]
+    intervention_plan = {
+        item["action"]: item for item in body["summary"]["intervention_plan"]
+    }
+    assert intervention_plan["add_or_hire_team_member"] == {
+        "action": "add_or_hire_team_member",
+        "category": "staffing",
+        "severity": "high",
+        "priority": 81,
+        "count": 1,
+        "task_ids": [str(running_task.id)],
+        "task_step_ids": [str(design_gap.id)],
+        "automation": "talent_market",
+        "operator_action": None,
+        "api_route": (
+            "POST /api/v1/workspaces/{workspace_id}/tasks/{task_id}/"
+            "talent-market/recommendations"
+        ),
+        "payload_template": {"max_candidates_per_role": 3},
+        "reason_codes": [
+            "staffing_gap",
+            "missing_manager_summary_step",
+            "specialist_steps_incomplete",
+            "risk:high",
+        ],
+    }
+    assert intervention_plan["request_manager_review"]["automation"] == "operator_action"
+    assert intervention_plan["request_manager_review"]["payload_template"] == {
+        "action": "request_manager_review",
+        "task_step_ids": [],
+        "reason": "team_execution_overview",
+        "metadata": {"source": "team_execution_overview"},
+    }
 
     members = {item["team_role"]: item for item in body["members"]}
     assert members["developer"]["active_task_count"] == 1
