@@ -193,6 +193,28 @@ class WorkspaceDataLifecycleResponse(BaseModel):
         return redact_sensitive_payload(value)
 
 
+class WorkspaceRecoveryReadinessResponse(BaseModel):
+    workspace_id: UUID
+    generated_at: datetime
+    latest_successful_archive_export: dict[str, object] | None
+    latest_archive_import: dict[str, object] | None
+    latest_failed_export_job: dict[str, object] | None
+    export_jobs: dict[str, object]
+    retention_safety: dict[str, object]
+    restore_readiness: dict[str, object]
+
+    @field_serializer(
+        "latest_successful_archive_export",
+        "latest_archive_import",
+        "latest_failed_export_job",
+        "export_jobs",
+        "retention_safety",
+        "restore_readiness",
+    )
+    def _serialize_metadata(self, value: dict[str, object] | None) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
+
+
 class WorkspaceRetentionRequest(BaseModel):
     include_files: bool = True
     include_export_jobs: bool = True

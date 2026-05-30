@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.services.exports import SUPPORTED_WORKSPACE_EXPORT_FORMAT
 from backend.app.artifacts.models import Artifact
+from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
 from backend.app.exports.models import WorkspaceExportJob
 from backend.app.exports.status import WorkspaceExportJobStatus
@@ -78,6 +79,48 @@ class WorkspaceDataLifecycleService:
             "readiness": readiness,
         }
 
+    def get_recovery_readiness(self, *, workspace_id: UUID) -> dict[str, object] | None:
+        workspace = self._session.get(Workspace, workspace_id)
+        if workspace is None:
+            return None
+
+        generated_at = datetime.now(UTC)
+        latest_job = self._latest_export_job(workspace_id)
+        latest_success = self._latest_successful_archive_export(workspace_id)
+        latest_import = self._latest_archive_import_event(workspace_id)
+        latest_failed_job = self._latest_failed_export_job(workspace_id)
+        job_stats = self._export_job_stats(workspace_id)
+        retention_policy = _retention_policy(workspace.settings)
+        backup_policy = _backup_policy(workspace.settings, latest_job, latest_success)
+        restore_readiness = _restore_readiness(
+            latest_success=latest_success,
+            latest_import=latest_import,
+            backup_policy=backup_policy,
+            generated_at=generated_at,
+            active_job_count=job_stats["active_job_count"],
+        )
+
+        return {
+            "workspace_id": workspace_id,
+            "generated_at": generated_at,
+            "latest_successful_archive_export": _job_payload(latest_success),
+            "latest_archive_import": _audit_event_payload(latest_import),
+            "latest_failed_export_job": _job_payload(latest_failed_job),
+            "export_jobs": job_stats,
+            "retention_safety": {
+                "retention_enabled": retention_policy["enabled"],
+                "backup_policy_enabled": backup_policy["enabled"],
+                "retention_delete_policy": retention_policy["delete_policy"],
+                "retention_requires_successful_backup_by_default": True,
+                "protected_by_successful_archive": latest_success is not None,
+                "warnings": [
+                    *retention_policy["warnings"],
+                    *backup_policy["warnings"],
+                ],
+            },
+            "restore_readiness": restore_readiness,
+        }
+
     def preview_retention(
         self,
         *,
@@ -141,6 +184,56 @@ class WorkspaceDataLifecycleService:
             .order_by(WorkspaceExportJob.completed_at.desc(), WorkspaceExportJob.id.desc())
             .limit(1)
         )
+
+    def _latest_failed_export_job(self, workspace_id: UUID) -> WorkspaceExportJob | None:
+        return self._session.scalar(
+            select(WorkspaceExportJob)
+            .where(
+                WorkspaceExportJob.workspace_id == workspace_id,
+                WorkspaceExportJob.status == WorkspaceExportJobStatus.FAILED.value,
+            )
+            .order_by(WorkspaceExportJob.created_at.desc(), WorkspaceExportJob.id.desc())
+            .limit(1)
+        )
+
+    def _latest_archive_import_event(self, workspace_id: UUID) -> AuditEvent | None:
+        return self._session.scalar(
+            select(AuditEvent)
+            .where(
+                AuditEvent.workspace_id == workspace_id,
+                AuditEvent.action == "workspace.archive_import.created",
+            )
+            .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+            .limit(1)
+        )
+
+    def _export_job_stats(self, workspace_id: UUID) -> dict[str, object]:
+        jobs = self._session.scalars(
+            select(WorkspaceExportJob)
+            .where(WorkspaceExportJob.workspace_id == workspace_id)
+            .order_by(WorkspaceExportJob.created_at.desc(), WorkspaceExportJob.id.desc())
+        ).all()
+        status_counts = Counter(job.status for job in jobs)
+        type_counts = Counter(job.export_type for job in jobs)
+        active_statuses = {
+            WorkspaceExportJobStatus.QUEUED.value,
+            WorkspaceExportJobStatus.RUNNING.value,
+        }
+        downloadable_count = sum(
+            1
+            for job in jobs
+            if job.status == WorkspaceExportJobStatus.COMPLETED.value
+            and job.storage_key is not None
+        )
+        return {
+            "total": len(jobs),
+            "by_status": dict(sorted(status_counts.items())),
+            "by_type": dict(sorted(type_counts.items())),
+            "active_job_count": sum(1 for job in jobs if job.status in active_statuses),
+            "downloadable_archive_count": downloadable_count,
+            "failed_job_count": int(status_counts.get(WorkspaceExportJobStatus.FAILED.value, 0)),
+            "latest_job": _job_payload(jobs[0] if jobs else None),
+        }
 
     def _file_stats(self, workspace_id: UUID) -> dict[str, object]:
         count, total_bytes = self._session.execute(
@@ -549,6 +642,54 @@ def _readiness(
     }
 
 
+def _restore_readiness(
+    *,
+    latest_success: WorkspaceExportJob | None,
+    latest_import: AuditEvent | None,
+    backup_policy: dict[str, object],
+    generated_at: datetime,
+    active_job_count: object,
+) -> dict[str, object]:
+    blocked_reasons: list[str] = []
+    warnings: list[str] = []
+    if backup_policy["enabled"] is not True:
+        blocked_reasons.append("backup_policy_not_enabled")
+    if latest_success is None:
+        blocked_reasons.append("no_successful_archive_export")
+    else:
+        if latest_success.storage_key is None:
+            blocked_reasons.append("latest_archive_missing_storage_object")
+        if latest_success.checksum_sha256 is None:
+            blocked_reasons.append("latest_archive_missing_checksum")
+        if latest_success.size_bytes is None or latest_success.size_bytes <= 0:
+            blocked_reasons.append("latest_archive_empty_or_unknown_size")
+    if latest_import is None:
+        blocked_reasons.append("no_archive_import_test_recorded")
+    if isinstance(active_job_count, int) and active_job_count > 0:
+        warnings.append("archive_export_jobs_in_progress")
+
+    latest_archive_age_days = (
+        _age_days(generated_at, latest_success.completed_at)
+        if latest_success is not None and latest_success.completed_at is not None
+        else None
+    )
+    return {
+        "ready": not blocked_reasons,
+        "blocked_reasons": blocked_reasons,
+        "warnings": warnings,
+        "downloadable_archive_available": (
+            latest_success is not None
+            and latest_success.status == WorkspaceExportJobStatus.COMPLETED.value
+            and latest_success.storage_key is not None
+        ),
+        "latest_archive_age_days": latest_archive_age_days,
+        "latest_archive_import_test_recorded": latest_import is not None,
+        "latest_archive_import_tested_at": latest_import.created_at
+        if latest_import is not None
+        else None,
+    }
+
+
 def _job_payload(job: WorkspaceExportJob | None) -> dict[str, object] | None:
     if job is None:
         return None
@@ -567,6 +708,20 @@ def _job_payload(job: WorkspaceExportJob | None) -> dict[str, object] | None:
         "has_storage_object": job.storage_key is not None,
         "request": job.request,
         "metadata": job.job_metadata,
+    }
+
+
+def _audit_event_payload(event: AuditEvent | None) -> dict[str, object] | None:
+    if event is None:
+        return None
+    return {
+        "id": event.id,
+        "action": event.action,
+        "target_type": event.target_type,
+        "target_id": event.target_id,
+        "user_id": event.user_id,
+        "metadata": event.audit_metadata,
+        "created_at": event.created_at,
     }
 
 

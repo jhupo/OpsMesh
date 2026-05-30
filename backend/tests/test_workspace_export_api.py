@@ -314,6 +314,148 @@ def test_workspace_data_lifecycle_diagnostics_reports_backup_retention_and_audit
     assert "workspaces/owner/exports/archive.zip" not in serialized
 
 
+def test_workspace_recovery_readiness_summarizes_restore_health_and_redacts_metadata(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-recovery@example.com",
+        slug="owner-recovery",
+    )
+    _, other_workspace = _seed_workspace(
+        session,
+        email="other-recovery@example.com",
+        slug="other-recovery",
+    )
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {
+                "enabled": True,
+                "target_type": "s3",
+                "target": {
+                    "remote_url": "https://backup.example.test/private",
+                    "token": "backup-token",
+                },
+            },
+            "retention": {
+                "enabled": True,
+                "default_retention_days": 30,
+                "delete_policy": "soft_delete",
+            },
+        }
+    }
+    completed_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="completed",
+        request={"include_file_bytes": True, "api_key": "sk-export"},
+        storage_key="workspaces/owner-recovery/exports/archive.zip",
+        filename="archive.zip",
+        content_type="application/zip",
+        size_bytes=123,
+        checksum_sha256="c" * 64,
+        completed_at=datetime(2026, 1, 3, tzinfo=UTC),
+        created_at=datetime(2026, 1, 3, tzinfo=UTC),
+        job_metadata={"token": "job-token"},
+    )
+    failed_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="failed",
+        request={"headers": {"authorization": "Bearer hidden"}},
+        error="network failed",
+        created_at=datetime(2026, 1, 4, tzinfo=UTC),
+    )
+    queued_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="queued",
+        request={"token": "queued-token"},
+        created_at=datetime(2026, 1, 6, tzinfo=UTC),
+    )
+    foreign_job = WorkspaceExportJob(
+        workspace_id=other_workspace.id,
+        export_type="workspace_archive",
+        status="completed",
+        storage_key="workspaces/other-recovery/exports/archive.zip",
+        filename="foreign.zip",
+        size_bytes=99,
+        checksum_sha256="d" * 64,
+        completed_at=datetime(2026, 1, 7, tzinfo=UTC),
+        created_at=datetime(2026, 1, 7, tzinfo=UTC),
+    )
+    import_event = AuditEvent(
+        workspace_id=workspace.id,
+        actor_type="user",
+        actor_id=str(owner.id),
+        user_id=owner.id,
+        action="workspace.archive_import.created",
+        target_type="workspace",
+        target_id=str(workspace.id),
+        audit_metadata={
+            "source_workspace_id": "source-workspace",
+            "created_counts": {"files": 1},
+            "token": "import-token",
+        },
+        created_at=datetime(2026, 1, 5, tzinfo=UTC),
+    )
+    session.add_all([completed_job, failed_job, queued_job, foreign_job, import_event])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness",
+        headers=_headers(owner.id),
+    )
+    foreign_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/exports/recovery-readiness",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["latest_successful_archive_export"]["id"] == str(completed_job.id)
+    assert body["latest_successful_archive_export"]["has_storage_object"] is True
+    assert body["latest_successful_archive_export"]["request"]["api_key"] == "[redacted]"
+    assert body["latest_successful_archive_export"]["metadata"]["token"] == "[redacted]"
+    assert body["latest_failed_export_job"]["id"] == str(failed_job.id)
+    assert body["latest_failed_export_job"]["request"]["headers"] == "[redacted]"
+    assert body["latest_archive_import"]["id"] == str(import_event.id)
+    assert body["latest_archive_import"]["metadata"]["token"] == "[redacted]"
+    assert body["export_jobs"]["total"] == 3
+    assert body["export_jobs"]["by_status"] == {
+        "completed": 1,
+        "failed": 1,
+        "queued": 1,
+    }
+    assert body["export_jobs"]["active_job_count"] == 1
+    assert body["export_jobs"]["downloadable_archive_count"] == 1
+    assert body["export_jobs"]["latest_job"]["id"] == str(queued_job.id)
+    assert body["export_jobs"]["latest_job"]["request"]["token"] == "[redacted]"
+    assert body["retention_safety"]["retention_enabled"] is True
+    assert body["retention_safety"]["backup_policy_enabled"] is True
+    assert body["retention_safety"]["protected_by_successful_archive"] is True
+    assert body["restore_readiness"]["ready"] is True
+    assert body["restore_readiness"]["blocked_reasons"] == []
+    assert body["restore_readiness"]["warnings"] == ["archive_export_jobs_in_progress"]
+    assert body["restore_readiness"]["downloadable_archive_available"] is True
+    assert body["restore_readiness"]["latest_archive_import_test_recorded"] is True
+    assert foreign_response.status_code == 403
+    serialized = str(body)
+    assert "backup.example.test/private" not in serialized
+    assert "backup-token" not in serialized
+    assert "sk-export" not in serialized
+    assert "job-token" not in serialized
+    assert "import-token" not in serialized
+    assert "queued-token" not in serialized
+    assert "Bearer hidden" not in serialized
+    assert "workspaces/owner-recovery/exports/archive.zip" not in serialized
+    assert "foreign.zip" not in serialized
+
+
 def test_workspace_retention_preview_reports_scoped_candidates_and_redacts_metadata(
     tmp_path: Path,
 ) -> None:

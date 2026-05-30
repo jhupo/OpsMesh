@@ -13,6 +13,7 @@ from backend.app.api.schemas.exports import (
     WorkspaceExportRequest,
     WorkspaceImportRequest,
     WorkspaceImportResponse,
+    WorkspaceRecoveryReadinessResponse,
     WorkspaceRetentionRequest,
     WorkspaceRetentionResponse,
 )
@@ -42,6 +43,19 @@ async def get_workspace_data_lifecycle_diagnostics(
     if diagnostics is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     return WorkspaceDataLifecycleResponse.model_validate(diagnostics)
+
+
+@router.get("/recovery-readiness", response_model=WorkspaceRecoveryReadinessResponse)
+async def get_workspace_recovery_readiness(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceRecoveryReadinessResponse:
+    diagnostics = WorkspaceDataLifecycleService(session).get_recovery_readiness(
+        workspace_id=context.workspace.id
+    )
+    if diagnostics is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return WorkspaceRecoveryReadinessResponse.model_validate(diagnostics)
 
 
 @router.post("/retention/preview", response_model=WorkspaceRetentionResponse)
