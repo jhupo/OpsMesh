@@ -153,3 +153,66 @@ class TaskObservationResponse(BaseModel):
     generated_at: datetime
     summary: dict[str, object]
     sections: list[TaskObservationSection]
+
+
+class TaskExecutionAgentSummary(BaseModel):
+    id: UUID
+    name: str
+    role: str
+    status: str
+
+
+class TaskExecutionRunDiagnostic(BaseModel):
+    id: UUID
+    status: str
+    agent_profile_id: UUID | None
+    runtime_id: UUID | None
+    runtime_space_id: UUID | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    error: dict[str, object] | None
+
+    @field_serializer("error")
+    def _serialize_error(self, value: dict[str, object] | None) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
+
+
+class TaskExecutionStepDiagnostic(BaseModel):
+    task_step_id: UUID
+    work_package_id: str | None
+    title: str
+    description: str
+    status: str
+    order_index: int
+    required_role: str | None
+    required_skills: list[str]
+    expected_artifacts: list[str]
+    acceptance_criteria: list[str]
+    review_policy: dict[str, object]
+    dependencies: dict[str, object]
+    dependency_state: dict[str, object]
+    assigned_agent: TaskExecutionAgentSummary | None
+    assignment_status: str
+    runnable: bool
+    blocked_reasons: list[str]
+    scheduling: dict[str, object]
+    runs: list[TaskExecutionRunDiagnostic]
+    active_run_ids: list[UUID]
+    result_summary: str | None
+
+    @field_serializer("review_policy", "dependencies", "dependency_state", "scheduling")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
+class TaskExecutionDiagnosticsResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    generated_at: datetime
+    task: dict[str, object]
+    summary: dict[str, object]
+    steps: list[TaskExecutionStepDiagnostic]
+
+    @field_serializer("task", "summary")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)

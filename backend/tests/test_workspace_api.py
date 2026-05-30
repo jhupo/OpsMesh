@@ -12,6 +12,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
 from backend.app.core.config import Settings, get_settings
@@ -1589,6 +1590,154 @@ def test_audit_event_api_redacts_sensitive_metadata() -> None:
     }
     assert "sk-hidden" not in str(metadata)
     assert "router.example.test/private" not in str(metadata)
+
+
+def test_task_execution_diagnostics_explains_assignments_dependencies_and_blockers() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-exec@example.com",
+        slug="other-exec",
+    )
+    active_agent_response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Developer", "role": "developer"},
+    )
+    inactive_agent_response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Reviewer", "role": "reviewer"},
+    )
+    inactive_agent = session.get(AgentProfile, UUID(inactive_agent_response.json()["id"]))
+    assert inactive_agent is not None
+    inactive_agent.status = "inactive"
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Build dashboard",
+        status=TaskStatus.RUNNING.value,
+        priority=4,
+        domain_type="software",
+        input={"api_key": "sk-hidden"},
+    )
+    session.add(task)
+    session.flush()
+    completed_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=UUID(active_agent_response.json()["id"]),
+        work_package_id="design",
+        required_role="designer",
+        title="Design",
+        status="completed",
+        order_index=10,
+        result_summary="Design complete",
+    )
+    session.add(completed_step)
+    session.flush()
+    runnable_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=UUID(active_agent_response.json()["id"]),
+        work_package_id="build",
+        required_role="developer",
+        title="Build",
+        status="queued",
+        order_index=20,
+        dependencies={"after_step_ids": [str(completed_step.id)]},
+    )
+    session.add(runnable_step)
+    session.flush()
+    blocked_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=UUID(inactive_agent_response.json()["id"]),
+        work_package_id="review",
+        required_role="reviewer",
+        title="Review",
+        status="queued",
+        order_index=30,
+        dependencies={
+            "after_step_ids": [str(runnable_step.id)],
+            "blocked_reason": "workspace_run_quota_exceeded",
+            "token": "hidden-token",
+        },
+    )
+    unassigned_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        work_package_id="release",
+        required_role="release_manager",
+        title="Release",
+        status="queued",
+        order_index=40,
+        dependencies={"after_step_ids": [str(uuid4())]},
+    )
+    session.add_all([blocked_step, unassigned_step])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=blocked_step.id,
+        agent_profile_id=UUID(inactive_agent_response.json()["id"]),
+        status=RunStatus.QUEUED.value,
+        input={},
+        error={"api_key": "sk-run"},
+    )
+    session.add(run)
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/execution-diagnostics",
+        headers=_headers(owner.id),
+    )
+    foreign_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks/{task.id}/execution-diagnostics",
+        headers=_headers(other_owner.id),
+    )
+    missing_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{uuid4()}/execution-diagnostics",
+        headers=_headers(owner.id),
+    )
+
+    assert active_agent_response.status_code == 201
+    assert inactive_agent_response.status_code == 201
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task_id"] == str(task.id)
+    assert body["task"]["has_project_plan"] is False
+    assert body["summary"]["total_steps"] == 4
+    assert body["summary"]["runnable_steps"] == 1
+    assert body["summary"]["unassigned_steps"] == 1
+    assert body["summary"]["active_runs"] == 1
+    by_package = {step["work_package_id"]: step for step in body["steps"]}
+    assert by_package["design"]["blocked_reasons"] == []
+    assert by_package["build"]["runnable"] is True
+    assert by_package["build"]["dependency_state"]["satisfied"] is True
+    assert by_package["review"]["assignment_status"] == "inactive_agent"
+    assert by_package["review"]["dependency_state"]["satisfied"] is False
+    assert set(by_package["review"]["blocked_reasons"]) == {
+        "assigned_agent_inactive",
+        "dependency_incomplete",
+        "active_run_exists",
+        "scheduler:workspace_run_quota_exceeded",
+    }
+    assert by_package["review"]["scheduling"]["blocked_reason"] == "workspace_run_quota_exceeded"
+    assert by_package["review"]["dependencies"]["token"] == "[redacted]"
+    assert by_package["review"]["runs"][0]["error"]["api_key"] == "[redacted]"
+    assert by_package["release"]["assignment_status"] == "unassigned"
+    assert by_package["release"]["blocked_reasons"] == [
+        "agent_unassigned",
+        "dependency_missing",
+    ]
+    assert "hidden-token" not in str(body)
+    assert "sk-run" not in str(body)
+    assert "sk-hidden" not in str(body)
+    assert foreign_response.status_code == 404
+    assert missing_response.status_code == 404
 
 
 def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> None:
