@@ -319,6 +319,23 @@ def _overview_summary(
         if item["status"] == "active" and item["accepts_tasks"] is True
     )
     active_member_tasks = sum(int(item["active_task_count"]) for item in member_items)
+    available_member_capacity = max(total_capacity - active_member_tasks, 0)
+    bottlenecks = _summary_bottlenecks(
+        task_items=task_items,
+        member_items=member_items,
+        staffing_gaps=staffing_gaps,
+        steps=steps,
+        runs=runs,
+    )
+    delivery_health = _delivery_health(
+        task_items=task_items,
+        member_items=member_items,
+        staffing_gaps=staffing_gaps,
+        bottlenecks=bottlenecks,
+        total_capacity=total_capacity,
+        active_member_tasks=active_member_tasks,
+        available_member_capacity=available_member_capacity,
+    )
     return {
         "task_counts": dict(sorted(task_status_counts.items())),
         "step_counts": dict(sorted(step_status_counts.items())),
@@ -342,7 +359,9 @@ def _overview_summary(
         "staffing_gap_step_count": sum(int(item["step_count"]) for item in staffing_gaps),
         "total_member_capacity": total_capacity,
         "active_member_task_count": active_member_tasks,
-        "available_member_capacity": max(total_capacity - active_member_tasks, 0),
+        "available_member_capacity": available_member_capacity,
+        "delivery_health": delivery_health,
+        "bottlenecks": bottlenecks,
         "recommended_actions": _summary_recommended_actions(
             task_items=task_items,
             staffing_gaps=staffing_gaps,
@@ -543,6 +562,209 @@ def _summary_recommended_actions(
         grouped.values(),
         key=lambda item: (-int(item["count"]), str(item["action"])),
     )
+
+
+def _summary_bottlenecks(
+    *,
+    task_items: list[dict[str, object]],
+    member_items: list[dict[str, object]],
+    staffing_gaps: list[dict[str, object]],
+    steps: list[TaskStep],
+    runs: list[AgentRun],
+) -> list[dict[str, object]]:
+    bottlenecks: list[dict[str, object]] = []
+    if staffing_gaps:
+        task_ids = sorted(
+            {
+                task_id
+                for gap in staffing_gaps
+                for task_id in _uuid_list(gap.get("task_ids"))
+            },
+            key=str,
+        )
+        bottlenecks.append(
+            _bottleneck(
+                code="staffing_gap",
+                severity="high",
+                count=len(staffing_gaps),
+                task_ids=task_ids,
+                recommended_action="add_or_hire_team_member",
+            )
+        )
+
+    overloaded_members = [
+        member for member in member_items if member.get("overloaded") is True
+    ]
+    if overloaded_members:
+        bottlenecks.append(
+            _bottleneck(
+                code="member_over_capacity",
+                severity="high",
+                count=len(overloaded_members),
+                task_ids=[],
+                recommended_action="rebalance_member_load",
+            )
+        )
+
+    blocked_tasks = [task for task in task_items if task.get("blocked_reasons")]
+    if blocked_tasks:
+        bottlenecks.append(
+            _bottleneck(
+                code="blocked_tasks",
+                severity="high"
+                if any(task.get("risk_level") in {"critical", "high"} for task in blocked_tasks)
+                else "medium",
+                count=len(blocked_tasks),
+                task_ids=_task_item_ids(blocked_tasks),
+                recommended_action="inspect_task_diagnostics",
+            )
+        )
+
+    high_risk_tasks = [
+        task for task in task_items if task.get("risk_level") in {"critical", "high"}
+    ]
+    if high_risk_tasks:
+        bottlenecks.append(
+            _bottleneck(
+                code="high_risk_tasks",
+                severity="critical"
+                if any(task.get("risk_level") == "critical" for task in high_risk_tasks)
+                else "high",
+                count=len(high_risk_tasks),
+                task_ids=_task_item_ids(high_risk_tasks),
+                recommended_action="review_high_risk_tasks",
+            )
+        )
+
+    waiting_runtime_count = sum(1 for run in runs if run.status == "waiting_runtime")
+    if waiting_runtime_count:
+        bottlenecks.append(
+            _bottleneck(
+                code="runtime_wait",
+                severity="medium",
+                count=waiting_runtime_count,
+                task_ids=sorted(
+                    {
+                        run.task_id
+                        for run in runs
+                        if run.status == "waiting_runtime" and run.task_id
+                    },
+                    key=str,
+                ),
+                recommended_action="inspect_runtime_capacity",
+            )
+        )
+
+    waiting_approval_steps = [step for step in steps if step.status == "waiting_approval"]
+    if waiting_approval_steps:
+        bottlenecks.append(
+            _bottleneck(
+                code="approval_wait",
+                severity="medium",
+                count=len(waiting_approval_steps),
+                task_ids=sorted({step.task_id for step in waiting_approval_steps}, key=str),
+                recommended_action="review_pending_approvals",
+            )
+        )
+
+    return sorted(
+        bottlenecks,
+        key=lambda item: (_severity_rank(str(item["severity"])), str(item["code"])),
+    )
+
+
+def _delivery_health(
+    *,
+    task_items: list[dict[str, object]],
+    member_items: list[dict[str, object]],
+    staffing_gaps: list[dict[str, object]],
+    bottlenecks: list[dict[str, object]],
+    total_capacity: int,
+    active_member_tasks: int,
+    available_member_capacity: int,
+) -> dict[str, object]:
+    reasons: list[str] = []
+    score = 100
+    high_risk_count = sum(
+        1 for task in task_items if task.get("risk_level") in {"critical", "high"}
+    )
+    blocked_task_count = sum(1 for task in task_items if task.get("blocked_reasons"))
+    overloaded_count = sum(1 for member in member_items if member.get("overloaded") is True)
+    critical_bottleneck = any(item.get("severity") == "critical" for item in bottlenecks)
+
+    if staffing_gaps:
+        score -= 20
+        reasons.append("staffing_gap")
+    if high_risk_count:
+        score -= min(35, high_risk_count * 25)
+        reasons.append("high_risk_tasks")
+    if blocked_task_count:
+        score -= min(25, blocked_task_count * 15)
+        reasons.append("blocked_tasks")
+    if overloaded_count:
+        score -= min(20, overloaded_count * 15)
+        reasons.append("member_over_capacity")
+    if total_capacity > 0 and active_member_tasks >= total_capacity:
+        score -= 10
+        reasons.append("team_capacity_full")
+
+    score = max(score, 0)
+    if critical_bottleneck or score <= 40:
+        status = "critical"
+    elif score <= 70:
+        status = "degraded"
+    elif score < 95:
+        status = "attention"
+    else:
+        status = "healthy"
+
+    return {
+        "status": status,
+        "score": score,
+        "reasons": _dedupe_strings(reasons),
+        "bottleneck_count": len(bottlenecks),
+        "high_risk_task_count": high_risk_count,
+        "blocked_task_count": blocked_task_count,
+        "overloaded_member_count": overloaded_count,
+        "capacity_utilization": round(
+            active_member_tasks / total_capacity,
+            4,
+        )
+        if total_capacity > 0
+        else 0.0,
+        "available_member_capacity": available_member_capacity,
+    }
+
+
+def _bottleneck(
+    *,
+    code: str,
+    severity: str,
+    count: int,
+    task_ids: list[UUID],
+    recommended_action: str,
+) -> dict[str, object]:
+    return {
+        "code": code,
+        "severity": severity,
+        "count": count,
+        "task_ids": task_ids,
+        "recommended_action": recommended_action,
+    }
+
+
+def _task_item_ids(task_items: list[dict[str, object]]) -> list[UUID]:
+    task_ids = [task.get("task_id") for task in task_items]
+    return sorted([task_id for task_id in task_ids if isinstance(task_id, UUID)], key=str)
+
+
+def _severity_rank(severity: str) -> int:
+    return {
+        "critical": 0,
+        "high": 1,
+        "medium": 2,
+        "low": 3,
+    }.get(severity, 4)
 
 
 def _add_summary_action(

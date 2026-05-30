@@ -672,6 +672,21 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert body["summary"]["staffing_gap_count"] == 1
     assert body["summary"]["staffing_gap_step_count"] == 1
     assert body["summary"]["available_member_capacity"] == 2
+    assert body["summary"]["delivery_health"] == {
+        "status": "critical",
+        "score": 40,
+        "reasons": ["staffing_gap", "high_risk_tasks", "blocked_tasks"],
+        "bottleneck_count": 3,
+        "high_risk_task_count": 1,
+        "blocked_task_count": 1,
+        "overloaded_member_count": 0,
+        "capacity_utilization": 0.3333,
+        "available_member_capacity": 2,
+    }
+    bottlenecks = {item["code"]: item for item in body["summary"]["bottlenecks"]}
+    assert set(bottlenecks) == {"blocked_tasks", "high_risk_tasks", "staffing_gap"}
+    assert bottlenecks["staffing_gap"]["task_ids"] == [str(running_task.id)]
+    assert bottlenecks["staffing_gap"]["recommended_action"] == "add_or_hire_team_member"
     actions = {item["action"]: item for item in body["summary"]["recommended_actions"]}
     assert actions["add_or_hire_team_member"]["task_ids"] == [str(running_task.id)]
     assert actions["monitor_specialist_execution"]["task_ids"] == [str(running_task.id)]
