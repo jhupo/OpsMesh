@@ -15,6 +15,7 @@ from backend.app.api.schemas.agents import AgentProfileCreateRequest, AgentProfi
 from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
 from backend.app.api.schemas.tasks import (
+    TaskCorrectionDiagnosticsResponse,
     TaskCorrectionRequest,
     TaskCorrectionResponse,
     TaskCreateRequest,
@@ -45,6 +46,7 @@ from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.diagnostics import ProjectPlanDiagnosticsService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
 from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.observation import TaskObservationService
@@ -504,6 +506,24 @@ async def create_task_correction(
     if correction is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskCorrectionResponse(**correction.__dict__)
+
+
+@router.get(
+    "/tasks/{task_id}/corrections/diagnostics",
+    response_model=TaskCorrectionDiagnosticsResponse,
+)
+async def get_task_correction_diagnostics(
+    task_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskCorrectionDiagnosticsResponse:
+    diagnostics = TaskCorrectionDiagnosticsService(session).get_diagnostics(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+    )
+    if diagnostics is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskCorrectionDiagnosticsResponse.model_validate(diagnostics)
 
 
 @router.get("/tasks/{task_id}/observation", response_model=TaskObservationResponse)

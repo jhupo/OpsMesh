@@ -133,6 +133,71 @@ class TaskCorrectionResponse(BaseModel):
     status: str
 
 
+class TaskCorrectionStepDiagnostic(BaseModel):
+    id: UUID
+    work_package_id: str | None
+    title: str
+    status: str
+    order_index: int
+    expected_artifacts: list[str]
+    result_summary: str | None
+
+
+class TaskCorrectionRunDiagnostic(BaseModel):
+    id: UUID
+    status: str
+    started_at: datetime | None
+    completed_at: datetime | None
+    error: dict[str, object] | None
+
+    @field_serializer("error")
+    def _serialize_error(self, value: dict[str, object] | None) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
+
+
+class TaskCorrectionArtifactDiagnostic(BaseModel):
+    id: UUID
+    filename: str
+    artifact_type: str
+    content_type: str | None
+    version: int
+    review_status: str
+    work_package_id: str | None
+
+
+class TaskCorrectionDiagnosticItem(BaseModel):
+    message_id: UUID
+    sequence: int
+    mode: str
+    target_type: str | None
+    target: dict[str, object]
+    instruction: str
+    metadata: dict[str, object]
+    actor_user_id: UUID | None
+    created_step: TaskCorrectionStepDiagnostic | None
+    runs: list[TaskCorrectionRunDiagnostic]
+    artifacts: list[TaskCorrectionArtifactDiagnostic]
+    status: str
+    blocked_reasons: list[str]
+    created_at: datetime
+
+    @field_serializer("target", "metadata")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
+class TaskCorrectionDiagnosticsResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    generated_at: datetime
+    summary: dict[str, object]
+    corrections: list[TaskCorrectionDiagnosticItem]
+
+    @field_serializer("summary")
+    def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
 class TaskObservationCard(BaseModel):
     card_type: str
     title: str

@@ -2348,6 +2348,148 @@ def test_artifact_correction_creates_replacement_work_without_mutating_artifact(
     assert step.dependencies["correction"]["target"]["artifact_id"] == str(artifact.id)
 
 
+def test_task_correction_diagnostics_tracks_follow_up_status_and_redacts_metadata() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-correction-diagnostics@example.com",
+        slug="other-correction-diagnostics",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Correction diagnostics",
+        status="running",
+    )
+    session.add(task)
+    session.flush()
+    draft_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Draft",
+        status="completed",
+        order_index=1,
+    )
+    session.add(draft_step)
+    session.flush()
+    artifact = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=draft_step.id,
+        artifact_type="document",
+        filename="draft.pdf",
+        content_type="application/pdf",
+        size_bytes=10,
+        checksum_sha256="a" * 64,
+        storage_key="draft",
+        created_at=datetime.now(UTC),
+    )
+    session.add(artifact)
+    session.commit()
+
+    replace = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/corrections",
+        headers=_headers(owner.id),
+        json={
+            "target_type": "artifact",
+            "target_id": str(artifact.id),
+            "mode": "replace_artifact",
+            "instruction": "Replace the draft PDF.",
+            "metadata": {"token": "hidden-token"},
+        },
+    )
+    revise = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/corrections",
+        headers=_headers(owner.id),
+        json={
+            "target_type": "step",
+            "target_id": str(draft_step.id),
+            "mode": "revise",
+            "instruction": "Revise the draft text.",
+        },
+    )
+    replace_step = session.get(TaskStep, UUID(replace.json()["created_step_id"]))
+    assert replace_step is not None
+    replace_step.status = "completed"
+    replace_step.result_summary = "Replacement complete"
+    session.add(
+        AgentRun(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            task_step_id=replace_step.id,
+            status=RunStatus.COMPLETED.value,
+            input={},
+            error={"api_key": "sk-hidden"},
+        )
+    )
+    replacement_artifact = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=replace_step.id,
+        artifact_type="document",
+        filename="replacement.pdf",
+        content_type="application/pdf",
+        size_bytes=12,
+        checksum_sha256="b" * 64,
+        storage_key="replacement",
+        created_at=datetime.now(UTC),
+    )
+    session.add(replacement_artifact)
+    session.commit()
+    stop = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/corrections",
+        headers=_headers(owner.id),
+        json={
+            "target_type": "task",
+            "mode": "stop_work",
+            "instruction": "Stop remaining work.",
+        },
+    )
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/corrections/diagnostics",
+        headers=_headers(owner.id),
+    )
+    foreign_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks/{task.id}/corrections/diagnostics",
+        headers=_headers(other_owner.id),
+    )
+
+    assert replace.status_code == 201
+    assert revise.status_code == 201
+    assert stop.status_code == 201
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"]["total_corrections"] == 3
+    assert body["summary"]["status_counts"] == {
+        "cancelled": 1,
+        "completed": 1,
+        "pending": 1,
+    }
+    assert body["summary"]["mode_counts"] == {
+        "replace_artifact": 1,
+        "revise": 1,
+        "stop_work": 1,
+    }
+    assert body["summary"]["blocked_corrections"] == 1
+    by_mode = {item["mode"]: item for item in body["corrections"]}
+    assert by_mode["replace_artifact"]["status"] == "completed"
+    assert by_mode["replace_artifact"]["metadata"]["token"] == "[redacted]"
+    assert by_mode["replace_artifact"]["created_step"]["result_summary"] == (
+        "Replacement complete"
+    )
+    assert by_mode["replace_artifact"]["artifacts"][0]["filename"] == "replacement.pdf"
+    assert by_mode["replace_artifact"]["blocked_reasons"] == []
+    assert by_mode["revise"]["status"] == "pending"
+    assert by_mode["revise"]["blocked_reasons"] == ["follow_up_waiting_to_start"]
+    assert by_mode["stop_work"]["status"] == "cancelled"
+    assert "hidden-token" not in str(body)
+    assert "sk-hidden" not in str(body)
+    assert foreign_response.status_code == 404
+
+
 def test_artifact_list_includes_work_package_version_metadata() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
