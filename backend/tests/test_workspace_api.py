@@ -1988,12 +1988,36 @@ def test_task_execution_diagnostics_explains_assignments_dependencies_and_blocke
     assert body["summary"]["runnable_steps"] == 1
     assert body["summary"]["unassigned_steps"] == 1
     assert body["summary"]["active_runs"] == 1
+    assert body["summary"]["handoff_counts"] == {
+        "no_downstream": 2,
+        "ready_for_downstream": 1,
+        "source_incomplete": 1,
+    }
+    assert body["summary"]["ready_handoffs"] == 1
+    assert body["summary"]["blocked_handoffs"] == 0
     by_package = {step["work_package_id"]: step for step in body["steps"]}
     assert by_package["design"]["blocked_reasons"] == []
+    assert by_package["design"]["handoff"]["status"] == "ready_for_downstream"
+    assert by_package["design"]["handoff"]["requires_handoff"] is True
+    assert by_package["design"]["handoff"]["downstream_step_ids"] == [str(runnable_step.id)]
+    assert by_package["design"]["handoff"]["runnable_downstream_step_ids"] == [
+        str(runnable_step.id)
+    ]
+    assert by_package["design"]["handoff"]["recommended_actions"] == [
+        "schedule_downstream_steps"
+    ]
     assert by_package["build"]["runnable"] is True
     assert by_package["build"]["dependency_state"]["satisfied"] is True
+    assert by_package["build"]["handoff"]["status"] == "source_incomplete"
+    assert by_package["build"]["handoff"]["upstream_step_ids"] == [str(completed_step.id)]
+    assert by_package["build"]["handoff"]["downstream_step_ids"] == [str(blocked_step.id)]
+    assert by_package["build"]["handoff"]["blocked_downstream_step_ids"] == [
+        str(blocked_step.id)
+    ]
     assert by_package["review"]["assignment_status"] == "inactive_agent"
     assert by_package["review"]["dependency_state"]["satisfied"] is False
+    assert by_package["review"]["handoff"]["status"] == "no_downstream"
+    assert by_package["review"]["handoff"]["upstream_step_ids"] == [str(runnable_step.id)]
     assert set(by_package["review"]["blocked_reasons"]) == {
         "assigned_agent_inactive",
         "dependency_incomplete",
@@ -2008,6 +2032,7 @@ def test_task_execution_diagnostics_explains_assignments_dependencies_and_blocke
         "agent_unassigned",
         "dependency_missing",
     ]
+    assert by_package["release"]["handoff"]["status"] == "no_downstream"
     assert "hidden-token" not in str(body)
     assert "sk-run" not in str(body)
     assert "sk-hidden" not in str(body)

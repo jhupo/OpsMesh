@@ -391,11 +391,18 @@ class TaskExecutionStepDiagnostic(BaseModel):
     runnable: bool
     blocked_reasons: list[str]
     scheduling: dict[str, object]
+    handoff: dict[str, object]
     runs: list[TaskExecutionRunDiagnostic]
     active_run_ids: list[UUID]
     result_summary: str | None
 
-    @field_serializer("review_policy", "dependencies", "dependency_state", "scheduling")
+    @field_serializer(
+        "review_policy",
+        "dependencies",
+        "dependency_state",
+        "scheduling",
+        "handoff",
+    )
     def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
 

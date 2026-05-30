@@ -42,6 +42,7 @@ class TaskExecutionDiagnosticsService:
         runs_by_step_id = self._runs_by_step_id(workspace_id, task.id)
         agents = self._agent_map(workspace_id, steps)
         step_by_id = {step.id: step for step in steps}
+        downstream_by_step_id = _downstream_map(steps)
         step_payloads = [
             self._step_payload(
                 step,
@@ -51,6 +52,15 @@ class TaskExecutionDiagnosticsService:
             )
             for step in steps
         ]
+        step_payload_by_id = {
+            step_payload["task_step_id"]: step_payload for step_payload in step_payloads
+        }
+        for step_payload in step_payloads:
+            step_payload["handoff"] = _handoff_state(
+                step_payload,
+                step_payload_by_id=step_payload_by_id,
+                downstream_by_step_id=downstream_by_step_id,
+            )
         return {
             "workspace_id": workspace_id,
             "task_id": task.id,
@@ -179,6 +189,11 @@ class TaskExecutionDiagnosticsService:
         status_counts = Counter(str(step["status"]) for step in steps)
         blocked = [step for step in steps if step["blocked_reasons"]]
         runnable = [step for step in steps if step["runnable"] is True]
+        handoff_counts = Counter(
+            str(handoff["status"])
+            for step in steps
+            if isinstance((handoff := step.get("handoff")), dict)
+        )
         active_run_count = sum(
             1
             for runs in runs_by_step_id.values()
@@ -195,6 +210,9 @@ class TaskExecutionDiagnosticsService:
             "unassigned_steps": sum(
                 1 for step in steps if step["assignment_status"] == "unassigned"
             ),
+            "handoff_counts": dict(sorted(handoff_counts.items())),
+            "ready_handoffs": handoff_counts.get("ready_for_downstream", 0),
+            "blocked_handoffs": handoff_counts.get("downstream_blocked", 0),
             "next_runnable_step_ids": [step["task_step_id"] for step in runnable],
             "blocked_step_ids": [step["task_step_id"] for step in blocked],
         }
@@ -217,6 +235,130 @@ def _dependency_state(
         "missing_step_ids": missing_step_ids,
         "incomplete_step_ids": incomplete_step_ids,
     }
+
+
+def _downstream_map(steps: list[TaskStep]) -> dict[UUID, list[UUID]]:
+    step_ids = {step.id for step in steps}
+    downstream_by_step_id: dict[UUID, list[UUID]] = {step.id: [] for step in steps}
+    for step in steps:
+        for upstream_step_id in _uuid_list_from_dependencies(
+            step.dependencies,
+            "after_step_ids",
+        ):
+            if upstream_step_id in step_ids:
+                downstream_by_step_id[upstream_step_id].append(step.id)
+    return downstream_by_step_id
+
+
+def _handoff_state(
+    step_payload: dict[str, object],
+    *,
+    step_payload_by_id: dict[UUID, dict[str, object]],
+    downstream_by_step_id: dict[UUID, list[UUID]],
+) -> dict[str, object]:
+    step_id = step_payload["task_step_id"]
+    if not isinstance(step_id, UUID):
+        return {}
+    dependency_state = step_payload.get("dependency_state")
+    upstream_step_ids = (
+        dependency_state.get("after_step_ids", [])
+        if isinstance(dependency_state, dict)
+        else []
+    )
+    downstream_step_ids = downstream_by_step_id.get(step_id, [])
+    downstream_steps = [
+        step_payload_by_id[downstream_step_id]
+        for downstream_step_id in downstream_step_ids
+        if downstream_step_id in step_payload_by_id
+    ]
+    blocked_downstream_step_ids = [
+        downstream_step["task_step_id"]
+        for downstream_step in downstream_steps
+        if downstream_step.get("blocked_reasons")
+    ]
+    completed_downstream_step_ids = [
+        downstream_step["task_step_id"]
+        for downstream_step in downstream_steps
+        if downstream_step.get("status") == "completed"
+    ]
+    waiting_downstream_step_ids = [
+        downstream_step["task_step_id"]
+        for downstream_step in downstream_steps
+        if downstream_step.get("status") != "completed"
+        and not downstream_step.get("blocked_reasons")
+    ]
+    runnable_downstream_step_ids = [
+        downstream_step["task_step_id"]
+        for downstream_step in downstream_steps
+        if downstream_step.get("runnable") is True
+    ]
+    status = _handoff_status(
+        step_status=str(step_payload.get("status")),
+        has_downstream=bool(downstream_steps),
+        downstream_steps=downstream_steps,
+        blocked_downstream_step_ids=blocked_downstream_step_ids,
+        runnable_downstream_step_ids=runnable_downstream_step_ids,
+    )
+    return {
+        "status": status,
+        "requires_handoff": bool(downstream_steps),
+        "upstream_step_ids": upstream_step_ids,
+        "downstream_step_ids": downstream_step_ids,
+        "completed_downstream_step_ids": completed_downstream_step_ids,
+        "waiting_downstream_step_ids": waiting_downstream_step_ids,
+        "blocked_downstream_step_ids": blocked_downstream_step_ids,
+        "runnable_downstream_step_ids": runnable_downstream_step_ids,
+        "deliverables_expected": step_payload.get("expected_artifacts", []),
+        "has_result_summary": step_payload.get("result_summary") is not None,
+        "recommended_actions": _handoff_recommended_actions(
+            status=status,
+            has_result_summary=step_payload.get("result_summary") is not None,
+        ),
+    }
+
+
+def _handoff_status(
+    *,
+    step_status: str,
+    has_downstream: bool,
+    downstream_steps: list[dict[str, object]],
+    blocked_downstream_step_ids: list[object],
+    runnable_downstream_step_ids: list[object],
+) -> str:
+    if step_status != "completed":
+        return "source_incomplete" if has_downstream else "no_downstream"
+    if not has_downstream:
+        return "final_delivery_ready"
+    if len(downstream_steps) == sum(
+        1 for downstream_step in downstream_steps if downstream_step.get("status") == "completed"
+    ):
+        return "consumed"
+    if blocked_downstream_step_ids:
+        return "downstream_blocked"
+    if runnable_downstream_step_ids:
+        return "ready_for_downstream"
+    return "handoff_in_progress"
+
+
+def _handoff_recommended_actions(
+    *,
+    status: str,
+    has_result_summary: bool,
+) -> list[str]:
+    if status == "source_incomplete":
+        return ["wait_for_source_completion"]
+    if status == "ready_for_downstream":
+        return ["schedule_downstream_steps"]
+    if status == "downstream_blocked":
+        return ["inspect_blocked_downstream"]
+    if status == "final_delivery_ready":
+        actions = ["request_manager_review"]
+        if not has_result_summary:
+            actions.append("create_correction")
+        return actions
+    if status == "no_downstream" and not has_result_summary:
+        return ["create_correction"]
+    return []
 
 
 def _step_blocked_reasons(
