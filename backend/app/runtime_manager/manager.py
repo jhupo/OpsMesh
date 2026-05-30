@@ -51,6 +51,7 @@ class RuntimeManager:
         limits: RuntimeLimits,
         runtime_space_id: UUID | None = None,
         network_disabled: bool = True,
+        policy_metadata: dict[str, object] | None = None,
     ) -> WorkspaceRuntime:
         RuntimeQuotaPolicy(self._session).assert_can_create_runtime(workspace_id, limits)
         runtime = WorkspaceRuntime(
@@ -79,6 +80,7 @@ class RuntimeManager:
         )
         runtime.capabilities = {
             "isolation": isolation_metadata,
+            "policy_resolution": dict(policy_metadata or {}),
             "managed_resources": {
                 "docker_volumes": [isolation_metadata["workspace_mount"]["docker_volume"]],
             },
@@ -138,6 +140,7 @@ class RuntimeManager:
                 "limits": dict(runtime.limits),
                 "network_policy": dict(runtime.network_policy),
                 "isolation": isolation_metadata,
+                "policy_resolution": dict(policy_metadata or {}),
                 "runtime_space_reservation_key": reservation_key
                 if runtime_space_id is not None
                 else None,
@@ -150,6 +153,7 @@ class RuntimeManager:
             metadata={
                 "isolation": isolation_metadata,
                 "network_policy": dict(runtime.network_policy),
+                "policy_resolution": dict(policy_metadata or {}),
             },
         )
         self._append_event(
@@ -772,6 +776,14 @@ def _runtime_labels(runtime: WorkspaceRuntime) -> dict[str, str]:
     }
     if runtime.runtime_space_id is not None:
         labels["chaincloud.runtime_space_id"] = str(runtime.runtime_space_id)
+    policy_resolution = runtime.capabilities.get("policy_resolution")
+    if isinstance(policy_resolution, dict):
+        team = policy_resolution.get("team")
+        if isinstance(team, dict) and isinstance(team.get("id"), str):
+            labels["chaincloud.team_id"] = team["id"]
+        runtime_space = policy_resolution.get("runtime_space")
+        if isinstance(runtime_space, dict) and isinstance(runtime_space.get("scope"), str):
+            labels["chaincloud.runtime_space_scope"] = runtime_space["scope"]
     return labels
 
 

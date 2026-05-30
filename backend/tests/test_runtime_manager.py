@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.runtime_manager.contracts import (
@@ -20,12 +21,15 @@ from backend.app.runtime_manager.contracts import (
 )
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
+from backend.app.runtime_manager.service import RuntimeControlService
 from backend.app.runtime_spaces.models import (
     RuntimeSpace,
+    RuntimeSpaceBinding,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
+from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeEvent,
@@ -34,6 +38,7 @@ from backend.app.runtimes.models import (
     WorkspaceRuntime,
 )
 from backend.app.security.models import SecurityEvent
+from backend.app.teams.models import AgentTeam
 from backend.app.workspaces.models import Workspace
 
 
@@ -990,6 +995,119 @@ def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch
     assert "--mount" in command
     assert command[command.index("--workdir") + 1] == "/workspace"
     assert "chaincloud.runtime_id=runtime-1" in command
+
+
+def test_runtime_control_service_applies_team_runtime_space_policy() -> None:
+    session = _session()
+    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme", settings={})
+    template = RuntimeTemplate(
+        name="python",
+        image="python:3.12-slim",
+        default_limits={
+            "cpu_count": 4,
+            "memory_mb": 4096,
+            "disk_mb": 8192,
+            "timeout_seconds": 300,
+            "max_output_bytes": 900_000,
+            "max_processes": 300,
+        },
+        default_network_policy={"allow_network": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Novel Studio",
+        team_type="creative",
+        default_task_policy={
+            "runtime": {
+                "network_disabled": True,
+                "limits": {
+                    "cpu_count": 1,
+                    "memory_mb": 1024,
+                    "timeout_seconds": 45,
+                    "max_processes": 128,
+                },
+            }
+        },
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Novel Studio Space",
+        scope="team",
+        policy={
+            "runtime": {
+                "limits": {
+                    "disk_mb": 2048,
+                    "max_output_bytes": 120_000,
+                }
+            }
+        },
+        network_policy={"mode": "none"},
+    )
+    session.add_all([team, runtime_space])
+    session.flush()
+    session.add(
+        RuntimeSpaceBinding(
+            workspace_id=workspace.id,
+            runtime_space_id=runtime_space.id,
+            target_type="agent_team",
+            target_id=team.id,
+        )
+    )
+    session.commit()
+    docker = FakeDockerClient()
+    service = RuntimeControlService(
+        session,
+        docker,
+        Settings(
+            storage_root=".chaincloud-test-storage",
+            runtime_allowed_images=["python:3.12-slim"],
+        ),
+    )
+
+    runtime = service.create_runtime(
+        workspace_id=workspace.id,
+        template_id=template.id,
+        name="drafting-runtime",
+        limits=None,
+        network_disabled=False,
+        runtime_space_id=runtime_space.id,
+    )
+
+    assert runtime is not None
+    request = docker.created_requests[0]
+    assert request.network_disabled is True
+    assert request.limits.cpu_count == 1
+    assert request.limits.memory_mb == 1024
+    assert request.limits.disk_mb == 2048
+    assert request.limits.timeout_seconds == 45
+    assert request.limits.max_output_bytes == 120_000
+    assert request.limits.max_processes == 128
+    assert request.labels["chaincloud.team_id"] == str(team.id)
+    assert request.labels["chaincloud.runtime_space_scope"] == "team"
+
+    policy_resolution = runtime.capabilities["policy_resolution"]
+    assert policy_resolution["runtime_space"]["scope"] == "team"
+    assert policy_resolution["team"]["id"] == str(team.id)
+    assert policy_resolution["effective"]["network_disabled"] is True
+    reduced_limits = {
+        item["limit"]: item["effective"]
+        for item in policy_resolution["limit_reductions"]
+    }
+    assert reduced_limits == {
+        "cpu_count": 1,
+        "memory_mb": 1024,
+        "timeout_seconds": 45,
+        "max_processes": 128,
+        "disk_mb": 2048,
+        "max_output_bytes": 120_000,
+    }
+
+    diagnostics = RuntimeSpaceService(session).diagnostics(workspace.id, runtime_space.id)
+    assert diagnostics is not None
+    assert diagnostics.runtimes[0].policy_resolution["team"]["id"] == str(team.id)
 
 
 def _runtime_space_quotas(session: Session, runtime_space_id: object) -> dict[str, int]:

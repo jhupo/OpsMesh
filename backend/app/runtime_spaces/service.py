@@ -204,6 +204,7 @@ class RuntimeSpaceService:
                     limits=dict(runtime.limits or {}),
                     network_policy=dict(runtime.network_policy or {}),
                     capabilities=dict(runtime.capabilities or {}),
+                    policy_resolution=_policy_resolution(runtime),
                     last_heartbeat_at=runtime.last_heartbeat_at,
                 )
                 for runtime in runtimes
@@ -1068,6 +1069,12 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _policy_resolution(runtime: WorkspaceRuntime) -> dict[str, object]:
+    capabilities = runtime.capabilities if isinstance(runtime.capabilities, dict) else {}
+    policy_resolution = capabilities.get("policy_resolution")
+    return policy_resolution if isinstance(policy_resolution, dict) else {}
 
 
 def _active_reservation_matches(

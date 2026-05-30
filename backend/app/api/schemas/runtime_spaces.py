@@ -134,9 +134,10 @@ class RuntimeSpaceRuntimeDiagnosticResponse(BaseModel):
     limits: dict[str, object]
     network_policy: dict[str, object]
     capabilities: dict[str, object]
+    policy_resolution: dict[str, object]
     last_heartbeat_at: datetime | None
 
-    @field_serializer("limits", "network_policy", "capabilities")
+    @field_serializer("limits", "network_policy", "capabilities", "policy_resolution")
     def _serialize_runtime_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
 
