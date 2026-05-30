@@ -21,6 +21,7 @@ from backend.app.api.schemas.tasks import (
     TaskExecutionDiagnosticsResponse,
     TaskMessageResponse,
     TaskObservationResponse,
+    TaskPlanDiagnosticsResponse,
     TaskPlanningAttemptResponse,
     TaskPlanRegenerateRequest,
     TaskPlanRetryRequest,
@@ -41,6 +42,7 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.planning.diagnostics import ProjectPlanDiagnosticsService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.tasks.corrections import TaskCorrectionService
@@ -414,6 +416,21 @@ async def regenerate_task_plan(
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskResponse.model_validate(task)
+
+
+@router.get("/tasks/{task_id}/plan/diagnostics", response_model=TaskPlanDiagnosticsResponse)
+async def get_task_plan_diagnostics(
+    task_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskPlanDiagnosticsResponse:
+    diagnostics = ProjectPlanDiagnosticsService(session).get_diagnostics(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+    )
+    if diagnostics is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskPlanDiagnosticsResponse.model_validate(diagnostics)
 
 
 @router.get("/tasks/{task_id}/messages", response_model=PageResponse[TaskMessageResponse])

@@ -1740,6 +1740,177 @@ def test_task_execution_diagnostics_explains_assignments_dependencies_and_blocke
     assert missing_response.status_code == 404
 
 
+def test_task_plan_diagnostics_explains_assignment_and_dependency_quality() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-plan@example.com",
+        slug="other-plan",
+    )
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="PM",
+        role="project_manager",
+    )
+    developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+    )
+    session.add_all([manager, developer])
+    session.flush()
+    member_id = uuid4()
+    team_snapshot = {
+        "team": {"manager_agent_profile_id": str(manager.id)},
+        "members": [
+            {
+                "id": str(member_id),
+                "agent_profile_id": str(developer.id),
+                "team_role": "developer",
+                "skill_weights": {"python": 0.9},
+                "accepts_tasks": True,
+                "is_required": True,
+                "max_concurrent_tasks": 3,
+            }
+        ],
+    }
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Build backend",
+        agent_team_id=None,
+        team_snapshot=team_snapshot,
+        project_plan={
+            "plan_id": "plan-1",
+            "strategy": "test",
+            "work_packages": [
+                {
+                    "package_id": "manager-planning",
+                    "title": "Manager planning",
+                    "required_role": "project_manager",
+                    "assigned_agent_profile_id": str(manager.id),
+                    "depends_on": [],
+                },
+                {
+                    "package_id": "build",
+                    "title": "Build API",
+                    "required_role": "developer",
+                    "required_skills": ["python"],
+                    "assigned_agent_profile_id": str(developer.id),
+                    "depends_on": ["manager-planning"],
+                    "review_policy": {"token": "hidden-token"},
+                },
+                {
+                    "package_id": "design",
+                    "title": "Design UI",
+                    "required_role": "designer",
+                    "required_skills": ["figma"],
+                    "assigned_agent_profile_id": None,
+                    "depends_on": ["manager-planning"],
+                },
+                {
+                    "package_id": "cycle-a",
+                    "title": "Cycle A",
+                    "required_role": "developer",
+                    "assigned_agent_profile_id": str(developer.id),
+                    "depends_on": ["cycle-b"],
+                },
+                {
+                    "package_id": "cycle-b",
+                    "title": "Cycle B",
+                    "required_role": "developer",
+                    "assigned_agent_profile_id": str(developer.id),
+                    "depends_on": ["cycle-a"],
+                },
+                {
+                    "package_id": "manager-summary",
+                    "title": "Manager summary",
+                    "required_role": "project_manager",
+                    "assigned_agent_profile_id": str(manager.id),
+                    "depends_on": ["build", "design", "missing-package"],
+                },
+            ],
+        },
+    )
+    no_plan_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="No plan",
+    )
+    session.add_all([task, no_plan_task])
+    session.flush()
+    load_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=developer.id,
+        title="Existing build",
+        status="running",
+    )
+    session.add(load_step)
+    session.flush()
+    session.add(
+        AgentRun(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            task_step_id=load_step.id,
+            agent_profile_id=developer.id,
+            status=RunStatus.RUNNING.value,
+            input={},
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/plan/diagnostics",
+        headers=_headers(owner.id),
+    )
+    no_plan_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{no_plan_task.id}/plan/diagnostics",
+        headers=_headers(owner.id),
+    )
+    foreign_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks/{task.id}/plan/diagnostics",
+        headers=_headers(other_owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["plan_present"] is True
+    assert body["plan_id"] == "plan-1"
+    assert body["manager"] == {
+        "manager_agent_profile_id": str(manager.id),
+        "has_manager": True,
+        "has_manager_planning": True,
+        "has_manager_summary": True,
+    }
+    assert body["summary"] == {
+        "total_packages": 6,
+        "assigned_packages": 5,
+        "unassigned_packages": 1,
+        "unknown_dependencies": 1,
+        "cycle_packages": 2,
+    }
+    assert set(body["blocked_reasons"]) == {
+        "unassigned_work_packages",
+        "unknown_dependencies",
+        "dependency_cycle",
+    }
+    assert body["dependency_graph"]["unknown_dependencies"] == ["missing-package"]
+    assert body["dependency_graph"]["cycle_package_ids"] == ["cycle-a", "cycle-b"]
+    by_package = {package["package_id"]: package for package in body["packages"]}
+    assert by_package["design"]["assignment_status"] == "unassigned"
+    assert by_package["build"]["assignment_status"] == "assigned"
+    assert by_package["build"]["review_policy"]["token"] == "[redacted]"
+    assert by_package["build"]["recommended_matches"][0]["agent_profile_id"] == str(developer.id)
+    assert by_package["build"]["recommended_matches"][0]["current_load"] == 1
+    assert "hidden-token" not in str(body)
+    assert no_plan_response.status_code == 200
+    assert no_plan_response.json()["blocked_reasons"] == ["no_project_plan"]
+    assert foreign_response.status_code == 404
+
+
 def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

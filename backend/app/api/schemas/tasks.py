@@ -216,3 +216,48 @@ class TaskExecutionDiagnosticsResponse(BaseModel):
     @field_serializer("task", "summary")
     def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+
+class TaskPlanPackageMatchResponse(BaseModel):
+    agent_profile_id: UUID
+    team_member_id: UUID | None
+    team_role: str
+    score: float
+    reasons: list[str]
+    current_load: int
+    max_concurrent_tasks: int
+
+
+class TaskPlanPackageDiagnosticResponse(BaseModel):
+    package_id: str | None
+    title: str
+    required_role: str
+    required_skills: list[str]
+    assigned_agent_profile_id: UUID | None
+    assignment_status: str
+    depends_on: list[str]
+    expected_artifacts: list[str]
+    acceptance_criteria: list[str]
+    review_policy: dict[str, object]
+    recommended_matches: list[TaskPlanPackageMatchResponse]
+
+    @field_serializer("review_policy")
+    def _serialize_review_policy(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
+class TaskPlanDiagnosticsResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    plan_present: bool
+    plan_id: str | None
+    strategy: str | None
+    summary: dict[str, object]
+    manager: dict[str, object]
+    packages: list[TaskPlanPackageDiagnosticResponse]
+    dependency_graph: dict[str, object]
+    blocked_reasons: list[str]
+
+    @field_serializer("summary", "manager", "dependency_graph")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
