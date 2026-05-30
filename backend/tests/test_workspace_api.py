@@ -772,6 +772,117 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert "sk-approved-overview" not in serialized
 
 
+def test_team_operator_action_requests_manager_review_for_selected_tasks() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-team-operator@example.com",
+        slug="other-team-operator",
+    )
+    manager = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "PM", "role": "project_manager"},
+    )
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={
+            "name": "Operator Team",
+            "team_type": "software",
+            "manager_agent_profile_id": manager.json()["id"],
+        },
+    )
+    assert manager.status_code == 201
+    assert team.status_code == 201
+    team_id = UUID(team.json()["id"])
+    manager_id = UUID(manager.json()["id"])
+
+    active_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team_id,
+        title="Active delivery",
+        status="running",
+        priority=7,
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager_id)}},
+    )
+    second_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team_id,
+        title="Second delivery",
+        status="queued",
+        priority=5,
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager_id)}},
+    )
+    completed_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team_id,
+        title="Completed delivery",
+        status="completed",
+        priority=1,
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager_id)}},
+    )
+    session.add_all([active_task, second_task, completed_task])
+    session.commit()
+
+    missing_task_id = uuid4()
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/operator-actions",
+        headers=_headers(owner.id),
+        json={
+            "action": "request_manager_review",
+            "task_ids": [
+                str(active_task.id),
+                str(second_task.id),
+                str(completed_task.id),
+                str(missing_task_id),
+            ],
+            "instruction": "Review blocked delivery without leaking sk-team-secret.",
+            "reason": "team_intervention",
+            "metadata": {"api_key": "sk-team-secret"},
+        },
+    )
+    forbidden = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/operator-actions",
+        headers=_headers(other_owner.id),
+        json={"action": "request_manager_review", "task_ids": [str(active_task.id)]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "applied"
+    assert body["requested_task_count"] == 4
+    assert body["applied_count"] == 2
+    assert body["skipped_count"] == 2
+    results = {item["task_id"]: item for item in body["results"]}
+    assert results[str(active_task.id)]["status"] == "applied"
+    assert results[str(second_task.id)]["status"] == "applied"
+    assert results[str(completed_task.id)]["message"] == "terminal_task"
+    assert results[str(missing_task_id)]["message"] == "task_not_found_or_not_in_team"
+    assert forbidden.status_code == 403
+    assert "sk-team-secret" not in str(body)
+
+    review_steps = session.scalars(
+        select(TaskStep).where(
+            TaskStep.workspace_id == workspace.id,
+            TaskStep.work_package_id == "manager-summary-operator-1",
+        )
+    ).all()
+    assert {step.task_id for step in review_steps} == {active_task.id, second_task.id}
+    messages = session.scalars(
+        select(TaskMessage).where(
+            TaskMessage.workspace_id == workspace.id,
+            TaskMessage.message_type == "task.operator.request_manager_review",
+        )
+    ).all()
+    assert {message.task_id for message in messages} == {active_task.id, second_task.id}
+
+
 def test_team_member_update_changes_future_snapshots_only() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

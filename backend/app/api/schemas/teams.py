@@ -186,3 +186,30 @@ class AgentTeamExecutionOverviewResponse(BaseModel):
     @field_serializer("team", "manager_agent", "summary")
     def _serialize_metadata(self, value: dict[str, object] | None) -> dict[str, object] | None:
         return redact_sensitive_payload(value) if value is not None else None
+
+
+class AgentTeamOperatorActionRequest(BaseModel):
+    action: str = Field(pattern="^request_manager_review$")
+    task_ids: list[UUID] = Field(default_factory=list, max_length=100)
+    max_tasks: int = Field(default=25, ge=1, le=100)
+    instruction: str | None = Field(default=None, max_length=4_000)
+    reason: str | None = Field(default=None, max_length=1_000)
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class AgentTeamOperatorActionResponse(BaseModel):
+    workspace_id: UUID
+    team_id: UUID
+    action: str
+    status: str
+    requested_task_count: int
+    applied_count: int
+    skipped_count: int
+    results: list[dict[str, object]]
+
+    @field_serializer("results")
+    def _serialize_results(
+        self,
+        value: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]

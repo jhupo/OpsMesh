@@ -40,6 +40,8 @@ from backend.app.api.schemas.teams import (
     AgentTeamMemberCreateRequest,
     AgentTeamMemberResponse,
     AgentTeamMemberUpdateRequest,
+    AgentTeamOperatorActionRequest,
+    AgentTeamOperatorActionResponse,
     AgentTeamOrgChartResponse,
     AgentTeamResponse,
 )
@@ -61,6 +63,7 @@ from backend.app.tasks.observation import TaskObservationService
 from backend.app.tasks.operator_actions import TaskOperatorActionService
 from backend.app.tasks.timeline import TaskTimelineService
 from backend.app.teams.execution_overview import TeamExecutionOverviewService
+from backend.app.teams.operator_actions import TeamOperatorActionService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
 
@@ -209,6 +212,35 @@ async def get_team_execution_overview(
     if overview is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     return AgentTeamExecutionOverviewResponse.model_validate(overview)
+
+
+@router.post(
+    "/teams/{team_id}/operator-actions",
+    response_model=AgentTeamOperatorActionResponse,
+)
+async def apply_team_operator_action(
+    team_id: UUID,
+    request: AgentTeamOperatorActionRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> AgentTeamOperatorActionResponse:
+    try:
+        response = TeamOperatorActionService(session).apply_action(
+            workspace_id=context.workspace.id,
+            team_id=team_id,
+            actor_user_id=context.user.user_id,
+            action=request.action,
+            task_ids=request.task_ids,
+            max_tasks=request.max_tasks,
+            instruction=request.instruction,
+            reason=request.reason,
+            metadata=request.metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    return AgentTeamOperatorActionResponse.model_validate(response)
 
 
 @router.get("/teams/{team_id}/members", response_model=PageResponse[AgentTeamMemberResponse])
