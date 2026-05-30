@@ -189,8 +189,11 @@ class AgentTeamExecutionOverviewResponse(BaseModel):
 
 
 class AgentTeamOperatorActionRequest(BaseModel):
-    action: str = Field(pattern="^request_manager_review$")
+    action: str = Field(
+        pattern="^(request_manager_review|requeue_blocked_steps|schedule_downstream_steps)$"
+    )
     task_ids: list[UUID] = Field(default_factory=list, max_length=100)
+    task_step_ids: list[UUID] = Field(default_factory=list, max_length=200)
     max_tasks: int = Field(default=25, ge=1, le=100)
     instruction: str | None = Field(default=None, max_length=4_000)
     reason: str | None = Field(default=None, max_length=1_000)
@@ -205,6 +208,7 @@ class AgentTeamOperatorActionResponse(BaseModel):
     requested_task_count: int
     applied_count: int
     skipped_count: int
+    warnings: list[str] = Field(default_factory=list)
     results: list[dict[str, object]]
 
     @field_serializer("results")

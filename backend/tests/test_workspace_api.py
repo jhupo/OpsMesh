@@ -883,6 +883,126 @@ def test_team_operator_action_requests_manager_review_for_selected_tasks() -> No
     assert {message.task_id for message in messages} == {active_task.id, second_task.id}
 
 
+def test_team_operator_action_requeues_and_schedules_step_actions() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Developer", "role": "developer"},
+    )
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={"name": "Execution Team", "team_type": "software"},
+    )
+    assert agent.status_code == 201
+    assert team.status_code == 201
+    team_id = UUID(team.json()["id"])
+    agent_id = UUID(agent.json()["id"])
+
+    blocked_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team_id,
+        title="Runtime blocked task",
+        status="blocked",
+        priority=8,
+    )
+    handoff_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team_id,
+        title="Handoff task",
+        status="running",
+        priority=6,
+    )
+    session.add_all([blocked_task, handoff_task])
+    session.flush()
+    blocked_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=blocked_task.id,
+        assigned_agent_profile_id=agent_id,
+        work_package_id="blocked-build",
+        title="Blocked build",
+        status="blocked",
+        order_index=10,
+        dependencies={
+            "blocked_reason": "runtime_space_paused",
+            "blocked_resource_keys": ["active_runs"],
+        },
+    )
+    source_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=handoff_task.id,
+        assigned_agent_profile_id=agent_id,
+        work_package_id="design",
+        title="Design ready",
+        status="completed",
+        order_index=10,
+    )
+    session.add_all([blocked_step, source_step])
+    session.flush()
+    downstream_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=handoff_task.id,
+        assigned_agent_profile_id=agent_id,
+        work_package_id="build",
+        title="Build downstream",
+        status="blocked",
+        order_index=20,
+        dependencies={
+            "after_step_ids": [str(source_step.id)],
+            "blocked_reason": "dependency_incomplete",
+        },
+    )
+    session.add(downstream_step)
+    session.commit()
+
+    missing_step_id = uuid4()
+    requeue = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/operator-actions",
+        headers=_headers(owner.id),
+        json={
+            "action": "requeue_blocked_steps",
+            "task_step_ids": [str(blocked_step.id), str(missing_step_id)],
+            "reason": "quota released",
+            "metadata": {"token": "team-action-hidden"},
+        },
+    )
+    schedule = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/operator-actions",
+        headers=_headers(owner.id),
+        json={
+            "action": "schedule_downstream_steps",
+            "task_step_ids": [str(source_step.id)],
+            "reason": "handoff ready",
+        },
+    )
+
+    assert requeue.status_code == 200
+    requeue_body = requeue.json()
+    assert requeue_body["action"] == "requeue_blocked_steps"
+    assert requeue_body["applied_count"] == 1
+    assert requeue_body["warnings"] == [
+        f"task_step_not_found_or_not_in_team:{missing_step_id}"
+    ]
+    assert "team-action-hidden" not in str(requeue_body)
+    session.refresh(blocked_step)
+    assert blocked_step.status == "queued"
+    assert "blocked_reason" not in blocked_step.dependencies
+    assert "blocked_resource_keys" not in blocked_step.dependencies
+
+    assert schedule.status_code == 200
+    schedule_body = schedule.json()
+    assert schedule_body["action"] == "schedule_downstream_steps"
+    assert schedule_body["applied_count"] == 1
+    assert schedule_body["results"][0]["changed_step_ids"] == [str(downstream_step.id)]
+    session.refresh(downstream_step)
+    assert downstream_step.status == "queued"
+    assert downstream_step.dependencies == {"after_step_ids": [str(source_step.id)]}
+
+
 def test_team_member_update_changes_future_snapshots_only() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

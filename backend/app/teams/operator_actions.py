@@ -5,12 +5,16 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.tasks.models import Task
+from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.operator_actions import TaskOperatorActionService
 from backend.app.teams.models import AgentTeam
 
 TERMINAL_TASK_STATUSES = {"completed", "cancelled", "canceled"}
-TEAM_OPERATOR_ACTIONS = {"request_manager_review"}
+TEAM_OPERATOR_ACTIONS = {
+    "request_manager_review",
+    "requeue_blocked_steps",
+    "schedule_downstream_steps",
+}
 
 
 class TeamOperatorActionService:
@@ -27,6 +31,7 @@ class TeamOperatorActionService:
         actor_user_id: UUID,
         action: str,
         task_ids: list[UUID],
+        task_step_ids: list[UUID],
         max_tasks: int,
         instruction: str | None,
         reason: str | None,
@@ -43,16 +48,22 @@ class TeamOperatorActionService:
         if team is None:
             return None
 
+        step_ids_by_task, step_warnings = self._step_ids_by_task(
+            workspace_id=workspace_id,
+            team_id=team_id,
+            task_step_ids=task_step_ids,
+        )
+        effective_task_ids = task_ids or sorted(step_ids_by_task, key=str)
         selected_tasks = self._tasks(
             workspace_id=workspace_id,
             team_id=team_id,
-            task_ids=task_ids,
+            task_ids=effective_task_ids,
             max_tasks=max_tasks,
         )
         selected_by_id = {task.id: task for task in selected_tasks}
         results = [
             _missing_task_result(task_id)
-            for task_id in _dedupe_uuids(task_ids)
+            for task_id in _dedupe_uuids(effective_task_ids)
             if task_id not in selected_by_id
         ]
         task_action = TaskOperatorActionService(self._session)
@@ -66,7 +77,7 @@ class TeamOperatorActionService:
                     task_id=task.id,
                     actor_user_id=actor_user_id,
                     action=action,
-                    task_step_ids=[],
+                    task_step_ids=step_ids_by_task.get(task.id, []),
                     agent_profile_id=None,
                     instruction=instruction,
                     reason=reason or "team_operator_action",
@@ -96,11 +107,49 @@ class TeamOperatorActionService:
             "team_id": team_id,
             "action": action,
             "status": "applied" if applied_count else "noop",
-            "requested_task_count": len(task_ids) if task_ids else len(selected_tasks),
+            "requested_task_count": (
+                len(effective_task_ids) if effective_task_ids else len(selected_tasks)
+            ),
             "applied_count": applied_count,
             "skipped_count": skipped_count,
+            "warnings": step_warnings,
             "results": results,
         }
+
+    def _step_ids_by_task(
+        self,
+        *,
+        workspace_id: UUID,
+        team_id: UUID,
+        task_step_ids: list[UUID],
+    ) -> tuple[dict[UUID, list[UUID]], list[str]]:
+        if not task_step_ids:
+            return {}, []
+        requested_step_ids = _dedupe_uuids(task_step_ids)
+        steps = list(
+            self._session.scalars(
+                select(TaskStep)
+                .join(Task, Task.id == TaskStep.task_id)
+                .where(
+                    TaskStep.workspace_id == workspace_id,
+                    TaskStep.id.in_(requested_step_ids),
+                    Task.agent_team_id == team_id,
+                )
+            )
+        )
+        found_step_ids = {step.id for step in steps}
+        grouped: dict[UUID, list[UUID]] = {}
+        for step in steps:
+            grouped.setdefault(step.task_id, []).append(step.id)
+        warnings = [
+            f"task_step_not_found_or_not_in_team:{step_id}"
+            for step_id in requested_step_ids
+            if step_id not in found_step_ids
+        ]
+        grouped_step_ids = {
+            task_id: sorted(step_ids, key=str) for task_id, step_ids in grouped.items()
+        }
+        return grouped_step_ids, warnings
 
     def _tasks(
         self,

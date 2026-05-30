@@ -231,6 +231,7 @@ async def apply_team_operator_action(
             actor_user_id=context.user.user_id,
             action=request.action,
             task_ids=request.task_ids,
+            task_step_ids=request.task_step_ids,
             max_tasks=request.max_tasks,
             instruction=request.instruction,
             reason=request.reason,
