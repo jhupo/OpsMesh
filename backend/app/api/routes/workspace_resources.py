@@ -27,6 +27,7 @@ from backend.app.api.schemas.tasks import (
     TaskPlanRegenerateRequest,
     TaskPlanRetryRequest,
     TaskResponse,
+    TaskTimelineResponse,
 )
 from backend.app.api.schemas.teams import (
     AgentTeamCreateRequest,
@@ -50,6 +51,7 @@ from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsSe
 from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.observation import TaskObservationService
+from backend.app.tasks.timeline import TaskTimelineService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
 
@@ -544,6 +546,23 @@ async def get_task_observation(
     if observation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskObservationResponse.model_validate(observation)
+
+
+@router.get("/tasks/{task_id}/timeline", response_model=TaskTimelineResponse)
+async def get_task_timeline(
+    task_id: UUID,
+    limit: int = Query(default=200, ge=1, le=500),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskTimelineResponse:
+    timeline = TaskTimelineService(session).get_timeline(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        limit=limit,
+    )
+    if timeline is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskTimelineResponse.model_validate(timeline)
 
 
 @router.get(

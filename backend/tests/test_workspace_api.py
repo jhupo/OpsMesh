@@ -2490,6 +2490,192 @@ def test_task_correction_diagnostics_tracks_follow_up_status_and_redacts_metadat
     assert foreign_response.status_code == 404
 
 
+def test_task_timeline_returns_execution_events_and_redacts_metadata() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-timeline@example.com",
+        slug="other-timeline",
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Build timeline",
+        status="running",
+        priority=9,
+        domain_type="software",
+        input={"api_key": "sk-task"},
+        created_at=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
+    )
+    session.add_all([agent, task])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        work_package_id="build",
+        required_role="developer",
+        required_skills=["python"],
+        expected_artifacts=["patch"],
+        acceptance_criteria=["tests pass"],
+        review_policy={"headers": {"authorization": "Bearer hidden"}},
+        title="Build API",
+        description="Implement the API",
+        status="running",
+        order_index=10,
+        dependencies={"token": "hidden-token"},
+        created_at=datetime(2026, 1, 1, 9, 5, tzinfo=UTC),
+    )
+    session.add(step)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.COMPLETED.value,
+        input={
+            "prompt": "build",
+            "base_url": "https://router.example.test/private",
+            "headers": {"authorization": "Bearer hidden"},
+        },
+        output={"result": "ok", "token": "hidden-token"},
+        error={"api_key": "sk-run"},
+        model="gpt-test",
+        started_at=datetime(2026, 1, 1, 9, 10, tzinfo=UTC),
+        completed_at=datetime(2026, 1, 1, 9, 20, tzinfo=UTC),
+        created_at=datetime(2026, 1, 1, 9, 6, tzinfo=UTC),
+    )
+    session.add(run)
+    session.flush()
+    session.add_all(
+        [
+            RunEvent(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                event_type="tool.completed",
+                sequence=1,
+                message="Tool completed",
+                event_metadata={"secret": "tool-secret", "safe": "ok"},
+                created_at=datetime(2026, 1, 1, 9, 15, tzinfo=UTC),
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=step.id,
+                agent_run_id=run.id,
+                agent_profile_id=agent.id,
+                message_type="pm.acceptance_decision",
+                sequence=1,
+                body="Do not expose this full message body.",
+                payload={
+                    "summary": "Needs review",
+                    "api_key": "sk-message",
+                    "nested": {"authorization": "Bearer hidden"},
+                },
+                created_at=datetime(2026, 1, 1, 9, 25, tzinfo=UTC),
+            ),
+            TaskMessage(
+                workspace_id=other_workspace.id,
+                task_id=task.id,
+                message_type="foreign.message",
+                sequence=2,
+                body="foreign",
+                payload={},
+                created_at=datetime(2026, 1, 1, 9, 30, tzinfo=UTC),
+            ),
+            Artifact(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=step.id,
+                agent_run_id=run.id,
+                agent_profile_id=agent.id,
+                work_package_id="build",
+                version=1,
+                review_status="approved",
+                artifact_type="patch",
+                filename="patch.diff",
+                content_type="text/x-diff",
+                size_bytes=128,
+                checksum_sha256="b" * 64,
+                storage_key="secret-storage-key",
+                artifact_metadata={"token": "artifact-token", "safe": "ok"},
+                created_at=datetime(2026, 1, 1, 9, 30, tzinfo=UTC),
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/timeline",
+        headers=_headers(owner.id),
+    )
+    limited = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/timeline?limit=3",
+        headers=_headers(owner.id),
+    )
+    foreign_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks/{task.id}/timeline",
+        headers=_headers(other_owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] == str(workspace.id)
+    assert body["summary"]["total_events"] == 8
+    assert body["summary"]["source_counts"] == {
+        "artifact": 1,
+        "message": 1,
+        "run": 3,
+        "run_event": 1,
+        "step": 1,
+        "task": 1,
+    }
+    event_types = [event["event_type"] for event in body["events"]]
+    assert event_types == [
+        "task.created",
+        "step.created",
+        "run.created",
+        "run.started",
+        "tool.completed",
+        "run.completed",
+        "pm.acceptance_decision",
+        "artifact.created",
+    ]
+    by_type = {event["event_type"]: event for event in body["events"]}
+    assert by_type["step.created"]["agent"]["name"] == "Developer"
+    assert by_type["step.created"]["metadata"]["review_policy"]["headers"] == "[redacted]"
+    assert by_type["step.created"]["metadata"]["dependencies"]["token"] == "[redacted]"
+    assert by_type["run.created"]["metadata"]["input"]["base_url"] == "[redacted]"
+    assert by_type["run.created"]["metadata"]["input"]["headers"] == "[redacted]"
+    assert by_type["run.created"]["metadata"]["error"]["api_key"] == "[redacted]"
+    assert by_type["tool.completed"]["metadata"]["secret"] == "[redacted]"
+    assert by_type["pm.acceptance_decision"]["summary"] == "Needs review"
+    assert by_type["pm.acceptance_decision"]["metadata"]["api_key"] == "[redacted]"
+    assert by_type["artifact.created"]["metadata"]["artifact_metadata"]["token"] == "[redacted]"
+    assert limited.status_code == 200
+    assert limited.json()["summary"]["returned_events"] == 3
+    assert limited.json()["summary"]["truncated_count"] == 5
+    assert foreign_response.status_code == 404
+    serialized = str(body)
+    assert "sk-task" not in serialized
+    assert "router.example.test/private" not in serialized
+    assert "hidden-token" not in serialized
+    assert "tool-secret" not in serialized
+    assert "sk-message" not in serialized
+    assert "artifact-token" not in serialized
+    assert "secret-storage-key" not in serialized
+    assert "Do not expose this full message body." not in serialized
+    assert "foreign" not in serialized
+
+
 def test_artifact_list_includes_work_package_version_metadata() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
