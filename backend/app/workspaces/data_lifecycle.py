@@ -116,6 +116,7 @@ class WorkspaceDataLifecycleService:
             workspace_id=workspace_id,
             latest_success=latest_success,
         )
+        import_conflict_history = self._import_conflict_history(workspace_id)
         retention_policy = _retention_policy(workspace.settings)
         backup_policy = _backup_policy(workspace.settings, latest_job, latest_success)
         restore_readiness = _restore_readiness(
@@ -129,6 +130,7 @@ class WorkspaceDataLifecycleService:
                 current_counts=current_counts,
             ),
             restore_test_history=restore_test_history,
+            import_conflict_history=import_conflict_history,
         )
 
         return {
@@ -285,6 +287,57 @@ class WorkspaceDataLifecycleService:
             "latest_created_counts": _metadata_counts(latest_test, "created_counts"),
             "latest_skipped_counts": _metadata_counts(latest_test, "skipped_counts"),
             "recent_tests": [_restore_test_payload(event) for event in events],
+        }
+
+    def _import_conflict_history(self, workspace_id: UUID) -> dict[str, object]:
+        events = self._session.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.workspace_id == workspace_id,
+                AuditEvent.action.in_(
+                    [
+                        "workspace.import.previewed",
+                        "workspace.archive_import.previewed",
+                    ]
+                ),
+            )
+            .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+            .limit(10)
+        ).all()
+        latest_preview = events[0] if events else None
+        collection_counts: Counter[str] = Counter()
+        severity_counts: Counter[str] = Counter()
+        strategy_counts: Counter[str] = Counter()
+        total_conflicts = 0
+        required_resolution_count = 0
+        suggested_resolution_count = 0
+        previews_with_required_resolution = 0
+        for event in events:
+            metadata = event.audit_metadata if isinstance(event.audit_metadata, dict) else {}
+            event_conflict_counts = _safe_count_map(metadata.get("conflict_counts"))
+            collection_counts.update(event_conflict_counts)
+            severity_counts.update(_safe_count_map(metadata.get("conflict_severity_counts")))
+            strategy_counts.update(_safe_count_map(metadata.get("conflict_strategy_counts")))
+            total_conflicts += sum(event_conflict_counts.values())
+            event_required_count = _safe_int(metadata.get("required_resolution_count"))
+            required_resolution_count += event_required_count
+            suggested_resolution_count += _safe_int(metadata.get("suggested_resolution_count"))
+            if event_required_count > 0:
+                previews_with_required_resolution += 1
+        return {
+            "total_previews": len(events),
+            "total_conflicts": total_conflicts,
+            "required_resolution_count": required_resolution_count,
+            "suggested_resolution_count": suggested_resolution_count,
+            "previews_with_required_resolution": previews_with_required_resolution,
+            "latest_previewed_at": (
+                latest_preview.created_at if latest_preview is not None else None
+            ),
+            "latest_preview": _import_preview_payload(latest_preview),
+            "conflict_counts": dict(sorted(collection_counts.items())),
+            "conflict_severity_counts": dict(sorted(severity_counts.items())),
+            "conflict_strategy_counts": dict(sorted(strategy_counts.items())),
+            "recent_previews": [_import_preview_payload(event) for event in events],
         }
 
     def _export_job_stats(self, workspace_id: UUID) -> dict[str, object]:
@@ -745,6 +798,7 @@ def _restore_readiness(
     active_job_count: object,
     backup_coverage: dict[str, object],
     restore_test_history: dict[str, object],
+    import_conflict_history: dict[str, object],
 ) -> dict[str, object]:
     blocked_reasons: list[str] = []
     warnings: list[str] = []
@@ -785,12 +839,15 @@ def _restore_readiness(
         warnings.append("archive_export_jobs_in_progress")
     if backup_coverage.get("status") == "unknown":
         warnings.append("backup_coverage_unknown")
+    if _safe_int(import_conflict_history.get("required_resolution_count")) > 0:
+        warnings.append("import_previews_have_required_resolutions")
     return {
         "ready": not blocked_reasons,
         "blocked_reasons": blocked_reasons,
         "warnings": warnings,
         "backup_coverage": backup_coverage,
         "restore_test_history": restore_test_history,
+        "import_conflict_history": import_conflict_history,
         "downloadable_archive_available": (
             latest_success is not None
             and latest_success.status == WorkspaceExportJobStatus.COMPLETED.value
@@ -911,6 +968,8 @@ def _restore_recommended_actions(
         actions.append("run_restore_import_test")
     if "restore_test_older_than_latest_archive" in blocked_reasons:
         actions.append("run_restore_import_test")
+    if "import_previews_have_required_resolutions" in warning_set:
+        actions.append("resolve_import_conflicts_before_restore")
     return actions
 
 
@@ -926,18 +985,74 @@ def _restore_test_payload(event: AuditEvent) -> dict[str, object]:
     }
 
 
+def _import_preview_payload(event: AuditEvent | None) -> dict[str, object] | None:
+    if event is None:
+        return None
+    metadata = event.audit_metadata if isinstance(event.audit_metadata, dict) else {}
+    return {
+        "id": event.id,
+        "action": event.action,
+        "created_at": event.created_at,
+        "user_id": event.user_id,
+        "source_workspace_id": metadata.get("source_workspace_id"),
+        "created_counts": _safe_count_map(metadata.get("created_counts")),
+        "skipped_counts": _safe_count_map(metadata.get("skipped_counts")),
+        "conflict_counts": _safe_count_map(metadata.get("conflict_counts")),
+        "conflict_severity_counts": _safe_count_map(
+            metadata.get("conflict_severity_counts")
+        ),
+        "conflict_strategy_counts": _safe_count_map(
+            metadata.get("conflict_strategy_counts")
+        ),
+        "required_resolution_count": _safe_int(
+            metadata.get("required_resolution_count")
+        ),
+        "suggested_resolution_count": _safe_int(
+            metadata.get("suggested_resolution_count")
+        ),
+        "conflict_summaries": _safe_conflict_summaries(
+            metadata.get("conflict_summaries")
+        ),
+    }
+
+
 def _metadata_counts(event: AuditEvent | None, key: str) -> dict[str, int]:
     if event is None:
         return {}
     metadata = event.audit_metadata if isinstance(event.audit_metadata, dict) else {}
-    raw_counts = metadata.get(key)
-    if not isinstance(raw_counts, dict):
+    return _safe_count_map(metadata.get(key))
+
+
+def _safe_count_map(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
         return {}
     return {
         str(collection): int(count)
-        for collection, count in raw_counts.items()
+        for collection, count in value.items()
         if isinstance(count, int) and count >= 0
     }
+
+
+def _safe_int(value: object) -> int:
+    return int(value) if isinstance(value, int) and value >= 0 else 0
+
+
+def _safe_conflict_summaries(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    summaries: list[dict[str, object]] = []
+    for item in value[:10]:
+        if not isinstance(item, dict):
+            continue
+        summaries.append(
+            {
+                "collection": str(item.get("collection") or ""),
+                "field": item.get("field") if isinstance(item.get("field"), str) else None,
+                "strategy": str(item.get("strategy") or ""),
+                "severity": str(item.get("severity") or ""),
+            }
+        )
+    return summaries
 
 
 def _job_payload(job: WorkspaceExportJob | None) -> dict[str, object] | None:

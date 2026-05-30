@@ -1279,6 +1279,40 @@ def test_workspace_metadata_import_preview_returns_conflict_plan(tmp_path: Path)
         )
         == 1
     )
+    preview_audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == target_workspace.id,
+            AuditEvent.action == "workspace.import.previewed",
+        )
+    )
+    readiness = client.get(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/recovery-readiness",
+        headers=_headers(target_user.id),
+    )
+    foreign_readiness = client.get(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/recovery-readiness",
+        headers=_headers(source_user.id),
+    )
+    assert preview_audit is not None
+    assert preview_audit.audit_metadata["dry_run"] is True
+    assert preview_audit.audit_metadata["conflict_counts"]["agents"] == 1
+    assert preview_audit.audit_metadata["conflict_strategy_counts"]["skip_existing"] >= 1
+    assert preview_audit.audit_metadata["required_resolution_count"] == 0
+    serialized_audit = str(preview_audit.audit_metadata)
+    assert "Imported Researcher" not in serialized_audit
+    assert "Imported Team Runtime" not in serialized_audit
+    assert "web-search" not in serialized_audit
+    assert readiness.status_code == 200
+    conflict_history = readiness.json()["restore_readiness"]["import_conflict_history"]
+    assert conflict_history["total_previews"] == 1
+    assert conflict_history["conflict_counts"]["agents"] == 1
+    assert conflict_history["conflict_strategy_counts"]["skip_existing"] >= 1
+    assert conflict_history["recent_previews"][0]["action"] == "workspace.import.previewed"
+    assert foreign_readiness.status_code == 403
+    serialized_readiness = str(conflict_history)
+    assert "Imported Researcher" not in serialized_readiness
+    assert "Imported Team Runtime" not in serialized_readiness
+    assert "web-search" not in serialized_readiness
 
 
 def test_workspace_metadata_import_can_rename_existing_agent_conflict(
@@ -2780,6 +2814,39 @@ def test_workspace_archive_import_preview_rejects_checksum_mismatch(tmp_path: Pa
     assert committed.status_code == 200
     assert committed.json()["created_counts"]["files"] == 0
     assert committed.json()["skipped_counts"]["files"] == 1
+    preview_audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == target_workspace.id,
+            AuditEvent.action == "workspace.archive_import.previewed",
+        )
+    )
+    readiness = client.get(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/recovery-readiness",
+        headers=_headers(target_user.id),
+    )
+    assert preview_audit is not None
+    assert preview_audit.audit_metadata["conflict_counts"] == {"files": 1}
+    assert preview_audit.audit_metadata["conflict_severity_counts"] == {"error": 1}
+    assert preview_audit.audit_metadata["conflict_strategy_counts"] == {"reject": 1}
+    assert preview_audit.audit_metadata["required_resolution_count"] == 1
+    assert "original" not in str(preview_audit.audit_metadata)
+    assert "tampered" not in str(preview_audit.audit_metadata)
+    assert readiness.status_code == 200
+    conflict_history = readiness.json()["restore_readiness"]["import_conflict_history"]
+    assert conflict_history["total_previews"] == 1
+    assert conflict_history["total_conflicts"] == 1
+    assert conflict_history["required_resolution_count"] == 1
+    assert conflict_history["conflict_counts"] == {"files": 1}
+    assert conflict_history["conflict_severity_counts"] == {"error": 1}
+    assert conflict_history["conflict_strategy_counts"] == {"reject": 1}
+    assert conflict_history["recent_previews"][0]["action"] == (
+        "workspace.archive_import.previewed"
+    )
+    assert "resolve_import_conflicts_before_restore" in readiness.json()[
+        "restore_readiness"
+    ]["recommended_actions"]
+    assert "original" not in str(conflict_history)
+    assert "tampered" not in str(conflict_history)
     assert session.scalars(
         select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
     ).all() == []

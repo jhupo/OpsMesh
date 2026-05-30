@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -428,6 +429,7 @@ class WorkspaceExportService:
         workspace: Workspace,
         user_id: UUID,
         request: WorkspaceImportRequest,
+        record_preview: bool = True,
     ) -> WorkspaceImportResponse:
         id_map: dict[str, dict[str, str]] = {
             "agents": {},
@@ -484,6 +486,13 @@ class WorkspaceExportService:
                 conflict_plan=conflict_plan,
             )
             _populate_import_preview(response, request.export)
+            if request.dry_run and record_preview:
+                self._record_import_preview(
+                    workspace_id=workspace.id,
+                    user_id=user_id,
+                    action="workspace.import.previewed",
+                    response=response,
+                )
             return response
 
         unsupported_format = _unsupported_format_conflict(request.export)
@@ -501,6 +510,13 @@ class WorkspaceExportService:
                 conflict_plan=conflict_plan,
             )
             _populate_import_preview(response, request.export)
+            if request.dry_run and record_preview:
+                self._record_import_preview(
+                    workspace_id=workspace.id,
+                    user_id=user_id,
+                    action="workspace.import.previewed",
+                    response=response,
+                )
             return response
 
         if request.import_runtime_spaces:
@@ -1058,6 +1074,13 @@ class WorkspaceExportService:
         _populate_import_preview(response, request.export)
         if request.dry_run:
             self._session.rollback()
+            if record_preview:
+                self._record_import_preview(
+                    workspace_id=workspace.id,
+                    user_id=user_id,
+                    action="workspace.import.previewed",
+                    response=response,
+                )
             return response
         AuditService(self._session).record_user_action(
             workspace_id=workspace.id,
@@ -1106,6 +1129,7 @@ class WorkspaceExportService:
                     name_prefix=request.name_prefix,
                     max_items_per_collection=request.max_items_per_collection,
                 ),
+                record_preview=False,
             )
             response.created_counts.setdefault("files", 0)
             response.skipped_counts.setdefault("files", 0)
@@ -1142,6 +1166,12 @@ class WorkspaceExportService:
             _populate_import_preview(response, metadata)
             if request.dry_run:
                 self._session.rollback()
+                self._record_import_preview(
+                    workspace_id=workspace.id,
+                    user_id=user_id,
+                    action="workspace.archive_import.previewed",
+                    response=response,
+                )
                 return response
             AuditService(self._session).record_user_action(
                 workspace_id=workspace.id,
@@ -1157,6 +1187,24 @@ class WorkspaceExportService:
             )
             self._session.commit()
             return response
+
+    def _record_import_preview(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        action: str,
+        response: WorkspaceImportResponse,
+    ) -> None:
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action=action,
+            target_type="workspace",
+            target_id=workspace_id,
+            metadata=_import_preview_audit_metadata(response),
+        )
+        self._session.commit()
 
     def _import_workspace_file_blob(
         self,
@@ -1744,6 +1792,34 @@ def _populate_import_preview(
         "conflict_total": len(response.conflict_plan),
         "required_resolution_total": len(required_resolutions),
         "suggested_resolution_total": len(suggested_resolutions),
+    }
+
+
+def _import_preview_audit_metadata(response: WorkspaceImportResponse) -> dict[str, object]:
+    conflict_counts = _conflict_counts(response.conflict_plan)
+    required_counts = _conflict_counts(response.required_resolutions)
+    severity_counts = Counter(conflict.severity for conflict in response.conflict_plan)
+    strategy_counts = Counter(conflict.strategy for conflict in response.conflict_plan)
+    return {
+        "source_workspace_id": str(response.source_workspace_id),
+        "dry_run": True,
+        "created_counts": dict(response.created_counts),
+        "skipped_counts": dict(response.skipped_counts),
+        "conflict_counts": dict(sorted(conflict_counts.items())),
+        "conflict_severity_counts": dict(sorted(severity_counts.items())),
+        "conflict_strategy_counts": dict(sorted(strategy_counts.items())),
+        "required_resolution_count": len(response.required_resolutions),
+        "required_resolution_counts": dict(sorted(required_counts.items())),
+        "suggested_resolution_count": len(response.suggested_resolutions),
+        "conflict_summaries": [
+            {
+                "collection": conflict.collection,
+                "field": conflict.field,
+                "strategy": conflict.strategy,
+                "severity": conflict.severity,
+            }
+            for conflict in response.conflict_plan[:10]
+        ],
     }
 
 
