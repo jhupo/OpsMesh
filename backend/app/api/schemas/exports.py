@@ -134,6 +134,20 @@ class WorkspaceArchiveImportRequest(BaseModel):
     resolutions: dict[str, dict[str, object]] = Field(default_factory=dict)
 
 
+class WorkspaceArchiveRestoreDrillRequest(BaseModel):
+    import_agents: bool = True
+    import_teams: bool = True
+    import_tasks: bool = True
+    import_runtime_spaces: bool = True
+    import_skill_installs: bool = True
+    import_file_bytes: bool = True
+    import_artifact_bytes: bool = True
+    name_prefix: str = Field(default="Restore Drill ", max_length=80)
+    max_items_per_collection: int = Field(default=500, ge=1, le=5_000)
+    max_bytes_per_object: int = Field(default=25 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
+    max_total_bytes: int = Field(default=100 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
+
+
 class WorkspaceImportConflict(BaseModel):
     collection: str
     source_id: str
@@ -186,6 +200,22 @@ class WorkspaceImportResponse(BaseModel):
     suggested_resolutions: list[WorkspaceImportSuggestedResolution] = Field(default_factory=list)
 
 
+class WorkspaceRestoreDrillResponse(BaseModel):
+    workspace_id: UUID
+    job_id: UUID
+    drilled_at: datetime
+    passed: bool
+    required_resolution_count: int = 0
+    suggested_resolution_count: int = 0
+    conflict_counts: dict[str, int] = Field(default_factory=dict)
+    import_preview: WorkspaceImportResponse
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+    @field_serializer("metadata")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
 class WorkspaceDataLifecycleResponse(BaseModel):
     workspace_id: UUID
     generated_at: datetime
@@ -215,6 +245,7 @@ class WorkspaceRecoveryReadinessResponse(BaseModel):
     generated_at: datetime
     latest_successful_archive_export: dict[str, object] | None
     latest_archive_import: dict[str, object] | None
+    latest_restore_drill: dict[str, object] | None
     latest_failed_export_job: dict[str, object] | None
     export_jobs: dict[str, object]
     retention_safety: dict[str, object]
@@ -224,6 +255,7 @@ class WorkspaceRecoveryReadinessResponse(BaseModel):
     @field_serializer(
         "latest_successful_archive_export",
         "latest_archive_import",
+        "latest_restore_drill",
         "latest_failed_export_job",
         "export_jobs",
         "retention_safety",

@@ -16,6 +16,7 @@ from backend.app.api.schemas.exports import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveExportResult,
     WorkspaceArchiveImportRequest,
+    WorkspaceArchiveRestoreDrillRequest,
     WorkspaceExportManifest,
     WorkspaceExportRequest,
     WorkspaceExportResponse,
@@ -429,6 +430,74 @@ class WorkspaceExportService:
             "checked_at": checked_at,
             "checks": checks,
             "failed_checks": failed_checks,
+            "metadata": metadata,
+        }
+
+    def run_archive_restore_drill(
+        self,
+        *,
+        workspace: Workspace,
+        user_id: UUID,
+        job_id: UUID,
+        request: WorkspaceArchiveRestoreDrillRequest,
+        storage: LocalStorage,
+    ) -> dict[str, object]:
+        export_job, archive_bytes = self.read_export_job_content(
+            workspace_id=workspace.id,
+            job_id=job_id,
+            storage=storage,
+        )
+        drilled_at = datetime.now(UTC)
+        preview = self.import_archive(
+            workspace=workspace,
+            user_id=user_id,
+            archive_bytes=archive_bytes,
+            request=WorkspaceArchiveImportRequest(
+                dry_run=True,
+                import_agents=request.import_agents,
+                import_teams=request.import_teams,
+                import_tasks=request.import_tasks,
+                import_runtime_spaces=request.import_runtime_spaces,
+                import_skill_installs=request.import_skill_installs,
+                import_file_bytes=request.import_file_bytes,
+                import_artifact_bytes=request.import_artifact_bytes,
+                name_prefix=request.name_prefix,
+                max_items_per_collection=request.max_items_per_collection,
+                max_bytes_per_object=request.max_bytes_per_object,
+                max_total_bytes=request.max_total_bytes,
+            ),
+            storage=storage,
+        )
+        audit_metadata = _import_preview_audit_metadata(preview)
+        passed = int(audit_metadata["required_resolution_count"]) == 0
+        metadata = {
+            "source_export_job_id": str(export_job.id),
+            "source_export_completed_at": (
+                export_job.completed_at.isoformat()
+                if export_job.completed_at is not None
+                else None
+            ),
+            "passed": passed,
+            **audit_metadata,
+        }
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace.id,
+            user_id=user_id,
+            action="workspace.archive_restore_drill.completed",
+            target_type="workspace_export_job",
+            target_id=export_job.id,
+            metadata=metadata,
+        )
+        self._session.commit()
+        return {
+            "workspace_id": workspace.id,
+            "job_id": export_job.id,
+            "drilled_at": drilled_at,
+            "passed": passed,
+            "required_resolution_count": audit_metadata["required_resolution_count"],
+            "suggested_resolution_count": audit_metadata["suggested_resolution_count"],
+            "conflict_counts": audit_metadata["conflict_counts"],
+            "import_preview": preview,
             "metadata": metadata,
         }
 

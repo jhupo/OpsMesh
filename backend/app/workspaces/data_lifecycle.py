@@ -53,6 +53,10 @@ _RETENTION_LIFECYCLE_EVENT_ACTIONS = (
     "workspace.lifecycle.retention_skipped",
     "workspace.retention_applied",
 )
+_RESTORE_TEST_EVENT_ACTIONS = (
+    "workspace.archive_import.created",
+    "workspace.archive_restore_drill.completed",
+)
 
 
 @dataclass(frozen=True)
@@ -166,6 +170,7 @@ class WorkspaceDataLifecycleService:
         latest_job = self._latest_export_job(workspace_id)
         latest_success = self._latest_successful_archive_export(workspace_id)
         latest_import = self._latest_archive_import_event(workspace_id)
+        latest_restore_drill = self._latest_restore_drill_event(workspace_id)
         latest_integrity = self._latest_archive_integrity_event(workspace_id)
         latest_failed_job = self._latest_failed_export_job(workspace_id)
         job_stats = self._export_job_stats(workspace_id)
@@ -184,7 +189,6 @@ class WorkspaceDataLifecycleService:
         )
         restore_readiness = _restore_readiness(
             latest_success=latest_success,
-            latest_import=latest_import,
             backup_policy=backup_policy,
             generated_at=generated_at,
             active_job_count=job_stats["active_job_count"],
@@ -201,6 +205,7 @@ class WorkspaceDataLifecycleService:
             "generated_at": generated_at,
             "latest_successful_archive_export": _job_payload(latest_success),
             "latest_archive_import": _audit_event_payload(latest_import),
+            "latest_restore_drill": _audit_event_payload(latest_restore_drill),
             "latest_failed_export_job": _job_payload(latest_failed_job),
             "export_jobs": job_stats,
             "archive_integrity": _archive_integrity_payload(
@@ -718,6 +723,17 @@ class WorkspaceDataLifecycleService:
             .limit(1)
         )
 
+    def _latest_restore_drill_event(self, workspace_id: UUID) -> AuditEvent | None:
+        return self._session.scalar(
+            select(AuditEvent)
+            .where(
+                AuditEvent.workspace_id == workspace_id,
+                AuditEvent.action == "workspace.archive_restore_drill.completed",
+            )
+            .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+            .limit(1)
+        )
+
     def _restore_test_history(
         self,
         *,
@@ -728,7 +744,7 @@ class WorkspaceDataLifecycleService:
             self._session.scalar(
                 select(func.count(AuditEvent.id)).where(
                     AuditEvent.workspace_id == workspace_id,
-                    AuditEvent.action == "workspace.archive_import.created",
+                    AuditEvent.action.in_(_RESTORE_TEST_EVENT_ACTIONS),
                 )
             )
             or 0
@@ -737,7 +753,7 @@ class WorkspaceDataLifecycleService:
             select(AuditEvent)
             .where(
                 AuditEvent.workspace_id == workspace_id,
-                AuditEvent.action == "workspace.archive_import.created",
+                AuditEvent.action.in_(_RESTORE_TEST_EVENT_ACTIONS),
             )
             .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
             .limit(5)
@@ -1441,7 +1457,6 @@ def _readiness(
 def _restore_readiness(
     *,
     latest_success: WorkspaceExportJob | None,
-    latest_import: AuditEvent | None,
     backup_policy: dict[str, object],
     generated_at: datetime,
     active_job_count: object,
@@ -1474,12 +1489,13 @@ def _restore_readiness(
             and latest_archive_age_days > max_archive_age_days
         ):
             blocked_reasons.append("latest_archive_stale")
-    if latest_import is None:
+    latest_tested_at = restore_test_history.get("latest_tested_at")
+    if latest_tested_at is None:
         blocked_reasons.append("no_archive_import_test_recorded")
     elif (
         latest_success is not None
         and latest_success.completed_at is not None
-        and latest_import.created_at < latest_success.completed_at
+        and latest_tested_at < latest_success.completed_at
     ):
         blocked_reasons.append("restore_test_older_than_latest_archive")
     if backup_coverage.get("status") == "partial":
@@ -1506,10 +1522,8 @@ def _restore_readiness(
         ),
         "latest_archive_age_days": latest_archive_age_days,
         "max_archive_age_days": max_archive_age_days,
-        "latest_archive_import_test_recorded": latest_import is not None,
-        "latest_archive_import_tested_at": latest_import.created_at
-        if latest_import is not None
-        else None,
+        "latest_archive_import_test_recorded": latest_tested_at is not None,
+        "latest_archive_import_tested_at": latest_tested_at,
         "recommended_actions": _restore_recommended_actions(
             blocked_reasons,
             warnings=warnings,
@@ -1630,9 +1644,12 @@ def _restore_test_payload(event: AuditEvent) -> dict[str, object]:
     metadata = event.audit_metadata if isinstance(event.audit_metadata, dict) else {}
     return {
         "id": event.id,
+        "action": event.action,
         "created_at": event.created_at,
         "user_id": event.user_id,
         "source_workspace_id": metadata.get("source_workspace_id"),
+        "source_export_job_id": metadata.get("source_export_job_id"),
+        "passed": metadata.get("passed"),
         "created_counts": _metadata_counts(event, "created_counts"),
         "skipped_counts": _metadata_counts(event, "skipped_counts"),
     }

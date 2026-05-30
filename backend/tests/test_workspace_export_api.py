@@ -3341,6 +3341,75 @@ def test_workspace_archive_export_job_verify_reports_tampered_archive(
     assert "tampered archive" not in str(body)
 
 
+def test_workspace_archive_restore_drill_is_recorded_in_recovery_readiness(
+    tmp_path: Path,
+) -> None:
+    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-restore-drill@example.com",
+        slug="owner-restore-drill",
+    )
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
+        headers=_headers(owner.id),
+        json={"include_audit_events": False},
+    )
+    assert created.status_code == 202
+    job_id = created.json()["id"]
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="drill-worker", queue_name="agent_runs"),
+        settings=Settings(
+            environment="test",
+            log_format="text",
+            internal_api_token=TOKEN,
+            storage_root=str(tmp_path),
+        ),
+    )
+    assert runner.run_once() is True
+
+    drill = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/restore-drill",
+        headers=_headers(owner.id),
+        json={},
+    )
+    assert drill.status_code == 200
+    drill_body = drill.json()
+    assert drill_body["workspace_id"] == str(workspace.id)
+    assert drill_body["job_id"] == job_id
+    assert drill_body["import_preview"]["dry_run"] is True
+    assert drill_body["import_preview"]["source_workspace_id"] == str(workspace.id)
+    assert drill_body["passed"] == (drill_body["required_resolution_count"] == 0)
+    assert "storage_key" not in str(drill_body)
+
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "workspace.archive_restore_drill.completed",
+        )
+    )
+    assert audit is not None
+    assert audit.audit_metadata["source_export_job_id"] == job_id
+    assert audit.audit_metadata["passed"] == drill_body["passed"]
+
+    readiness = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness",
+        headers=_headers(owner.id),
+    )
+    assert readiness.status_code == 200
+    body = readiness.json()
+    history = body["restore_readiness"]["restore_test_history"]
+    assert body["latest_restore_drill"]["action"] == "workspace.archive_restore_drill.completed"
+    assert body["latest_restore_drill"]["target_id"] == job_id
+    assert body["restore_readiness"]["latest_archive_import_test_recorded"] is True
+    assert body["restore_readiness"]["latest_archive_import_tested_at"] is not None
+    assert history["latest_test_covers_latest_archive"] is True
+    assert history["recent_tests"][0]["action"] == "workspace.archive_restore_drill.completed"
+    assert "storage_key" not in str(body)
+
+
 def test_worker_maintenance_enqueues_due_workspace_backup_job(tmp_path: Path) -> None:
     client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
     owner, workspace = _seed_workspace(

@@ -1,7 +1,7 @@
 import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -9,12 +9,14 @@ from backend.app.api.schemas.exports import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveImportRequest,
     WorkspaceArchiveIntegrityResponse,
+    WorkspaceArchiveRestoreDrillRequest,
     WorkspaceDataLifecycleResponse,
     WorkspaceExportJobResponse,
     WorkspaceExportRequest,
     WorkspaceImportRequest,
     WorkspaceImportResponse,
     WorkspaceRecoveryReadinessResponse,
+    WorkspaceRestoreDrillResponse,
     WorkspaceRetentionRequest,
     WorkspaceRetentionResponse,
 )
@@ -250,6 +252,34 @@ async def verify_workspace_archive_export_job(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return WorkspaceArchiveIntegrityResponse.model_validate(result)
+
+
+@router.post(
+    "/archive/jobs/{job_id}/restore-drill",
+    response_model=WorkspaceRestoreDrillResponse,
+)
+async def run_workspace_archive_restore_drill(
+    job_id: UUID,
+    request: WorkspaceArchiveRestoreDrillRequest = Body(
+        default_factory=WorkspaceArchiveRestoreDrillRequest
+    ),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> WorkspaceRestoreDrillResponse:
+    try:
+        result = WorkspaceExportService(session).run_archive_restore_drill(
+            workspace=context.workspace,
+            user_id=context.user.user_id,
+            job_id=job_id,
+            request=request,
+            storage=LocalStorage(settings.storage_root),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return WorkspaceRestoreDrillResponse.model_validate(result)
 
 
 @router.post("/archive/import", response_model=WorkspaceImportResponse)
