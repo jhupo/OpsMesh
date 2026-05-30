@@ -13,7 +13,8 @@ COPY pyproject.toml README.md alembic.ini ./
 COPY backend ./backend
 COPY scripts ./scripts
 
-RUN pip install --upgrade pip \
+RUN sed -i 's/\r$//' /app/scripts/docker-entrypoint.sh \
+    && pip install --upgrade pip \
     && pip install . \
     && chmod +x /app/scripts/docker-entrypoint.sh \
     && mkdir -p /app/.chaincloud-storage \

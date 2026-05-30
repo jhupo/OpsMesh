@@ -1,7 +1,7 @@
 """add skill install snapshots
 
 Revision ID: 0024_skill_install_snapshots
-Revises: 0023_task_messages
+Revises: 0023_create_task_messages
 Create Date: 2026-05-19 17:00:00.000000
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0024_skill_install_snapshots"
-down_revision: str | None = "0023_task_messages"
+down_revision: str | None = "0023_create_task_messages"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

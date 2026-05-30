@@ -1,6 +1,6 @@
 """add artifact work package metadata
 
-Revision ID: 0031_artifact_work_package_metadata
+Revision ID: 0031_artifact_wp_metadata
 Revises: 0030_task_planning_attempts
 Create Date: 2026-05-21 00:00:00.000000
 """
@@ -10,7 +10,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0031_artifact_work_package_metadata"
+revision: str = "0031_artifact_wp_metadata"
 down_revision: str | None = "0030_task_planning_attempts"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

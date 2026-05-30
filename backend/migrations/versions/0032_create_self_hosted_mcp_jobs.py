@@ -1,7 +1,7 @@
 """create self hosted mcp jobs
 
 Revision ID: 0032_self_hosted_mcp_jobs
-Revises: 0031_artifact_work_package_metadata
+Revises: 0031_artifact_wp_metadata
 Create Date: 2026-05-21 00:00:00.000000
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0032_self_hosted_mcp_jobs"
-down_revision: str | None = "0031_artifact_work_package_metadata"
+down_revision: str | None = "0031_artifact_wp_metadata"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

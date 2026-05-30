@@ -1,7 +1,7 @@
 """create workspace quotas
 
 Revision ID: 0028_create_workspace_quotas
-Revises: 0027_create_platform_policies
+Revises: 0027_platform_policies
 Create Date: 2026-05-21 00:00:00.000000
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0028_create_workspace_quotas"
-down_revision: str | None = "0027_create_platform_policies"
+down_revision: str | None = "0027_platform_policies"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

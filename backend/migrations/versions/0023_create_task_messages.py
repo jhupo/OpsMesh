@@ -1,7 +1,7 @@
 """create task messages
 
 Revision ID: 0023_create_task_messages
-Revises: 0022_enhance_task_steps_work_packages
+Revises: 0022_task_steps_work_packages
 Create Date: 2026-05-19 14:00:00.000000
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0023_create_task_messages"
-down_revision: str | None = "0022_enhance_task_steps_work_packages"
+down_revision: str | None = "0022_task_steps_work_packages"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

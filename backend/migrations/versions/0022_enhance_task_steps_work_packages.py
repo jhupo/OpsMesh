@@ -1,6 +1,6 @@
 """enhance task steps work packages
 
-Revision ID: 0022_enhance_task_steps_work_packages
+Revision ID: 0022_task_steps_work_packages
 Revises: 0021_add_task_project_plan
 Create Date: 2026-05-19 11:00:00.000000
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0022_enhance_task_steps_work_packages"
+revision: str = "0022_task_steps_work_packages"
 down_revision: str | None = "0021_add_task_project_plan"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
