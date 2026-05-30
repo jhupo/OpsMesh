@@ -297,6 +297,10 @@ def test_workspace_data_lifecycle_diagnostics_reports_backup_retention_and_audit
     assert body["backup_policy"]["enabled"] is True
     assert body["backup_policy"]["target"]["remote_url"] == "[redacted]"
     assert body["backup_policy"]["target"]["token"] == "[redacted]"
+    assert body["backup_policy"]["schedule_status"]["configured"] is True
+    assert body["backup_policy"]["schedule_status"]["interval_hours"] == 24
+    assert body["backup_policy"]["schedule_status"]["overdue"] is True
+    assert "backup_schedule_overdue" in body["backup_policy"]["warnings"]
     assert body["retention_policy"]["enabled"] is True
     assert body["retention_policy"]["file_retention_days"] == 30
     assert body["storage"]["files"]["total_count"] == 1
@@ -521,6 +525,68 @@ def test_workspace_recovery_readiness_blocks_stale_archive_backup(tmp_path: Path
     assert body["restore_readiness"]["blocked_reasons"] == ["latest_archive_stale"]
     assert body["restore_readiness"]["max_archive_age_days"] == 1
     assert body["restore_readiness"]["latest_archive_age_days"] > 1
+    assert body["restore_readiness"]["recommended_actions"] == ["run_archive_export"]
+
+
+def test_workspace_recovery_readiness_warns_when_backup_schedule_is_overdue(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-overdue-schedule@example.com",
+        slug="owner-overdue-schedule",
+    )
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {
+                "enabled": True,
+                "schedule": "daily",
+                "target_type": "manual_export",
+            },
+        }
+    }
+    now = datetime.now(UTC)
+    completed_at = now - timedelta(hours=49)
+    completed_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="completed",
+        storage_key="workspaces/owner-overdue-schedule/exports/archive.zip",
+        filename="archive.zip",
+        content_type="application/zip",
+        size_bytes=123,
+        checksum_sha256="c" * 64,
+        completed_at=completed_at,
+        created_at=completed_at,
+        job_metadata={"manifest_counts": {"agents": 0}},
+    )
+    import_event = AuditEvent(
+        workspace_id=workspace.id,
+        actor_type="user",
+        actor_id=str(owner.id),
+        user_id=owner.id,
+        action="workspace.archive_import.created",
+        target_type="workspace",
+        target_id=str(workspace.id),
+        audit_metadata={},
+        created_at=now - timedelta(hours=48),
+    )
+    session.add_all([completed_job, import_event])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "backup_schedule_overdue" in body["retention_safety"]["warnings"]
+    assert body["restore_readiness"]["ready"] is True
+    assert body["restore_readiness"]["blocked_reasons"] == []
+    assert body["restore_readiness"]["warnings"] == ["backup_schedule_overdue"]
     assert body["restore_readiness"]["recommended_actions"] == ["run_archive_export"]
 
 

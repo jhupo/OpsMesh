@@ -51,18 +51,24 @@ class WorkspaceDataLifecycleService:
         if workspace is None:
             return None
 
+        generated_at = datetime.now(UTC)
         latest_job = self._latest_export_job(workspace_id)
         latest_success = self._latest_successful_archive_export(workspace_id)
         file_stats = self._file_stats(workspace_id)
         artifact_stats = self._artifact_stats(workspace_id)
         access_stats = self._access_stats(workspace_id)
         retention_policy = _retention_policy(workspace.settings)
-        backup_policy = _backup_policy(workspace.settings, latest_job, latest_success)
+        backup_policy = _backup_policy(
+            workspace.settings,
+            latest_job,
+            latest_success,
+            generated_at=generated_at,
+        )
         readiness = _readiness(retention_policy, backup_policy, latest_success)
 
         return {
             "workspace_id": workspace_id,
-            "generated_at": datetime.now(UTC),
+            "generated_at": generated_at,
             "export_import": {
                 "format_version": SUPPORTED_WORKSPACE_EXPORT_FORMAT,
                 "metadata_export_supported": True,
@@ -118,7 +124,12 @@ class WorkspaceDataLifecycleService:
         )
         import_conflict_history = self._import_conflict_history(workspace_id)
         retention_policy = _retention_policy(workspace.settings)
-        backup_policy = _backup_policy(workspace.settings, latest_job, latest_success)
+        backup_policy = _backup_policy(
+            workspace.settings,
+            latest_job,
+            latest_success,
+            generated_at=generated_at,
+        )
         restore_readiness = _restore_readiness(
             latest_success=latest_success,
             latest_import=latest_import,
@@ -752,6 +763,8 @@ def _backup_policy(
     settings: dict[str, object],
     latest_job: WorkspaceExportJob | None,
     latest_success: WorkspaceExportJob | None,
+    *,
+    generated_at: datetime,
 ) -> dict[str, object]:
     data_lifecycle = settings.get("data_lifecycle") if isinstance(settings, dict) else None
     lifecycle = data_lifecycle if isinstance(data_lifecycle, dict) else {}
@@ -762,6 +775,13 @@ def _backup_policy(
         warnings.append("backup_policy_not_enabled")
     if latest_success is None:
         warnings.append("no_successful_archive_export")
+    schedule_status = _backup_schedule_status(
+        raw_policy=raw_policy,
+        enabled=enabled,
+        latest_success=latest_success,
+        generated_at=generated_at,
+    )
+    warnings.extend(schedule_status["warnings"])
     return {
         "enabled": enabled,
         "source": "workspace.settings.data_lifecycle.backup",
@@ -775,8 +795,67 @@ def _backup_policy(
         "last_successful_archive_export_at": (
             latest_success.completed_at if latest_success is not None else None
         ),
+        "schedule_status": schedule_status,
         "warnings": warnings,
     }
+
+
+def _backup_schedule_status(
+    *,
+    raw_policy: dict[str, object],
+    enabled: bool,
+    latest_success: WorkspaceExportJob | None,
+    generated_at: datetime,
+) -> dict[str, object]:
+    schedule = raw_policy.get("schedule")
+    interval_hours = _backup_interval_hours(raw_policy)
+    last_success_at = _ensure_utc_datetime(
+        latest_success.completed_at
+        if latest_success is not None and latest_success.completed_at is not None
+        else None
+    )
+    generated_at = _ensure_utc_datetime(generated_at) or generated_at
+    next_due_at = (
+        last_success_at + timedelta(hours=interval_hours)
+        if last_success_at is not None and interval_hours is not None
+        else None
+    )
+    overdue = bool(
+        enabled
+        and last_success_at is not None
+        and next_due_at is not None
+        and next_due_at <= generated_at
+    )
+    warnings: list[str] = []
+    if enabled and schedule is not None and interval_hours is None:
+        warnings.append("backup_schedule_unrecognized")
+    if overdue:
+        warnings.append("backup_schedule_overdue")
+    return {
+        "configured": bool(schedule is not None or interval_hours is not None),
+        "schedule": schedule,
+        "interval_hours": interval_hours,
+        "last_successful_archive_export_at": last_success_at,
+        "next_due_at": next_due_at,
+        "overdue": overdue,
+        "warnings": warnings,
+    }
+
+
+def _backup_interval_hours(raw_policy: dict[str, object]) -> int | None:
+    explicit_interval = _positive_int(
+        raw_policy.get("interval_hours") or raw_policy.get("schedule_interval_hours")
+    )
+    if explicit_interval is not None:
+        return explicit_interval
+    schedule = raw_policy.get("schedule")
+    if not isinstance(schedule, str):
+        return None
+    return {
+        "hourly": 1,
+        "daily": 24,
+        "weekly": 168,
+    }.get(schedule.strip().lower())
 
 
 def _readiness(
@@ -850,6 +929,8 @@ def _restore_readiness(
         warnings.append("backup_coverage_unknown")
     if _safe_int(import_conflict_history.get("required_resolution_count")) > 0:
         warnings.append("import_previews_have_required_resolutions")
+    if "backup_schedule_overdue" in backup_policy.get("warnings", []):
+        warnings.append("backup_schedule_overdue")
     return {
         "ready": not blocked_reasons,
         "blocked_reasons": blocked_reasons,
@@ -964,6 +1045,8 @@ def _restore_recommended_actions(
         actions.append("run_archive_export")
     if "backup_coverage_unknown" in warning_set:
         actions.append("run_archive_export_with_manifest_counts")
+    if "backup_schedule_overdue" in warning_set and "run_archive_export" not in actions:
+        actions.append("run_archive_export")
     if any(
         reason in blocked_reasons
         for reason in {
@@ -1192,8 +1275,16 @@ def _candidate_payload(
 
 
 def _age_days(now: datetime, then: datetime) -> int:
-    normalized_then = then if then.tzinfo is not None else then.replace(tzinfo=UTC)
+    normalized_then = _ensure_utc_datetime(then) or then.replace(tzinfo=UTC)
     return max((now - normalized_then).days, 0)
+
+
+def _ensure_utc_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _candidate_counts(candidates: list[dict[str, object]]) -> dict[str, int]:
