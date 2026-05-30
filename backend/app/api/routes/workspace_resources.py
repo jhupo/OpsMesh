@@ -39,6 +39,8 @@ from backend.app.api.schemas.teams import (
     AgentTeamCommandCenterApplyResponse,
     AgentTeamCommandCenterResponse,
     AgentTeamCreateRequest,
+    AgentTeamExecutionLoopFinalizeRequest,
+    AgentTeamExecutionLoopFinalizeResponse,
     AgentTeamExecutionOverviewResponse,
     AgentTeamMemberCreateRequest,
     AgentTeamMemberResponse,
@@ -66,6 +68,7 @@ from backend.app.tasks.observation import TaskObservationService
 from backend.app.tasks.operator_actions import TaskOperatorActionService
 from backend.app.tasks.timeline import TaskTimelineService
 from backend.app.teams.command_center import TeamCommandCenterService
+from backend.app.teams.execution_loop import TeamExecutionLoopService
 from backend.app.teams.execution_overview import TeamExecutionOverviewService
 from backend.app.teams.operator_actions import TeamOperatorActionService
 from backend.app.workers.dependencies import get_worker_queue
@@ -270,6 +273,28 @@ async def apply_team_command_center_actions(
     if response is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     return AgentTeamCommandCenterApplyResponse.model_validate(response)
+
+
+@router.post(
+    "/teams/{team_id}/execution-loop/finalize",
+    response_model=AgentTeamExecutionLoopFinalizeResponse,
+)
+async def finalize_team_execution_loop_tasks(
+    team_id: UUID,
+    request: AgentTeamExecutionLoopFinalizeRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> AgentTeamExecutionLoopFinalizeResponse:
+    response = TeamExecutionLoopService(session).finalize_ready_tasks(
+        workspace_id=context.workspace.id,
+        team_id=team_id,
+        actor_user_id=context.user.user_id,
+        dry_run=request.dry_run,
+        max_tasks=request.max_tasks,
+    )
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    return AgentTeamExecutionLoopFinalizeResponse.model_validate(response)
 
 
 @router.post(

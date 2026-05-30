@@ -1051,6 +1051,195 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
     assert len(manager_review_steps) == 1
 
 
+def test_team_execution_loop_finalize_closes_approved_tasks_only() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-finalize@example.com",
+        slug="other-finalize",
+    )
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="PM",
+        role="project_manager",
+        model_settings={"api_key": "sk-finalize-manager"},
+    )
+    developer = AgentProfile(workspace_id=workspace.id, name="Developer", role="developer")
+    session.add_all([manager, developer])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Finalize Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+    )
+    other_team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Other Finalize Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+    )
+    session.add_all([team, other_team])
+    session.flush()
+    approved_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Approved delivery",
+        status="running",
+        priority=8,
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id)},
+    )
+    needs_follow_up = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Needs follow up",
+        status="running",
+        priority=7,
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id)},
+    )
+    other_team_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=other_team.id,
+        title="Other approved delivery",
+        status="running",
+        priority=10,
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id)},
+    )
+    session.add_all([approved_task, needs_follow_up, other_team_task])
+    session.flush()
+
+    def add_completed_flow(task: Task, decision: str, summary: str) -> None:
+        planning = TaskStep(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            assigned_agent_profile_id=manager.id,
+            work_package_id="manager-planning",
+            required_role="project_manager",
+            title=f"Plan {task.title}",
+            status="completed",
+            order_index=10,
+        )
+        build = TaskStep(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            assigned_agent_profile_id=developer.id,
+            work_package_id="build",
+            required_role="developer",
+            title=f"Build {task.title}",
+            status="completed",
+            order_index=20,
+        )
+        summary_step = TaskStep(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            assigned_agent_profile_id=manager.id,
+            work_package_id="manager-summary",
+            required_role="project_manager",
+            title=f"Review {task.title}",
+            status="completed",
+            order_index=30,
+        )
+        session.add_all([planning, build, summary_step])
+        session.flush()
+        session.add(
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=summary_step.id,
+                agent_profile_id=manager.id,
+                message_type="pm.acceptance_decision",
+                sequence=1,
+                body=f"Private body for {task.title}",
+                payload={
+                    "decision": decision,
+                    "summary": summary,
+                    "api_key": "sk-approved-finalize",
+                },
+            )
+        )
+
+    add_completed_flow(approved_task, "approved", "Ready to ship")
+    add_completed_flow(needs_follow_up, "request_revision", "Needs tests")
+    add_completed_flow(other_team_task, "approved", "Other team ready")
+    session.commit()
+
+    dry_run = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/execution-loop/finalize",
+        headers=_headers(owner.id),
+        json={"dry_run": True},
+    )
+    forbidden = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/execution-loop/finalize",
+        headers=_headers(other_owner.id),
+        json={"dry_run": True},
+    )
+    missing = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{uuid4()}/execution-loop/finalize",
+        headers=_headers(owner.id),
+        json={"dry_run": True},
+    )
+
+    assert dry_run.status_code == 200
+    dry_run_body = dry_run.json()
+    assert dry_run_body["status"] == "dry_run"
+    assert dry_run_body["finalized_task_count"] == 0
+    assert dry_run_body["scanned_task_count"] == 2
+    by_task = {item["task_id"]: item for item in dry_run_body["results"]}
+    assert by_task[str(approved_task.id)]["status"] == "would_finalize"
+    assert by_task[str(needs_follow_up.id)]["reason"] == "manager_acceptance_not_healthy"
+    assert str(other_team_task.id) not in by_task
+    assert forbidden.status_code == 403
+    assert missing.status_code == 404
+    assert "Private body" not in str(dry_run_body)
+    assert "sk-approved-finalize" not in str(dry_run_body)
+    session.refresh(approved_task)
+    assert approved_task.status == "running"
+
+    applied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/execution-loop/finalize",
+        headers=_headers(owner.id),
+        json={"dry_run": False},
+    )
+    assert applied.status_code == 200
+    applied_body = applied.json()
+    assert applied_body["status"] == "finalized"
+    assert applied_body["finalized_task_count"] == 1
+    session.expire_all()
+    stored_approved = session.get(Task, approved_task.id)
+    stored_follow_up = session.get(Task, needs_follow_up.id)
+    stored_other = session.get(Task, other_team_task.id)
+    assert stored_approved is not None
+    assert stored_follow_up is not None
+    assert stored_other is not None
+    assert stored_approved.status == "completed"
+    assert stored_approved.final_output["summary"] == "Ready to ship"
+    assert stored_follow_up.status == "running"
+    assert stored_other.status == "running"
+    audits = session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action.in_(
+                [
+                    "task.execution_loop.finalized",
+                    "team.execution_loop.tasks_finalized",
+                ]
+            ),
+        )
+    ).all()
+    assert {audit.action for audit in audits} == {
+        "task.execution_loop.finalized",
+        "team.execution_loop.tasks_finalized",
+    }
+
+
 def test_team_operator_action_requests_manager_review_for_selected_tasks() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

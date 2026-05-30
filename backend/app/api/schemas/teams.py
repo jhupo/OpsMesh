@@ -250,6 +250,30 @@ class AgentTeamCommandCenterApplyResponse(BaseModel):
         return [redact_sensitive_payload(item) for item in value]
 
 
+class AgentTeamExecutionLoopFinalizeRequest(BaseModel):
+    dry_run: bool = True
+    max_tasks: int = Field(default=50, ge=1, le=200)
+
+
+class AgentTeamExecutionLoopFinalizeResponse(BaseModel):
+    workspace_id: UUID
+    team_id: UUID
+    generated_at: datetime
+    dry_run: bool
+    status: str
+    scanned_task_count: int
+    finalized_task_count: int
+    skipped_task_count: int
+    results: list[dict[str, object]]
+
+    @field_serializer("results")
+    def _serialize_results(
+        self,
+        value: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
+
 class AgentTeamOperatorActionRequest(BaseModel):
     action: str = Field(
         pattern="^(request_manager_review|requeue_blocked_steps|schedule_downstream_steps)$"
