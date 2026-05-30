@@ -235,6 +235,10 @@ class TaskObservationCard(BaseModel):
     status: str
     data: dict[str, object]
 
+    @field_serializer("data")
+    def _serialize_data(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
 
 class TaskObservationSection(BaseModel):
     key: str
@@ -249,6 +253,10 @@ class TaskObservationResponse(BaseModel):
     generated_at: datetime
     summary: dict[str, object]
     sections: list[TaskObservationSection]
+
+    @field_serializer("summary")
+    def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class TaskTimelineAgent(BaseModel):

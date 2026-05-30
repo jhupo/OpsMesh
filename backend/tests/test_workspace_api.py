@@ -2864,11 +2864,12 @@ def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> N
         title="Write a mystery novel",
         status="running",
         priority=7,
-        input={"outline": ["Act 1", "Act 2"]},
-        generic_state={"word_count": 3200},
+        input={"outline": ["Act 1", "Act 2"], "api_key": "sk-observation-input"},
+        generic_state={"word_count": 3200, "headers": {"authorization": "Bearer generic"}},
         domain_state={
             "chapters": [{"title": "Chapter 1", "status": "drafting"}],
             "characters": [{"name": "Lin", "role": "detective"}],
+            "token": "domain-hidden-token",
         },
     )
     session.add(task)
@@ -2990,8 +2991,19 @@ def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> N
     assert body["summary"]["artifact_count"] == 1
     sections = {section["key"]: section for section in body["sections"]}
     assert set(sections) == {"overview", "timeline", "artifacts", "review", "quality", "domain"}
-    assert sections["domain"]["cards"][0]["card_type"] == "outline"
-    assert sections["domain"]["cards"][1]["data"]["value"] == [
+    domain_cards = sections["domain"]["cards"]
+    assert domain_cards[0]["card_type"] == "manuscript_status"
+    assert domain_cards[0]["status"] == "attention"
+    assert domain_cards[0]["data"]["outline_item_count"] == 2
+    assert domain_cards[0]["data"]["chapter_count"] == 1
+    assert domain_cards[0]["data"]["character_count"] == 1
+    assert domain_cards[0]["data"]["word_count"] == 3200
+    assert domain_cards[0]["data"]["recommended_actions"] == [
+        "check_continuity",
+        "request_editorial_review",
+    ]
+    assert domain_cards[1]["card_type"] == "outline"
+    assert domain_cards[2]["data"]["value"] == [
         {"title": "Chapter 1", "status": "drafting"}
     ]
     message_payload = sections["timeline"]["cards"][0]["data"]["payload"]
@@ -3025,9 +3037,130 @@ def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> N
     )
     assert sections["artifacts"]["cards"][0]["title"] == "chapter-1.md"
     assert forced.status_code == 200
-    assert forced.json()["view_type"] == "software"
+    forced_body = forced.json()
+    assert forced_body["view_type"] == "software"
+    forced_domain = {
+        section["key"]: section for section in forced_body["sections"]
+    }["domain"]
+    assert forced_domain["cards"][0]["card_type"] == "delivery_status"
+    assert "capture_requirements" in forced_domain["cards"][0]["data"]["recommended_actions"]
     assert unsupported.status_code == 400
     assert foreign.status_code == 404
+    serialized = str(body)
+    assert "sk-observation-input" not in serialized
+    assert "Bearer generic" not in serialized
+    assert "domain-hidden-token" not in serialized
+
+
+def test_task_observation_status_cards_for_specialized_domains() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    aigc_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        domain_type="aigc",
+        title="Create launch visuals",
+        input={"prompt": "clean product render"},
+        generic_state={"model_settings": {"size": "1024x1024"}},
+        domain_state={
+            "variants": [{"id": "v1"}, {"id": "v2"}],
+            "selected_asset": {"id": "v2", "status": "approved"},
+            "review_notes": ["Approved for launch"],
+        },
+    )
+    research_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        domain_type="research",
+        title="Research competitors",
+        domain_state={
+            "sources": [{"url": "https://example.test/a"}],
+            "claims": [{"text": "Competitor A is faster"}],
+            "citations": [{"source": "source-a"}],
+            "report_sections": [{"title": "Summary"}],
+            "confidence": "medium",
+        },
+    )
+    software_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        domain_type="software",
+        title="Build worker dashboard API",
+        domain_state={
+            "requirements": ["show worker backlog"],
+            "design_tasks": ["add endpoint contract"],
+            "branches": ["feature/workers"],
+            "patches": ["worker-dashboard.patch"],
+            "tests": ["test_worker_dashboard"],
+            "build_status": "passed",
+            "review_comments": [],
+        },
+    )
+    session.add_all([aigc_task, research_task, software_task])
+    session.flush()
+    session.add_all(
+        [
+            Artifact(
+                workspace_id=workspace.id,
+                task_id=aigc_task.id,
+                artifact_type="image",
+                filename="launch.png",
+                content_type="image/png",
+                size_bytes=128,
+                checksum_sha256="a" * 64,
+                storage_key="aigc-launch",
+                created_at=datetime.now(UTC),
+            ),
+            Artifact(
+                workspace_id=workspace.id,
+                task_id=research_task.id,
+                artifact_type="report",
+                filename="research.md",
+                content_type="text/markdown",
+                size_bytes=128,
+                checksum_sha256="b" * 64,
+                storage_key="research-report",
+                created_at=datetime.now(UTC),
+            ),
+        ]
+    )
+    session.commit()
+
+    aigc = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{aigc_task.id}/observation",
+        headers=_headers(owner.id),
+    )
+    research = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{research_task.id}/observation",
+        headers=_headers(owner.id),
+    )
+    software = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{software_task.id}/observation",
+        headers=_headers(owner.id),
+    )
+
+    assert aigc.status_code == 200
+    aigc_domain = {section["key"]: section for section in aigc.json()["sections"]}["domain"]
+    assert aigc_domain["cards"][0]["card_type"] == "production_status"
+    assert aigc_domain["cards"][0]["status"] == "healthy"
+    assert aigc_domain["cards"][0]["data"]["variant_count"] == 2
+    assert aigc_domain["cards"][0]["data"]["recommended_actions"] == []
+
+    assert research.status_code == 200
+    research_domain = {
+        section["key"]: section for section in research.json()["sections"]
+    }["domain"]
+    assert research_domain["cards"][0]["card_type"] == "research_status"
+    assert research_domain["cards"][0]["data"]["source_count"] == 1
+    assert research_domain["cards"][0]["data"]["recommended_actions"] == []
+
+    assert software.status_code == 200
+    software_domain = {
+        section["key"]: section for section in software.json()["sections"]
+    }["domain"]
+    assert software_domain["cards"][0]["card_type"] == "delivery_status"
+    assert software_domain["cards"][0]["status"] == "healthy"
+    assert software_domain["cards"][0]["data"]["build_status"] == "passed"
 
 
 def test_retry_failed_run_creates_new_queued_run_and_enqueues_job() -> None:
