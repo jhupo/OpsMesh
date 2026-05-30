@@ -662,9 +662,20 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert body["summary"]["step_counts"] == {"completed": 1, "queued": 1, "running": 1}
     assert body["summary"]["run_counts"] == {"running": 1}
     assert body["summary"]["needs_attention_tasks"] == 1
+    assert body["summary"]["risk_counts"] == {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+    }
+    assert body["summary"]["high_risk_task_count"] == 1
     assert body["summary"]["staffing_gap_count"] == 1
     assert body["summary"]["staffing_gap_step_count"] == 1
     assert body["summary"]["available_member_capacity"] == 2
+    actions = {item["action"]: item for item in body["summary"]["recommended_actions"]}
+    assert actions["add_or_hire_team_member"]["task_ids"] == [str(running_task.id)]
+    assert actions["monitor_specialist_execution"]["task_ids"] == [str(running_task.id)]
+    assert actions["request_manager_review"]["task_ids"] == [str(running_task.id)]
 
     members = {item["team_role"]: item for item in body["members"]}
     assert members["developer"]["active_task_count"] == 1
@@ -679,6 +690,12 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert task["title"] == "Build workspace console"
     assert task["needs_attention"] is True
     assert task["pending_phase"] == "specialist_execution"
+    assert task["risk_level"] == "high"
+    assert task["attention_score"] == 170
+    assert set(task["recommended_actions"]) == {
+        "monitor_specialist_execution",
+        "request_manager_review",
+    }
     assert "specialist_steps_incomplete" in task["blocked_reasons"]
     assert task["active_run_count"] == 1
     assert body["staffing_gaps"] == [

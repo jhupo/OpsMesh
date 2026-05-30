@@ -151,8 +151,11 @@ class AgentTeamExecutionTaskResponse(BaseModel):
     domain_type: str | None
     summary_status: str
     pending_phase: str
+    risk_level: str
+    attention_score: int
     needs_attention: bool
     blocked_reasons: list[str] = Field(default_factory=list)
+    recommended_actions: list[str] = Field(default_factory=list)
     step_status_counts: dict[str, int]
     active_run_count: int
     last_activity_at: datetime

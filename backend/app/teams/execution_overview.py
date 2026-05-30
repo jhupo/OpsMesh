@@ -16,6 +16,7 @@ from backend.app.teams.models import AgentTeam, AgentTeamMember
 ACTIVE_STEP_STATUSES = {"queued", "running", "waiting_approval", "blocked"}
 ACTIVE_RUN_STATUSES = {"queued", "running", "waiting_runtime"}
 DONE_TASK_STATUSES = {"completed", "cancelled", "canceled"}
+RISK_LEVELS = ("critical", "high", "medium", "low")
 
 
 class TeamExecutionOverviewService:
@@ -190,6 +191,21 @@ class TeamExecutionOverviewService:
             if isinstance(summary, dict) and summary.get("status") is not None
             else "unknown"
         )
+        pending_phase = _pending_phase(diagnostics)
+        active_run_count = sum(1 for run in runs if run.status in ACTIVE_RUN_STATUSES)
+        needs_attention = summary_status != "healthy" or bool(blocked_reasons)
+        risk_level = _task_risk_level(
+            task=task,
+            blocked_reasons=blocked_reasons,
+            summary_status=summary_status,
+            needs_attention=needs_attention,
+        )
+        recommended_actions = _task_recommended_actions(
+            blocked_reasons=blocked_reasons,
+            pending_phase=pending_phase,
+            active_run_count=active_run_count,
+            needs_attention=needs_attention,
+        )
         return {
             "task_id": task.id,
             "title": task.title,
@@ -197,11 +213,14 @@ class TeamExecutionOverviewService:
             "priority": task.priority,
             "domain_type": task.domain_type,
             "summary_status": summary_status,
-            "pending_phase": _pending_phase(diagnostics),
-            "needs_attention": summary_status != "healthy" or bool(blocked_reasons),
+            "pending_phase": pending_phase,
+            "risk_level": risk_level,
+            "attention_score": _attention_score(task.priority, risk_level, blocked_reasons),
+            "needs_attention": needs_attention,
             "blocked_reasons": blocked_reasons,
+            "recommended_actions": recommended_actions,
             "step_status_counts": dict(sorted(Counter(step.status for step in steps).items())),
-            "active_run_count": sum(1 for run in runs if run.status in ACTIVE_RUN_STATUSES),
+            "active_run_count": active_run_count,
             "last_activity_at": task.updated_at,
         }
 
@@ -293,6 +312,7 @@ def _overview_summary(
     task_status_counts = Counter(task.status for task in tasks)
     step_status_counts = Counter(step.status for step in steps)
     run_status_counts = Counter(run.status for run in runs)
+    risk_counts = Counter(str(item["risk_level"]) for item in task_items)
     total_capacity = sum(
         int(item["max_concurrent_tasks"])
         for item in member_items
@@ -306,6 +326,10 @@ def _overview_summary(
         "total_tasks": len(tasks),
         "needs_attention_tasks": sum(1 for item in task_items if item["needs_attention"]),
         "blocked_tasks": sum(1 for item in task_items if item["blocked_reasons"]),
+        "risk_counts": {level: risk_counts.get(level, 0) for level in RISK_LEVELS},
+        "high_risk_task_count": sum(
+            risk_counts.get(level, 0) for level in ("critical", "high")
+        ),
         "member_count": len(member_items),
         "active_member_count": sum(1 for item in member_items if item["status"] == "active"),
         "accepting_member_count": sum(
@@ -319,6 +343,11 @@ def _overview_summary(
         "total_member_capacity": total_capacity,
         "active_member_task_count": active_member_tasks,
         "available_member_capacity": max(total_capacity - active_member_tasks, 0),
+        "recommended_actions": _summary_recommended_actions(
+            task_items=task_items,
+            staffing_gaps=staffing_gaps,
+            member_items=member_items,
+        ),
     }
 
 
@@ -420,6 +449,131 @@ def _pending_phase(diagnostics: object) -> str:
                 value = phase.get("phase")
                 return value if isinstance(value, str) else "unknown"
     return "none"
+
+
+def _task_risk_level(
+    *,
+    task: Task,
+    blocked_reasons: list[str],
+    summary_status: str,
+    needs_attention: bool,
+) -> str:
+    reasons = set(blocked_reasons)
+    if task.status == "failed" or "missing_manager" in reasons:
+        return "critical"
+    if reasons & {
+        "missing_manager_planning_step",
+        "missing_manager_summary_step",
+        "acceptance_decision_missing",
+        "follow_up_missing",
+        "follow_up_incomplete",
+    }:
+        return "high"
+    if task.priority >= 8 and needs_attention:
+        return "high"
+    if needs_attention or summary_status == "attention":
+        return "medium"
+    return "low"
+
+
+def _attention_score(priority: int, risk_level: str, blocked_reasons: list[str]) -> int:
+    risk_weight = {
+        "critical": 100,
+        "high": 70,
+        "medium": 40,
+        "low": 10,
+    }.get(risk_level, 0)
+    return risk_weight + max(priority, 0) * 10 + len(blocked_reasons) * 5
+
+
+def _task_recommended_actions(
+    *,
+    blocked_reasons: list[str],
+    pending_phase: str,
+    active_run_count: int,
+    needs_attention: bool,
+) -> list[str]:
+    reasons = set(blocked_reasons)
+    actions: list[str] = []
+    if "missing_manager" in reasons:
+        actions.append("assign_manager")
+    if reasons & {
+        "missing_manager_planning_step",
+        "missing_manager_summary_step",
+        "acceptance_decision_missing",
+        "follow_up_missing",
+    }:
+        actions.append("request_manager_review")
+    if "follow_up_incomplete" in reasons:
+        actions.append("track_revision_follow_up")
+    if "specialist_steps_incomplete" in reasons and active_run_count == 0:
+        actions.append("unblock_or_reassign_specialist_work")
+    elif "specialist_steps_incomplete" in reasons:
+        actions.append("monitor_specialist_execution")
+    if needs_attention and pending_phase == "unknown":
+        actions.append("inspect_task_diagnostics")
+    return _dedupe_strings(actions)
+
+
+def _summary_recommended_actions(
+    *,
+    task_items: list[dict[str, object]],
+    staffing_gaps: list[dict[str, object]],
+    member_items: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    grouped: dict[str, dict[str, object]] = {}
+    for gap in staffing_gaps:
+        _add_summary_action(
+            grouped,
+            action=str(gap.get("recommended_action") or "add_or_hire_team_member"),
+            task_ids=_uuid_list(gap.get("task_ids")),
+        )
+    for member in member_items:
+        if member.get("overloaded") is True:
+            _add_summary_action(grouped, action="rebalance_member_load", task_ids=[])
+        if "member_not_accepting_tasks" in _string_list(member.get("blocked_reasons")):
+            _add_summary_action(grouped, action="review_member_availability", task_ids=[])
+    for task in task_items:
+        task_id = task.get("task_id")
+        task_ids = [task_id] if isinstance(task_id, UUID) else []
+        for action in _string_list(task.get("recommended_actions")):
+            _add_summary_action(grouped, action=action, task_ids=task_ids)
+
+    return sorted(
+        grouped.values(),
+        key=lambda item: (-int(item["count"]), str(item["action"])),
+    )
+
+
+def _add_summary_action(
+    grouped: dict[str, dict[str, object]],
+    *,
+    action: str,
+    task_ids: list[UUID],
+) -> None:
+    item = grouped.setdefault(action, {"action": action, "count": 0, "task_ids": []})
+    item["count"] = int(item["count"]) + 1
+    existing = item["task_ids"] if isinstance(item["task_ids"], list) else []
+    merged = {task_id for task_id in existing if isinstance(task_id, UUID)}
+    merged.update(task_ids)
+    item["task_ids"] = sorted(merged, key=str)
+
+
+def _uuid_list(value: object) -> list[UUID]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, UUID)]
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return deduped
 
 
 def _agent_summary(agent: AgentProfile | None) -> dict[str, object] | None:
