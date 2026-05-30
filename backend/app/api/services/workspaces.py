@@ -1,3 +1,5 @@
+from collections import Counter
+from datetime import UTC, datetime
 from typing import TypeVar
 from uuid import UUID
 
@@ -13,7 +15,14 @@ from backend.app.api.schemas.workspaces import (
 from backend.app.audit.service import AuditService
 from backend.app.auth.permissions import WorkspaceRole
 from backend.app.db.errors import commit_or_raise_conflict
-from backend.app.workspaces.models import Workspace, WorkspaceMember, WorkspaceQuota
+from backend.app.workspaces.models import (
+    Workspace,
+    WorkspaceMember,
+    WorkspaceQuota,
+    WorkspaceReservation,
+)
+
+EXECUTION_SLOT_QUOTA_KEYS = ("active_runs", "docker_runtimes", "self_hosted_jobs")
 
 T = TypeVar("T")
 
@@ -212,6 +221,48 @@ class WorkspaceService:
         self._session.refresh(quota)
         return quota
 
+    def execution_slot_summary(self, workspace_id: UUID) -> dict[str, object]:
+        quotas = list(
+            self._session.scalars(
+                select(WorkspaceQuota)
+                .where(
+                    WorkspaceQuota.workspace_id == workspace_id,
+                    WorkspaceQuota.quota_key.in_(EXECUTION_SLOT_QUOTA_KEYS),
+                )
+                .order_by(WorkspaceQuota.quota_key.asc())
+            )
+        )
+        reservations = list(
+            self._session.scalars(
+                select(WorkspaceReservation)
+                .where(
+                    WorkspaceReservation.workspace_id == workspace_id,
+                    WorkspaceReservation.status == "active",
+                )
+                .order_by(WorkspaceReservation.created_at.asc())
+            )
+        )
+        active_reservation_usage: Counter[str] = Counter()
+        over_reserved_quota_keys: list[str] = []
+        for quota in quotas:
+            if quota.reserved_value > quota.limit_value:
+                over_reserved_quota_keys.append(quota.quota_key)
+        active_reservation_count = 0
+        for reservation in reservations:
+            active_reservation_count += 1
+            for quota_key, amount in _reservation_usage(reservation).items():
+                if quota_key in EXECUTION_SLOT_QUOTA_KEYS:
+                    active_reservation_usage[quota_key] += amount
+        return {
+            "workspace_id": workspace_id,
+            "generated_at": datetime.now(UTC),
+            "quotas": quotas,
+            "active_reservations": reservations,
+            "active_reservation_count": active_reservation_count,
+            "reservation_usage": dict(sorted(active_reservation_usage.items())),
+            "over_reserved_quota_keys": sorted(over_reserved_quota_keys),
+        }
+
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
         total = self._session.scalar(
             select(func.count()).select_from(statement.order_by(None).subquery())
@@ -235,3 +286,11 @@ def _quota_snapshot(quota: WorkspaceQuota) -> dict[str, object]:
         "unit": quota.unit,
         "status": quota.status,
     }
+
+
+def _reservation_usage(reservation: WorkspaceReservation) -> dict[str, int]:
+    usage: dict[str, int] = {}
+    for quota_key, value in reservation.resource_usage.items():
+        if isinstance(quota_key, str) and isinstance(value, int) and value > 0:
+            usage[quota_key] = value
+    return usage

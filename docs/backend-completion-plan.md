@@ -41,7 +41,7 @@ Incomplete or basic-only areas:
 - Skills support private/public visibility, workspace-local installs, provenance snapshots, upgrades, disable history, MCP availability diagnostics, and run authorization validation.
 - Task observation now has a stable backend API with generic and domain-specific sections for AIGC, novel writing, research, and software tasks. The first implementation composes existing task, step, message, run event, and artifact data; richer domain persistence can be added behind the same response shape.
 - Correction/revision is supported through a generic user-facing endpoint that targets tasks, steps, agents, artifacts, or final output and records follow-up work plus task messages.
-- Scheduling supports per-member concurrency, workspace active run quotas, per-tick resource-limit prechecks, durable workspace usage reservations, blocked reasons, cross-task priority ordering, and starvation prevention. Docker/self-hosted execution slot usage still needs deeper completion.
+- Scheduling supports per-member concurrency, workspace active run quotas, per-tick resource-limit prechecks, durable workspace usage reservations, blocked reasons, cross-task priority ordering, and starvation prevention. Docker/self-hosted execution slot usage now has a workspace execution-slot summary view, but deeper operator workflows can still be expanded later.
 - Docker runtime command execution now records timeout and Docker exec failures without leaving
   dangling running command records. Docker runtime cleanup records container and managed
   host-resource evidence and emits critical security events on cleanup failure. Self-hosted

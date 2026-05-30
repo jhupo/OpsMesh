@@ -13,6 +13,7 @@ from backend.app.api.idempotency import (
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
 from backend.app.api.schemas.workspaces import (
     WorkspaceCreateRequest,
+    WorkspaceExecutionSlotSummaryResponse,
     WorkspaceMemberResponse,
     WorkspaceQuotaResponse,
     WorkspaceQuotaUpsertRequest,
@@ -130,6 +131,18 @@ async def list_workspace_quotas(
         limit=page.limit,
         offset=page.offset,
     )
+
+
+@router.get(
+    "/{workspace_id}/quotas/execution-summary",
+    response_model=WorkspaceExecutionSlotSummaryResponse,
+)
+async def get_workspace_execution_slot_summary(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceExecutionSlotSummaryResponse:
+    summary = WorkspaceService(session).execution_slot_summary(context.workspace.id)
+    return WorkspaceExecutionSlotSummaryResponse.model_validate(summary)
 
 
 @router.put("/{workspace_id}/quotas", response_model=list[WorkspaceQuotaResponse])

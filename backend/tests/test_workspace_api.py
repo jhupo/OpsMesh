@@ -31,6 +31,7 @@ from backend.app.teams.models import AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember, WorkspaceQuota
+from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 TOKEN = "test-token"
 
@@ -4001,6 +4002,108 @@ def test_workspace_quota_api_manages_runtime_limits() -> None:
     assert audit_events[1].audit_metadata["quotas"][0]["before"]["reserved_value"] == 1024
     assert audit_events[1].audit_metadata["quotas"][0]["after"]["limit_value"] == 512
     assert audit_events[2].audit_metadata["quota_key"] == "docker_runtimes"
+
+
+def test_workspace_execution_slot_summary_reports_active_capacity() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-execution-slots@example.com",
+        slug="other-execution-slots",
+    )
+
+    client.put(
+        f"/api/v1/workspaces/{workspace.id}/quotas",
+        headers=_headers(owner.id),
+        json={
+            "quotas": [
+                {"quota_key": "active_runs", "limit_value": 4, "unit": "count"},
+                {"quota_key": "docker_runtimes", "limit_value": 2, "unit": "count"},
+                {"quota_key": "self_hosted_jobs", "limit_value": 2, "unit": "count"},
+            ]
+        },
+    )
+
+    service = WorkspaceQuotaService(session)
+    first_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="First run",
+        status="running",
+    )
+    second_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Second run",
+        status="running",
+    )
+    session.add_all([first_task, second_task])
+    session.flush()
+
+    first_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=first_task.id,
+        status=RunStatus.RUNNING.value,
+        input={},
+    )
+    second_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=second_task.id,
+        status=RunStatus.RUNNING.value,
+        input={},
+    )
+    session.add_all([first_run, second_run])
+    session.flush()
+
+    first_result = service.reserve(
+        workspace_id=workspace.id,
+        task_id=first_task.id,
+        task_step_id=None,
+        reservation_key="run:first",
+        resource_usage={"active_runs": 1, "docker_runtimes": 1},
+    )
+    second_result = service.reserve(
+        workspace_id=workspace.id,
+        task_id=second_task.id,
+        task_step_id=None,
+        reservation_key="run:second",
+        resource_usage={"active_runs": 1, "self_hosted_jobs": 1},
+    )
+    assert first_result.reservation is not None
+    assert second_result.reservation is not None
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/quotas/execution-summary",
+        headers=_headers(owner.id),
+    )
+    forbidden = client.get(
+        f"/api/v1/workspaces/{workspace.id}/quotas/execution-summary",
+        headers=_headers(other_owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] == str(workspace.id)
+    assert body["active_reservation_count"] == 2
+    assert body["reservation_usage"] == {
+        "active_runs": 2,
+        "docker_runtimes": 1,
+        "self_hosted_jobs": 1,
+    }
+    assert body["over_reserved_quota_keys"] == []
+    quotas = {item["quota_key"]: item for item in body["quotas"]}
+    assert quotas["active_runs"]["reserved_value"] == 2
+    assert quotas["active_runs"]["available_value"] == 2
+    assert quotas["docker_runtimes"]["reserved_value"] == 1
+    assert quotas["self_hosted_jobs"]["reserved_value"] == 1
+    assert [item["reservation_key"] for item in body["active_reservations"]] == [
+        "run:first",
+        "run:second",
+    ]
+    assert forbidden.status_code == 403
 
 
 def test_duplicate_workspace_slug_returns_conflict_error() -> None:

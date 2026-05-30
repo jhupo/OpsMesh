@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -98,3 +99,25 @@ class WorkspaceQuotaResponse(TimestampedModel):
     @property
     def over_reserved(self) -> bool:
         return self.reserved_value > self.limit_value
+
+
+class WorkspaceExecutionSlotReservationResponse(TimestampedModel):
+    id: UUID
+    reservation_key: str
+    task_id: UUID | None
+    task_step_id: UUID | None
+    agent_run_id: UUID | None
+    resource_usage: dict[str, object]
+    status: str
+    expires_at: datetime | None
+    released_at: datetime | None
+
+
+class WorkspaceExecutionSlotSummaryResponse(BaseModel):
+    workspace_id: UUID
+    generated_at: datetime
+    quotas: list[WorkspaceQuotaResponse]
+    active_reservations: list[WorkspaceExecutionSlotReservationResponse]
+    active_reservation_count: int
+    reservation_usage: dict[str, int]
+    over_reserved_quota_keys: list[str]
