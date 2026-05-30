@@ -964,6 +964,60 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
     assert "Private manager review body." not in serialized
     assert "Foreign command task" not in serialized
 
+    dry_run = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/command-center/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": True,
+            "metadata": {"token": "hidden-dry-run-token"},
+        },
+    )
+    assert dry_run.status_code == 200
+    dry_run_body = dry_run.json()
+    assert dry_run_body["status"] == "dry_run"
+    assert dry_run_body["eligible_action_count"] == 2
+    assert {item["action"] for item in dry_run_body["results"]} == {
+        "request_manager_review",
+        "schedule_downstream_steps",
+    }
+    assert all(item["status"] == "would_apply" for item in dry_run_body["results"])
+    assert "hidden-dry-run-token" not in str(dry_run_body)
+    manager_review_steps = session.scalars(
+        select(TaskStep).where(
+            TaskStep.workspace_id == workspace.id,
+            TaskStep.task_id == task.id,
+            TaskStep.work_package_id.like("manager-summary-operator-%"),
+        )
+    ).all()
+    assert manager_review_steps == []
+
+    apply_response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/command-center/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": False,
+            "reason": "command center auto apply",
+            "metadata": {"api_key": "sk-command-apply"},
+        },
+    )
+    assert apply_response.status_code == 200
+    apply_body = apply_response.json()
+    assert apply_body["status"] == "applied"
+    assert apply_body["eligible_action_count"] == 2
+    assert apply_body["applied_action_count"] == 2
+    applied = {item["action"]: item for item in apply_body["results"]}
+    assert applied["request_manager_review"]["candidate_count"] >= 2
+    assert applied["schedule_downstream_steps"]["candidate_count"] >= 1
+    assert "sk-command-apply" not in str(apply_body)
+    manager_review_steps = session.scalars(
+        select(TaskStep).where(
+            TaskStep.workspace_id == workspace.id,
+            TaskStep.task_id == task.id,
+            TaskStep.work_package_id.like("manager-summary-operator-%"),
+        )
+    ).all()
+    assert len(manager_review_steps) == 1
+
 
 def test_team_operator_action_requests_manager_review_for_selected_tasks() -> None:
     client, session = _client()

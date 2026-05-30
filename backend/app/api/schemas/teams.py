@@ -209,6 +209,44 @@ class AgentTeamCommandCenterResponse(BaseModel):
         return [redact_sensitive_payload(item) for item in value]
 
 
+class AgentTeamCommandCenterApplyRequest(BaseModel):
+    dry_run: bool = True
+    sources: list[str] = Field(default_factory=list, max_length=3)
+    actions: list[str] = Field(default_factory=list, max_length=10)
+    max_actions: int = Field(default=5, ge=1, le=10)
+    max_tasks_per_action: int = Field(default=100, ge=1, le=200)
+    include_completed: bool = False
+    queue_limit: int = Field(default=50, ge=1, le=200)
+    reason: str | None = Field(default=None, max_length=1_000)
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class AgentTeamCommandCenterApplyResponse(BaseModel):
+    workspace_id: UUID
+    team_id: UUID
+    generated_at: datetime
+    dry_run: bool
+    status: str
+    requested_action_count: int
+    eligible_action_count: int
+    applied_action_count: int
+    skipped_action_count: int
+    summary: dict[str, object]
+    results: list[dict[str, object]]
+    skipped: list[dict[str, object]]
+
+    @field_serializer("summary")
+    def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("results", "skipped")
+    def _serialize_items(
+        self,
+        value: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
+
 class AgentTeamOperatorActionRequest(BaseModel):
     action: str = Field(
         pattern="^(request_manager_review|requeue_blocked_steps|schedule_downstream_steps)$"

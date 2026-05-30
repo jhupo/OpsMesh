@@ -35,6 +35,8 @@ from backend.app.api.schemas.tasks import (
     TaskTimelineResponse,
 )
 from backend.app.api.schemas.teams import (
+    AgentTeamCommandCenterApplyRequest,
+    AgentTeamCommandCenterApplyResponse,
     AgentTeamCommandCenterResponse,
     AgentTeamCreateRequest,
     AgentTeamExecutionOverviewResponse,
@@ -236,6 +238,35 @@ async def get_team_command_center(
     if command_center is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     return AgentTeamCommandCenterResponse.model_validate(command_center)
+
+
+@router.post(
+    "/teams/{team_id}/command-center/actions/apply",
+    response_model=AgentTeamCommandCenterApplyResponse,
+)
+async def apply_team_command_center_actions(
+    team_id: UUID,
+    request: AgentTeamCommandCenterApplyRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> AgentTeamCommandCenterApplyResponse:
+    response = TeamCommandCenterService(session).apply_action_plan(
+        workspace_id=context.workspace.id,
+        team_id=team_id,
+        actor_user_id=context.user.user_id,
+        include_completed=request.include_completed,
+        queue_limit=request.queue_limit,
+        dry_run=request.dry_run,
+        sources=request.sources or None,
+        actions=request.actions or None,
+        max_actions=request.max_actions,
+        max_tasks_per_action=request.max_tasks_per_action,
+        reason=request.reason,
+        metadata=request.metadata,
+    )
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    return AgentTeamCommandCenterApplyResponse.model_validate(response)
 
 
 @router.post(
