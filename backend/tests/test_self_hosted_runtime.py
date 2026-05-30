@@ -1565,6 +1565,50 @@ def test_self_hosted_worker_trust_view_reports_connector_version_policy() -> Non
     ]
 
 
+def test_self_hosted_connector_manifest_exposes_bootstrap_contract_without_secrets() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    workspace.settings = {
+        "self_hosted_worker_policy": {
+            "min_version": "0.3.0",
+            "recommended_version": "0.4.0",
+            "upgrade_url": "https://downloads.example.test/connector",
+            "token": "hidden-policy-token",
+        }
+    }
+    session.commit()
+
+    manifest = client.get(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/connector-manifest",
+        headers=_headers(owner.id),
+    )
+
+    assert manifest.status_code == 200
+    payload = manifest.json()
+    assert payload["workspace_id"] == str(workspace.id)
+    assert payload["api_prefix"] == "/api/v1"
+    assert payload["connector"] == {
+        "name": "chaincloud-self-hosted-worker",
+        "protocol_version": 1,
+        "recommended_version": "0.4.0",
+        "min_version": "0.3.0",
+        "upgrade_url": "https://downloads.example.test/connector",
+    }
+    assert payload["endpoints"]["register"] == "/api/v1/self-hosted/register"
+    assert payload["endpoints"]["claim_job"].endswith(
+        "/self-hosted/jobs/{agent_run_id}/claim"
+    )
+    assert "allowed_tools" in payload["capability_contract"]["optional_capabilities"]
+    assert payload["security"]["workspace_scoped"] is True
+    assert payload["security"]["returns_credentials"] is False
+    assert payload["version_policy"] == {
+        "min_version": "0.3.0",
+        "recommended_version": "0.4.0",
+        "upgrade_url": "https://downloads.example.test/connector",
+    }
+    assert "hidden-policy-token" not in str(payload)
+
+
 def test_self_hosted_worker_trust_view_reflects_degraded_and_revoked_states() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

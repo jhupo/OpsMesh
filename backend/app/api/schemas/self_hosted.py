@@ -102,6 +102,26 @@ class SelfHostedWorkerTrustResponse(BaseModel):
         return [redact_sensitive_payload(item) for item in value]
 
 
+class SelfHostedConnectorManifestResponse(BaseModel):
+    workspace_id: UUID
+    api_prefix: str
+    connector: dict[str, object]
+    endpoints: dict[str, object]
+    capability_contract: dict[str, object]
+    security: dict[str, object]
+    version_policy: dict[str, object]
+
+    @field_serializer(
+        "connector",
+        "endpoints",
+        "capability_contract",
+        "security",
+        "version_policy",
+    )
+    def _serialize_manifest_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
 class RuntimeCredentialRevokeRequest(BaseModel):
     reason: str = Field(default="", max_length=500)
 

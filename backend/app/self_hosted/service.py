@@ -888,6 +888,66 @@ class SelfHostedRuntimeService:
             )
         return snapshots
 
+    def connector_manifest(self, workspace_id: UUID) -> dict[str, object]:
+        version_policy = self._workspace_self_hosted_version_policy(workspace_id)
+        return {
+            "workspace_id": str(workspace_id),
+            "api_prefix": self._settings.api_prefix,
+            "connector": {
+                "name": "chaincloud-self-hosted-worker",
+                "protocol_version": 1,
+                "recommended_version": _version_string(
+                    version_policy.get("recommended_version")
+                ),
+                "min_version": _version_string(version_policy.get("min_version")),
+                "upgrade_url": _version_string(version_policy.get("upgrade_url")),
+            },
+            "endpoints": {
+                "register": f"{self._settings.api_prefix}/self-hosted/register",
+                "heartbeat": f"{self._settings.api_prefix}/self-hosted/heartbeat",
+                "next_job": f"{self._settings.api_prefix}/self-hosted/jobs/next",
+                "claim_job": f"{self._settings.api_prefix}/self-hosted/jobs/{{agent_run_id}}/claim",
+                "complete_job": (
+                    f"{self._settings.api_prefix}/self-hosted/jobs/{{agent_run_id}}/complete"
+                ),
+                "next_mcp_job": f"{self._settings.api_prefix}/self-hosted/mcp-jobs/next",
+                "claim_mcp_job": (
+                    f"{self._settings.api_prefix}/self-hosted/mcp-jobs/{{mcp_job_id}}/claim"
+                ),
+                "complete_mcp_job": (
+                    f"{self._settings.api_prefix}/self-hosted/mcp-jobs/{{mcp_job_id}}/complete"
+                ),
+                "progress": f"{self._settings.api_prefix}/self-hosted/progress",
+                "local_files": f"{self._settings.api_prefix}/self-hosted/local-files",
+                "artifact_uploads": f"{self._settings.api_prefix}/self-hosted/artifact-uploads",
+            },
+            "capability_contract": {
+                "required": ["machine_id", "name", "version"],
+                "optional_capabilities": [
+                    "runtime_space_id",
+                    "allowed_runtime_space_ids",
+                    "allowed_tools",
+                    "supported_models",
+                    "supported_runtimes",
+                    "supported_network_modes",
+                    "max_concurrent_jobs",
+                    "max_concurrent_mcp_jobs",
+                    "max_artifact_bytes",
+                ],
+            },
+            "security": {
+                "enrollment_token_transport": "one_time_registration_payload",
+                "runtime_credential_transport": "authorization_bearer_token",
+                "returns_credentials": False,
+                "workspace_scoped": True,
+            },
+            "version_policy": {
+                key: value
+                for key, value in version_policy.items()
+                if key in {"min_version", "recommended_version", "upgrade_url"}
+            },
+        }
+
     def _workspace_self_hosted_version_policy(self, workspace_id: UUID) -> dict[str, object]:
         workspace = self._session.get(Workspace, workspace_id)
         settings = workspace.settings if workspace is not None else None

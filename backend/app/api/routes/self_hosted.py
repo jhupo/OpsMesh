@@ -21,6 +21,7 @@ from backend.app.api.schemas.self_hosted import (
     RuntimeCredentialRevokeRequest,
     RuntimeRegistrationRequest,
     RuntimeRegistrationResponse,
+    SelfHostedConnectorManifestResponse,
     SelfHostedJobResponse,
     SelfHostedMcpJobResponse,
     SelfHostedWorkerCleanupResponse,
@@ -248,6 +249,19 @@ async def list_self_hosted_worker_trust(
         )
         for snapshot in snapshots
     ]
+
+
+@router.get(
+    "/workspaces/{workspace_id}/self-hosted/connector-manifest",
+    response_model=SelfHostedConnectorManifestResponse,
+)
+async def self_hosted_connector_manifest(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> SelfHostedConnectorManifestResponse:
+    manifest = SelfHostedRuntimeService(session, settings).connector_manifest(context.workspace.id)
+    return SelfHostedConnectorManifestResponse(**manifest)
 
 
 @router.get("/self-hosted/jobs/next", response_model=SelfHostedJobResponse | None)
