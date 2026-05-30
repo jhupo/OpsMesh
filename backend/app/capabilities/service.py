@@ -1,5 +1,6 @@
 import hashlib
 import json
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -524,6 +525,153 @@ class CapabilityService:
             "installed_skills": installed_skill_diagnostics,
             "effective_tools": effective_tools,
             "blocked_reasons": blocked_reasons,
+        }
+
+    def workspace_capability_governance(self, workspace_id: UUID) -> dict[str, object]:
+        installs = self._session.scalars(
+            select(WorkspaceSkillInstall)
+            .where(WorkspaceSkillInstall.workspace_id == workspace_id)
+            .order_by(
+                WorkspaceSkillInstall.status.asc(),
+                WorkspaceSkillInstall.installed_key.asc(),
+                WorkspaceSkillInstall.created_at.desc(),
+            )
+        ).all()
+        skill_items: list[dict[str, object]] = []
+        skill_blocked_reasons: Counter[str] = Counter()
+        for install in installs:
+            availability = self.workspace_skill_availability(workspace_id, install.id)
+            skill_blocked_reasons.update(availability.blocked_reasons)
+            skill_items.append(
+                {
+                    "install_id": install.id,
+                    "installed_key": install.installed_key,
+                    "installed_name": install.installed_name,
+                    "installed_version": install.installed_version,
+                    "status": install.status,
+                    "usable": availability.usable,
+                    "required_tools": availability.required_tools,
+                    "blocked_reasons": availability.blocked_reasons,
+                }
+            )
+
+        agents = self._session.scalars(
+            select(AgentProfile)
+            .where(AgentProfile.workspace_id == workspace_id)
+            .order_by(AgentProfile.status.asc(), AgentProfile.name.asc(), AgentProfile.id.asc())
+        ).all()
+        agent_items: list[dict[str, object]] = []
+        agent_blocked_reasons: Counter[str] = Counter()
+        for agent in agents:
+            diagnostics = self.agent_tool_policy_diagnostics(workspace_id, agent.id)
+            effective_tools = _dict_list(diagnostics.get("effective_tools"))
+            unavailable_tool_count = sum(
+                1
+                for tool in effective_tools
+                if tool.get("allowed_by_agent_policy") is True and tool.get("available") is False
+            )
+            blocked_reasons = _string_list(diagnostics.get("blocked_reasons"))
+            agent_blocked_reasons.update(blocked_reasons)
+            agent_items.append(
+                {
+                    "agent_profile_id": agent.id,
+                    "name": agent.name,
+                    "role": agent.role,
+                    "status": agent.status,
+                    "policy_mode": diagnostics["policy_mode"],
+                    "configured_mcp_tools": diagnostics["configured_mcp_tools"],
+                    "installed_skill_count": len(
+                        _dict_list(diagnostics.get("installed_skills"))
+                    ),
+                    "effective_tool_count": len(effective_tools),
+                    "unavailable_tool_count": unavailable_tool_count,
+                    "blocked_reasons": blocked_reasons,
+                }
+            )
+
+        catalog_items, catalog_total = self.list_mcp_catalog(
+            workspace_id,
+            PageParams(limit=10_000, offset=0),
+        )
+        server_items: list[dict[str, object]] = []
+        server_blocked_reasons: Counter[str] = Counter()
+        allowed_tool_count = 0
+        high_risk_tool_count = 0
+        approval_required_tool_count = 0
+        failed_tool_call_count = 0
+        for item in catalog_items:
+            server = item.server
+            tool_count = len(item.tools)
+            server_high_risk_tools = sum(
+                1
+                for tool in item.tools
+                if tool.allowlist.risk_level.lower().strip() in {"high", "critical"}
+            )
+            server_approval_tools = sum(
+                1 for tool in item.tools if tool.allowlist.requires_approval
+            )
+            server_blocked_reasons.update(item.blocked_reasons)
+            allowed_tool_count += tool_count
+            high_risk_tool_count += server_high_risk_tools
+            approval_required_tool_count += server_approval_tools
+            failed_tool_call_count += item.usage.failed_call_count
+            server_items.append(
+                {
+                    "server_id": server.id,
+                    "name": server.name,
+                    "server_type": server.server_type,
+                    "status": server.status,
+                    "health_status": server.health_status,
+                    "execution_mode": item.execution_mode,
+                    "executable": item.executable,
+                    "credential_status": item.credential_status,
+                    "allowed_tool_count": tool_count,
+                    "high_risk_tool_count": server_high_risk_tools,
+                    "approval_required_tool_count": server_approval_tools,
+                    "failed_call_count": item.usage.failed_call_count,
+                    "blocked_reasons": item.blocked_reasons,
+                }
+            )
+
+        blocked_reason_counts = Counter()
+        blocked_reason_counts.update(skill_blocked_reasons)
+        blocked_reason_counts.update(agent_blocked_reasons)
+        blocked_reason_counts.update(server_blocked_reasons)
+        return {
+            "workspace_id": workspace_id,
+            "generated_at": datetime.now(UTC),
+            "summary": {
+                "skill_installs": len(skill_items),
+                "active_skill_installs": sum(
+                    1 for item in skill_items if item["status"] == "active"
+                ),
+                "unusable_skill_installs": sum(
+                    1 for item in skill_items if item["usable"] is False
+                ),
+                "agents": len(agent_items),
+                "agents_with_blocks": sum(
+                    1 for item in agent_items if item["blocked_reasons"]
+                ),
+                "mcp_servers": catalog_total,
+                "executable_mcp_servers": sum(1 for item in server_items if item["executable"]),
+                "blocked_mcp_servers": sum(
+                    1 for item in server_items if item["blocked_reasons"]
+                ),
+                "allowed_mcp_tools": allowed_tool_count,
+                "high_risk_mcp_tools": high_risk_tool_count,
+                "tools_requiring_approval": approval_required_tool_count,
+                "missing_required_credential_servers": sum(
+                    1
+                    for item in server_items
+                    if item["credential_status"] == "missing_required"
+                ),
+                "failed_mcp_tool_calls": failed_tool_call_count,
+                "catalog_truncated": catalog_total > len(catalog_items),
+                "blocked_reason_counts": dict(sorted(blocked_reason_counts.items())),
+            },
+            "skills": skill_items,
+            "agents": agent_items,
+            "mcp_servers": server_items,
         }
 
     def _require_workspace_install(
@@ -1170,6 +1318,18 @@ class CapabilityService:
         )
         rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
         return list(rows), int(total or 0)
+
+
+def _dict_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
 
 
 def _skill_checksum(skill: Skill) -> str:

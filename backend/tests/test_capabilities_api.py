@@ -1134,6 +1134,185 @@ def test_agent_tool_policy_diagnostics_explain_skill_and_mcp_effective_access() 
     assert foreign_diagnostics.status_code == 404
 
 
+def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    skill = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+        json={
+            "key": "image-pack",
+            "name": "Image Pack",
+            "version": "1.0.0",
+            "manifest": {
+                "mcp_tools": [
+                    "generate_image",
+                    "upscale_image",
+                ],
+                "api_key": "sk-skill",
+            },
+            "visibility": "public",
+        },
+    )
+    installed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/workspace-skills",
+        headers=_headers(owner.id),
+        json={"skill_id": skill.json()["id"], "config": {"token": "hidden-token"}},
+    )
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "image-tools",
+            "server_type": "hosted",
+            "connection": {
+                "transport": "http_jsonrpc",
+                "url": "https://mcp.example.test/private?token=hidden",
+                "requires_credentials": True,
+            },
+        },
+    )
+    allowed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={
+            "tool_name": "generate_image",
+            "capability_key": "image.generate",
+            "requires_approval": True,
+            "risk_level": "high",
+        },
+    )
+    failed_log = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "tool_name": "generate_image",
+            "status": "failed",
+            "request": {"arguments_sha256": "args", "token": "request-token"},
+            "error": {"code": "timeout", "api_key": "sk-error"},
+        },
+    )
+    agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Designer",
+            "role": "designer",
+            "skills": {"installed_skill_ids": [installed.json()["id"]]},
+            "tool_policy": {"mcp_tools": ["generate_image", "delete_image"]},
+            "model_settings": {"api_key": "sk-agent"},
+        },
+    )
+    foreign_server = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers",
+        headers=_headers(other.id),
+        json={
+            "name": "foreign-tools",
+            "server_type": "http_jsonrpc",
+            "connection": {"url": "https://foreign.example.test/private"},
+        },
+    )
+
+    governance = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance",
+        headers=_headers(owner.id),
+    )
+
+    assert skill.status_code == 201
+    assert installed.status_code == 201
+    assert server.status_code == 201
+    assert allowed.status_code == 201
+    assert failed_log.status_code == 201
+    assert agent.status_code == 201
+    assert foreign_server.status_code == 201
+    assert governance.status_code == 200
+    body = governance.json()
+    assert body["workspace_id"] == str(workspace.id)
+    assert body["summary"] == {
+        "skill_installs": 1,
+        "active_skill_installs": 1,
+        "unusable_skill_installs": 1,
+        "agents": 1,
+        "agents_with_blocks": 1,
+        "mcp_servers": 1,
+        "executable_mcp_servers": 0,
+        "blocked_mcp_servers": 1,
+        "allowed_mcp_tools": 1,
+        "high_risk_mcp_tools": 1,
+        "tools_requiring_approval": 1,
+        "missing_required_credential_servers": 1,
+        "failed_mcp_tool_calls": 1,
+        "catalog_truncated": False,
+        "blocked_reason_counts": {
+            "configured_mcp_tools_not_allowed": 1,
+            "missing_required_credentials": 1,
+            "missing_required_mcp_tools": 1,
+            "unavailable_allowed_mcp_tools": 1,
+            "unusable_installed_skills": 1,
+        },
+    }
+    assert body["skills"] == [
+        {
+            "install_id": installed.json()["id"],
+            "installed_key": "image-pack",
+            "installed_name": "Image Pack",
+            "installed_version": "1.0.0",
+            "status": "active",
+            "usable": False,
+            "required_tools": ["generate_image", "upscale_image"],
+            "blocked_reasons": ["missing_required_mcp_tools"],
+        }
+    ]
+    assert body["agents"] == [
+        {
+            "agent_profile_id": agent.json()["id"],
+            "name": "Designer",
+            "role": "designer",
+            "status": "active",
+            "policy_mode": "allowlist",
+            "configured_mcp_tools": ["delete_image", "generate_image"],
+            "installed_skill_count": 1,
+            "effective_tool_count": 3,
+            "unavailable_tool_count": 2,
+            "blocked_reasons": [
+                "configured_mcp_tools_not_allowed",
+                "unusable_installed_skills",
+                "unavailable_allowed_mcp_tools",
+            ],
+        }
+    ]
+    assert body["mcp_servers"] == [
+        {
+            "server_id": server.json()["id"],
+            "name": "image-tools",
+            "server_type": "hosted",
+            "status": "active",
+            "health_status": "unknown",
+            "execution_mode": "hosted",
+            "executable": False,
+            "credential_status": "missing_required",
+            "allowed_tool_count": 1,
+            "high_risk_tool_count": 1,
+            "approval_required_tool_count": 1,
+            "failed_call_count": 1,
+            "blocked_reasons": ["missing_required_credentials"],
+        }
+    ]
+    serialized = str(body)
+    assert "sk-skill" not in serialized
+    assert "hidden-token" not in serialized
+    assert "private" not in serialized
+    assert "request-token" not in serialized
+    assert "sk-error" not in serialized
+    assert "sk-agent" not in serialized
+    assert "foreign-tools" not in serialized
+    assert "foreign.example.test" not in serialized
+
+
 def test_workspace_skill_install_can_upgrade_and_disable_without_source_access() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

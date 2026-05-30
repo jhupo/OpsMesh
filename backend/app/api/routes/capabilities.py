@@ -24,6 +24,7 @@ from backend.app.api.schemas.capabilities import (
     SkillResponse,
     ToolGroupCreateRequest,
     ToolGroupResponse,
+    WorkspaceCapabilityGovernanceResponse,
     WorkspaceSkillAvailabilityResponse,
     WorkspaceSkillImpactResponse,
     WorkspaceSkillInstallConfigRequest,
@@ -90,6 +91,17 @@ async def create_skill(
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     return SkillResponse.model_validate(skill)
+
+
+@router.get("/governance", response_model=WorkspaceCapabilityGovernanceResponse)
+async def get_workspace_capability_governance(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceCapabilityGovernanceResponse:
+    diagnostics = CapabilityService(session).workspace_capability_governance(
+        context.workspace.id,
+    )
+    return WorkspaceCapabilityGovernanceResponse.model_validate(diagnostics)
 
 
 @router.get("/workspace-skills", response_model=PageResponse[WorkspaceSkillInstallResponse])

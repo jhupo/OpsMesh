@@ -186,6 +186,59 @@ class AgentToolPolicyDiagnosticsResponse(BaseModel):
     blocked_reasons: list[str] = Field(default_factory=list)
 
 
+class WorkspaceCapabilityGovernanceSkillResponse(BaseModel):
+    install_id: UUID
+    installed_key: str
+    installed_name: str
+    installed_version: str
+    status: str
+    usable: bool
+    required_tools: list[str]
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
+class WorkspaceCapabilityGovernanceAgentResponse(BaseModel):
+    agent_profile_id: UUID
+    name: str
+    role: str
+    status: str
+    policy_mode: str
+    configured_mcp_tools: list[str] | None
+    installed_skill_count: int
+    effective_tool_count: int
+    unavailable_tool_count: int
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
+class WorkspaceCapabilityGovernanceMcpServerResponse(BaseModel):
+    server_id: UUID
+    name: str
+    server_type: str
+    status: str
+    health_status: str
+    execution_mode: str
+    executable: bool
+    credential_status: str
+    allowed_tool_count: int
+    high_risk_tool_count: int
+    approval_required_tool_count: int
+    failed_call_count: int
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
+class WorkspaceCapabilityGovernanceResponse(BaseModel):
+    workspace_id: UUID
+    generated_at: datetime
+    summary: dict[str, object]
+    skills: list[WorkspaceCapabilityGovernanceSkillResponse]
+    agents: list[WorkspaceCapabilityGovernanceAgentResponse]
+    mcp_servers: list[WorkspaceCapabilityGovernanceMcpServerResponse]
+
+    @field_serializer("summary")
+    def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
 class ToolGroupCreateRequest(BaseModel):
     key: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=160)
