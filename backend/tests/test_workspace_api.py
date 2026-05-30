@@ -2114,6 +2114,224 @@ def test_task_manager_diagnostics_explains_acceptance_follow_up_and_redacts() ->
     assert "foreign" not in serialized
 
 
+def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-manager-queue@example.com",
+        slug="other-manager-queue",
+    )
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="PM",
+        role="project_manager",
+        model_settings={"api_key": "sk-manager"},
+    )
+    developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+    )
+    session.add_all([manager, developer])
+    session.flush()
+    needs_follow_up = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Needs manager follow up",
+        status="running",
+        priority=8,
+        domain_type="software",
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id)},
+    )
+    healthy = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Approved delivery",
+        status="completed",
+        priority=1,
+        domain_type="software",
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id)},
+    )
+    foreign_task = Task(
+        workspace_id=other_workspace.id,
+        created_by_user_id=other_owner.id,
+        title="Foreign manager queue task",
+        status="running",
+    )
+    session.add_all([needs_follow_up, healthy, foreign_task])
+    session.flush()
+
+    follow_up_steps = [
+        TaskStep(
+            workspace_id=workspace.id,
+            task_id=needs_follow_up.id,
+            assigned_agent_profile_id=manager.id,
+            work_package_id="manager-planning",
+            required_role="project_manager",
+            title="Plan attention task",
+            status="completed",
+            order_index=10,
+        ),
+        TaskStep(
+            workspace_id=workspace.id,
+            task_id=needs_follow_up.id,
+            assigned_agent_profile_id=developer.id,
+            work_package_id="build",
+            required_role="developer",
+            title="Build attention task",
+            status="completed",
+            order_index=20,
+        ),
+        TaskStep(
+            workspace_id=workspace.id,
+            task_id=needs_follow_up.id,
+            assigned_agent_profile_id=manager.id,
+            work_package_id="manager-summary",
+            required_role="project_manager",
+            title="Review attention task",
+            status="completed",
+            order_index=30,
+        ),
+    ]
+    healthy_steps = [
+        TaskStep(
+            workspace_id=workspace.id,
+            task_id=healthy.id,
+            assigned_agent_profile_id=manager.id,
+            work_package_id="manager-planning",
+            required_role="project_manager",
+            title="Plan healthy task",
+            status="completed",
+            order_index=10,
+        ),
+        TaskStep(
+            workspace_id=workspace.id,
+            task_id=healthy.id,
+            assigned_agent_profile_id=developer.id,
+            work_package_id="build",
+            required_role="developer",
+            title="Build healthy task",
+            status="completed",
+            order_index=20,
+        ),
+        TaskStep(
+            workspace_id=workspace.id,
+            task_id=healthy.id,
+            assigned_agent_profile_id=manager.id,
+            work_package_id="manager-summary",
+            required_role="project_manager",
+            title="Review healthy task",
+            status="completed",
+            order_index=30,
+        ),
+    ]
+    session.add_all([*follow_up_steps, *healthy_steps])
+    session.flush()
+    session.add_all(
+        [
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=needs_follow_up.id,
+                task_step_id=follow_up_steps[2].id,
+                agent_profile_id=manager.id,
+                message_type="pm.acceptance_decision",
+                sequence=1,
+                body="Private body should not be serialized.",
+                payload={
+                    "decision": "request_revision",
+                    "summary": "Needs tests",
+                    "revision_requests": [
+                        {"work_package_id": "build", "instruction": "Add tests"}
+                    ],
+                    "token": "hidden-token",
+                },
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=healthy.id,
+                task_step_id=healthy_steps[2].id,
+                agent_profile_id=manager.id,
+                message_type="pm.acceptance_decision",
+                sequence=1,
+                body="Approved body should not be serialized.",
+                payload={
+                    "decision": "approved",
+                    "summary": "Approved",
+                    "api_key": "sk-approved",
+                },
+            ),
+            TaskMessage(
+                workspace_id=other_workspace.id,
+                task_id=foreign_task.id,
+                message_type="pm.acceptance_decision",
+                sequence=1,
+                body="foreign",
+                payload={"decision": "request_revision"},
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/manager-queue",
+        headers=_headers(owner.id),
+    )
+    include_healthy = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/manager-queue?include_healthy=true",
+        headers=_headers(owner.id),
+    )
+    status_filtered = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/manager-queue"
+        "?include_healthy=true&status=completed",
+        headers=_headers(owner.id),
+    )
+    foreign_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks/manager-queue?include_healthy=true",
+        headers=_headers(other_owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["summary"]["needs_attention"] == 1
+    assert body["summary"]["pending_phases"] == {"follow_up": 1}
+    item = body["items"][0]
+    assert item["task_id"] == str(needs_follow_up.id)
+    assert item["manager_agent_profile_id"] == str(manager.id)
+    assert item["manager_agent_name"] == "PM"
+    assert item["manager_status"] == "active"
+    assert item["summary_status"] == "blocked"
+    assert item["pending_phase"] == "follow_up"
+    assert item["needs_attention"] is True
+    assert item["blocked_reasons"] == ["follow_up_missing"]
+    assert item["recommended_actions"] == ["request_manager_review"]
+    assert item["acceptance_decisions"] == 1
+    assert item["follow_up_cycles"] == 0
+    assert item["step_status_counts"] == {"completed": 3}
+
+    assert include_healthy.status_code == 200
+    assert include_healthy.json()["total"] == 2
+    by_title = {item["title"]: item for item in include_healthy.json()["items"]}
+    assert by_title["Approved delivery"]["needs_attention"] is False
+    assert by_title["Approved delivery"]["pending_phase"] == "none"
+    assert status_filtered.status_code == 200
+    assert status_filtered.json()["items"][0]["task_id"] == str(healthy.id)
+    assert foreign_response.status_code == 200
+    assert foreign_response.json()["total"] == 1
+    assert foreign_response.json()["items"][0]["title"] == "Foreign manager queue task"
+    serialized = str(include_healthy.json())
+    assert "Private body should not be serialized." not in serialized
+    assert "Approved body should not be serialized." not in serialized
+    assert "hidden-token" not in serialized
+    assert "sk-approved" not in serialized
+    assert "sk-manager" not in serialized
+    assert "foreign" not in str(body)
+
+
 def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

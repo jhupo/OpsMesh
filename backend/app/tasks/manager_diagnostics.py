@@ -91,6 +91,46 @@ class TaskManagerDiagnosticsService:
             "blocked_reasons": blocked_reasons,
         }
 
+    def list_manager_queue(
+        self,
+        *,
+        workspace_id: UUID,
+        limit: int,
+        offset: int,
+        status: str | None = None,
+        include_healthy: bool = False,
+    ) -> dict[str, object]:
+        statement = select(Task).where(Task.workspace_id == workspace_id)
+        if status is not None:
+            statement = statement.where(Task.status == status)
+        tasks = list(
+            self._session.scalars(
+                statement.order_by(Task.updated_at.desc(), Task.created_at.desc())
+            )
+        )
+
+        items: list[dict[str, object]] = []
+        for task in tasks:
+            diagnostics = self.get_diagnostics(workspace_id=workspace_id, task_id=task.id)
+            if diagnostics is None:
+                continue
+            item = _manager_queue_item(task, diagnostics)
+            if not include_healthy and not item["needs_attention"]:
+                continue
+            items.append(item)
+
+        total = len(items)
+        paged_items = items[offset : offset + limit]
+        return {
+            "workspace_id": workspace_id,
+            "generated_at": datetime.now(UTC),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "summary": _manager_queue_summary(items),
+            "items": paged_items,
+        }
+
     def _steps(self, workspace_id: UUID, task_id: UUID) -> list[TaskStep]:
         return list(
             self._session.scalars(
@@ -134,6 +174,107 @@ class TaskManagerDiagnosticsService:
             )
         ).all()
         return {agent.id: agent for agent in agents}
+
+
+def _manager_queue_item(task: Task, diagnostics: dict[str, object]) -> dict[str, object]:
+    manager = diagnostics.get("manager") if isinstance(diagnostics.get("manager"), dict) else {}
+    summary = diagnostics.get("summary") if isinstance(diagnostics.get("summary"), dict) else {}
+    blocked_reasons = _string_list(diagnostics.get("blocked_reasons"))
+    manager_agent = manager.get("agent") if isinstance(manager.get("agent"), dict) else None
+    manager_status = _manager_status(manager)
+    summary_status = str(summary.get("status") or "unknown")
+    needs_attention = summary_status != "healthy" or bool(blocked_reasons)
+    return {
+        "task_id": task.id,
+        "title": task.title,
+        "status": task.status,
+        "priority": task.priority,
+        "domain_type": task.domain_type,
+        "manager_agent_profile_id": manager.get("agent_profile_id"),
+        "manager_agent_name": manager_agent.get("name") if manager_agent is not None else None,
+        "manager_status": manager_status,
+        "summary_status": summary_status,
+        "pending_phase": _pending_manager_phase(diagnostics),
+        "needs_attention": needs_attention,
+        "blocked_reasons": blocked_reasons,
+        "recommended_actions": _recommended_manager_actions(blocked_reasons),
+        "acceptance_decisions": int(summary.get("acceptance_decisions") or 0),
+        "follow_up_cycles": int(summary.get("follow_up_cycles") or 0),
+        "step_status_counts": _int_dict(summary.get("step_status_counts")),
+        "last_activity_at": task.updated_at,
+    }
+
+
+def _manager_queue_summary(items: list[dict[str, object]]) -> dict[str, object]:
+    pending_phases = Counter(str(item["pending_phase"]) for item in items)
+    manager_statuses = Counter(str(item["manager_status"]) for item in items)
+    recommended_actions = Counter(
+        action
+        for item in items
+        for action in item["recommended_actions"]
+        if isinstance(action, str)
+    )
+    return {
+        "needs_attention": len(items),
+        "pending_phases": dict(sorted(pending_phases.items())),
+        "manager_statuses": dict(sorted(manager_statuses.items())),
+        "recommended_actions": dict(sorted(recommended_actions.items())),
+    }
+
+
+def _manager_status(manager: dict[str, object]) -> str:
+    if not manager.get("has_manager"):
+        return "missing"
+    agent = manager.get("agent")
+    if not isinstance(agent, dict):
+        return "unknown"
+    status = agent.get("status")
+    return status if isinstance(status, str) else "unknown"
+
+
+def _pending_manager_phase(diagnostics: dict[str, object]) -> str:
+    blocked_reasons = set(_string_list(diagnostics.get("blocked_reasons")))
+    if any(reason.startswith("missing_manager") for reason in blocked_reasons):
+        return "manager_setup"
+    if "specialist_steps_incomplete" in blocked_reasons:
+        return "specialist_execution"
+    if "acceptance_decision_missing" in blocked_reasons:
+        return "manager_acceptance"
+    if "follow_up_missing" in blocked_reasons or "follow_up_incomplete" in blocked_reasons:
+        return "follow_up"
+
+    handoff_chain = diagnostics.get("handoff_chain")
+    if isinstance(handoff_chain, list):
+        for phase in handoff_chain:
+            if not isinstance(phase, dict):
+                continue
+            if phase.get("status") not in {"completed", "not_required"}:
+                value = phase.get("phase")
+                return value if isinstance(value, str) else "unknown"
+    return "none"
+
+
+def _recommended_manager_actions(blocked_reasons: list[str]) -> list[str]:
+    actions: list[str] = []
+    if "missing_manager" in blocked_reasons:
+        actions.append("assign_manager")
+    if any(reason.startswith("missing_manager_") for reason in blocked_reasons):
+        actions.append("request_manager_review")
+    if "acceptance_decision_missing" in blocked_reasons:
+        actions.append("request_manager_review")
+    if "follow_up_missing" in blocked_reasons:
+        actions.append("request_manager_review")
+    if "follow_up_incomplete" in blocked_reasons:
+        actions.append("monitor_follow_up")
+    if "specialist_steps_incomplete" in blocked_reasons:
+        actions.append("monitor_specialists")
+    return list(dict.fromkeys(actions))
+
+
+def _int_dict(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): int(item) for key, item in value.items() if isinstance(item, int)}
 
 
 def _manager_agent_id(task: Task) -> UUID | None:

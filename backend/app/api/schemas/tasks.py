@@ -315,6 +315,40 @@ class TaskManagerDiagnosticsResponse(BaseModel):
         return value
 
 
+class TaskManagerQueueItemResponse(BaseModel):
+    task_id: UUID
+    title: str
+    status: str
+    priority: int
+    domain_type: str | None
+    manager_agent_profile_id: UUID | None
+    manager_agent_name: str | None
+    manager_status: str
+    summary_status: str
+    pending_phase: str
+    needs_attention: bool
+    blocked_reasons: list[str]
+    recommended_actions: list[str]
+    acceptance_decisions: int
+    follow_up_cycles: int
+    step_status_counts: dict[str, int]
+    last_activity_at: datetime
+
+
+class TaskManagerQueueResponse(BaseModel):
+    workspace_id: UUID
+    generated_at: datetime
+    total: int
+    limit: int
+    offset: int
+    summary: dict[str, object]
+    items: list[TaskManagerQueueItemResponse]
+
+    @field_serializer("summary")
+    def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
 class TaskExecutionAgentSummary(BaseModel):
     id: UUID
     name: str

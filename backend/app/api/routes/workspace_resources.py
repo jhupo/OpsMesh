@@ -21,6 +21,7 @@ from backend.app.api.schemas.tasks import (
     TaskCreateRequest,
     TaskExecutionDiagnosticsResponse,
     TaskManagerDiagnosticsResponse,
+    TaskManagerQueueResponse,
     TaskMessageResponse,
     TaskObservationResponse,
     TaskOperatorActionRequest,
@@ -344,6 +345,24 @@ async def create_task(
         )
         raise HTTPException(status_code=code, detail=message) from exc
     return TaskResponse.model_validate(task)
+
+
+@router.get("/tasks/manager-queue", response_model=TaskManagerQueueResponse)
+async def list_task_manager_queue(
+    page: PageParams = Depends(pagination_params),
+    status_filter: str | None = Query(default=None, alias="status"),
+    include_healthy: bool = Query(default=False),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskManagerQueueResponse:
+    response = TaskManagerDiagnosticsService(session).list_manager_queue(
+        workspace_id=context.workspace.id,
+        limit=page.limit,
+        offset=page.offset,
+        status=status_filter,
+        include_healthy=include_healthy,
+    )
+    return TaskManagerQueueResponse.model_validate(response)
 
 
 @router.post("/tasks/{task_id}/cancel", response_model=TaskResponse)
