@@ -38,7 +38,7 @@ Frontend remains out of scope. Billing remains out of scope.
 | 3 | P0 | Agent model configuration closure | Done | Workspace default provider, per-agent override, cloud-downloaded base URL/key/model, fallback behavior, and redacted audit coverage are covered by model provider service and runtime tests |
 | 4 | P0 | Multi-agent project execution loop | Pending | Reusable team org chart, project-manager decomposition, role assignment, dependency DAG, correction loop, and message/state timeline |
 | 5 | P1 | MCP skill lifecycle and tool permission hardening | Pending | Private/public skill install lifecycle, version snapshots, per-agent tool permissions, runtime execution limits, and audit evidence |
-| 6 | P1 | Self-hosted worker install and upgrade channel | Pending | Registration token, connector package, heartbeat/version policy, job slots, upgrade/drain/quarantine flow, and trust diagnostics |
+| 6 | P1 | Self-hosted worker install and upgrade channel | In Progress | Registration token, job slots, drain/quarantine/revoke flow, trust diagnostics, and workspace connector version policy diagnostics are implemented; remaining work is a downloadable connector package/bootstrap manifest |
 | 7 | P1 | Operations control plane expansion | Done | Runtime/container quota dashboard API, backlog/failure/latency aggregates, blocked-step explanations, and metadata-only operator responses are covered by operations API and tests |
 | 8 | P1 | Workspace data lifecycle | Pending | Import/export restore path, artifact versioning, backup hooks, retention policy, and file access audit |
 

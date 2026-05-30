@@ -1491,6 +1491,80 @@ def test_self_hosted_worker_trust_view_reports_policy_diagnostics() -> None:
     assert "runtime-hidden" not in str(diagnostics)
 
 
+def test_self_hosted_worker_trust_view_reports_connector_version_policy() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    workspace.settings = {
+        "self_hosted_worker_policy": {
+            "min_version": "0.3.0",
+            "recommended_version": "0.4.0",
+            "upgrade_url": "https://downloads.example.test/connector",
+        }
+    }
+    session.commit()
+    required_token = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "required"},
+    ).json()["token"]
+    recommended_token = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "recommended"},
+    ).json()["token"]
+    client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": required_token,
+            "name": "required",
+            "machine_id": "machine-upgrade-required",
+            "version": "0.2.9",
+            "capabilities": {},
+        },
+    )
+    client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": recommended_token,
+            "name": "recommended",
+            "machine_id": "machine-upgrade-recommended",
+            "version": "0.3.5",
+            "capabilities": {},
+        },
+    )
+
+    trust = client.get(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/workers/trust",
+        headers=_headers(owner.id),
+    )
+
+    assert trust.status_code == 200
+    by_machine = {item["machine_id"]: item for item in trust.json()}
+    required = by_machine["machine-upgrade-required"]["policy_diagnostics"]
+    recommended = by_machine["machine-upgrade-recommended"]["policy_diagnostics"]
+    assert required == [
+        {
+            "code": "self_hosted_connector_upgrade_required",
+            "severity": "critical",
+            "message": "Self-hosted connector version is below minimum supported version.",
+            "current_version": "0.2.9",
+            "min_version": "0.3.0",
+            "recommended_version": "0.4.0",
+            "upgrade_url": "https://downloads.example.test/connector",
+        }
+    ]
+    assert recommended == [
+        {
+            "code": "self_hosted_connector_upgrade_recommended",
+            "severity": "warning",
+            "message": "Self-hosted connector version is below recommended version.",
+            "current_version": "0.3.5",
+            "recommended_version": "0.4.0",
+            "upgrade_url": "https://downloads.example.test/connector",
+        }
+    ]
+
+
 def test_self_hosted_worker_trust_view_reflects_degraded_and_revoked_states() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

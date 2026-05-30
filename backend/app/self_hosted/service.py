@@ -39,6 +39,7 @@ from backend.app.self_hosted.policy import evaluate_worker_job_policy
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
+from backend.app.workspaces.models import Workspace
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 
@@ -854,6 +855,7 @@ class SelfHostedRuntimeService:
         )
 
     def list_worker_trust(self, workspace_id: UUID) -> list[WorkerTrustSnapshot]:
+        version_policy = self._workspace_self_hosted_version_policy(workspace_id)
         rows = self._session.scalars(
             select(SelfHostedWorker)
             .where(SelfHostedWorker.workspace_id == workspace_id)
@@ -877,10 +879,34 @@ class SelfHostedRuntimeService:
                     credential=credential,
                     trust_state=_worker_trust_state(worker, runtime, credential),
                     policy_summary=_worker_policy_summary(worker.capabilities),
-                    policy_diagnostics=_worker_policy_diagnostics(worker, runtime),
+                    policy_diagnostics=_worker_policy_diagnostics(
+                        worker,
+                        runtime,
+                        version_policy=version_policy,
+                    ),
                 )
             )
         return snapshots
+
+    def _workspace_self_hosted_version_policy(self, workspace_id: UUID) -> dict[str, object]:
+        workspace = self._session.get(Workspace, workspace_id)
+        settings = workspace.settings if workspace is not None else None
+        if not isinstance(settings, dict):
+            return {}
+        for key in (
+            "self_hosted_worker_policy",
+            "self_hosted_connector_policy",
+            "self_hosted",
+        ):
+            policy = settings.get(key)
+            if not isinstance(policy, dict):
+                continue
+            version_policy = policy.get("version_policy")
+            if isinstance(version_policy, dict):
+                return version_policy
+            if "min_version" in policy or "recommended_version" in policy:
+                return policy
+        return {}
 
     def _consume_enrollment_token(self, raw_token: str) -> RuntimeEnrollmentToken:
         token = self._session.scalar(
@@ -1539,6 +1565,8 @@ def _worker_policy_summary(capabilities: dict[str, object]) -> dict[str, object]
 def _worker_policy_diagnostics(
     worker: SelfHostedWorker,
     runtime: WorkspaceRuntime,
+    *,
+    version_policy: dict[str, object] | None = None,
 ) -> list[dict[str, object]]:
     diagnostics: list[dict[str, object]] = []
     worker_policy = _worker_policy_summary(worker.capabilities)
@@ -1576,7 +1604,78 @@ def _worker_policy_diagnostics(
                 "message": "Runtime is revoked but worker record is not revoked.",
             }
         )
+    diagnostics.extend(_worker_version_diagnostics(worker, version_policy or {}))
     return diagnostics
+
+
+def _worker_version_diagnostics(
+    worker: SelfHostedWorker,
+    version_policy: dict[str, object],
+) -> list[dict[str, object]]:
+    current = _parse_version(worker.version)
+    if current is None:
+        return []
+    min_version = _version_string(version_policy.get("min_version"))
+    recommended_version = _version_string(version_policy.get("recommended_version"))
+    upgrade_url = _version_string(version_policy.get("upgrade_url"))
+    diagnostics: list[dict[str, object]] = []
+    if min_version is not None:
+        parsed_min = _parse_version(min_version)
+        if parsed_min is not None and _version_less_than(current, parsed_min):
+            diagnostics.append(
+                {
+                    "code": "self_hosted_connector_upgrade_required",
+                    "severity": "critical",
+                    "message": "Self-hosted connector version is below minimum supported version.",
+                    "current_version": worker.version,
+                    "min_version": min_version,
+                    "recommended_version": recommended_version,
+                    "upgrade_url": upgrade_url,
+                }
+            )
+            return diagnostics
+    if recommended_version is not None:
+        parsed_recommended = _parse_version(recommended_version)
+        if parsed_recommended is not None and _version_less_than(current, parsed_recommended):
+            diagnostics.append(
+                {
+                    "code": "self_hosted_connector_upgrade_recommended",
+                    "severity": "warning",
+                    "message": "Self-hosted connector version is below recommended version.",
+                    "current_version": worker.version,
+                    "recommended_version": recommended_version,
+                    "upgrade_url": upgrade_url,
+                }
+            )
+    return diagnostics
+
+
+def _parse_version(value: object) -> tuple[int, ...] | None:
+    text = _version_string(value)
+    if text is None:
+        return None
+    normalized = text.removeprefix("v").replace("-", ".")
+    parts: list[int] = []
+    for raw_part in normalized.split("."):
+        digits = "".join(char for char in raw_part if char.isdigit())
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts) if parts else None
+
+
+def _version_less_than(current: tuple[int, ...], required: tuple[int, ...]) -> bool:
+    length = max(len(current), len(required))
+    padded_current = current + (0,) * (length - len(current))
+    padded_required = required + (0,) * (length - len(required))
+    return padded_current < padded_required
+
+
+def _version_string(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _connection_status_after_resume(last_heartbeat_at: datetime | None, now: datetime) -> str:
