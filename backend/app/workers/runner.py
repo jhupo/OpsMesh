@@ -19,6 +19,7 @@ from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload
 from backend.app.workers.queue import RedisQueue
+from backend.app.workspaces.data_lifecycle import WorkspaceDataLifecycleService
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,10 @@ class WorkerRunSummary:
     expired_leases: int
     stale_runtimes: int
     deleted_runtime_records: int
+    lifecycle_backup_jobs_enqueued: int
+    lifecycle_backup_jobs_skipped: int
+    lifecycle_retention_runs_applied: int
+    lifecycle_retention_runs_skipped: int
     stopped: bool
 
 
@@ -59,6 +64,10 @@ class WorkerMaintenanceSummary:
     expired_leases: int
     stale_runtimes: int = 0
     deleted_runtime_records: int = 0
+    lifecycle_backup_jobs_enqueued: int = 0
+    lifecycle_backup_jobs_skipped: int = 0
+    lifecycle_retention_runs_applied: int = 0
+    lifecycle_retention_runs_skipped: int = 0
 
 
 class WorkerRunner:
@@ -150,6 +159,10 @@ class WorkerRunner:
         expired_leases = 0
         stale_runtimes = 0
         deleted_runtime_records = 0
+        lifecycle_backup_jobs_enqueued = 0
+        lifecycle_backup_jobs_skipped = 0
+        lifecycle_retention_runs_applied = 0
+        lifecycle_retention_runs_skipped = 0
         last_error: str | None = None
         next_heartbeat_at = 0.0
         next_maintenance_at = 0.0
@@ -167,6 +180,10 @@ class WorkerRunner:
                         expired_leases=expired_leases,
                         stale_runtimes=stale_runtimes,
                         deleted_runtime_records=deleted_runtime_records,
+                        lifecycle_backup_jobs_enqueued=lifecycle_backup_jobs_enqueued,
+                        lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
+                        lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
+                        lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
                         last_error=last_error,
                     ),
                 )
@@ -177,6 +194,18 @@ class WorkerRunner:
                 expired_leases += maintenance.expired_leases
                 stale_runtimes += maintenance.stale_runtimes
                 deleted_runtime_records += maintenance.deleted_runtime_records
+                lifecycle_backup_jobs_enqueued += (
+                    maintenance.lifecycle_backup_jobs_enqueued
+                )
+                lifecycle_backup_jobs_skipped += (
+                    maintenance.lifecycle_backup_jobs_skipped
+                )
+                lifecycle_retention_runs_applied += (
+                    maintenance.lifecycle_retention_runs_applied
+                )
+                lifecycle_retention_runs_skipped += (
+                    maintenance.lifecycle_retention_runs_skipped
+                )
                 next_maintenance_at = now + self._config.maintenance_interval_seconds
 
             try:
@@ -195,6 +224,10 @@ class WorkerRunner:
                         expired_leases=expired_leases,
                         stale_runtimes=stale_runtimes,
                         deleted_runtime_records=deleted_runtime_records,
+                        lifecycle_backup_jobs_enqueued=lifecycle_backup_jobs_enqueued,
+                        lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
+                        lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
+                        lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
                         last_error=last_error,
                     ),
                 )
@@ -221,6 +254,10 @@ class WorkerRunner:
                 expired_leases=expired_leases,
                 stale_runtimes=stale_runtimes,
                 deleted_runtime_records=deleted_runtime_records,
+                lifecycle_backup_jobs_enqueued=lifecycle_backup_jobs_enqueued,
+                lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
+                lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
+                lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
                 last_error=last_error,
             ),
         )
@@ -232,6 +269,10 @@ class WorkerRunner:
             expired_leases=expired_leases,
             stale_runtimes=stale_runtimes,
             deleted_runtime_records=deleted_runtime_records,
+            lifecycle_backup_jobs_enqueued=lifecycle_backup_jobs_enqueued,
+            lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
+            lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
+            lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
             stopped=self._is_stopped(stop_event),
         )
 
@@ -278,11 +319,29 @@ class WorkerRunner:
                 ).cleanup_stale_runtimes_across_workspaces(
                     stale_after_seconds=self._config.run_lease_seconds,
                 )
+                lifecycle_summary = WorkspaceDataLifecycleService(
+                    session
+                ).run_scheduled_lifecycle(
+                    queue=self._queue,
+                    limit=self._config.recovery_batch_size,
+                )
                 return WorkerMaintenanceSummary(
                     recovered_runs=summary.recovered_runs,
                     expired_leases=expired_leases,
                     stale_runtimes=stale_runtimes,
                     deleted_runtime_records=deleted_runtime_records,
+                    lifecycle_backup_jobs_enqueued=(
+                        lifecycle_summary.backup_jobs_enqueued
+                    ),
+                    lifecycle_backup_jobs_skipped=(
+                        lifecycle_summary.backup_jobs_skipped
+                    ),
+                    lifecycle_retention_runs_applied=(
+                        lifecycle_summary.retention_runs_applied
+                    ),
+                    lifecycle_retention_runs_skipped=(
+                        lifecycle_summary.retention_runs_skipped
+                    ),
                 )
         except Exception:
             logger.exception("Failed to run worker maintenance")
@@ -301,6 +360,10 @@ class WorkerRunner:
         expired_leases: int,
         stale_runtimes: int,
         deleted_runtime_records: int,
+        lifecycle_backup_jobs_enqueued: int,
+        lifecycle_backup_jobs_skipped: int,
+        lifecycle_retention_runs_applied: int,
+        lifecycle_retention_runs_skipped: int,
         last_error: str | None,
     ) -> dict[str, object]:
         details: dict[str, object] = {
@@ -311,6 +374,10 @@ class WorkerRunner:
             "expired_leases": expired_leases,
             "stale_runtimes": stale_runtimes,
             "deleted_runtime_records": deleted_runtime_records,
+            "lifecycle_backup_jobs_enqueued": lifecycle_backup_jobs_enqueued,
+            "lifecycle_backup_jobs_skipped": lifecycle_backup_jobs_skipped,
+            "lifecycle_retention_runs_applied": lifecycle_retention_runs_applied,
+            "lifecycle_retention_runs_skipped": lifecycle_retention_runs_skipped,
             "capacity": {
                 "max_jobs": self._config.max_jobs,
             },

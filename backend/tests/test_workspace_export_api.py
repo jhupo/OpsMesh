@@ -3266,6 +3266,135 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
         assert archive.read(file_name) == b"async archive"
 
 
+def test_worker_maintenance_enqueues_due_workspace_backup_job(tmp_path: Path) -> None:
+    _, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-scheduled-backup@example.com",
+        slug="owner-scheduled-backup",
+    )
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {
+                "enabled": True,
+                "schedule": "daily",
+                "target_type": "manual_export",
+                "archive_request": {
+                    "include_audit_events": False,
+                    "include_file_bytes": False,
+                    "include_artifact_bytes": False,
+                },
+            },
+        }
+    }
+    session.commit()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="lifecycle-worker", queue_name="agent_runs"),
+        settings=Settings(
+            environment="test",
+            log_format="text",
+            internal_api_token=TOKEN,
+            storage_root=str(tmp_path),
+        ),
+    )
+
+    maintenance = runner.run_maintenance()
+
+    assert maintenance.lifecycle_backup_jobs_enqueued == 1
+    assert queue.count_queued(workspace_id=workspace.id) == 1
+    queued_job = queue.peek(limit=1)[0]
+    assert queued_job.workspace_id == workspace.id
+    assert queued_job.job_type == "workspace.archive_export"
+    export_job = session.get(WorkspaceExportJob, queued_job.resource_id)
+    assert export_job is not None
+    assert export_job.status == "queued"
+    assert export_job.request["include_audit_events"] is False
+    assert export_job.job_metadata["scheduled_by"] == "workspace_data_lifecycle"
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "workspace.lifecycle.backup_enqueued",
+        )
+    )
+    assert audit is not None
+    assert audit.user_id == owner.id
+    assert audit.audit_metadata["reason"] == "backup_schedule_due"
+
+
+def test_worker_maintenance_applies_due_workspace_retention(tmp_path: Path) -> None:
+    _, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-scheduled-retention@example.com",
+        slug="owner-scheduled-retention",
+    )
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {"enabled": True, "target_type": "manual_export"},
+            "retention": {
+                "enabled": True,
+                "auto_apply": True,
+                "schedule": "daily",
+                "file_retention_days": 30,
+                "delete_policy": "soft_delete",
+            },
+        }
+    }
+    old_file = WorkspaceFile(
+        workspace_id=workspace.id,
+        uploaded_by_user_id=owner.id,
+        filename="old.txt",
+        content_type="text/plain",
+        size_bytes=12,
+        checksum_sha256="1" * 64,
+        storage_key="workspaces/owner-scheduled-retention/files/old.txt",
+        created_at=datetime.now(UTC) - timedelta(days=45),
+    )
+    completed_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="completed",
+        storage_key="workspaces/owner-scheduled-retention/exports/latest.zip",
+        filename="latest.zip",
+        content_type="application/zip",
+        size_bytes=50,
+        checksum_sha256="2" * 64,
+        completed_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([old_file, completed_job])
+    session.commit()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="retention-worker", queue_name="agent_runs"),
+        settings=Settings(
+            environment="test",
+            log_format="text",
+            internal_api_token=TOKEN,
+            storage_root=str(tmp_path),
+        ),
+    )
+
+    maintenance = runner.run_maintenance()
+
+    session.refresh(old_file)
+    assert maintenance.lifecycle_retention_runs_applied == 1
+    assert old_file.status == "retention_deleted"
+    assert old_file.file_metadata["retention_delete_policy"] == "soft_delete"
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "workspace.retention_applied",
+        )
+    )
+    assert audit is not None
+    assert audit.audit_metadata["applied_counts"]["files"] == 1
+
+
 def test_workspace_archive_export_job_download_requires_completion(tmp_path: Path) -> None:
     client, session, _, _ = _client_with_worker_queue(tmp_path)
     owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
