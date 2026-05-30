@@ -112,6 +112,10 @@ class WorkspaceDataLifecycleService:
         latest_failed_job = self._latest_failed_export_job(workspace_id)
         job_stats = self._export_job_stats(workspace_id)
         current_counts = self._archive_coverage_counts(workspace_id)
+        restore_test_history = self._restore_test_history(
+            workspace_id=workspace_id,
+            latest_success=latest_success,
+        )
         retention_policy = _retention_policy(workspace.settings)
         backup_policy = _backup_policy(workspace.settings, latest_job, latest_success)
         restore_readiness = _restore_readiness(
@@ -124,6 +128,7 @@ class WorkspaceDataLifecycleService:
                 latest_success=latest_success,
                 current_counts=current_counts,
             ),
+            restore_test_history=restore_test_history,
         )
 
         return {
@@ -232,6 +237,55 @@ class WorkspaceDataLifecycleService:
             .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
             .limit(1)
         )
+
+    def _restore_test_history(
+        self,
+        *,
+        workspace_id: UUID,
+        latest_success: WorkspaceExportJob | None,
+    ) -> dict[str, object]:
+        total_tests = int(
+            self._session.scalar(
+                select(func.count(AuditEvent.id)).where(
+                    AuditEvent.workspace_id == workspace_id,
+                    AuditEvent.action == "workspace.archive_import.created",
+                )
+            )
+            or 0
+        )
+        events = self._session.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.workspace_id == workspace_id,
+                AuditEvent.action == "workspace.archive_import.created",
+            )
+            .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+            .limit(5)
+        ).all()
+        latest_test = events[0] if events else None
+        latest_success_at = (
+            latest_success.completed_at
+            if latest_success is not None and latest_success.completed_at is not None
+            else None
+        )
+        tests_after_latest_archive = (
+            sum(1 for event in events if event.created_at >= latest_success_at)
+            if latest_success_at is not None
+            else 0
+        )
+        return {
+            "total_tests": total_tests,
+            "latest_tested_at": latest_test.created_at if latest_test is not None else None,
+            "latest_test_covers_latest_archive": (
+                latest_test is not None
+                and latest_success_at is not None
+                and latest_test.created_at >= latest_success_at
+            ),
+            "tests_after_latest_archive": tests_after_latest_archive,
+            "latest_created_counts": _metadata_counts(latest_test, "created_counts"),
+            "latest_skipped_counts": _metadata_counts(latest_test, "skipped_counts"),
+            "recent_tests": [_restore_test_payload(event) for event in events],
+        }
 
     def _export_job_stats(self, workspace_id: UUID) -> dict[str, object]:
         jobs = self._session.scalars(
@@ -690,6 +744,7 @@ def _restore_readiness(
     generated_at: datetime,
     active_job_count: object,
     backup_coverage: dict[str, object],
+    restore_test_history: dict[str, object],
 ) -> dict[str, object]:
     blocked_reasons: list[str] = []
     warnings: list[str] = []
@@ -718,6 +773,12 @@ def _restore_readiness(
             blocked_reasons.append("latest_archive_stale")
     if latest_import is None:
         blocked_reasons.append("no_archive_import_test_recorded")
+    elif (
+        latest_success is not None
+        and latest_success.completed_at is not None
+        and latest_import.created_at < latest_success.completed_at
+    ):
+        blocked_reasons.append("restore_test_older_than_latest_archive")
     if backup_coverage.get("status") == "partial":
         blocked_reasons.append("backup_coverage_incomplete")
     if isinstance(active_job_count, int) and active_job_count > 0:
@@ -729,6 +790,7 @@ def _restore_readiness(
         "blocked_reasons": blocked_reasons,
         "warnings": warnings,
         "backup_coverage": backup_coverage,
+        "restore_test_history": restore_test_history,
         "downloadable_archive_available": (
             latest_success is not None
             and latest_success.status == WorkspaceExportJobStatus.COMPLETED.value
@@ -847,7 +909,35 @@ def _restore_recommended_actions(
         actions.append("repair_or_regenerate_archive_export")
     if "no_archive_import_test_recorded" in blocked_reasons:
         actions.append("run_restore_import_test")
+    if "restore_test_older_than_latest_archive" in blocked_reasons:
+        actions.append("run_restore_import_test")
     return actions
+
+
+def _restore_test_payload(event: AuditEvent) -> dict[str, object]:
+    metadata = event.audit_metadata if isinstance(event.audit_metadata, dict) else {}
+    return {
+        "id": event.id,
+        "created_at": event.created_at,
+        "user_id": event.user_id,
+        "source_workspace_id": metadata.get("source_workspace_id"),
+        "created_counts": _metadata_counts(event, "created_counts"),
+        "skipped_counts": _metadata_counts(event, "skipped_counts"),
+    }
+
+
+def _metadata_counts(event: AuditEvent | None, key: str) -> dict[str, int]:
+    if event is None:
+        return {}
+    metadata = event.audit_metadata if isinstance(event.audit_metadata, dict) else {}
+    raw_counts = metadata.get(key)
+    if not isinstance(raw_counts, dict):
+        return {}
+    return {
+        str(collection): int(count)
+        for collection, count in raw_counts.items()
+        if isinstance(count, int) and count >= 0
+    }
 
 
 def _job_payload(job: WorkspaceExportJob | None) -> dict[str, object] | None:

@@ -444,6 +444,13 @@ def test_workspace_recovery_readiness_summarizes_restore_health_and_redacts_meta
     assert body["restore_readiness"]["backup_coverage"]["status"] == "verified"
     assert body["restore_readiness"]["backup_coverage"]["score"] == 100
     assert body["restore_readiness"]["backup_coverage"]["uncovered_resource_count"] == 0
+    assert body["restore_readiness"]["restore_test_history"]["total_tests"] == 1
+    assert body["restore_readiness"]["restore_test_history"][
+        "latest_test_covers_latest_archive"
+    ] is True
+    assert body["restore_readiness"]["restore_test_history"]["latest_created_counts"] == {
+        "files": 1
+    }
     assert body["restore_readiness"]["downloadable_archive_available"] is True
     assert body["restore_readiness"]["latest_archive_import_test_recorded"] is True
     assert foreign_response.status_code == 403
@@ -515,6 +522,76 @@ def test_workspace_recovery_readiness_blocks_stale_archive_backup(tmp_path: Path
     assert body["restore_readiness"]["max_archive_age_days"] == 1
     assert body["restore_readiness"]["latest_archive_age_days"] > 1
     assert body["restore_readiness"]["recommended_actions"] == ["run_archive_export"]
+
+
+def test_workspace_recovery_readiness_requires_restore_test_after_latest_archive(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-restore-history@example.com",
+        slug="owner-restore-history",
+    )
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {
+                "enabled": True,
+                "target_type": "manual_export",
+            },
+        }
+    }
+    completed_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="completed",
+        storage_key="workspaces/owner-restore-history/exports/archive.zip",
+        filename="archive.zip",
+        content_type="application/zip",
+        size_bytes=123,
+        checksum_sha256="c" * 64,
+        completed_at=datetime(2026, 1, 5, tzinfo=UTC),
+        created_at=datetime(2026, 1, 5, tzinfo=UTC),
+        job_metadata={"manifest_counts": {"agents": 0}},
+    )
+    older_import_event = AuditEvent(
+        workspace_id=workspace.id,
+        actor_type="user",
+        actor_id=str(owner.id),
+        user_id=owner.id,
+        action="workspace.archive_import.created",
+        target_type="workspace",
+        target_id=str(workspace.id),
+        audit_metadata={
+            "source_workspace_id": "source-workspace",
+            "created_counts": {"agents": 0},
+            "skipped_counts": {"agents": 0},
+            "token": "restore-token",
+        },
+        created_at=datetime(2026, 1, 4, tzinfo=UTC),
+    )
+    session.add_all([completed_job, older_import_event])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    history = body["restore_readiness"]["restore_test_history"]
+    assert body["restore_readiness"]["ready"] is False
+    assert body["restore_readiness"]["blocked_reasons"] == [
+        "restore_test_older_than_latest_archive"
+    ]
+    assert body["restore_readiness"]["recommended_actions"] == ["run_restore_import_test"]
+    assert history["total_tests"] == 1
+    assert history["latest_test_covers_latest_archive"] is False
+    assert history["tests_after_latest_archive"] == 0
+    assert history["latest_created_counts"] == {"agents": 0}
+    assert "restore-token" not in str(body)
 
 
 def test_workspace_recovery_readiness_reports_backup_coverage_gap(tmp_path: Path) -> None:
