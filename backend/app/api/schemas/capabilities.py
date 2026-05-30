@@ -103,6 +103,48 @@ class WorkspaceSkillAvailabilityResponse(BaseModel):
     blocked_reasons: list[str] = Field(default_factory=list)
 
 
+class AgentSkillPolicyDiagnosticResponse(BaseModel):
+    install_id: UUID
+    installed_key: str
+    installed_name: str
+    installed_version: str
+    source_visibility: str
+    status: str
+    usable: bool
+    required_tools: list[str]
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
+class AgentMcpToolPolicyDiagnosticResponse(BaseModel):
+    tool_name: str
+    allowed_by_agent_policy: bool
+    allowed_in_workspace: bool
+    available: bool
+    server_id: UUID | None = None
+    server_name: str | None = None
+    capability_key: str | None = None
+    requires_approval: bool = False
+    risk_level: str | None = None
+    credential_status: str | None = None
+    execution_mode: str | None = None
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
+class AgentToolPolicyDiagnosticsResponse(BaseModel):
+    workspace_id: UUID
+    agent_profile_id: UUID
+    agent_name: str
+    agent_role: str
+    agent_status: str
+    policy_mode: str
+    configured_mcp_tools: list[str] | None
+    missing_policy_tools: list[str]
+    missing_agent_skill_install_ids: list[UUID]
+    installed_skills: list[AgentSkillPolicyDiagnosticResponse]
+    effective_tools: list[AgentMcpToolPolicyDiagnosticResponse]
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
 class ToolGroupCreateRequest(BaseModel):
     key: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=160)

@@ -318,6 +318,97 @@ class CapabilityService:
             blocked_reasons=blocked_reasons,
         )
 
+    def agent_tool_policy_diagnostics(
+        self,
+        workspace_id: UUID,
+        agent_profile_id: UUID,
+    ) -> dict[str, object]:
+        agent = self._session.get(AgentProfile, agent_profile_id)
+        if agent is None or agent.workspace_id != workspace_id:
+            raise ValueError("Agent profile not found")
+
+        policy_mode, configured_tool_names = self._agent_mcp_policy_mode(agent)
+        configured_tool_set = set(configured_tool_names or [])
+        allowed_tools = self.list_allowed_mcp_tools(workspace_id)
+        allowed_by_name: dict[str, tuple[McpToolAllowlist, McpServer]] = {}
+        for allow, server in allowed_tools:
+            allowed_by_name.setdefault(allow.tool_name, (allow, server))
+
+        installed_skill_ids = _agent_installed_skill_ids(agent)
+        installs_by_id = self._workspace_installs_by_id(workspace_id, installed_skill_ids)
+        missing_install_ids = [
+            install_id for install_id in installed_skill_ids if install_id not in installs_by_id
+        ]
+        installed_skill_diagnostics = [
+            self._agent_skill_diagnostic(workspace_id, installs_by_id[install_id])
+            for install_id in installed_skill_ids
+            if install_id in installs_by_id
+        ]
+
+        required_tool_names = {
+            tool_name
+            for item in installed_skill_diagnostics
+            for tool_name in item["required_tools"]
+        }
+        candidate_tool_names = (
+            set(allowed_by_name) if configured_tool_names is None else configured_tool_set
+        ) | required_tool_names
+        credential_counts, workspace_credential_count = self._credential_counts_for_servers(
+            workspace_id,
+            [server.id for _, server in allowed_by_name.values()],
+        )
+        effective_tools = [
+            self._agent_tool_diagnostic(
+                tool_name,
+                allowed_by_name.get(tool_name),
+                allowed_by_agent_policy=(
+                    configured_tool_names is None or tool_name in configured_tool_set
+                ),
+                credential_count=credential_counts.get(
+                    allowed_by_name[tool_name][1].id,
+                    0,
+                )
+                if tool_name in allowed_by_name
+                else 0,
+                workspace_credential_count=workspace_credential_count,
+            )
+            for tool_name in sorted(candidate_tool_names)
+        ]
+        missing_policy_tools = sorted(
+            configured_tool_set - set(allowed_by_name)
+            if configured_tool_names is not None
+            else set()
+        )
+        blocked_reasons: list[str] = []
+        if agent.status != "active":
+            blocked_reasons.append("agent_inactive")
+        if missing_install_ids:
+            blocked_reasons.append("missing_agent_skill_installs")
+        if missing_policy_tools:
+            blocked_reasons.append("configured_mcp_tools_not_allowed")
+        if any(not item["usable"] for item in installed_skill_diagnostics):
+            blocked_reasons.append("unusable_installed_skills")
+        if any(
+            tool["allowed_by_agent_policy"] and not tool["available"]
+            for tool in effective_tools
+        ):
+            blocked_reasons.append("unavailable_allowed_mcp_tools")
+
+        return {
+            "workspace_id": workspace_id,
+            "agent_profile_id": agent.id,
+            "agent_name": agent.name,
+            "agent_role": agent.role,
+            "agent_status": agent.status,
+            "policy_mode": policy_mode,
+            "configured_mcp_tools": configured_tool_names,
+            "missing_policy_tools": missing_policy_tools,
+            "missing_agent_skill_install_ids": missing_install_ids,
+            "installed_skills": installed_skill_diagnostics,
+            "effective_tools": effective_tools,
+            "blocked_reasons": blocked_reasons,
+        }
+
     def _require_workspace_install(
         self,
         workspace_id: UUID,
@@ -594,6 +685,109 @@ class CapabilityService:
             return tools
         return [(allow, server) for allow, server in tools if allow.tool_name in allowed_names]
 
+    def _workspace_installs_by_id(
+        self,
+        workspace_id: UUID,
+        install_ids: list[UUID],
+    ) -> dict[UUID, WorkspaceSkillInstall]:
+        if not install_ids:
+            return {}
+        installs = self._session.scalars(
+            select(WorkspaceSkillInstall).where(
+                WorkspaceSkillInstall.workspace_id == workspace_id,
+                WorkspaceSkillInstall.id.in_(install_ids),
+            )
+        ).all()
+        return {install.id: install for install in installs}
+
+    def _agent_skill_diagnostic(
+        self,
+        workspace_id: UUID,
+        install: WorkspaceSkillInstall,
+    ) -> dict[str, object]:
+        availability = self.workspace_skill_availability(workspace_id, install.id)
+        return {
+            "install_id": install.id,
+            "installed_key": install.installed_key,
+            "installed_name": install.installed_name,
+            "installed_version": install.installed_version,
+            "source_visibility": install.source_visibility,
+            "status": install.status,
+            "usable": availability.usable,
+            "required_tools": availability.required_tools,
+            "blocked_reasons": availability.blocked_reasons,
+        }
+
+    def _agent_tool_diagnostic(
+        self,
+        tool_name: str,
+        allowed_tool: tuple[McpToolAllowlist, McpServer] | None,
+        *,
+        allowed_by_agent_policy: bool,
+        credential_count: int,
+        workspace_credential_count: int,
+    ) -> dict[str, object]:
+        availability = _skill_tool_availability(
+            tool_name,
+            allowed_tool,
+            credential_count=credential_count,
+            workspace_credential_count=workspace_credential_count,
+        )
+        credential_status: str | None = None
+        execution_mode: str | None = None
+        if allowed_tool is not None:
+            _, server = allowed_tool
+            credential_status = _credential_status(
+                server,
+                credential_count=credential_count,
+                workspace_credential_count=workspace_credential_count,
+            )
+            execution_mode = _execution_mode(server)
+        blocked_reasons = list(availability.blocked_reasons)
+        if not allowed_by_agent_policy:
+            blocked_reasons.append("not_allowed_by_agent_policy")
+        return {
+            "tool_name": tool_name,
+            "allowed_by_agent_policy": allowed_by_agent_policy,
+            "allowed_in_workspace": allowed_tool is not None,
+            "available": availability.available and allowed_by_agent_policy,
+            "server_id": availability.server_id,
+            "server_name": availability.server_name,
+            "capability_key": availability.capability_key,
+            "requires_approval": availability.requires_approval,
+            "risk_level": availability.risk_level,
+            "credential_status": credential_status,
+            "execution_mode": execution_mode,
+            "blocked_reasons": blocked_reasons,
+        }
+
+    def _credential_counts_for_servers(
+        self,
+        workspace_id: UUID,
+        server_ids: list[UUID],
+    ) -> tuple[dict[UUID, int], int]:
+        if not server_ids:
+            return {}, 0
+        credentials = self._session.scalars(
+            select(McpCredentialReference).where(
+                McpCredentialReference.workspace_id == workspace_id,
+                McpCredentialReference.status == "active",
+                or_(
+                    McpCredentialReference.mcp_server_id.in_(server_ids),
+                    McpCredentialReference.mcp_server_id.is_(None),
+                ),
+            )
+        ).all()
+        credential_counts: dict[UUID, int] = {server_id: 0 for server_id in server_ids}
+        workspace_credential_count = 0
+        for credential in credentials:
+            if credential.mcp_server_id is None:
+                workspace_credential_count += 1
+                continue
+            if credential.mcp_server_id in credential_counts:
+                credential_counts[credential.mcp_server_id] += 1
+        return credential_counts, workspace_credential_count
+
     def create_credential_reference(
         self,
         workspace_id: UUID,
@@ -765,6 +959,14 @@ class CapabilityService:
         if isinstance(configured, list) and all(isinstance(item, str) for item in configured):
             return set(configured)
         return set()
+
+    def _agent_mcp_policy_mode(self, agent: AgentProfile) -> tuple[str, list[str] | None]:
+        configured = agent.tool_policy.get("mcp_tools")
+        if configured in (None, "*"):
+            return "all_workspace_tools", None
+        if isinstance(configured, list) and all(isinstance(item, str) for item in configured):
+            return "allowlist", sorted(set(configured))
+        return "deny_all", []
 
     def _catalog_entry(
         self,
@@ -967,6 +1169,26 @@ def _manifest_mcp_tools(manifest: dict[str, object]) -> list[str]:
         tools.append(tool_name)
         seen.add(tool_name)
     return tools
+
+
+def _agent_installed_skill_ids(agent: AgentProfile) -> list[UUID]:
+    raw_ids = agent.skills.get("installed_skill_ids")
+    if raw_ids is None:
+        raw_ids = agent.skills.get("workspace_skill_install_ids")
+    if not isinstance(raw_ids, list):
+        return []
+    install_ids: list[UUID] = []
+    seen: set[UUID] = set()
+    for raw_id in raw_ids:
+        try:
+            install_id = UUID(str(raw_id))
+        except (TypeError, ValueError):
+            continue
+        if install_id in seen:
+            continue
+        install_ids.append(install_id)
+        seen.add(install_id)
+    return install_ids
 
 
 def _skill_tool_availability(

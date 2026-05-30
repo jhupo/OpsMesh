@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
 from backend.app.api.schemas.capabilities import (
+    AgentToolPolicyDiagnosticsResponse,
     CapabilityCreateRequest,
     CapabilityResponse,
     McpCatalogServerResponse,
@@ -397,6 +398,25 @@ async def list_mapped_mcp_tools(
         )
         for allow, server in rows
     ]
+
+
+@router.get(
+    "/agents/{agent_profile_id}/tool-policy-diagnostics",
+    response_model=AgentToolPolicyDiagnosticsResponse,
+)
+async def get_agent_tool_policy_diagnostics(
+    agent_profile_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> AgentToolPolicyDiagnosticsResponse:
+    try:
+        diagnostics = CapabilityService(session).agent_tool_policy_diagnostics(
+            context.workspace.id,
+            agent_profile_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return AgentToolPolicyDiagnosticsResponse.model_validate(diagnostics)
 
 
 @router.post(

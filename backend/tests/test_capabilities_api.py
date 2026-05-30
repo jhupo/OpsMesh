@@ -1,5 +1,5 @@
 from collections.abc import Generator
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -999,6 +999,138 @@ def test_workspace_skill_availability_reports_required_mcp_tool_state() -> None:
     assert disabled_availability.json()["usable"] is False
     assert "skill_install_disabled" in disabled_availability.json()["blocked_reasons"]
     assert foreign_availability.status_code == 404
+
+
+def test_agent_tool_policy_diagnostics_explain_skill_and_mcp_effective_access() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    skill = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+        json={
+            "key": "image-pack",
+            "name": "Image Pack",
+            "version": "1.0.0",
+            "manifest": {"mcp_tools": ["generate_image", "upscale_image"]},
+            "visibility": "public",
+        },
+    )
+    installed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/workspace-skills",
+        headers=_headers(owner.id),
+        json={"skill_id": skill.json()["id"]},
+    )
+    foreign_install = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills",
+        headers=_headers(other.id),
+        json={"skill_id": skill.json()["id"]},
+    )
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "image-tools",
+            "server_type": "hosted",
+            "connection": {
+                "transport": "http_jsonrpc",
+                "url": "https://mcp.example.test/private?token=hidden",
+            },
+        },
+    )
+    allowed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={
+            "tool_name": "generate_image",
+            "capability_key": "image.generate",
+            "requires_approval": True,
+            "risk_level": "medium",
+        },
+    )
+    missing_install_id = str(uuid4())
+    agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Designer",
+            "role": "designer",
+            "skills": {
+                "installed_skill_ids": [
+                    installed.json()["id"],
+                    foreign_install.json()["id"],
+                    missing_install_id,
+                ]
+            },
+            "tool_policy": {"mcp_tools": ["generate_image", "delete_image"]},
+        },
+    )
+    diagnostics = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/agents/"
+        f"{agent.json()['id']}/tool-policy-diagnostics",
+        headers=_headers(owner.id),
+    )
+    foreign_diagnostics = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/agents/"
+        f"{agent.json()['id']}/tool-policy-diagnostics",
+        headers=_headers(other.id),
+    )
+
+    assert skill.status_code == 201
+    assert installed.status_code == 201
+    assert foreign_install.status_code == 201
+    assert server.status_code == 201
+    assert allowed.status_code == 201
+    assert agent.status_code == 201
+    assert diagnostics.status_code == 200
+    body = diagnostics.json()
+    assert body["policy_mode"] == "allowlist"
+    assert body["configured_mcp_tools"] == ["delete_image", "generate_image"]
+    assert body["missing_policy_tools"] == ["delete_image"]
+    assert body["missing_agent_skill_install_ids"] == [
+        foreign_install.json()["id"],
+        missing_install_id,
+    ]
+    assert body["installed_skills"] == [
+        {
+            "install_id": installed.json()["id"],
+            "installed_key": "image-pack",
+            "installed_name": "Image Pack",
+            "installed_version": "1.0.0",
+            "source_visibility": "public",
+            "status": "active",
+            "usable": False,
+            "required_tools": ["generate_image", "upscale_image"],
+            "blocked_reasons": ["missing_required_mcp_tools"],
+        }
+    ]
+    tools = {item["tool_name"]: item for item in body["effective_tools"]}
+    assert tools["generate_image"]["allowed_by_agent_policy"] is True
+    assert tools["generate_image"]["allowed_in_workspace"] is True
+    assert tools["generate_image"]["available"] is False
+    assert tools["generate_image"]["credential_status"] == "missing_required"
+    assert tools["generate_image"]["execution_mode"] == "hosted"
+    assert tools["generate_image"]["requires_approval"] is True
+    assert tools["generate_image"]["risk_level"] == "medium"
+    assert tools["generate_image"]["blocked_reasons"] == ["missing_required_credentials"]
+    assert tools["upscale_image"]["allowed_by_agent_policy"] is False
+    assert tools["upscale_image"]["allowed_in_workspace"] is False
+    assert tools["upscale_image"]["available"] is False
+    assert set(tools["upscale_image"]["blocked_reasons"]) == {
+        "tool_not_allowed",
+        "not_allowed_by_agent_policy",
+    }
+    assert {
+        "missing_agent_skill_installs",
+        "configured_mcp_tools_not_allowed",
+        "unusable_installed_skills",
+        "unavailable_allowed_mcp_tools",
+    } <= set(body["blocked_reasons"])
+    assert "hidden" not in str(body)
+    assert "private" not in str(body)
+    assert foreign_diagnostics.status_code == 404
 
 
 def test_workspace_skill_install_can_upgrade_and_disable_without_source_access() -> None:
