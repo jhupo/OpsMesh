@@ -180,6 +180,7 @@ class WorkspaceDataLifecycleResponse(BaseModel):
     retention_policy: dict[str, object]
     storage: dict[str, object]
     file_access_audit: dict[str, object]
+    automation: dict[str, object]
     readiness: dict[str, object]
 
     @field_serializer(
@@ -188,6 +189,7 @@ class WorkspaceDataLifecycleResponse(BaseModel):
         "retention_policy",
         "storage",
         "file_access_audit",
+        "automation",
         "readiness",
     )
     def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:

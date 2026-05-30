@@ -3267,7 +3267,7 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
 
 
 def test_worker_maintenance_enqueues_due_workspace_backup_job(tmp_path: Path) -> None:
-    _, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
     owner, workspace = _seed_workspace(
         session,
         email="owner-scheduled-backup@example.com",
@@ -3312,6 +3312,8 @@ def test_worker_maintenance_enqueues_due_workspace_backup_job(tmp_path: Path) ->
     assert export_job.status == "queued"
     assert export_job.request["include_audit_events"] is False
     assert export_job.job_metadata["scheduled_by"] == "workspace_data_lifecycle"
+    export_job.job_metadata = {**export_job.job_metadata, "token": "scheduled-secret"}
+    session.commit()
     audit = session.scalar(
         select(AuditEvent).where(
             AuditEvent.workspace_id == workspace.id,
@@ -3321,10 +3323,33 @@ def test_worker_maintenance_enqueues_due_workspace_backup_job(tmp_path: Path) ->
     assert audit is not None
     assert audit.user_id == owner.id
     assert audit.audit_metadata["reason"] == "backup_schedule_due"
+    second_maintenance = runner.run_maintenance()
+    assert second_maintenance.lifecycle_backup_jobs_skipped == 1
+    diagnostics = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/lifecycle-diagnostics",
+        headers=_headers(owner.id),
+    )
+    assert diagnostics.status_code == 200
+    automation = diagnostics.json()["automation"]["scheduled_backup"]
+    assert automation["due"] is True
+    assert automation["blocked_by_active_export"] is True
+    assert automation["active_archive_export_job_count"] == 1
+    assert automation["latest_event"]["action"] == "workspace.lifecycle.backup_skipped"
+    assert automation["latest_event"]["metadata"]["reason"] == "archive_export_already_active"
+    assert {
+        event["action"] for event in automation["recent_events"]
+    } == {
+        "workspace.lifecycle.backup_enqueued",
+        "workspace.lifecycle.backup_skipped",
+    }
+    assert automation["latest_scheduled_archive_export_job"]["id"] == str(export_job.id)
+    assert automation["latest_scheduled_archive_export_job"]["metadata"]["token"] == "[redacted]"
+    assert "storage_key" not in str(automation)
+    assert "scheduled-secret" not in str(automation)
 
 
 def test_worker_maintenance_applies_due_workspace_retention(tmp_path: Path) -> None:
-    _, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
     owner, workspace = _seed_workspace(
         session,
         email="owner-scheduled-retention@example.com",
@@ -3393,6 +3418,19 @@ def test_worker_maintenance_applies_due_workspace_retention(tmp_path: Path) -> N
     )
     assert audit is not None
     assert audit.audit_metadata["applied_counts"]["files"] == 1
+    diagnostics = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/lifecycle-diagnostics",
+        headers=_headers(owner.id),
+    )
+    assert diagnostics.status_code == 200
+    automation = diagnostics.json()["automation"]["scheduled_retention"]
+    assert automation["auto_apply"] is True
+    assert automation["configured"] is True
+    assert automation["interval_hours"] == 24
+    assert automation["latest_run_at"] is not None
+    assert automation["next_due_at"] is not None
+    assert automation["due"] is False
+    assert automation["latest_event"]["action"] == "workspace.retention_applied"
 
 
 def test_workspace_archive_export_job_download_requires_completion(tmp_path: Path) -> None:

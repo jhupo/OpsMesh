@@ -45,6 +45,14 @@ ARCHIVE_COVERAGE_MODELS = {
     "runtime_space_quotas": RuntimeSpaceQuota,
     "skill_installs": WorkspaceSkillInstall,
 }
+_BACKUP_LIFECYCLE_EVENT_ACTIONS = (
+    "workspace.lifecycle.backup_enqueued",
+    "workspace.lifecycle.backup_skipped",
+)
+_RETENTION_LIFECYCLE_EVENT_ACTIONS = (
+    "workspace.lifecycle.retention_skipped",
+    "workspace.retention_applied",
+)
 
 
 @dataclass(frozen=True)
@@ -140,6 +148,12 @@ class WorkspaceDataLifecycleService:
                 "total_bytes": file_stats["total_bytes"] + artifact_stats["total_bytes"],
             },
             "file_access_audit": access_stats,
+            "automation": self._automation_diagnostics(
+                workspace=workspace,
+                backup_policy=backup_policy,
+                retention_policy=retention_policy,
+                generated_at=generated_at,
+            ),
             "readiness": readiness,
         }
 
@@ -425,6 +439,18 @@ class WorkspaceDataLifecycleService:
             ),
         )
         if response is None or response["blocked_reasons"]:
+            blocked_reasons = (
+                response["blocked_reasons"]
+                if response is not None and isinstance(response["blocked_reasons"], list)
+                else ["retention_response_missing"]
+            )
+            self._record_lifecycle_schedule_event(
+                workspace=workspace,
+                action="workspace.lifecycle.retention_skipped",
+                reason="retention_blocked",
+                metadata={"blocked_reasons": blocked_reasons},
+            )
+            self._session.commit()
             return ScheduledLifecycleSummary(
                 retention_runs_skipped=1,
                 details=[
@@ -448,7 +474,96 @@ class WorkspaceDataLifecycleService:
             ],
         )
 
+    def _automation_diagnostics(
+        self,
+        *,
+        workspace: Workspace,
+        backup_policy: dict[str, object],
+        retention_policy: dict[str, object],
+        generated_at: datetime,
+    ) -> dict[str, object]:
+        raw_retention = _retention_settings(workspace.settings)
+        retention_interval_hours = _backup_interval_hours(raw_retention)
+        latest_retention_run_at = self._latest_lifecycle_retention_run_at(workspace.id)
+        retention_next_due_at = (
+            latest_retention_run_at + timedelta(hours=retention_interval_hours)
+            if latest_retention_run_at is not None and retention_interval_hours is not None
+            else None
+        )
+        active_archive_export_count = self._active_archive_export_job_count(workspace.id)
+        scheduled_backup_due = _scheduled_backup_due(backup_policy)
+        return {
+            "scheduled_backup": {
+                "enabled": backup_policy["enabled"],
+                "configured": _schedule_configured(backup_policy),
+                "due": scheduled_backup_due,
+                "blocked_by_active_export": scheduled_backup_due
+                and active_archive_export_count > 0,
+                "active_archive_export_job_count": active_archive_export_count,
+                "latest_scheduled_archive_export_job": _job_payload(
+                    self._latest_scheduled_archive_export_job(workspace.id)
+                ),
+                "latest_event": _audit_event_payload(
+                    self._latest_lifecycle_event(
+                        workspace.id,
+                        _BACKUP_LIFECYCLE_EVENT_ACTIONS,
+                    )
+                ),
+                "recent_events": [
+                    _audit_event_payload(event)
+                    for event in self._recent_lifecycle_events(
+                        workspace.id,
+                        _BACKUP_LIFECYCLE_EVENT_ACTIONS,
+                    )
+                ],
+                "warnings": _automation_backup_warnings(
+                    backup_policy,
+                    active_archive_export_count=active_archive_export_count,
+                ),
+            },
+            "scheduled_retention": {
+                "enabled": retention_policy["enabled"],
+                "auto_apply": raw_retention.get("auto_apply") is True,
+                "configured": retention_interval_hours is not None,
+                "interval_hours": retention_interval_hours,
+                "latest_run_at": latest_retention_run_at,
+                "next_due_at": retention_next_due_at,
+                "due": bool(
+                    raw_retention.get("auto_apply") is True
+                    and retention_interval_hours is not None
+                    and (
+                        latest_retention_run_at is None
+                        or (
+                            retention_next_due_at is not None
+                            and retention_next_due_at <= generated_at
+                        )
+                    )
+                ),
+                "latest_event": _audit_event_payload(
+                    self._latest_lifecycle_event(
+                        workspace.id,
+                        _RETENTION_LIFECYCLE_EVENT_ACTIONS,
+                    )
+                ),
+                "recent_events": [
+                    _audit_event_payload(event)
+                    for event in self._recent_lifecycle_events(
+                        workspace.id,
+                        _RETENTION_LIFECYCLE_EVENT_ACTIONS,
+                    )
+                ],
+                "warnings": _automation_retention_warnings(
+                    raw_retention=raw_retention,
+                    retention_policy=retention_policy,
+                    interval_hours=retention_interval_hours,
+                ),
+            },
+        }
+
     def _has_active_archive_export_job(self, workspace_id: UUID) -> bool:
+        return self._active_archive_export_job_count(workspace_id) > 0
+
+    def _active_archive_export_job_count(self, workspace_id: UUID) -> int:
         active_count = self._session.scalar(
             select(func.count(WorkspaceExportJob.id)).where(
                 WorkspaceExportJob.workspace_id == workspace_id,
@@ -461,7 +576,63 @@ class WorkspaceDataLifecycleService:
                 ),
             )
         )
-        return int(active_count or 0) > 0
+        return int(active_count or 0)
+
+    def _latest_scheduled_archive_export_job(
+        self,
+        workspace_id: UUID,
+    ) -> WorkspaceExportJob | None:
+        jobs = self._session.scalars(
+            select(WorkspaceExportJob)
+            .where(
+                WorkspaceExportJob.workspace_id == workspace_id,
+                WorkspaceExportJob.export_type == "workspace_archive",
+            )
+            .order_by(WorkspaceExportJob.created_at.desc(), WorkspaceExportJob.id.desc())
+            .limit(20)
+        ).all()
+        return next(
+            (
+                job
+                for job in jobs
+                if job.job_metadata.get("scheduled_by") == "workspace_data_lifecycle"
+            ),
+            None,
+        )
+
+    def _latest_lifecycle_event(
+        self,
+        workspace_id: UUID,
+        actions: tuple[str, ...],
+    ) -> AuditEvent | None:
+        return self._session.scalar(
+            select(AuditEvent)
+            .where(
+                AuditEvent.workspace_id == workspace_id,
+                AuditEvent.action.in_(actions),
+            )
+            .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+            .limit(1)
+        )
+
+    def _recent_lifecycle_events(
+        self,
+        workspace_id: UUID,
+        actions: tuple[str, ...],
+        limit: int = 10,
+    ) -> list[AuditEvent]:
+        return list(
+            self._session.scalars(
+                select(AuditEvent)
+                .where(
+                    AuditEvent.workspace_id == workspace_id,
+                    AuditEvent.action.in_(actions),
+                )
+                .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+                .limit(limit)
+            ).all()
+        )
+
 
     def _latest_lifecycle_retention_run_at(self, workspace_id: UUID) -> datetime | None:
         latest = self._session.scalar(
@@ -1061,6 +1232,59 @@ def _scheduled_lifecycle_detail(
     if resource_id is not None:
         detail["resource_id"] = str(resource_id)
     return detail
+
+
+def _scheduled_backup_due(backup_policy: dict[str, object]) -> bool:
+    schedule_status = backup_policy.get("schedule_status")
+    if not isinstance(schedule_status, dict):
+        return False
+    return bool(
+        backup_policy["enabled"] is True
+        and schedule_status.get("configured") is True
+        and (
+            schedule_status.get("last_successful_archive_export_at") is None
+            or schedule_status.get("overdue") is True
+        )
+    )
+
+
+def _schedule_configured(policy: dict[str, object]) -> bool:
+    schedule_status = policy.get("schedule_status")
+    return bool(
+        isinstance(schedule_status, dict)
+        and schedule_status.get("configured") is True
+    )
+
+
+def _automation_backup_warnings(
+    backup_policy: dict[str, object],
+    *,
+    active_archive_export_count: int,
+) -> list[str]:
+    warnings = (
+        list(backup_policy["warnings"])
+        if isinstance(backup_policy["warnings"], list)
+        else []
+    )
+    if _scheduled_backup_due(backup_policy) and active_archive_export_count > 0:
+        warnings.append("scheduled_backup_waiting_for_active_export")
+    return warnings
+
+
+def _automation_retention_warnings(
+    *,
+    raw_retention: dict[str, object],
+    retention_policy: dict[str, object],
+    interval_hours: int | None,
+) -> list[str]:
+    warnings = (
+        list(retention_policy["warnings"])
+        if isinstance(retention_policy["warnings"], list)
+        else []
+    )
+    if raw_retention.get("auto_apply") is True and interval_hours is None:
+        warnings.append("retention_schedule_unrecognized")
+    return warnings
 
 
 def _retention_policy(settings: dict[str, object]) -> dict[str, object]:
