@@ -9,11 +9,17 @@ from backend.app.runtime_manager.contracts import (
 
 class DockerCliRuntimeClient(DockerRuntimeClient):
     def create_container(self, request: RuntimeCreateRequest) -> str:
+        labels = {
+            "chaincloud.workspace_id": request.workspace_id,
+            **request.labels,
+        }
+        if request.runtime_id is not None:
+            labels["chaincloud.runtime_id"] = request.runtime_id
+        if request.runtime_space_id is not None:
+            labels["chaincloud.runtime_space_id"] = request.runtime_space_id
         command = [
             "docker",
             "create",
-            "--label",
-            f"chaincloud.workspace_id={request.workspace_id}",
             "--name",
             request.name,
             "--cpus",
@@ -26,10 +32,21 @@ class DockerCliRuntimeClient(DockerRuntimeClient):
             f"size={request.limits.disk_mb}m",
             "--network",
             "none" if request.network_disabled else "bridge",
-            request.image,
-            "sleep",
-            "infinity",
         ]
+        for key, value in sorted(labels.items()):
+            command.extend(["--label", f"{key}={value}"])
+        for mount in request.mounts:
+            options = [
+                f"type={mount.mount_type}",
+                f"source={mount.source}",
+                f"target={mount.target}",
+            ]
+            if mount.read_only:
+                options.append("readonly")
+            command.extend(["--mount", ",".join(options)])
+        if request.working_dir is not None:
+            command.extend(["--workdir", request.working_dir])
+        command.extend([request.image, "sleep", "infinity"])
         return self._run(command, timeout_seconds=30).stdout.strip()
 
     def start_container(self, container_id: str) -> None:

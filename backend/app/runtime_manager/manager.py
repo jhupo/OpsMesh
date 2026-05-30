@@ -13,6 +13,7 @@ from backend.app.runtime_manager.contracts import (
     RuntimeCommandResult,
     RuntimeCreateRequest,
     RuntimeLimits,
+    RuntimeMount,
 )
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
 from backend.app.runtime_spaces.models import RuntimeSpaceEvent
@@ -70,6 +71,18 @@ class RuntimeManager:
         )
         self._session.add(runtime)
         self._session.flush()
+        isolation_metadata = _runtime_isolation_metadata(
+            workspace_id=workspace_id,
+            runtime_id=runtime.id,
+            runtime_space_id=runtime_space_id,
+            network_disabled=network_disabled,
+        )
+        runtime.capabilities = {
+            "isolation": isolation_metadata,
+            "managed_resources": {
+                "docker_volumes": [isolation_metadata["workspace_mount"]["docker_volume"]],
+            },
+        }
         reservation_key = _runtime_space_reservation_key(runtime)
         if runtime_space_id is not None:
             reservation_result = RuntimeSpaceService(self._session).reserve_run_capacity(
@@ -95,8 +108,18 @@ class RuntimeManager:
                     image=template.image,
                     name=f"chaincloud-{workspace_id}-{runtime.id}",
                     workspace_id=str(workspace_id),
+                    runtime_id=str(runtime.id),
+                    runtime_space_id=str(runtime_space_id) if runtime_space_id else None,
                     limits=limits,
                     network_disabled=network_disabled,
+                    labels=_runtime_labels(runtime),
+                    mounts=(
+                        RuntimeMount(
+                            source=isolation_metadata["workspace_mount"]["docker_volume"],
+                            target=isolation_metadata["workspace_mount"]["target"],
+                        ),
+                    ),
+                    working_dir=isolation_metadata["workspace_mount"]["target"],
                 )
             )
         except Exception:
@@ -114,12 +137,21 @@ class RuntimeManager:
                 "image": template.image,
                 "limits": dict(runtime.limits),
                 "network_policy": dict(runtime.network_policy),
+                "isolation": isolation_metadata,
                 "runtime_space_reservation_key": reservation_key
                 if runtime_space_id is not None
                 else None,
             },
         )
-        self._append_event(runtime, "runtime.created", container_id)
+        self._append_event(
+            runtime,
+            "runtime.created",
+            container_id,
+            metadata={
+                "isolation": isolation_metadata,
+                "network_policy": dict(runtime.network_policy),
+            },
+        )
         self._append_event(
             runtime,
             "runtime.lease_acquired",
@@ -701,6 +733,46 @@ def _ceil_positive_int(value: float) -> int:
     if value > integer_value:
         integer_value += 1
     return max(1, integer_value)
+
+
+def _runtime_isolation_metadata(
+    *,
+    workspace_id: UUID,
+    runtime_id: UUID,
+    runtime_space_id: UUID | None,
+    network_disabled: bool,
+) -> dict[str, object]:
+    volume_name = _runtime_volume_name(workspace_id, runtime_id)
+    return {
+        "workspace_id": str(workspace_id),
+        "runtime_id": str(runtime_id),
+        "runtime_space_id": str(runtime_space_id) if runtime_space_id else None,
+        "workspace_mount": {
+            "type": "volume",
+            "docker_volume": volume_name,
+            "target": "/workspace",
+            "mode": "rw",
+        },
+        "network": {
+            "disabled": network_disabled,
+            "mode": "none" if network_disabled else "bridge",
+        },
+    }
+
+
+def _runtime_volume_name(workspace_id: UUID, runtime_id: UUID) -> str:
+    return f"chaincloud-ws-{workspace_id.hex}-runtime-{runtime_id.hex}"
+
+
+def _runtime_labels(runtime: WorkspaceRuntime) -> dict[str, str]:
+    labels = {
+        "chaincloud.managed": "true",
+        "chaincloud.runtime_type": runtime.runtime_type,
+        "chaincloud.runtime_provider": runtime.runtime_provider,
+    }
+    if runtime.runtime_space_id is not None:
+        labels["chaincloud.runtime_space_id"] = str(runtime.runtime_space_id)
+    return labels
 
 
 def _positive_int_limit(value: object, fallback: int) -> int:

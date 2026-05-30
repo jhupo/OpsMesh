@@ -34,7 +34,7 @@ Frontend remains out of scope. Billing remains out of scope.
 | Order | Priority | Goal | Current Status | Acceptance Evidence |
 | --- | --- | --- | --- | --- |
 | 1 | P0 | Server deployment assets and smoke test for API/worker on shared Postgres/Redis | Done | `deploy/server/docker-compose.backend.yml`, `deploy/server/env.example`, `scripts/server-smoke-test.sh`, deployment asset tests, and server health verified on `192.168.2.17` |
-| 2 | P0 | Workspace/team Docker runtime isolation closure | Next | Runtime containers must bind to workspace/team ownership, quota leases, storage mounts, network policy, cleanup, and operations diagnostics |
+| 2 | P0 | Workspace/team Docker runtime isolation closure | In Progress | Runtime containers now carry workspace/runtime/runtime-space identity, a dedicated `/workspace` Docker volume, network-policy metadata, managed volume cleanup, and tests; remaining work is team-level runtime policy and richer operations diagnostics |
 | 3 | P0 | Agent model configuration closure | Pending | Workspace default provider, per-agent override, cloud-downloaded base URL/key/model, fallback behavior, and redacted audit coverage |
 | 4 | P0 | Multi-agent project execution loop | Pending | Reusable team org chart, project-manager decomposition, role assignment, dependency DAG, correction loop, and message/state timeline |
 | 5 | P1 | MCP skill lifecycle and tool permission hardening | Pending | Private/public skill install lifecycle, version snapshots, per-agent tool permissions, runtime execution limits, and audit evidence |

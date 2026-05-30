@@ -16,6 +16,7 @@ from backend.app.runtime_manager.contracts import (
     RuntimeCommandResult,
     RuntimeCreateRequest,
     RuntimeLimits,
+    RuntimeMount,
 )
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
@@ -126,11 +127,18 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     assert docker.created_requests[0].limits == limits
     assert docker.created_requests[0].network_disabled is True
     assert docker.created_requests[0].workspace_id == str(workspace.id)
+    assert docker.created_requests[0].runtime_id == str(runtime.id)
+    assert docker.created_requests[0].runtime_space_id == str(runtime_space.id)
+    assert docker.created_requests[0].working_dir == "/workspace"
+    assert docker.created_requests[0].mounts[0].target == "/workspace"
+    assert docker.created_requests[0].mounts[0].source.startswith("chaincloud-ws-")
+    assert docker.created_requests[0].labels["chaincloud.managed"] == "true"
     assert docker.created_requests[0].limits.max_processes == 64
     assert docker.started == ["container-123"]
     assert docker.executed == [("container-123", ["python", "--version"], 30)]
     assert docker.stopped == ["container-123"]
     assert docker.removed == ["container-123"]
+    assert docker.removed_volumes == [docker.created_requests[0].mounts[0].source]
     assert command.status == "completed"
     assert command.stdout == "ok\n"
     assert session.query(RuntimeCommand).count() == 1
@@ -149,6 +157,7 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
         "runtime.stopped",
         "runtime.deleted",
     ]
+    assert events[0].event_metadata["isolation"]["workspace_mount"]["target"] == "/workspace"
     assert events[1].event_metadata["runtime_lease_id"] == str(lease.id)
     assert events[2].event_metadata["runtime_lease_id"] == str(lease.id)
     assert events[-1].event_metadata["cleanup"]["action"] == "delete"
@@ -166,6 +175,11 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     ]
     assert space_events[1].event_metadata["runtime_id"] == str(runtime.id)
     assert space_events[1].event_metadata["runtime_status"] == "created"
+    assert runtime.capabilities["isolation"]["workspace_id"] == str(workspace.id)
+    assert runtime.capabilities["isolation"]["runtime_space_id"] == str(runtime_space.id)
+    assert runtime.capabilities["managed_resources"]["docker_volumes"] == [
+        docker.created_requests[0].mounts[0].source
+    ]
 
 
 def test_runtime_manager_reserves_and_releases_runtime_space_docker_usage() -> None:
@@ -951,6 +965,7 @@ def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch
             image="python:3.12-slim",
             name="chaincloud-test",
             workspace_id="workspace-1",
+            runtime_id="runtime-1",
             limits=RuntimeLimits(
                 cpu_count=1,
                 memory_mb=512,
@@ -958,6 +973,13 @@ def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch
                 timeout_seconds=30,
                 max_processes=96,
             ),
+            mounts=(
+                RuntimeMount(
+                    source="chaincloud-ws-workspace-runtime",
+                    target="/workspace",
+                ),
+            ),
+            working_dir="/workspace",
         )
     )
 
@@ -965,6 +987,9 @@ def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch
     assert container_id == "container-abc"
     assert command[command.index("--pids-limit") + 1] == "96"
     assert command[command.index("--storage-opt") + 1] == "size=2048m"
+    assert "--mount" in command
+    assert command[command.index("--workdir") + 1] == "/workspace"
+    assert "chaincloud.runtime_id=runtime-1" in command
 
 
 def _runtime_space_quotas(session: Session, runtime_space_id: object) -> dict[str, int]:

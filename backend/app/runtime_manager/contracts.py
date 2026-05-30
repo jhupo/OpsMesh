@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 
@@ -19,6 +19,19 @@ class RuntimeCreateRequest:
     workspace_id: str
     limits: RuntimeLimits
     network_disabled: bool = True
+    runtime_id: str | None = None
+    runtime_space_id: str | None = None
+    labels: dict[str, str] = field(default_factory=dict)
+    mounts: tuple["RuntimeMount", ...] = ()
+    working_dir: str | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeMount:
+    source: str
+    target: str
+    mount_type: str = "volume"
+    read_only: bool = False
 
 
 @dataclass(frozen=True)
