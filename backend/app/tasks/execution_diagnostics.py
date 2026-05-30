@@ -485,10 +485,67 @@ def _handoff_queue_summary(items: list[dict[str, object]]) -> dict[str, object]:
         "tasks": len(task_ids),
         "handoff_status_counts": dict(sorted(status_counts.items())),
         "recommended_actions": dict(sorted(action_counts.items())),
+        "team_operator_action_plan": _handoff_queue_team_action_plan(items),
         "ready_handoffs": status_counts.get("ready_for_downstream", 0),
         "blocked_handoffs": status_counts.get("downstream_blocked", 0),
         "final_delivery_ready": status_counts.get("final_delivery_ready", 0),
     }
+
+
+def _handoff_queue_team_action_plan(items: list[dict[str, object]]) -> list[dict[str, object]]:
+    grouped: dict[tuple[UUID, str], dict[str, object]] = {}
+    for item in items:
+        team_id = item.get("team_id")
+        task_id = item.get("task_id")
+        task_step_id = item.get("task_step_id")
+        if not isinstance(team_id, UUID) or not isinstance(task_id, UUID):
+            continue
+        for action in _string_values(item.get("recommended_actions")):
+            if action not in {"request_manager_review", "schedule_downstream_steps"}:
+                continue
+            plan = grouped.setdefault(
+                (team_id, action),
+                {
+                    "team_id": team_id,
+                    "action": action,
+                    "automation": "team_operator_action",
+                    "api_route": (
+                        "POST /api/v1/workspaces/{workspace_id}/"
+                        "teams/{team_id}/operator-actions"
+                    ),
+                    "task_ids": [],
+                    "task_step_ids": [],
+                    "count": 0,
+                    "reason": "handoff_queue",
+                },
+            )
+            plan["count"] = int(plan["count"]) + 1
+            _append_uuid(plan, "task_ids", task_id)
+            if action == "schedule_downstream_steps" and isinstance(task_step_id, UUID):
+                _append_uuid(plan, "task_step_ids", task_step_id)
+
+    plan_items = []
+    for item in grouped.values():
+        payload = {
+            "action": item["action"],
+            "task_ids": item["task_ids"],
+            "task_step_ids": item["task_step_ids"],
+            "reason": item["reason"],
+            "metadata": {"source": "handoff_queue"},
+        }
+        plan_items.append({**item, "payload_template": payload})
+    return sorted(
+        plan_items,
+        key=lambda item: (str(item["team_id"]), str(item["action"])),
+    )
+
+
+def _append_uuid(item: dict[str, object], key: str, value: UUID) -> None:
+    values = item[key] if isinstance(item.get(key), list) else []
+    existing = [entry for entry in values if isinstance(entry, UUID)]
+    if value not in existing:
+        existing.append(value)
+    item[key] = sorted(existing, key=str)
 
 
 def _dict_list(value: object) -> list[dict[str, object]]:

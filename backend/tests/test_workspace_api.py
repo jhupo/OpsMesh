@@ -2471,6 +2471,36 @@ def test_task_handoff_queue_lists_attention_items_and_preserves_scope() -> None:
         "request_manager_review": 1,
         "schedule_downstream_steps": 1,
     }
+    team_action_plan = {
+        item["action"]: item for item in body["summary"]["team_operator_action_plan"]
+    }
+    assert team_action_plan["schedule_downstream_steps"] == {
+        "team_id": str(team.id),
+        "action": "schedule_downstream_steps",
+        "automation": "team_operator_action",
+        "api_route": (
+            "POST /api/v1/workspaces/{workspace_id}/"
+            "teams/{team_id}/operator-actions"
+        ),
+        "task_ids": [str(task.id)],
+        "task_step_ids": [str(design_step.id)],
+        "count": 1,
+        "reason": "handoff_queue",
+        "payload_template": {
+            "action": "schedule_downstream_steps",
+            "task_ids": [str(task.id)],
+            "task_step_ids": [str(design_step.id)],
+            "reason": "handoff_queue",
+            "metadata": {"source": "handoff_queue"},
+        },
+    }
+    assert team_action_plan["request_manager_review"]["payload_template"] == {
+        "action": "request_manager_review",
+        "task_ids": [str(task.id)],
+        "task_step_ids": [],
+        "reason": "handoff_queue",
+        "metadata": {"source": "handoff_queue"},
+    }
     by_package = {item["work_package_id"]: item for item in body["items"]}
     assert by_package["design"]["handoff_status"] == "ready_for_downstream"
     assert by_package["design"]["runnable_downstream_step_ids"] == [str(build_step.id)]
