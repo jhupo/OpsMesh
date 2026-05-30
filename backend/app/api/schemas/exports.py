@@ -245,6 +245,7 @@ class WorkspaceRetentionResponse(BaseModel):
     policy: dict[str, object]
     blocked_reasons: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    recommended_actions: list[str] = Field(default_factory=list)
     counts: dict[str, int]
     applied_counts: dict[str, int]
     candidates: list[WorkspaceRetentionCandidate] = Field(default_factory=list)

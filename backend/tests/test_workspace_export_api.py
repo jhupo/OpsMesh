@@ -767,6 +767,11 @@ def test_workspace_retention_preview_reports_scoped_candidates_and_redacts_metad
     assert body["dry_run"] is True
     assert body["applied"] is False
     assert body["blocked_reasons"] == []
+    assert body["warnings"] == ["manual_review_candidates_present"]
+    assert body["recommended_actions"] == [
+        "review_retention_candidates",
+        "apply_retention",
+    ]
     assert body["counts"] == {"files": 1, "export_jobs": 1, "artifacts": 1, "total": 3}
     candidates_by_type = {candidate["resource_type"]: candidate for candidate in body["candidates"]}
     assert candidates_by_type["file"]["resource_id"] == str(old_file.id)
@@ -837,6 +842,7 @@ def test_workspace_retention_apply_soft_deletes_files_and_records_audit(
     body = response.json()
     assert body["dry_run"] is False
     assert body["applied"] is True
+    assert body["recommended_actions"] == []
     assert body["applied_counts"] == {"files": 1, "export_jobs": 0, "artifacts": 0}
     session.refresh(old_file)
     assert old_file.status == "retention_deleted"
@@ -885,6 +891,7 @@ def test_workspace_retention_apply_blocks_without_successful_backup(tmp_path: Pa
     body = response.json()
     assert body["applied"] is False
     assert body["blocked_reasons"] == ["no_successful_archive_export"]
+    assert body["recommended_actions"] == ["run_archive_export"]
     assert body["candidates"] == []
     session.refresh(old_file)
     assert old_file.status == "active"
@@ -910,6 +917,7 @@ def test_workspace_retention_disabled_policy_is_reported_as_blocked(tmp_path: Pa
     body = response.json()
     assert body["applied"] is False
     assert body["blocked_reasons"] == ["retention_policy_not_enabled"]
+    assert body["recommended_actions"] == ["enable_retention_policy"]
     assert body["candidates"] == []
 
 

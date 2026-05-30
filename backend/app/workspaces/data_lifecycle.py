@@ -491,6 +491,13 @@ class WorkspaceDataLifecycleService:
             applied_counts = self._apply_file_retention(candidates)
 
         counts = _candidate_counts(candidates)
+        warnings = _retention_warnings(policy, candidates)
+        recommended_actions = _retention_recommended_actions(
+            blocked_reasons=blocked_reasons,
+            warnings=warnings,
+            candidates=candidates,
+            apply_changes=apply_changes,
+        )
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -506,6 +513,7 @@ class WorkspaceDataLifecycleService:
                 "blocked_reasons": blocked_reasons,
                 "candidate_counts": counts,
                 "applied_counts": applied_counts,
+                "recommended_actions": recommended_actions,
                 "include_files": include_files,
                 "include_export_jobs": include_export_jobs,
                 "include_artifacts": include_artifacts,
@@ -520,7 +528,8 @@ class WorkspaceDataLifecycleService:
             "applied": apply_changes and not blocked_reasons,
             "policy": policy,
             "blocked_reasons": blocked_reasons,
-            "warnings": _retention_warnings(policy, candidates),
+            "warnings": warnings,
+            "recommended_actions": recommended_actions,
             "counts": counts,
             "applied_counts": applied_counts,
             "candidates": candidates,
@@ -1128,6 +1137,31 @@ def _retention_warnings(
     if any(candidate["action"] == "manual_review" for candidate in candidates):
         warnings.append("manual_review_candidates_present")
     return warnings
+
+
+def _retention_recommended_actions(
+    *,
+    blocked_reasons: list[str],
+    warnings: list[str],
+    candidates: list[dict[str, object]],
+    apply_changes: bool,
+) -> list[str]:
+    actions: list[str] = []
+    reason_set = set(blocked_reasons)
+    warning_set = set(warnings)
+    if "retention_policy_not_enabled" in reason_set:
+        actions.append("enable_retention_policy")
+    if "no_successful_archive_export" in reason_set:
+        actions.append("run_archive_export")
+    if "no_retention_targets_enabled" in reason_set:
+        actions.append("select_retention_targets")
+    if "manual_review_candidates_present" in warning_set:
+        actions.append("review_retention_candidates")
+    if not blocked_reasons and candidates and not apply_changes:
+        actions.append("apply_retention")
+    if not blocked_reasons and not candidates:
+        actions.append("no_retention_candidates")
+    return actions
 
 
 def _candidate_payload(
