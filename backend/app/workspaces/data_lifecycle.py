@@ -615,6 +615,9 @@ def _backup_policy(
         "schedule": raw_policy.get("schedule"),
         "target_type": raw_policy.get("target_type") or "manual_export",
         "target": raw_policy.get("target"),
+        "max_archive_age_days": _positive_int(
+            raw_policy.get("max_archive_age_days") or raw_policy.get("max_age_days")
+        ),
         "last_export_job_status": latest_job.status if latest_job is not None else None,
         "last_successful_archive_export_at": (
             latest_success.completed_at if latest_success is not None else None
@@ -652,6 +655,12 @@ def _restore_readiness(
 ) -> dict[str, object]:
     blocked_reasons: list[str] = []
     warnings: list[str] = []
+    latest_archive_age_days = (
+        _age_days(generated_at, latest_success.completed_at)
+        if latest_success is not None and latest_success.completed_at is not None
+        else None
+    )
+    max_archive_age_days = backup_policy.get("max_archive_age_days")
     if backup_policy["enabled"] is not True:
         blocked_reasons.append("backup_policy_not_enabled")
     if latest_success is None:
@@ -663,16 +672,16 @@ def _restore_readiness(
             blocked_reasons.append("latest_archive_missing_checksum")
         if latest_success.size_bytes is None or latest_success.size_bytes <= 0:
             blocked_reasons.append("latest_archive_empty_or_unknown_size")
+        if (
+            isinstance(max_archive_age_days, int)
+            and latest_archive_age_days is not None
+            and latest_archive_age_days > max_archive_age_days
+        ):
+            blocked_reasons.append("latest_archive_stale")
     if latest_import is None:
         blocked_reasons.append("no_archive_import_test_recorded")
     if isinstance(active_job_count, int) and active_job_count > 0:
         warnings.append("archive_export_jobs_in_progress")
-
-    latest_archive_age_days = (
-        _age_days(generated_at, latest_success.completed_at)
-        if latest_success is not None and latest_success.completed_at is not None
-        else None
-    )
     return {
         "ready": not blocked_reasons,
         "blocked_reasons": blocked_reasons,
@@ -683,11 +692,36 @@ def _restore_readiness(
             and latest_success.storage_key is not None
         ),
         "latest_archive_age_days": latest_archive_age_days,
+        "max_archive_age_days": max_archive_age_days,
         "latest_archive_import_test_recorded": latest_import is not None,
         "latest_archive_import_tested_at": latest_import.created_at
         if latest_import is not None
         else None,
+        "recommended_actions": _restore_recommended_actions(blocked_reasons),
     }
+
+
+def _restore_recommended_actions(blocked_reasons: list[str]) -> list[str]:
+    actions: list[str] = []
+    if "backup_policy_not_enabled" in blocked_reasons:
+        actions.append("enable_backup_policy")
+    if (
+        "no_successful_archive_export" in blocked_reasons
+        or "latest_archive_stale" in blocked_reasons
+    ):
+        actions.append("run_archive_export")
+    if any(
+        reason in blocked_reasons
+        for reason in {
+            "latest_archive_missing_storage_object",
+            "latest_archive_missing_checksum",
+            "latest_archive_empty_or_unknown_size",
+        }
+    ):
+        actions.append("repair_or_regenerate_archive_export")
+    if "no_archive_import_test_recorded" in blocked_reasons:
+        actions.append("run_restore_import_test")
+    return actions
 
 
 def _job_payload(job: WorkspaceExportJob | None) -> dict[str, object] | None:
