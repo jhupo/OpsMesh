@@ -186,6 +186,18 @@ class AgentToolPolicyDiagnosticsResponse(BaseModel):
     blocked_reasons: list[str] = Field(default_factory=list)
 
 
+class WorkspaceToolPolicyMatrixResponse(BaseModel):
+    workspace_id: UUID
+    generated_at: datetime
+    tool_names: list[str]
+    summary: dict[str, object]
+    agents: list[AgentToolPolicyDiagnosticsResponse]
+
+    @field_serializer("summary")
+    def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
 class WorkspaceCapabilityGovernanceSkillResponse(BaseModel):
     install_id: UUID
     installed_key: str

@@ -527,6 +527,55 @@ class CapabilityService:
             "blocked_reasons": blocked_reasons,
         }
 
+    def workspace_tool_policy_matrix(self, workspace_id: UUID) -> dict[str, object]:
+        agents = self._session.scalars(
+            select(AgentProfile)
+            .where(AgentProfile.workspace_id == workspace_id)
+            .order_by(AgentProfile.status.asc(), AgentProfile.name.asc(), AgentProfile.id.asc())
+        ).all()
+        agent_items = [
+            self.agent_tool_policy_diagnostics(workspace_id, agent.id) for agent in agents
+        ]
+        tool_names = sorted(
+            {
+                str(tool["tool_name"])
+                for agent_item in agent_items
+                for tool in agent_item["effective_tools"]
+                if isinstance(tool, dict) and tool.get("tool_name") is not None
+            }
+        )
+        blocked_reasons: Counter[str] = Counter()
+        policy_modes: Counter[str] = Counter()
+        unavailable_tool_count = 0
+        for agent_item in agent_items:
+            blocked_reasons.update(
+                reason
+                for reason in agent_item["blocked_reasons"]
+                if isinstance(reason, str)
+            )
+            policy_modes.update([str(agent_item["policy_mode"])])
+            unavailable_tool_count += sum(
+                1
+                for tool in agent_item["effective_tools"]
+                if isinstance(tool, dict) and tool.get("available") is not True
+            )
+        return {
+            "workspace_id": workspace_id,
+            "generated_at": datetime.now(UTC),
+            "tool_names": tool_names,
+            "summary": {
+                "agent_count": len(agent_items),
+                "blocked_agent_count": sum(
+                    1 for agent_item in agent_items if agent_item["blocked_reasons"]
+                ),
+                "tool_name_count": len(tool_names),
+                "unavailable_tool_count": unavailable_tool_count,
+                "policy_modes": dict(sorted(policy_modes.items())),
+                "blocked_reasons": dict(sorted(blocked_reasons.items())),
+            },
+            "agents": agent_items,
+        }
+
     def workspace_capability_governance(self, workspace_id: UUID) -> dict[str, object]:
         installs = self._session.scalars(
             select(WorkspaceSkillInstall)

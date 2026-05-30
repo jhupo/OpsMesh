@@ -1134,6 +1134,102 @@ def test_agent_tool_policy_diagnostics_explain_skill_and_mcp_effective_access() 
     assert foreign_diagnostics.status_code == 404
 
 
+def test_workspace_tool_policy_matrix_summarizes_agent_tool_access() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, _ = _seed_workspace(session, email="other-matrix@example.com", slug="other-matrix")
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "image-tools",
+            "server_type": "hosted",
+            "connection": {
+                "transport": "http_jsonrpc",
+                "url": "https://mcp.example.test/private?token=hidden",
+                "requires_credentials": True,
+            },
+        },
+    )
+    allowed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={
+            "tool_name": "generate_image",
+            "capability_key": "image.generate",
+            "requires_approval": True,
+            "risk_level": "high",
+        },
+    )
+    designer = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Designer",
+            "role": "designer",
+            "tool_policy": {"mcp_tools": ["generate_image"]},
+            "model_settings": {"api_key": "sk-designer"},
+        },
+    )
+    reviewer = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Reviewer",
+            "role": "reviewer",
+            "tool_policy": {"mcp_tools": ["delete_image"]},
+        },
+    )
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/tool-policy-matrix",
+        headers=_headers(owner.id),
+    )
+    forbidden = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/tool-policy-matrix",
+        headers=_headers(other.id),
+    )
+
+    assert server.status_code == 201
+    assert allowed.status_code == 201
+    assert designer.status_code == 201
+    assert reviewer.status_code == 201
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] == str(workspace.id)
+    assert body["tool_names"] == ["delete_image", "generate_image"]
+    assert body["summary"] == {
+        "agent_count": 2,
+        "blocked_agent_count": 2,
+        "tool_name_count": 2,
+        "unavailable_tool_count": 2,
+        "policy_modes": {"allowlist": 2},
+        "blocked_reasons": {
+            "configured_mcp_tools_not_allowed": 1,
+            "unavailable_allowed_mcp_tools": 2,
+        },
+    }
+    agents = {item["agent_name"]: item for item in body["agents"]}
+    designer_tools = {item["tool_name"]: item for item in agents["Designer"]["effective_tools"]}
+    reviewer_tools = {item["tool_name"]: item for item in agents["Reviewer"]["effective_tools"]}
+    assert designer_tools["generate_image"]["allowed_by_agent_policy"] is True
+    assert designer_tools["generate_image"]["available"] is False
+    assert designer_tools["generate_image"]["credential_status"] == "missing_required"
+    assert designer_tools["generate_image"]["blocked_reasons"] == [
+        "missing_required_credentials"
+    ]
+    assert reviewer_tools["delete_image"]["allowed_by_agent_policy"] is True
+    assert reviewer_tools["delete_image"]["allowed_in_workspace"] is False
+    assert set(reviewer_tools["delete_image"]["blocked_reasons"]) == {"tool_not_allowed"}
+    assert forbidden.status_code == 403
+    serialized = str(body)
+    assert "hidden" not in serialized
+    assert "private" not in serialized
+    assert "sk-designer" not in serialized
+
+
 def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

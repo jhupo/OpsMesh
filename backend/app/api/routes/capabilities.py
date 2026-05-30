@@ -33,6 +33,7 @@ from backend.app.api.schemas.capabilities import (
     WorkspaceSkillRollbackRequest,
     WorkspaceSkillToolAvailabilityResponse,
     WorkspaceSkillUpgradeRequest,
+    WorkspaceToolPolicyMatrixResponse,
 )
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
@@ -502,6 +503,15 @@ async def get_agent_tool_policy_diagnostics(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return AgentToolPolicyDiagnosticsResponse.model_validate(diagnostics)
+
+
+@router.get("/tool-policy-matrix", response_model=WorkspaceToolPolicyMatrixResponse)
+async def get_workspace_tool_policy_matrix(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceToolPolicyMatrixResponse:
+    matrix = CapabilityService(session).workspace_tool_policy_matrix(context.workspace.id)
+    return WorkspaceToolPolicyMatrixResponse.model_validate(matrix)
 
 
 @router.post(
