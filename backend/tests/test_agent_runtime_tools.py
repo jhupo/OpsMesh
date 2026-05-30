@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agent_runtime.contracts import AgentRuntimeContext
 from backend.app.agent_runtime.tools import BackendToolExecutor
-from backend.app.capabilities.models import McpServer, McpToolAllowlist
+from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
@@ -60,6 +60,62 @@ def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
 
     assert result.status == "completed"
     assert result.output == {"ok": True, "tool": "generate_image"}
+
+
+def test_backend_tool_executor_enforces_mcp_per_run_call_limit() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, title="Task")
+    server = McpServer(workspace_id=workspace.id, name="image-tools")
+    session.add_all([task, server])
+    session.flush()
+    allow = McpToolAllowlist(
+        workspace_id=workspace.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+        policy={"max_calls_per_run": 1},
+    )
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        input={
+            "authorization_snapshot": {
+                "workspace_id": str(workspace.id),
+                "allowed_tools": ["generate_image"],
+            }
+        },
+    )
+    session.add_all([allow, run])
+    session.commit()
+    executor = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter())
+    context = AgentRuntimeContext(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        run_id=run.id,
+        allowed_tools=("generate_image",),
+    )
+
+    first = executor.execute_tool(
+        context=context,
+        tool_name="generate_image",
+        arguments={"prompt": "mountain"},
+    )
+    try:
+        executor.execute_tool(
+            context=context,
+            tool_name="generate_image",
+            arguments={"prompt": "forest"},
+        )
+    except ToolPermissionError as exc:
+        assert "mcp_tool_run_call_limit_exceeded" in str(exc)
+    else:
+        raise AssertionError("Expected MCP per-run call limit to block repeated calls")
+
+    logs = session.query(McpToolCallLog).order_by(McpToolCallLog.created_at.asc()).all()
+    assert first.status == "completed"
+    assert [log.status for log in logs] == ["completed", "blocked"]
+    assert logs[1].mcp_server_id == server.id
+    assert logs[1].error_code == "mcp_tool_run_call_limit_exceeded"
 
 
 def test_backend_tool_executor_enforces_runtime_allowed_tools() -> None:

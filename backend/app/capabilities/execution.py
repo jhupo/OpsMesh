@@ -115,9 +115,19 @@ class McpToolExecutionService:
         self._require_runtime_context_tool(request)
         allow, server = self._resolve_allowed_tool(request)
         self._require_snapshot_tool(snapshot, request)
+        policy = _mcp_policy(snapshot, allow)
         policy_decision = PlatformPolicyService(self._session).risky_execution_policy()
         if _is_high_risk_tool(allow) and policy_decision.high_risk_tool_mode == "block":
-            self._block(request, "mcp_high_risk_tool_globally_disabled")
+            self._block(
+                request,
+                "mcp_high_risk_tool_globally_disabled",
+                mcp_server_id=server.id,
+            )
+        self._enforce_call_limit(
+            request,
+            server_id=server.id,
+            max_calls_per_run=policy.max_calls_per_run,
+        )
         if allow.requires_approval:
             return self._request_tool_approval(
                 request,
@@ -137,7 +147,6 @@ class McpToolExecutionService:
                 server,
                 reason="mcp_high_risk_tool_requires_approval",
             )
-        policy = _mcp_policy(snapshot, allow)
 
         self._append_run_event(
             run=run,
@@ -359,6 +368,39 @@ class McpToolExecutionService:
                 code="mcp_payload_too_large",
             )
 
+    def _enforce_call_limit(
+        self,
+        request: McpExecutionRequest,
+        *,
+        server_id: UUID,
+        max_calls_per_run: int | None,
+    ) -> None:
+        if max_calls_per_run is None:
+            return
+        counted_statuses = (
+            "completed",
+            "failed",
+            "waiting_approval",
+            "waiting_self_hosted",
+        )
+        current_count = self._session.scalar(
+            select(func.count())
+            .select_from(McpToolCallLog)
+            .where(
+                McpToolCallLog.workspace_id == request.workspace_id,
+                McpToolCallLog.agent_run_id == request.agent_run_id,
+                McpToolCallLog.mcp_server_id == server_id,
+                McpToolCallLog.tool_name == request.tool_name,
+                McpToolCallLog.status.in_(counted_statuses),
+            )
+        )
+        if int(current_count or 0) >= max_calls_per_run:
+            self._block(
+                request,
+                "mcp_tool_run_call_limit_exceeded",
+                mcp_server_id=server_id,
+            )
+
     def _credential_refs(
         self,
         workspace_id: UUID,
@@ -541,8 +583,15 @@ class McpToolExecutionService:
             )
         )
 
-    def _block(self, request: McpExecutionRequest, reason: str) -> None:
+    def _block(
+        self,
+        request: McpExecutionRequest,
+        reason: str,
+        *,
+        mcp_server_id: UUID | None = None,
+    ) -> None:
         run = self._session.get(AgentRun, request.agent_run_id)
+        resolved_server_id = mcp_server_id or request.mcp_server_id
         snapshot = (
             _authorization_snapshot(run)
             if run is not None and run.workspace_id == request.workspace_id
@@ -556,8 +605,8 @@ class McpToolExecutionService:
                 message=request.tool_name,
                 metadata={
                     "tool_kind": "mcp",
-                    "mcp_server_id": str(request.mcp_server_id)
-                    if request.mcp_server_id is not None
+                    "mcp_server_id": str(resolved_server_id)
+                    if resolved_server_id is not None
                     else None,
                     "tool_name": request.tool_name,
                     "reason": reason,
@@ -570,8 +619,8 @@ class McpToolExecutionService:
                 body=f"MCP tool blocked: {request.tool_name}",
                 payload={
                     "tool_name": request.tool_name,
-                    "mcp_server_id": str(request.mcp_server_id)
-                    if request.mcp_server_id is not None
+                    "mcp_server_id": str(resolved_server_id)
+                    if resolved_server_id is not None
                     else None,
                     "reason": reason,
                 },
@@ -579,7 +628,7 @@ class McpToolExecutionService:
         self._session.add(
             McpToolCallLog(
                 workspace_id=request.workspace_id,
-                mcp_server_id=request.mcp_server_id,
+                mcp_server_id=resolved_server_id,
                 agent_run_id=request.agent_run_id,
                 task_id=run.task_id
                 if run is not None and run.workspace_id == request.workspace_id
@@ -621,8 +670,8 @@ class McpToolExecutionService:
                 reason=reason,
                 event_metadata={
                     "agent_run_id": str(request.agent_run_id),
-                    "mcp_server_id": str(request.mcp_server_id)
-                    if request.mcp_server_id is not None
+                    "mcp_server_id": str(resolved_server_id)
+                    if resolved_server_id is not None
                     else None,
                     "tool_name": request.tool_name,
                     **_snapshot_audit_metadata(snapshot),
@@ -650,6 +699,7 @@ class _McpPolicy:
     timeout_seconds: int
     max_input_bytes: int
     max_output_bytes: int
+    max_calls_per_run: int | None
 
 
 def _authorization_snapshot(run: AgentRun) -> dict[str, object]:
@@ -702,6 +752,11 @@ def _mcp_policy(snapshot: dict[str, object], allow: McpToolAllowlist) -> _McpPol
             "max_output_bytes",
             256_000,
         ),
+        max_calls_per_run=_optional_int_policy(
+            allow_policy,
+            snapshot_mcp_policy,
+            "max_calls_per_run",
+        ),
     )
 
 
@@ -719,6 +774,21 @@ def _int_policy(
         if isinstance(value, int) and value > 0:
             return value
     return default
+
+
+def _optional_int_policy(
+    allow_policy: dict[str, object],
+    snapshot_policy: object,
+    key: str,
+) -> int | None:
+    value = allow_policy.get(key)
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(snapshot_policy, dict):
+        value = snapshot_policy.get(key)
+        if isinstance(value, int) and value > 0:
+            return value
+    return None
 
 
 def _is_high_risk_tool(allow: McpToolAllowlist) -> bool:
