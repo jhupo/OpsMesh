@@ -1,0 +1,52 @@
+services:
+  api:
+    build:
+      context: ${CHAINCLOUD_RELEASE_DIR:-.}
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1}
+    image: ${CHAINCLOUD_BACKEND_IMAGE:-chaincloud-agent-team-backend:server}
+    container_name: ${CHAINCLOUD_API_CONTAINER:-chaincloud-api}
+    restart: unless-stopped
+    env_file:
+      - ${CHAINCLOUD_ENV_FILE:-.env}
+    ports:
+      - "${CHAINCLOUD_API_BIND:-127.0.0.1}:${CHAINCLOUD_API_PORT:-8000}:8000"
+    volumes:
+      - chaincloud_app_storage:/app/.chaincloud-storage
+    networks:
+      - backend_runtime
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3).read()"
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  worker:
+    image: ${CHAINCLOUD_BACKEND_IMAGE:-chaincloud-agent-team-backend:server}
+    container_name: ${CHAINCLOUD_WORKER_CONTAINER:-chaincloud-worker}
+    restart: unless-stopped
+    env_file:
+      - ${CHAINCLOUD_ENV_FILE:-.env}
+    environment:
+      CHAINCLOUD_RUN_MIGRATIONS: "false"
+    command: ["python", "-m", "backend.app.workers.cli"]
+    volumes:
+      - chaincloud_app_storage:/app/.chaincloud-storage
+    networks:
+      - backend_runtime
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  backend_runtime:
+    external: true
+    name: ${CHAINCLOUD_BACKEND_NETWORK:-chaincloud_default}
+
+volumes:
+  chaincloud_app_storage:

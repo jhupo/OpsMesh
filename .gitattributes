@@ -1,3 +1,7 @@
+.gitattributes text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.example text eol=lf
 *.sh text eol=lf
 Dockerfile text eol=lf
 *.yml text eol=lf

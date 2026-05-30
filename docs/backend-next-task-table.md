@@ -14,7 +14,7 @@ Frontend remains out of scope. Billing remains out of scope.
 - Keep API responses metadata-only and redacted.
 - Do not include mockups or frontend assets in backend commits.
 
-## Task Table
+## Completed Reliability Phase
 
 | Order | Priority | Task | Current Status | Acceptance Evidence |
 | --- | --- | --- | --- | --- |
@@ -29,8 +29,23 @@ Frontend remains out of scope. Billing remains out of scope.
 | 9 | P1 | MCP/OpenAI Agents continuation compatibility | Done | Runner-level continuation rendering remains; OpenAI raw output now persists stable `sdk_continuation` metadata for future SDK-native migration, and MCP/self-hosted continuation tests cover completed and failed tool results |
 | 10 | P1 | Continuous redaction audit | Done for current phase | New metadata surfaces from this phase are covered: runtime/stale/self-hosted diagnostics avoid sensitive fields, policy diagnostics redact nested metadata, and run API output redacts `sdk_continuation` token/base_url/header values |
 
-## Immediate Implementation Queue
+## Next Phase Goal Table
 
-1. Current backend reliability task table is complete.
-2. Keep future new metadata fields under the same redaction test rule.
-3. Start the next backend reliability task list when new gaps are identified.
+| Order | Priority | Goal | Current Status | Acceptance Evidence |
+| --- | --- | --- | --- | --- |
+| 1 | P0 | Server deployment assets and smoke test for API/worker on shared Postgres/Redis | Done | `deploy/server/docker-compose.backend.yml`, `deploy/server/env.example`, `scripts/server-smoke-test.sh`, deployment asset tests, and server health verified on `192.168.2.17` |
+| 2 | P0 | Workspace/team Docker runtime isolation closure | Next | Runtime containers must bind to workspace/team ownership, quota leases, storage mounts, network policy, cleanup, and operations diagnostics |
+| 3 | P0 | Agent model configuration closure | Pending | Workspace default provider, per-agent override, cloud-downloaded base URL/key/model, fallback behavior, and redacted audit coverage |
+| 4 | P0 | Multi-agent project execution loop | Pending | Reusable team org chart, project-manager decomposition, role assignment, dependency DAG, correction loop, and message/state timeline |
+| 5 | P1 | MCP skill lifecycle and tool permission hardening | Pending | Private/public skill install lifecycle, version snapshots, per-agent tool permissions, runtime execution limits, and audit evidence |
+| 6 | P1 | Self-hosted worker install and upgrade channel | Pending | Registration token, connector package, heartbeat/version policy, job slots, upgrade/drain/quarantine flow, and trust diagnostics |
+| 7 | P1 | Operations control plane expansion | Pending | Runtime/container quota dashboard API, backlog/failure/latency aggregates, blocked-step explanations, and metadata-only operator responses |
+| 8 | P1 | Workspace data lifecycle | Pending | Import/export restore path, artifact versioning, backup hooks, retention policy, and file access audit |
+
+## Execution Rules For This Phase
+
+1. Implement one backend goal at a time.
+2. Validate locally with targeted tests and lint.
+3. Validate runtime behavior on `192.168.2.17` before committing.
+4. Commit and push after each verified goal.
+5. Keep frontend and billing out of scope.

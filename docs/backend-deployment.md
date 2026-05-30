@@ -26,6 +26,22 @@ The API is exposed at `http://localhost:8000`. Health checks are available at:
 - `GET /api/v1/health`
 - `GET /api/v1/health/ready`
 
+## Server Test Stack
+
+The server test stack reuses a shared Postgres/Redis runtime network instead of creating a
+second database pair. Use it after provisioning the database services and creating a release
+symlink such as `/opt/chaincloud-app/current`:
+
+```bash
+cp deploy/server/env.example /opt/chaincloud-app/.env
+docker compose -f deploy/server/docker-compose.backend.yml --env-file /opt/chaincloud-app/.env build
+docker compose -f deploy/server/docker-compose.backend.yml --env-file /opt/chaincloud-app/.env up -d
+CHAINCLOUD_COMPOSE_FILE=deploy/server/docker-compose.backend.yml scripts/server-smoke-test.sh
+```
+
+By default the API binds to `127.0.0.1:8000`. Put Nginx or another controlled ingress in front
+of it before exposing it outside the server.
+
 ## Production Settings
 
 Before running with `CHAINCLOUD_ENVIRONMENT=production`, set strong values for:
