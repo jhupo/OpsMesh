@@ -40,7 +40,7 @@ Frontend remains out of scope. Billing remains out of scope.
 | 5 | P1 | MCP skill lifecycle and tool permission hardening | In progress | Private/public skill install lifecycle and version snapshots exist; per-agent tool-policy diagnostics now explain effective MCP access, missing skill installs, missing allowlist entries, credential gaps, and blocked reasons without exposing secrets |
 | 6 | P1 | Self-hosted worker install and upgrade channel | Done | Registration token, connector bootstrap manifest, heartbeat/version policy diagnostics, job slots, upgrade/drain/quarantine/revoke flow, and trust diagnostics are implemented |
 | 7 | P1 | Operations control plane expansion | Done | Runtime/container quota dashboard API, backlog/failure/latency aggregates, blocked-step explanations, and metadata-only operator responses are covered by operations API and tests |
-| 8 | P1 | Workspace data lifecycle | Pending | Import/export restore path, artifact versioning, backup hooks, retention policy, and file access audit |
+| 8 | P1 | Workspace data lifecycle | In progress | Import/export restore path, artifact versioning, archive job download, and file access audit exist; lifecycle diagnostics now reports backup policy, retention policy, storage footprint, latest export jobs, and audit readiness |
 
 ## Execution Rules For This Phase
 

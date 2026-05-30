@@ -169,3 +169,25 @@ class WorkspaceImportResponse(BaseModel):
     estimated_counts: dict[str, int] = Field(default_factory=dict)
     required_resolutions: list[WorkspaceImportRequiredResolution] = Field(default_factory=list)
     suggested_resolutions: list[WorkspaceImportSuggestedResolution] = Field(default_factory=list)
+
+
+class WorkspaceDataLifecycleResponse(BaseModel):
+    workspace_id: UUID
+    generated_at: datetime
+    export_import: dict[str, object]
+    backup_policy: dict[str, object]
+    retention_policy: dict[str, object]
+    storage: dict[str, object]
+    file_access_audit: dict[str, object]
+    readiness: dict[str, object]
+
+    @field_serializer(
+        "export_import",
+        "backup_policy",
+        "retention_policy",
+        "storage",
+        "file_access_audit",
+        "readiness",
+    )
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)

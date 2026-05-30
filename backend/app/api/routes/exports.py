@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.schemas.exports import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveImportRequest,
+    WorkspaceDataLifecycleResponse,
     WorkspaceExportJobResponse,
     WorkspaceExportRequest,
     WorkspaceImportRequest,
@@ -23,8 +24,22 @@ from backend.app.files.security import content_disposition_attachment
 from backend.app.files.storage import LocalStorage
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
+from backend.app.workspaces.data_lifecycle import WorkspaceDataLifecycleService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/exports", tags=["exports"])
+
+
+@router.get("/lifecycle-diagnostics", response_model=WorkspaceDataLifecycleResponse)
+async def get_workspace_data_lifecycle_diagnostics(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceDataLifecycleResponse:
+    diagnostics = WorkspaceDataLifecycleService(session).get_diagnostics(
+        workspace_id=context.workspace.id
+    )
+    if diagnostics is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return WorkspaceDataLifecycleResponse.model_validate(diagnostics)
 
 
 @router.post("/metadata", status_code=status.HTTP_200_OK)

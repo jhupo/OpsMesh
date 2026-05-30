@@ -25,7 +25,7 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.exports.models import WorkspaceExportJob
-from backend.app.files.models import WorkspaceFile
+from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.files.storage import LocalStorage
 from backend.app.identity.models import User
 from backend.app.main import create_app
@@ -174,6 +174,144 @@ def test_workspace_metadata_export_denies_cross_workspace_access(tmp_path: Path)
 
     assert response.status_code == 403
     assert workspace.id != other_workspace.id
+
+
+def test_workspace_data_lifecycle_diagnostics_reports_backup_retention_and_audit(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(session, email="owner-lifecycle@example.com", slug="owner")
+    _, other_workspace = _seed_workspace(
+        session,
+        email="other-lifecycle@example.com",
+        slug="other",
+    )
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {
+                "enabled": True,
+                "schedule": "daily",
+                "target_type": "s3",
+                "target": {
+                    "remote_url": "https://backup.example.test/private",
+                    "token": "backup-token",
+                },
+            },
+            "retention": {
+                "enabled": True,
+                "default_retention_days": 90,
+                "file_retention_days": 30,
+                "artifact_retention_days": 180,
+                "audit_event_retention_days": 365,
+                "delete_policy": "manual_review",
+            },
+        }
+    }
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Lifecycle task",
+    )
+    session.add(task)
+    session.flush()
+    file = WorkspaceFile(
+        workspace_id=workspace.id,
+        uploaded_by_user_id=owner.id,
+        filename="brief.txt",
+        content_type="text/plain",
+        size_bytes=20,
+        checksum_sha256="a" * 64,
+        storage_key="workspaces/owner/files/brief.txt",
+    )
+    session.add(file)
+    session.flush()
+    artifact = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        version=2,
+        artifact_type="document",
+        filename="report.pdf",
+        content_type="application/pdf",
+        size_bytes=30,
+        checksum_sha256="b" * 64,
+        storage_key="workspaces/owner/artifacts/report.pdf",
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    completed_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="completed",
+        request={"include_file_bytes": True, "api_key": "sk-export"},
+        storage_key="workspaces/owner/exports/archive.zip",
+        filename="archive.zip",
+        content_type="application/zip",
+        size_bytes=123,
+        checksum_sha256="c" * 64,
+        completed_at=datetime(2026, 1, 3, tzinfo=UTC),
+        created_at=datetime(2026, 1, 3, tzinfo=UTC),
+        job_metadata={"token": "job-token", "safe": "ok"},
+    )
+    failed_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="failed",
+        request={"headers": {"authorization": "Bearer hidden"}},
+        error="network failed",
+        created_at=datetime(2026, 1, 4, tzinfo=UTC),
+    )
+    access = FileAccessEvent(
+        workspace_id=workspace.id,
+        workspace_file_id=file.id,
+        user_id=owner.id,
+        action="file.download",
+        created_at=datetime(2026, 1, 5, tzinfo=UTC),
+    )
+    session.add_all([artifact, completed_job, failed_job, access])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/lifecycle-diagnostics",
+        headers=_headers(owner.id),
+    )
+    foreign_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/exports/lifecycle-diagnostics",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["export_import"]["format_version"] == "workspace-export.v1"
+    assert body["export_import"]["archive_import_supported"] is True
+    assert body["export_import"]["latest_export_job"]["status"] == "failed"
+    assert body["export_import"]["latest_export_job"]["request"]["headers"] == "[redacted]"
+    assert body["export_import"]["latest_successful_archive_export"]["status"] == "completed"
+    assert body["export_import"]["latest_successful_archive_export"]["has_storage_object"] is True
+    assert body["export_import"]["latest_successful_archive_export"]["request"]["api_key"] == (
+        "[redacted]"
+    )
+    assert body["export_import"]["latest_successful_archive_export"]["metadata"]["token"] == (
+        "[redacted]"
+    )
+    assert body["backup_policy"]["enabled"] is True
+    assert body["backup_policy"]["target"]["remote_url"] == "[redacted]"
+    assert body["backup_policy"]["target"]["token"] == "[redacted]"
+    assert body["retention_policy"]["enabled"] is True
+    assert body["retention_policy"]["file_retention_days"] == 30
+    assert body["storage"]["files"]["total_count"] == 1
+    assert body["storage"]["artifacts"]["versioned_count"] == 1
+    assert body["storage"]["total_bytes"] == 50
+    assert body["file_access_audit"]["by_action"] == {"file.download": 1}
+    assert body["readiness"]["ready"] is True
+    assert body["readiness"]["blocked_reasons"] == []
+    assert foreign_response.status_code == 403
+    serialized = str(body)
+    assert "backup.example.test/private" not in serialized
+    assert "backup-token" not in serialized
+    assert "sk-export" not in serialized
+    assert "job-token" not in serialized
+    assert "workspaces/owner/exports/archive.zip" not in serialized
 
 
 def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_path: Path) -> None:
