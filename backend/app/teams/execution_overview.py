@@ -56,6 +56,7 @@ class TeamExecutionOverviewService:
         steps_by_task = _group_steps_by_task(steps)
         runs_by_task = _group_runs_by_task(runs)
         member_items = _member_items(members, agents, steps, runs)
+        staffing_gaps = _staffing_gaps(members, agents, steps)
         task_items = [
             self._task_item(
                 workspace_id=workspace_id,
@@ -85,9 +86,11 @@ class TeamExecutionOverviewService:
                 runs=runs,
                 member_items=member_items,
                 task_items=task_items,
+                staffing_gaps=staffing_gaps,
             ),
             "members": member_items,
             "tasks": task_items,
+            "staffing_gaps": staffing_gaps,
         }
 
     def _members(self, workspace_id: UUID, team_id: UUID) -> list[AgentTeamMember]:
@@ -285,6 +288,7 @@ def _overview_summary(
     runs: list[AgentRun],
     member_items: list[dict[str, object]],
     task_items: list[dict[str, object]],
+    staffing_gaps: list[dict[str, object]],
 ) -> dict[str, object]:
     task_status_counts = Counter(task.status for task in tasks)
     step_status_counts = Counter(step.status for step in steps)
@@ -310,10 +314,83 @@ def _overview_summary(
             if item["status"] == "active" and item["accepts_tasks"] is True
         ),
         "overloaded_member_count": sum(1 for item in member_items if item["overloaded"]),
+        "staffing_gap_count": len(staffing_gaps),
+        "staffing_gap_step_count": sum(int(item["step_count"]) for item in staffing_gaps),
         "total_member_capacity": total_capacity,
         "active_member_task_count": active_member_tasks,
         "available_member_capacity": max(total_capacity - active_member_tasks, 0),
     }
+
+
+def _staffing_gaps(
+    members: list[AgentTeamMember],
+    agents: dict[UUID, AgentProfile],
+    steps: list[TaskStep],
+) -> list[dict[str, object]]:
+    grouped_steps: dict[tuple[str | None, tuple[str, ...]], list[TaskStep]] = defaultdict(list)
+    for step in steps:
+        if step.status not in ACTIVE_STEP_STATUSES or step.assigned_agent_profile_id is not None:
+            continue
+        required_role = step.required_role or None
+        required_skills = tuple(sorted(_string_list(step.required_skills)))
+        if required_role is None and not required_skills:
+            continue
+        matching_member_count = _matching_member_count(
+            members=members,
+            agents=agents,
+            required_role=required_role,
+            required_skills=required_skills,
+        )
+        if matching_member_count > 0:
+            continue
+        grouped_steps[(required_role, required_skills)].append(step)
+
+    gaps: list[dict[str, object]] = []
+    for (required_role, required_skills), gap_steps in sorted(
+        grouped_steps.items(),
+        key=lambda item: (
+            item[0][0] or "",
+            ",".join(item[0][1]),
+            min(step.order_index for step in item[1]),
+        ),
+    ):
+        task_ids = sorted({step.task_id for step in gap_steps}, key=str)
+        gaps.append(
+            {
+                "required_role": required_role,
+                "required_skills": list(required_skills),
+                "step_count": len(gap_steps),
+                "task_count": len(task_ids),
+                "task_ids": task_ids,
+                "task_step_ids": [step.id for step in gap_steps],
+                "matching_member_count": 0,
+                "recommended_action": "add_or_hire_team_member",
+            }
+        )
+    return gaps
+
+
+def _matching_member_count(
+    *,
+    members: list[AgentTeamMember],
+    agents: dict[UUID, AgentProfile],
+    required_role: str | None,
+    required_skills: tuple[str, ...],
+) -> int:
+    count = 0
+    for member in members:
+        agent = agents.get(member.agent_profile_id)
+        if agent is None or agent.status != "active":
+            continue
+        if member.status != "active" or not member.accepts_tasks:
+            continue
+        if required_role is not None and required_role not in {member.team_role, agent.role}:
+            continue
+        member_skills = {str(skill) for skill in member.skill_weights}
+        if any(skill not in member_skills for skill in required_skills):
+            continue
+        count += 1
+    return count
 
 
 def _group_steps_by_task(steps: list[TaskStep]) -> dict[UUID, list[TaskStep]]:

@@ -555,6 +555,16 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
         status="running",
         order_index=20,
     )
+    design_gap = TaskStep(
+        workspace_id=workspace.id,
+        task_id=running_task.id,
+        work_package_id="design",
+        required_role="designer",
+        required_skills=["ux"],
+        title="Design console",
+        status="queued",
+        order_index=15,
+    )
     session.add_all(
         [
             TaskStep(
@@ -567,6 +577,7 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
                 status="completed",
                 order_index=10,
             ),
+            design_gap,
             running_build,
             TaskStep(
                 workspace_id=workspace.id,
@@ -648,9 +659,11 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert body["manager_agent"]["name"] == "PM"
     assert body["summary"]["total_tasks"] == 1
     assert body["summary"]["task_counts"] == {"running": 1}
-    assert body["summary"]["step_counts"] == {"completed": 1, "running": 1}
+    assert body["summary"]["step_counts"] == {"completed": 1, "queued": 1, "running": 1}
     assert body["summary"]["run_counts"] == {"running": 1}
     assert body["summary"]["needs_attention_tasks"] == 1
+    assert body["summary"]["staffing_gap_count"] == 1
+    assert body["summary"]["staffing_gap_step_count"] == 1
     assert body["summary"]["available_member_capacity"] == 2
 
     members = {item["team_role"]: item for item in body["members"]}
@@ -668,6 +681,18 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert task["pending_phase"] == "specialist_execution"
     assert "specialist_steps_incomplete" in task["blocked_reasons"]
     assert task["active_run_count"] == 1
+    assert body["staffing_gaps"] == [
+        {
+            "required_role": "designer",
+            "required_skills": ["ux"],
+            "step_count": 1,
+            "task_count": 1,
+            "task_ids": [str(running_task.id)],
+            "task_step_ids": [str(design_gap.id)],
+            "matching_member_count": 0,
+            "recommended_action": "add_or_hire_team_member",
+        }
+    ]
 
     assert include_completed.status_code == 200
     titles = {item["title"] for item in include_completed.json()["tasks"]}

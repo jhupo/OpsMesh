@@ -158,6 +158,17 @@ class AgentTeamExecutionTaskResponse(BaseModel):
     last_activity_at: datetime
 
 
+class AgentTeamExecutionStaffingGapResponse(BaseModel):
+    required_role: str | None
+    required_skills: list[str]
+    step_count: int
+    task_count: int
+    task_ids: list[UUID]
+    task_step_ids: list[UUID]
+    matching_member_count: int
+    recommended_action: str
+
+
 class AgentTeamExecutionOverviewResponse(BaseModel):
     workspace_id: UUID
     team_id: UUID
@@ -167,6 +178,7 @@ class AgentTeamExecutionOverviewResponse(BaseModel):
     summary: dict[str, object]
     members: list[AgentTeamExecutionMemberResponse]
     tasks: list[AgentTeamExecutionTaskResponse]
+    staffing_gaps: list[AgentTeamExecutionStaffingGapResponse] = Field(default_factory=list)
 
     @field_serializer("team", "manager_agent", "summary")
     def _serialize_metadata(self, value: dict[str, object] | None) -> dict[str, object] | None:
