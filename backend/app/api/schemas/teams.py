@@ -188,6 +188,27 @@ class AgentTeamExecutionOverviewResponse(BaseModel):
         return redact_sensitive_payload(value) if value is not None else None
 
 
+class AgentTeamCommandCenterResponse(BaseModel):
+    workspace_id: UUID
+    team_id: UUID
+    generated_at: datetime
+    summary: dict[str, object]
+    overview: dict[str, object]
+    queues: dict[str, object]
+    action_plan: list[dict[str, object]] = Field(default_factory=list)
+
+    @field_serializer("summary", "overview", "queues")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("action_plan")
+    def _serialize_action_plan(
+        self,
+        value: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
+
 class AgentTeamOperatorActionRequest(BaseModel):
     action: str = Field(
         pattern="^(request_manager_review|requeue_blocked_steps|schedule_downstream_steps)$"

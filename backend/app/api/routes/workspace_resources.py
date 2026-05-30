@@ -35,6 +35,7 @@ from backend.app.api.schemas.tasks import (
     TaskTimelineResponse,
 )
 from backend.app.api.schemas.teams import (
+    AgentTeamCommandCenterResponse,
     AgentTeamCreateRequest,
     AgentTeamExecutionOverviewResponse,
     AgentTeamMemberCreateRequest,
@@ -62,6 +63,7 @@ from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.tasks.observation import TaskObservationService
 from backend.app.tasks.operator_actions import TaskOperatorActionService
 from backend.app.tasks.timeline import TaskTimelineService
+from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.execution_overview import TeamExecutionOverviewService
 from backend.app.teams.operator_actions import TeamOperatorActionService
 from backend.app.workers.dependencies import get_worker_queue
@@ -212,6 +214,28 @@ async def get_team_execution_overview(
     if overview is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     return AgentTeamExecutionOverviewResponse.model_validate(overview)
+
+
+@router.get(
+    "/teams/{team_id}/command-center",
+    response_model=AgentTeamCommandCenterResponse,
+)
+async def get_team_command_center(
+    team_id: UUID,
+    include_completed: bool = Query(default=False),
+    queue_limit: int = Query(default=50, ge=1, le=200),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> AgentTeamCommandCenterResponse:
+    command_center = TeamCommandCenterService(session).get_command_center(
+        workspace_id=context.workspace.id,
+        team_id=team_id,
+        include_completed=include_completed,
+        queue_limit=queue_limit,
+    )
+    if command_center is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    return AgentTeamCommandCenterResponse.model_validate(command_center)
 
 
 @router.post(

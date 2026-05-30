@@ -772,6 +772,199 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert "sk-approved-overview" not in serialized
 
 
+def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-command-center@example.com",
+        slug="other-command-center",
+    )
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="PM",
+        role="project_manager",
+        model_settings={"api_key": "sk-command-manager"},
+    )
+    developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+    )
+    session.add_all([manager, developer])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Command Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+    )
+    foreign_team = AgentTeam(
+        workspace_id=other_workspace.id,
+        name="Foreign Command Team",
+        team_type="software",
+    )
+    session.add_all([team, foreign_team])
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=manager.id,
+                team_role="project_manager",
+                max_concurrent_tasks=2,
+                order_index=1,
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=developer.id,
+                team_role="developer",
+                max_concurrent_tasks=2,
+                order_index=2,
+            ),
+        ]
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Ship command center",
+        status="running",
+        priority=8,
+        domain_type="software",
+        input={"api_key": "sk-command-task"},
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id)},
+    )
+    foreign_task = Task(
+        workspace_id=other_workspace.id,
+        created_by_user_id=other_owner.id,
+        agent_team_id=foreign_team.id,
+        title="Foreign command task",
+        status="running",
+    )
+    session.add_all([task, foreign_task])
+    session.flush()
+    design_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=developer.id,
+        work_package_id="design",
+        required_role="developer",
+        title="Design command center",
+        status="completed",
+        order_index=20,
+        result_summary="Design ready",
+    )
+    summary_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=manager.id,
+        work_package_id="manager-summary",
+        required_role="project_manager",
+        title="Review command center",
+        status="completed",
+        order_index=40,
+    )
+    session.add_all(
+        [
+            TaskStep(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                assigned_agent_profile_id=manager.id,
+                work_package_id="manager-planning",
+                required_role="project_manager",
+                title="Plan command center",
+                status="completed",
+                order_index=10,
+            ),
+            design_step,
+            summary_step,
+        ]
+    )
+    session.flush()
+    session.add(
+        TaskStep(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            assigned_agent_profile_id=developer.id,
+            work_package_id="build",
+            required_role="developer",
+            title="Build command center",
+            status="queued",
+            order_index=30,
+            dependencies={"after_step_ids": [str(design_step.id)]},
+        )
+    )
+    session.add(
+        TaskMessage(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            task_step_id=summary_step.id,
+            agent_profile_id=manager.id,
+            message_type="pm.acceptance_decision",
+            sequence=1,
+            body="Private manager review body.",
+            payload={
+                "decision": "request_revision",
+                "summary": "Needs follow up",
+                "revision_requests": [
+                    {"work_package_id": "build", "instruction": "Add API tests"}
+                ],
+                "token": "hidden-command-token",
+            },
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/command-center",
+        headers=_headers(owner.id),
+    )
+    missing = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{uuid4()}/command-center",
+        headers=_headers(owner.id),
+    )
+    foreign_team_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{foreign_team.id}/command-center",
+        headers=_headers(owner.id),
+    )
+    forbidden = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/command-center",
+        headers=_headers(other_owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] == str(workspace.id)
+    assert body["team_id"] == str(team.id)
+    assert body["summary"]["total_tasks"] == 1
+    assert body["summary"]["needs_attention_tasks"] == 1
+    assert body["summary"]["handoff_queue_total"] >= 1
+    assert body["summary"]["manager_queue_total"] == 1
+    assert body["queues"]["handoff"]["team_id"] == str(team.id)
+    assert body["queues"]["manager"]["team_id"] == str(team.id)
+    sources = {item["source"] for item in body["action_plan"]}
+    assert {"execution_overview", "handoff_queue", "manager_queue"} <= sources
+    assert body["summary"]["action_plan_source_counts"]["execution_overview"] >= 1
+    assert body["summary"]["action_plan_source_counts"]["handoff_queue"] >= 1
+    assert body["summary"]["action_plan_source_counts"]["manager_queue"] == 1
+    assert any(item["action"] == "schedule_downstream_steps" for item in body["action_plan"])
+    assert any(item["action"] == "request_manager_review" for item in body["action_plan"])
+    assert missing.status_code == 404
+    assert foreign_team_response.status_code == 404
+    assert forbidden.status_code == 403
+    serialized = str(body)
+    assert "sk-command-manager" not in serialized
+    assert "sk-command-task" not in serialized
+    assert "hidden-command-token" not in serialized
+    assert "Private manager review body." not in serialized
+    assert "Foreign command task" not in serialized
+
+
 def test_team_operator_action_requests_manager_review_for_selected_tasks() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
