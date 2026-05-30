@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -74,3 +76,48 @@ class AgentTeamMemberResponse(ORMModel):
     is_required: bool
     order_index: int
     status: str
+
+
+class AgentTeamOrgAgentSummary(BaseModel):
+    id: UUID
+    name: str
+    role: str
+    status: str
+
+
+class AgentTeamOrgMemberNode(BaseModel):
+    id: UUID
+    agent_profile_id: UUID
+    reports_to_member_id: UUID | None
+    team_role: str
+    department: str | None
+    position_title: str | None
+    responsibilities: list[str]
+    skill_weights: dict[str, object]
+    availability: dict[str, object]
+    max_concurrent_tasks: int
+    accepts_tasks: bool
+    is_required: bool
+    order_index: int
+    status: str
+    agent: AgentTeamOrgAgentSummary | None
+    children: list[AgentTeamOrgMemberNode] = Field(default_factory=list)
+
+
+class AgentTeamOrgChartResponse(BaseModel):
+    workspace_id: UUID
+    team_id: UUID
+    name: str
+    team_type: str
+    description: str
+    status: str
+    manager_agent_profile_id: UUID | None
+    manager_agent: AgentTeamOrgAgentSummary | None
+    runtime_space_id: UUID | None
+    coordination_rules: dict[str, object]
+    default_task_policy: dict[str, object]
+    roots: list[AgentTeamOrgMemberNode]
+    members: list[AgentTeamOrgMemberNode]
+    orphan_member_ids: list[UUID]
+    cycle_member_ids: list[UUID]
+    capacity_summary: dict[str, int]

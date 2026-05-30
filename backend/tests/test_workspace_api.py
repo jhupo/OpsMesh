@@ -323,6 +323,132 @@ def test_team_member_api_stores_persistent_org_metadata_and_reporting_line() -> 
     assert stored.reports_to_member_id == UUID(manager_member.json()["id"])
 
 
+def test_team_org_chart_returns_reporting_tree_and_capacity_summary() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+
+    manager_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "PM",
+            "role": "project_manager",
+            "model_settings": {"api_key": "sk-hidden"},
+        },
+    )
+    developer_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Frontend Dev", "role": "frontend_engineer"},
+    )
+    qa_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "QA", "role": "qa_engineer"},
+    )
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={
+            "name": "Product Team",
+            "team_type": "software",
+            "manager_agent_profile_id": manager_agent.json()["id"],
+            "coordination_rules": {"handoff": "manager_review"},
+            "default_task_policy": {"priority": 3},
+        },
+    )
+    manager_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": manager_agent.json()["id"],
+            "team_role": "project_manager",
+            "department": "Management",
+            "max_concurrent_tasks": 3,
+            "order_index": 0,
+        },
+    )
+    developer_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": developer_agent.json()["id"],
+            "reports_to_member_id": manager_member.json()["id"],
+            "team_role": "frontend_engineer",
+            "department": "Engineering",
+            "skill_weights": {"react": 0.9},
+            "max_concurrent_tasks": 2,
+            "order_index": 1,
+        },
+    )
+    qa_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": qa_agent.json()["id"],
+            "reports_to_member_id": manager_member.json()["id"],
+            "team_role": "qa_engineer",
+            "accepts_tasks": False,
+            "order_index": 2,
+        },
+    )
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/org-chart",
+        headers=_headers(owner.id),
+    )
+    missing = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{uuid4()}/org-chart",
+        headers=_headers(owner.id),
+    )
+    manager_record = session.get(AgentTeamMember, UUID(manager_member.json()["id"]))
+    assert manager_record is not None
+    manager_record.reports_to_member_id = UUID(developer_member.json()["id"])
+    session.commit()
+    cycle_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/org-chart",
+        headers=_headers(owner.id),
+    )
+
+    assert manager_agent.status_code == 201
+    assert developer_member.status_code == 201
+    assert qa_member.status_code == 201
+    assert response.status_code == 200
+    body = response.json()
+    assert body["team_id"] == team.json()["id"]
+    assert body["manager_agent"] == {
+        "id": manager_agent.json()["id"],
+        "name": "PM",
+        "role": "project_manager",
+        "status": "active",
+    }
+    assert body["coordination_rules"] == {"handoff": "manager_review"}
+    assert body["default_task_policy"] == {"priority": 3}
+    assert body["capacity_summary"] == {
+        "total_members": 3,
+        "active_members": 3,
+        "accepting_members": 2,
+        "required_members": 3,
+        "inactive_members": 0,
+        "total_max_concurrent_tasks": 5,
+    }
+    assert body["orphan_member_ids"] == []
+    assert body["cycle_member_ids"] == []
+    assert [root["id"] for root in body["roots"]] == [manager_member.json()["id"]]
+    assert [child["id"] for child in body["roots"][0]["children"]] == [
+        developer_member.json()["id"],
+        qa_member.json()["id"],
+    ]
+    assert body["members"][1]["agent"]["name"] == "Frontend Dev"
+    assert "sk-hidden" not in str(body)
+    assert missing.status_code == 404
+    assert cycle_response.status_code == 200
+    assert {
+        manager_member.json()["id"],
+        developer_member.json()["id"],
+    } <= set(cycle_response.json()["cycle_member_ids"])
+
+
 def test_team_member_update_changes_future_snapshots_only() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
@@ -449,6 +575,14 @@ def test_team_member_api_rejects_foreign_agent_and_reporting_member() -> None:
         headers=_headers(owner.id),
         json={"agent_profile_id": foreign_agent.json()["id"], "team_role": "developer"},
     )
+    bad_manager = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={
+            "name": "Foreign Managed Team",
+            "manager_agent_profile_id": foreign_agent.json()["id"],
+        },
+    )
     bad_report = client.post(
         f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
         headers=_headers(owner.id),
@@ -467,6 +601,7 @@ def test_team_member_api_rejects_foreign_agent_and_reporting_member() -> None:
 
     assert local_member.status_code == 201
     assert bad_agent.status_code == 404
+    assert bad_manager.status_code == 404
     assert bad_report.status_code == 404
     assert self_report.status_code == 400
 

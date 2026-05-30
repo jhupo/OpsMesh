@@ -30,6 +30,7 @@ from backend.app.api.schemas.teams import (
     AgentTeamMemberCreateRequest,
     AgentTeamMemberResponse,
     AgentTeamMemberUpdateRequest,
+    AgentTeamOrgChartResponse,
     AgentTeamResponse,
 )
 from backend.app.api.services.resources import WorkspaceResourceService
@@ -147,7 +148,30 @@ async def create_team(
             status_code=status.HTTP_409_CONFLICT,
             detail="Request with this Idempotency-Key is still processing",
         ) from exc
+    except ValueError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
     return AgentTeamResponse.model_validate(team)
+
+
+@router.get("/teams/{team_id}/org-chart", response_model=AgentTeamOrgChartResponse)
+async def get_team_org_chart(
+    team_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> AgentTeamOrgChartResponse:
+    org_chart = WorkspaceResourceService(session).get_team_org_chart(
+        context.workspace.id,
+        team_id,
+    )
+    if org_chart is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    return AgentTeamOrgChartResponse.model_validate(org_chart)
 
 
 @router.get("/teams/{team_id}/members", response_model=PageResponse[AgentTeamMemberResponse])
