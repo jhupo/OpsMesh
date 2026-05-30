@@ -35,6 +35,7 @@ from backend.app.api.schemas.tasks import (
 )
 from backend.app.api.schemas.teams import (
     AgentTeamCreateRequest,
+    AgentTeamExecutionOverviewResponse,
     AgentTeamMemberCreateRequest,
     AgentTeamMemberResponse,
     AgentTeamMemberUpdateRequest,
@@ -58,6 +59,7 @@ from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.tasks.observation import TaskObservationService
 from backend.app.tasks.operator_actions import TaskOperatorActionService
 from backend.app.tasks.timeline import TaskTimelineService
+from backend.app.teams.execution_overview import TeamExecutionOverviewService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
 
@@ -186,6 +188,26 @@ async def get_team_org_chart(
     if org_chart is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     return AgentTeamOrgChartResponse.model_validate(org_chart)
+
+
+@router.get(
+    "/teams/{team_id}/execution-overview",
+    response_model=AgentTeamExecutionOverviewResponse,
+)
+async def get_team_execution_overview(
+    team_id: UUID,
+    include_completed: bool = Query(default=False),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> AgentTeamExecutionOverviewResponse:
+    overview = TeamExecutionOverviewService(session).get_overview(
+        workspace_id=context.workspace.id,
+        team_id=team_id,
+        include_completed=include_completed,
+    )
+    if overview is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    return AgentTeamExecutionOverviewResponse.model_validate(overview)
 
 
 @router.get("/teams/{team_id}/members", response_model=PageResponse[AgentTeamMemberResponse])

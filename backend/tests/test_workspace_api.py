@@ -450,6 +450,238 @@ def test_team_org_chart_returns_reporting_tree_and_capacity_summary() -> None:
     } <= set(cycle_response.json()["cycle_member_ids"])
 
 
+def test_team_execution_overview_reports_workload_and_attention_items() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-team-overview@example.com",
+        slug="other-team-overview",
+    )
+
+    manager = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "PM",
+            "role": "project_manager",
+            "model_settings": {"api_key": "sk-manager-overview"},
+        },
+    )
+    developer = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Developer", "role": "developer"},
+    )
+    assert manager.status_code == 201
+    assert developer.status_code == 201
+    manager_id = UUID(manager.json()["id"])
+    developer_id = UUID(developer.json()["id"])
+
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={
+            "name": "Delivery Team",
+            "team_type": "software",
+            "manager_agent_profile_id": str(manager_id),
+        },
+    )
+    assert team.status_code == 201
+    team_id = UUID(team.json()["id"])
+
+    manager_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": str(manager_id),
+            "team_role": "project_manager",
+            "department": "delivery",
+            "max_concurrent_tasks": 2,
+            "order_index": 1,
+        },
+    )
+    developer_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": str(developer_id),
+            "reports_to_member_id": manager_member.json()["id"],
+            "team_role": "developer",
+            "department": "engineering",
+            "max_concurrent_tasks": 1,
+            "order_index": 2,
+        },
+    )
+    assert manager_member.status_code == 201
+    assert developer_member.status_code == 201
+
+    running_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team_id,
+        title="Build workspace console",
+        status="running",
+        priority=9,
+        domain_type="software",
+        input={"api_key": "sk-task-overview"},
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager_id)}},
+        project_plan={"planner_agent_profile_id": str(manager_id)},
+    )
+    completed_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team_id,
+        title="Ship onboarding flow",
+        status="completed",
+        priority=1,
+        domain_type="software",
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager_id)}},
+        project_plan={"planner_agent_profile_id": str(manager_id)},
+        completed_at=datetime.now(UTC),
+    )
+    session.add_all([running_task, completed_task])
+    session.flush()
+
+    running_build = TaskStep(
+        workspace_id=workspace.id,
+        task_id=running_task.id,
+        assigned_agent_profile_id=developer_id,
+        work_package_id="build",
+        required_role="developer",
+        title="Build console",
+        status="running",
+        order_index=20,
+    )
+    session.add_all(
+        [
+            TaskStep(
+                workspace_id=workspace.id,
+                task_id=running_task.id,
+                assigned_agent_profile_id=manager_id,
+                work_package_id="manager-planning",
+                required_role="project_manager",
+                title="Plan console",
+                status="completed",
+                order_index=10,
+            ),
+            running_build,
+            TaskStep(
+                workspace_id=workspace.id,
+                task_id=completed_task.id,
+                assigned_agent_profile_id=manager_id,
+                work_package_id="manager-planning",
+                required_role="project_manager",
+                title="Plan onboarding",
+                status="completed",
+                order_index=10,
+            ),
+            TaskStep(
+                workspace_id=workspace.id,
+                task_id=completed_task.id,
+                assigned_agent_profile_id=developer_id,
+                work_package_id="build",
+                required_role="developer",
+                title="Build onboarding",
+                status="completed",
+                order_index=20,
+            ),
+            TaskStep(
+                workspace_id=workspace.id,
+                task_id=completed_task.id,
+                assigned_agent_profile_id=manager_id,
+                work_package_id="manager-summary",
+                required_role="project_manager",
+                title="Review onboarding",
+                status="completed",
+                order_index=30,
+            ),
+        ]
+    )
+    session.flush()
+    session.add_all(
+        [
+            AgentRun(
+                workspace_id=workspace.id,
+                task_id=running_task.id,
+                task_step_id=running_build.id,
+                agent_profile_id=developer_id,
+                status=RunStatus.RUNNING.value,
+                input={"token": "run-hidden"},
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=completed_task.id,
+                agent_profile_id=manager_id,
+                message_type="pm.acceptance_decision",
+                sequence=1,
+                body="Approved body should stay private.",
+                payload={"decision": "approved", "api_key": "sk-approved-overview"},
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/execution-overview",
+        headers=_headers(owner.id),
+    )
+    include_completed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/execution-overview"
+        "?include_completed=true",
+        headers=_headers(owner.id),
+    )
+    not_found = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{uuid4()}/execution-overview",
+        headers=_headers(owner.id),
+    )
+    forbidden = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/execution-overview",
+        headers=_headers(other_owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["team"]["name"] == "Delivery Team"
+    assert body["manager_agent"]["name"] == "PM"
+    assert body["summary"]["total_tasks"] == 1
+    assert body["summary"]["task_counts"] == {"running": 1}
+    assert body["summary"]["step_counts"] == {"completed": 1, "running": 1}
+    assert body["summary"]["run_counts"] == {"running": 1}
+    assert body["summary"]["needs_attention_tasks"] == 1
+    assert body["summary"]["available_member_capacity"] == 2
+
+    members = {item["team_role"]: item for item in body["members"]}
+    assert members["developer"]["active_task_count"] == 1
+    assert members["developer"]["active_step_count"] == 1
+    assert members["developer"]["active_run_count"] == 1
+    assert members["developer"]["utilization"] == 1.0
+    assert members["developer"]["overloaded"] is False
+
+    assert len(body["tasks"]) == 1
+    task = body["tasks"][0]
+    assert task["task_id"] == str(running_task.id)
+    assert task["title"] == "Build workspace console"
+    assert task["needs_attention"] is True
+    assert task["pending_phase"] == "specialist_execution"
+    assert "specialist_steps_incomplete" in task["blocked_reasons"]
+    assert task["active_run_count"] == 1
+
+    assert include_completed.status_code == 200
+    titles = {item["title"] for item in include_completed.json()["tasks"]}
+    assert titles == {"Build workspace console", "Ship onboarding flow"}
+    assert not_found.status_code == 404
+    assert forbidden.status_code == 403
+
+    serialized = str(include_completed.json())
+    assert "sk-manager-overview" not in serialized
+    assert "sk-task-overview" not in serialized
+    assert "run-hidden" not in serialized
+    assert "Approved body should stay private." not in serialized
+    assert "sk-approved-overview" not in serialized
+
+
 def test_team_member_update_changes_future_snapshots_only() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

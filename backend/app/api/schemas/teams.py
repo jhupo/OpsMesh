@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 
 
 class AgentTeamCreateRequest(BaseModel):
@@ -121,3 +123,51 @@ class AgentTeamOrgChartResponse(BaseModel):
     orphan_member_ids: list[UUID]
     cycle_member_ids: list[UUID]
     capacity_summary: dict[str, int]
+
+
+class AgentTeamExecutionMemberResponse(BaseModel):
+    team_member_id: UUID
+    agent_profile_id: UUID
+    agent_name: str | None
+    agent_role: str | None
+    team_role: str
+    department: str | None
+    status: str
+    accepts_tasks: bool
+    max_concurrent_tasks: int
+    active_task_count: int
+    active_step_count: int
+    active_run_count: int
+    utilization: float
+    overloaded: bool
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
+class AgentTeamExecutionTaskResponse(BaseModel):
+    task_id: UUID
+    title: str
+    status: str
+    priority: int
+    domain_type: str | None
+    summary_status: str
+    pending_phase: str
+    needs_attention: bool
+    blocked_reasons: list[str] = Field(default_factory=list)
+    step_status_counts: dict[str, int]
+    active_run_count: int
+    last_activity_at: datetime
+
+
+class AgentTeamExecutionOverviewResponse(BaseModel):
+    workspace_id: UUID
+    team_id: UUID
+    generated_at: datetime
+    team: dict[str, object]
+    manager_agent: dict[str, object] | None
+    summary: dict[str, object]
+    members: list[AgentTeamExecutionMemberResponse]
+    tasks: list[AgentTeamExecutionTaskResponse]
+
+    @field_serializer("team", "manager_agent", "summary")
+    def _serialize_metadata(self, value: dict[str, object] | None) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
