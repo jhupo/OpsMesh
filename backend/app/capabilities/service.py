@@ -38,6 +38,7 @@ from backend.app.capabilities.models import (
     WorkspaceSkillInstall,
 )
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
 
 T = TypeVar("T")
@@ -1274,9 +1275,31 @@ class CapabilityService:
         allow = self._allowed_tool_by_name(workspace_id, data.tool_name)
         if allow is None:
             raise ValueError("MCP tool is not allowed for this workspace")
+        if data.mcp_server_id is not None and allow.mcp_server_id != data.mcp_server_id:
+            raise ValueError("MCP tool is not allowed for this server")
+        run = self._mcp_log_run_context(workspace_id, data)
+        agent = (
+            self._session.get(AgentProfile, run.agent_profile_id)
+            if run is not None and run.agent_profile_id is not None
+            else None
+        )
+        agent_allowed_tools = (
+            self._agent_allowed_mcp_tool_names(agent) if agent is not None else None
+        )
+        if agent_allowed_tools is not None and data.tool_name not in agent_allowed_tools:
+            raise ValueError("MCP tool is not allowed for this agent")
         request_payload = data.request
         response_payload = data.response
         error_payload = data.error
+        payload = data.model_dump()
+        if run is not None:
+            payload.update(
+                {
+                    "task_id": run.task_id,
+                    "task_step_id": run.task_step_id,
+                    "agent_profile_id": run.agent_profile_id,
+                }
+            )
         log = McpToolCallLog(
             workspace_id=workspace_id,
             latency_ms=_latency_ms_from_payload(response_payload, error_payload),
@@ -1284,7 +1307,7 @@ class CapabilityService:
             response_sha256=_response_hash_from_payload(response_payload),
             error_code=_error_code_from_payload(error_payload),
             created_at=datetime.now(UTC),
-            **data.model_dump(),
+            **payload,
         )
         self._session.add(log)
         self._session.commit()
@@ -1313,6 +1336,18 @@ class CapabilityService:
 
     def _can_use_skill(self, workspace_id: UUID, skill: Skill) -> bool:
         return skill.visibility == "public" or skill.owner_workspace_id == workspace_id
+
+    def _mcp_log_run_context(
+        self,
+        workspace_id: UUID,
+        data: McpToolCallLogRequest,
+    ) -> AgentRun | None:
+        if data.agent_run_id is None:
+            return None
+        run = self._session.get(AgentRun, data.agent_run_id)
+        if run is None or run.workspace_id != workspace_id:
+            raise ValueError("Agent run not found")
+        return run
 
     def _allowed_tool_by_name(self, workspace_id: UUID, tool_name: str) -> McpToolAllowlist | None:
         return self._session.scalar(

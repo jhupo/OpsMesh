@@ -19,6 +19,8 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.runs.models import AgentRun
+from backend.app.tasks.models import Task, TaskStep
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -868,6 +870,155 @@ def test_mcp_tool_call_log_rejects_foreign_server_reference() -> None:
     assert local_tool.status_code == 201
     assert foreign_server.status_code == 201
     assert foreign_tool.status_code == 201
+    assert forged_log.status_code == 404
+    assert session.query(McpToolCallLog).count() == 0
+
+
+def test_mcp_tool_call_log_enforces_agent_policy_and_binds_run_context() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    _, other_workspace = _seed_workspace(
+        session,
+        email="other-run-log@example.com",
+        slug="other-run-log",
+    )
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={"name": "image-tools"},
+    )
+    allowed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "generate_image"},
+    )
+    denied_tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "delete_image"},
+    )
+    task = Task(workspace_id=workspace.id, created_by_user_id=owner.id, title="Make poster")
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Designer",
+        role="designer",
+        tool_policy={"mcp_tools": ["generate_image"]},
+    )
+    session.add_all([task, agent])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        title="Generate image",
+    )
+    foreign_run = AgentRun(workspace_id=other_workspace.id)
+    session.add_all([step, foreign_run])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=agent.id,
+        input={
+            "authorization_snapshot": {
+                "allowed_tools": ["generate_image"],
+                "token": "snapshot-token",
+            }
+        },
+    )
+    session.add(run)
+    session.commit()
+
+    logged = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "agent_run_id": str(run.id),
+            "tool_name": "generate_image",
+            "status": "completed",
+            "request": {"arguments_sha256": "args", "api_key": "sk-request"},
+            "response": {"result": {"ok": True, "token": "response-token"}},
+        },
+    )
+    blocked_by_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "agent_run_id": str(run.id),
+            "tool_name": "delete_image",
+            "status": "completed",
+            "request": {"arguments_sha256": "delete"},
+        },
+    )
+    foreign_run_log = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "agent_run_id": str(foreign_run.id),
+            "tool_name": "generate_image",
+            "status": "completed",
+            "request": {"arguments_sha256": "foreign"},
+        },
+    )
+
+    assert server.status_code == 201
+    assert allowed.status_code == 201
+    assert denied_tool.status_code == 201
+    assert logged.status_code == 201
+    assert logged.json()["task_id"] == str(task.id)
+    assert logged.json()["task_step_id"] == str(step.id)
+    assert logged.json()["agent_profile_id"] == str(agent.id)
+    assert logged.json()["request"]["api_key"] == "[redacted]"
+    assert logged.json()["response"]["result"]["token"] == "[redacted]"
+    assert blocked_by_agent.status_code == 404
+    assert foreign_run_log.status_code == 404
+    logs = session.query(McpToolCallLog).all()
+    assert len(logs) == 1
+    assert logs[0].task_id == task.id
+    assert logs[0].task_step_id == step.id
+    assert logs[0].agent_profile_id == agent.id
+    assert "snapshot-token" not in str(logged.json())
+
+
+def test_mcp_tool_call_log_requires_tool_to_belong_to_declared_server() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    image_server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={"name": "image-tools"},
+    )
+    text_server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={"name": "text-tools"},
+    )
+    allowed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{image_server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "generate_image"},
+    )
+    forged_log = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": text_server.json()["id"],
+            "tool_name": "generate_image",
+            "status": "completed",
+            "request": {"arguments_sha256": "wrong-server"},
+        },
+    )
+
+    assert image_server.status_code == 201
+    assert text_server.status_code == 201
+    assert allowed.status_code == 201
     assert forged_log.status_code == 404
     assert session.query(McpToolCallLog).count() == 0
 
