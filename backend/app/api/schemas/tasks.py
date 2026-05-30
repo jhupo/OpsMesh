@@ -330,6 +330,7 @@ class TaskManagerDiagnosticsResponse(BaseModel):
 
 class TaskManagerQueueItemResponse(BaseModel):
     task_id: UUID
+    team_id: UUID | None
     title: str
     status: str
     priority: int

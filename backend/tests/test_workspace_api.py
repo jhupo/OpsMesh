@@ -3114,8 +3114,31 @@ def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope(
     assert body["total"] == 1
     assert body["summary"]["needs_attention"] == 1
     assert body["summary"]["pending_phases"] == {"follow_up": 1}
+    assert body["summary"]["team_operator_action_plan"] == [
+        {
+            "team_id": str(delivery_team.id),
+            "action": "request_manager_review",
+            "automation": "team_operator_action",
+            "api_route": (
+                "POST /api/v1/workspaces/{workspace_id}/"
+                "teams/{team_id}/operator-actions"
+            ),
+            "task_ids": [str(needs_follow_up.id)],
+            "task_step_ids": [],
+            "count": 1,
+            "reason": "manager_queue",
+            "payload_template": {
+                "action": "request_manager_review",
+                "task_ids": [str(needs_follow_up.id)],
+                "task_step_ids": [],
+                "reason": "manager_queue",
+                "metadata": {"source": "manager_queue"},
+            },
+        }
+    ]
     item = body["items"][0]
     assert item["task_id"] == str(needs_follow_up.id)
+    assert item["team_id"] == str(delivery_team.id)
     assert item["manager_agent_profile_id"] == str(manager.id)
     assert item["manager_agent_name"] == "PM"
     assert item["manager_status"] == "active"

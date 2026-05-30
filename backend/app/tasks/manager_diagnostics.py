@@ -194,6 +194,7 @@ def _manager_queue_item(task: Task, diagnostics: dict[str, object]) -> dict[str,
     needs_attention = summary_status != "healthy" or bool(blocked_reasons)
     return {
         "task_id": task.id,
+        "team_id": task.agent_team_id,
         "title": task.title,
         "status": task.status,
         "priority": task.priority,
@@ -227,7 +228,57 @@ def _manager_queue_summary(items: list[dict[str, object]]) -> dict[str, object]:
         "pending_phases": dict(sorted(pending_phases.items())),
         "manager_statuses": dict(sorted(manager_statuses.items())),
         "recommended_actions": dict(sorted(recommended_actions.items())),
+        "team_operator_action_plan": _manager_queue_team_action_plan(items),
     }
+
+
+def _manager_queue_team_action_plan(items: list[dict[str, object]]) -> list[dict[str, object]]:
+    grouped: dict[UUID, dict[str, object]] = {}
+    for item in items:
+        team_id = item.get("team_id")
+        task_id = item.get("task_id")
+        if not isinstance(team_id, UUID) or not isinstance(task_id, UUID):
+            continue
+        if "request_manager_review" not in _string_list(item.get("recommended_actions")):
+            continue
+        plan = grouped.setdefault(
+            team_id,
+            {
+                "team_id": team_id,
+                "action": "request_manager_review",
+                "automation": "team_operator_action",
+                "api_route": (
+                    "POST /api/v1/workspaces/{workspace_id}/"
+                    "teams/{team_id}/operator-actions"
+                ),
+                "task_ids": [],
+                "task_step_ids": [],
+                "count": 0,
+                "reason": "manager_queue",
+            },
+        )
+        plan["count"] = int(plan["count"]) + 1
+        _append_uuid(plan, "task_ids", task_id)
+
+    plan_items = []
+    for item in grouped.values():
+        payload = {
+            "action": item["action"],
+            "task_ids": item["task_ids"],
+            "task_step_ids": [],
+            "reason": item["reason"],
+            "metadata": {"source": "manager_queue"},
+        }
+        plan_items.append({**item, "payload_template": payload})
+    return sorted(plan_items, key=lambda item: str(item["team_id"]))
+
+
+def _append_uuid(item: dict[str, object], key: str, value: UUID) -> None:
+    values = item[key] if isinstance(item.get(key), list) else []
+    existing = [entry for entry in values if isinstance(entry, UUID)]
+    if value not in existing:
+        existing.append(value)
+    item[key] = sorted(existing, key=str)
 
 
 def _manager_status(manager: dict[str, object]) -> str:
