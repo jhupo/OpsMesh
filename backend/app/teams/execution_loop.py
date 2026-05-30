@@ -11,7 +11,9 @@ from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
+from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.models import AgentTeam
+from backend.app.workers.queue import RedisQueue
 
 COMPLETED_STEP_STATUSES = {"completed", "cancelled", "canceled"}
 ACTIVE_RUN_STATUSES = {
@@ -27,6 +29,91 @@ class TeamExecutionLoopService:
 
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def run_iteration(
+        self,
+        *,
+        workspace_id: UUID,
+        team_id: UUID,
+        actor_user_id: UUID,
+        dry_run: bool = True,
+        apply_command_center_actions: bool = True,
+        enqueue_runs: bool = True,
+        finalize_ready_tasks: bool = True,
+        include_completed: bool = False,
+        queue_limit: int = 50,
+        sources: list[str] | None = None,
+        actions: list[str] | None = None,
+        max_actions: int = 5,
+        max_tasks_per_action: int = 100,
+        max_finalize_tasks: int = 50,
+        queue: RedisQueue | None = None,
+        reason: str | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> dict[str, object] | None:
+        if not self._team_exists(workspace_id=workspace_id, team_id=team_id):
+            return None
+
+        finalization = None
+        if finalize_ready_tasks:
+            finalization = self.finalize_ready_tasks(
+                workspace_id=workspace_id,
+                team_id=team_id,
+                actor_user_id=actor_user_id,
+                dry_run=dry_run,
+                max_tasks=max_finalize_tasks,
+            )
+            if finalization is None:
+                return None
+
+        command_center_actions = None
+        if apply_command_center_actions:
+            command_center_actions = TeamCommandCenterService(self._session).apply_action_plan(
+                workspace_id=workspace_id,
+                team_id=team_id,
+                actor_user_id=actor_user_id,
+                include_completed=include_completed,
+                queue_limit=queue_limit,
+                dry_run=dry_run,
+                sources=sources,
+                actions=actions,
+                max_actions=max_actions,
+                max_tasks_per_action=max_tasks_per_action,
+                enqueue_runs=enqueue_runs,
+                queue=queue,
+                reason=reason,
+                metadata=metadata,
+            )
+            if command_center_actions is None:
+                return None
+
+        summary = _iteration_summary(
+            command_center_actions=command_center_actions,
+            finalization=finalization,
+            apply_command_center_actions=apply_command_center_actions,
+            finalize_ready_tasks=finalize_ready_tasks,
+        )
+        if not dry_run:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="team.execution_loop.iteration_ran",
+                target_type="agent_team",
+                target_id=team_id,
+                metadata=summary,
+            )
+            self._session.commit()
+
+        return {
+            "workspace_id": workspace_id,
+            "team_id": team_id,
+            "generated_at": datetime.now(UTC),
+            "dry_run": dry_run,
+            "status": "dry_run" if dry_run else "advanced" if _advanced(summary) else "noop",
+            "summary": summary,
+            "command_center_actions": command_center_actions,
+            "finalization": finalization,
+        }
 
     def finalize_ready_tasks(
         self,
@@ -78,6 +165,17 @@ class TeamExecutionLoopService:
             "skipped_task_count": len(results) - len(finalized),
             "results": results,
         }
+
+    def _team_exists(self, *, workspace_id: UUID, team_id: UUID) -> bool:
+        return (
+            self._session.scalar(
+                select(AgentTeam.id).where(
+                    AgentTeam.workspace_id == workspace_id,
+                    AgentTeam.id == team_id,
+                )
+            )
+            is not None
+        )
 
     def _tasks(self, *, workspace_id: UUID, team_id: UUID, limit: int) -> list[Task]:
         return list(
@@ -206,6 +304,42 @@ def _result(
         "reason": reason,
         "final_output": final_output,
     }
+
+
+def _iteration_summary(
+    *,
+    command_center_actions: dict[str, object] | None,
+    finalization: dict[str, object] | None,
+    apply_command_center_actions: bool,
+    finalize_ready_tasks: bool,
+) -> dict[str, object]:
+    return {
+        "apply_command_center_actions": apply_command_center_actions,
+        "finalize_ready_tasks": finalize_ready_tasks,
+        "eligible_action_count": _int_from(command_center_actions, "eligible_action_count"),
+        "applied_action_count": _int_from(command_center_actions, "applied_action_count"),
+        "scheduled_run_count": _int_from(command_center_actions, "scheduled_run_count"),
+        "scanned_task_count": _int_from(finalization, "scanned_task_count"),
+        "finalized_task_count": _int_from(finalization, "finalized_task_count"),
+        "skipped_task_count": _int_from(finalization, "skipped_task_count"),
+    }
+
+
+def _advanced(summary: dict[str, object]) -> bool:
+    return any(
+        _int(summary.get(key)) > 0
+        for key in ("applied_action_count", "scheduled_run_count", "finalized_task_count")
+    )
+
+
+def _int_from(payload: dict[str, object] | None, key: str) -> int:
+    if payload is None:
+        return 0
+    return _int(payload.get(key))
+
+
+def _int(value: object) -> int:
+    return value if isinstance(value, int) else 0
 
 
 def _final_output_from_acceptance(message: TaskMessage) -> dict[str, object]:

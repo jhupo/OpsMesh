@@ -255,6 +255,22 @@ class AgentTeamExecutionLoopFinalizeRequest(BaseModel):
     max_tasks: int = Field(default=50, ge=1, le=200)
 
 
+class AgentTeamExecutionLoopRunRequest(BaseModel):
+    dry_run: bool = True
+    apply_command_center_actions: bool = True
+    enqueue_runs: bool = True
+    finalize_ready_tasks: bool = True
+    sources: list[str] = Field(default_factory=list, max_length=3)
+    actions: list[str] = Field(default_factory=list, max_length=10)
+    max_actions: int = Field(default=5, ge=1, le=10)
+    max_tasks_per_action: int = Field(default=100, ge=1, le=200)
+    max_finalize_tasks: int = Field(default=50, ge=1, le=200)
+    include_completed: bool = False
+    queue_limit: int = Field(default=50, ge=1, le=200)
+    reason: str | None = Field(default=None, max_length=1_000)
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
 class AgentTeamExecutionLoopFinalizeResponse(BaseModel):
     workspace_id: UUID
     team_id: UUID
@@ -272,6 +288,24 @@ class AgentTeamExecutionLoopFinalizeResponse(BaseModel):
         value: list[dict[str, object]],
     ) -> list[dict[str, object]]:
         return [redact_sensitive_payload(item) for item in value]
+
+
+class AgentTeamExecutionLoopRunResponse(BaseModel):
+    workspace_id: UUID
+    team_id: UUID
+    generated_at: datetime
+    dry_run: bool
+    status: str
+    summary: dict[str, object]
+    command_center_actions: dict[str, object] | None
+    finalization: dict[str, object] | None
+
+    @field_serializer("summary", "command_center_actions", "finalization")
+    def _serialize_metadata(
+        self,
+        value: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
 
 
 class AgentTeamOperatorActionRequest(BaseModel):

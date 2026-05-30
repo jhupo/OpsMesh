@@ -1264,6 +1264,252 @@ def test_team_execution_loop_finalize_closes_approved_tasks_only() -> None:
     }
 
 
+def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> None:
+    queue_redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(queue_redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    client, session = _client(queue=queue)
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-loop-run@example.com",
+        slug="other-loop-run",
+    )
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="PM",
+        role="project_manager",
+        model_settings={"api_key": "sk-loop-manager"},
+    )
+    developer = AgentProfile(workspace_id=workspace.id, name="Developer", role="developer")
+    session.add_all([manager, developer])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Loop Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+    )
+    session.add(team)
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=manager.id,
+                team_role="project_manager",
+                max_concurrent_tasks=2,
+                order_index=1,
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=developer.id,
+                team_role="developer",
+                max_concurrent_tasks=2,
+                order_index=2,
+            ),
+        ]
+    )
+    approved_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Approved loop delivery",
+        status="running",
+        priority=9,
+        input={"api_key": "sk-loop-task"},
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id)},
+    )
+    handoff_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Continue loop delivery",
+        status="running",
+        priority=8,
+        domain_type="software",
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id)},
+    )
+    session.add_all([approved_task, handoff_task])
+    session.flush()
+
+    def add_manager_step(task: Task, work_package_id: str, status: str = "completed") -> TaskStep:
+        step = TaskStep(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            assigned_agent_profile_id=manager.id,
+            work_package_id=work_package_id,
+            required_role="project_manager",
+            title=work_package_id,
+            status=status,
+            order_index=10,
+        )
+        session.add(step)
+        session.flush()
+        return step
+
+    add_manager_step(approved_task, "manager-planning")
+    approved_summary = add_manager_step(approved_task, "manager-summary")
+    session.add(
+        TaskStep(
+            workspace_id=workspace.id,
+            task_id=approved_task.id,
+            assigned_agent_profile_id=developer.id,
+            work_package_id="build-approved",
+            required_role="developer",
+            title="Build approved work",
+            status="completed",
+            order_index=20,
+        )
+    )
+    design_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=handoff_task.id,
+        assigned_agent_profile_id=developer.id,
+        work_package_id="design",
+        required_role="developer",
+        title="Design next work",
+        status="completed",
+        order_index=20,
+    )
+    add_manager_step(handoff_task, "manager-planning")
+    handoff_summary = add_manager_step(handoff_task, "manager-summary")
+    session.add(design_step)
+    session.flush()
+    session.add(
+        TaskStep(
+            workspace_id=workspace.id,
+            task_id=handoff_task.id,
+            assigned_agent_profile_id=developer.id,
+            work_package_id="build",
+            required_role="developer",
+            title="Build next work",
+            status="queued",
+            order_index=30,
+            dependencies={"after_step_ids": [str(design_step.id)]},
+        )
+    )
+    session.add_all(
+        [
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=approved_task.id,
+                task_step_id=approved_summary.id,
+                agent_profile_id=manager.id,
+                message_type="pm.acceptance_decision",
+                sequence=1,
+                body="Private approved body",
+                payload={
+                    "decision": "approved",
+                    "summary": "Approved loop output",
+                    "token": "hidden-approved-token",
+                },
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=handoff_task.id,
+                task_step_id=handoff_summary.id,
+                agent_profile_id=manager.id,
+                message_type="pm.acceptance_decision",
+                sequence=1,
+                body="Private revision body",
+                payload={
+                    "decision": "request_revision",
+                    "summary": "Needs next build",
+                    "revision_requests": [
+                        {"work_package_id": "build", "instruction": "Add endpoint tests"}
+                    ],
+                    "token": "hidden-revision-token",
+                },
+            ),
+        ]
+    )
+    session.commit()
+
+    dry_run = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/execution-loop/run",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": True,
+            "metadata": {"token": "hidden-loop-dry-run"},
+        },
+    )
+    assert dry_run.status_code == 200
+    dry_body = dry_run.json()
+    assert dry_body["status"] == "dry_run"
+    assert dry_body["summary"]["eligible_action_count"] >= 1
+    assert dry_body["summary"]["finalized_task_count"] == 0
+    assert dry_body["finalization"]["finalized_task_count"] == 0
+    assert queue_redis.llen(RedisKeyBuilder("chaincloud").queue("agent_runs")) == 0
+    assert "hidden-loop-dry-run" not in str(dry_body)
+
+    forbidden = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/execution-loop/run",
+        headers=_headers(other_owner.id),
+        json={"dry_run": True},
+    )
+    missing = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{uuid4()}/execution-loop/run",
+        headers=_headers(owner.id),
+        json={"dry_run": True},
+    )
+    assert forbidden.status_code == 403
+    assert missing.status_code == 404
+
+    applied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/execution-loop/run",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": False,
+            "enqueue_runs": True,
+            "reason": "advance loop",
+            "metadata": {"api_key": "sk-loop-run"},
+        },
+    )
+    assert applied.status_code == 200
+    body = applied.json()
+    assert body["status"] == "advanced"
+    assert body["summary"]["applied_action_count"] >= 1
+    assert body["summary"]["scheduled_run_count"] >= 1
+    assert body["summary"]["finalized_task_count"] == 1
+    assert body["command_center_actions"]["scheduled_run_count"] >= 1
+    assert body["finalization"]["finalized_task_count"] == 1
+    assert queue_redis.llen(RedisKeyBuilder("chaincloud").queue("agent_runs")) >= 1
+    serialized = str(body)
+    assert "sk-loop-run" not in serialized
+    assert "sk-loop-manager" not in serialized
+    assert "sk-loop-task" not in serialized
+    assert "hidden-approved-token" not in serialized
+    assert "hidden-revision-token" not in serialized
+    assert "Private approved body" not in serialized
+    assert "Private revision body" not in serialized
+
+    session.expire_all()
+    stored_approved = session.get(Task, approved_task.id)
+    assert stored_approved is not None
+    assert stored_approved.status == "completed"
+    scheduled_runs = session.scalars(
+        select(AgentRun).where(
+            AgentRun.workspace_id == workspace.id,
+            AgentRun.task_id == handoff_task.id,
+            AgentRun.status == RunStatus.QUEUED.value,
+        )
+    ).all()
+    assert len(scheduled_runs) >= 1
+    iteration_audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "team.execution_loop.iteration_ran",
+        )
+    )
+    assert iteration_audit is not None
+    assert iteration_audit.audit_metadata["finalized_task_count"] == 1
+
+
 def test_team_operator_action_requests_manager_review_for_selected_tasks() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

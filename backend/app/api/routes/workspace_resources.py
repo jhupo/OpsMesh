@@ -41,6 +41,8 @@ from backend.app.api.schemas.teams import (
     AgentTeamCreateRequest,
     AgentTeamExecutionLoopFinalizeRequest,
     AgentTeamExecutionLoopFinalizeResponse,
+    AgentTeamExecutionLoopRunRequest,
+    AgentTeamExecutionLoopRunResponse,
     AgentTeamExecutionOverviewResponse,
     AgentTeamMemberCreateRequest,
     AgentTeamMemberResponse,
@@ -273,6 +275,41 @@ async def apply_team_command_center_actions(
     if response is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     return AgentTeamCommandCenterApplyResponse.model_validate(response)
+
+
+@router.post(
+    "/teams/{team_id}/execution-loop/run",
+    response_model=AgentTeamExecutionLoopRunResponse,
+)
+async def run_team_execution_loop_iteration(
+    team_id: UUID,
+    request: AgentTeamExecutionLoopRunRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> AgentTeamExecutionLoopRunResponse:
+    response = TeamExecutionLoopService(session).run_iteration(
+        workspace_id=context.workspace.id,
+        team_id=team_id,
+        actor_user_id=context.user.user_id,
+        dry_run=request.dry_run,
+        apply_command_center_actions=request.apply_command_center_actions,
+        enqueue_runs=request.enqueue_runs,
+        finalize_ready_tasks=request.finalize_ready_tasks,
+        include_completed=request.include_completed,
+        queue_limit=request.queue_limit,
+        sources=request.sources or None,
+        actions=request.actions or None,
+        max_actions=request.max_actions,
+        max_tasks_per_action=request.max_tasks_per_action,
+        max_finalize_tasks=request.max_finalize_tasks,
+        queue=queue,
+        reason=request.reason,
+        metadata=request.metadata,
+    )
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    return AgentTeamExecutionLoopRunResponse.model_validate(response)
 
 
 @router.post(
