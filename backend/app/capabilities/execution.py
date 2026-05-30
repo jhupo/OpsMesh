@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from time import monotonic
 from typing import Protocol, runtime_checkable
@@ -127,6 +127,7 @@ class McpToolExecutionService:
             request,
             server_id=server.id,
             max_calls_per_run=policy.max_calls_per_run,
+            max_calls_per_hour=policy.max_calls_per_hour,
         )
         if allow.requires_approval:
             return self._request_tool_approval(
@@ -374,8 +375,9 @@ class McpToolExecutionService:
         *,
         server_id: UUID,
         max_calls_per_run: int | None,
+        max_calls_per_hour: int | None,
     ) -> None:
-        if max_calls_per_run is None:
+        if max_calls_per_run is None and max_calls_per_hour is None:
             return
         counted_statuses = (
             "completed",
@@ -383,23 +385,43 @@ class McpToolExecutionService:
             "waiting_approval",
             "waiting_self_hosted",
         )
-        current_count = self._session.scalar(
-            select(func.count())
-            .select_from(McpToolCallLog)
-            .where(
-                McpToolCallLog.workspace_id == request.workspace_id,
-                McpToolCallLog.agent_run_id == request.agent_run_id,
-                McpToolCallLog.mcp_server_id == server_id,
-                McpToolCallLog.tool_name == request.tool_name,
-                McpToolCallLog.status.in_(counted_statuses),
+        if max_calls_per_run is not None:
+            current_run_count = self._session.scalar(
+                select(func.count())
+                .select_from(McpToolCallLog)
+                .where(
+                    McpToolCallLog.workspace_id == request.workspace_id,
+                    McpToolCallLog.agent_run_id == request.agent_run_id,
+                    McpToolCallLog.mcp_server_id == server_id,
+                    McpToolCallLog.tool_name == request.tool_name,
+                    McpToolCallLog.status.in_(counted_statuses),
+                )
             )
-        )
-        if int(current_count or 0) >= max_calls_per_run:
-            self._block(
-                request,
-                "mcp_tool_run_call_limit_exceeded",
-                mcp_server_id=server_id,
+            if int(current_run_count or 0) >= max_calls_per_run:
+                self._block(
+                    request,
+                    "mcp_tool_run_call_limit_exceeded",
+                    mcp_server_id=server_id,
+                )
+        if max_calls_per_hour is not None:
+            window_started_at = datetime.now(UTC) - timedelta(hours=1)
+            current_hour_count = self._session.scalar(
+                select(func.count())
+                .select_from(McpToolCallLog)
+                .where(
+                    McpToolCallLog.workspace_id == request.workspace_id,
+                    McpToolCallLog.mcp_server_id == server_id,
+                    McpToolCallLog.tool_name == request.tool_name,
+                    McpToolCallLog.status.in_(counted_statuses),
+                    McpToolCallLog.created_at >= window_started_at,
+                )
             )
+            if int(current_hour_count or 0) >= max_calls_per_hour:
+                self._block(
+                    request,
+                    "mcp_tool_hourly_call_limit_exceeded",
+                    mcp_server_id=server_id,
+                )
 
     def _credential_refs(
         self,
@@ -700,6 +722,7 @@ class _McpPolicy:
     max_input_bytes: int
     max_output_bytes: int
     max_calls_per_run: int | None
+    max_calls_per_hour: int | None
 
 
 def _authorization_snapshot(run: AgentRun) -> dict[str, object]:
@@ -756,6 +779,11 @@ def _mcp_policy(snapshot: dict[str, object], allow: McpToolAllowlist) -> _McpPol
             allow_policy,
             snapshot_mcp_policy,
             "max_calls_per_run",
+        ),
+        max_calls_per_hour=_optional_int_policy(
+            allow_policy,
+            snapshot_mcp_policy,
+            "max_calls_per_hour",
         ),
     )
 
