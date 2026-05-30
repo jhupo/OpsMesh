@@ -773,7 +773,9 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
 
 
 def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> None:
-    client, session = _client()
+    queue_redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(queue_redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    client, session = _client(queue=queue)
     owner, workspace = _seed_workspace(session, role="owner")
     other_owner, other_workspace = _seed_workspace(
         session,
@@ -800,12 +802,18 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
         team_type="software",
         manager_agent_profile_id=manager.id,
     )
+    other_local_team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Other Local Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+    )
     foreign_team = AgentTeam(
         workspace_id=other_workspace.id,
         name="Foreign Command Team",
         team_type="software",
     )
-    session.add_all([team, foreign_team])
+    session.add_all([team, other_local_team, foreign_team])
     session.flush()
     session.add_all(
         [
@@ -846,7 +854,15 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
         title="Foreign command task",
         status="running",
     )
-    session.add_all([task, foreign_task])
+    other_local_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=other_local_team.id,
+        title="Other local team task",
+        status="running",
+        priority=10,
+    )
+    session.add_all([task, foreign_task, other_local_task])
     session.flush()
     design_step = TaskStep(
         workspace_id=workspace.id,
@@ -897,6 +913,18 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
             status="queued",
             order_index=30,
             dependencies={"after_step_ids": [str(design_step.id)]},
+        )
+    )
+    session.add(
+        TaskStep(
+            workspace_id=workspace.id,
+            task_id=other_local_task.id,
+            assigned_agent_profile_id=developer.id,
+            work_package_id="other-build",
+            required_role="developer",
+            title="Other team queued work",
+            status="queued",
+            order_index=10,
         )
     )
     session.add(
@@ -996,6 +1024,7 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
         headers=_headers(owner.id),
         json={
             "dry_run": False,
+            "enqueue_runs": True,
             "reason": "command center auto apply",
             "metadata": {"api_key": "sk-command-apply"},
         },
@@ -1005,9 +1034,12 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
     assert apply_body["status"] == "applied"
     assert apply_body["eligible_action_count"] == 2
     assert apply_body["applied_action_count"] == 2
+    assert apply_body["scheduled_run_count"] == 2
     applied = {item["action"]: item for item in apply_body["results"]}
     assert applied["request_manager_review"]["candidate_count"] >= 2
     assert applied["schedule_downstream_steps"]["candidate_count"] >= 1
+    assert {item["task_id"] for item in apply_body["scheduled_runs"]} == {str(task.id)}
+    assert queue_redis.llen(RedisKeyBuilder("chaincloud").queue("agent_runs")) == 2
     assert "sk-command-apply" not in str(apply_body)
     manager_review_steps = session.scalars(
         select(TaskStep).where(

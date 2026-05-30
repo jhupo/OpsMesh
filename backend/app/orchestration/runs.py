@@ -162,6 +162,35 @@ class RunOrchestrationService:
         self._session.flush()
         return runs
 
+    def schedule_team_steps(
+        self,
+        *,
+        workspace_id: UUID,
+        team_id: UUID,
+        requested_by_user_id: UUID | None = None,
+    ) -> list[AgentRun]:
+        candidates = [
+            step
+            for step in self._team_eligible_steps(workspace_id, team_id)
+            if not self._step_has_active_run(step)
+        ]
+        scheduled_steps = self._scheduler().select_runnable_steps(
+            workspace_id=workspace_id,
+            candidate_steps=candidates,
+        ).runnable_steps
+        runs: list[AgentRun] = []
+        for step in scheduled_steps:
+            task = self._session.get(Task, step.task_id)
+            if task is None or task.workspace_id != workspace_id or task.agent_team_id != team_id:
+                continue
+            run = self._create_reserved_run_for_step(task, step)
+            if run is None:
+                continue
+            self.enqueue_run(run, requested_by_user_id)
+            runs.append(run)
+        self._session.flush()
+        return runs
+
     def cancel_task(
         self,
         *,
@@ -2177,6 +2206,27 @@ class RunOrchestrationService:
             .where(
                 TaskStep.workspace_id == workspace_id,
                 Task.workspace_id == workspace_id,
+                TaskStep.status == STEP_STATUS_QUEUED,
+                Task.status.in_(
+                    [
+                        TaskStatus.QUEUED.value,
+                        TaskStatus.RUNNING.value,
+                        TaskStatus.WAITING_APPROVAL.value,
+                    ]
+                ),
+            )
+            .order_by(Task.priority.desc(), TaskStep.order_index.asc())
+        ).all()
+        return [step for step in queued_steps if self._dependencies_satisfied(step)]
+
+    def _team_eligible_steps(self, workspace_id: UUID, team_id: UUID) -> list[TaskStep]:
+        queued_steps = self._session.scalars(
+            select(TaskStep)
+            .join(Task, Task.id == TaskStep.task_id)
+            .where(
+                TaskStep.workspace_id == workspace_id,
+                Task.workspace_id == workspace_id,
+                Task.agent_team_id == team_id,
                 TaskStep.status == STEP_STATUS_QUEUED,
                 Task.status.in_(
                     [

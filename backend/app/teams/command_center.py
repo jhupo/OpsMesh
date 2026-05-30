@@ -3,10 +3,13 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.runs.models import AgentRun
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.teams.execution_overview import TeamExecutionOverviewService
 from backend.app.teams.operator_actions import TEAM_OPERATOR_ACTIONS, TeamOperatorActionService
+from backend.app.workers.queue import RedisQueue
 
 COMMAND_CENTER_ACTION_SOURCES = {
     "execution_overview",
@@ -88,6 +91,8 @@ class TeamCommandCenterService:
         actions: list[str] | None = None,
         max_actions: int = 5,
         max_tasks_per_action: int = 100,
+        enqueue_runs: bool = False,
+        queue: RedisQueue | None = None,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> dict[str, object] | None:
@@ -131,6 +136,15 @@ class TeamCommandCenterService:
                 metadata=metadata or {},
             )
         )
+        scheduled_runs = (
+            RunOrchestrationService(self._session, queue=queue).schedule_team_steps(
+                workspace_id=workspace_id,
+                team_id=team_id,
+                requested_by_user_id=actor_user_id,
+            )
+            if enqueue_runs and not dry_run
+            else []
+        )
         applied_action_count = sum(1 for item in results if item["status"] == "applied")
         return {
             "workspace_id": workspace_id,
@@ -145,6 +159,8 @@ class TeamCommandCenterService:
             "summary": command_center["summary"],
             "results": results,
             "skipped": skipped,
+            "scheduled_run_count": len(scheduled_runs),
+            "scheduled_runs": [_scheduled_run_payload(run) for run in scheduled_runs],
         }
 
     def _apply_grouped_actions(
@@ -338,6 +354,17 @@ def _skip(index: int, reason: str, item: dict[str, object] | object) -> dict[str
         "source": payload.get("source"),
         "action": payload.get("action"),
         "reason": reason,
+    }
+
+
+def _scheduled_run_payload(run: AgentRun) -> dict[str, object]:
+    return {
+        "agent_run_id": run.id,
+        "task_id": run.task_id,
+        "task_step_id": run.task_step_id,
+        "agent_profile_id": run.agent_profile_id,
+        "runtime_space_id": run.runtime_space_id,
+        "status": run.status,
     }
 
 

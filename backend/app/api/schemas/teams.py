@@ -215,6 +215,7 @@ class AgentTeamCommandCenterApplyRequest(BaseModel):
     actions: list[str] = Field(default_factory=list, max_length=10)
     max_actions: int = Field(default=5, ge=1, le=10)
     max_tasks_per_action: int = Field(default=100, ge=1, le=200)
+    enqueue_runs: bool = False
     include_completed: bool = False
     queue_limit: int = Field(default=50, ge=1, le=200)
     reason: str | None = Field(default=None, max_length=1_000)
@@ -231,15 +232,17 @@ class AgentTeamCommandCenterApplyResponse(BaseModel):
     eligible_action_count: int
     applied_action_count: int
     skipped_action_count: int
+    scheduled_run_count: int
     summary: dict[str, object]
     results: list[dict[str, object]]
     skipped: list[dict[str, object]]
+    scheduled_runs: list[dict[str, object]]
 
     @field_serializer("summary")
     def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
 
-    @field_serializer("results", "skipped")
+    @field_serializer("results", "skipped", "scheduled_runs")
     def _serialize_items(
         self,
         value: list[dict[str, object]],

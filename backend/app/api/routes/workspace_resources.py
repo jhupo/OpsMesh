@@ -249,6 +249,7 @@ async def apply_team_command_center_actions(
     request: AgentTeamCommandCenterApplyRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> AgentTeamCommandCenterApplyResponse:
     response = TeamCommandCenterService(session).apply_action_plan(
         workspace_id=context.workspace.id,
@@ -261,6 +262,8 @@ async def apply_team_command_center_actions(
         actions=request.actions or None,
         max_actions=request.max_actions,
         max_tasks_per_action=request.max_tasks_per_action,
+        enqueue_runs=request.enqueue_runs,
+        queue=queue,
         reason=request.reason,
         metadata=request.metadata,
     )
