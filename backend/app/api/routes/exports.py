@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.schemas.exports import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveImportRequest,
+    WorkspaceArchiveIntegrityResponse,
     WorkspaceDataLifecycleResponse,
     WorkspaceExportJobResponse,
     WorkspaceExportRequest,
@@ -225,6 +226,30 @@ async def download_workspace_archive_export_job(
             )
         },
     )
+
+
+@router.post(
+    "/archive/jobs/{job_id}/verify",
+    response_model=WorkspaceArchiveIntegrityResponse,
+)
+async def verify_workspace_archive_export_job(
+    job_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> WorkspaceArchiveIntegrityResponse:
+    try:
+        result = WorkspaceExportService(session).verify_archive_export_job(
+            workspace_id=context.workspace.id,
+            job_id=job_id,
+            user_id=context.user.user_id,
+            storage=LocalStorage(settings.storage_root),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return WorkspaceArchiveIntegrityResponse.model_validate(result)
 
 
 @router.post("/archive/import", response_model=WorkspaceImportResponse)

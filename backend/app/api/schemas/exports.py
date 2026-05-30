@@ -90,6 +90,20 @@ class WorkspaceExportJobResponse(ORMModel):
         return redact_sensitive_payload(value)
 
 
+class WorkspaceArchiveIntegrityResponse(BaseModel):
+    workspace_id: UUID
+    job_id: UUID
+    verified: bool
+    checked_at: datetime
+    checks: dict[str, bool]
+    failed_checks: list[str] = Field(default_factory=list)
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+    @field_serializer("metadata")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
 class WorkspaceImportRequest(BaseModel):
     export: WorkspaceExportResponse
     dry_run: bool = True
@@ -204,6 +218,7 @@ class WorkspaceRecoveryReadinessResponse(BaseModel):
     latest_failed_export_job: dict[str, object] | None
     export_jobs: dict[str, object]
     retention_safety: dict[str, object]
+    archive_integrity: dict[str, object]
     restore_readiness: dict[str, object]
 
     @field_serializer(
@@ -212,6 +227,7 @@ class WorkspaceRecoveryReadinessResponse(BaseModel):
         "latest_failed_export_job",
         "export_jobs",
         "retention_safety",
+        "archive_integrity",
         "restore_readiness",
     )
     def _serialize_metadata(self, value: dict[str, object] | None) -> dict[str, object] | None:

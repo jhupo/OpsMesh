@@ -3246,6 +3246,14 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
         f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/download",
         headers=_headers(owner.id),
     )
+    verified = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/verify",
+        headers=_headers(owner.id),
+    )
+    readiness = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness",
+        headers=_headers(owner.id),
+    )
 
     assert status_response.status_code == 200
     status_body = status_response.json()
@@ -3264,6 +3272,73 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
         file_name = f"files/{uploaded.json()['id']}/brief.txt"
         assert "metadata.json" in names
         assert archive.read(file_name) == b"async archive"
+    assert verified.status_code == 200
+    verify_body = verified.json()
+    assert verify_body["verified"] is True
+    assert verify_body["failed_checks"] == []
+    assert verify_body["checks"]["checksum_matches"] is True
+    assert verify_body["checks"]["manifest_valid"] is True
+    assert "storage_key" not in str(verify_body)
+    assert readiness.status_code == 200
+    integrity = readiness.json()["archive_integrity"]
+    assert integrity["latest_check_verified"] is True
+    assert integrity["latest_check_covers_latest_successful_archive"] is True
+    assert integrity["latest_check"]["target_id"] == job_id
+
+
+def test_workspace_archive_export_job_verify_reports_tampered_archive(
+    tmp_path: Path,
+) -> None:
+    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-tampered-archive@example.com",
+        slug="owner-tampered-archive",
+    )
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
+        headers=_headers(owner.id),
+        json={"include_audit_events": False},
+    )
+    assert created.status_code == 202
+    job_id = created.json()["id"]
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="verify-worker", queue_name="agent_runs"),
+        settings=Settings(
+            environment="test",
+            log_format="text",
+            internal_api_token=TOKEN,
+            storage_root=str(tmp_path),
+        ),
+    )
+    assert runner.run_once() is True
+    export_job = session.get(WorkspaceExportJob, UUID(job_id))
+    assert export_job is not None
+    assert export_job.storage_key is not None
+    LocalStorage(str(tmp_path)).write(export_job.storage_key, b"tampered archive")
+
+    verified = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/verify",
+        headers=_headers(owner.id),
+    )
+
+    assert verified.status_code == 200
+    body = verified.json()
+    assert body["verified"] is False
+    assert "checksum_matches" in body["failed_checks"]
+    assert "zip_readable" in body["failed_checks"]
+    assert body["checks"]["metadata_present"] is False
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "workspace.archive_export_job.integrity_checked",
+        )
+    )
+    assert audit is not None
+    assert audit.audit_metadata["verified"] is False
+    assert "tampered archive" not in str(body)
 
 
 def test_worker_maintenance_enqueues_due_workspace_backup_job(tmp_path: Path) -> None:

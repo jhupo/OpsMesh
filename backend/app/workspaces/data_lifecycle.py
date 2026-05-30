@@ -166,6 +166,7 @@ class WorkspaceDataLifecycleService:
         latest_job = self._latest_export_job(workspace_id)
         latest_success = self._latest_successful_archive_export(workspace_id)
         latest_import = self._latest_archive_import_event(workspace_id)
+        latest_integrity = self._latest_archive_integrity_event(workspace_id)
         latest_failed_job = self._latest_failed_export_job(workspace_id)
         job_stats = self._export_job_stats(workspace_id)
         current_counts = self._archive_coverage_counts(workspace_id)
@@ -202,6 +203,10 @@ class WorkspaceDataLifecycleService:
             "latest_archive_import": _audit_event_payload(latest_import),
             "latest_failed_export_job": _job_payload(latest_failed_job),
             "export_jobs": job_stats,
+            "archive_integrity": _archive_integrity_payload(
+                latest_integrity,
+                latest_success=latest_success,
+            ),
             "retention_safety": {
                 "retention_enabled": retention_policy["enabled"],
                 "backup_policy_enabled": backup_policy["enabled"],
@@ -697,6 +702,17 @@ class WorkspaceDataLifecycleService:
             .where(
                 AuditEvent.workspace_id == workspace_id,
                 AuditEvent.action == "workspace.archive_import.created",
+            )
+            .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+            .limit(1)
+        )
+
+    def _latest_archive_integrity_event(self, workspace_id: UUID) -> AuditEvent | None:
+        return self._session.scalar(
+            select(AuditEvent)
+            .where(
+                AuditEvent.workspace_id == workspace_id,
+                AuditEvent.action == "workspace.archive_export_job.integrity_checked",
             )
             .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
             .limit(1)
@@ -1653,6 +1669,32 @@ def _import_preview_payload(event: AuditEvent | None) -> dict[str, object] | Non
     }
 
 
+def _archive_integrity_payload(
+    event: AuditEvent | None,
+    *,
+    latest_success: WorkspaceExportJob | None,
+) -> dict[str, object]:
+    metadata = (
+        event.audit_metadata
+        if event is not None and isinstance(event.audit_metadata, dict)
+        else {}
+    )
+    latest_success_id = str(latest_success.id) if latest_success is not None else None
+    checked_job_id = event.target_id if event is not None else None
+    return {
+        "latest_check": _audit_event_payload(event),
+        "latest_check_verified": metadata.get("verified") if event is not None else None,
+        "latest_check_failed_checks": _string_list(metadata.get("failed_checks")),
+        "latest_check_job_id": checked_job_id,
+        "latest_successful_archive_export_job_id": latest_success_id,
+        "latest_check_covers_latest_successful_archive": (
+            event is not None
+            and latest_success_id is not None
+            and checked_job_id == latest_success_id
+        ),
+    }
+
+
 def _metadata_counts(event: AuditEvent | None, key: str) -> dict[str, int]:
     if event is None:
         return {}
@@ -1690,6 +1732,12 @@ def _safe_conflict_summaries(value: object) -> list[dict[str, object]]:
             }
         )
     return summaries
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
 
 
 def _job_payload(job: WorkspaceExportJob | None) -> dict[str, object] | None:

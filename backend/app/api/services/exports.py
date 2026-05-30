@@ -338,6 +338,100 @@ class WorkspaceExportService:
             raise FileNotFoundError("Export artifact is missing")
         return export_job, storage.read(export_job.storage_key)
 
+    def verify_archive_export_job(
+        self,
+        *,
+        workspace_id: UUID,
+        job_id: UUID,
+        user_id: UUID,
+        storage: LocalStorage,
+    ) -> dict[str, object]:
+        export_job, content = self.read_export_job_content(
+            workspace_id=workspace_id,
+            job_id=job_id,
+            storage=storage,
+        )
+        checked_at = datetime.now(UTC)
+        actual_size = len(content)
+        actual_checksum = sha256(content).hexdigest()
+        checks = {
+            "size_matches": export_job.size_bytes == actual_size,
+            "checksum_matches": export_job.checksum_sha256 == actual_checksum,
+            "zip_readable": False,
+            "metadata_present": False,
+            "manifest_valid": False,
+            "workspace_matches": False,
+            "format_version_matches": False,
+        }
+        metadata: dict[str, object] = {
+            "filename": export_job.filename,
+            "content_type": export_job.content_type,
+            "expected_size_bytes": export_job.size_bytes,
+            "actual_size_bytes": actual_size,
+            "expected_checksum_sha256": export_job.checksum_sha256,
+            "actual_checksum_sha256": actual_checksum,
+        }
+        manifest_counts: dict[str, int] = {}
+        try:
+            with ZipFile(BytesIO(content)) as archive:
+                checks["zip_readable"] = True
+                names = set(archive.namelist())
+                checks["metadata_present"] = "metadata.json" in names
+                metadata["archive_entry_count"] = len(names)
+                if checks["metadata_present"]:
+                    payload = json.loads(archive.read("metadata.json"))
+                    manifest = payload.get("manifest") if isinstance(payload, dict) else None
+                    workspace = payload.get("workspace") if isinstance(payload, dict) else None
+                    if isinstance(manifest, dict):
+                        checks["format_version_matches"] = (
+                            manifest.get("format_version") == SUPPORTED_WORKSPACE_EXPORT_FORMAT
+                        )
+                        manifest_workspace_id = manifest.get("workspace_id")
+                        checks["workspace_matches"] = manifest_workspace_id == str(workspace_id)
+                        raw_counts = manifest.get("counts")
+                        if isinstance(raw_counts, dict):
+                            manifest_counts = {
+                                str(key): int(value)
+                                for key, value in raw_counts.items()
+                                if isinstance(value, int) and value >= 0
+                            }
+                    elif isinstance(workspace, dict):
+                        checks["workspace_matches"] = workspace.get("id") == str(workspace_id)
+                    checks["manifest_valid"] = (
+                        checks["metadata_present"]
+                        and checks["format_version_matches"]
+                        and checks["workspace_matches"]
+                    )
+        except (BadZipFile, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            metadata["archive_error"] = str(exc)[:500]
+
+        metadata["manifest_counts"] = manifest_counts
+        failed_checks = [name for name, passed in checks.items() if not passed]
+        verified = not failed_checks
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action="workspace.archive_export_job.integrity_checked",
+            target_type="workspace_export_job",
+            target_id=export_job.id,
+            metadata={
+                "verified": verified,
+                "checks": checks,
+                "failed_checks": failed_checks,
+                **metadata,
+            },
+        )
+        self._session.commit()
+        return {
+            "workspace_id": workspace_id,
+            "job_id": export_job.id,
+            "verified": verified,
+            "checked_at": checked_at,
+            "checks": checks,
+            "failed_checks": failed_checks,
+            "metadata": metadata,
+        }
+
     def run_archive_export_job(
         self,
         *,
