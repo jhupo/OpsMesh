@@ -2040,6 +2040,176 @@ def test_task_execution_diagnostics_explains_assignments_dependencies_and_blocke
     assert missing_response.status_code == 404
 
 
+def test_task_handoff_queue_lists_attention_items_and_preserves_scope() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-handoff@example.com",
+        slug="other-handoff",
+    )
+    active_agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+    )
+    inactive_agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Reviewer",
+        role="reviewer",
+        status="inactive",
+        model_settings={"api_key": "sk-reviewer"},
+    )
+    session.add_all([active_agent, inactive_agent])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Delivery Team",
+        team_type="software",
+    )
+    foreign_team = AgentTeam(
+        workspace_id=other_workspace.id,
+        name="Foreign Team",
+        team_type="software",
+    )
+    session.add_all([team, foreign_team])
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Build handoff queue",
+        status="running",
+        priority=7,
+        domain_type="software",
+    )
+    foreign_task = Task(
+        workspace_id=other_workspace.id,
+        created_by_user_id=other_owner.id,
+        agent_team_id=foreign_team.id,
+        title="Foreign task",
+        status="running",
+        priority=10,
+    )
+    session.add_all([task, foreign_task])
+    session.flush()
+    design_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=active_agent.id,
+        work_package_id="design",
+        title="Design",
+        status="completed",
+        order_index=10,
+        result_summary="Design complete",
+    )
+    api_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=active_agent.id,
+        work_package_id="api",
+        title="API",
+        status="completed",
+        order_index=20,
+        result_summary="API complete",
+    )
+    final_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=active_agent.id,
+        work_package_id="final",
+        title="Final summary",
+        status="completed",
+        order_index=50,
+        result_summary="Ready for review",
+    )
+    foreign_step = TaskStep(
+        workspace_id=other_workspace.id,
+        task_id=foreign_task.id,
+        work_package_id="foreign",
+        title="Foreign",
+        status="completed",
+    )
+    session.add_all([design_step, api_step, final_step, foreign_step])
+    session.flush()
+    build_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=active_agent.id,
+        work_package_id="build",
+        title="Build",
+        status="queued",
+        order_index=30,
+        dependencies={"after_step_ids": [str(design_step.id)]},
+    )
+    review_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=inactive_agent.id,
+        work_package_id="review",
+        title="Review",
+        status="queued",
+        order_index=40,
+        dependencies={
+            "after_step_ids": [str(api_step.id)],
+            "blocked_reason": "worker_unavailable",
+            "token": "hidden-token",
+        },
+    )
+    session.add_all([build_step, review_step])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/handoff-queue?team_id={team.id}",
+        headers=_headers(owner.id),
+    )
+    ready_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/handoff-queue"
+        "?handoff_status=ready_for_downstream",
+        headers=_headers(owner.id),
+    )
+    include_terminal_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/handoff-queue?include_terminal=true",
+        headers=_headers(owner.id),
+    )
+    foreign_team_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/handoff-queue?team_id={foreign_team.id}",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] == str(workspace.id)
+    assert body["team_id"] == str(team.id)
+    assert body["total"] == 3
+    assert body["summary"]["handoff_status_counts"] == {
+        "downstream_blocked": 1,
+        "final_delivery_ready": 1,
+        "ready_for_downstream": 1,
+    }
+    assert body["summary"]["recommended_actions"] == {
+        "inspect_blocked_downstream": 1,
+        "request_manager_review": 1,
+        "schedule_downstream_steps": 1,
+    }
+    by_package = {item["work_package_id"]: item for item in body["items"]}
+    assert by_package["design"]["handoff_status"] == "ready_for_downstream"
+    assert by_package["design"]["runnable_downstream_step_ids"] == [str(build_step.id)]
+    assert by_package["api"]["handoff_status"] == "downstream_blocked"
+    assert by_package["api"]["blocked_downstream_step_ids"] == [str(review_step.id)]
+    assert by_package["final"]["handoff_status"] == "final_delivery_ready"
+    assert ready_response.status_code == 200
+    assert ready_response.json()["total"] == 1
+    assert include_terminal_response.status_code == 200
+    assert include_terminal_response.json()["total"] == 5
+    assert foreign_team_response.status_code == 404
+    serialized = str(body)
+    assert "hidden-token" not in serialized
+    assert "sk-reviewer" not in serialized
+    assert "Foreign task" not in serialized
+
+
 def test_task_plan_diagnostics_explains_assignment_and_dependency_quality() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

@@ -420,6 +420,52 @@ class TaskExecutionDiagnosticsResponse(BaseModel):
         return redact_sensitive_payload(value)
 
 
+class TaskHandoffQueueItemResponse(BaseModel):
+    task_id: UUID
+    task_title: str
+    task_status: str
+    task_priority: int
+    team_id: UUID | None
+    domain_type: str
+    task_step_id: UUID
+    work_package_id: str | None
+    step_title: str
+    step_status: str
+    assigned_agent: dict[str, object] | None
+    assignment_status: str
+    handoff_status: str
+    requires_handoff: bool
+    upstream_step_ids: list[UUID]
+    downstream_step_ids: list[UUID]
+    runnable_downstream_step_ids: list[UUID]
+    blocked_downstream_step_ids: list[UUID]
+    blocked_reasons: list[str]
+    recommended_actions: list[str]
+    last_activity_at: datetime
+
+    @field_serializer("assigned_agent")
+    def _serialize_assigned_agent(
+        self,
+        value: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
+
+
+class TaskHandoffQueueResponse(BaseModel):
+    workspace_id: UUID
+    team_id: UUID | None = None
+    generated_at: datetime
+    total: int
+    limit: int
+    offset: int
+    summary: dict[str, object]
+    items: list[TaskHandoffQueueItemResponse]
+
+    @field_serializer("summary")
+    def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
 class TaskPlanPackageMatchResponse(BaseModel):
     agent_profile_id: UUID
     team_member_id: UUID | None

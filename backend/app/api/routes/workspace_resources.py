@@ -20,6 +20,7 @@ from backend.app.api.schemas.tasks import (
     TaskCorrectionResponse,
     TaskCreateRequest,
     TaskExecutionDiagnosticsResponse,
+    TaskHandoffQueueResponse,
     TaskManagerDiagnosticsResponse,
     TaskManagerQueueResponse,
     TaskMessageResponse,
@@ -390,6 +391,31 @@ async def list_task_manager_queue(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return TaskManagerQueueResponse.model_validate(response)
+
+
+@router.get("/tasks/handoff-queue", response_model=TaskHandoffQueueResponse)
+async def list_task_handoff_queue(
+    page: PageParams = Depends(pagination_params),
+    status_filter: str | None = Query(default=None, alias="status"),
+    team_id: UUID | None = Query(default=None),
+    handoff_status: str | None = Query(default=None),
+    include_terminal: bool = Query(default=False),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskHandoffQueueResponse:
+    try:
+        response = TaskExecutionDiagnosticsService(session).list_handoff_queue(
+            workspace_id=context.workspace.id,
+            limit=page.limit,
+            offset=page.offset,
+            task_status=status_filter,
+            team_id=team_id,
+            handoff_status=handoff_status,
+            include_terminal=include_terminal,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return TaskHandoffQueueResponse.model_validate(response)
 
 
 @router.post("/tasks/{task_id}/cancel", response_model=TaskResponse)

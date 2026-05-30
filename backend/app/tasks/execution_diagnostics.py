@@ -11,6 +11,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskStep
+from backend.app.teams.models import AgentTeam
 
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,
@@ -77,6 +78,63 @@ class TaskExecutionDiagnosticsService:
             },
             "summary": self._summary(task, step_payloads, runs_by_step_id),
             "steps": step_payloads,
+        }
+
+    def list_handoff_queue(
+        self,
+        *,
+        workspace_id: UUID,
+        limit: int,
+        offset: int,
+        task_status: str | None = None,
+        team_id: UUID | None = None,
+        handoff_status: str | None = None,
+        include_terminal: bool = False,
+    ) -> dict[str, object]:
+        statement = select(Task).where(Task.workspace_id == workspace_id)
+        if team_id is not None:
+            team = self._session.get(AgentTeam, team_id)
+            if team is None or team.workspace_id != workspace_id:
+                raise ValueError("Team not found")
+            statement = statement.where(Task.agent_team_id == team_id)
+        if task_status is not None:
+            statement = statement.where(Task.status == task_status)
+
+        tasks = list(
+            self._session.scalars(
+                statement.order_by(
+                    Task.priority.desc(),
+                    Task.updated_at.desc(),
+                    Task.created_at.desc(),
+                )
+            )
+        )
+        items: list[dict[str, object]] = []
+        for task in tasks:
+            diagnostics = self.get_diagnostics(workspace_id=workspace_id, task_id=task.id)
+            if diagnostics is None:
+                continue
+            for step_payload in _dict_list(diagnostics.get("steps")):
+                item = _handoff_queue_item(task, step_payload)
+                if item is None:
+                    continue
+                if handoff_status is not None and item["handoff_status"] != handoff_status:
+                    continue
+                if not include_terminal and not _handoff_needs_attention(item):
+                    continue
+                items.append(item)
+
+        total = len(items)
+        paged_items = items[offset : offset + limit]
+        return {
+            "workspace_id": workspace_id,
+            "team_id": team_id,
+            "generated_at": datetime.now(UTC),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "summary": _handoff_queue_summary(items),
+            "items": paged_items,
         }
 
     def _step_payload(
@@ -359,6 +417,96 @@ def _handoff_recommended_actions(
     if status == "no_downstream" and not has_result_summary:
         return ["create_correction"]
     return []
+
+
+def _handoff_queue_item(
+    task: Task,
+    step_payload: dict[str, object],
+) -> dict[str, object] | None:
+    handoff = step_payload.get("handoff")
+    if not isinstance(handoff, dict):
+        return None
+    status = handoff.get("status")
+    if not isinstance(status, str) or not status:
+        return None
+    return {
+        "task_id": task.id,
+        "task_title": task.title,
+        "task_status": task.status,
+        "task_priority": task.priority,
+        "team_id": task.agent_team_id,
+        "domain_type": task.domain_type,
+        "task_step_id": step_payload.get("task_step_id"),
+        "work_package_id": step_payload.get("work_package_id"),
+        "step_title": step_payload.get("title"),
+        "step_status": step_payload.get("status"),
+        "assigned_agent": step_payload.get("assigned_agent"),
+        "assignment_status": step_payload.get("assignment_status"),
+        "handoff_status": status,
+        "requires_handoff": handoff.get("requires_handoff") is True,
+        "upstream_step_ids": _uuid_values(handoff.get("upstream_step_ids")),
+        "downstream_step_ids": _uuid_values(handoff.get("downstream_step_ids")),
+        "runnable_downstream_step_ids": _uuid_values(
+            handoff.get("runnable_downstream_step_ids")
+        ),
+        "blocked_downstream_step_ids": _uuid_values(
+            handoff.get("blocked_downstream_step_ids")
+        ),
+        "blocked_reasons": _string_values(step_payload.get("blocked_reasons")),
+        "recommended_actions": _string_values(handoff.get("recommended_actions")),
+        "last_activity_at": task.updated_at,
+    }
+
+
+def _handoff_needs_attention(item: dict[str, object]) -> bool:
+    return item["handoff_status"] in {
+        "ready_for_downstream",
+        "downstream_blocked",
+        "handoff_in_progress",
+        "final_delivery_ready",
+    }
+
+
+def _handoff_queue_summary(items: list[dict[str, object]]) -> dict[str, object]:
+    status_counts = Counter(str(item["handoff_status"]) for item in items)
+    action_counts = Counter(
+        action
+        for item in items
+        for action in item["recommended_actions"]
+        if isinstance(action, str)
+    )
+    task_ids = {
+        task_id
+        for item in items
+        if isinstance((task_id := item.get("task_id")), UUID)
+    }
+    return {
+        "attention_handoffs": len(items),
+        "tasks": len(task_ids),
+        "handoff_status_counts": dict(sorted(status_counts.items())),
+        "recommended_actions": dict(sorted(action_counts.items())),
+        "ready_handoffs": status_counts.get("ready_for_downstream", 0),
+        "blocked_handoffs": status_counts.get("downstream_blocked", 0),
+        "final_delivery_ready": status_counts.get("final_delivery_ready", 0),
+    }
+
+
+def _dict_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _uuid_values(value: object) -> list[UUID]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, UUID)]
+
+
+def _string_values(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
 
 
 def _step_blocked_reasons(
