@@ -1,6 +1,6 @@
 import json
 from collections.abc import Generator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -312,6 +312,261 @@ def test_workspace_data_lifecycle_diagnostics_reports_backup_retention_and_audit
     assert "sk-export" not in serialized
     assert "job-token" not in serialized
     assert "workspaces/owner/exports/archive.zip" not in serialized
+
+
+def test_workspace_retention_preview_reports_scoped_candidates_and_redacts_metadata(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-retention-preview@example.com",
+        slug="owner-retention-preview",
+    )
+    _, other_workspace = _seed_workspace(
+        session,
+        email="other-retention-preview@example.com",
+        slug="other-retention-preview",
+    )
+    workspace.settings = _retention_settings()
+    old_at = datetime.now(UTC) - timedelta(days=45)
+    fresh_at = datetime.now(UTC) - timedelta(days=3)
+    old_file = WorkspaceFile(
+        workspace_id=workspace.id,
+        uploaded_by_user_id=owner.id,
+        filename="old.txt",
+        content_type="text/plain",
+        size_bytes=12,
+        checksum_sha256="1" * 64,
+        storage_key="workspaces/owner-retention-preview/files/secret-old.txt",
+        created_at=old_at,
+    )
+    fresh_file = WorkspaceFile(
+        workspace_id=workspace.id,
+        uploaded_by_user_id=owner.id,
+        filename="fresh.txt",
+        content_type="text/plain",
+        size_bytes=8,
+        checksum_sha256="2" * 64,
+        storage_key="workspaces/owner-retention-preview/files/fresh.txt",
+        created_at=fresh_at,
+    )
+    foreign_file = WorkspaceFile(
+        workspace_id=other_workspace.id,
+        uploaded_by_user_id=None,
+        filename="foreign.txt",
+        content_type="text/plain",
+        size_bytes=9,
+        checksum_sha256="3" * 64,
+        storage_key="workspaces/other/files/foreign.txt",
+        created_at=old_at,
+    )
+    old_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="completed",
+        request={"token": "job-secret"},
+        storage_key="workspaces/owner-retention-preview/exports/old.zip",
+        filename="old.zip",
+        content_type="application/zip",
+        size_bytes=30,
+        checksum_sha256="4" * 64,
+        completed_at=old_at,
+        created_at=old_at,
+        job_metadata={"api_key": "sk-hidden"},
+    )
+    backup_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="completed",
+        request={},
+        storage_key="workspaces/owner-retention-preview/exports/latest.zip",
+        filename="latest.zip",
+        content_type="application/zip",
+        size_bytes=40,
+        checksum_sha256="5" * 64,
+        completed_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+    )
+    task = Task(workspace_id=workspace.id, created_by_user_id=owner.id, title="Retention task")
+    session.add_all([old_file, fresh_file, foreign_file, old_job, backup_job, task])
+    session.flush()
+    old_artifact = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        artifact_type="document",
+        filename="old-artifact.txt",
+        content_type="text/plain",
+        size_bytes=20,
+        checksum_sha256="6" * 64,
+        storage_key="workspaces/owner-retention-preview/artifacts/old.txt",
+        created_at=old_at,
+    )
+    session.add(old_artifact)
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/retention/preview",
+        headers=_headers(owner.id),
+        json={},
+    )
+    foreign_response = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/exports/retention/preview",
+        headers=_headers(owner.id),
+        json={},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dry_run"] is True
+    assert body["applied"] is False
+    assert body["blocked_reasons"] == []
+    assert body["counts"] == {"files": 1, "export_jobs": 1, "artifacts": 1, "total": 3}
+    candidates_by_type = {candidate["resource_type"]: candidate for candidate in body["candidates"]}
+    assert candidates_by_type["file"]["resource_id"] == str(old_file.id)
+    assert candidates_by_type["file"]["action"] == "soft_delete"
+    assert candidates_by_type["export_job"]["resource_id"] == str(old_job.id)
+    assert candidates_by_type["export_job"]["action"] == "manual_review"
+    assert candidates_by_type["artifact"]["resource_id"] == str(old_artifact.id)
+    assert candidates_by_type["artifact"]["action"] == "manual_review"
+    assert foreign_response.status_code == 403
+    serialized = str(body)
+    assert str(fresh_file.id) not in serialized
+    assert str(foreign_file.id) not in serialized
+    assert "secret-old.txt" not in serialized
+    assert "job-secret" not in serialized
+    assert "sk-hidden" not in serialized
+
+
+def test_workspace_retention_apply_soft_deletes_files_and_records_audit(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-retention-apply@example.com",
+        slug="owner-retention-apply",
+    )
+    workspace.settings = _retention_settings()
+    old_at = datetime.now(UTC) - timedelta(days=40)
+    old_file = WorkspaceFile(
+        workspace_id=workspace.id,
+        uploaded_by_user_id=owner.id,
+        filename="old.txt",
+        content_type="text/plain",
+        size_bytes=12,
+        checksum_sha256="7" * 64,
+        storage_key="workspaces/owner-retention-apply/files/old.txt",
+        created_at=old_at,
+    )
+    backup_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="completed",
+        request={},
+        storage_key="workspaces/owner-retention-apply/exports/latest.zip",
+        filename="latest.zip",
+        content_type="application/zip",
+        size_bytes=40,
+        checksum_sha256="8" * 64,
+        completed_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([old_file, backup_job])
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/retention/apply",
+        headers=_headers(owner.id),
+        json={"include_export_jobs": False, "include_artifacts": False},
+    )
+    listed = client.get(f"/api/v1/workspaces/{workspace.id}/files", headers=_headers(owner.id))
+    downloaded = client.get(
+        f"/api/v1/workspaces/{workspace.id}/files/{old_file.id}/download",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dry_run"] is False
+    assert body["applied"] is True
+    assert body["applied_counts"] == {"files": 1, "export_jobs": 0, "artifacts": 0}
+    session.refresh(old_file)
+    assert old_file.status == "retention_deleted"
+    assert old_file.file_metadata["retention_delete_policy"] == "soft_delete"
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 0
+    assert downloaded.status_code == 404
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "workspace.retention_applied",
+        )
+    )
+    assert audit is not None
+    assert audit.audit_metadata["applied_counts"]["files"] == 1
+
+
+def test_workspace_retention_apply_blocks_without_successful_backup(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-retention-blocked@example.com",
+        slug="owner-retention-blocked",
+    )
+    workspace.settings = _retention_settings()
+    old_file = WorkspaceFile(
+        workspace_id=workspace.id,
+        uploaded_by_user_id=owner.id,
+        filename="old.txt",
+        content_type="text/plain",
+        size_bytes=12,
+        checksum_sha256="9" * 64,
+        storage_key="workspaces/owner-retention-blocked/files/old.txt",
+        created_at=datetime.now(UTC) - timedelta(days=40),
+    )
+    session.add(old_file)
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/retention/apply",
+        headers=_headers(owner.id),
+        json={},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied"] is False
+    assert body["blocked_reasons"] == ["no_successful_archive_export"]
+    assert body["candidates"] == []
+    session.refresh(old_file)
+    assert old_file.status == "active"
+
+
+def test_workspace_retention_disabled_policy_is_reported_as_blocked(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-retention-disabled@example.com",
+        slug="owner-retention-disabled",
+    )
+    workspace.settings = {"data_lifecycle": {"retention": {"enabled": False}}}
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/retention/preview",
+        headers=_headers(owner.id),
+        json={"require_successful_backup": False},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied"] is False
+    assert body["blocked_reasons"] == ["retention_policy_not_enabled"]
+    assert body["candidates"] == []
 
 
 def test_workspace_metadata_import_supports_dry_run_and_committed_import(tmp_path: Path) -> None:
@@ -2600,6 +2855,22 @@ def _seed_workspace(session: Session, *, email: str, slug: str) -> tuple[User, W
 
 def _headers(user_id: object) -> dict[str, str]:
     return {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(user_id)}
+
+
+def _retention_settings() -> dict[str, object]:
+    return {
+        "data_lifecycle": {
+            "backup": {"enabled": True, "target_type": "manual_export"},
+            "retention": {
+                "enabled": True,
+                "default_retention_days": 30,
+                "file_retention_days": 30,
+                "export_job_retention_days": 30,
+                "artifact_retention_days": 30,
+                "delete_policy": "soft_delete",
+            },
+        }
+    }
 
 
 def _patch_portable_types_for_sqlite() -> None:

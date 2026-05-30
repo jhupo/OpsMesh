@@ -191,3 +191,41 @@ class WorkspaceDataLifecycleResponse(BaseModel):
     )
     def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+
+class WorkspaceRetentionRequest(BaseModel):
+    include_files: bool = True
+    include_export_jobs: bool = True
+    include_artifacts: bool = True
+    max_items: int = Field(default=100, ge=1, le=1_000)
+    require_successful_backup: bool = True
+
+
+class WorkspaceRetentionCandidate(BaseModel):
+    resource_type: str
+    resource_id: UUID
+    created_at: datetime
+    age_days: int
+    retention_days: int
+    status: str
+    action: str
+    filename: str | None = None
+    size_bytes: int | None = None
+    reason: str | None = None
+
+
+class WorkspaceRetentionResponse(BaseModel):
+    workspace_id: UUID
+    generated_at: datetime
+    dry_run: bool
+    applied: bool
+    policy: dict[str, object]
+    blocked_reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    counts: dict[str, int]
+    applied_counts: dict[str, int]
+    candidates: list[WorkspaceRetentionCandidate] = Field(default_factory=list)
+
+    @field_serializer("policy")
+    def _serialize_policy(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -9,10 +9,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.services.exports import SUPPORTED_WORKSPACE_EXPORT_FORMAT
 from backend.app.artifacts.models import Artifact
+from backend.app.audit.service import AuditService
 from backend.app.exports.models import WorkspaceExportJob
 from backend.app.exports.status import WorkspaceExportJobStatus
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.workspaces.models import Workspace
+
+RETENTION_DELETED_FILE_STATUS = "retention_deleted"
 
 
 class WorkspaceDataLifecycleService:
@@ -74,6 +77,50 @@ class WorkspaceDataLifecycleService:
             "file_access_audit": access_stats,
             "readiness": readiness,
         }
+
+    def preview_retention(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        include_files: bool,
+        include_export_jobs: bool,
+        include_artifacts: bool,
+        max_items: int,
+        require_successful_backup: bool,
+    ) -> dict[str, object] | None:
+        return self._retention_response(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            apply_changes=False,
+            include_files=include_files,
+            include_export_jobs=include_export_jobs,
+            include_artifacts=include_artifacts,
+            max_items=max_items,
+            require_successful_backup=require_successful_backup,
+        )
+
+    def apply_retention(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        include_files: bool,
+        include_export_jobs: bool,
+        include_artifacts: bool,
+        max_items: int,
+        require_successful_backup: bool,
+    ) -> dict[str, object] | None:
+        return self._retention_response(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            apply_changes=True,
+            include_files=include_files,
+            include_export_jobs=include_export_jobs,
+            include_artifacts=include_artifacts,
+            max_items=max_items,
+            require_successful_backup=require_successful_backup,
+        )
 
     def _latest_export_job(self, workspace_id: UUID) -> WorkspaceExportJob | None:
         return self._session.scalar(
@@ -163,6 +210,276 @@ class WorkspaceDataLifecycleService:
             "download_audit_enabled": True,
         }
 
+    def _retention_response(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        apply_changes: bool,
+        include_files: bool,
+        include_export_jobs: bool,
+        include_artifacts: bool,
+        max_items: int,
+        require_successful_backup: bool,
+    ) -> dict[str, object] | None:
+        workspace = self._session.get(Workspace, workspace_id)
+        if workspace is None:
+            return None
+
+        generated_at = datetime.now(UTC)
+        policy = _retention_policy(workspace.settings)
+        latest_success = self._latest_successful_archive_export(workspace_id)
+        blocked_reasons = _retention_blocked_reasons(
+            policy=policy,
+            require_successful_backup=require_successful_backup,
+            latest_success=latest_success,
+            include_files=include_files,
+            include_export_jobs=include_export_jobs,
+            include_artifacts=include_artifacts,
+        )
+        candidates: list[dict[str, object]] = []
+        if not blocked_reasons:
+            candidates = self._retention_candidates(
+                workspace_id=workspace_id,
+                generated_at=generated_at,
+                policy=policy,
+                include_files=include_files,
+                include_export_jobs=include_export_jobs,
+                include_artifacts=include_artifacts,
+                max_items=max_items,
+            )
+
+        applied_counts = {"files": 0, "export_jobs": 0, "artifacts": 0}
+        if apply_changes and not blocked_reasons:
+            applied_counts = self._apply_file_retention(candidates)
+
+        counts = _candidate_counts(candidates)
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action=(
+                "workspace.retention_applied"
+                if apply_changes and not blocked_reasons
+                else "workspace.retention_previewed"
+            ),
+            target_type="workspace",
+            target_id=workspace_id,
+            metadata={
+                "dry_run": not apply_changes,
+                "blocked_reasons": blocked_reasons,
+                "candidate_counts": counts,
+                "applied_counts": applied_counts,
+                "include_files": include_files,
+                "include_export_jobs": include_export_jobs,
+                "include_artifacts": include_artifacts,
+                "require_successful_backup": require_successful_backup,
+            },
+        )
+        self._session.commit()
+        return {
+            "workspace_id": workspace_id,
+            "generated_at": generated_at,
+            "dry_run": not apply_changes,
+            "applied": apply_changes and not blocked_reasons,
+            "policy": policy,
+            "blocked_reasons": blocked_reasons,
+            "warnings": _retention_warnings(policy, candidates),
+            "counts": counts,
+            "applied_counts": applied_counts,
+            "candidates": candidates,
+        }
+
+    def _retention_candidates(
+        self,
+        *,
+        workspace_id: UUID,
+        generated_at: datetime,
+        policy: dict[str, object],
+        include_files: bool,
+        include_export_jobs: bool,
+        include_artifacts: bool,
+        max_items: int,
+    ) -> list[dict[str, object]]:
+        candidates: list[dict[str, object]] = []
+        if include_files:
+            candidates.extend(
+                self._file_retention_candidates(
+                    workspace_id=workspace_id,
+                    generated_at=generated_at,
+                    retention_days=_retention_days(policy, "file_retention_days"),
+                    delete_policy=str(policy.get("delete_policy") or "manual_review"),
+                    limit=max_items - len(candidates),
+                )
+            )
+        if include_export_jobs and len(candidates) < max_items:
+            candidates.extend(
+                self._export_job_retention_candidates(
+                    workspace_id=workspace_id,
+                    generated_at=generated_at,
+                    retention_days=_retention_days(policy, "export_job_retention_days"),
+                    limit=max_items - len(candidates),
+                )
+            )
+        if include_artifacts and len(candidates) < max_items:
+            candidates.extend(
+                self._artifact_retention_candidates(
+                    workspace_id=workspace_id,
+                    generated_at=generated_at,
+                    retention_days=_retention_days(policy, "artifact_retention_days"),
+                    limit=max_items - len(candidates),
+                )
+            )
+        return candidates
+
+    def _file_retention_candidates(
+        self,
+        *,
+        workspace_id: UUID,
+        generated_at: datetime,
+        retention_days: int | None,
+        delete_policy: str,
+        limit: int,
+    ) -> list[dict[str, object]]:
+        if retention_days is None or limit <= 0:
+            return []
+        action = "soft_delete" if delete_policy == "soft_delete" else "manual_review"
+        reason = (
+            None
+            if action == "soft_delete"
+            else "retention_delete_policy_requires_manual_review"
+        )
+        cutoff = generated_at - timedelta(days=retention_days)
+        files = self._session.scalars(
+            select(WorkspaceFile)
+            .where(
+                WorkspaceFile.workspace_id == workspace_id,
+                WorkspaceFile.status == "active",
+                WorkspaceFile.created_at < cutoff,
+            )
+            .order_by(WorkspaceFile.created_at.asc(), WorkspaceFile.id.asc())
+            .limit(limit)
+        ).all()
+        return [
+            _candidate_payload(
+                resource_type="file",
+                resource_id=file.id,
+                created_at=file.created_at,
+                generated_at=generated_at,
+                retention_days=retention_days,
+                status=file.status,
+                action=action,
+                filename=file.filename,
+                size_bytes=file.size_bytes,
+                reason=reason,
+            )
+            for file in files
+        ]
+
+    def _export_job_retention_candidates(
+        self,
+        *,
+        workspace_id: UUID,
+        generated_at: datetime,
+        retention_days: int | None,
+        limit: int,
+    ) -> list[dict[str, object]]:
+        if retention_days is None or limit <= 0:
+            return []
+        cutoff = generated_at - timedelta(days=retention_days)
+        jobs = self._session.scalars(
+            select(WorkspaceExportJob)
+            .where(
+                WorkspaceExportJob.workspace_id == workspace_id,
+                WorkspaceExportJob.status.in_(
+                    [
+                        WorkspaceExportJobStatus.COMPLETED.value,
+                        WorkspaceExportJobStatus.FAILED.value,
+                    ]
+                ),
+                WorkspaceExportJob.created_at < cutoff,
+            )
+            .order_by(WorkspaceExportJob.created_at.asc(), WorkspaceExportJob.id.asc())
+            .limit(limit)
+        ).all()
+        return [
+            _candidate_payload(
+                resource_type="export_job",
+                resource_id=job.id,
+                created_at=job.created_at,
+                generated_at=generated_at,
+                retention_days=retention_days,
+                status=job.status,
+                action="manual_review",
+                filename=job.filename,
+                size_bytes=job.size_bytes,
+                reason="export_job_storage_requires_operator_review",
+            )
+            for job in jobs
+        ]
+
+    def _artifact_retention_candidates(
+        self,
+        *,
+        workspace_id: UUID,
+        generated_at: datetime,
+        retention_days: int | None,
+        limit: int,
+    ) -> list[dict[str, object]]:
+        if retention_days is None or limit <= 0:
+            return []
+        cutoff = generated_at - timedelta(days=retention_days)
+        artifacts = self._session.scalars(
+            select(Artifact)
+            .where(
+                Artifact.workspace_id == workspace_id,
+                Artifact.created_at < cutoff,
+            )
+            .order_by(Artifact.created_at.asc(), Artifact.id.asc())
+            .limit(limit)
+        ).all()
+        return [
+            _candidate_payload(
+                resource_type="artifact",
+                resource_id=artifact.id,
+                created_at=artifact.created_at,
+                generated_at=generated_at,
+                retention_days=retention_days,
+                status=artifact.review_status,
+                action="manual_review",
+                filename=artifact.filename,
+                size_bytes=artifact.size_bytes,
+                reason="artifact_retention_requires_operator_review",
+            )
+            for artifact in artifacts
+        ]
+
+    def _apply_file_retention(self, candidates: list[dict[str, object]]) -> dict[str, int]:
+        applied_counts = {"files": 0, "export_jobs": 0, "artifacts": 0}
+        file_ids = [
+            candidate["resource_id"]
+            for candidate in candidates
+            if candidate["resource_type"] == "file" and candidate["action"] == "soft_delete"
+        ]
+        if not file_ids:
+            return applied_counts
+
+        files = self._session.scalars(
+            select(WorkspaceFile).where(
+                WorkspaceFile.id.in_(file_ids),
+                WorkspaceFile.status == "active",
+            )
+        ).all()
+        now = datetime.now(UTC)
+        for file in files:
+            file.status = RETENTION_DELETED_FILE_STATUS
+            file.file_metadata = {
+                **file.file_metadata,
+                "retention_deleted_at": now.isoformat(),
+                "retention_delete_policy": "soft_delete",
+            }
+            applied_counts["files"] += 1
+        return applied_counts
+
 
 def _retention_policy(settings: dict[str, object]) -> dict[str, object]:
     data_lifecycle = settings.get("data_lifecycle") if isinstance(settings, dict) else None
@@ -177,6 +494,7 @@ def _retention_policy(settings: dict[str, object]) -> dict[str, object]:
         "source": "workspace.settings.data_lifecycle.retention",
         "default_retention_days": _positive_int(raw_policy.get("default_retention_days")),
         "file_retention_days": _positive_int(raw_policy.get("file_retention_days")),
+        "export_job_retention_days": _positive_int(raw_policy.get("export_job_retention_days")),
         "artifact_retention_days": _positive_int(raw_policy.get("artifact_retention_days")),
         "audit_event_retention_days": _positive_int(raw_policy.get("audit_event_retention_days")),
         "delete_policy": str(raw_policy.get("delete_policy") or "manual_review"),
@@ -256,3 +574,81 @@ def _positive_int(value: object) -> int | None:
     if isinstance(value, int) and value > 0:
         return value
     return None
+
+
+def _retention_days(policy: dict[str, object], key: str) -> int | None:
+    value = policy.get(key) or policy.get("default_retention_days")
+    return value if isinstance(value, int) and value > 0 else None
+
+
+def _retention_blocked_reasons(
+    *,
+    policy: dict[str, object],
+    require_successful_backup: bool,
+    latest_success: WorkspaceExportJob | None,
+    include_files: bool,
+    include_export_jobs: bool,
+    include_artifacts: bool,
+) -> list[str]:
+    reasons: list[str] = []
+    if policy["enabled"] is not True:
+        reasons.append("retention_policy_not_enabled")
+    if require_successful_backup and latest_success is None:
+        reasons.append("no_successful_archive_export")
+    if not any([include_files, include_export_jobs, include_artifacts]):
+        reasons.append("no_retention_targets_enabled")
+    return reasons
+
+
+def _retention_warnings(
+    policy: dict[str, object],
+    candidates: list[dict[str, object]],
+) -> list[str]:
+    warnings = list(policy["warnings"]) if isinstance(policy.get("warnings"), list) else []
+    if any(candidate["action"] == "manual_review" for candidate in candidates):
+        warnings.append("manual_review_candidates_present")
+    return warnings
+
+
+def _candidate_payload(
+    *,
+    resource_type: str,
+    resource_id: UUID,
+    created_at: datetime,
+    generated_at: datetime,
+    retention_days: int,
+    status: str,
+    action: str,
+    filename: str | None,
+    size_bytes: int | None,
+    reason: str | None = None,
+) -> dict[str, object]:
+    return {
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "created_at": created_at,
+        "age_days": _age_days(generated_at, created_at),
+        "retention_days": retention_days,
+        "status": status,
+        "action": action,
+        "filename": filename,
+        "size_bytes": size_bytes,
+        "reason": reason,
+    }
+
+
+def _age_days(now: datetime, then: datetime) -> int:
+    normalized_then = then if then.tzinfo is not None else then.replace(tzinfo=UTC)
+    return max((now - normalized_then).days, 0)
+
+
+def _candidate_counts(candidates: list[dict[str, object]]) -> dict[str, int]:
+    counts = {"files": 0, "export_jobs": 0, "artifacts": 0, "total": len(candidates)}
+    for candidate in candidates:
+        if candidate["resource_type"] == "file":
+            counts["files"] += 1
+        elif candidate["resource_type"] == "export_job":
+            counts["export_jobs"] += 1
+        elif candidate["resource_type"] == "artifact":
+            counts["artifacts"] += 1
+    return counts

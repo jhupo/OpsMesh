@@ -13,6 +13,8 @@ from backend.app.api.schemas.exports import (
     WorkspaceExportRequest,
     WorkspaceImportRequest,
     WorkspaceImportResponse,
+    WorkspaceRetentionRequest,
+    WorkspaceRetentionResponse,
 )
 from backend.app.api.services.exports import WorkspaceExportService
 from backend.app.auth.context import WorkspaceContext
@@ -40,6 +42,46 @@ async def get_workspace_data_lifecycle_diagnostics(
     if diagnostics is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     return WorkspaceDataLifecycleResponse.model_validate(diagnostics)
+
+
+@router.post("/retention/preview", response_model=WorkspaceRetentionResponse)
+async def preview_workspace_retention(
+    request: WorkspaceRetentionRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceRetentionResponse:
+    response = WorkspaceDataLifecycleService(session).preview_retention(
+        workspace_id=context.workspace.id,
+        user_id=context.user.user_id,
+        include_files=request.include_files,
+        include_export_jobs=request.include_export_jobs,
+        include_artifacts=request.include_artifacts,
+        max_items=request.max_items,
+        require_successful_backup=request.require_successful_backup,
+    )
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return WorkspaceRetentionResponse.model_validate(response)
+
+
+@router.post("/retention/apply", response_model=WorkspaceRetentionResponse)
+async def apply_workspace_retention(
+    request: WorkspaceRetentionRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceRetentionResponse:
+    response = WorkspaceDataLifecycleService(session).apply_retention(
+        workspace_id=context.workspace.id,
+        user_id=context.user.user_id,
+        include_files=request.include_files,
+        include_export_jobs=request.include_export_jobs,
+        include_artifacts=request.include_artifacts,
+        max_items=request.max_items,
+        require_successful_backup=request.require_successful_backup,
+    )
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return WorkspaceRetentionResponse.model_validate(response)
 
 
 @router.post("/metadata", status_code=status.HTTP_200_OK)
