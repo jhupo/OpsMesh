@@ -604,6 +604,9 @@ class CapabilityService:
                     "usable": availability.usable,
                     "required_tools": availability.required_tools,
                     "blocked_reasons": availability.blocked_reasons,
+                    "recommended_actions": _skill_governance_actions(
+                        availability.blocked_reasons
+                    ),
                 }
             )
 
@@ -638,6 +641,7 @@ class CapabilityService:
                     "effective_tool_count": len(effective_tools),
                     "unavailable_tool_count": unavailable_tool_count,
                     "blocked_reasons": blocked_reasons,
+                    "recommended_actions": _agent_governance_actions(blocked_reasons),
                 }
             )
 
@@ -682,6 +686,10 @@ class CapabilityService:
                     "approval_required_tool_count": server_approval_tools,
                     "failed_call_count": item.usage.failed_call_count,
                     "blocked_reasons": item.blocked_reasons,
+                    "recommended_actions": _mcp_server_governance_actions(
+                        item.blocked_reasons,
+                        failed_call_count=item.usage.failed_call_count,
+                    ),
                 }
             )
 
@@ -689,6 +697,11 @@ class CapabilityService:
         blocked_reason_counts.update(skill_blocked_reasons)
         blocked_reason_counts.update(agent_blocked_reasons)
         blocked_reason_counts.update(server_blocked_reasons)
+        recommended_actions = Counter(
+            action
+            for item in [*skill_items, *agent_items, *server_items]
+            for action in _string_list(item.get("recommended_actions"))
+        )
         return {
             "workspace_id": workspace_id,
             "generated_at": datetime.now(UTC),
@@ -720,6 +733,7 @@ class CapabilityService:
                 "failed_mcp_tool_calls": failed_tool_call_count,
                 "catalog_truncated": catalog_total > len(catalog_items),
                 "blocked_reason_counts": dict(sorted(blocked_reason_counts.items())),
+                "recommended_actions": dict(sorted(recommended_actions.items())),
             },
             "skills": skill_items,
             "agents": agent_items,
@@ -1795,6 +1809,58 @@ def _mcp_blocked_reasons(
         if not _has_remote_url(server):
             reasons.append("missing_remote_url")
     return reasons
+
+
+def _skill_governance_actions(blocked_reasons: list[str]) -> list[str]:
+    actions: list[str] = []
+    reasons = set(blocked_reasons)
+    if "skill_install_disabled" in reasons:
+        actions.append("review_skill_install_status")
+    if "missing_required_mcp_tools" in reasons:
+        actions.append("repair_required_mcp_tools")
+    return actions
+
+
+def _agent_governance_actions(blocked_reasons: list[str]) -> list[str]:
+    actions: list[str] = []
+    reasons = set(blocked_reasons)
+    if "agent_inactive" in reasons:
+        actions.append("review_agent_status")
+    if "missing_agent_skill_installs" in reasons:
+        actions.append("repair_agent_skill_assignments")
+    if "configured_mcp_tools_not_allowed" in reasons:
+        actions.append("allow_or_remove_configured_mcp_tools")
+    if "unusable_installed_skills" in reasons:
+        actions.append("repair_installed_skill_dependencies")
+    if "unavailable_allowed_mcp_tools" in reasons:
+        actions.append("repair_mcp_tool_availability")
+    return actions
+
+
+def _mcp_server_governance_actions(
+    blocked_reasons: list[str],
+    *,
+    failed_call_count: int,
+) -> list[str]:
+    actions: list[str] = []
+    reasons = set(blocked_reasons)
+    if "server_inactive" in reasons:
+        actions.append("review_mcp_server_status")
+    if "server_unhealthy" in reasons or "health_check_stale" in reasons:
+        actions.append("refresh_mcp_health_check")
+    if "no_allowed_tools" in reasons:
+        actions.append("allow_mcp_tools")
+    if "missing_required_credentials" in reasons:
+        actions.append("add_mcp_credentials")
+    if "unsupported_server_type" in reasons:
+        actions.append("replace_unsupported_mcp_server")
+    if "missing_stdio_command" in reasons:
+        actions.append("configure_stdio_command")
+    if "missing_remote_url" in reasons or "unsupported_hosted_transport" in reasons:
+        actions.append("repair_mcp_connection")
+    if failed_call_count > 0:
+        actions.append("inspect_failed_mcp_calls")
+    return actions
 
 
 def _health_check_stale(server: McpServer) -> bool:

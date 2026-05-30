@@ -560,7 +560,10 @@ def test_mcp_catalog_and_policy_diagnostics_block_stale_health_checks() -> None:
     body = governance.json()
     assert body["summary"]["blocked_reason_counts"]["health_check_stale"] == 1
     assert body["summary"]["blocked_reason_counts"]["unavailable_allowed_mcp_tools"] == 1
+    assert body["summary"]["recommended_actions"]["refresh_mcp_health_check"] == 1
+    assert body["summary"]["recommended_actions"]["repair_mcp_tool_availability"] == 1
     assert body["mcp_servers"][0]["blocked_reasons"] == ["health_check_stale"]
+    assert body["mcp_servers"][0]["recommended_actions"] == ["refresh_mcp_health_check"]
 
     refreshed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
@@ -1600,6 +1603,14 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
             "unavailable_allowed_mcp_tools": 1,
             "unusable_installed_skills": 1,
         },
+        "recommended_actions": {
+            "add_mcp_credentials": 1,
+            "allow_or_remove_configured_mcp_tools": 1,
+            "inspect_failed_mcp_calls": 1,
+            "repair_installed_skill_dependencies": 1,
+            "repair_mcp_tool_availability": 1,
+            "repair_required_mcp_tools": 1,
+        },
     }
     assert body["skills"] == [
         {
@@ -1611,6 +1622,7 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
             "usable": False,
             "required_tools": ["generate_image", "upscale_image"],
             "blocked_reasons": ["missing_required_mcp_tools"],
+            "recommended_actions": ["repair_required_mcp_tools"],
         }
     ]
     assert body["agents"] == [
@@ -1629,6 +1641,11 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
                 "unusable_installed_skills",
                 "unavailable_allowed_mcp_tools",
             ],
+            "recommended_actions": [
+                "allow_or_remove_configured_mcp_tools",
+                "repair_installed_skill_dependencies",
+                "repair_mcp_tool_availability",
+            ],
         }
     ]
     assert body["mcp_servers"] == [
@@ -1646,6 +1663,7 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
             "approval_required_tool_count": 1,
             "failed_call_count": 1,
             "blocked_reasons": ["missing_required_credentials"],
+            "recommended_actions": ["add_mcp_credentials", "inspect_failed_mcp_calls"],
         }
     ]
     serialized = str(body)

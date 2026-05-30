@@ -207,6 +207,7 @@ class WorkspaceCapabilityGovernanceSkillResponse(BaseModel):
     usable: bool
     required_tools: list[str]
     blocked_reasons: list[str] = Field(default_factory=list)
+    recommended_actions: list[str] = Field(default_factory=list)
 
 
 class WorkspaceCapabilityGovernanceAgentResponse(BaseModel):
@@ -220,6 +221,7 @@ class WorkspaceCapabilityGovernanceAgentResponse(BaseModel):
     effective_tool_count: int
     unavailable_tool_count: int
     blocked_reasons: list[str] = Field(default_factory=list)
+    recommended_actions: list[str] = Field(default_factory=list)
 
 
 class WorkspaceCapabilityGovernanceMcpServerResponse(BaseModel):
@@ -236,6 +238,7 @@ class WorkspaceCapabilityGovernanceMcpServerResponse(BaseModel):
     approval_required_tool_count: int
     failed_call_count: int
     blocked_reasons: list[str] = Field(default_factory=list)
+    recommended_actions: list[str] = Field(default_factory=list)
 
 
 class WorkspaceCapabilityGovernanceResponse(BaseModel):
