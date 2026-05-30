@@ -23,6 +23,8 @@ from backend.app.api.schemas.tasks import (
     TaskManagerDiagnosticsResponse,
     TaskMessageResponse,
     TaskObservationResponse,
+    TaskOperatorActionRequest,
+    TaskOperatorActionResponse,
     TaskPlanDiagnosticsResponse,
     TaskPlanningAttemptResponse,
     TaskPlanRegenerateRequest,
@@ -53,6 +55,7 @@ from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.tasks.observation import TaskObservationService
+from backend.app.tasks.operator_actions import TaskOperatorActionService
 from backend.app.tasks.timeline import TaskTimelineService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
@@ -565,6 +568,38 @@ async def get_task_timeline(
     if timeline is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskTimelineResponse.model_validate(timeline)
+
+
+@router.post("/tasks/{task_id}/operator-actions", response_model=TaskOperatorActionResponse)
+async def apply_task_operator_action(
+    task_id: UUID,
+    request: TaskOperatorActionRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> TaskOperatorActionResponse:
+    try:
+        response = TaskOperatorActionService(session).apply_action(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            actor_user_id=context.user.user_id,
+            action=request.action,
+            task_step_ids=request.task_step_ids,
+            agent_profile_id=request.agent_profile_id,
+            instruction=request.instruction,
+            reason=request.reason,
+            metadata=request.metadata,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskOperatorActionResponse.model_validate(response)
 
 
 @router.get(

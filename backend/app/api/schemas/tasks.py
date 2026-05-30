@@ -39,6 +39,15 @@ class TaskCorrectionRequest(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
+class TaskOperatorActionRequest(BaseModel):
+    action: str = Field(pattern="^(requeue_blocked_steps|reassign_step|request_manager_review)$")
+    task_step_ids: list[UUID] = Field(default_factory=list, max_length=100)
+    agent_profile_id: UUID | None = None
+    instruction: str | None = Field(default=None, max_length=4_000)
+    reason: str | None = Field(default=None, max_length=1_000)
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
 class TaskResponse(TimestampedModel):
     workspace_id: UUID
     created_by_user_id: UUID | None
@@ -131,6 +140,23 @@ class TaskCorrectionResponse(BaseModel):
     created_step_id: UUID | None
     message_id: UUID
     status: str
+
+
+class TaskOperatorActionResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    action: str
+    status: str
+    task_status: str
+    changed_step_ids: list[UUID]
+    created_step_ids: list[UUID]
+    message_id: UUID
+    warnings: list[str] = Field(default_factory=list)
+    details: dict[str, object]
+
+    @field_serializer("details")
+    def _serialize_details(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class TaskCorrectionStepDiagnostic(BaseModel):

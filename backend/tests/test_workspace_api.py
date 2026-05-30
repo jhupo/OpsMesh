@@ -2475,6 +2475,189 @@ def test_task_correction_rejects_foreign_artifact_target() -> None:
     assert "does not belong" in response.json()["error"]["message"]
 
 
+def test_task_operator_action_reassigns_and_requeues_blocked_step() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-operator@example.com",
+        slug="other-operator",
+    )
+    original_agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Original Developer",
+        role="developer",
+    )
+    replacement_agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Replacement Developer",
+        role="developer",
+    )
+    foreign_agent = AgentProfile(
+        workspace_id=other_workspace.id,
+        name="Foreign Developer",
+        role="developer",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Blocked implementation",
+        status="blocked",
+    )
+    session.add_all([original_agent, replacement_agent, foreign_agent, task])
+    session.flush()
+    blocked_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=original_agent.id,
+        work_package_id="build",
+        required_role="developer",
+        title="Build feature",
+        status="blocked",
+        dependencies={
+            "blocked_reason": "worker_unavailable",
+            "blocked_resource_keys": ["worker:cloud"],
+            "after_step_ids": [],
+        },
+    )
+    session.add(blocked_step)
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/operator-actions",
+        headers=_headers(owner.id),
+        json={
+            "action": "reassign_step",
+            "task_step_ids": [str(blocked_step.id)],
+            "agent_profile_id": str(replacement_agent.id),
+            "reason": "Developer unavailable",
+            "metadata": {"token": "operator-secret"},
+        },
+    )
+    foreign_agent_response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/operator-actions",
+        headers=_headers(owner.id),
+        json={
+            "action": "reassign_step",
+            "task_step_ids": [str(blocked_step.id)],
+            "agent_profile_id": str(foreign_agent.id),
+        },
+    )
+    foreign_task_response = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks/{task.id}/operator-actions",
+        headers=_headers(other_owner.id),
+        json={"action": "requeue_blocked_steps"},
+    )
+    messages = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/messages",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"] == "reassign_step"
+    assert body["task_status"] == "running"
+    assert body["changed_step_ids"] == [str(blocked_step.id)]
+    assert body["details"]["previous_agent_profile_id"] == str(original_agent.id)
+    assert body["details"]["agent_profile_id"] == str(replacement_agent.id)
+    assert "operator-secret" not in str(body)
+    session.refresh(task)
+    session.refresh(blocked_step)
+    assert task.status == "running"
+    assert blocked_step.status == "queued"
+    assert blocked_step.assigned_agent_profile_id == replacement_agent.id
+    assert blocked_step.dependencies == {"after_step_ids": []}
+    assert foreign_agent_response.status_code == 404
+    assert foreign_task_response.status_code == 404
+    assert messages.status_code == 200
+    message_payload = messages.json()["items"][0]["payload"]
+    assert message_payload["metadata"]["token"] == "[redacted]"
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "task.operator.reassign_step",
+        )
+    )
+    assert audit is not None
+    assert audit.audit_metadata["changed_step_ids"] == [str(blocked_step.id)]
+
+
+def test_task_operator_action_requests_manager_review_step() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="PM",
+        role="project_manager",
+    )
+    developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+    )
+    session.add_all([manager, developer])
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Needs PM review",
+        status="running",
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id)},
+    )
+    no_manager_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="No manager",
+        status="running",
+    )
+    session.add_all([task, no_manager_task])
+    session.flush()
+    session.add(
+        TaskStep(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            assigned_agent_profile_id=developer.id,
+            work_package_id="build",
+            title="Build feature",
+            status="completed",
+            order_index=10,
+        )
+    )
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/operator-actions",
+        headers=_headers(owner.id),
+        json={
+            "action": "request_manager_review",
+            "instruction": "Review the implementation and decide whether to accept.",
+            "reason": "Operator wants acceptance check",
+        },
+    )
+    missing_manager = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{no_manager_task.id}/operator-actions",
+        headers=_headers(owner.id),
+        json={"action": "request_manager_review"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["created_step_ids"]
+    created_step = session.get(TaskStep, UUID(body["created_step_ids"][0]))
+    assert created_step is not None
+    assert created_step.assigned_agent_profile_id == manager.id
+    assert created_step.work_package_id == "manager-summary-operator-1"
+    assert created_step.required_role == "project_manager"
+    assert created_step.status == "queued"
+    assert created_step.dependencies["operator_action"]["reason"] == (
+        "Operator wants acceptance check"
+    )
+    assert body["details"]["manager_agent_profile_id"] == str(manager.id)
+    assert missing_manager.status_code == 404
+
+
 def test_final_output_correction_creates_reconciliation_work() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

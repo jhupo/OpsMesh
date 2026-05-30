@@ -1,0 +1,359 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from uuid import UUID
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from backend.app.agents.models import AgentProfile
+from backend.app.audit.service import AuditService
+from backend.app.tasks.models import Task, TaskMessage, TaskStep
+
+TASK_OPERATOR_ACTIONS = {
+    "requeue_blocked_steps",
+    "reassign_step",
+    "request_manager_review",
+}
+TERMINAL_STEP_STATUSES = {"completed", "cancelled"}
+TERMINAL_TASK_STATUSES = {"completed", "cancelled"}
+BLOCKING_DEPENDENCY_KEYS = {
+    "blocked_at",
+    "blocked_reason",
+    "blocked_resource_key",
+    "blocked_resource_keys",
+    "blocked_by",
+    "scheduler",
+}
+
+
+class TaskOperatorActionService:
+    """Apply user/operator actions that turn task diagnostics into runnable work."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def apply_action(
+        self,
+        *,
+        workspace_id: UUID,
+        task_id: UUID,
+        actor_user_id: UUID,
+        action: str,
+        task_step_ids: list[UUID],
+        agent_profile_id: UUID | None,
+        instruction: str | None,
+        reason: str | None,
+        metadata: dict[str, object],
+    ) -> dict[str, object] | None:
+        if action not in TASK_OPERATOR_ACTIONS:
+            raise ValueError("Unsupported task operator action")
+
+        task = self._task(workspace_id, task_id)
+        if task is None:
+            return None
+        if task.status in TERMINAL_TASK_STATUSES:
+            raise ValueError("Terminal tasks cannot be modified by operator action")
+
+        if action == "requeue_blocked_steps":
+            result = self._requeue_blocked_steps(task, task_step_ids)
+        elif action == "reassign_step":
+            result = self._reassign_step(
+                task,
+                task_step_ids=task_step_ids,
+                agent_profile_id=agent_profile_id,
+            )
+        else:
+            result = self._request_manager_review(
+                task,
+                instruction=instruction,
+                reason=reason,
+            )
+
+        message = self._append_message(
+            task,
+            action=action,
+            result=result,
+            instruction=instruction,
+            reason=reason,
+            metadata=metadata,
+        )
+        self._wake_task(task, result["changed_step_ids"] or result["created_step_ids"])
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=actor_user_id,
+            action=f"task.operator.{action}",
+            target_type="task",
+            target_id=task.id,
+            metadata={
+                "task_step_ids": [str(step_id) for step_id in task_step_ids],
+                "agent_profile_id": str(agent_profile_id) if agent_profile_id else None,
+                "changed_step_ids": [str(step_id) for step_id in result["changed_step_ids"]],
+                "created_step_ids": [str(step_id) for step_id in result["created_step_ids"]],
+                "message_id": str(message.id),
+                "reason": reason,
+                "metadata": metadata,
+            },
+        )
+        self._session.commit()
+        self._session.refresh(task)
+        return {
+            "workspace_id": workspace_id,
+            "task_id": task.id,
+            "action": action,
+            "status": "applied",
+            "task_status": task.status,
+            "changed_step_ids": result["changed_step_ids"],
+            "created_step_ids": result["created_step_ids"],
+            "message_id": message.id,
+            "warnings": result["warnings"],
+            "details": result["details"],
+        }
+
+    def _task(self, workspace_id: UUID, task_id: UUID) -> Task | None:
+        return self._session.scalar(
+            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+        )
+
+    def _requeue_blocked_steps(
+        self,
+        task: Task,
+        task_step_ids: list[UUID],
+    ) -> dict[str, object]:
+        steps = self._target_steps(task, task_step_ids)
+        if not steps:
+            raise ValueError("No matching task steps found")
+
+        changed_step_ids: list[UUID] = []
+        warnings: list[str] = []
+        for step in steps:
+            if step.status != "blocked":
+                warnings.append(f"step_not_blocked:{step.id}")
+                continue
+            step.status = "queued"
+            step.dependencies = _without_blocking_keys(step.dependencies)
+            changed_step_ids.append(step.id)
+
+        return {
+            "changed_step_ids": changed_step_ids,
+            "created_step_ids": [],
+            "warnings": warnings,
+            "details": {
+                "requeued_steps": len(changed_step_ids),
+                "requested_steps": len(steps),
+            },
+        }
+
+    def _reassign_step(
+        self,
+        task: Task,
+        *,
+        task_step_ids: list[UUID],
+        agent_profile_id: UUID | None,
+    ) -> dict[str, object]:
+        if len(task_step_ids) != 1:
+            raise ValueError("reassign_step requires exactly one task_step_id")
+        if agent_profile_id is None:
+            raise ValueError("reassign_step requires agent_profile_id")
+        agent = self._session.scalar(
+            select(AgentProfile).where(
+                AgentProfile.workspace_id == task.workspace_id,
+                AgentProfile.id == agent_profile_id,
+                AgentProfile.status == "active",
+            )
+        )
+        if agent is None:
+            raise ValueError("Agent profile not found")
+
+        step = self._target_steps(task, task_step_ids)[0]
+        if step.status in TERMINAL_STEP_STATUSES:
+            raise ValueError("Terminal task steps cannot be reassigned")
+
+        previous_agent_profile_id = step.assigned_agent_profile_id
+        step.assigned_agent_profile_id = agent_profile_id
+        if step.status in {"blocked", "failed"}:
+            step.status = "queued"
+            step.dependencies = _without_blocking_keys(step.dependencies)
+
+        return {
+            "changed_step_ids": [step.id],
+            "created_step_ids": [],
+            "warnings": [],
+            "details": {
+                "task_step_id": str(step.id),
+                "previous_agent_profile_id": (
+                    str(previous_agent_profile_id) if previous_agent_profile_id else None
+                ),
+                "agent_profile_id": str(agent_profile_id),
+                "agent_role": agent.role,
+            },
+        }
+
+    def _request_manager_review(
+        self,
+        task: Task,
+        *,
+        instruction: str | None,
+        reason: str | None,
+    ) -> dict[str, object]:
+        manager_agent_id = _manager_agent_id(task)
+        if manager_agent_id is None:
+            raise ValueError("Task manager not found")
+        manager = self._session.scalar(
+            select(AgentProfile).where(
+                AgentProfile.workspace_id == task.workspace_id,
+                AgentProfile.id == manager_agent_id,
+                AgentProfile.status == "active",
+            )
+        )
+        if manager is None:
+            raise ValueError("Task manager not found")
+
+        next_order = self._next_step_order(task.workspace_id, task.id)
+        cycle = self._next_manager_review_cycle(task.workspace_id, task.id)
+        step = TaskStep(
+            workspace_id=task.workspace_id,
+            task_id=task.id,
+            assigned_agent_profile_id=manager.id,
+            runtime_space_id=task.runtime_space_id,
+            work_package_id=f"manager-summary-operator-{cycle}",
+            required_role="project_manager",
+            required_skills=["project_management", "review"],
+            expected_artifacts=["manager_review"],
+            acceptance_criteria=["Manager review is recorded with a decision."],
+            review_policy={"mode": "operator_requested_review"},
+            title="Operator requested manager review",
+            description=instruction or "Review current task progress and decide next action.",
+            status="queued",
+            order_index=next_order,
+            dependencies={
+                "operator_action": {
+                    "action": "request_manager_review",
+                    "reason": reason,
+                    "requested_at": datetime.now(UTC).isoformat(),
+                }
+            },
+        )
+        self._session.add(step)
+        self._session.flush([step])
+        return {
+            "changed_step_ids": [],
+            "created_step_ids": [step.id],
+            "warnings": [],
+            "details": {
+                "manager_agent_profile_id": str(manager.id),
+                "created_work_package_id": step.work_package_id,
+                "order_index": step.order_index,
+            },
+        }
+
+    def _target_steps(self, task: Task, task_step_ids: list[UUID]) -> list[TaskStep]:
+        statement = select(TaskStep).where(
+            TaskStep.workspace_id == task.workspace_id,
+            TaskStep.task_id == task.id,
+        )
+        if task_step_ids:
+            statement = statement.where(TaskStep.id.in_(task_step_ids))
+        else:
+            statement = statement.where(TaskStep.status == "blocked")
+        steps = self._session.scalars(
+            statement.order_by(TaskStep.order_index.asc(), TaskStep.created_at.asc())
+        ).all()
+        if task_step_ids and len(steps) != len(set(task_step_ids)):
+            raise ValueError("Task step not found")
+        return list(steps)
+
+    def _next_step_order(self, workspace_id: UUID, task_id: UUID) -> int:
+        current = self._session.scalar(
+            select(func.coalesce(func.max(TaskStep.order_index), 0)).where(
+                TaskStep.workspace_id == workspace_id,
+                TaskStep.task_id == task_id,
+            )
+        )
+        return int(current or 0) + 1
+
+    def _next_manager_review_cycle(self, workspace_id: UUID, task_id: UUID) -> int:
+        existing = self._session.scalar(
+            select(func.count(TaskStep.id)).where(
+                TaskStep.workspace_id == workspace_id,
+                TaskStep.task_id == task_id,
+                TaskStep.work_package_id.like("manager-summary-operator-%"),
+            )
+        )
+        return int(existing or 0) + 1
+
+    def _append_message(
+        self,
+        task: Task,
+        *,
+        action: str,
+        result: dict[str, object],
+        instruction: str | None,
+        reason: str | None,
+        metadata: dict[str, object],
+    ) -> TaskMessage:
+        next_sequence = (
+            self._session.scalar(
+                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
+                    TaskMessage.workspace_id == task.workspace_id,
+                    TaskMessage.task_id == task.id,
+                )
+            )
+            or 0
+        ) + 1
+        message = TaskMessage(
+            workspace_id=task.workspace_id,
+            task_id=task.id,
+            message_type=f"task.operator.{action}",
+            sequence=next_sequence,
+            body=f"Operator action applied: {action}.",
+            payload={
+                "action": action,
+                "instruction": instruction,
+                "reason": reason,
+                "changed_step_ids": [str(step_id) for step_id in result["changed_step_ids"]],
+                "created_step_ids": [str(step_id) for step_id in result["created_step_ids"]],
+                "warnings": result["warnings"],
+                "metadata": metadata,
+            },
+        )
+        self._session.add(message)
+        self._session.flush([message])
+        return message
+
+    def _wake_task(self, task: Task, affected_step_ids: object) -> None:
+        if not affected_step_ids:
+            return
+        if task.status == "blocked":
+            task.status = "running"
+        elif task.status == "failed":
+            task.status = "queued"
+
+
+def _without_blocking_keys(dependencies: dict[str, object]) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in dependencies.items()
+        if key not in BLOCKING_DEPENDENCY_KEYS
+    }
+
+
+def _manager_agent_id(task: Task) -> UUID | None:
+    snapshot = task.team_snapshot if isinstance(task.team_snapshot, dict) else {}
+    team = snapshot.get("team") if isinstance(snapshot.get("team"), dict) else {}
+    manager_id = team.get("manager_agent_profile_id")
+    if isinstance(manager_id, str):
+        try:
+            return UUID(manager_id)
+        except ValueError:
+            return None
+    if isinstance(manager_id, UUID):
+        return manager_id
+    plan = task.project_plan if isinstance(task.project_plan, dict) else {}
+    planner_id = plan.get("planner_agent_profile_id")
+    if isinstance(planner_id, str):
+        try:
+            return UUID(planner_id)
+        except ValueError:
+            return None
+    return planner_id if isinstance(planner_id, UUID) else None
