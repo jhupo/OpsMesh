@@ -20,6 +20,7 @@ from backend.app.api.schemas.tasks import (
     TaskCorrectionResponse,
     TaskCreateRequest,
     TaskExecutionDiagnosticsResponse,
+    TaskManagerDiagnosticsResponse,
     TaskMessageResponse,
     TaskObservationResponse,
     TaskPlanDiagnosticsResponse,
@@ -50,6 +51,7 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
 from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
+from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.tasks.observation import TaskObservationService
 from backend.app.tasks.timeline import TaskTimelineService
 from backend.app.workers.dependencies import get_worker_queue
@@ -581,6 +583,24 @@ async def get_task_execution_diagnostics(
     if diagnostics is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskExecutionDiagnosticsResponse.model_validate(diagnostics)
+
+
+@router.get(
+    "/tasks/{task_id}/manager-diagnostics",
+    response_model=TaskManagerDiagnosticsResponse,
+)
+async def get_task_manager_diagnostics(
+    task_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskManagerDiagnosticsResponse:
+    diagnostics = TaskManagerDiagnosticsService(session).get_diagnostics(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+    )
+    if diagnostics is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskManagerDiagnosticsResponse.model_validate(diagnostics)
 
 
 @router.get("/runs", response_model=PageResponse[AgentRunResponse])

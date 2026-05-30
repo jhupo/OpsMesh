@@ -260,6 +260,35 @@ class TaskTimelineResponse(BaseModel):
         return redact_sensitive_payload(value)
 
 
+class TaskManagerDiagnosticsResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    generated_at: datetime
+    manager: dict[str, object]
+    summary: dict[str, object]
+    handoff_chain: list[dict[str, object]]
+    acceptance_decisions: list[dict[str, object]]
+    follow_up_cycles: list[dict[str, object]]
+    blocked_reasons: list[str]
+
+    @field_serializer(
+        "manager",
+        "summary",
+        "handoff_chain",
+        "acceptance_decisions",
+        "follow_up_cycles",
+    )
+    def _serialize_metadata(self, value: object) -> object:
+        if isinstance(value, dict):
+            return redact_sensitive_payload(value)
+        if isinstance(value, list):
+            return [
+                redact_sensitive_payload(item) if isinstance(item, dict) else item
+                for item in value
+            ]
+        return value
+
+
 class TaskExecutionAgentSummary(BaseModel):
     id: UUID
     name: str

@@ -1911,6 +1911,209 @@ def test_task_plan_diagnostics_explains_assignment_and_dependency_quality() -> N
     assert foreign_response.status_code == 404
 
 
+def test_task_manager_diagnostics_explains_acceptance_follow_up_and_redacts() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-manager-diagnostics@example.com",
+        slug="other-manager-diagnostics",
+    )
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="PM",
+        role="project_manager",
+    )
+    developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+    )
+    session.add_all([manager, developer])
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Manager diagnostics",
+        status="running",
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id)},
+    )
+    other_task = Task(
+        workspace_id=other_workspace.id,
+        created_by_user_id=other_owner.id,
+        title="Foreign manager diagnostics",
+    )
+    session.add_all([task, other_task])
+    session.flush()
+    planning_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=manager.id,
+        work_package_id="manager-planning",
+        required_role="project_manager",
+        title="Plan work",
+        status="completed",
+        order_index=10,
+    )
+    session.add(planning_step)
+    session.flush()
+    build_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=developer.id,
+        work_package_id="build",
+        required_role="developer",
+        title="Build feature",
+        status="completed",
+        order_index=20,
+        dependencies={"after_step_ids": [str(planning_step.id)]},
+    )
+    session.add(build_step)
+    session.flush()
+    summary_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=manager.id,
+        work_package_id="manager-summary",
+        required_role="project_manager",
+        title="Review delivery",
+        status="completed",
+        order_index=30,
+        dependencies={"after_step_ids": [str(build_step.id)]},
+    )
+    session.add(summary_step)
+    session.flush()
+    revision_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=developer.id,
+        work_package_id="revision-build-1-1",
+        required_role="developer",
+        title="Revise feature",
+        status="queued",
+        order_index=40,
+        dependencies={
+            "revision_of_work_package_id": "build",
+            "token": "hidden-token",
+        },
+    )
+    session.add(revision_step)
+    session.flush()
+    review_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=manager.id,
+        work_package_id="manager-summary-revision-1",
+        required_role="project_manager",
+        title="Review revision",
+        status="queued",
+        order_index=50,
+        dependencies={"after_step_ids": [str(revision_step.id)]},
+    )
+    session.add(review_step)
+    session.flush()
+    session.add_all(
+        [
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=summary_step.id,
+                agent_profile_id=manager.id,
+                message_type="pm.acceptance_decision",
+                sequence=1,
+                body="Private acceptance body should not be returned.",
+                payload={
+                    "decision": "request_revision",
+                    "summary": "Needs one revision",
+                    "reasons": ["Missing tests"],
+                    "revision_requests": [
+                        {
+                            "work_package_id": "build",
+                            "instruction": "Add tests",
+                            "token": "hidden-token",
+                        }
+                    ],
+                    "api_key": "sk-message",
+                },
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=summary_step.id,
+                agent_profile_id=manager.id,
+                message_type="pm.follow_up_created",
+                sequence=2,
+                body="Follow up created.",
+                payload={
+                    "decision": "request_revision",
+                    "revision_cycle": 1,
+                    "follow_up_step_ids": [str(revision_step.id)],
+                    "follow_up_work_package_ids": ["revision-build-1-1"],
+                    "headers": {"authorization": "Bearer hidden"},
+                },
+            ),
+            TaskMessage(
+                workspace_id=other_workspace.id,
+                task_id=other_task.id,
+                message_type="pm.acceptance_decision",
+                sequence=1,
+                body="foreign",
+                payload={"decision": "approved"},
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/manager-diagnostics",
+        headers=_headers(owner.id),
+    )
+    foreign_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks/{task.id}/manager-diagnostics",
+        headers=_headers(other_owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["manager"]["agent"]["name"] == "PM"
+    assert body["manager"]["planning_step_id"] == str(planning_step.id)
+    assert body["summary"]["status"] == "attention"
+    assert body["summary"]["decision_counts"] == {"request_revision": 1}
+    assert set(body["blocked_reasons"]) == {
+        "specialist_steps_incomplete",
+        "follow_up_incomplete",
+    }
+    chain = {item["phase"]: item for item in body["handoff_chain"]}
+    assert chain["manager_planning"]["status"] == "completed"
+    assert chain["specialist_execution"]["status"] == "in_progress"
+    assert chain["manager_acceptance"]["status"] == "completed"
+    assert chain["follow_up"]["blocked_reasons"] == ["follow_up_incomplete"]
+    decision = body["acceptance_decisions"][0]
+    assert decision["decision"] == "request_revision"
+    assert decision["status"] == "follow_up_created"
+    assert decision["summary"] == "Needs one revision"
+    assert decision["revision_requests"][0]["token"] == "[redacted]"
+    assert decision["metadata"]["api_key"] == "[redacted]"
+    cycle = body["follow_up_cycles"][0]
+    assert cycle["revision_cycle"] == 1
+    assert cycle["status"] == "in_progress"
+    assert cycle["follow_up_step_ids"] == [str(revision_step.id)]
+    assert set(cycle["blocked_reasons"]) == {
+        "follow_up_steps_incomplete",
+        "follow_up_review_incomplete",
+    }
+    assert cycle["metadata"]["headers"] == "[redacted]"
+    assert foreign_response.status_code == 404
+    serialized = str(body)
+    assert "Private acceptance body should not be returned." not in serialized
+    assert "hidden-token" not in serialized
+    assert "sk-message" not in serialized
+    assert "Bearer hidden" not in serialized
+    assert "foreign" not in serialized
+
+
 def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
