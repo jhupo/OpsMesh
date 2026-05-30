@@ -266,6 +266,7 @@ class WorkspaceExportService:
             filename=f"{workspace.slug}-workspace-archive.zip",
             content=buffer.getvalue(),
             skipped_objects=skipped,
+            manifest_counts=metadata.manifest.counts,
         )
 
     def create_archive_export_job(
@@ -383,6 +384,7 @@ class WorkspaceExportService:
             export_job.completed_at = datetime.now(UTC)
             export_job.job_metadata = {
                 **export_job.job_metadata,
+                "manifest_counts": result.manifest_counts,
                 "skipped_objects": result.skipped_objects,
             }
             AuditService(self._session).record_user_action(

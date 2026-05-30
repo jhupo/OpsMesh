@@ -58,6 +58,7 @@ class WorkspaceArchiveExportResult(BaseModel):
     content_type: str = "application/zip"
     content: bytes
     skipped_objects: list[str] = Field(default_factory=list)
+    manifest_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class WorkspaceExportJobResponse(ORMModel):

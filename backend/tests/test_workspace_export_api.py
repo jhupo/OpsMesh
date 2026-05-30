@@ -358,7 +358,7 @@ def test_workspace_recovery_readiness_summarizes_restore_health_and_redacts_meta
         checksum_sha256="c" * 64,
         completed_at=datetime(2026, 1, 3, tzinfo=UTC),
         created_at=datetime(2026, 1, 3, tzinfo=UTC),
-        job_metadata={"token": "job-token"},
+        job_metadata={"token": "job-token", "manifest_counts": {"agents": 0}},
     )
     failed_job = WorkspaceExportJob(
         workspace_id=workspace.id,
@@ -441,6 +441,9 @@ def test_workspace_recovery_readiness_summarizes_restore_health_and_redacts_meta
     assert body["restore_readiness"]["ready"] is True
     assert body["restore_readiness"]["blocked_reasons"] == []
     assert body["restore_readiness"]["warnings"] == ["archive_export_jobs_in_progress"]
+    assert body["restore_readiness"]["backup_coverage"]["status"] == "verified"
+    assert body["restore_readiness"]["backup_coverage"]["score"] == 100
+    assert body["restore_readiness"]["backup_coverage"]["uncovered_resource_count"] == 0
     assert body["restore_readiness"]["downloadable_archive_available"] is True
     assert body["restore_readiness"]["latest_archive_import_test_recorded"] is True
     assert foreign_response.status_code == 403
@@ -484,6 +487,7 @@ def test_workspace_recovery_readiness_blocks_stale_archive_backup(tmp_path: Path
         checksum_sha256="c" * 64,
         completed_at=datetime(2026, 1, 3, tzinfo=UTC),
         created_at=datetime(2026, 1, 3, tzinfo=UTC),
+        job_metadata={"manifest_counts": {"agents": 0}},
     )
     import_event = AuditEvent(
         workspace_id=workspace.id,
@@ -511,6 +515,70 @@ def test_workspace_recovery_readiness_blocks_stale_archive_backup(tmp_path: Path
     assert body["restore_readiness"]["max_archive_age_days"] == 1
     assert body["restore_readiness"]["latest_archive_age_days"] > 1
     assert body["restore_readiness"]["recommended_actions"] == ["run_archive_export"]
+
+
+def test_workspace_recovery_readiness_reports_backup_coverage_gap(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-coverage-recovery@example.com",
+        slug="owner-coverage-recovery",
+    )
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {
+                "enabled": True,
+                "target_type": "manual_export",
+                "max_archive_age_days": 30,
+            },
+        }
+    }
+    agent = AgentProfile(workspace_id=workspace.id, name="New Agent", role="researcher")
+    completed_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="completed",
+        storage_key="workspaces/owner-coverage-recovery/exports/archive.zip",
+        filename="archive.zip",
+        content_type="application/zip",
+        size_bytes=123,
+        checksum_sha256="c" * 64,
+        completed_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        job_metadata={"manifest_counts": {"agents": 0}},
+    )
+    import_event = AuditEvent(
+        workspace_id=workspace.id,
+        actor_type="user",
+        actor_id=str(owner.id),
+        user_id=owner.id,
+        action="workspace.archive_import.created",
+        target_type="workspace",
+        target_id=str(workspace.id),
+        audit_metadata={},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([agent, completed_job, import_event])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    coverage = body["restore_readiness"]["backup_coverage"]
+    assert body["restore_readiness"]["ready"] is False
+    assert body["restore_readiness"]["blocked_reasons"] == ["backup_coverage_incomplete"]
+    assert body["restore_readiness"]["recommended_actions"] == ["run_archive_export"]
+    assert coverage["status"] == "partial"
+    assert coverage["score"] == 0
+    assert coverage["current_counts"]["agents"] == 1
+    assert coverage["archived_counts"]["agents"] == 0
+    assert coverage["uncovered_counts"] == {"agents": 1}
+    assert coverage["uncovered_resource_count"] == 1
 
 
 def test_workspace_retention_preview_reports_scoped_candidates_and_redacts_metadata(

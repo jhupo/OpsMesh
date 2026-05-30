@@ -7,16 +7,37 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.models import AgentProfile
 from backend.app.api.services.exports import SUPPORTED_WORKSPACE_EXPORT_FORMAT
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
+from backend.app.capabilities.models import WorkspaceSkillInstall
 from backend.app.exports.models import WorkspaceExportJob
 from backend.app.exports.status import WorkspaceExportJobStatus
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
+from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import Workspace
 
 RETENTION_DELETED_FILE_STATUS = "retention_deleted"
+ARCHIVE_COVERAGE_MODELS = {
+    "agents": AgentProfile,
+    "teams": AgentTeam,
+    "team_members": AgentTeamMember,
+    "tasks": Task,
+    "task_steps": TaskStep,
+    "task_messages": TaskMessage,
+    "runs": AgentRun,
+    "run_events": RunEvent,
+    "files": WorkspaceFile,
+    "artifacts": Artifact,
+    "runtime_spaces": RuntimeSpace,
+    "runtime_space_quotas": RuntimeSpaceQuota,
+    "skill_installs": WorkspaceSkillInstall,
+}
 
 
 class WorkspaceDataLifecycleService:
@@ -90,6 +111,7 @@ class WorkspaceDataLifecycleService:
         latest_import = self._latest_archive_import_event(workspace_id)
         latest_failed_job = self._latest_failed_export_job(workspace_id)
         job_stats = self._export_job_stats(workspace_id)
+        current_counts = self._archive_coverage_counts(workspace_id)
         retention_policy = _retention_policy(workspace.settings)
         backup_policy = _backup_policy(workspace.settings, latest_job, latest_success)
         restore_readiness = _restore_readiness(
@@ -98,6 +120,10 @@ class WorkspaceDataLifecycleService:
             backup_policy=backup_policy,
             generated_at=generated_at,
             active_job_count=job_stats["active_job_count"],
+            backup_coverage=_backup_coverage(
+                latest_success=latest_success,
+                current_counts=current_counts,
+            ),
         )
 
         return {
@@ -234,6 +260,17 @@ class WorkspaceDataLifecycleService:
             "failed_job_count": int(status_counts.get(WorkspaceExportJobStatus.FAILED.value, 0)),
             "latest_job": _job_payload(jobs[0] if jobs else None),
         }
+
+    def _archive_coverage_counts(self, workspace_id: UUID) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for collection, model in ARCHIVE_COVERAGE_MODELS.items():
+            counts[collection] = int(
+                self._session.scalar(
+                    select(func.count(model.id)).where(model.workspace_id == workspace_id)
+                )
+                or 0
+            )
+        return counts
 
     def _file_stats(self, workspace_id: UUID) -> dict[str, object]:
         count, total_bytes = self._session.execute(
@@ -652,6 +689,7 @@ def _restore_readiness(
     backup_policy: dict[str, object],
     generated_at: datetime,
     active_job_count: object,
+    backup_coverage: dict[str, object],
 ) -> dict[str, object]:
     blocked_reasons: list[str] = []
     warnings: list[str] = []
@@ -680,12 +718,17 @@ def _restore_readiness(
             blocked_reasons.append("latest_archive_stale")
     if latest_import is None:
         blocked_reasons.append("no_archive_import_test_recorded")
+    if backup_coverage.get("status") == "partial":
+        blocked_reasons.append("backup_coverage_incomplete")
     if isinstance(active_job_count, int) and active_job_count > 0:
         warnings.append("archive_export_jobs_in_progress")
+    if backup_coverage.get("status") == "unknown":
+        warnings.append("backup_coverage_unknown")
     return {
         "ready": not blocked_reasons,
         "blocked_reasons": blocked_reasons,
         "warnings": warnings,
+        "backup_coverage": backup_coverage,
         "downloadable_archive_available": (
             latest_success is not None
             and latest_success.status == WorkspaceExportJobStatus.COMPLETED.value
@@ -697,19 +740,102 @@ def _restore_readiness(
         "latest_archive_import_tested_at": latest_import.created_at
         if latest_import is not None
         else None,
-        "recommended_actions": _restore_recommended_actions(blocked_reasons),
+        "recommended_actions": _restore_recommended_actions(
+            blocked_reasons,
+            warnings=warnings,
+        ),
     }
 
 
-def _restore_recommended_actions(blocked_reasons: list[str]) -> list[str]:
+def _backup_coverage(
+    *,
+    latest_success: WorkspaceExportJob | None,
+    current_counts: dict[str, int],
+) -> dict[str, object]:
+    if latest_success is None:
+        return {
+            "status": "missing",
+            "score": 0,
+            "current_counts": current_counts,
+            "archived_counts": {},
+            "uncovered_counts": current_counts,
+            "total_current_resources": sum(current_counts.values()),
+            "total_archived_resources": 0,
+            "uncovered_resource_count": sum(current_counts.values()),
+        }
+
+    archived_counts = _manifest_counts(latest_success.job_metadata)
+    if not archived_counts:
+        return {
+            "status": "unknown",
+            "score": 50,
+            "current_counts": current_counts,
+            "archived_counts": {},
+            "uncovered_counts": {},
+            "total_current_resources": sum(current_counts.values()),
+            "total_archived_resources": 0,
+            "uncovered_resource_count": None,
+        }
+
+    uncovered_counts = {
+        collection: max(current_count - int(archived_counts.get(collection, 0)), 0)
+        for collection, current_count in current_counts.items()
+    }
+    total_current = sum(current_counts.values())
+    total_uncovered = sum(uncovered_counts.values())
+    score = (
+        100
+        if total_current == 0
+        else int(((total_current - total_uncovered) / total_current) * 100)
+    )
+    return {
+        "status": "verified" if total_uncovered == 0 else "partial",
+        "score": max(min(score, 100), 0),
+        "current_counts": current_counts,
+        "archived_counts": {
+            collection: int(archived_counts.get(collection, 0))
+            for collection in current_counts
+        },
+        "uncovered_counts": {
+            collection: count for collection, count in uncovered_counts.items() if count > 0
+        },
+        "total_current_resources": total_current,
+        "total_archived_resources": sum(
+            int(archived_counts.get(collection, 0)) for collection in current_counts
+        ),
+        "uncovered_resource_count": total_uncovered,
+    }
+
+
+def _manifest_counts(metadata: dict[str, object]) -> dict[str, int]:
+    for key in ("manifest_counts", "counts"):
+        raw_counts = metadata.get(key)
+        if isinstance(raw_counts, dict):
+            return {
+                str(collection): int(count)
+                for collection, count in raw_counts.items()
+                if isinstance(count, int) and count >= 0
+            }
+    return {}
+
+
+def _restore_recommended_actions(
+    blocked_reasons: list[str],
+    *,
+    warnings: list[str] | None = None,
+) -> list[str]:
     actions: list[str] = []
+    warning_set = set(warnings or [])
     if "backup_policy_not_enabled" in blocked_reasons:
         actions.append("enable_backup_policy")
     if (
         "no_successful_archive_export" in blocked_reasons
         or "latest_archive_stale" in blocked_reasons
+        or "backup_coverage_incomplete" in blocked_reasons
     ):
         actions.append("run_archive_export")
+    if "backup_coverage_unknown" in warning_set:
+        actions.append("run_archive_export_with_manifest_counts")
     if any(
         reason in blocked_reasons
         for reason in {
