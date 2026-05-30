@@ -2,7 +2,7 @@ import hashlib
 import json
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import TypeVar
 from urllib.parse import urlparse
@@ -40,6 +40,7 @@ from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_confl
 from backend.app.secrets.service import SecretEncryptionService
 
 T = TypeVar("T")
+MCP_HEALTH_CHECK_STALE_AFTER = timedelta(hours=24)
 
 
 @dataclass(frozen=True)
@@ -1628,6 +1629,8 @@ def _skill_tool_availability(
     blocked_reasons: list[str] = []
     if server.health_status == "unhealthy":
         blocked_reasons.append("server_unhealthy")
+    if _health_check_stale(server):
+        blocked_reasons.append("health_check_stale")
     credential_status = _credential_status(
         server,
         credential_count=credential_count,
@@ -1699,6 +1702,8 @@ def _mcp_blocked_reasons(
         reasons.append("server_inactive")
     if server.health_status == "unhealthy":
         reasons.append("server_unhealthy")
+    if _health_check_stale(server):
+        reasons.append("health_check_stale")
     if not tools:
         reasons.append("no_allowed_tools")
     if credential_status == "missing_required":
@@ -1717,6 +1722,14 @@ def _mcp_blocked_reasons(
         if not _has_remote_url(server):
             reasons.append("missing_remote_url")
     return reasons
+
+
+def _health_check_stale(server: McpServer) -> bool:
+    checked_at = server.last_health_check_at
+    if checked_at is None:
+        return False
+    normalized = checked_at if checked_at.tzinfo is not None else checked_at.replace(tzinfo=UTC)
+    return datetime.now(UTC) - normalized > MCP_HEALTH_CHECK_STALE_AFTER
 
 
 def _connection_summary(server: McpServer) -> dict[str, object]:

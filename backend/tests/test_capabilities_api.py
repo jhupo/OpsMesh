@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.models import AgentProfile
-from backend.app.capabilities.models import McpCredentialReference, McpToolCallLog, Skill
+from backend.app.capabilities.models import McpCredentialReference, McpServer, McpToolCallLog, Skill
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -489,6 +490,74 @@ def test_mcp_catalog_flags_missing_required_credentials() -> None:
     assert body["credential_status"] == "missing_required"
     assert body["executable"] is False
     assert "missing_required_credentials" in body["blocked_reasons"]
+
+
+def test_mcp_catalog_and_policy_diagnostics_block_stale_health_checks() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "remote-tools",
+            "server_type": "http_jsonrpc",
+            "connection": {"url": "https://mcp.example.test/rpc"},
+        },
+    )
+    allowed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "search_docs"},
+    )
+    agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Researcher",
+            "role": "researcher",
+            "tool_policy": {"mcp_tools": ["search_docs"]},
+        },
+    )
+    stored_server = session.get(McpServer, UUID(server.json()["id"]))
+    assert stored_server is not None
+    stored_server.health_status = "healthy"
+    stored_server.last_health_check_at = datetime(2026, 1, 1, tzinfo=UTC)
+    session.commit()
+
+    catalog = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
+        headers=_headers(owner.id),
+    )
+    diagnostics = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/agents/"
+        f"{agent.json()['id']}/tool-policy-diagnostics",
+        headers=_headers(owner.id),
+    )
+    governance = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance",
+        headers=_headers(owner.id),
+    )
+
+    assert server.status_code == 201
+    assert allowed.status_code == 201
+    assert agent.status_code == 201
+    assert catalog.status_code == 200
+    catalog_item = catalog.json()["items"][0]
+    assert catalog_item["health_status"] == "healthy"
+    assert catalog_item["executable"] is False
+    assert catalog_item["blocked_reasons"] == ["health_check_stale"]
+    assert diagnostics.status_code == 200
+    tool = diagnostics.json()["effective_tools"][0]
+    assert tool["tool_name"] == "search_docs"
+    assert tool["available"] is False
+    assert tool["blocked_reasons"] == ["health_check_stale"]
+    assert governance.status_code == 200
+    body = governance.json()
+    assert body["summary"]["blocked_reason_counts"]["health_check_stale"] == 1
+    assert body["summary"]["blocked_reason_counts"]["unavailable_allowed_mcp_tools"] == 1
+    assert body["mcp_servers"][0]["blocked_reasons"] == ["health_check_stale"]
 
 
 def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:
