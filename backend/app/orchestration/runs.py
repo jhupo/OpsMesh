@@ -113,7 +113,13 @@ class RunOrchestrationService:
         self._session.flush()
         return run
 
-    def enqueue_run(self, run: AgentRun, requested_by_user_id: UUID | None) -> bool:
+    def enqueue_run(
+        self,
+        run: AgentRun,
+        requested_by_user_id: UUID | None,
+        *,
+        force: bool = False,
+    ) -> bool:
         if self._queue is None:
             return False
 
@@ -126,7 +132,7 @@ class RunOrchestrationService:
             priority=self._run_job_priority(run),
             routing=self._run_job_routing(run),
         )
-        return self._queue.enqueue(job)
+        return self._queue.enqueue(job, force=force)
 
     def schedule_workspace_steps(
         self,

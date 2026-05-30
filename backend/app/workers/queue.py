@@ -25,11 +25,14 @@ class RedisQueue:
     queue_name: str
     blocking_timeout_seconds: int = 1
 
-    def enqueue(self, job: JobPayload) -> bool:
+    def enqueue(self, job: JobPayload, *, force: bool = False) -> bool:
         idempotency_key = self.keys.idempotency_key(str(job.workspace_id), job.idempotency_key)
-        created = self.redis.set(idempotency_key, str(job.job_id), nx=True, ex=86_400)
-        if not created:
-            return False
+        if force:
+            self.redis.set(idempotency_key, str(job.job_id), ex=86_400)
+        else:
+            created = self.redis.set(idempotency_key, str(job.job_id), nx=True, ex=86_400)
+            if not created:
+                return False
 
         self.redis.rpush(self.keys.queue(self.queue_name), self._serialize(job))
         return True
@@ -136,6 +139,26 @@ class RedisQueue:
             retry_job = job.model_copy(update=update)
             self.redis.rpush(self.keys.queue(self.queue_name), self._serialize(retry_job))
             return retry_job
+        return None
+
+    def remove_queued_job(
+        self,
+        job_id: UUID,
+        *,
+        workspace_id: UUID | None = None,
+        resource_id: UUID | None = None,
+    ) -> JobPayload | None:
+        queue_key = self.keys.queue(self.queue_name)
+        for raw_job in self.redis.lrange(queue_key, 0, -1):
+            job = self._deserialize(raw_job)
+            if job.job_id != job_id:
+                continue
+            if workspace_id is not None and job.workspace_id != workspace_id:
+                return None
+            if resource_id is not None and job.resource_id != resource_id:
+                return None
+            removed = self.redis.lrem(queue_key, 1, raw_job)
+            return job if int(removed) > 0 else None
         return None
 
     @contextmanager

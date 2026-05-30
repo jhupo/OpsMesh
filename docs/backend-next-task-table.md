@@ -28,6 +28,7 @@ Frontend remains out of scope. Billing remains out of scope.
 | 8 | P1 | Memory indexing abstraction | Done | Memory search now uses a pluggable backend protocol with lexical fallback, Postgres full-text adapter support, backend metadata in results, and workspace-scoped tests proving no cross-workspace leakage |
 | 9 | P1 | MCP/OpenAI Agents continuation compatibility | Done | Runner-level continuation rendering remains; OpenAI raw output now persists stable `sdk_continuation` metadata for future SDK-native migration, and MCP/self-hosted continuation tests cover completed and failed tool results |
 | 10 | P1 | Continuous redaction audit | Done for current phase | New metadata surfaces from this phase are covered: runtime/stale/self-hosted diagnostics avoid sensitive fields, policy diagnostics redact nested metadata, and run API output redacts `sdk_continuation` token/base_url/header values |
+| 11 | P0 | Queue governance and DB/Redis reconciliation | Done | `/operations/queue-governance` diagnoses orphaned/non-runnable/duplicate/old queued jobs, missing queued runs, dead-letter pressure, and scan truncation; `/operations/queue-governance/reconcile` can force requeue missing runs and remove stale queue jobs with audit coverage |
 
 ## Next Phase Goal Table
 

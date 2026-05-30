@@ -276,6 +276,68 @@ class OperationsQueueInsightsResponse(BaseModel):
     job_type_buckets: list[QueueJobTypeBucketResponse]
 
 
+QueueGovernanceReconcileAction = Literal[
+    "requeue_missing_runs",
+    "remove_orphaned_jobs",
+    "remove_non_runnable_jobs",
+]
+
+
+class QueueGovernanceIssueResponse(BaseModel):
+    code: str
+    severity: Literal["info", "warning", "critical"]
+    message: str
+    count: int
+    resource_ids: list[UUID] = Field(default_factory=list)
+    job_ids: list[UUID] = Field(default_factory=list)
+    oldest_age_seconds: int | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+    @field_serializer("metadata")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
+class QueueGovernanceDiagnosticsResponse(BaseModel):
+    generated_at: datetime
+    queue_name: str
+    scan_limit: int
+    stale_after_seconds: int
+    queued_total: int
+    queued_scanned: int
+    agent_run_jobs_scanned: int
+    dead_letter_total: int
+    orphaned_queue_jobs: int
+    non_runnable_queue_jobs: int
+    duplicate_queue_jobs: int
+    queued_runs_missing_queue_job: int
+    old_queued_jobs: int
+    truncated: bool
+    issues: list[QueueGovernanceIssueResponse]
+    recommended_actions: list[QueueGovernanceReconcileAction]
+
+
+class QueueGovernanceReconcileRequest(BaseModel):
+    queue_name: str = Field(default="agent_runs", min_length=1, max_length=120)
+    scan_limit: int = Field(default=500, ge=1, le=5_000)
+    stale_after_seconds: int = Field(default=900, ge=60, le=86_400)
+    actions: list[QueueGovernanceReconcileAction] = Field(min_length=1, max_length=3)
+    max_items: int = Field(default=100, ge=1, le=500)
+    reason: str | None = Field(default=None, max_length=240)
+
+
+class QueueGovernanceReconcileResponse(BaseModel):
+    workspace_id: UUID
+    queue_name: str
+    scanned_jobs: int
+    actions: list[QueueGovernanceReconcileAction]
+    requeued_missing_runs: int
+    removed_orphaned_jobs: int
+    removed_non_runnable_jobs: int
+    skipped_items: int
+    remaining_issues: list[QueueGovernanceIssueResponse]
+
+
 class WorkerCapacityAggregateResponse(BaseModel):
     workers_total: int
     workers_online: int

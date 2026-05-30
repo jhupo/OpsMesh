@@ -948,6 +948,172 @@ def test_operations_queue_insights_marks_truncated_scan() -> None:
     assert payload["truncated"] is True
 
 
+def test_operations_queue_governance_diagnoses_queue_run_drift() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    keys = RedisKeyBuilder("chaincloud")
+    now = datetime.now(UTC)
+    queued_run = AgentRun(
+        workspace_id=workspace.id,
+        status="queued",
+        created_at=now - timedelta(seconds=120),
+        updated_at=now - timedelta(seconds=120),
+    )
+    missing_run = AgentRun(
+        workspace_id=workspace.id,
+        status="queued",
+        created_at=now - timedelta(seconds=180),
+        updated_at=now - timedelta(seconds=180),
+    )
+    completed_run = AgentRun(workspace_id=workspace.id, status="completed")
+    session.add_all([queued_run, missing_run, completed_run])
+    session.flush()
+    duplicate_first = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=queued_run.id,
+        idempotency_key="queue-governance:queued:first",
+        priority=3,
+        created_at=now - timedelta(seconds=1_000),
+    )
+    duplicate_second = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=queued_run.id,
+        idempotency_key="queue-governance:queued:second",
+        priority=3,
+        created_at=now - timedelta(seconds=900),
+    )
+    orphaned = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="queue-governance:orphaned",
+        created_at=now - timedelta(seconds=800),
+    )
+    non_runnable = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=completed_run.id,
+        idempotency_key="queue-governance:completed",
+        created_at=now - timedelta(seconds=700),
+    )
+    other_workspace = JobPayload(
+        workspace_id=uuid4(),
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="queue-governance:other",
+    )
+    redis.rpush(
+        keys.queue("agent_runs"),
+        duplicate_first.model_dump_json(),
+        duplicate_second.model_dump_json(),
+        orphaned.model_dump_json(),
+        non_runnable.model_dump_json(),
+        other_workspace.model_dump_json(),
+    )
+    redis.rpush(
+        keys.dead_letter_queue("agent_runs"),
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=queued_run.id,
+            idempotency_key="queue-governance:dead",
+        ).model_dump_json(),
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/queue-governance"
+        "?stale_after_seconds=600",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["queued_total"] == 4
+    assert payload["queued_scanned"] == 4
+    assert payload["agent_run_jobs_scanned"] == 4
+    assert payload["orphaned_queue_jobs"] == 1
+    assert payload["non_runnable_queue_jobs"] == 1
+    assert payload["duplicate_queue_jobs"] == 1
+    assert payload["queued_runs_missing_queue_job"] == 1
+    assert payload["old_queued_jobs"] == 4
+    assert payload["dead_letter_total"] == 1
+    assert payload["recommended_actions"] == [
+        "requeue_missing_runs",
+        "remove_orphaned_jobs",
+        "remove_non_runnable_jobs",
+    ]
+    issue_codes = [issue["code"] for issue in payload["issues"]]
+    assert "orphaned_queue_jobs" in issue_codes
+    assert "queued_runs_missing_queue_job" in issue_codes
+    assert "dead_letter_pressure" in issue_codes
+
+
+def test_operations_queue_governance_reconciles_missing_and_stale_jobs() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    keys = RedisKeyBuilder("chaincloud")
+    queued_run = AgentRun(workspace_id=workspace.id, status="queued")
+    completed_run = AgentRun(workspace_id=workspace.id, status="completed")
+    session.add_all([queued_run, completed_run])
+    session.flush()
+    orphaned = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=uuid4(),
+        idempotency_key="queue-governance-reconcile:orphaned",
+    )
+    non_runnable = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=completed_run.id,
+        idempotency_key="queue-governance-reconcile:completed",
+    )
+    redis.rpush(
+        keys.queue("agent_runs"),
+        orphaned.model_dump_json(),
+        non_runnable.model_dump_json(),
+    )
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/queue-governance/reconcile",
+        headers=_headers(owner.id),
+        json={
+            "actions": [
+                "requeue_missing_runs",
+                "remove_orphaned_jobs",
+                "remove_non_runnable_jobs",
+            ],
+            "reason": "operator repair",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["requeued_missing_runs"] == 1
+    assert payload["removed_orphaned_jobs"] == 1
+    assert payload["removed_non_runnable_jobs"] == 1
+    assert payload["remaining_issues"] == []
+    queued_jobs = [
+        JobPayload.model_validate_json(raw)
+        for raw in redis.lrange(keys.queue("agent_runs"), 0, -1)
+    ]
+    assert [job.resource_id for job in queued_jobs] == [queued_run.id]
+    assert queued_jobs[0].job_type == JobType.AGENT_RUN
+    audit = session.scalar(
+        select(AuditEvent).where(AuditEvent.action == "operations.queue_governance_reconciled")
+    )
+    assert audit is not None
+    assert audit.audit_metadata["requeued_missing_runs"] == 1
+    assert audit.audit_metadata["removed_orphaned_jobs"] == 1
+    assert audit.audit_metadata["removed_non_runnable_jobs"] == 1
+
+
 def test_operations_capacity_reports_queue_workers_and_runtime_space_saturation() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)

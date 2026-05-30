@@ -26,6 +26,9 @@ from backend.app.api.schemas.operations import (
     OperationsSchedulerResponse,
     OperationsSelfHostedMachinesResponse,
     OperationsWorkerLifecycleResponse,
+    QueueGovernanceDiagnosticsResponse,
+    QueueGovernanceReconcileRequest,
+    QueueGovernanceReconcileResponse,
     QueueMetricsResponse,
     RequeueDeadLetterResponse,
     RunEventFilterResponse,
@@ -213,6 +216,55 @@ async def queue_insights(
         workspace_id=context.workspace.id,
         queue_name=queue_name,
         scan_limit=scan_limit,
+    )
+
+
+@router.get("/queue-governance", response_model=QueueGovernanceDiagnosticsResponse)
+async def queue_governance(
+    queue_name: str = Query(default="agent_runs"),
+    scan_limit: int = Query(default=500, ge=1, le=5_000),
+    stale_after_seconds: int = Query(default=900, ge=60, le=86_400),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> QueueGovernanceDiagnosticsResponse:
+    return OperationsService(
+        session,
+        redis,
+        RedisKeyBuilder(settings.redis_key_prefix),
+    ).queue_governance(
+        workspace_id=context.workspace.id,
+        queue_name=queue_name,
+        scan_limit=scan_limit,
+        stale_after_seconds=stale_after_seconds,
+    )
+
+
+@router.post(
+    "/queue-governance/reconcile",
+    response_model=QueueGovernanceReconcileResponse,
+)
+async def reconcile_queue_governance(
+    request: QueueGovernanceReconcileRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> QueueGovernanceReconcileResponse:
+    return OperationsService(
+        session,
+        redis,
+        RedisKeyBuilder(settings.redis_key_prefix),
+    ).reconcile_queue_governance(
+        workspace_id=context.workspace.id,
+        actor_user_id=context.user.user_id,
+        queue_name=request.queue_name,
+        scan_limit=request.scan_limit,
+        stale_after_seconds=request.stale_after_seconds,
+        actions=list(request.actions),
+        max_items=request.max_items,
+        reason=request.reason,
     )
 
 
