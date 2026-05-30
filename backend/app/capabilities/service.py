@@ -21,6 +21,7 @@ from backend.app.api.schemas.capabilities import (
     SkillCreateRequest,
     ToolGroupCreateRequest,
     WorkspaceSkillInstallRequest,
+    WorkspaceSkillRollbackRequest,
     WorkspaceSkillUpgradeRequest,
 )
 from backend.app.audit.service import AuditService
@@ -199,16 +200,69 @@ class CapabilityService:
     ) -> WorkspaceSkillInstall:
         install = self._require_workspace_install(workspace_id, install_id)
         skill = self._require_installable_skill(workspace_id, data.skill_id)
+        _require_same_skill_key(install, skill)
+        lifecycle_config = _append_skill_install_history(
+            install.config,
+            install,
+            action="upgrade",
+            user_id=user_id,
+        )
         install.skill_id = skill.id
         self._copy_skill_snapshot(install, skill)
         if data.config is not None:
-            install.config = data.config
+            install.config = _config_with_lifecycle(data.config, lifecycle_config)
+        else:
+            install.config = lifecycle_config
         install.status = "active"
         install.disabled_at = None
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
             user_id=user_id,
             action="skill_install.upgraded",
+            target_type="workspace_skill_install",
+            target_id=install.id,
+            metadata={
+                "skill_id": str(skill.id),
+                "installed_key": install.installed_key,
+                "installed_version": install.installed_version,
+                "source_checksum": install.source_checksum,
+            },
+        )
+        self._session.commit()
+        self._session.refresh(install)
+        return install
+
+    def rollback_skill_install(
+        self,
+        workspace_id: UUID,
+        user_id: UUID,
+        install_id: UUID,
+        data: WorkspaceSkillRollbackRequest,
+    ) -> WorkspaceSkillInstall:
+        install = self._require_workspace_install(workspace_id, install_id)
+        target_skill_id = data.skill_id or _latest_history_skill_id(install.config)
+        if target_skill_id is None:
+            raise ValueError("Workspace skill install has no rollback history")
+        skill = self._require_installable_skill(workspace_id, target_skill_id)
+        _require_same_skill_key(install, skill)
+        lifecycle_config = _append_skill_install_history(
+            install.config,
+            install,
+            action="rollback",
+            user_id=user_id,
+        )
+        install.skill_id = skill.id
+        self._copy_skill_snapshot(install, skill)
+        if data.config is not None:
+            install.config = _config_with_lifecycle(data.config, lifecycle_config)
+        else:
+            install.config = lifecycle_config
+        install.status = "active"
+        install.disabled_at = None
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action="skill_install.rolled_back",
             target_type="workspace_skill_install",
             target_id=install.id,
             metadata={
@@ -249,6 +303,59 @@ class CapabilityService:
         self._session.refresh(install)
         return install
 
+    def workspace_skill_impact(
+        self,
+        workspace_id: UUID,
+        install_id: UUID,
+        target_skill_id: UUID | None = None,
+    ) -> dict[str, object]:
+        install = self._require_workspace_install(workspace_id, install_id)
+        target_skill = (
+            self._require_installable_skill(workspace_id, target_skill_id)
+            if target_skill_id is not None
+            else None
+        )
+        if target_skill is not None:
+            _require_same_skill_key(install, target_skill)
+
+        current_required_tools = _manifest_mcp_tools(install.installed_manifest)
+        target_required_tools = (
+            _manifest_mcp_tools(target_skill.manifest)
+            if target_skill is not None
+            else current_required_tools
+        )
+        target_tool_availability = self._skill_tool_availability_for_tools(
+            workspace_id,
+            target_required_tools,
+        )
+        affected_agents = self._agents_using_skill_install(workspace_id, install.id)
+        blocked_reasons: list[str] = []
+        if install.status != "active":
+            blocked_reasons.append("skill_install_disabled")
+        if any(not item.available for item in target_tool_availability):
+            blocked_reasons.append("target_missing_required_mcp_tools")
+
+        return {
+            "install_id": install.id,
+            "installed_key": install.installed_key,
+            "current_version": install.installed_version,
+            "target_skill_id": target_skill.id if target_skill is not None else None,
+            "target_version": target_skill.version if target_skill is not None else None,
+            "status": install.status,
+            "affected_agent_count": len(affected_agents),
+            "affected_agents": affected_agents,
+            "current_required_tools": current_required_tools,
+            "target_required_tools": target_required_tools,
+            "added_required_tools": sorted(
+                set(target_required_tools) - set(current_required_tools)
+            ),
+            "removed_required_tools": sorted(
+                set(current_required_tools) - set(target_required_tools)
+            ),
+            "target_tool_availability": target_tool_availability,
+            "blocked_reasons": blocked_reasons,
+        }
+
     def list_workspace_skills(
         self,
         workspace_id: UUID,
@@ -274,6 +381,29 @@ class CapabilityService:
     ) -> WorkspaceSkillAvailability:
         install = self._require_workspace_install(workspace_id, install_id)
         required_tools = _manifest_mcp_tools(install.installed_manifest)
+        tool_availability = self._skill_tool_availability_for_tools(
+            workspace_id,
+            required_tools,
+        )
+        blocked_reasons: list[str] = []
+        if install.status != "active":
+            blocked_reasons.append("skill_install_disabled")
+        missing_tools = [item.tool_name for item in tool_availability if not item.available]
+        if missing_tools:
+            blocked_reasons.append("missing_required_mcp_tools")
+        return WorkspaceSkillAvailability(
+            install=install,
+            usable=not blocked_reasons,
+            required_tools=required_tools,
+            tools=tool_availability,
+            blocked_reasons=blocked_reasons,
+        )
+
+    def _skill_tool_availability_for_tools(
+        self,
+        workspace_id: UUID,
+        required_tools: list[str],
+    ) -> list[WorkspaceSkillToolAvailability]:
         allowed_tools = self.list_allowed_mcp_tools(workspace_id)
         allowed_by_name: dict[str, tuple[McpToolAllowlist, McpServer]] = {}
         for allow, server in allowed_tools:
@@ -293,7 +423,7 @@ class CapabilityService:
                 credential_counts[credential.mcp_server_id] = (
                     credential_counts.get(credential.mcp_server_id, 0) + 1
                 )
-        tool_availability = [
+        return [
             _skill_tool_availability(
                 tool_name,
                 allowed_by_name.get(tool_name),
@@ -304,19 +434,6 @@ class CapabilityService:
             )
             for tool_name in required_tools
         ]
-        blocked_reasons: list[str] = []
-        if install.status != "active":
-            blocked_reasons.append("skill_install_disabled")
-        missing_tools = [item.tool_name for item in tool_availability if not item.available]
-        if missing_tools:
-            blocked_reasons.append("missing_required_mcp_tools")
-        return WorkspaceSkillAvailability(
-            install=install,
-            usable=not blocked_reasons,
-            required_tools=required_tools,
-            tools=tool_availability,
-            blocked_reasons=blocked_reasons,
-        )
 
     def agent_tool_policy_diagnostics(
         self,
@@ -700,6 +817,33 @@ class CapabilityService:
         ).all()
         return {install.id: install for install in installs}
 
+    def _agents_using_skill_install(
+        self,
+        workspace_id: UUID,
+        install_id: UUID,
+    ) -> list[dict[str, object]]:
+        agents = self._session.scalars(
+            select(AgentProfile)
+            .where(AgentProfile.workspace_id == workspace_id)
+            .order_by(AgentProfile.name.asc(), AgentProfile.id.asc())
+        ).all()
+        affected: list[dict[str, object]] = []
+        for agent in agents:
+            if install_id not in _agent_installed_skill_ids(agent):
+                continue
+            policy_mode, configured_tool_names = self._agent_mcp_policy_mode(agent)
+            affected.append(
+                {
+                    "agent_profile_id": agent.id,
+                    "name": agent.name,
+                    "role": agent.role,
+                    "status": agent.status,
+                    "policy_mode": policy_mode,
+                    "configured_mcp_tools": configured_tool_names,
+                }
+            )
+        return affected
+
     def _agent_skill_diagnostic(
         self,
         workspace_id: UUID,
@@ -1043,6 +1187,68 @@ def _skill_checksum(skill: Skill) -> str:
     }
     normalized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return f"sha256:{hashlib.sha256(normalized.encode('utf-8')).hexdigest()}"
+
+
+def _require_same_skill_key(install: WorkspaceSkillInstall, skill: Skill) -> None:
+    if install.installed_key != skill.key:
+        raise ValueError("Skill key mismatch")
+
+
+def _append_skill_install_history(
+    config: dict[str, object],
+    install: WorkspaceSkillInstall,
+    *,
+    action: str,
+    user_id: UUID,
+) -> dict[str, object]:
+    next_config = dict(config)
+    lifecycle = next_config.get("_lifecycle")
+    lifecycle_payload = dict(lifecycle) if isinstance(lifecycle, dict) else {}
+    raw_history = lifecycle_payload.get("history")
+    history = list(raw_history) if isinstance(raw_history, list) else []
+    history.append(
+        {
+            "skill_id": str(install.skill_id),
+            "installed_key": install.installed_key,
+            "installed_version": install.installed_version,
+            "source_checksum": install.source_checksum,
+            "status": install.status,
+            "recorded_at": datetime.now(UTC).isoformat(),
+            "action": action,
+            "user_id": str(user_id),
+        }
+    )
+    lifecycle_payload["history"] = history[-20:]
+    next_config["_lifecycle"] = lifecycle_payload
+    return next_config
+
+
+def _config_with_lifecycle(
+    config: dict[str, object],
+    lifecycle_config: dict[str, object],
+) -> dict[str, object]:
+    next_config = dict(config)
+    lifecycle = lifecycle_config.get("_lifecycle")
+    if isinstance(lifecycle, dict):
+        next_config["_lifecycle"] = lifecycle
+    return next_config
+
+
+def _latest_history_skill_id(config: dict[str, object]) -> UUID | None:
+    lifecycle = config.get("_lifecycle")
+    if not isinstance(lifecycle, dict):
+        return None
+    history = lifecycle.get("history")
+    if not isinstance(history, list) or not history:
+        return None
+    latest = history[-1]
+    if not isinstance(latest, dict):
+        return None
+    raw_skill_id = latest.get("skill_id")
+    try:
+        return UUID(str(raw_skill_id))
+    except (TypeError, ValueError):
+        return None
 
 
 def _hash_from_payload(payload: dict[str, object] | None, key: str) -> str | None:

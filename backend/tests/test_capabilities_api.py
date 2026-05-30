@@ -9,6 +9,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.models import McpCredentialReference, McpToolCallLog, Skill
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
@@ -1165,12 +1166,32 @@ def test_workspace_skill_install_can_upgrade_and_disable_without_source_access()
         headers=_headers(other.id),
         json={"skill_id": v1.json()["id"], "config": {"tone": "clear"}},
     )
+    agent = AgentProfile(
+        workspace_id=other_workspace.id,
+        name="Writer Agent",
+        role="writer",
+        skills={"installed_skill_ids": [installed.json()["id"]]},
+        tool_policy={"mcp_tools": ["draft_text"]},
+    )
+    session.add(agent)
+    session.commit()
 
+    impact = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills/"
+        f"{installed.json()['id']}/impact?target_skill_id={v2.json()['id']}",
+        headers=_headers(other.id),
+    )
     upgraded = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills/"
         f"{installed.json()['id']}/upgrade",
         headers=_headers(other.id),
         json={"skill_id": v2.json()["id"], "config": {"tone": "bold"}},
+    )
+    rollback = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills/"
+        f"{installed.json()['id']}/rollback",
+        headers=_headers(other.id),
+        json={},
     )
     disabled = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills/"
@@ -1187,12 +1208,26 @@ def test_workspace_skill_install_can_upgrade_and_disable_without_source_access()
         headers=_headers(owner.id),
     )
 
+    assert impact.status_code == 200
+    impact_body = impact.json()
+    assert impact_body["install_id"] == installed.json()["id"]
+    assert impact_body["current_version"] == "1.0.0"
+    assert impact_body["target_version"] == "2.0.0"
+    assert impact_body["affected_agent_count"] == 1
+    assert impact_body["affected_agents"][0]["agent_profile_id"] == str(agent.id)
+    assert impact_body["blocked_reasons"] == []
     assert upgraded.status_code == 200
     assert upgraded.json()["installed_name"] == "Writer Pro"
     assert upgraded.json()["installed_version"] == "2.0.0"
     assert upgraded.json()["installed_manifest"] == {"prompt": "v2"}
     assert upgraded.json()["config"] == {"tone": "bold"}
     assert upgraded.json()["disabled_at"] is None
+    assert "_lifecycle" not in upgraded.json()["config"]
+    assert rollback.status_code == 200
+    assert rollback.json()["installed_name"] == "Writer"
+    assert rollback.json()["installed_version"] == "1.0.0"
+    assert rollback.json()["installed_manifest"] == {"prompt": "v1"}
+    assert rollback.json()["config"] == {"tone": "bold"}
     assert disabled.status_code == 200
     assert disabled.json()["status"] == "disabled"
     assert disabled.json()["disabled_at"] is not None
@@ -1205,7 +1240,11 @@ def test_workspace_skill_install_can_upgrade_and_disable_without_source_access()
         headers=_headers(other.id),
     )
     actions = {item["action"] for item in audit.json()["items"]}
-    assert {"skill_install.upgraded", "skill_install.disabled"} <= actions
+    assert {
+        "skill_install.upgraded",
+        "skill_install.rolled_back",
+        "skill_install.disabled",
+    } <= actions
 
 
 def test_skill_install_by_id_endpoint_and_disabled_history() -> None:

@@ -64,6 +64,11 @@ class WorkspaceSkillUpgradeRequest(BaseModel):
     config: dict[str, object] | None = None
 
 
+class WorkspaceSkillRollbackRequest(BaseModel):
+    skill_id: UUID | None = None
+    config: dict[str, object] | None = None
+
+
 class WorkspaceSkillInstallResponse(TimestampedModel):
     workspace_id: UUID
     skill_id: UUID
@@ -80,6 +85,16 @@ class WorkspaceSkillInstallResponse(TimestampedModel):
     config: dict[str, object]
     status: str
     disabled_at: datetime | None
+
+    @field_serializer("installed_manifest")
+    def _serialize_manifest(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("config")
+    def _serialize_config(self, value: dict[str, object]) -> dict[str, object]:
+        redacted = redact_sensitive_payload(value)
+        redacted.pop("_lifecycle", None)
+        return redacted
 
 
 class WorkspaceSkillToolAvailabilityResponse(BaseModel):
@@ -100,6 +115,32 @@ class WorkspaceSkillAvailabilityResponse(BaseModel):
     usable: bool
     required_tools: list[str]
     tools: list[WorkspaceSkillToolAvailabilityResponse]
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
+class WorkspaceSkillImpactAgentResponse(BaseModel):
+    agent_profile_id: UUID
+    name: str
+    role: str
+    status: str
+    policy_mode: str
+    configured_mcp_tools: list[str] | None
+
+
+class WorkspaceSkillImpactResponse(BaseModel):
+    install_id: UUID
+    installed_key: str
+    current_version: str
+    target_skill_id: UUID | None = None
+    target_version: str | None = None
+    status: str
+    affected_agent_count: int
+    affected_agents: list[WorkspaceSkillImpactAgentResponse]
+    current_required_tools: list[str]
+    target_required_tools: list[str]
+    added_required_tools: list[str]
+    removed_required_tools: list[str]
+    target_tool_availability: list[WorkspaceSkillToolAvailabilityResponse]
     blocked_reasons: list[str] = Field(default_factory=list)
 
 
