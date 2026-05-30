@@ -17,6 +17,7 @@ from backend.app.api.schemas.capabilities import (
     CapabilityCreateRequest,
     McpCredentialReferenceCreateRequest,
     McpServerCreateRequest,
+    McpServerHealthCheckRequest,
     McpToolAllowRequest,
     McpToolCallLogRequest,
     SkillCreateRequest,
@@ -848,6 +849,43 @@ class CapabilityService:
                 target_type="mcp_server",
                 target_id=server.id,
                 metadata={"name": server.name},
+            )
+        self._session.commit()
+        self._session.refresh(server)
+        return server
+
+    def record_mcp_server_health_check(
+        self,
+        workspace_id: UUID,
+        mcp_server_id: UUID,
+        actor_user_id: UUID | None,
+        data: McpServerHealthCheckRequest,
+    ) -> McpServer:
+        server = self._require_server(workspace_id, mcp_server_id)
+        previous = {
+            "health_status": server.health_status,
+            "last_health_check_at": server.last_health_check_at.isoformat()
+            if server.last_health_check_at is not None
+            else None,
+            "last_error_configured": server.last_error is not None,
+        }
+        server.health_status = data.health_status
+        server.last_health_check_at = datetime.now(UTC)
+        server.last_error = _mcp_health_error(data.health_status, data.error_code)
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="mcp_server.health_check_recorded",
+                target_type="mcp_server",
+                target_id=server.id,
+                metadata={
+                    "name": server.name,
+                    "previous": previous,
+                    "health_status": server.health_status,
+                    "error_code": server.last_error,
+                    "last_error_configured": server.last_error is not None,
+                },
             )
         self._session.commit()
         self._session.refresh(server)
@@ -1730,6 +1768,17 @@ def _health_check_stale(server: McpServer) -> bool:
         return False
     normalized = checked_at if checked_at.tzinfo is not None else checked_at.replace(tzinfo=UTC)
     return datetime.now(UTC) - normalized > MCP_HEALTH_CHECK_STALE_AFTER
+
+
+def _mcp_health_error(health_status: str, error_code: str | None) -> str | None:
+    if health_status == "healthy":
+        return None
+    normalized = error_code.strip() if isinstance(error_code, str) else ""
+    if normalized:
+        return normalized
+    if health_status == "unhealthy":
+        return "health_check_failed"
+    return None
 
 
 def _connection_summary(server: McpServer) -> dict[str, object]:

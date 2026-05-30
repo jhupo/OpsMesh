@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.models import AgentProfile
+from backend.app.audit.models import AuditEvent
 from backend.app.capabilities.models import McpCredentialReference, McpServer, McpToolCallLog, Skill
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
@@ -558,6 +559,35 @@ def test_mcp_catalog_and_policy_diagnostics_block_stale_health_checks() -> None:
     assert body["summary"]["blocked_reason_counts"]["health_check_stale"] == 1
     assert body["summary"]["blocked_reason_counts"]["unavailable_allowed_mcp_tools"] == 1
     assert body["mcp_servers"][0]["blocked_reasons"] == ["health_check_stale"]
+
+    refreshed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/health-check",
+        headers=_headers(owner.id),
+        json={"health_status": "healthy", "error_code": "token-like-value-is-not-stored"},
+    )
+    refreshed_catalog = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
+        headers=_headers(owner.id),
+    )
+    audit = session.query(AuditEvent).filter_by(
+        workspace_id=workspace.id,
+        action="mcp_server.health_check_recorded",
+    ).one()
+
+    assert refreshed.status_code == 200
+    refreshed_body = refreshed.json()
+    assert refreshed_body["health_status"] == "healthy"
+    assert refreshed_body["last_health_check_at"] is not None
+    assert refreshed_body["last_error"] is None
+    refreshed_item = refreshed_catalog.json()["items"][0]
+    assert refreshed_item["executable"] is True
+    assert refreshed_item["blocked_reasons"] == []
+    assert audit.audit_metadata["health_status"] == "healthy"
+    assert audit.audit_metadata["last_error_configured"] is False
+    assert audit.audit_metadata["error_code"] is None
+    assert "token-like-value-is-not-stored" not in str(audit.audit_metadata)
+    assert "token-like-value-is-not-stored" not in str(refreshed_body)
 
 
 def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:

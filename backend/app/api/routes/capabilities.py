@@ -14,6 +14,7 @@ from backend.app.api.schemas.capabilities import (
     McpCredentialReferenceCreateRequest,
     McpCredentialReferenceResponse,
     McpServerCreateRequest,
+    McpServerHealthCheckRequest,
     McpServerResponse,
     McpToolAllowRequest,
     McpToolAllowResponse,
@@ -429,6 +430,25 @@ async def disable_mcp_server(
             context.workspace.id,
             mcp_server_id,
             context.user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return McpServerResponse.model_validate(server)
+
+
+@router.post("/mcp-servers/{mcp_server_id}/health-check", response_model=McpServerResponse)
+async def record_mcp_server_health_check(
+    mcp_server_id: UUID,
+    request: McpServerHealthCheckRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> McpServerResponse:
+    try:
+        server = CapabilityService(session).record_mcp_server_health_check(
+            context.workspace.id,
+            mcp_server_id,
+            context.user.user_id,
+            request,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
