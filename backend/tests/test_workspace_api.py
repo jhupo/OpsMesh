@@ -1040,6 +1040,30 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
     assert applied["schedule_downstream_steps"]["candidate_count"] >= 1
     assert {item["task_id"] for item in apply_body["scheduled_runs"]} == {str(task.id)}
     assert queue_redis.llen(RedisKeyBuilder("chaincloud").queue("agent_runs")) == 2
+    session.expire_all()
+    scheduled_runs = session.scalars(
+        select(AgentRun).where(
+            AgentRun.workspace_id == workspace.id,
+            AgentRun.task_id == task.id,
+            AgentRun.status == RunStatus.QUEUED.value,
+        )
+    ).all()
+    assert len(scheduled_runs) == 2
+    other_team_runs = session.scalars(
+        select(AgentRun).where(
+            AgentRun.workspace_id == workspace.id,
+            AgentRun.task_id == other_local_task.id,
+        )
+    ).all()
+    assert other_team_runs == []
+    command_center_audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "team.command_center.actions_applied",
+        )
+    )
+    assert command_center_audit is not None
+    assert command_center_audit.audit_metadata["scheduled_run_count"] == 2
     assert "sk-command-apply" not in str(apply_body)
     manager_review_steps = session.scalars(
         select(TaskStep).where(

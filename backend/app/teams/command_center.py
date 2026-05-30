@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.audit.service import AuditService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
@@ -146,6 +147,29 @@ class TeamCommandCenterService:
             else []
         )
         applied_action_count = sum(1 for item in results if item["status"] == "applied")
+        if not dry_run:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="team.command_center.actions_applied",
+                target_type="agent_team",
+                target_id=team_id,
+                metadata={
+                    "eligible_action_count": len(grouped),
+                    "applied_action_count": applied_action_count,
+                    "skipped_action_count": len(skipped),
+                    "scheduled_run_count": len(scheduled_runs),
+                    "actions": [str(item["action"]) for item in results],
+                    "sources": sorted(
+                        {
+                            str(source)
+                            for item in results
+                            for source in _string_list(item.get("sources"))
+                        }
+                    ),
+                },
+            )
+            self._session.commit()
         return {
             "workspace_id": workspace_id,
             "team_id": team_id,
@@ -393,6 +417,12 @@ def _dict(value: object) -> dict[str, object]:
 
 def _list(value: object) -> list[object]:
     return value if isinstance(value, list) else []
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
 
 
 def _int(value: object) -> int:
