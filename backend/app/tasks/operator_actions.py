@@ -14,6 +14,7 @@ TASK_OPERATOR_ACTIONS = {
     "requeue_blocked_steps",
     "reassign_step",
     "request_manager_review",
+    "schedule_downstream_steps",
 }
 TERMINAL_STEP_STATUSES = {"completed", "cancelled"}
 TERMINAL_TASK_STATUSES = {"completed", "cancelled"}
@@ -57,6 +58,8 @@ class TaskOperatorActionService:
 
         if action == "requeue_blocked_steps":
             result = self._requeue_blocked_steps(task, task_step_ids)
+        elif action == "schedule_downstream_steps":
+            result = self._schedule_downstream_steps(task, task_step_ids)
         elif action == "reassign_step":
             result = self._reassign_step(
                 task,
@@ -141,6 +144,78 @@ class TaskOperatorActionService:
             "details": {
                 "requeued_steps": len(changed_step_ids),
                 "requested_steps": len(steps),
+            },
+        }
+
+    def _schedule_downstream_steps(
+        self,
+        task: Task,
+        task_step_ids: list[UUID],
+    ) -> dict[str, object]:
+        steps = self._task_steps(task)
+        step_by_id = {step.id: step for step in steps}
+        source_steps = _source_steps(steps, task_step_ids)
+        if task_step_ids and len(source_steps) != len(set(task_step_ids)):
+            raise ValueError("Task step not found")
+        if not source_steps:
+            raise ValueError("No completed source task steps found")
+
+        source_step_ids = {step.id for step in source_steps}
+        changed_step_ids: list[UUID] = []
+        scheduled_downstream_step_ids: list[UUID] = []
+        cleared_blocking_step_ids: list[UUID] = []
+        warnings: list[str] = []
+
+        for step in steps:
+            upstream_step_ids = _dependency_step_ids(step.dependencies)
+            if not upstream_step_ids or not source_step_ids.intersection(upstream_step_ids):
+                continue
+            missing_step_ids = [
+                step_id for step_id in upstream_step_ids if step_id not in step_by_id
+            ]
+            incomplete_step_ids = [
+                step_id
+                for step_id in upstream_step_ids
+                if step_id in step_by_id and step_by_id[step_id].status != "completed"
+            ]
+            if missing_step_ids or incomplete_step_ids:
+                warnings.append(f"downstream_dependencies_incomplete:{step.id}")
+                continue
+            if step.status in TERMINAL_STEP_STATUSES:
+                warnings.append(f"downstream_terminal:{step.id}")
+                continue
+            if step.status in {"running", "waiting_runtime", "waiting_approval"}:
+                warnings.append(f"downstream_active:{step.id}")
+                continue
+
+            cleaned_dependencies = _without_blocking_keys(step.dependencies)
+            cleared_blocking = cleaned_dependencies != step.dependencies
+            status_changed = step.status in {"blocked", "failed"}
+            if cleared_blocking:
+                step.dependencies = cleaned_dependencies
+                cleared_blocking_step_ids.append(step.id)
+            if status_changed:
+                step.status = "queued"
+            if step.status == "queued":
+                scheduled_downstream_step_ids.append(step.id)
+            if cleared_blocking or status_changed or step.status == "queued":
+                changed_step_ids.append(step.id)
+
+        if not scheduled_downstream_step_ids and not warnings:
+            warnings.append("no_downstream_steps")
+
+        return {
+            "changed_step_ids": list(dict.fromkeys(changed_step_ids)),
+            "created_step_ids": [],
+            "warnings": warnings,
+            "details": {
+                "source_step_ids": [str(step_id) for step_id in source_step_ids],
+                "scheduled_downstream_step_ids": [
+                    str(step_id) for step_id in dict.fromkeys(scheduled_downstream_step_ids)
+                ],
+                "cleared_blocking_step_ids": [
+                    str(step_id) for step_id in dict.fromkeys(cleared_blocking_step_ids)
+                ],
             },
         }
 
@@ -263,6 +338,18 @@ class TaskOperatorActionService:
             raise ValueError("Task step not found")
         return list(steps)
 
+    def _task_steps(self, task: Task) -> list[TaskStep]:
+        return list(
+            self._session.scalars(
+                select(TaskStep)
+                .where(
+                    TaskStep.workspace_id == task.workspace_id,
+                    TaskStep.task_id == task.id,
+                )
+                .order_by(TaskStep.order_index.asc(), TaskStep.created_at.asc())
+            )
+        )
+
     def _next_step_order(self, workspace_id: UUID, task_id: UUID) -> int:
         current = self._session.scalar(
             select(func.coalesce(func.max(TaskStep.order_index), 0)).where(
@@ -330,7 +417,38 @@ class TaskOperatorActionService:
             task.status = "queued"
 
 
-def _without_blocking_keys(dependencies: dict[str, object]) -> dict[str, object]:
+def _source_steps(steps: list[TaskStep], task_step_ids: list[UUID]) -> list[TaskStep]:
+    requested_ids = set(task_step_ids)
+    return [
+        step
+        for step in steps
+        if step.status == "completed" and (not requested_ids or step.id in requested_ids)
+    ]
+
+
+def _dependency_step_ids(dependencies: object) -> list[UUID]:
+    if not isinstance(dependencies, dict):
+        return []
+    raw_values = dependencies.get("after_step_ids")
+    if not isinstance(raw_values, list):
+        return []
+    step_ids: list[UUID] = []
+    seen: set[UUID] = set()
+    for raw_value in raw_values:
+        try:
+            step_id = UUID(str(raw_value))
+        except (TypeError, ValueError):
+            continue
+        if step_id in seen:
+            continue
+        step_ids.append(step_id)
+        seen.add(step_id)
+    return step_ids
+
+
+def _without_blocking_keys(dependencies: object) -> dict[str, object]:
+    if not isinstance(dependencies, dict):
+        return {}
     return {
         key: value
         for key, value in dependencies.items()

@@ -3317,6 +3317,152 @@ def test_task_operator_action_reassigns_and_requeues_blocked_step() -> None:
     assert audit.audit_metadata["changed_step_ids"] == [str(blocked_step.id)]
 
 
+def test_task_operator_action_schedules_downstream_steps_from_handoff() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Schedule downstream",
+        status="blocked",
+    )
+    session.add_all([agent, task])
+    session.flush()
+    source_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        work_package_id="source",
+        title="Source",
+        status="completed",
+        order_index=10,
+        result_summary="Done",
+    )
+    incomplete_source = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        work_package_id="incomplete-source",
+        title="Incomplete source",
+        status="queued",
+        order_index=20,
+    )
+    session.add_all([source_step, incomplete_source])
+    session.flush()
+    blocked_downstream = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        work_package_id="blocked-downstream",
+        title="Blocked downstream",
+        status="blocked",
+        order_index=30,
+        dependencies={
+            "after_step_ids": [str(source_step.id)],
+            "blocked_reason": "runtime_space_paused",
+            "blocked_resource_keys": ["runtime-space"],
+            "token": "hidden-token",
+        },
+    )
+    failed_downstream = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        work_package_id="failed-downstream",
+        title="Failed downstream",
+        status="failed",
+        order_index=40,
+        dependencies={
+            "after_step_ids": [str(source_step.id)],
+            "scheduler": {"reason": "old-failure"},
+        },
+    )
+    waiting_downstream = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        work_package_id="waiting-downstream",
+        title="Waiting downstream",
+        status="blocked",
+        order_index=50,
+        dependencies={
+            "after_step_ids": [str(source_step.id), str(incomplete_source.id)],
+            "blocked_reason": "dependency_incomplete",
+        },
+    )
+    session.add_all([blocked_downstream, failed_downstream, waiting_downstream])
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/operator-actions",
+        headers=_headers(owner.id),
+        json={
+            "action": "schedule_downstream_steps",
+            "task_step_ids": [str(source_step.id)],
+            "reason": "Source handoff is ready",
+            "metadata": {"api_key": "sk-operator"},
+        },
+    )
+    messages = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/messages",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"] == "schedule_downstream_steps"
+    assert body["task_status"] == "running"
+    assert body["changed_step_ids"] == [
+        str(blocked_downstream.id),
+        str(failed_downstream.id),
+    ]
+    assert body["details"]["source_step_ids"] == [str(source_step.id)]
+    assert body["details"]["scheduled_downstream_step_ids"] == [
+        str(blocked_downstream.id),
+        str(failed_downstream.id),
+    ]
+    assert body["details"]["cleared_blocking_step_ids"] == [
+        str(blocked_downstream.id),
+        str(failed_downstream.id),
+    ]
+    assert body["warnings"] == [f"downstream_dependencies_incomplete:{waiting_downstream.id}"]
+    session.refresh(task)
+    session.refresh(blocked_downstream)
+    session.refresh(failed_downstream)
+    session.refresh(waiting_downstream)
+    assert task.status == "running"
+    assert blocked_downstream.status == "queued"
+    assert failed_downstream.status == "queued"
+    assert waiting_downstream.status == "blocked"
+    assert blocked_downstream.dependencies == {
+        "after_step_ids": [str(source_step.id)],
+        "token": "hidden-token",
+    }
+    assert failed_downstream.dependencies == {"after_step_ids": [str(source_step.id)]}
+    assert messages.status_code == 200
+    message_payload = messages.json()["items"][0]["payload"]
+    assert message_payload["metadata"]["api_key"] == "[redacted]"
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "task.operator.schedule_downstream_steps",
+        )
+    )
+    assert audit is not None
+    assert audit.audit_metadata["changed_step_ids"] == [
+        str(blocked_downstream.id),
+        str(failed_downstream.id),
+    ]
+    serialized = str(body)
+    assert "hidden-token" not in serialized
+    assert "sk-operator" not in serialized
+
+
 def test_task_operator_action_requests_manager_review_step() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

@@ -40,7 +40,12 @@ class TaskCorrectionRequest(BaseModel):
 
 
 class TaskOperatorActionRequest(BaseModel):
-    action: str = Field(pattern="^(requeue_blocked_steps|reassign_step|request_manager_review)$")
+    action: str = Field(
+        pattern=(
+            "^(requeue_blocked_steps|reassign_step|request_manager_review|"
+            "schedule_downstream_steps)$"
+        )
+    )
     task_step_ids: list[UUID] = Field(default_factory=list, max_length=100)
     agent_profile_id: UUID | None = None
     instruction: str | None = Field(default=None, max_length=4_000)
