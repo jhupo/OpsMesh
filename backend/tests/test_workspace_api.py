@@ -6082,6 +6082,156 @@ def test_task_timeline_returns_execution_events_and_redacts_metadata() -> None:
     assert "foreign" not in serialized
 
 
+def test_task_delivery_review_reports_missing_artifacts_and_redacts_metadata() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-delivery-review@example.com",
+        slug="other-delivery-review",
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Designer",
+        role="designer",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Review delivery",
+        status=TaskStatus.RUNNING.value,
+        domain_type="aigc",
+        final_output={"summary": "Draft ready", "token": "final-output-token"},
+    )
+    session.add_all([agent, task])
+    session.flush()
+    design_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        work_package_id="design",
+        title="Design cover",
+        status="completed",
+        expected_artifacts=["image", "metadata"],
+        result_summary="Cover image delivered",
+        order_index=1,
+    )
+    build_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        work_package_id="build",
+        title="Build package",
+        status="running",
+        expected_artifacts=["patch"],
+        order_index=2,
+    )
+    session.add_all([design_step, build_step])
+    session.flush()
+    session.add_all(
+        [
+            Artifact(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=design_step.id,
+                agent_profile_id=agent.id,
+                work_package_id="design",
+                version=1,
+                review_status="approved",
+                artifact_type="image",
+                filename="cover.png",
+                content_type="image/png",
+                size_bytes=128,
+                checksum_sha256="1" * 64,
+                storage_key="secret-storage-image",
+                artifact_metadata={"token": "image-token", "safe": "ok"},
+                created_at=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
+            ),
+            Artifact(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=build_step.id,
+                work_package_id="build",
+                version=2,
+                review_status="pending",
+                artifact_type="patch",
+                filename="changes.diff",
+                content_type="text/plain",
+                size_bytes=256,
+                checksum_sha256="2" * 64,
+                storage_key="secret-storage-patch",
+                artifact_metadata={"headers": {"authorization": "Bearer patch"}},
+                created_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
+            ),
+            Artifact(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                version=1,
+                review_status="pending",
+                artifact_type="brief",
+                filename="brief.md",
+                content_type="text/markdown",
+                size_bytes=64,
+                checksum_sha256="3" * 64,
+                storage_key="secret-storage-brief",
+                artifact_metadata={"api_key": "sk-brief"},
+                created_at=datetime(2026, 1, 1, 11, 0, tzinfo=UTC),
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/delivery-review",
+        headers=_headers(owner.id),
+    )
+    forbidden = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/delivery-review",
+        headers=_headers(other_owner.id),
+    )
+    missing = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{uuid4()}/delivery-review",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] == str(workspace.id)
+    assert body["status"] == "incomplete"
+    assert body["final_output"] == {"summary": "Draft ready", "token": "[redacted]"}
+    assert body["summary"]["artifact_count"] == 3
+    assert body["summary"]["expected_artifact_count"] == 3
+    assert body["summary"]["produced_expected_artifact_count"] == 2
+    assert body["summary"]["missing_expected_artifact_count"] == 1
+    assert body["summary"]["pending_review_artifact_count"] == 2
+    assert body["summary"]["approved_artifact_count"] == 1
+    assert body["summary"]["artifact_type_counts"] == {
+        "brief": 1,
+        "image": 1,
+        "patch": 1,
+    }
+    by_package = {step["work_package_id"]: step for step in body["steps"]}
+    assert by_package["design"]["missing_expected_artifacts"] == ["metadata"]
+    assert by_package["design"]["latest_artifacts"][0]["metadata"]["token"] == "[redacted]"
+    assert by_package["design"]["latest_artifacts"][0]["agent"]["name"] == "Designer"
+    assert by_package["build"]["missing_expected_artifacts"] == []
+    assert by_package["build"]["review_status_counts"] == {"pending": 1}
+    assert body["unattached_artifacts"][0]["metadata"]["api_key"] == "[redacted]"
+    action_names = {item["action"] for item in body["recommended_actions"]}
+    assert {"create_correction", "review_artifacts"} <= action_names
+    assert forbidden.status_code == 403
+    assert missing.status_code == 404
+
+    serialized = str(body)
+    assert "final-output-token" not in serialized
+    assert "image-token" not in serialized
+    assert "Bearer patch" not in serialized
+    assert "sk-brief" not in serialized
+    assert "secret-storage-image" not in serialized
+    assert "secret-storage-patch" not in serialized
+    assert "secret-storage-brief" not in serialized
+
+
 def test_artifact_list_includes_work_package_version_metadata() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

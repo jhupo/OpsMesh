@@ -205,6 +205,30 @@ class TaskInteractionTranscriptResponse(BaseModel):
         return [redact_sensitive_payload(item) for item in value]
 
 
+class TaskDeliveryReviewResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    generated_at: datetime
+    status: str
+    task: dict[str, object]
+    summary: dict[str, object]
+    final_output: dict[str, object] | None
+    steps: list[dict[str, object]]
+    unattached_artifacts: list[dict[str, object]]
+    recommended_actions: list[dict[str, object]]
+
+    @field_serializer("task", "summary", "final_output")
+    def _serialize_metadata(
+        self,
+        value: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
+
+    @field_serializer("steps", "unattached_artifacts", "recommended_actions")
+    def _serialize_metadata_list(self, value: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
+
 class TaskPlanningAttemptResponse(ORMModel):
     id: UUID
     workspace_id: UUID

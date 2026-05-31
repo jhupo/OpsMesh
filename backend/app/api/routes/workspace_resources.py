@@ -26,6 +26,7 @@ from backend.app.api.schemas.tasks import (
     TaskCorrectionRequest,
     TaskCorrectionResponse,
     TaskCreateRequest,
+    TaskDeliveryReviewResponse,
     TaskExecutionDiagnosticsResponse,
     TaskExecutionStatusResponse,
     TaskHandoffQueueResponse,
@@ -76,6 +77,7 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.tasks.control import TaskControlService
 from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
 from backend.app.tasks.corrections import TaskCorrectionService
+from backend.app.tasks.delivery_review import TaskDeliveryReviewService
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.live_status import TaskLiveStatusService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
@@ -984,6 +986,21 @@ async def get_task_observation(
     if observation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskObservationResponse.model_validate(observation)
+
+
+@router.get("/tasks/{task_id}/delivery-review", response_model=TaskDeliveryReviewResponse)
+async def get_task_delivery_review(
+    task_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskDeliveryReviewResponse:
+    review = TaskDeliveryReviewService(session).get_review(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+    )
+    if review is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskDeliveryReviewResponse.model_validate(review)
 
 
 @router.get("/tasks/{task_id}/timeline", response_model=TaskTimelineResponse)
