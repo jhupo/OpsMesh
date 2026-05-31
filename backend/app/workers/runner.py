@@ -21,6 +21,7 @@ from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload
 from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.data_lifecycle import WorkspaceDataLifecycleService
+from backend.app.workspaces.health import WorkspaceHealthService
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,8 @@ class WorkerRunSummary:
     lifecycle_retention_runs_skipped: int
     lifecycle_restore_drills_completed: int
     lifecycle_restore_drills_skipped: int
+    health_snapshots_created: int
+    health_snapshots_skipped: int
     stopped: bool
 
 
@@ -73,6 +76,8 @@ class WorkerMaintenanceSummary:
     lifecycle_retention_runs_skipped: int = 0
     lifecycle_restore_drills_completed: int = 0
     lifecycle_restore_drills_skipped: int = 0
+    health_snapshots_created: int = 0
+    health_snapshots_skipped: int = 0
 
 
 class WorkerRunner:
@@ -170,6 +175,8 @@ class WorkerRunner:
         lifecycle_retention_runs_skipped = 0
         lifecycle_restore_drills_completed = 0
         lifecycle_restore_drills_skipped = 0
+        health_snapshots_created = 0
+        health_snapshots_skipped = 0
         last_error: str | None = None
         next_heartbeat_at = 0.0
         next_maintenance_at = 0.0
@@ -195,6 +202,8 @@ class WorkerRunner:
                             lifecycle_restore_drills_completed
                         ),
                         lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
+                        health_snapshots_created=health_snapshots_created,
+                        health_snapshots_skipped=health_snapshots_skipped,
                         last_error=last_error,
                     ),
                 )
@@ -223,6 +232,8 @@ class WorkerRunner:
                 lifecycle_restore_drills_skipped += (
                     maintenance.lifecycle_restore_drills_skipped
                 )
+                health_snapshots_created += maintenance.health_snapshots_created
+                health_snapshots_skipped += maintenance.health_snapshots_skipped
                 next_maintenance_at = now + self._config.maintenance_interval_seconds
 
             try:
@@ -249,6 +260,8 @@ class WorkerRunner:
                             lifecycle_restore_drills_completed
                         ),
                         lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
+                        health_snapshots_created=health_snapshots_created,
+                        health_snapshots_skipped=health_snapshots_skipped,
                         last_error=last_error,
                     ),
                 )
@@ -281,6 +294,8 @@ class WorkerRunner:
                 lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
                 lifecycle_restore_drills_completed=lifecycle_restore_drills_completed,
                 lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
+                health_snapshots_created=health_snapshots_created,
+                health_snapshots_skipped=health_snapshots_skipped,
                 last_error=last_error,
             ),
         )
@@ -298,6 +313,8 @@ class WorkerRunner:
             lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
             lifecycle_restore_drills_completed=lifecycle_restore_drills_completed,
             lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
+            health_snapshots_created=health_snapshots_created,
+            health_snapshots_skipped=health_snapshots_skipped,
             stopped=self._is_stopped(stop_event),
         )
 
@@ -359,6 +376,9 @@ class WorkerRunner:
                     ),
                     limit=self._config.recovery_batch_size,
                 )
+                health_summary = WorkspaceHealthService(session).run_scheduled_snapshots(
+                    limit=self._config.recovery_batch_size,
+                )
                 return WorkerMaintenanceSummary(
                     recovered_runs=summary.recovered_runs,
                     expired_leases=expired_leases,
@@ -382,6 +402,8 @@ class WorkerRunner:
                     lifecycle_restore_drills_skipped=(
                         lifecycle_summary.restore_drills_skipped
                     ),
+                    health_snapshots_created=health_summary.snapshots_created,
+                    health_snapshots_skipped=health_summary.snapshots_skipped,
                 )
         except Exception:
             logger.exception("Failed to run worker maintenance")
@@ -406,6 +428,8 @@ class WorkerRunner:
         lifecycle_retention_runs_skipped: int,
         lifecycle_restore_drills_completed: int,
         lifecycle_restore_drills_skipped: int,
+        health_snapshots_created: int,
+        health_snapshots_skipped: int,
         last_error: str | None,
     ) -> dict[str, object]:
         details: dict[str, object] = {
@@ -422,6 +446,8 @@ class WorkerRunner:
             "lifecycle_retention_runs_skipped": lifecycle_retention_runs_skipped,
             "lifecycle_restore_drills_completed": lifecycle_restore_drills_completed,
             "lifecycle_restore_drills_skipped": lifecycle_restore_drills_skipped,
+            "health_snapshots_created": health_snapshots_created,
+            "health_snapshots_skipped": health_snapshots_skipped,
             "capacity": {
                 "max_jobs": self._config.max_jobs,
             },

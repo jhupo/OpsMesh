@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -12,7 +13,7 @@ from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam
-from backend.app.workspaces.models import WorkspaceHealthSnapshot
+from backend.app.workspaces.models import Workspace, WorkspaceHealthSnapshot
 
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,
@@ -20,6 +21,14 @@ ACTIVE_RUN_STATUSES = {
     RunStatus.WAITING_RUNTIME.value,
     RunStatus.WAITING_APPROVAL.value,
 }
+
+
+@dataclass(frozen=True)
+class WorkspaceHealthSnapshotMaintenanceSummary:
+    workspaces_scanned: int = 0
+    snapshots_created: int = 0
+    snapshots_skipped: int = 0
+    snapshots_disabled: int = 0
 
 
 class WorkspaceHealthService:
@@ -131,6 +140,57 @@ class WorkspaceHealthService:
             "risk_changes": _risk_changes(latest, previous),
             "recommendation_changes": _recommendation_changes(latest, previous),
         }
+
+    def run_scheduled_snapshots(
+        self,
+        *,
+        limit: int = 100,
+        now: datetime | None = None,
+    ) -> WorkspaceHealthSnapshotMaintenanceSummary:
+        current_time = _aware(now or datetime.now(UTC))
+        workspaces = list(
+            self._session.scalars(
+                select(Workspace)
+                .where(Workspace.status == "active")
+                .order_by(Workspace.created_at.asc(), Workspace.id.asc())
+                .limit(max(1, limit))
+            ).all()
+        )
+        created = 0
+        skipped = 0
+        disabled = 0
+        for workspace in workspaces:
+            policy = _health_snapshot_policy(workspace.settings)
+            if policy is None:
+                disabled += 1
+                continue
+            latest = self._latest_snapshot(workspace.id)
+            if latest is not None and not _snapshot_due(
+                latest.created_at,
+                current_time,
+                policy["interval"],
+            ):
+                skipped += 1
+                continue
+            self.record_snapshot(workspace.id)
+            created += 1
+        return WorkspaceHealthSnapshotMaintenanceSummary(
+            workspaces_scanned=len(workspaces),
+            snapshots_created=created,
+            snapshots_skipped=skipped,
+            snapshots_disabled=disabled,
+        )
+
+    def _latest_snapshot(self, workspace_id: UUID) -> WorkspaceHealthSnapshot | None:
+        return self._session.scalar(
+            select(WorkspaceHealthSnapshot)
+            .where(WorkspaceHealthSnapshot.workspace_id == workspace_id)
+            .order_by(
+                WorkspaceHealthSnapshot.created_at.desc(),
+                WorkspaceHealthSnapshot.id.desc(),
+            )
+            .limit(1)
+        )
 
     def _team_count(self, workspace_id: UUID) -> int:
         teams = self._session.scalars(
@@ -382,6 +442,49 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _health_snapshot_policy(settings: object) -> dict[str, timedelta] | None:
+    root = _dict(settings)
+    operations = _dict(root.get("operations"))
+    policy = _dict(operations.get("health_snapshots"))
+    if not policy:
+        policy = _dict(root.get("health_snapshots"))
+    if policy.get("enabled") is not True:
+        return None
+    interval = _positive_timedelta(policy.get("interval_minutes"), unit="minutes")
+    if interval is None:
+        interval = _positive_timedelta(policy.get("interval_hours"), unit="hours")
+    return {"interval": interval or timedelta(hours=24)}
+
+
+def _positive_timedelta(value: object, *, unit: str) -> timedelta | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float) and value > 0:
+        return timedelta(**{unit: float(value)})
+    if isinstance(value, str):
+        try:
+            parsed = float(value)
+        except ValueError:
+            return None
+        if parsed > 0:
+            return timedelta(**{unit: parsed})
+    return None
+
+
+def _snapshot_due(
+    latest_created_at: datetime,
+    now: datetime,
+    interval: timedelta,
+) -> bool:
+    return _aware(latest_created_at) <= now - interval
+
+
+def _aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _snapshot_payload(snapshot: WorkspaceHealthSnapshot | None) -> dict[str, object] | None:

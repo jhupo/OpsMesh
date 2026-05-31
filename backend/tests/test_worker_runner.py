@@ -31,7 +31,7 @@ from backend.app.tasks.status import TaskStatus
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
 from backend.app.workers.runner import WorkerRunner, WorkerRunnerConfig
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.workspaces.models import Workspace, WorkspaceHealthSnapshot, WorkspaceMember
 
 
 def test_worker_runner_run_once_processes_agent_job() -> None:
@@ -926,6 +926,66 @@ def test_worker_runner_maintenance_cleans_stale_runtimes_across_workspaces() -> 
         assert terminal_runtime.status == "deleted"
         assert space_event is not None
         assert space_event.event_metadata["source"] == "worker.maintenance"
+
+
+def test_worker_runner_maintenance_records_due_workspace_health_snapshots() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, _, _ = _seed_run(session_factory, slug="health-snapshot-worker")
+    with session_factory() as session:
+        workspace = session.get(Workspace, workspace_id)
+        assert workspace is not None
+        workspace.settings = {
+            "operations": {
+                "health_snapshots": {
+                    "enabled": True,
+                    "interval_minutes": 60,
+                }
+            }
+        }
+        session.commit()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(
+            worker_id="worker-health-snapshot",
+            queue_name="agent_runs",
+            recovery_batch_size=10,
+        ),
+    )
+
+    first = runner.run_maintenance()
+    second = runner.run_maintenance()
+
+    assert first.health_snapshots_created == 1
+    assert first.health_snapshots_skipped == 0
+    assert second.health_snapshots_created == 0
+    assert second.health_snapshots_skipped == 1
+    with session_factory() as session:
+        snapshots = session.scalars(
+            select(WorkspaceHealthSnapshot)
+            .where(WorkspaceHealthSnapshot.workspace_id == workspace_id)
+            .order_by(WorkspaceHealthSnapshot.created_at.asc())
+        ).all()
+        assert len(snapshots) == 1
+        assert snapshots[0].trend_basis["mode"] == "persisted_snapshot"
+        snapshots[0].created_at = datetime.now(UTC) - timedelta(hours=2)
+        session.commit()
+
+    third = runner.run_maintenance()
+
+    assert third.health_snapshots_created == 1
+    assert third.health_snapshots_skipped == 0
+    with session_factory() as session:
+        snapshots = session.scalars(
+            select(WorkspaceHealthSnapshot).where(
+                WorkspaceHealthSnapshot.workspace_id == workspace_id
+            )
+        ).all()
+        assert len(snapshots) == 2
+        serialized = str([snapshot.summary for snapshot in snapshots])
+        assert "api_key" not in serialized
+        assert "authorization" not in serialized
 
 
 def test_worker_runner_summary_includes_maintenance_recovery() -> None:
