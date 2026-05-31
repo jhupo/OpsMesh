@@ -485,6 +485,7 @@ class RunOrchestrationService:
                 self._session.refresh(run)
                 return run
 
+            self._append_run_claimed_event(run, job)
             self._mark_run_started(run)
             used_provider_credentials: set[UUID] = set()
             model_provider_override: dict[str, Any] | None = None
@@ -495,12 +496,20 @@ class RunOrchestrationService:
                     job,
                     model_provider_override=model_provider_override,
                 )
+                self._append_context_built_event(run, request)
                 if request.model_provider_credential_id is not None:
                     used_provider_credentials.add(request.model_provider_credential_id)
                 try:
+                    self._append_model_request_started_event(
+                        run,
+                        request,
+                        fallback_selected=fallback_selected,
+                    )
                     result = await self._agent_runner.run(request)
+                    self._append_model_response_received_event(run, request, result)
                     break
                 except Exception as exc:
+                    self._append_model_request_failed_event(run, request, exc)
                     self._record_model_provider_failure(
                         run,
                         request.model_provider_credential_id,
@@ -602,7 +611,8 @@ class RunOrchestrationService:
         require_run_transition(RunStatus(run.status), RunStatus.RUNNING)
         run.status = RunStatus.RUNNING.value
         run.started_at = datetime.now(UTC)
-        self._append_event(run, "run.started", "Fake run started")
+        self._session.flush([run])
+        self._append_event(run, "run.started", "Run started")
 
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
@@ -641,7 +651,7 @@ class RunOrchestrationService:
         run.status = RunStatus.COMPLETED.value
         run.output = _run_output_payload(result)
         run.completed_at = datetime.now(UTC)
-        self._append_event(run, "run.completed", "Fake run completed")
+        self._append_event(run, "run.completed", "Run completed")
         self._release_runtime_space_reservations(run, released_at=run.completed_at)
 
         if run.task_id is not None:
@@ -840,6 +850,127 @@ class RunOrchestrationService:
                     if request.model_provider_credential_id is not None
                     else None,
                 }
+            },
+        )
+
+    def _append_run_claimed_event(self, run: AgentRun, job: JobPayload) -> None:
+        self._append_event(
+            run,
+            "run.claimed",
+            "Worker claimed the run",
+            {
+                "job": {
+                    "job_id": str(job.job_id),
+                    "attempt": job.attempt,
+                    "priority": job.priority,
+                    "created_at": job.created_at.isoformat(),
+                    "requested_by_user_id": str(job.requested_by_user_id)
+                    if job.requested_by_user_id is not None
+                    else None,
+                    "requested_by_agent_run_id": str(job.requested_by_agent_run_id)
+                    if job.requested_by_agent_run_id is not None
+                    else None,
+                    "routing": _safe_routing_metadata(job.routing),
+                }
+            },
+        )
+
+    def _append_context_built_event(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+    ) -> None:
+        context_metadata = request.context.metadata
+        self._append_event(
+            run,
+            "run.context_built",
+            "Agent runtime context built",
+            {
+                "agent_profile_id": str(request.agent_profile.id)
+                if request.agent_profile.id is not None
+                else None,
+                "agent_role": request.agent_profile.role,
+                "task_id": str(request.context.task_id)
+                if request.context.task_id is not None
+                else None,
+                "task_step_id": _optional_string_from_metadata(
+                    context_metadata,
+                    "task_step_id",
+                ),
+                "work_package_id": _optional_string_from_metadata(
+                    context_metadata,
+                    "work_package_id",
+                ),
+                "model": request.model,
+                "model_provider_credential_id": str(request.model_provider_credential_id)
+                if request.model_provider_credential_id is not None
+                else None,
+                "allowed_tool_count": len(request.context.allowed_tools),
+                "continuation_count": len(request.continuations),
+                "has_tool_executor": request.tool_executor is not None,
+            },
+        )
+
+    def _append_model_request_started_event(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        *,
+        fallback_selected: bool,
+    ) -> None:
+        self._append_event(
+            run,
+            "model.request_started",
+            "Model request started",
+            {
+                "model": request.model,
+                "model_provider_credential_id": str(request.model_provider_credential_id)
+                if request.model_provider_credential_id is not None
+                else None,
+                "fallback_selected": fallback_selected,
+                "allowed_tool_count": len(request.context.allowed_tools),
+                "continuation_count": len(request.continuations),
+            },
+        )
+
+    def _append_model_response_received_event(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        result: AgentRunResult,
+    ) -> None:
+        self._append_event(
+            run,
+            "model.response_received",
+            "Model response received",
+            {
+                "model": request.model,
+                "model_provider_credential_id": str(request.model_provider_credential_id)
+                if request.model_provider_credential_id is not None
+                else None,
+                "runtime_event_count": len(result.events),
+                "has_raw_output": result.raw_output is not None,
+                "final_output_length": len(result.final_output),
+            },
+        )
+
+    def _append_model_request_failed_event(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        exc: Exception,
+    ) -> None:
+        error = normalize_agent_error(exc)
+        self._append_event(
+            run,
+            "model.request_failed",
+            "Model request failed",
+            {
+                "model": request.model,
+                "model_provider_credential_id": str(request.model_provider_credential_id)
+                if request.model_provider_credential_id is not None
+                else None,
+                "reason": error.as_dict(),
             },
         )
 
@@ -2980,8 +3111,31 @@ def _optional_string(value: object) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _optional_string_from_metadata(metadata: dict[str, object], key: str) -> str | None:
+    value = metadata.get(key)
+    return value if isinstance(value, str) else None
+
+
 def _string_or_default(value: object, default: str) -> str:
     return value if isinstance(value, str) and value else default
+
+
+def _safe_routing_metadata(value: object) -> dict[str, object]:
+    routing = _dict_copy(value)
+    return {
+        key: _json_safe_object(item)
+        for key, item in routing.items()
+        if key
+        not in {
+            "api_key",
+            "authorization",
+            "base_url",
+            "container_id",
+            "headers",
+            "secret",
+            "token",
+        }
+    }
 
 
 def _allowed_tools_from_policy(tool_policy: dict[str, object]) -> tuple[str, ...]:

@@ -28,6 +28,7 @@ from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.runs.activity import activity_phase
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_spaces.models import (
@@ -86,10 +87,26 @@ def test_task_start_creates_queued_run_and_worker_completes_fake_run() -> None:
     assert stored_task is not None
     assert stored_task.status == TaskStatus.COMPLETED.value
     assert [event.event_type for event in events] == [
+        "run.claimed",
         "run.started",
+        "run.context_built",
+        "model.request_started",
+        "model.response_received",
         "model_provider.used",
         "run.completed",
     ]
+    assert events[0].event_metadata["job"]["priority"] == 0
+    assert events[2].event_metadata["allowed_tool_count"] == 0
+    assert events[3].event_metadata["model"] == "gpt-4.1"
+    assert events[4].event_metadata["runtime_event_count"] == 0
+
+
+def test_run_activity_maps_precise_execution_lifecycle_events() -> None:
+    assert activity_phase("running", "run.claimed") == "worker_claimed"
+    assert activity_phase("running", "run.context_built") == "context_ready"
+    assert activity_phase("running", "model.request_started") == "model_running"
+    assert activity_phase("running", "model.response_received") == "model_processing"
+    assert activity_phase("running", "model.request_failed") == "model_failed"
 
 
 def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
@@ -1985,6 +2002,18 @@ def test_worker_persists_failed_run_event() -> None:
     assert stored_run is not None
     assert stored_run.status == RunStatus.FAILED.value
     assert stored_run.error == {
+        "code": "RuntimeError",
+        "message": "model failed",
+        "retryable": True,
+    }
+    request_failed_event = session.scalar(
+        select(RunEvent).where(
+            RunEvent.agent_run_id == run.id,
+            RunEvent.event_type == "model.request_failed",
+        )
+    )
+    assert request_failed_event is not None
+    assert request_failed_event.event_metadata["reason"] == {
         "code": "RuntimeError",
         "message": "model failed",
         "retryable": True,

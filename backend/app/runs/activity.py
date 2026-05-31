@@ -36,6 +36,16 @@ def activity_phase(run_status: str, event_type: str | None) -> str:
         return "tool_failed"
     if event_type == "tool.completed":
         return "tool_completed"
+    if event_type == "run.claimed":
+        return "worker_claimed"
+    if event_type == "run.context_built":
+        return "context_ready"
+    if event_type == "model.request_started":
+        return "model_running"
+    if event_type == "model.response_received":
+        return "model_processing"
+    if event_type == "model.request_failed":
+        return "model_failed"
     if event_type in {"model_provider.fallback_selected", "model.fallback"}:
         return "model_routing"
     if event_type in {"model.usage", "agent.raw_item"}:
@@ -52,7 +62,11 @@ def activity_phase(run_status: str, event_type: str | None) -> str:
 def activity_label(phase: str) -> str:
     labels = {
         "queued": "Queued",
+        "worker_claimed": "Worker claimed",
+        "context_ready": "Context ready",
         "model_running": "Calling model",
+        "model_processing": "Processing model result",
+        "model_failed": "Model call failed",
         "model_routing": "Switching model provider",
         "tool_calling": "Calling tool",
         "tool_completed": "Processing tool result",
@@ -77,6 +91,12 @@ def activity_recommended_action(phase: str) -> str | None:
         "waiting_approval": "review_pending_approval",
         "tool_failed": "inspect_tool_error",
         "queued": "monitor_worker_queue",
+        "worker_claimed": "monitor_worker_startup",
+        "context_ready": "monitor_model_request",
+        "model_running": "monitor_model_response",
+        "model_processing": "monitor_result_processing",
+        "model_failed": "inspect_model_provider",
+        "model_routing": "monitor_fallback_provider",
         "cancelling": "monitor_worker_cancel_request",
     }
     return actions.get(phase)
