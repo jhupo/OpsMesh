@@ -72,12 +72,14 @@ async def apply_workspace_recovery_readiness_actions(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
     queue: RedisQueue = Depends(get_worker_queue),
+    settings: Settings = Depends(get_settings),
 ) -> WorkspaceRecoveryReadinessActionResponse:
     try:
         response = WorkspaceDataLifecycleService(session).apply_recovery_readiness_actions(
             workspace_id=context.workspace.id,
             user_id=context.user.user_id,
             queue=queue,
+            storage=LocalStorage(settings.storage_root),
             dry_run=request.dry_run,
             actions=request.actions,
             reason=request.reason,

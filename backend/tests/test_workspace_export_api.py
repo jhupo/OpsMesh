@@ -692,6 +692,98 @@ def test_workspace_recovery_readiness_actions_skip_when_export_active(
     assert queue.count_queued(workspace_id=workspace.id) == 0
 
 
+def test_workspace_recovery_readiness_actions_run_restore_import_test(
+    tmp_path: Path,
+) -> None:
+    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-recovery-restore-action@example.com",
+        slug="owner-recovery-restore-action",
+    )
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
+        headers=_headers(owner.id),
+        json={"include_audit_events": False},
+    )
+    assert created.status_code == 202
+    job_id = created.json()["id"]
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(
+            worker_id="recovery-restore-action-worker",
+            queue_name="agent_runs",
+        ),
+        settings=Settings(
+            environment="test",
+            log_format="text",
+            internal_api_token=TOKEN,
+            storage_root=str(tmp_path),
+        ),
+    )
+    assert runner.run_once() is True
+
+    dry_run = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness/actions/apply",
+        headers=_headers(owner.id),
+        json={},
+    )
+
+    assert dry_run.status_code == 200
+    dry_body = dry_run.json()
+    assert dry_body["requested_actions"] == ["run_restore_import_test"]
+    assert dry_body["results"][0]["resource_id"] == job_id
+    assert dry_body["results"][0]["status"] == "would_apply"
+
+    applied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": False,
+            "actions": ["run_restore_import_test"],
+            "metadata": {"token": "restore-secret"},
+        },
+    )
+
+    assert applied.status_code == 200
+    body = applied.json()
+    assert body["status"] == "applied"
+    assert body["applied_count"] == 1
+    assert body["summary"]["restore_import_tests_completed"] == 1
+    assert body["results"][0]["resource_type"] == "workspace_export_job"
+    assert body["results"][0]["resource_id"] == job_id
+    assert body["results"][0]["metadata"]["passed"] == (
+        body["results"][0]["metadata"]["required_resolution_count"] == 0
+    )
+    assert "restore-secret" not in json.dumps(body)
+    assert "storage_key" not in json.dumps(body)
+    assert (
+        session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action
+                == "workspace.recovery_readiness.restore_import_test_completed",
+                AuditEvent.workspace_id == workspace.id,
+            )
+        )
+        is not None
+    )
+
+    readiness = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness",
+        headers=_headers(owner.id),
+    )
+    assert readiness.status_code == 200
+    readiness_body = readiness.json()
+    assert readiness_body["latest_restore_drill"]["target_id"] == job_id
+    assert (
+        readiness_body["restore_readiness"]["restore_test_history"][
+            "latest_test_covers_latest_archive"
+        ]
+        is True
+    )
+
+
 def test_workspace_recovery_readiness_warns_when_backup_schedule_is_overdue(
     tmp_path: Path,
 ) -> None:
