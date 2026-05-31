@@ -52,6 +52,7 @@ MCP_LIMIT_COUNTED_STATUSES = (
 GOVERNANCE_APPLY_ACTIONS = {
     "disable_unusable_skill_installs",
     "disable_blocked_mcp_servers",
+    "refresh_mcp_health_check",
 }
 DEFAULT_GOVERNANCE_APPLY_ACTIONS = [
     "disable_unusable_skill_installs",
@@ -811,6 +812,18 @@ class CapabilityService:
             results.extend(action_results)
             skipped.extend(action_skipped)
             remaining -= len(action_results)
+        if "refresh_mcp_health_check" in requested_actions and remaining > 0:
+            action_results, action_skipped = self._apply_refresh_mcp_health_checks(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                dry_run=dry_run,
+                mcp_server_ids=set(mcp_server_ids or []),
+                limit=remaining,
+                reason=reason,
+            )
+            results.extend(action_results)
+            skipped.extend(action_skipped)
+            remaining -= len(action_results)
 
         summary = {
             "disabled_skill_install_count": sum(
@@ -818,6 +831,9 @@ class CapabilityService:
             ),
             "disabled_mcp_server_count": sum(
                 1 for item in results if item["resource_type"] == "mcp_server"
+            ),
+            "requested_mcp_health_check_count": sum(
+                1 for item in results if item["resource_type"] == "mcp_server_health_check"
             ),
             "metadata_keys": sorted((metadata or {}).keys()),
         }
@@ -994,6 +1010,81 @@ class CapabilityService:
                 _governance_result(
                     action="disable_blocked_mcp_servers",
                     resource_type="mcp_server",
+                    resource_id=server.id,
+                    resource_name=server.name,
+                    status="would_apply" if dry_run else "applied",
+                    blocked_reasons=blocked_reasons,
+                )
+            )
+        return results, skipped
+
+    def _apply_refresh_mcp_health_checks(
+        self,
+        *,
+        workspace_id: UUID,
+        actor_user_id: UUID,
+        dry_run: bool,
+        mcp_server_ids: set[UUID],
+        limit: int,
+        reason: str | None,
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+        catalog_items, _ = self.list_mcp_catalog(
+            workspace_id,
+            PageParams(limit=10_000, offset=0),
+        )
+        results: list[dict[str, object]] = []
+        skipped: list[dict[str, object]] = []
+        for item in catalog_items:
+            server = item.server
+            if server.status != "active":
+                continue
+            if mcp_server_ids and server.id not in mcp_server_ids:
+                continue
+            blocked_reasons = item.blocked_reasons
+            if not _mcp_server_health_check_should_refresh(blocked_reasons):
+                skipped.append(
+                    _governance_skipped(
+                        action="refresh_mcp_health_check",
+                        resource_type="mcp_server_health_check",
+                        resource_id=server.id,
+                        resource_name=server.name,
+                        reason="mcp_server_health_check_not_required",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            if len(results) >= limit:
+                skipped.append(
+                    _governance_skipped(
+                        action="refresh_mcp_health_check",
+                        resource_type="mcp_server_health_check",
+                        resource_id=server.id,
+                        resource_name=server.name,
+                        reason="max_items_reached",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            if not dry_run:
+                server.health_status = "checking"
+                server.last_health_check_at = None
+                server.last_error = "health_check_refresh_requested"
+                AuditService(self._session).record_user_action(
+                    workspace_id=workspace_id,
+                    user_id=actor_user_id,
+                    action="capability_governance.mcp_health_check_refresh_requested",
+                    target_type="mcp_server",
+                    target_id=server.id,
+                    metadata={
+                        "name": server.name,
+                        "blocked_reasons": blocked_reasons,
+                        "reason": reason,
+                    },
+                )
+            results.append(
+                _governance_result(
+                    action="refresh_mcp_health_check",
+                    resource_type="mcp_server_health_check",
                     resource_id=server.id,
                     resource_name=server.name,
                     status="would_apply" if dry_run else "applied",
@@ -2039,6 +2130,8 @@ def _skill_tool_availability(
     blocked_reasons: list[str] = []
     if server.health_status == "unhealthy":
         blocked_reasons.append("server_unhealthy")
+    if server.health_status == "checking":
+        blocked_reasons.append("health_check_pending")
     if _health_check_stale(server):
         blocked_reasons.append("health_check_stale")
     credential_status = _credential_status(
@@ -2112,6 +2205,8 @@ def _mcp_blocked_reasons(
         reasons.append("server_inactive")
     if server.health_status == "unhealthy":
         reasons.append("server_unhealthy")
+    if server.health_status == "checking":
+        reasons.append("health_check_pending")
     if _health_check_stale(server):
         reasons.append("health_check_stale")
     if not tools:
@@ -2171,6 +2266,8 @@ def _mcp_server_governance_actions(
         actions.append("review_mcp_server_status")
     if "server_unhealthy" in reasons or "health_check_stale" in reasons:
         actions.append("refresh_mcp_health_check")
+    if "health_check_pending" in reasons:
+        actions.append("wait_for_mcp_health_check")
     if "no_allowed_tools" in reasons:
         actions.append("allow_mcp_tools")
     if "missing_required_credentials" in reasons:
@@ -2208,6 +2305,10 @@ def _skill_install_should_be_disabled(blocked_reasons: list[str]) -> bool:
 
 def _mcp_server_should_be_governance_disabled(blocked_reasons: list[str]) -> bool:
     return bool(set(blocked_reasons) & MCP_SERVER_GOVERNANCE_DISABLE_REASONS)
+
+
+def _mcp_server_health_check_should_refresh(blocked_reasons: list[str]) -> bool:
+    return bool(set(blocked_reasons) & {"health_check_stale", "server_unhealthy"})
 
 
 def _governance_result(

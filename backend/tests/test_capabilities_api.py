@@ -1864,6 +1864,123 @@ def test_workspace_capability_governance_actions_apply_safe_quarantine() -> None
     } <= audit_actions
 
 
+def test_workspace_capability_governance_can_request_mcp_health_refresh() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, _ = _seed_workspace(
+        session,
+        email="other-health-refresh@example.com",
+        slug="other-health-refresh",
+    )
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "stale-health",
+            "server_type": "http_jsonrpc",
+            "connection": {"url": "https://health.example.test/rpc?token=hidden-refresh"},
+        },
+    )
+    tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "search_docs", "risk_level": "low"},
+    )
+    assert server.status_code == 201
+    assert tool.status_code == 201
+    stored_server = session.get(McpServer, UUID(server.json()["id"]))
+    assert stored_server is not None
+    stored_server.health_status = "healthy"
+    stored_server.last_health_check_at = datetime(2026, 1, 1, tzinfo=UTC)
+    stored_server.last_error = "hidden-old-error-token"
+    session.commit()
+
+    governance = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance",
+        headers=_headers(owner.id),
+    )
+    dry_run = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": True,
+            "actions": ["refresh_mcp_health_check"],
+            "mcp_server_ids": [server.json()["id"]],
+            "metadata": {"api_key": "sk-health-refresh-dry"},
+        },
+    )
+    forbidden = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
+        headers=_headers(other.id),
+        json={"dry_run": True, "actions": ["refresh_mcp_health_check"]},
+    )
+
+    assert governance.status_code == 200
+    assert governance.json()["mcp_servers"][0]["blocked_reasons"] == ["health_check_stale"]
+    assert governance.json()["mcp_servers"][0]["recommended_actions"] == [
+        "refresh_mcp_health_check"
+    ]
+    assert dry_run.status_code == 200
+    dry_body = dry_run.json()
+    assert dry_body["status"] == "dry_run"
+    assert dry_body["eligible_action_count"] == 1
+    assert dry_body["summary"]["requested_mcp_health_check_count"] == 1
+    assert dry_body["results"][0]["resource_type"] == "mcp_server_health_check"
+    assert dry_body["results"][0]["status"] == "would_apply"
+    assert forbidden.status_code == 403
+    assert "sk-health-refresh-dry" not in str(dry_body)
+    assert "hidden-refresh" not in str(dry_body)
+    assert "hidden-old-error-token" not in str(dry_body)
+
+    applied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": False,
+            "actions": ["refresh_mcp_health_check"],
+            "mcp_server_ids": [server.json()["id"]],
+            "reason": "operator requested fresh health signal",
+            "metadata": {"token": "hidden-health-refresh-apply"},
+        },
+    )
+    assert applied.status_code == 200
+    body = applied.json()
+    assert body["status"] == "applied"
+    assert body["applied_count"] == 1
+    assert body["summary"]["requested_mcp_health_check_count"] == 1
+    assert body["summary"]["disabled_mcp_server_count"] == 0
+    assert "hidden-health-refresh-apply" not in str(body)
+
+    session.expire_all()
+    refreshed_server = session.get(McpServer, UUID(server.json()["id"]))
+    assert refreshed_server is not None
+    assert refreshed_server.status == "active"
+    assert refreshed_server.health_status == "checking"
+    assert refreshed_server.last_health_check_at is None
+    assert refreshed_server.last_error == "health_check_refresh_requested"
+
+    pending_governance = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance",
+        headers=_headers(owner.id),
+    )
+    assert pending_governance.status_code == 200
+    pending_server = pending_governance.json()["mcp_servers"][0]
+    assert pending_server["blocked_reasons"] == ["health_check_pending"]
+    assert pending_server["recommended_actions"] == ["wait_for_mcp_health_check"]
+
+    audit_actions = {
+        event.action
+        for event in session.query(AuditEvent)
+        .filter(AuditEvent.workspace_id == workspace.id)
+        .all()
+    }
+    assert {
+        "capability_governance.actions_applied",
+        "capability_governance.mcp_health_check_refresh_requested",
+    } <= audit_actions
+
+
 def test_workspace_skill_install_can_upgrade_and_disable_without_source_access() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
