@@ -6366,6 +6366,150 @@ def test_task_delivery_review_reports_missing_artifacts_and_redacts_metadata() -
     assert "secret-storage-brief" not in serialized
 
 
+def test_task_delivery_decision_approves_or_requests_follow_up_and_redacts() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-delivery-decision@example.com",
+        slug="other-delivery-decision",
+    )
+    approved_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Approve delivery",
+        status=TaskStatus.RUNNING.value,
+    )
+    follow_up_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Needs delivery changes",
+        status=TaskStatus.RUNNING.value,
+    )
+    session.add_all([approved_task, follow_up_task])
+    session.flush()
+    session.add_all(
+        [
+            TaskStep(
+                workspace_id=workspace.id,
+                task_id=approved_task.id,
+                title="Completed delivery",
+                status="completed",
+                result_summary="Done",
+                order_index=1,
+            ),
+            TaskStep(
+                workspace_id=workspace.id,
+                task_id=follow_up_task.id,
+                title="Draft delivery",
+                status="completed",
+                result_summary="Draft",
+                order_index=1,
+            ),
+        ]
+    )
+    session.commit()
+
+    approved = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{approved_task.id}/delivery-decision",
+        headers=_headers(owner.id),
+        json={
+            "action": "approve",
+            "summary": "Approved for release.",
+            "metadata": {"api_key": "sk-delivery-approve"},
+        },
+    )
+    forbidden = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{approved_task.id}/delivery-decision",
+        headers=_headers(other_owner.id),
+        json={"action": "approve", "summary": "Nope"},
+    )
+    missing = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{uuid4()}/delivery-decision",
+        headers=_headers(owner.id),
+        json={"action": "approve", "summary": "Missing"},
+    )
+    invalid_follow_up = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{follow_up_task.id}/delivery-decision",
+        headers=_headers(owner.id),
+        json={"action": "request_changes", "summary": "Needs changes"},
+    )
+    changes = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{follow_up_task.id}/delivery-decision",
+        headers=_headers(owner.id),
+        json={
+            "action": "request_changes",
+            "summary": "Needs stronger validation.",
+            "instruction": "Add validation tests before final acceptance.",
+            "correction_mode": "add_missing_work",
+            "target_type": "task",
+            "metadata": {"authorization": "Bearer delivery-change"},
+        },
+    )
+
+    assert approved.status_code == 200
+    approved_body = approved.json()
+    assert approved_body["decision"] == "approved"
+    assert approved_body["status"] == "approved"
+    assert approved_body["task_status"] == TaskStatus.COMPLETED.value
+    assert approved_body["details"]["finalization"] == {
+        "status": "finalized",
+        "reason": "ready",
+    }
+    assert approved_body["final_output"]["decision"] == "approved"
+    assert approved_body["final_output"]["source"] == "delivery_decision"
+    assert forbidden.status_code == 403
+    assert missing.status_code == 404
+    assert invalid_follow_up.status_code == 409
+    assert changes.status_code == 200
+    changes_body = changes.json()
+    assert changes_body["decision"] == "request_revision"
+    assert changes_body["status"] == "follow_up_created"
+    assert changes_body["task_status"] == TaskStatus.BLOCKED.value
+    assert changes_body["created_step_id"] is not None
+    assert changes_body["details"]["correction_mode"] == "add_missing_work"
+
+    session.expire_all()
+    stored_approved = session.get(Task, approved_task.id)
+    stored_follow_up = session.get(Task, follow_up_task.id)
+    created_step = session.get(TaskStep, UUID(changes_body["created_step_id"]))
+    acceptance_messages = session.scalars(
+        select(TaskMessage)
+        .where(TaskMessage.task_id.in_([approved_task.id, follow_up_task.id]))
+        .order_by(TaskMessage.sequence.asc())
+    ).all()
+    audit_actions = {
+        event.action
+        for event in session.query(AuditEvent)
+        .filter(AuditEvent.workspace_id == workspace.id)
+        .all()
+    }
+    assert stored_approved is not None
+    assert stored_approved.status == TaskStatus.COMPLETED.value
+    assert stored_approved.final_output["summary"] == "Approved for release."
+    assert stored_follow_up is not None
+    assert stored_follow_up.status == TaskStatus.BLOCKED.value
+    assert created_step is not None
+    assert created_step.dependencies["correction"]["metadata"]["decision"] == "request_changes"
+    assert [message.message_type for message in acceptance_messages] == [
+        "pm.acceptance_decision",
+        "pm.acceptance_decision",
+        "task.correction.created",
+    ]
+    assert acceptance_messages[0].payload["decision"] == "approved"
+    assert acceptance_messages[1].payload["decision"] == "request_revision"
+    assert {
+        "task.delivery.approved",
+        "task.delivery.request_changes",
+        "task.correction.created",
+    } <= audit_actions
+
+    serialized = str(approved_body) + str(changes_body)
+    assert "sk-delivery-approve" not in serialized
+    assert "Bearer delivery-change" not in serialized
+
+
 def test_artifact_list_includes_work_package_version_metadata() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

@@ -70,6 +70,23 @@ class TaskControlActionRequest(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
+class TaskDeliveryDecisionRequest(BaseModel):
+    action: str = Field(pattern="^(approve|request_changes|reject)$")
+    summary: str = Field(min_length=1, max_length=4_000)
+    instruction: str | None = Field(default=None, max_length=4_000)
+    finalize: bool = True
+    correction_mode: str | None = Field(
+        default=None,
+        pattern="^(revise|regenerate|add_missing_work|replace_artifact|stop_work)$",
+    )
+    target_type: str | None = Field(
+        default=None,
+        pattern="^(task|step|agent|artifact|final_output)$",
+    )
+    target_id: UUID | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
 class TaskResponse(TimestampedModel):
     workspace_id: UUID
     created_by_user_id: UUID | None
@@ -315,6 +332,26 @@ class TaskControlActionResponse(BaseModel):
     @field_serializer("details")
     def _serialize_details(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+
+class TaskDeliveryDecisionResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    action: str
+    decision: str
+    status: str
+    task_status: str
+    message_id: UUID
+    created_step_id: UUID | None = None
+    final_output: dict[str, object] | None = None
+    details: dict[str, object]
+
+    @field_serializer("final_output", "details")
+    def _serialize_metadata(
+        self,
+        value: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
 
 
 class TaskCorrectionStepDiagnostic(BaseModel):

@@ -27,6 +27,8 @@ from backend.app.api.schemas.tasks import (
     TaskCorrectionRequest,
     TaskCorrectionResponse,
     TaskCreateRequest,
+    TaskDeliveryDecisionRequest,
+    TaskDeliveryDecisionResponse,
     TaskDeliveryReviewResponse,
     TaskExecutionDiagnosticsResponse,
     TaskExecutionStatusResponse,
@@ -79,6 +81,7 @@ from backend.app.tasks.control import TaskControlService
 from backend.app.tasks.control_diagnostics import TaskControlDiagnosticsService
 from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
 from backend.app.tasks.corrections import TaskCorrectionService
+from backend.app.tasks.delivery_decisions import TaskDeliveryDecisionService
 from backend.app.tasks.delivery_review import TaskDeliveryReviewService
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.live_status import TaskLiveStatusService
@@ -1020,6 +1023,33 @@ async def get_task_delivery_review(
     if review is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskDeliveryReviewResponse.model_validate(review)
+
+
+@router.post("/tasks/{task_id}/delivery-decision", response_model=TaskDeliveryDecisionResponse)
+async def apply_task_delivery_decision(
+    task_id: UUID,
+    request: TaskDeliveryDecisionRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> TaskDeliveryDecisionResponse:
+    try:
+        response = TaskDeliveryDecisionService(session).apply_decision(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            actor_user_id=context.user.user_id,
+            request=request,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskDeliveryDecisionResponse.model_validate(response)
 
 
 @router.get("/tasks/{task_id}/timeline", response_model=TaskTimelineResponse)
