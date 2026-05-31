@@ -27,6 +27,7 @@ from backend.app.api.schemas.tasks import (
     TaskCorrectionResponse,
     TaskCreateRequest,
     TaskExecutionDiagnosticsResponse,
+    TaskExecutionStatusResponse,
     TaskHandoffQueueResponse,
     TaskLiveStatusResponse,
     TaskManagerDiagnosticsResponse,
@@ -77,6 +78,7 @@ from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.live_status import TaskLiveStatusService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
+from backend.app.tasks.monitor import TaskExecutionStatusService
 from backend.app.tasks.observation import TaskObservationService
 from backend.app.tasks.operator_actions import TaskOperatorActionService
 from backend.app.tasks.timeline import TaskTimelineService
@@ -770,6 +772,25 @@ async def get_task_live_status(
     if status_snapshot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskLiveStatusResponse.model_validate(status_snapshot)
+
+
+@router.get("/tasks/{task_id}/execution-status", response_model=TaskExecutionStatusResponse)
+async def get_task_execution_status(
+    task_id: UUID,
+    message_limit: int = Query(default=20, ge=1, le=100),
+    event_limit: int = Query(default=30, ge=1, le=200),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskExecutionStatusResponse:
+    status_snapshot = TaskExecutionStatusService(session).get_status(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        message_limit=message_limit,
+        event_limit=event_limit,
+    )
+    if status_snapshot is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskExecutionStatusResponse.model_validate(status_snapshot)
 
 
 @router.get("/tasks/{task_id}/events/stream")

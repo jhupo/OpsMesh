@@ -3387,6 +3387,149 @@ def test_task_live_status_api_returns_active_runs_and_message_cursor() -> None:
     assert payload["recent_messages"][0]["agent"]["role"] == "researcher"
 
 
+def test_task_execution_status_reports_focus_actions_and_redacts_metadata() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-execution-status@example.com",
+        slug="other-execution-status",
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Runtime Specialist",
+        role="developer",
+        model_settings={"api_key": "sk-agent-status"},
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Observe execution",
+        status=TaskStatus.RUNNING.value,
+        priority=8,
+        input={"base_url": "https://router.example.test/private"},
+        generic_state={
+            "control": {
+                "paused": True,
+                "reason": "Need owner check",
+                "headers": {"authorization": "Bearer task-control"},
+            }
+        },
+    )
+    session.add_all([agent, task])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        work_package_id="build",
+        required_role="developer",
+        title="Build API",
+        status="queued",
+        order_index=10,
+        dependencies={
+            "blocked_reason": "workspace_run_quota_exceeded",
+            "headers": {"authorization": "Bearer step-token"},
+        },
+    )
+    session.add(step)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=agent.id,
+        status="waiting_runtime",
+        input={
+            "prompt": "Continue work",
+            "base_url": "https://runtime.example.test/private",
+            "headers": {"authorization": "Bearer runtime"},
+        },
+        output={"token": "runtime-output-token"},
+        error={"api_key": "sk-run-status"},
+        model="gpt-test",
+        started_at=datetime.now(UTC),
+    )
+    session.add(run)
+    session.flush()
+    session.add_all(
+        [
+            RunEvent(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                event_type="runtime.waiting",
+                sequence=1,
+                message="Waiting for runtime",
+                event_metadata={"secret": "event-secret", "safe": "ok"},
+                created_at=datetime.now(UTC),
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=step.id,
+                agent_run_id=run.id,
+                agent_profile_id=agent.id,
+                message_type="agent.progress",
+                sequence=1,
+                body="Working on runtime result",
+                payload={"token": "message-token", "progress": "waiting"},
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/execution-status"
+        "?message_limit=5&event_limit=10",
+        headers=_headers(owner.id),
+    )
+    forbidden = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/execution-status",
+        headers=_headers(other_owner.id),
+    )
+    missing = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{uuid4()}/execution-status",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] == str(workspace.id)
+    assert body["task_id"] == str(task.id)
+    assert body["status"] == "paused"
+    assert body["control"]["paused"] is True
+    assert body["control"]["headers"] == "[redacted]"
+    assert body["summary"]["active_run_count"] == 1
+    assert body["summary"]["blocked_reason_count"] >= 2
+    assert body["current_focus"]["kind"] == "run"
+    assert body["current_focus"]["status"] == "waiting_runtime"
+    assert body["current_focus"]["run_id"] == str(run.id)
+    assert body["current_focus"]["agent"]["name"] == "Runtime Specialist"
+    assert "task_paused" in body["blocked_reasons"]
+    assert "scheduler:workspace_run_quota_exceeded" in body["blocked_reasons"]
+    action_names = {item["action"] for item in body["recommended_actions"]}
+    assert {"resume", "inspect_runtime", "inspect_scheduler_block"} <= action_names
+    assert body["active_runs"][0]["latest_event"]["metadata"]["secret"] == "[redacted]"
+    assert body["recent_messages"][0]["payload"]["token"] == "[redacted]"
+    events_by_type = {event["event_type"]: event for event in body["recent_events"]}
+    assert events_by_type["runtime.waiting"]["metadata"]["secret"] == "[redacted]"
+    assert forbidden.status_code == 403
+    assert missing.status_code == 404
+
+    serialized = str(body)
+    assert "sk-agent-status" not in serialized
+    assert "router.example.test/private" not in serialized
+    assert "runtime.example.test/private" not in serialized
+    assert "Bearer task-control" not in serialized
+    assert "Bearer step-token" not in serialized
+    assert "Bearer runtime" not in serialized
+    assert "runtime-output-token" not in serialized
+    assert "sk-run-status" not in serialized
+    assert "message-token" not in serialized
+    assert "event-secret" not in serialized
+
+
 def test_task_event_stream_returns_redacted_snapshot() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
