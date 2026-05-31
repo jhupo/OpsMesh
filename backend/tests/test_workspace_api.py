@@ -4066,7 +4066,11 @@ def test_task_event_stream_returns_redacted_snapshot() -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: task.events" in response.text
     assert "event: task.snapshot" in response.text
+    assert '"event_count": 2' in response.text
+    assert '"event_type": "step.completed"' in response.text
+    assert '"event_cursor": 2' in response.text
     assert "[redacted]" in response.text
     assert "Bearer hidden" not in response.text
 

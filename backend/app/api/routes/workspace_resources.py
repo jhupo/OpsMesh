@@ -892,7 +892,9 @@ async def get_task_event_feed(
 async def stream_task_events(
     task_id: UUID,
     after_sequence: int = Query(default=0, ge=0),
+    after_cursor: int = Query(default=0, ge=0),
     message_limit: int = Query(default=50, ge=1, le=200),
+    event_limit: int = Query(default=100, ge=1, le=500),
     poll_seconds: float = Query(default=1.0, ge=0.25, le=10.0),
     heartbeat_seconds: float = Query(default=15.0, ge=1.0, le=60.0),
     once: bool = Query(default=False),
@@ -910,20 +912,47 @@ async def stream_task_events(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
     async def event_stream():
-        cursor = after_sequence
+        message_cursor = after_sequence
+        event_cursor = after_cursor
         last_emit_at = asyncio.get_running_loop().time()
         snapshot = initial
         while True:
+            feed = TaskEventFeedService(session).get_feed(
+                workspace_id=context.workspace.id,
+                task_id=task_id,
+                after_cursor=event_cursor,
+                limit=event_limit,
+            )
+            events = _feed_events(feed)
+            if events:
+                event_cursor = _feed_next_cursor(feed, event_cursor)
+                yield _sse_event(
+                    "task.events",
+                    {
+                        **(feed or {}),
+                        "stream": {
+                            "cursor": event_cursor,
+                            "event_count": len(events),
+                            "complete": _task_stream_complete(snapshot),
+                        },
+                    },
+                )
+                last_emit_at = asyncio.get_running_loop().time()
+
             messages = _snapshot_messages(snapshot)
             if messages:
-                cursor = max(_message_sequence(message, cursor) for message in messages)
+                message_cursor = max(
+                    _message_sequence(message, message_cursor) for message in messages
+                )
             yield _sse_event(
                 "task.snapshot",
                 {
                     **snapshot,
                     "stream": {
-                        "cursor": cursor,
+                        "cursor": message_cursor,
+                        "event_cursor": event_cursor,
                         "message_count": len(messages),
+                        "event_count": len(events),
                         "complete": _task_stream_complete(snapshot),
                     },
                 },
@@ -938,13 +967,20 @@ async def stream_task_events(
             snapshot = service.get_status(
                 workspace_id=context.workspace.id,
                 task_id=task_id,
-                after_sequence=cursor,
+                after_sequence=message_cursor,
                 message_limit=message_limit,
             )
             if snapshot is None:
-                yield _sse_event("task.missing", {"task_id": str(task_id), "cursor": cursor})
+                yield _sse_event(
+                    "task.missing",
+                    {
+                        "task_id": str(task_id),
+                        "cursor": message_cursor,
+                        "event_cursor": event_cursor,
+                    },
+                )
                 break
-            if not _snapshot_messages(snapshot):
+            if not _snapshot_messages(snapshot) and not events:
                 now = asyncio.get_running_loop().time()
                 if now - last_emit_at >= heartbeat_seconds:
                     yield _sse_event(
@@ -952,7 +988,8 @@ async def stream_task_events(
                         {
                             "workspace_id": str(context.workspace.id),
                             "task_id": str(task_id),
-                            "cursor": cursor,
+                            "cursor": message_cursor,
+                            "event_cursor": event_cursor,
                         },
                     )
                     last_emit_at = now
@@ -1276,6 +1313,25 @@ def _snapshot_messages(snapshot: dict[str, object]) -> list[dict[str, object]]:
     if not isinstance(messages, list):
         return []
     return [message for message in messages if isinstance(message, dict)]
+
+
+def _feed_events(feed: dict[str, object] | None) -> list[dict[str, object]]:
+    if feed is None:
+        return []
+    events = feed.get("events")
+    if not isinstance(events, list):
+        return []
+    return [event for event in events if isinstance(event, dict)]
+
+
+def _feed_next_cursor(feed: dict[str, object] | None, default: int) -> int:
+    if feed is None:
+        return default
+    summary = feed.get("summary")
+    if not isinstance(summary, dict):
+        return default
+    next_cursor = summary.get("next_cursor")
+    return next_cursor if isinstance(next_cursor, int) else default
 
 
 def _message_sequence(message: dict[str, object], default: int) -> int:
