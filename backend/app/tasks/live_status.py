@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.runs.activity import run_activity
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
@@ -59,7 +60,8 @@ class TaskLiveStatusService:
                 "step_status_counts": _count_by_status(step.status for step in steps),
                 "run_status_counts": _count_by_status(run.status for run in runs),
                 "active_run_phase_counts": _count_by_status(
-                    _run_activity(run, latest_events.get(run.id))["phase"] for run in active_runs
+                    run_activity(run, latest_events.get(run.id))["phase"]
+                    for run in active_runs
                 ),
                 "active_run_count": len(active_runs),
                 "latest_message_sequence": latest_sequence,
@@ -205,7 +207,7 @@ class TaskLiveStatusService:
             "started_at": run.started_at,
             "completed_at": run.completed_at,
             "latest_event": _event_summary(latest_event),
-            "activity": _run_activity(run, latest_event),
+            "activity": run_activity(run, latest_event),
         }
 
 
@@ -231,83 +233,6 @@ def _event_summary(event: RunEvent | None) -> dict[str, object] | None:
         "metadata": event.event_metadata,
         "created_at": event.created_at,
     }
-
-
-def _run_activity(run: AgentRun, latest_event: RunEvent | None) -> dict[str, object]:
-    event_type = latest_event.event_type if latest_event is not None else None
-    phase = _activity_phase(run.status, event_type)
-    return {
-        "phase": phase,
-        "label": _activity_label(phase),
-        "status": run.status,
-        "latest_event_type": event_type,
-        "since": _activity_since(run, latest_event),
-        "message": latest_event.message if latest_event is not None else None,
-        "recommended_action": _activity_recommended_action(phase),
-    }
-
-
-def _activity_phase(run_status: str, event_type: str | None) -> str:
-    if run_status == "queued":
-        return "queued"
-    if run_status == "waiting_runtime":
-        return "waiting_runtime"
-    if run_status == "waiting_approval":
-        return "waiting_approval"
-    if event_type in {"tool.waiting", "runtime.waiting", "run.waiting_runtime"}:
-        return "waiting_runtime"
-    if event_type == "approval.requested":
-        return "waiting_approval"
-    if event_type in {"tool.called", "tool.blocked"}:
-        return "tool_calling"
-    if event_type == "tool.failed":
-        return "tool_failed"
-    if event_type == "tool.completed":
-        return "tool_completed"
-    if event_type in {"model_provider.fallback_selected", "model.fallback"}:
-        return "model_routing"
-    if event_type in {"model.usage", "agent.raw_item"}:
-        return "model_running"
-    if event_type == "agent.handoff":
-        return "handoff"
-    if event_type == "run.cancelled":
-        return "cancelling"
-    if run_status == "running":
-        return "model_running"
-    return run_status
-
-
-def _activity_label(phase: str) -> str:
-    labels = {
-        "queued": "Queued",
-        "model_running": "Calling model",
-        "model_routing": "Switching model provider",
-        "tool_calling": "Calling tool",
-        "tool_completed": "Processing tool result",
-        "tool_failed": "Tool failed",
-        "waiting_runtime": "Waiting for runtime",
-        "waiting_approval": "Waiting for approval",
-        "handoff": "Handing off",
-        "cancelling": "Cancelling",
-    }
-    return labels.get(phase, phase.replace("_", " ").title())
-
-
-def _activity_since(run: AgentRun, latest_event: RunEvent | None) -> datetime:
-    if latest_event is not None:
-        return latest_event.created_at
-    return run.started_at or run.created_at
-
-
-def _activity_recommended_action(phase: str) -> str | None:
-    actions = {
-        "waiting_runtime": "inspect_runtime_capacity",
-        "waiting_approval": "review_pending_approval",
-        "tool_failed": "inspect_tool_error",
-        "queued": "monitor_worker_queue",
-        "cancelling": "monitor_worker_cancel_request",
-    }
-    return actions.get(phase)
 
 
 def _count_by_status(statuses: object) -> dict[str, int]:

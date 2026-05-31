@@ -138,6 +138,7 @@ class AgentTeamExecutionMemberResponse(BaseModel):
     active_task_count: int
     active_step_count: int
     active_run_count: int
+    active_run_phase_counts: dict[str, int] = Field(default_factory=dict)
     utilization: float
     overloaded: bool
     blocked_reasons: list[str] = Field(default_factory=list)
@@ -158,6 +159,7 @@ class AgentTeamExecutionTaskResponse(BaseModel):
     recommended_actions: list[str] = Field(default_factory=list)
     step_status_counts: dict[str, int]
     active_run_count: int
+    active_run_phase_counts: dict[str, int] = Field(default_factory=dict)
     last_activity_at: datetime
 
 

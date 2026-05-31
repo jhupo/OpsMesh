@@ -614,15 +614,26 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
         ]
     )
     session.flush()
+    developer_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=running_task.id,
+        task_step_id=running_build.id,
+        agent_profile_id=developer_id,
+        status=RunStatus.RUNNING.value,
+        input={"token": "run-hidden"},
+    )
+    session.add(developer_run)
+    session.flush()
     session.add_all(
         [
-            AgentRun(
+            RunEvent(
                 workspace_id=workspace.id,
-                task_id=running_task.id,
-                task_step_id=running_build.id,
-                agent_profile_id=developer_id,
-                status=RunStatus.RUNNING.value,
-                input={"token": "run-hidden"},
+                agent_run_id=developer_run.id,
+                event_type="tool.called",
+                sequence=1,
+                message="Calling design tool",
+                event_metadata={"api_key": "sk-tool-overview"},
+                created_at=datetime.now(UTC),
             ),
             TaskMessage(
                 workspace_id=workspace.id,
@@ -663,6 +674,7 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert body["summary"]["task_counts"] == {"running": 1}
     assert body["summary"]["step_counts"] == {"completed": 1, "queued": 1, "running": 1}
     assert body["summary"]["run_counts"] == {"running": 1}
+    assert body["summary"]["active_run_phase_counts"] == {"tool_calling": 1}
     assert body["summary"]["needs_attention_tasks"] == 1
     assert body["summary"]["risk_counts"] == {
         "critical": 0,
@@ -730,6 +742,7 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert members["developer"]["active_task_count"] == 1
     assert members["developer"]["active_step_count"] == 1
     assert members["developer"]["active_run_count"] == 1
+    assert members["developer"]["active_run_phase_counts"] == {"tool_calling": 1}
     assert members["developer"]["utilization"] == 1.0
     assert members["developer"]["overloaded"] is False
 
@@ -747,6 +760,7 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     }
     assert "specialist_steps_incomplete" in task["blocked_reasons"]
     assert task["active_run_count"] == 1
+    assert task["active_run_phase_counts"] == {"tool_calling": 1}
     assert body["staffing_gaps"] == [
         {
             "required_role": "designer",
@@ -770,6 +784,7 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert "sk-manager-overview" not in serialized
     assert "sk-task-overview" not in serialized
     assert "run-hidden" not in serialized
+    assert "sk-tool-overview" not in serialized
     assert "Approved body should stay private." not in serialized
     assert "sk-approved-overview" not in serialized
 
