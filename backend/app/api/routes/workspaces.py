@@ -14,6 +14,7 @@ from backend.app.api.pagination import PageParams, PageResponse, pagination_para
 from backend.app.api.schemas.workspaces import (
     WorkspaceCreateRequest,
     WorkspaceExecutionSlotSummaryResponse,
+    WorkspaceHealthResponse,
     WorkspaceMemberResponse,
     WorkspaceQuotaResponse,
     WorkspaceQuotaUpsertRequest,
@@ -29,6 +30,7 @@ from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.workspaces.health import WorkspaceHealthService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]
@@ -87,6 +89,15 @@ async def get_workspace(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
 ) -> WorkspaceResponse:
     return WorkspaceResponse.model_validate(context.workspace)
+
+
+@router.get("/{workspace_id}/health", response_model=WorkspaceHealthResponse)
+async def get_workspace_health(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceHealthResponse:
+    health = WorkspaceHealthService(session).get_health(context.workspace.id)
+    return WorkspaceHealthResponse.model_validate(health)
 
 
 @router.patch("/{workspace_id}", response_model=WorkspaceResponse)

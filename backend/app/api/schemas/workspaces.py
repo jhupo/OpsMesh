@@ -121,3 +121,22 @@ class WorkspaceExecutionSlotSummaryResponse(BaseModel):
     active_reservation_count: int
     reservation_usage: dict[str, int]
     over_reserved_quota_keys: list[str]
+
+
+class WorkspaceHealthResponse(BaseModel):
+    workspace_id: UUID
+    generated_at: datetime
+    status: str
+    score: int
+    summary: dict[str, object]
+    risk_items: list[dict[str, object]]
+    recommended_actions: list[str]
+    trend_basis: dict[str, object]
+
+    @field_serializer("summary", "trend_basis")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("risk_items")
+    def _serialize_risk_items(self, value: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]

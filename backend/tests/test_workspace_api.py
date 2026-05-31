@@ -7089,6 +7089,146 @@ def test_workspace_update_rejects_invalid_scheduler_pause_config() -> None:
     assert response.status_code == 422
 
 
+def test_workspace_health_reports_operational_risks_and_redacts() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-workspace-health@example.com",
+        slug="other-workspace-health",
+    )
+    team = AgentTeam(workspace_id=workspace.id, name="Health Team", team_type="software")
+    blocked_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Blocked delivery",
+        status="blocked",
+        input={"api_key": "sk-health-task"},
+    )
+    review_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Review delivery",
+        status="running",
+    )
+    completed_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Done delivery",
+        status="completed",
+        final_output={"summary": "Done", "token": "health-final-token"},
+        completed_at=datetime.now(UTC),
+    )
+    session.add_all([team, blocked_task, review_task, completed_task])
+    session.flush()
+    blocked_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=blocked_task.id,
+        title="Missing patch",
+        status="blocked",
+        expected_artifacts=["patch"],
+        dependencies={"blocked_reason": "task_paused", "token": "health-step-token"},
+        order_index=1,
+    )
+    review_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=review_task.id,
+        title="Review image",
+        status="completed",
+        expected_artifacts=["image"],
+        order_index=1,
+    )
+    session.add_all([blocked_step, review_step])
+    session.flush()
+    session.add_all(
+        [
+            AgentRun(
+                workspace_id=workspace.id,
+                task_id=review_task.id,
+                task_step_id=review_step.id,
+                status=RunStatus.WAITING_RUNTIME.value,
+                input={"authorization": "Bearer health-run"},
+            ),
+            Artifact(
+                workspace_id=workspace.id,
+                task_id=review_task.id,
+                task_step_id=review_step.id,
+                artifact_type="image",
+                filename="review.png",
+                content_type="image/png",
+                review_status="pending",
+                version=1,
+                size_bytes=42,
+                checksum_sha256="4" * 64,
+                storage_key="secret-health-storage",
+                artifact_metadata={"api_key": "sk-health-artifact"},
+                created_at=datetime.now(UTC),
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=blocked_task.id,
+                message_type="task.control.pause",
+                sequence=1,
+                body="Pause with secret body",
+                payload={"token": "health-control-token"},
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/health",
+        headers=_headers(owner.id),
+    )
+    forbidden = client.get(
+        f"/api/v1/workspaces/{workspace.id}/health",
+        headers=_headers(other_owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] == str(workspace.id)
+    assert body["status"] == "degraded"
+    assert body["score"] == 56
+    assert body["summary"]["team_count"] == 1
+    assert body["summary"]["task_count"] == 3
+    assert body["summary"]["active_task_count"] == 2
+    assert body["summary"]["blocked_task_count"] == 1
+    assert body["summary"]["completed_task_count"] == 1
+    assert body["summary"]["active_run_count"] == 1
+    assert body["summary"]["waiting_runtime_run_count"] == 1
+    assert body["summary"]["missing_expected_artifact_count"] == 1
+    assert body["summary"]["pending_review_artifact_count"] == 1
+    assert body["summary"]["final_output_task_count"] == 1
+    assert body["summary"]["control_message_count"] == 1
+    risks = {item["code"]: item for item in body["risk_items"]}
+    assert risks["blocked_tasks"]["severity"] == "high"
+    assert risks["waiting_runtime_runs"]["recommended_action"] == "inspect_runtime_capacity"
+    assert risks["missing_expected_artifacts"]["count"] == 1
+    assert risks["pending_artifact_review"]["severity"] == "medium"
+    assert risks["recent_control_activity"]["severity"] == "low"
+    assert body["recommended_actions"] == [
+        "inspect_project_dashboard",
+        "inspect_runtime_capacity",
+        "create_corrections",
+        "review_artifacts",
+        "inspect_control_diagnostics",
+    ]
+    assert body["trend_basis"]["mode"] == "snapshot"
+    assert forbidden.status_code == 403
+
+    serialized = str(body)
+    assert "sk-health-task" not in serialized
+    assert "health-final-token" not in serialized
+    assert "health-step-token" not in serialized
+    assert "Bearer health-run" not in serialized
+    assert "secret-health-storage" not in serialized
+    assert "sk-health-artifact" not in serialized
+    assert "Pause with secret body" not in serialized
+    assert "health-control-token" not in serialized
+
+
 def test_workspace_quota_api_manages_runtime_limits() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
