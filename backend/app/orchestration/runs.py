@@ -522,6 +522,7 @@ class RunOrchestrationService:
                 )
                 if run.task_step_id is not None:
                     self._mark_step_completed(run, final_output)
+                    self._session.flush()
                     next_runs = self._create_and_enqueue_next_step_runs(
                         task,
                         requested_by_user_id=requested_by_user_id,
