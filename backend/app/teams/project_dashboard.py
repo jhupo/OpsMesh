@@ -8,7 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.artifacts.models import Artifact
-from backend.app.runs.models import AgentRun
+from backend.app.runs.activity import run_activity
+from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam
@@ -63,6 +64,10 @@ class TeamProjectDashboardService:
         task_ids = [task.id for task in tasks]
         steps_by_task = self._steps_by_task(workspace_id, task_ids)
         runs_by_task = self._runs_by_task(workspace_id, task_ids)
+        latest_events = self._latest_events(
+            workspace_id,
+            [run for runs in runs_by_task.values() for run in runs],
+        )
         artifacts_by_task = self._artifacts_by_task(workspace_id, task_ids)
         latest_messages = self._latest_messages(workspace_id, task_ids)
         items = [
@@ -70,6 +75,7 @@ class TeamProjectDashboardService:
                 task,
                 steps=steps_by_task.get(task.id, []),
                 runs=runs_by_task.get(task.id, []),
+                latest_events=latest_events,
                 artifacts=artifacts_by_task.get(task.id, []),
                 latest_message=latest_messages.get(task.id),
             )
@@ -126,6 +132,24 @@ class TeamProjectDashboardService:
                 grouped[run.task_id].append(run)
         return grouped
 
+    def _latest_events(
+        self,
+        workspace_id: UUID,
+        runs: list[AgentRun],
+    ) -> dict[UUID, RunEvent]:
+        run_ids = [run.id for run in runs]
+        if not run_ids:
+            return {}
+        events = self._session.scalars(
+            select(RunEvent)
+            .where(RunEvent.workspace_id == workspace_id, RunEvent.agent_run_id.in_(run_ids))
+            .order_by(RunEvent.agent_run_id.asc(), RunEvent.sequence.desc())
+        ).all()
+        latest: dict[UUID, RunEvent] = {}
+        for event in events:
+            latest.setdefault(event.agent_run_id, event)
+        return latest
+
     def _artifacts_by_task(
         self,
         workspace_id: UUID,
@@ -167,6 +191,7 @@ def _task_item(
     *,
     steps: list[TaskStep],
     runs: list[AgentRun],
+    latest_events: dict[UUID, RunEvent],
     artifacts: list[Artifact],
     latest_message: TaskMessage | None,
 ) -> dict[str, object]:
@@ -189,6 +214,7 @@ def _task_item(
         },
         "execution": {
             "active_run_count": sum(1 for run in runs if run.status in ACTIVE_RUN_STATUSES),
+            "active_run_phase_counts": _active_run_phase_counts(runs, latest_events),
             "run_status_counts": run_counts,
             "latest_message": _latest_message_payload(latest_message),
         },
@@ -323,6 +349,7 @@ def _summary(
         "active_run_count": sum(
             _int(_dict(item.get("execution")).get("active_run_count")) for item in items
         ),
+        "active_run_phase_counts": _summary_phase_counts(items),
         "missing_expected_artifact_count": sum(
             _int(_dict(item.get("delivery")).get("missing_expected_artifact_count"))
             for item in items
@@ -372,6 +399,28 @@ def _step_status_counts(steps: list[TaskStep]) -> dict[str, int]:
 
 def _run_status_counts(runs: list[AgentRun]) -> dict[str, int]:
     return _counts(run.status for run in runs)
+
+
+def _active_run_phase_counts(
+    runs: list[AgentRun],
+    latest_events: dict[UUID, RunEvent],
+) -> dict[str, int]:
+    return _counts(
+        str(run_activity(run, latest_events.get(run.id)).get("phase"))
+        for run in runs
+        if run.status in ACTIVE_RUN_STATUSES
+    )
+
+
+def _summary_phase_counts(items: list[dict[str, object]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        execution = _dict(item.get("execution"))
+        phase_counts = _dict(execution.get("active_run_phase_counts"))
+        for phase, count in phase_counts.items():
+            if isinstance(phase, str) and isinstance(count, int):
+                counts[phase] = counts.get(phase, 0) + count
+    return dict(sorted(counts.items()))
 
 
 def _completion_ratio(step_counts: dict[str, int], step_count: int) -> float:

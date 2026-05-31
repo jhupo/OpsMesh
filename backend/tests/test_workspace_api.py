@@ -864,14 +864,25 @@ def test_team_project_dashboard_aggregates_delivery_progress_and_redacts() -> No
     )
     session.add_all([blocked_step, review_step, completed_step])
     session.flush()
+    review_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=review_task.id,
+        task_step_id=review_step.id,
+        status=RunStatus.RUNNING.value,
+        input={"authorization": "Bearer dashboard-run"},
+    )
+    session.add(review_run)
+    session.flush()
     session.add_all(
         [
-            AgentRun(
+            RunEvent(
                 workspace_id=workspace.id,
-                task_id=review_task.id,
-                task_step_id=review_step.id,
-                status=RunStatus.RUNNING.value,
-                input={"authorization": "Bearer dashboard-run"},
+                agent_run_id=review_run.id,
+                event_type="model.usage",
+                sequence=1,
+                message="Model usage recorded",
+                event_metadata={"api_key": "sk-dashboard-event"},
+                created_at=datetime.now(UTC),
             ),
             Artifact(
                 workspace_id=workspace.id,
@@ -930,6 +941,7 @@ def test_team_project_dashboard_aggregates_delivery_progress_and_redacts() -> No
     assert body["summary"]["blocked_task_count"] == 1
     assert body["summary"]["high_risk_task_count"] == 1
     assert body["summary"]["active_run_count"] == 1
+    assert body["summary"]["active_run_phase_counts"] == {"model_running": 1}
     assert body["summary"]["missing_expected_artifact_count"] == 1
     assert body["summary"]["pending_review_task_count"] == 1
     by_title = {item["title"]: item for item in body["tasks"]}
@@ -946,6 +958,7 @@ def test_team_project_dashboard_aggregates_delivery_progress_and_redacts() -> No
     assert review["risk_level"] == "medium"
     assert review["progress"]["completion_ratio"] == 1.0
     assert review["execution"]["active_run_count"] == 1
+    assert review["execution"]["active_run_phase_counts"] == {"model_running": 1}
     assert review["execution"]["latest_message"]["message_type"] == "agent.progress"
     assert review["delivery"]["status"] == "needs_review"
     assert set(review["recommended_actions"]) == {"review_artifacts", "monitor_active_runs"}
@@ -959,6 +972,7 @@ def test_team_project_dashboard_aggregates_delivery_progress_and_redacts() -> No
     assert "sk-dashboard-task" not in serialized
     assert "step-secret" not in serialized
     assert "Bearer dashboard-run" not in serialized
+    assert "sk-dashboard-event" not in serialized
     assert "secret-dashboard-storage" not in serialized
     assert "sk-artifact-dashboard" not in serialized
     assert "Private progress body" not in serialized
