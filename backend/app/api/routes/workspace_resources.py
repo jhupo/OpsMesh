@@ -29,6 +29,7 @@ from backend.app.api.schemas.tasks import (
     TaskExecutionDiagnosticsResponse,
     TaskExecutionStatusResponse,
     TaskHandoffQueueResponse,
+    TaskInteractionTranscriptResponse,
     TaskLiveStatusResponse,
     TaskManagerDiagnosticsResponse,
     TaskManagerQueueResponse,
@@ -82,6 +83,7 @@ from backend.app.tasks.monitor import TaskExecutionStatusService
 from backend.app.tasks.observation import TaskObservationService
 from backend.app.tasks.operator_actions import TaskOperatorActionService
 from backend.app.tasks.timeline import TaskTimelineService
+from backend.app.tasks.transcript import TaskInteractionTranscriptService
 from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.execution_loop import TeamExecutionLoopService
 from backend.app.teams.execution_overview import TeamExecutionOverviewService
@@ -753,6 +755,30 @@ async def list_task_messages(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get(
+    "/tasks/{task_id}/interaction-transcript",
+    response_model=TaskInteractionTranscriptResponse,
+)
+async def get_task_interaction_transcript(
+    task_id: UUID,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    message_type: str | None = Query(default=None),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskInteractionTranscriptResponse:
+    transcript = TaskInteractionTranscriptService(session).get_transcript(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        limit=limit,
+        offset=offset,
+        message_type=message_type,
+    )
+    if transcript is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskInteractionTranscriptResponse.model_validate(transcript)
 
 
 @router.get("/tasks/{task_id}/live-status", response_model=TaskLiveStatusResponse)

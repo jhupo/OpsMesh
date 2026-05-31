@@ -3292,6 +3292,159 @@ def test_task_messages_api_lists_filters_and_enforces_workspace_scope() -> None:
     assert foreign.status_code == 404
 
 
+def test_task_interaction_transcript_returns_context_and_redacts_payloads() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-transcript@example.com",
+        slug="other-transcript",
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Builder",
+        role="developer",
+        model_settings={"api_key": "sk-agent-transcript"},
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Transcript task",
+        status=TaskStatus.RUNNING.value,
+        input={"base_url": "https://router.example.test/private"},
+    )
+    session.add_all([agent, task])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        work_package_id="build-api",
+        title="Build API",
+        status="running",
+        order_index=1,
+    )
+    session.add(step)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.RUNNING.value,
+        input={"headers": {"authorization": "Bearer run-token"}},
+        output={"token": "run-output-token"},
+        error={"api_key": "sk-run-transcript"},
+        model="gpt-test",
+        started_at=datetime.now(UTC),
+    )
+    session.add(run)
+    session.flush()
+    session.add_all(
+        [
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                message_type="planning.created",
+                sequence=1,
+                body="Plan is ready",
+                payload={"token": "planning-token", "safe": "ok"},
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=step.id,
+                agent_run_id=run.id,
+                agent_profile_id=agent.id,
+                message_type="agent.progress",
+                sequence=2,
+                body="Implemented the endpoint skeleton",
+                payload={
+                    "progress": "coding",
+                    "headers": {"authorization": "Bearer message-token"},
+                },
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                message_type="task.control.instruction_added",
+                sequence=3,
+                body="Please add tests",
+                payload={"api_key": "sk-control-transcript"},
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/interaction-transcript"
+        "?limit=2",
+        headers=_headers(owner.id),
+    )
+    filtered = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/interaction-transcript"
+        "?message_type=task.control.instruction_added",
+        headers=_headers(owner.id),
+    )
+    forbidden = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/interaction-transcript",
+        headers=_headers(other_owner.id),
+    )
+    missing = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{uuid4()}/interaction-transcript",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] == str(workspace.id)
+    assert body["summary"]["task_status"] == TaskStatus.RUNNING.value
+    assert body["summary"]["total_messages"] == 3
+    assert body["summary"]["returned_messages"] == 2
+    assert body["summary"]["has_more"] is True
+    assert body["summary"]["latest_sequence"] == 3
+    assert body["summary"]["message_type_counts"] == {
+        "agent.progress": 1,
+        "planning.created": 1,
+        "task.control.instruction_added": 1,
+    }
+    assert body["participants"] == [
+        {
+            "id": str(agent.id),
+            "name": "Builder",
+            "role": "developer",
+            "status": "active",
+            "message_count": 1,
+        }
+    ]
+    assert [item["sequence"] for item in body["items"]] == [1, 2]
+    assert body["items"][0]["source"] == "system"
+    assert body["items"][0]["payload"]["token"] == "[redacted]"
+    assert body["items"][1]["source"] == "agent"
+    assert body["items"][1]["phase"] == "agent"
+    assert body["items"][1]["agent"]["name"] == "Builder"
+    assert body["items"][1]["task_step"]["work_package_id"] == "build-api"
+    assert body["items"][1]["agent_run"]["status"] == RunStatus.RUNNING.value
+    assert body["items"][1]["payload"]["headers"] == "[redacted]"
+    assert filtered.status_code == 200
+    assert filtered.json()["summary"]["total_messages"] == 1
+    assert filtered.json()["items"][0]["source"] == "operator"
+    assert filtered.json()["items"][0]["payload"]["api_key"] == "[redacted]"
+    assert forbidden.status_code == 403
+    assert missing.status_code == 404
+
+    serialized = str(body) + str(filtered.json())
+    assert "sk-agent-transcript" not in serialized
+    assert "router.example.test/private" not in serialized
+    assert "Bearer run-token" not in serialized
+    assert "run-output-token" not in serialized
+    assert "sk-run-transcript" not in serialized
+    assert "planning-token" not in serialized
+    assert "Bearer message-token" not in serialized
+    assert "sk-control-transcript" not in serialized
+
+
 def test_task_live_status_api_returns_active_runs_and_message_cursor() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
