@@ -7238,16 +7238,97 @@ def test_workspace_health_reports_operational_risks_and_redacts() -> None:
     assert snapshots.json()["total"] == 1
     assert snapshots.json()["items"][0]["id"] == snapshot_body["id"]
     assert snapshots.json()["items"][0]["summary"]["task_count"] == 3
+
+    waiting_run = session.scalar(select(AgentRun).where(AgentRun.task_id == review_task.id))
+    pending_artifact = session.scalar(select(Artifact).where(Artifact.task_id == review_task.id))
+    assert waiting_run is not None
+    assert pending_artifact is not None
+    blocked_task.status = TaskStatus.RUNNING.value
+    blocked_step.status = "completed"
+    waiting_run.status = RunStatus.COMPLETED.value
+    pending_artifact.review_status = "approved"
+    session.add(
+        Artifact(
+            workspace_id=workspace.id,
+            task_id=blocked_task.id,
+            task_step_id=blocked_step.id,
+            artifact_type="patch",
+            filename="patch.diff",
+            content_type="text/plain",
+            review_status="approved",
+            version=1,
+            size_bytes=128,
+            checksum_sha256="5" * 64,
+            storage_key="secret-health-patch",
+            artifact_metadata={"token": "health-patch-token"},
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+    improved_snapshot = client.post(
+        f"/api/v1/workspaces/{workspace.id}/health/snapshots",
+        headers=_headers(owner.id),
+    )
+    trends = client.get(
+        f"/api/v1/workspaces/{workspace.id}/health/trends",
+        headers=_headers(owner.id),
+    )
+    snapshots_after = client.get(
+        f"/api/v1/workspaces/{workspace.id}/health/snapshots",
+        headers=_headers(owner.id),
+    )
+    forbidden_trends = client.get(
+        f"/api/v1/workspaces/{workspace.id}/health/trends",
+        headers=_headers(other_owner.id),
+    )
+
+    assert improved_snapshot.status_code == 201
+    improved_body = improved_snapshot.json()
+    assert improved_body["status"] == "healthy"
+    assert improved_body["score"] == 98
+    assert trends.status_code == 200
+    trend_body = trends.json()
+    assert trend_body["snapshot_count"] == 2
+    assert trend_body["compared_snapshot_count"] == 2
+    assert trend_body["latest"]["id"] == improved_body["id"]
+    assert trend_body["previous"]["id"] == snapshot_body["id"]
+    assert trend_body["score_delta"] == 42
+    assert trend_body["status_change"] == {
+        "from": "degraded",
+        "to": "healthy",
+        "changed": True,
+        "direction": "improved",
+    }
+    resolved_codes = {item["code"] for item in trend_body["risk_changes"]["resolved"]}
+    assert {
+        "blocked_tasks",
+        "waiting_runtime_runs",
+        "missing_expected_artifacts",
+        "pending_artifact_review",
+    } <= resolved_codes
+    assert trend_body["recommendation_changes"]["active"] == ["inspect_control_diagnostics"]
+    assert snapshots_after.status_code == 200
+    assert snapshots_after.json()["total"] == 2
+    assert snapshots_after.json()["items"][0]["id"] == improved_body["id"]
     assert forbidden.status_code == 403
     assert forbidden_snapshot.status_code == 403
+    assert forbidden_trends.status_code == 403
 
-    serialized = str(body) + str(snapshot_body) + str(snapshots.json())
+    serialized = (
+        str(body)
+        + str(snapshot_body)
+        + str(snapshots_after.json())
+        + str(trend_body)
+    )
     assert "sk-health-task" not in serialized
     assert "health-final-token" not in serialized
     assert "health-step-token" not in serialized
     assert "Bearer health-run" not in serialized
     assert "secret-health-storage" not in serialized
     assert "sk-health-artifact" not in serialized
+    assert "secret-health-patch" not in serialized
+    assert "health-patch-token" not in serialized
     assert "Pause with secret body" not in serialized
     assert "health-control-token" not in serialized
 

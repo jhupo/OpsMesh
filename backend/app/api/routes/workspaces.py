@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from backend.app.api.schemas.workspaces import (
     WorkspaceExecutionSlotSummaryResponse,
     WorkspaceHealthResponse,
     WorkspaceHealthSnapshotResponse,
+    WorkspaceHealthTrendResponse,
     WorkspaceMemberResponse,
     WorkspaceQuotaResponse,
     WorkspaceQuotaUpsertRequest,
@@ -134,6 +135,19 @@ async def list_workspace_health_snapshots(
         limit=page.limit,
         offset=page.offset,
     )
+
+
+@router.get("/{workspace_id}/health/trends", response_model=WorkspaceHealthTrendResponse)
+async def get_workspace_health_trends(
+    limit: int = Query(default=20, ge=2, le=100),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceHealthTrendResponse:
+    trends = WorkspaceHealthService(session).get_trends(
+        context.workspace.id,
+        limit=limit,
+    )
+    return WorkspaceHealthTrendResponse.model_validate(trends)
 
 
 @router.patch("/{workspace_id}", response_model=WorkspaceResponse)

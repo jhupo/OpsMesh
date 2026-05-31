@@ -161,3 +161,29 @@ class WorkspaceHealthSnapshotResponse(TimestampedModel):
         value: list[dict[str, object]],
     ) -> list[dict[str, object]]:
         return [redact_sensitive_payload(item) for item in value]
+
+
+class WorkspaceHealthTrendResponse(BaseModel):
+    workspace_id: UUID
+    generated_at: datetime
+    snapshot_count: int
+    compared_snapshot_count: int
+    latest: dict[str, object] | None
+    previous: dict[str, object] | None
+    score_delta: int | None
+    status_change: dict[str, object] | None
+    risk_changes: dict[str, object]
+    recommendation_changes: dict[str, object]
+
+    @field_serializer(
+        "latest",
+        "previous",
+        "status_change",
+        "risk_changes",
+        "recommendation_changes",
+    )
+    def _serialize_metadata(
+        self,
+        value: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
