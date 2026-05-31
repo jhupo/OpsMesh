@@ -229,6 +229,36 @@ class TaskDeliveryReviewResponse(BaseModel):
         return [redact_sensitive_payload(item) for item in value]
 
 
+class TaskControlDiagnosticsResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    generated_at: datetime
+    status: str
+    control: dict[str, object]
+    summary: dict[str, object]
+    paused_steps: list[dict[str, object]]
+    cancelled_runs: list[dict[str, object]]
+    scheduled_runs: list[dict[str, object]]
+    active_runs: list[dict[str, object]]
+    recent_control_messages: list[dict[str, object]]
+    recommended_actions: list[dict[str, object]]
+
+    @field_serializer("control", "summary")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer(
+        "paused_steps",
+        "cancelled_runs",
+        "scheduled_runs",
+        "active_runs",
+        "recent_control_messages",
+        "recommended_actions",
+    )
+    def _serialize_metadata_list(self, value: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
+
 class TaskPlanningAttemptResponse(ORMModel):
     id: UUID
     workspace_id: UUID

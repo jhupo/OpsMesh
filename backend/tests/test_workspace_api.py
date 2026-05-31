@@ -3227,6 +3227,140 @@ def test_task_control_pause_instruction_and_resume_are_audited_and_redacted() ->
     } <= audit_actions
 
 
+def test_task_control_diagnostics_explains_pause_resume_and_corrections() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-control-diagnostics@example.com",
+        slug="other-control-diagnostics",
+    )
+    agent = AgentProfile(workspace_id=workspace.id, name="Worker", role="developer")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Control diagnostics",
+        status=TaskStatus.RUNNING.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        title="Build",
+        status="running",
+        dependencies={"token": "step-token"},
+        order_index=1,
+    )
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.RUNNING.value,
+        input={"api_key": "sk-run-control-diagnostics"},
+    )
+    session.add_all([step, run])
+    session.commit()
+
+    pause = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control",
+        headers=_headers(owner.id),
+        json={
+            "action": "pause",
+            "reason": "owner review",
+            "metadata": {"api_key": "sk-control-diagnostics-pause"},
+        },
+    )
+    paused = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control-diagnostics",
+        headers=_headers(owner.id),
+    )
+    forbidden = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control-diagnostics",
+        headers=_headers(other_owner.id),
+    )
+    missing = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{uuid4()}/control-diagnostics",
+        headers=_headers(owner.id),
+    )
+
+    assert pause.status_code == 200
+    assert paused.status_code == 200
+    paused_body = paused.json()
+    assert paused_body["status"] == "paused"
+    assert paused_body["summary"]["paused"] is True
+    assert paused_body["summary"]["paused_blocked_step_count"] == 1
+    assert paused_body["summary"]["cancelled_by_pause_run_count"] == 1
+    assert paused_body["paused_steps"][0]["blocked_reason"] == "task_paused"
+    assert paused_body["paused_steps"][0]["dependencies"]["token"] == "[redacted]"
+    assert paused_body["cancelled_runs"][0]["error"]["code"] == "task_paused"
+    assert paused_body["cancelled_runs"][0]["input"]["api_key"] == "[redacted]"
+    assert paused_body["recent_control_messages"][0]["payload"]["metadata"]["api_key"] == (
+        "[redacted]"
+    )
+    assert {item["action"] for item in paused_body["recommended_actions"]} == {"resume"}
+    assert forbidden.status_code == 403
+    assert missing.status_code == 404
+
+    resume = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control",
+        headers=_headers(owner.id),
+        json={
+            "action": "resume",
+            "enqueue": True,
+            "reason": "review complete",
+            "metadata": {"token": "resume-token"},
+        },
+    )
+    correction = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control",
+        headers=_headers(owner.id),
+        json={
+            "action": "create_correction",
+            "instruction": "Add missing validation tests.",
+            "correction_mode": "add_missing_work",
+            "target_type": "task",
+            "metadata": {"authorization": "Bearer correction"},
+        },
+    )
+    resumed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control-diagnostics"
+        "?message_limit=10",
+        headers=_headers(owner.id),
+    )
+
+    assert resume.status_code == 200
+    assert resume.json()["scheduled_run_ids"]
+    assert correction.status_code == 200
+    assert resumed.status_code == 200
+    resumed_body = resumed.json()
+    assert resumed_body["summary"]["paused"] is False
+    assert resumed_body["summary"]["paused_blocked_step_count"] == 0
+    assert resumed_body["summary"]["scheduled_resume_run_count"] == 1
+    assert resumed_body["summary"]["correction_message_count"] == 1
+    assert resumed_body["scheduled_runs"][0]["input"]["source"] == "task_control_resume"
+    message_types = {
+        message["message_type"] for message in resumed_body["recent_control_messages"]
+    }
+    assert {
+        "task.control.pause",
+        "task.control.resume",
+        "task.correction.created",
+    } <= message_types
+    action_names = {item["action"] for item in resumed_body["recommended_actions"]}
+    assert {"monitor_active_runs", "review_corrections"} <= action_names
+
+    serialized = str(paused_body) + str(resumed_body)
+    assert "step-token" not in serialized
+    assert "sk-run-control-diagnostics" not in serialized
+    assert "sk-control-diagnostics-pause" not in serialized
+    assert "resume-token" not in serialized
+    assert "Bearer correction" not in serialized
+
+
 def test_task_messages_api_lists_filters_and_enforces_workspace_scope() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

@@ -22,6 +22,7 @@ from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
 from backend.app.api.schemas.tasks import (
     TaskControlActionRequest,
     TaskControlActionResponse,
+    TaskControlDiagnosticsResponse,
     TaskCorrectionDiagnosticsResponse,
     TaskCorrectionRequest,
     TaskCorrectionResponse,
@@ -75,6 +76,7 @@ from backend.app.planning.diagnostics import ProjectPlanDiagnosticsService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.tasks.control import TaskControlService
+from backend.app.tasks.control_diagnostics import TaskControlDiagnosticsService
 from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
 from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.delivery_review import TaskDeliveryReviewService
@@ -660,6 +662,23 @@ async def control_task(
     if response is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskControlActionResponse.model_validate(response)
+
+
+@router.get("/tasks/{task_id}/control-diagnostics", response_model=TaskControlDiagnosticsResponse)
+async def get_task_control_diagnostics(
+    task_id: UUID,
+    message_limit: int = Query(default=20, ge=1, le=100),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskControlDiagnosticsResponse:
+    diagnostics = TaskControlDiagnosticsService(session).get_diagnostics(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        message_limit=message_limit,
+    )
+    if diagnostics is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskControlDiagnosticsResponse.model_validate(diagnostics)
 
 
 @router.post("/tasks/{task_id}/plan/retry", response_model=TaskResponse)
