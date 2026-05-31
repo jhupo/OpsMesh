@@ -308,6 +308,20 @@ class AgentTeamExecutionLoopRunResponse(BaseModel):
         return redact_sensitive_payload(value) if value is not None else None
 
 
+class AgentTeamExecutionLoopStatusResponse(BaseModel):
+    workspace_id: UUID
+    team_id: UUID
+    generated_at: datetime
+    status: str
+    summary: dict[str, object]
+    command_center: dict[str, object]
+    finalization: dict[str, object]
+
+    @field_serializer("summary", "command_center", "finalization")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
 class AgentTeamOperatorActionRequest(BaseModel):
     action: str = Field(
         pattern="^(request_manager_review|requeue_blocked_steps|schedule_downstream_steps)$"

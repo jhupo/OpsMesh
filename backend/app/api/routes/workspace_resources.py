@@ -49,6 +49,7 @@ from backend.app.api.schemas.teams import (
     AgentTeamExecutionLoopFinalizeResponse,
     AgentTeamExecutionLoopRunRequest,
     AgentTeamExecutionLoopRunResponse,
+    AgentTeamExecutionLoopStatusResponse,
     AgentTeamExecutionOverviewResponse,
     AgentTeamMemberCreateRequest,
     AgentTeamMemberResponse,
@@ -251,6 +252,30 @@ async def get_team_command_center(
     if command_center is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     return AgentTeamCommandCenterResponse.model_validate(command_center)
+
+
+@router.get(
+    "/teams/{team_id}/execution-loop",
+    response_model=AgentTeamExecutionLoopStatusResponse,
+)
+async def get_team_execution_loop_status(
+    team_id: UUID,
+    include_completed: bool = Query(default=False),
+    queue_limit: int = Query(default=50, ge=1, le=200),
+    max_finalize_tasks: int = Query(default=50, ge=1, le=200),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> AgentTeamExecutionLoopStatusResponse:
+    response = TeamExecutionLoopService(session).get_status(
+        workspace_id=context.workspace.id,
+        team_id=team_id,
+        include_completed=include_completed,
+        queue_limit=queue_limit,
+        max_finalize_tasks=max_finalize_tasks,
+    )
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    return AgentTeamExecutionLoopStatusResponse.model_validate(response)
 
 
 @router.post(

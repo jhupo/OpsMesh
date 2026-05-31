@@ -30,6 +30,69 @@ class TeamExecutionLoopService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    def get_status(
+        self,
+        *,
+        workspace_id: UUID,
+        team_id: UUID,
+        include_completed: bool = False,
+        queue_limit: int = 50,
+        max_finalize_tasks: int = 50,
+    ) -> dict[str, object] | None:
+        if not self._team_exists(workspace_id=workspace_id, team_id=team_id):
+            return None
+
+        command_center = TeamCommandCenterService(self._session).get_command_center(
+            workspace_id=workspace_id,
+            team_id=team_id,
+            include_completed=include_completed,
+            queue_limit=queue_limit,
+        )
+        if command_center is None:
+            return None
+
+        finalization = self.finalize_ready_tasks(
+            workspace_id=workspace_id,
+            team_id=team_id,
+            actor_user_id=None,
+            dry_run=True,
+            max_tasks=max_finalize_tasks,
+        )
+        if finalization is None:
+            return None
+        command_center = _without_finalizable_review_actions(command_center, finalization)
+
+        command_center_summary = (
+            command_center.get("summary")
+            if isinstance(command_center.get("summary"), dict)
+            else {}
+        )
+        summary = {
+            "team_status": command_center_summary.get("team_status"),
+            "delivery_health": command_center_summary.get("delivery_health"),
+            "action_plan_count": _int_from(command_center_summary, "action_plan_count"),
+            "needs_attention_tasks": _int_from(command_center_summary, "needs_attention_tasks"),
+            "finalizable_task_count": len(_finalizable_task_ids(finalization)),
+            "scanned_task_count": _int_from(finalization, "scanned_task_count"),
+            "queue_truncated": bool(command_center_summary.get("queue_truncated")),
+        }
+        if summary["action_plan_count"] > 0:
+            status = "needs_attention"
+        elif summary["finalizable_task_count"] > 0:
+            status = "ready_to_finalize"
+        else:
+            status = "idle"
+
+        return {
+            "workspace_id": workspace_id,
+            "team_id": team_id,
+            "generated_at": datetime.now(UTC),
+            "status": status,
+            "summary": summary,
+            "command_center": command_center,
+            "finalization": finalization,
+        }
+
     def run_iteration(
         self,
         *,
@@ -120,7 +183,7 @@ class TeamExecutionLoopService:
         *,
         workspace_id: UUID,
         team_id: UUID,
-        actor_user_id: UUID,
+        actor_user_id: UUID | None,
         dry_run: bool = True,
         max_tasks: int = 50,
     ) -> dict[str, object] | None:
@@ -195,7 +258,7 @@ class TeamExecutionLoopService:
         self,
         *,
         task: Task,
-        actor_user_id: UUID,
+        actor_user_id: UUID | None,
         dry_run: bool,
     ) -> dict[str, object]:
         blocked_reason = self._blocked_reason(task)
@@ -340,6 +403,81 @@ def _int_from(payload: dict[str, object] | None, key: str) -> int:
 
 def _int(value: object) -> int:
     return value if isinstance(value, int) else 0
+
+
+def _without_finalizable_review_actions(
+    command_center: dict[str, object],
+    finalization: dict[str, object],
+) -> dict[str, object]:
+    finalizable_task_ids = _finalizable_task_ids(finalization)
+    if not finalizable_task_ids:
+        return command_center
+
+    action_plan = _dict_list(command_center.get("action_plan"))
+    filtered_actions: list[dict[str, object]] = []
+    suppressed = 0
+    for item in action_plan:
+        action = item.get("action")
+        task_ids = _object_list(item.get("task_ids"))
+        if action != "request_manager_review" or not task_ids:
+            filtered_actions.append(item)
+            continue
+
+        kept_task_ids = [
+            task_id for task_id in task_ids if str(task_id) not in finalizable_task_ids
+        ]
+        if not kept_task_ids and not _object_list(item.get("task_step_ids")):
+            suppressed += 1
+            continue
+
+        adjusted = {**item, "task_ids": kept_task_ids}
+        if isinstance(adjusted.get("count"), int):
+            adjusted["count"] = min(int(adjusted["count"]), len(kept_task_ids))
+        filtered_actions.append(adjusted)
+
+    if suppressed == 0 and len(filtered_actions) == len(action_plan):
+        return command_center
+
+    summary = (
+        dict(command_center["summary"])
+        if isinstance(command_center.get("summary"), dict)
+        else {}
+    )
+    summary["action_plan_count"] = len(filtered_actions)
+    summary["action_plan_source_counts"] = _action_source_counts(filtered_actions)
+    summary["suppressed_finalization_action_count"] = suppressed
+    return {
+        **command_center,
+        "summary": summary,
+        "action_plan": filtered_actions,
+    }
+
+
+def _finalizable_task_ids(finalization: dict[str, object]) -> set[str]:
+    return {
+        str(item["task_id"])
+        for item in _dict_list(finalization.get("results"))
+        if item.get("status") in {"would_finalize", "finalized"} and item.get("task_id")
+    }
+
+
+def _action_source_counts(action_plan: list[dict[str, object]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in action_plan:
+        source = item.get("source")
+        if isinstance(source, str) and source:
+            counts[source] = counts.get(source, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _dict_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _object_list(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
 
 
 def _final_output_from_acceptance(message: TaskMessage) -> dict[str, object]:

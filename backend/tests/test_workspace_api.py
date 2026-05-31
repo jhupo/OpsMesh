@@ -1076,6 +1076,168 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
     assert len(manager_review_steps) == 1
 
 
+def test_team_execution_loop_status_reports_ready_to_finalize_and_redacts_payloads() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-loop-status@example.com",
+        slug="other-loop-status",
+    )
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="PM",
+        role="project_manager",
+        model_settings={"api_key": "sk-loop-status-manager"},
+    )
+    developer = AgentProfile(workspace_id=workspace.id, name="Developer", role="developer")
+    session.add_all([manager, developer])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Loop Status Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+    )
+    other_team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Other Loop Status Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+    )
+    session.add_all([team, other_team])
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=manager.id,
+                team_role="project_manager",
+                max_concurrent_tasks=2,
+                order_index=1,
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=developer.id,
+                team_role="developer",
+                max_concurrent_tasks=2,
+                order_index=2,
+            ),
+        ]
+    )
+    finalizable_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Ready to finalize",
+        status="running",
+        priority=9,
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id)},
+    )
+    blocked_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=other_team.id,
+        title="Foreign attention task",
+        status="running",
+        priority=4,
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id)},
+    )
+    session.add_all([finalizable_task, blocked_task])
+    session.flush()
+
+    def add_completed_flow(task: Task, summary: str) -> None:
+        planning = TaskStep(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            assigned_agent_profile_id=manager.id,
+            work_package_id="manager-planning",
+            required_role="project_manager",
+            title=f"Plan {task.title}",
+            status="completed",
+            order_index=10,
+        )
+        build = TaskStep(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            assigned_agent_profile_id=developer.id,
+            work_package_id="build",
+            required_role="developer",
+            title=f"Build {task.title}",
+            status="completed",
+            order_index=20,
+        )
+        summary_step = TaskStep(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            assigned_agent_profile_id=manager.id,
+            work_package_id="manager-summary",
+            required_role="project_manager",
+            title=f"Review {task.title}",
+            status="completed",
+            order_index=30,
+        )
+        session.add_all([planning, build, summary_step])
+        session.flush()
+        session.add(
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=summary_step.id,
+                agent_profile_id=manager.id,
+                message_type="pm.acceptance_decision",
+                sequence=1,
+                body=f"Private body for {task.title}",
+                payload={
+                    "decision": "approved",
+                    "summary": summary,
+                    "api_key": "sk-loop-status-approval",
+                },
+            )
+        )
+
+    add_completed_flow(finalizable_task, "Ready for release")
+    add_completed_flow(blocked_task, "Foreign ready")
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/execution-loop",
+        headers=_headers(owner.id),
+    )
+    forbidden = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/execution-loop",
+        headers=_headers(other_owner.id),
+    )
+    missing = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{uuid4()}/execution-loop",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready_to_finalize"
+    assert body["summary"]["action_plan_count"] == 0
+    assert body["summary"]["finalizable_task_count"] == 1
+    assert body["summary"]["needs_attention_tasks"] == 0
+    assert body["command_center"]["summary"]["action_plan_count"] == 0
+    assert body["finalization"]["status"] == "dry_run"
+    assert body["finalization"]["finalized_task_count"] == 0
+    assert body["finalization"]["scanned_task_count"] == 1
+    assert body["finalization"]["results"][0]["status"] == "would_finalize"
+    serialized = str(body)
+    assert "sk-loop-status-manager" not in serialized
+    assert "sk-loop-status-approval" not in serialized
+    assert "Private body for Ready to finalize" not in serialized
+    assert "Foreign attention task" not in serialized
+    assert forbidden.status_code == 403
+    assert missing.status_code == 404
+
+
 def test_team_execution_loop_finalize_closes_approved_tasks_only() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
