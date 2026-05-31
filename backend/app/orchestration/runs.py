@@ -67,6 +67,8 @@ TERMINAL_RUN_STATUSES = {
 @dataclass(frozen=True)
 class StaleRunRecoverySummary:
     recovered_runs: int
+    requeued_runs: int = 0
+    failed_runs: int = 0
 
 
 @dataclass(frozen=True)
@@ -356,7 +358,65 @@ class RunOrchestrationService:
         for run in stale_runs:
             self._mark_run_recovered_failed(run)
         self._session.commit()
-        return StaleRunRecoverySummary(recovered_runs=len(stale_runs))
+        return StaleRunRecoverySummary(
+            recovered_runs=len(stale_runs),
+            failed_runs=len(stale_runs),
+        )
+
+    def recover_stale_worker_runs(
+        self,
+        *,
+        stale_after_seconds: int,
+        limit: int = 100,
+        requested_by_user_id: UUID | None = None,
+        reason: str | None = None,
+    ) -> StaleRunRecoverySummary:
+        cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
+        candidates = self._session.scalars(
+            select(AgentRun)
+            .where(
+                AgentRun.status.in_(
+                    [
+                        RunStatus.QUEUED.value,
+                        RunStatus.RUNNING.value,
+                        RunStatus.WAITING_RUNTIME.value,
+                    ]
+                )
+            )
+            .order_by(AgentRun.updated_at.asc(), AgentRun.created_at.asc())
+            .limit(limit * 3)
+        ).all()
+        stale_runs = [
+            run
+            for run in candidates
+            if (anchor := _stale_recovery_anchor(run)) is not None and anchor < cutoff
+        ][:limit]
+
+        requeued = 0
+        failed = 0
+        for run in stale_runs:
+            if run.status == RunStatus.QUEUED.value:
+                self.requeue_stale_run(
+                    run,
+                    requested_by_user_id=requested_by_user_id,
+                    reason=reason or "worker_maintenance_stale_queued_run",
+                )
+                requeued += 1
+                continue
+            self.fail_recovered_run(
+                run,
+                code="stale_worker_run",
+                message=_stale_recovery_failure_message(run.status),
+                retryable=True,
+                event_message="Marked failed by worker maintenance recovery",
+            )
+            failed += 1
+        self._session.commit()
+        return StaleRunRecoverySummary(
+            recovered_runs=requeued + failed,
+            requeued_runs=requeued,
+            failed_runs=failed,
+        )
 
     def requeue_stale_run(
         self,
@@ -3140,6 +3200,26 @@ def _fallback_candidate(value: object) -> tuple[UUID, str | None] | None:
         return None
     model = value.get("model")
     return credential_id, model if isinstance(model, str) and model else None
+
+
+def _stale_recovery_anchor(run: AgentRun) -> datetime | None:
+    if run.status == RunStatus.RUNNING.value:
+        anchor = run.started_at or run.updated_at or run.created_at
+    elif run.status == RunStatus.WAITING_RUNTIME.value:
+        anchor = run.updated_at or run.started_at or run.created_at
+    elif run.status == RunStatus.QUEUED.value:
+        anchor = run.updated_at or run.created_at
+    else:
+        return None
+    if anchor.tzinfo is None:
+        return anchor.replace(tzinfo=UTC)
+    return anchor
+
+
+def _stale_recovery_failure_message(status: str) -> str:
+    if status == RunStatus.WAITING_RUNTIME.value:
+        return "Runtime tool result did not arrive before the recovery window expired"
+    return "Worker stopped reporting before the run completed"
 
 
 def _positive_number_dict(value: object) -> dict[str, int | float]:

@@ -713,6 +713,68 @@ def test_worker_runner_maintenance_recovers_stale_runs() -> None:
         assert task.status == TaskStatus.FAILED.value
 
 
+def test_worker_runner_maintenance_requeues_stale_queued_and_fails_waiting_runtime() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    queued_workspace_id, queued_run_id, _ = _seed_run(
+        session_factory,
+        slug="stale-queued",
+        status=RunStatus.QUEUED,
+        task_status=TaskStatus.QUEUED,
+    )
+    waiting_workspace_id, waiting_run_id, _ = _seed_run(
+        session_factory,
+        slug="stale-waiting-runtime",
+        status=RunStatus.WAITING_RUNTIME,
+        task_status=TaskStatus.RUNNING,
+        started_at=datetime.now(UTC) - timedelta(seconds=3_600),
+    )
+    stale_at = datetime.now(UTC) - timedelta(seconds=3_600)
+    with session_factory() as session:
+        queued_run = session.get(AgentRun, queued_run_id)
+        waiting_run = session.get(AgentRun, waiting_run_id)
+        assert queued_run is not None
+        assert waiting_run is not None
+        queued_run.created_at = stale_at
+        queued_run.updated_at = stale_at
+        waiting_run.created_at = stale_at
+        waiting_run.updated_at = stale_at
+        session.commit()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(
+            worker_id="worker-stale-all",
+            queue_name="agent_runs",
+            run_lease_seconds=60,
+        ),
+    )
+
+    maintenance = runner.run_maintenance()
+
+    assert maintenance.recovered_runs == 2
+    requeued = queue.dequeue()
+    assert requeued is not None
+    assert requeued.workspace_id == queued_workspace_id
+    assert requeued.resource_id == queued_run_id
+    with session_factory() as session:
+        queued_run = session.get(AgentRun, queued_run_id)
+        waiting_run = session.get(AgentRun, waiting_run_id)
+        waiting_task = session.scalar(
+            select(Task).where(Task.workspace_id == waiting_workspace_id)
+        )
+        assert queued_run is not None
+        assert waiting_run is not None
+        assert waiting_task is not None
+        assert queued_run.status == RunStatus.QUEUED.value
+        assert waiting_run.status == RunStatus.FAILED.value
+        assert waiting_run.error is not None
+        assert waiting_run.error["message"] == (
+            "Runtime tool result did not arrive before the recovery window expired"
+        )
+        assert waiting_task.status == TaskStatus.FAILED.value
+
+
 def test_worker_runner_maintenance_expires_stale_worker_leases() -> None:
     session_factory = _session_factory()
     queue = _queue()

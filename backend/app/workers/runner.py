@@ -332,9 +332,13 @@ class WorkerRunner:
     def run_maintenance(self) -> WorkerMaintenanceSummary:
         try:
             with self._session_scope() as session:
-                summary = RunOrchestrationService(session).recover_stale_running_runs(
+                summary = RunOrchestrationService(
+                    session,
+                    queue=self._queue,
+                ).recover_stale_worker_runs(
                     stale_after_seconds=self._config.run_lease_seconds,
                     limit=self._config.recovery_batch_size,
+                    reason="worker_maintenance",
                 )
                 expired_leases = OperationsService(session).expire_stale_worker_leases(
                     stale_after_seconds=self._config.run_lease_seconds,
