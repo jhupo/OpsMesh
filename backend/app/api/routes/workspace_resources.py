@@ -30,6 +30,7 @@ from backend.app.api.schemas.tasks import (
     TaskDeliveryDecisionRequest,
     TaskDeliveryDecisionResponse,
     TaskDeliveryReviewResponse,
+    TaskEventFeedResponse,
     TaskExecutionDiagnosticsResponse,
     TaskExecutionStatusResponse,
     TaskHandoffQueueResponse,
@@ -84,6 +85,7 @@ from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsSe
 from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.delivery_decisions import TaskDeliveryDecisionService
 from backend.app.tasks.delivery_review import TaskDeliveryReviewService
+from backend.app.tasks.events import TaskEventFeedService
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.live_status import TaskLiveStatusService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
@@ -865,6 +867,25 @@ async def get_task_execution_status(
     if status_snapshot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskExecutionStatusResponse.model_validate(status_snapshot)
+
+
+@router.get("/tasks/{task_id}/events", response_model=TaskEventFeedResponse)
+async def get_task_event_feed(
+    task_id: UUID,
+    after_cursor: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskEventFeedResponse:
+    feed = TaskEventFeedService(session).get_feed(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        after_cursor=after_cursor,
+        limit=limit,
+    )
+    if feed is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskEventFeedResponse.model_validate(feed)
 
 
 @router.get("/tasks/{task_id}/events/stream")

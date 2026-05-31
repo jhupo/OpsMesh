@@ -6338,8 +6338,20 @@ def test_task_timeline_returns_execution_events_and_redacts_metadata() -> None:
         f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/timeline?limit=3",
         headers=_headers(owner.id),
     )
+    feed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/events?limit=4",
+        headers=_headers(owner.id),
+    )
+    feed_after = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/events?after_cursor=4&limit=10",
+        headers=_headers(owner.id),
+    )
     foreign_response = client.get(
         f"/api/v1/workspaces/{other_workspace.id}/tasks/{task.id}/timeline",
+        headers=_headers(other_owner.id),
+    )
+    foreign_feed = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks/{task.id}/events",
         headers=_headers(other_owner.id),
     )
 
@@ -6380,8 +6392,32 @@ def test_task_timeline_returns_execution_events_and_redacts_metadata() -> None:
     assert limited.status_code == 200
     assert limited.json()["summary"]["returned_events"] == 3
     assert limited.json()["summary"]["truncated_count"] == 5
+    assert feed.status_code == 200
+    feed_body = feed.json()
+    assert feed_body["summary"]["total_events"] == 8
+    assert feed_body["summary"]["returned_events"] == 4
+    assert feed_body["summary"]["after_cursor"] == 0
+    assert feed_body["summary"]["next_cursor"] == 4
+    assert feed_body["summary"]["has_more"] is True
+    assert [event["cursor"] for event in feed_body["events"]] == [1, 2, 3, 4]
+    assert [event["event_type"] for event in feed_body["events"]] == [
+        "task.created",
+        "step.created",
+        "run.created",
+        "run.started",
+    ]
+    assert feed_after.status_code == 200
+    feed_after_body = feed_after.json()
+    assert feed_after_body["summary"]["after_cursor"] == 4
+    assert feed_after_body["summary"]["next_cursor"] == 8
+    assert feed_after_body["summary"]["has_more"] is False
+    assert [event["cursor"] for event in feed_after_body["events"]] == [5, 6, 7, 8]
+    assert feed_after_body["events"][0]["event_type"] == "tool.completed"
+    assert feed_after_body["events"][0]["metadata"]["secret"] == "[redacted]"
+    assert feed_after_body["events"][0]["event_id"].startswith("run_event:tool.completed")
     assert foreign_response.status_code == 404
-    serialized = str(body)
+    assert foreign_feed.status_code == 404
+    serialized = str(body) + str(feed_body) + str(feed_after_body)
     assert "sk-task" not in serialized
     assert "router.example.test/private" not in serialized
     assert "hidden-token" not in serialized
