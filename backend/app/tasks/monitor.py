@@ -111,6 +111,7 @@ class TaskExecutionStatusService:
             "recent_messages": recent_messages,
             "recent_events": recent_events,
             "diagnostics": {
+                "live_summary": live_summary,
                 "execution_summary": execution_summary,
                 "manager_summary": manager_summary,
                 "timeline_summary": _dict(timeline.get("summary")),
@@ -152,6 +153,7 @@ def _current_focus(
             "run_id": run.get("id"),
             "task_step_id": run.get("task_step_id"),
             "agent": run.get("agent"),
+            "activity": _dict(run.get("activity")) or None,
             "latest_event": latest_event or None,
         }
 

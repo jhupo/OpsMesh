@@ -3911,10 +3911,14 @@ def test_task_live_status_api_returns_active_runs_and_message_cursor() -> None:
     payload = response.json()
     assert payload["task"]["status"] == TaskStatus.RUNNING.value
     assert payload["summary"]["active_run_count"] == 1
+    assert payload["summary"]["active_run_phase_counts"] == {"model_running": 1}
     assert payload["summary"]["latest_message_sequence"] == 2
     assert payload["summary"]["poll_after_seconds"] == 1
     assert payload["steps"][0]["assigned_agent"]["name"] == "Researcher"
     assert payload["active_runs"][0]["latest_event"]["metadata"]["api_key"] == "[redacted]"
+    assert payload["active_runs"][0]["activity"]["phase"] == "model_running"
+    assert payload["active_runs"][0]["activity"]["label"] == "Calling model"
+    assert payload["active_runs"][0]["activity"]["latest_event_type"] == "run.started"
     assert [message["sequence"] for message in payload["recent_messages"]] == [2]
     assert payload["recent_messages"][0]["agent"]["role"] == "researcher"
 
@@ -4038,11 +4042,19 @@ def test_task_execution_status_reports_focus_actions_and_redacts_metadata() -> N
     assert body["current_focus"]["status"] == "waiting_runtime"
     assert body["current_focus"]["run_id"] == str(run.id)
     assert body["current_focus"]["agent"]["name"] == "Runtime Specialist"
+    assert body["current_focus"]["activity"]["phase"] == "waiting_runtime"
+    assert body["current_focus"]["activity"]["recommended_action"] == (
+        "inspect_runtime_capacity"
+    )
     assert "task_paused" in body["blocked_reasons"]
     assert "scheduler:workspace_run_quota_exceeded" in body["blocked_reasons"]
     action_names = {item["action"] for item in body["recommended_actions"]}
     assert {"resume", "inspect_runtime", "inspect_scheduler_block"} <= action_names
+    assert body["diagnostics"]["live_summary"]["active_run_phase_counts"] == {
+        "waiting_runtime": 1
+    }
     assert body["active_runs"][0]["latest_event"]["metadata"]["secret"] == "[redacted]"
+    assert body["active_runs"][0]["activity"]["latest_event_type"] == "runtime.waiting"
     assert body["recent_messages"][0]["payload"]["token"] == "[redacted]"
     events_by_type = {event["event_type"]: event for event in body["recent_events"]}
     assert events_by_type["runtime.waiting"]["metadata"]["secret"] == "[redacted]"
