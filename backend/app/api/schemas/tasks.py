@@ -257,6 +257,7 @@ class TaskControlDiagnosticsResponse(BaseModel):
     cancelled_runs: list[dict[str, object]]
     scheduled_runs: list[dict[str, object]]
     active_runs: list[dict[str, object]]
+    worker_cancel_requests: list[dict[str, object]]
     recent_control_messages: list[dict[str, object]]
     recommended_actions: list[dict[str, object]]
 
@@ -269,6 +270,7 @@ class TaskControlDiagnosticsResponse(BaseModel):
         "cancelled_runs",
         "scheduled_runs",
         "active_runs",
+        "worker_cancel_requests",
         "recent_control_messages",
         "recommended_actions",
     )

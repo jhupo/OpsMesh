@@ -32,7 +32,6 @@ from backend.app.capabilities.models import (
 from backend.app.core.config import Settings
 from backend.app.model_providers.resolution import ModelProviderResolutionService
 from backend.app.model_providers.service import ModelProviderCredentialService
-from backend.app.operations.models import WorkerLease
 from backend.app.orchestration.scheduler import WorkspaceScheduler
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.member_matching import MemberMatchingService
@@ -49,6 +48,7 @@ from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.snapshots import build_team_snapshot
 from backend.app.workers.jobs import JobPayload, JobType
+from backend.app.workers.lease_lifecycle import mark_agent_run_worker_cancel_requested
 from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace
 from backend.app.workspaces.quotas import WorkspaceQuotaService
@@ -800,21 +800,12 @@ class RunOrchestrationService:
         *,
         requested_at: datetime,
     ) -> int:
-        leases = self._session.scalars(
-            select(WorkerLease).where(
-                WorkerLease.workspace_id == run.workspace_id,
-                WorkerLease.job_type == JobType.AGENT_RUN.value,
-                WorkerLease.resource_id == run.id,
-                WorkerLease.status == "running",
-            )
-        ).all()
-        for lease in leases:
-            lease.lease_metadata = _append_worker_cancel_requested_event(
-                dict(lease.lease_metadata or {}),
-                requested_at=requested_at,
-                attempt=lease.attempt,
-            )
-        return len(leases)
+        return mark_agent_run_worker_cancel_requested(
+            self._session,
+            workspace_id=run.workspace_id,
+            run_id=run.id,
+            requested_at=requested_at,
+        )
 
     def _agent_result_waiting_runtime(self, result: AgentRunResult) -> bool:
         for event in result.events:
@@ -3388,25 +3379,3 @@ def _dict_list(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
-
-
-def _append_worker_cancel_requested_event(
-    metadata: dict[str, object],
-    *,
-    requested_at: datetime,
-    attempt: int,
-) -> dict[str, object]:
-    events = metadata.get("lifecycle_events")
-    lifecycle_events = list(events) if isinstance(events, list) else []
-    event = {
-        "type": "cancel_requested",
-        "at": requested_at.isoformat(),
-        "attempt": attempt,
-        "status": "running",
-    }
-    lifecycle_events.append(event)
-    metadata["cancel_requested"] = True
-    metadata["cancel_requested_at"] = requested_at.isoformat()
-    metadata["lifecycle_events"] = lifecycle_events[-50:]
-    metadata["last_lifecycle_event"] = event
-    return metadata

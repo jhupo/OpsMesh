@@ -6,11 +6,13 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.operations.models import WorkerLease
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.control import TASK_PAUSED_REASON
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
+from backend.app.workers.jobs import JobType
 
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,
@@ -59,12 +61,17 @@ class TaskControlDiagnosticsService:
         cancelled_runs = [run for run in runs if _is_pause_cancelled_run(run)]
         scheduled_runs = [run for run in runs if _is_resume_scheduled_run(run)]
         active_runs = [run for run in runs if run.status in ACTIVE_RUN_STATUSES]
+        worker_cancel_requests = self._worker_cancel_requests(
+            workspace_id,
+            [run.id for run in runs],
+        )
         summary = {
             "task_status": task.status,
             "paused": control.get("paused") is True,
             "active_run_count": len(active_runs),
             "paused_blocked_step_count": len(paused_steps),
             "cancelled_by_pause_run_count": len(cancelled_runs),
+            "worker_cancel_request_count": len(worker_cancel_requests),
             "scheduled_resume_run_count": len(scheduled_runs),
             "control_message_count": sum(
                 1 for message in messages if message.message_type.startswith("task.control.")
@@ -88,6 +95,9 @@ class TaskControlDiagnosticsService:
             "cancelled_runs": [_run_payload(run) for run in cancelled_runs],
             "scheduled_runs": [_run_payload(run) for run in scheduled_runs],
             "active_runs": [_run_payload(run) for run in active_runs],
+            "worker_cancel_requests": [
+                _worker_cancel_request_payload(lease) for lease in worker_cancel_requests
+            ],
             "recent_control_messages": [_message_payload(message) for message in messages],
             "recommended_actions": _recommended_actions(task, summary),
         }
@@ -113,6 +123,29 @@ class TaskControlDiagnosticsService:
                 .limit(limit)
             ).all()
         )
+
+    def _worker_cancel_requests(
+        self,
+        workspace_id: UUID,
+        run_ids: list[UUID],
+    ) -> list[WorkerLease]:
+        if not run_ids:
+            return []
+        leases = self._session.scalars(
+            select(WorkerLease)
+            .where(
+                WorkerLease.workspace_id == workspace_id,
+                WorkerLease.job_type == JobType.AGENT_RUN.value,
+                WorkerLease.resource_id.in_(run_ids),
+            )
+            .order_by(WorkerLease.started_at.desc(), WorkerLease.created_at.desc())
+        ).all()
+        return [
+            lease
+            for lease in leases
+            if isinstance(lease.lease_metadata, dict)
+            and lease.lease_metadata.get("cancel_requested") is True
+        ]
 
 
 def _status(task: Task, summary: dict[str, object]) -> str:
@@ -211,6 +244,28 @@ def _message_payload(message: TaskMessage) -> dict[str, object]:
         "body": message.body,
         "payload": message.payload,
         "created_at": message.created_at,
+    }
+
+
+def _worker_cancel_request_payload(lease: WorkerLease) -> dict[str, object]:
+    metadata = lease.lease_metadata if isinstance(lease.lease_metadata, dict) else {}
+    lifecycle_events = metadata.get("lifecycle_events")
+    return {
+        "agent_run_id": lease.resource_id,
+        "worker_id": lease.worker_id,
+        "queue_name": lease.queue_name,
+        "status": lease.status,
+        "attempt": lease.attempt,
+        "started_at": lease.started_at,
+        "finished_at": lease.finished_at,
+        "cancel_requested": metadata.get("cancel_requested") is True,
+        "cancel_requested_at": metadata.get("cancel_requested_at"),
+        "last_lifecycle_event": metadata.get("last_lifecycle_event")
+        if isinstance(metadata.get("last_lifecycle_event"), dict)
+        else None,
+        "lifecycle_event_count": len(lifecycle_events)
+        if isinstance(lifecycle_events, list)
+        else 0,
     }
 
 

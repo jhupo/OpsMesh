@@ -3482,6 +3482,21 @@ def test_task_control_diagnostics_explains_pause_resume_and_corrections() -> Non
         input={"api_key": "sk-run-control-diagnostics"},
     )
     session.add_all([step, run])
+    session.flush()
+    session.add(
+        WorkerLease(
+            workspace_id=workspace.id,
+            worker_id="worker-control-diagnostics",
+            queue_name="agent_runs",
+            job_id=uuid4(),
+            job_type="agent.run",
+            resource_id=run.id,
+            status="running",
+            attempt=1,
+            lease_metadata={"headers": {"authorization": "Bearer lease-secret"}},
+            started_at=datetime.now(UTC),
+        )
+    )
     session.commit()
 
     pause = client.post(
@@ -3507,16 +3522,25 @@ def test_task_control_diagnostics_explains_pause_resume_and_corrections() -> Non
     )
 
     assert pause.status_code == 200
+    assert pause.json()["details"]["worker_cancel_request_count"] == 1
     assert paused.status_code == 200
     paused_body = paused.json()
     assert paused_body["status"] == "paused"
     assert paused_body["summary"]["paused"] is True
     assert paused_body["summary"]["paused_blocked_step_count"] == 1
     assert paused_body["summary"]["cancelled_by_pause_run_count"] == 1
+    assert paused_body["summary"]["worker_cancel_request_count"] == 1
     assert paused_body["paused_steps"][0]["blocked_reason"] == "task_paused"
     assert paused_body["paused_steps"][0]["dependencies"]["token"] == "[redacted]"
     assert paused_body["cancelled_runs"][0]["error"]["code"] == "task_paused"
     assert paused_body["cancelled_runs"][0]["input"]["api_key"] == "[redacted]"
+    assert paused_body["worker_cancel_requests"][0]["worker_id"] == (
+        "worker-control-diagnostics"
+    )
+    assert paused_body["worker_cancel_requests"][0]["cancel_requested"] is True
+    assert paused_body["worker_cancel_requests"][0]["last_lifecycle_event"]["type"] == (
+        "cancel_requested"
+    )
     assert paused_body["recent_control_messages"][0]["payload"]["metadata"]["api_key"] == (
         "[redacted]"
     )
@@ -3558,6 +3582,7 @@ def test_task_control_diagnostics_explains_pause_resume_and_corrections() -> Non
     resumed_body = resumed.json()
     assert resumed_body["summary"]["paused"] is False
     assert resumed_body["summary"]["paused_blocked_step_count"] == 0
+    assert resumed_body["summary"]["worker_cancel_request_count"] == 1
     assert resumed_body["summary"]["scheduled_resume_run_count"] == 1
     assert resumed_body["summary"]["correction_message_count"] == 1
     assert resumed_body["scheduled_runs"][0]["input"]["source"] == "task_control_resume"
@@ -3578,6 +3603,7 @@ def test_task_control_diagnostics_explains_pause_resume_and_corrections() -> Non
     assert "sk-control-diagnostics-pause" not in serialized
     assert "resume-token" not in serialized
     assert "Bearer correction" not in serialized
+    assert "Bearer lease-secret" not in serialized
 
 
 def test_task_messages_api_lists_filters_and_enforces_workspace_scope() -> None:

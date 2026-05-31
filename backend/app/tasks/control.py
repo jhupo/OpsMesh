@@ -15,6 +15,7 @@ from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
+from backend.app.workers.lease_lifecycle import mark_agent_run_worker_cancel_requested
 from backend.app.workers.queue import RedisQueue
 
 PAUSABLE_RUN_STATUSES = {
@@ -68,7 +69,7 @@ class TaskControlService:
         if TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
             raise ValueError("Terminal tasks cannot be paused")
         now = datetime.now(UTC)
-        cancelled_runs = self._cancel_active_runs(task, now=now)
+        cancelled_runs, worker_cancel_requests = self._cancel_active_runs(task, now=now)
         blocked_steps = self._block_schedulable_steps(task, request=request, now=now)
         previous_status = task.status
         if TaskStatus(task.status) != TaskStatus.BLOCKED:
@@ -92,6 +93,7 @@ class TaskControlService:
             metadata={
                 **request.metadata,
                 "cancelled_run_count": cancelled_runs,
+                "worker_cancel_request_count": worker_cancel_requests,
                 "blocked_step_count": blocked_steps,
             },
         )
@@ -102,6 +104,7 @@ class TaskControlService:
             metadata={
                 "previous_status": previous_status,
                 "cancelled_run_count": cancelled_runs,
+                "worker_cancel_request_count": worker_cancel_requests,
                 "blocked_step_count": blocked_steps,
                 "reason": request.reason,
             },
@@ -115,6 +118,7 @@ class TaskControlService:
             details={
                 "previous_status": previous_status,
                 "cancelled_run_count": cancelled_runs,
+                "worker_cancel_request_count": worker_cancel_requests,
                 "blocked_step_count": blocked_steps,
             },
         )
@@ -289,7 +293,7 @@ class TaskControlService:
             select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
         )
 
-    def _cancel_active_runs(self, task: Task, *, now: datetime) -> int:
+    def _cancel_active_runs(self, task: Task, *, now: datetime) -> tuple[int, int]:
         runs = self._session.scalars(
             select(AgentRun).where(
                 AgentRun.workspace_id == task.workspace_id,
@@ -297,12 +301,19 @@ class TaskControlService:
                 AgentRun.status.in_(PAUSABLE_RUN_STATUSES),
             )
         ).all()
+        worker_cancel_requests = 0
         for run in runs:
             require_run_transition(RunStatus(run.status), RunStatus.CANCELLED)
             run.status = RunStatus.CANCELLED.value
             run.completed_at = now
             run.error = {"code": TASK_PAUSED_REASON, "message": "Task paused by owner control"}
-        return len(runs)
+            worker_cancel_requests += mark_agent_run_worker_cancel_requested(
+                self._session,
+                workspace_id=run.workspace_id,
+                run_id=run.id,
+                requested_at=now,
+            )
+        return len(runs), worker_cancel_requests
 
     def _block_schedulable_steps(
         self,
