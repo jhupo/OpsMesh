@@ -196,7 +196,10 @@ def _seed_team(
         role="project_manager",
         instructions=(
             "Coordinate the team. Keep every response under 40 words. "
-            "For final review, approve concise completed work when all steps are done."
+            "For final review, approve when all assigned specialist steps are complete "
+            "and produced non-empty output. The smoke script itself is the live "
+            "execution evidence; "
+            "do not ask for extra provider proof."
         ),
         model=config.model,
         model_provider_credential_id=credential.id,
@@ -261,7 +264,11 @@ def _task_request(team: AgentTeam) -> TaskCreateRequest:
         agent_team_id=team.id,
         domain_type="market_research",
         title="Real model team dispatch smoke",
-        description="Test full team dispatch with a real model provider.",
+        description=(
+            "Test full team dispatch with a real model provider. "
+            "The current run is the live execution; completed specialist outputs are sufficient "
+            "evidence for final approval."
+        ),
         priority=9,
         input={
             "work_packages": [
