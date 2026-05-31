@@ -20,6 +20,8 @@ from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
 from backend.app.api.schemas.tasks import (
+    TaskControlActionRequest,
+    TaskControlActionResponse,
     TaskCorrectionDiagnosticsResponse,
     TaskCorrectionRequest,
     TaskCorrectionResponse,
@@ -69,6 +71,7 @@ from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.diagnostics import ProjectPlanDiagnosticsService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.tasks.control import TaskControlService
 from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
 from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
@@ -623,6 +626,34 @@ async def cancel_task(
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskResponse.model_validate(task)
+
+
+@router.post("/tasks/{task_id}/control", response_model=TaskControlActionResponse)
+async def control_task(
+    task_id: UUID,
+    request: TaskControlActionRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> TaskControlActionResponse:
+    try:
+        response = TaskControlService(session, queue=queue).apply_action(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            actor_user_id=context.user.user_id,
+            request=request,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskControlActionResponse.model_validate(response)
 
 
 @router.post("/tasks/{task_id}/plan/retry", response_model=TaskResponse)

@@ -3068,6 +3068,165 @@ def test_cancel_run_marks_linked_task_cancelled() -> None:
     assert task.status == TaskStatus.CANCELLED.value
 
 
+def test_task_control_pause_instruction_and_resume_are_audited_and_redacted() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-task-control@example.com",
+        slug="other-task-control",
+    )
+    agent = AgentProfile(workspace_id=workspace.id, name="Builder", role="developer")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Interruptible build",
+        status="running",
+        input={"api_key": "sk-task-control-input"},
+    )
+    session.add_all([agent, task])
+    session.flush()
+    running_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        title="Build API",
+        status="running",
+        dependencies={"token": "hidden-step-token"},
+    )
+    queued_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        title="Write tests",
+        status="queued",
+    )
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=running_step.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.RUNNING.value,
+        input={"token": "hidden-run-token"},
+    )
+    session.add_all([running_step, queued_step, run])
+    session.commit()
+
+    pause = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control",
+        headers=_headers(owner.id),
+        json={
+            "action": "pause",
+            "instruction": "Stop before touching production credentials.",
+            "reason": "owner review",
+            "metadata": {"api_key": "sk-task-control-pause"},
+        },
+    )
+    forbidden = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control",
+        headers=_headers(other_owner.id),
+        json={"action": "pause", "reason": "nope"},
+    )
+    missing = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{uuid4()}/control",
+        headers=_headers(owner.id),
+        json={"action": "pause"},
+    )
+
+    assert pause.status_code == 200
+    paused_body = pause.json()
+    assert paused_body["action"] == "pause"
+    assert paused_body["task_status"] == "blocked"
+    assert paused_body["details"]["cancelled_run_count"] == 1
+    assert paused_body["details"]["blocked_step_count"] == 2
+    assert forbidden.status_code == 403
+    assert missing.status_code == 404
+    serialized_pause = str(paused_body)
+    assert "sk-task-control-pause" not in serialized_pause
+    assert "hidden-run-token" not in serialized_pause
+    assert "hidden-step-token" not in serialized_pause
+
+    session.expire_all()
+    paused_task = session.get(Task, task.id)
+    paused_run = session.get(AgentRun, run.id)
+    paused_steps = session.scalars(
+        select(TaskStep).where(TaskStep.task_id == task.id).order_by(TaskStep.title.asc())
+    ).all()
+    assert paused_task is not None
+    assert paused_run is not None
+    assert paused_task.status == TaskStatus.BLOCKED.value
+    assert paused_task.generic_state["control"]["paused"] is True
+    assert paused_run.status == RunStatus.CANCELLED.value
+    assert {step.status for step in paused_steps} == {"blocked"}
+    assert all(step.dependencies["blocked_reason"] == "task_paused" for step in paused_steps)
+
+    instruction = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control",
+        headers=_headers(owner.id),
+        json={
+            "action": "add_instruction",
+            "instruction": "Use a mock credential and rerun the tests.",
+            "metadata": {"authorization": "Bearer hidden-instruction"},
+        },
+    )
+    assert instruction.status_code == 200
+    assert instruction.json()["details"]["instruction_count"] == 1
+    assert "hidden-instruction" not in str(instruction.json())
+
+    resume = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control",
+        headers=_headers(owner.id),
+        json={
+            "action": "resume",
+            "enqueue": False,
+            "reason": "review complete",
+            "metadata": {"token": "hidden-resume-token"},
+        },
+    )
+    assert resume.status_code == 200
+    resumed_body = resume.json()
+    assert resumed_body["task_status"] == "running"
+    assert resumed_body["details"]["unblocked_step_count"] == 2
+    assert resumed_body["scheduled_run_ids"] == []
+    assert "hidden-resume-token" not in str(resumed_body)
+
+    session.expire_all()
+    resumed_task = session.get(Task, task.id)
+    resumed_steps = session.scalars(
+        select(TaskStep).where(TaskStep.task_id == task.id).order_by(TaskStep.title.asc())
+    ).all()
+    assert resumed_task is not None
+    assert resumed_task.status == TaskStatus.RUNNING.value
+    assert resumed_task.generic_state["control"]["paused"] is False
+    assert {step.status for step in resumed_steps} == {"queued"}
+    assert all("task_control_paused" not in step.dependencies for step in resumed_steps)
+
+    messages = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/messages",
+        headers=_headers(owner.id),
+    )
+    assert messages.status_code == 200
+    message_payload = str(messages.json())
+    assert "sk-task-control-pause" not in message_payload
+    assert "Bearer hidden-instruction" not in message_payload
+    assert "hidden-resume-token" not in message_payload
+    assert "task.control.pause" in message_payload
+    assert "task.control.resume" in message_payload
+
+    audit_actions = {
+        event.action
+        for event in session.query(AuditEvent)
+        .filter(AuditEvent.workspace_id == workspace.id)
+        .all()
+    }
+    assert {
+        "task.control.paused",
+        "task.control.instruction_added",
+        "task.control.resumed",
+    } <= audit_actions
+
+
 def test_task_messages_api_lists_filters_and_enforces_workspace_scope() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
