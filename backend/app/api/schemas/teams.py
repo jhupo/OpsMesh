@@ -188,6 +188,23 @@ class AgentTeamExecutionOverviewResponse(BaseModel):
         return redact_sensitive_payload(value) if value is not None else None
 
 
+class AgentTeamProjectDashboardResponse(BaseModel):
+    workspace_id: UUID
+    team_id: UUID
+    generated_at: datetime
+    team: dict[str, object]
+    summary: dict[str, object]
+    tasks: list[dict[str, object]]
+
+    @field_serializer("team", "summary")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("tasks")
+    def _serialize_tasks(self, value: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
+
 class AgentTeamCommandCenterResponse(BaseModel):
     workspace_id: UUID
     team_id: UUID

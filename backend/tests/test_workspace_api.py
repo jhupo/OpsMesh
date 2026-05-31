@@ -773,6 +773,183 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert "sk-approved-overview" not in serialized
 
 
+def test_team_project_dashboard_aggregates_delivery_progress_and_redacts() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, _ = _seed_workspace(
+        session,
+        role="owner",
+        email="other-project-dashboard@example.com",
+        slug="other-project-dashboard",
+    )
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Project Team",
+        team_type="software",
+        status="active",
+    )
+    session.add(team)
+    session.flush()
+    blocked_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Blocked API",
+        status="blocked",
+        priority=9,
+        domain_type="software",
+        input={"api_key": "sk-dashboard-task"},
+    )
+    review_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Review image",
+        status="running",
+        priority=5,
+        domain_type="aigc",
+    )
+    completed_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Accepted task",
+        status="completed",
+        priority=1,
+        final_output={"summary": "Accepted", "token": "final-token"},
+        completed_at=datetime.now(UTC),
+    )
+    session.add_all([blocked_task, review_task, completed_task])
+    session.flush()
+    blocked_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=blocked_task.id,
+        title="Patch API",
+        status="blocked",
+        expected_artifacts=["patch"],
+        dependencies={"blocked_reason": "task_paused", "token": "step-secret"},
+        order_index=1,
+    )
+    review_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=review_task.id,
+        title="Create image",
+        status="completed",
+        expected_artifacts=["image"],
+        order_index=1,
+    )
+    completed_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=completed_task.id,
+        title="Done",
+        status="completed",
+        expected_artifacts=[],
+        order_index=1,
+    )
+    session.add_all([blocked_step, review_step, completed_step])
+    session.flush()
+    session.add_all(
+        [
+            AgentRun(
+                workspace_id=workspace.id,
+                task_id=review_task.id,
+                task_step_id=review_step.id,
+                status=RunStatus.RUNNING.value,
+                input={"authorization": "Bearer dashboard-run"},
+            ),
+            Artifact(
+                workspace_id=workspace.id,
+                task_id=review_task.id,
+                task_step_id=review_step.id,
+                artifact_type="image",
+                filename="image.png",
+                content_type="image/png",
+                review_status="pending",
+                version=1,
+                size_bytes=128,
+                checksum_sha256="1" * 64,
+                storage_key="secret-dashboard-storage",
+                artifact_metadata={"api_key": "sk-artifact-dashboard"},
+                created_at=datetime.now(UTC),
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=review_task.id,
+                message_type="agent.progress",
+                sequence=1,
+                body="Private progress body",
+                payload={"token": "message-token"},
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/project-dashboard",
+        headers=_headers(owner.id),
+    )
+    include_completed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/project-dashboard"
+        "?include_completed=true",
+        headers=_headers(owner.id),
+    )
+    forbidden = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/project-dashboard",
+        headers=_headers(other_owner.id),
+    )
+    missing = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{uuid4()}/project-dashboard",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["team"]["name"] == "Project Team"
+    assert body["summary"]["total_tasks"] == 2
+    assert body["summary"]["status_counts"] == {"blocked": 1, "running": 1}
+    assert body["summary"]["delivery_status_counts"] == {
+        "incomplete": 1,
+        "needs_review": 1,
+    }
+    assert body["summary"]["blocked_task_count"] == 1
+    assert body["summary"]["high_risk_task_count"] == 1
+    assert body["summary"]["active_run_count"] == 1
+    assert body["summary"]["missing_expected_artifact_count"] == 1
+    assert body["summary"]["pending_review_task_count"] == 1
+    by_title = {item["title"]: item for item in body["tasks"]}
+    blocked = by_title["Blocked API"]
+    assert blocked["risk_level"] == "high"
+    assert blocked["delivery"]["status"] == "incomplete"
+    assert blocked["blocked_reasons"] == [
+        "task_blocked",
+        "task_paused",
+        "missing_expected_artifacts",
+    ]
+    assert set(blocked["recommended_actions"]) == {"resume_task", "create_correction"}
+    review = by_title["Review image"]
+    assert review["risk_level"] == "medium"
+    assert review["progress"]["completion_ratio"] == 1.0
+    assert review["execution"]["active_run_count"] == 1
+    assert review["execution"]["latest_message"]["message_type"] == "agent.progress"
+    assert review["delivery"]["status"] == "needs_review"
+    assert set(review["recommended_actions"]) == {"review_artifacts", "monitor_active_runs"}
+    assert include_completed.status_code == 200
+    assert include_completed.json()["summary"]["total_tasks"] == 3
+    assert include_completed.json()["summary"]["delivery_status_counts"]["accepted"] == 1
+    assert forbidden.status_code == 403
+    assert missing.status_code == 404
+
+    serialized = str(include_completed.json())
+    assert "sk-dashboard-task" not in serialized
+    assert "step-secret" not in serialized
+    assert "Bearer dashboard-run" not in serialized
+    assert "secret-dashboard-storage" not in serialized
+    assert "sk-artifact-dashboard" not in serialized
+    assert "Private progress body" not in serialized
+    assert "message-token" not in serialized
+    assert "final-token" not in serialized
+
+
 def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> None:
     queue_redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(queue_redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)

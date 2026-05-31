@@ -65,6 +65,7 @@ from backend.app.api.schemas.teams import (
     AgentTeamOperatorActionRequest,
     AgentTeamOperatorActionResponse,
     AgentTeamOrgChartResponse,
+    AgentTeamProjectDashboardResponse,
     AgentTeamResponse,
 )
 from backend.app.api.services.resources import WorkspaceResourceService
@@ -95,6 +96,7 @@ from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.execution_loop import TeamExecutionLoopService
 from backend.app.teams.execution_overview import TeamExecutionOverviewService
 from backend.app.teams.operator_actions import TeamOperatorActionService
+from backend.app.teams.project_dashboard import TeamProjectDashboardService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
 
@@ -244,6 +246,28 @@ async def get_team_execution_overview(
     if overview is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     return AgentTeamExecutionOverviewResponse.model_validate(overview)
+
+
+@router.get(
+    "/teams/{team_id}/project-dashboard",
+    response_model=AgentTeamProjectDashboardResponse,
+)
+async def get_team_project_dashboard(
+    team_id: UUID,
+    include_completed: bool = Query(default=False),
+    limit: int = Query(default=100, ge=1, le=200),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> AgentTeamProjectDashboardResponse:
+    dashboard = TeamProjectDashboardService(session).get_dashboard(
+        workspace_id=context.workspace.id,
+        team_id=team_id,
+        include_completed=include_completed,
+        limit=limit,
+    )
+    if dashboard is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    return AgentTeamProjectDashboardResponse.model_validate(dashboard)
 
 
 @router.get(
