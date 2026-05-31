@@ -15,6 +15,8 @@ from backend.app.api.schemas.exports import (
     WorkspaceExportRequest,
     WorkspaceImportRequest,
     WorkspaceImportResponse,
+    WorkspaceRecoveryReadinessActionRequest,
+    WorkspaceRecoveryReadinessActionResponse,
     WorkspaceRecoveryReadinessResponse,
     WorkspaceRestoreDrillResponse,
     WorkspaceRetentionRequest,
@@ -59,6 +61,33 @@ async def get_workspace_recovery_readiness(
     if diagnostics is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     return WorkspaceRecoveryReadinessResponse.model_validate(diagnostics)
+
+
+@router.post(
+    "/recovery-readiness/actions/apply",
+    response_model=WorkspaceRecoveryReadinessActionResponse,
+)
+async def apply_workspace_recovery_readiness_actions(
+    request: WorkspaceRecoveryReadinessActionRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> WorkspaceRecoveryReadinessActionResponse:
+    try:
+        response = WorkspaceDataLifecycleService(session).apply_recovery_readiness_actions(
+            workspace_id=context.workspace.id,
+            user_id=context.user.user_id,
+            queue=queue,
+            dry_run=request.dry_run,
+            actions=request.actions,
+            reason=request.reason,
+            metadata=request.metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return WorkspaceRecoveryReadinessActionResponse.model_validate(response)
 
 
 @router.post("/retention/preview", response_model=WorkspaceRetentionResponse)

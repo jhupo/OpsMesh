@@ -528,6 +528,170 @@ def test_workspace_recovery_readiness_blocks_stale_archive_backup(tmp_path: Path
     assert body["restore_readiness"]["recommended_actions"] == ["run_archive_export"]
 
 
+def test_workspace_recovery_readiness_actions_dry_run_and_apply_archive_export(
+    tmp_path: Path,
+) -> None:
+    client, session, _, queue = _client_with_worker_queue(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-recovery-action@example.com",
+        slug="owner-recovery-action",
+    )
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {
+                "enabled": True,
+                "max_archive_age_days": 1,
+                "archive_request": {
+                    "include_audit_events": False,
+                    "include_file_bytes": False,
+                    "include_artifact_bytes": False,
+                },
+            }
+        }
+    }
+    stale_completed_at = datetime.now(UTC) - timedelta(days=3)
+    session.add(
+        WorkspaceExportJob(
+            workspace_id=workspace.id,
+            created_by_user_id=owner.id,
+            export_type="workspace_archive",
+            status="completed",
+            request={"api_key": "should-redact"},
+            job_metadata={"token": "should-redact"},
+            storage_key="workspaces/owner-recovery-action/exports/stale.zip",
+            filename="stale.zip",
+            content_type="application/zip",
+            size_bytes=10,
+            checksum_sha256="a" * 64,
+            completed_at=stale_completed_at,
+            created_at=stale_completed_at,
+        )
+    )
+    session.commit()
+
+    dry_run = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "metadata": {
+                "token": "operator-secret",
+                "base_url": "https://private.example",
+            },
+            "reason": "refresh stale backup",
+        },
+    )
+
+    assert dry_run.status_code == 200
+    dry_body = dry_run.json()
+    assert dry_body["dry_run"] is True
+    assert dry_body["status"] == "dry_run"
+    assert dry_body["requested_actions"] == ["run_archive_export"]
+    assert dry_body["eligible_action_count"] == 1
+    assert dry_body["applied_count"] == 0
+    assert dry_body["results"][0]["status"] == "would_apply"
+    assert dry_body["summary"]["metadata_keys"] == ["base_url", "token"]
+    assert queue.count_queued(workspace_id=workspace.id) == 0
+    serialized_dry_run = json.dumps(dry_body)
+    assert "operator-secret" not in serialized_dry_run
+    assert "https://private.example" not in serialized_dry_run
+
+    applied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": False,
+            "metadata": {
+                "token": "operator-secret",
+                "base_url": "https://private.example",
+            },
+            "reason": "refresh stale backup",
+        },
+    )
+
+    assert applied.status_code == 200
+    applied_body = applied.json()
+    assert applied_body["status"] == "applied"
+    assert applied_body["applied_count"] == 1
+    assert applied_body["summary"]["archive_export_jobs_enqueued"] == 1
+    assert applied_body["results"][0]["resource_type"] == "workspace_export_job"
+    assert queue.count_queued(workspace_id=workspace.id) == 1
+    export_job = session.get(WorkspaceExportJob, UUID(applied_body["results"][0]["resource_id"]))
+    assert export_job is not None
+    assert export_job.status == "queued"
+    assert export_job.request["include_audit_events"] is False
+    assert export_job.job_metadata["source"] == "recovery_readiness_action"
+    assert export_job.job_metadata["metadata_keys"] == ["base_url", "token"]
+    serialized_apply = json.dumps(applied_body)
+    assert "operator-secret" not in serialized_apply
+    assert "https://private.example" not in serialized_apply
+    assert "workspaces/owner-recovery-action/exports/stale.zip" not in serialized_apply
+    assert (
+        session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action == "workspace.recovery_readiness.actions_applied",
+                AuditEvent.workspace_id == workspace.id,
+            )
+        )
+        is not None
+    )
+    assert (
+        session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action
+                == "workspace.recovery_readiness.archive_export_enqueued",
+                AuditEvent.workspace_id == workspace.id,
+            )
+        )
+        is not None
+    )
+
+
+def test_workspace_recovery_readiness_actions_skip_when_export_active(
+    tmp_path: Path,
+) -> None:
+    client, session, _, queue = _client_with_worker_queue(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-recovery-active@example.com",
+        slug="owner-recovery-active",
+    )
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {
+                "enabled": True,
+                "archive_request": {"include_audit_events": False},
+            }
+        }
+    }
+    session.add(
+        WorkspaceExportJob(
+            workspace_id=workspace.id,
+            created_by_user_id=owner.id,
+            export_type="workspace_archive",
+            status="queued",
+            request={"include_audit_events": False},
+        )
+    )
+    session.commit()
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness/actions/apply",
+        headers=_headers(owner.id),
+        json={"dry_run": False, "actions": ["run_archive_export"]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "noop"
+    assert body["eligible_action_count"] == 0
+    assert body["applied_count"] == 0
+    assert body["skipped_count"] == 1
+    assert body["skipped"][0]["reason"] == "archive_export_already_active"
+    assert body["summary"]["active_archive_export_job_count"] == 1
+    assert queue.count_queued(workspace_id=workspace.id) == 0
+
+
 def test_workspace_recovery_readiness_warns_when_backup_schedule_is_overdue(
     tmp_path: Path,
 ) -> None:

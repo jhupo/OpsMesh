@@ -266,6 +266,38 @@ class WorkspaceRecoveryReadinessResponse(BaseModel):
         return redact_sensitive_payload(value) if value is not None else None
 
 
+class WorkspaceRecoveryReadinessActionRequest(BaseModel):
+    dry_run: bool = True
+    actions: list[str] = Field(default_factory=list, max_length=5)
+    reason: str | None = Field(default=None, max_length=1_000)
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class WorkspaceRecoveryReadinessActionResponse(BaseModel):
+    workspace_id: UUID
+    generated_at: datetime
+    dry_run: bool
+    status: str
+    requested_actions: list[str]
+    eligible_action_count: int
+    applied_count: int
+    skipped_count: int
+    summary: dict[str, object]
+    results: list[dict[str, object]]
+    skipped: list[dict[str, object]]
+
+    @field_serializer("summary")
+    def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("results", "skipped")
+    def _serialize_items(
+        self,
+        value: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
+
 class WorkspaceRetentionRequest(BaseModel):
     include_files: bool = True
     include_export_jobs: bool = True

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -65,6 +66,7 @@ _RESTORE_TEST_EVENT_ACTIONS = (
     "workspace.archive_import.created",
     "workspace.archive_restore_drill.completed",
 )
+RECOVERY_READINESS_APPLY_ACTIONS = frozenset({"run_archive_export"})
 
 
 @dataclass(frozen=True)
@@ -240,6 +242,178 @@ class WorkspaceDataLifecycleService:
                 ],
             },
             "restore_readiness": restore_readiness,
+        }
+
+    def apply_recovery_readiness_actions(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        queue: RedisQueue,
+        dry_run: bool = True,
+        actions: list[str] | None = None,
+        reason: str | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> dict[str, object] | None:
+        workspace = self._session.get(Workspace, workspace_id)
+        if workspace is None:
+            return None
+
+        readiness = self.get_recovery_readiness(workspace_id=workspace_id)
+        if readiness is None:
+            return None
+        restore_readiness = readiness["restore_readiness"]
+        if not isinstance(restore_readiness, dict):
+            restore_readiness = {}
+        recommended_actions = _string_list(restore_readiness.get("recommended_actions"))
+        requested_actions = _recovery_readiness_actions(
+            actions,
+            recommended_actions=recommended_actions,
+        )
+        unsupported_actions = sorted(
+            set(requested_actions) - RECOVERY_READINESS_APPLY_ACTIONS
+        )
+        if unsupported_actions:
+            raise ValueError(f"Unsupported recovery readiness action: {unsupported_actions[0]}")
+
+        results: list[dict[str, object]] = []
+        skipped: list[dict[str, object]] = []
+        blocked_reasons = _string_list(restore_readiness.get("blocked_reasons"))
+        warnings = _string_list(restore_readiness.get("warnings"))
+        metadata_keys = sorted((metadata or {}).keys())
+        raw_backup_policy = _backup_settings(workspace.settings)
+
+        for action in requested_actions:
+            if action != "run_archive_export":
+                continue
+            if self._has_active_archive_export_job(workspace_id):
+                skipped.append(
+                    _recovery_action_skipped(
+                        action=action,
+                        resource_type="workspace",
+                        resource_id=workspace_id,
+                        reason="archive_export_already_active",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            try:
+                request = _scheduled_archive_export_request(raw_backup_policy)
+            except ValidationError:
+                skipped.append(
+                    _recovery_action_skipped(
+                        action=action,
+                        resource_type="workspace",
+                        resource_id=workspace_id,
+                        reason="invalid_archive_request",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+
+            request_payload = request.model_dump(mode="json")
+            if dry_run:
+                results.append(
+                    _recovery_action_result(
+                        action=action,
+                        resource_type="workspace",
+                        resource_id=workspace_id,
+                        status="would_apply",
+                        blocked_reasons=blocked_reasons,
+                        metadata={
+                            "request": request_payload,
+                            "readiness_warnings": warnings,
+                        },
+                    )
+                )
+                continue
+
+            export_job = WorkspaceExportService(self._session).create_archive_export_job(
+                workspace=workspace,
+                user_id=user_id,
+                request=request,
+                queue=queue,
+            )
+            export_job.job_metadata = {
+                **export_job.job_metadata,
+                "source": "recovery_readiness_action",
+                "reason": reason,
+                "metadata_keys": metadata_keys,
+                "readiness_blocked_reasons": blocked_reasons,
+                "readiness_warnings": warnings,
+            }
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                action="workspace.recovery_readiness.archive_export_enqueued",
+                target_type="workspace_export_job",
+                target_id=export_job.id,
+                metadata={
+                    "reason": reason,
+                    "metadata_keys": metadata_keys,
+                    "readiness_blocked_reasons": blocked_reasons,
+                    "readiness_warnings": warnings,
+                },
+            )
+            results.append(
+                _recovery_action_result(
+                    action=action,
+                    resource_type="workspace_export_job",
+                    resource_id=export_job.id,
+                    status="applied",
+                    blocked_reasons=blocked_reasons,
+                    metadata={
+                        "export_job_status": export_job.status,
+                        "request": request_payload,
+                    },
+                )
+            )
+
+        summary = {
+            "archive_export_jobs_enqueued": sum(
+                1
+                for item in results
+                if item["action"] == "run_archive_export" and item["status"] == "applied"
+            ),
+            "active_archive_export_job_count": self._active_archive_export_job_count(
+                workspace_id
+            ),
+            "metadata_keys": metadata_keys,
+            "readiness_blocked_reasons": blocked_reasons,
+            "readiness_warnings": warnings,
+            "unsupported_recommended_actions": sorted(
+                set(recommended_actions) - RECOVERY_READINESS_APPLY_ACTIONS
+            ),
+        }
+        if not dry_run:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                action="workspace.recovery_readiness.actions_applied",
+                target_type="workspace",
+                target_id=workspace_id,
+                metadata={
+                    "requested_actions": requested_actions,
+                    "applied_count": len(results),
+                    "skipped_count": len(skipped),
+                    "summary": summary,
+                    "reason": reason,
+                },
+            )
+            self._session.commit()
+
+        return {
+            "workspace_id": workspace_id,
+            "generated_at": datetime.now(UTC),
+            "dry_run": dry_run,
+            "status": "dry_run" if dry_run else "applied" if results else "noop",
+            "requested_actions": requested_actions,
+            "eligible_action_count": len(results),
+            "applied_count": 0 if dry_run else len(results),
+            "skipped_count": len(skipped),
+            "summary": summary,
+            "results": results,
+            "skipped": skipped,
         }
 
     def preview_retention(
@@ -1954,6 +2128,71 @@ def _restore_recommended_actions(
     if "import_previews_have_required_resolutions" in warning_set:
         actions.append("resolve_import_conflicts_before_restore")
     return actions
+
+
+def _recovery_readiness_actions(
+    actions: list[str] | None,
+    *,
+    recommended_actions: list[str],
+) -> list[str]:
+    if not actions:
+        return _unique_strings(
+            action
+            for action in recommended_actions
+            if action in RECOVERY_READINESS_APPLY_ACTIONS
+        )
+    return _unique_strings(actions)
+
+
+def _recovery_action_result(
+    *,
+    action: str,
+    resource_type: str,
+    resource_id: UUID,
+    status: str,
+    blocked_reasons: list[str],
+    metadata: dict[str, object] | None = None,
+) -> dict[str, object]:
+    return {
+        "action": action,
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "status": status,
+        "blocked_reasons": blocked_reasons,
+        "metadata": metadata or {},
+    }
+
+
+def _recovery_action_skipped(
+    *,
+    action: str,
+    resource_type: str,
+    resource_id: UUID,
+    reason: str,
+    blocked_reasons: list[str],
+) -> dict[str, object]:
+    return {
+        "action": action,
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "status": "skipped",
+        "reason": reason,
+        "blocked_reasons": blocked_reasons,
+    }
+
+
+def _unique_strings(values: Iterable[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        item = value.strip()
+        if not item or item in seen:
+            continue
+        normalized.append(item)
+        seen.add(item)
+    return normalized
 
 
 def _restore_test_payload(event: AuditEvent) -> dict[str, object]:
