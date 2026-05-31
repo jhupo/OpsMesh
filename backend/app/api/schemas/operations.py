@@ -418,6 +418,40 @@ class OperationsWorkerLifecycleResponse(BaseModel):
     worker_types: list[WorkerLifecycleBucketResponse]
 
 
+class RunActivityOldestRunResponse(BaseModel):
+    run_id: UUID
+    task_id: UUID | None
+    task_step_id: UUID | None
+    agent_profile_id: UUID | None
+    runtime_id: UUID | None
+    runtime_space_id: UUID | None
+    status: str
+    latest_event_type: str | None
+    age_seconds: int
+    started_at: datetime | None
+    last_activity_at: datetime
+
+
+class RunActivityPhaseBucketResponse(BaseModel):
+    phase: str
+    label: str
+    count: int
+    oldest_age_seconds: int | None
+    oldest_run: RunActivityOldestRunResponse | None = None
+    recommended_action: str | None = None
+
+
+class OperationsRunActivityResponse(BaseModel):
+    generated_at: datetime
+    team_id: UUID | None = None
+    total_active_runs: int
+    scanned_active_runs: int
+    truncated: bool
+    status_counts: dict[str, int]
+    phases: list[RunActivityPhaseBucketResponse]
+    oldest_active_run: RunActivityOldestRunResponse | None = None
+
+
 class OperationsRuntimeCapacityResponse(BaseModel):
     generated_at: datetime
     providers: list[RuntimeProviderCapacityResponse]

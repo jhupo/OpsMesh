@@ -22,6 +22,7 @@ from backend.app.api.schemas.operations import (
     OperationsOutcomesResponse,
     OperationsOverviewResponse,
     OperationsQueueInsightsResponse,
+    OperationsRunActivityResponse,
     OperationsRuntimeCapacityResponse,
     OperationsSchedulerResponse,
     OperationsSelfHostedMachinesResponse,
@@ -581,6 +582,29 @@ async def operations_worker_lifecycle(
         ttl_seconds=10,
     )
     return OperationsWorkerLifecycleResponse(**cached.value)
+
+
+@router.get("/run-activity", response_model=OperationsRunActivityResponse)
+async def operations_run_activity(
+    team_id: UUID | None = Query(default=None),
+    scan_limit: int = Query(default=500, ge=1, le=1_000),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+    cache: RedisJsonCache = Depends(get_cache_service),
+) -> OperationsRunActivityResponse:
+    cache_key = f"run-activity:{context.workspace.id}:{team_id}:{scan_limit}"
+    cached = cache.get_or_set(
+        cache_key,
+        lambda: OperationsService(session)
+        .run_activity_payload(
+            context.workspace.id,
+            team_id=team_id,
+            scan_limit=scan_limit,
+        )
+        .model_dump(mode="json"),
+        ttl_seconds=5,
+    )
+    return OperationsRunActivityResponse(**cached.value)
 
 
 @router.get("/mcp-jobs", response_model=OperationsMcpJobsResponse)

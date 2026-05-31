@@ -35,6 +35,7 @@ from backend.app.self_hosted.models import (
     SelfHostedWorker,
 )
 from backend.app.tasks.models import Task, TaskStep
+from backend.app.teams.models import AgentTeam
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
@@ -751,6 +752,10 @@ def test_operations_aggregates_return_zero_metrics_for_empty_workspace() -> None
         f"/api/v1/workspaces/{workspace.id}/operations/runtime-capacity",
         headers=headers,
     )
+    run_activity = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/run-activity",
+        headers=headers,
+    )
     control_plane = client.get(
         f"/api/v1/workspaces/{workspace.id}/operations/control-plane",
         headers=headers,
@@ -762,6 +767,7 @@ def test_operations_aggregates_return_zero_metrics_for_empty_workspace() -> None
         scheduler,
         outcomes,
         runtime_capacity,
+        run_activity,
         control_plane,
     ):
         assert response.status_code == 200
@@ -797,6 +803,8 @@ def test_operations_aggregates_return_zero_metrics_for_empty_workspace() -> None
     assert outcomes.json()["approvals"]["pending"] == 0
     assert runtime_capacity.json()["providers"] == []
     assert runtime_capacity.json()["worker_types"] == []
+    assert run_activity.json()["total_active_runs"] == 0
+    assert run_activity.json()["phases"] == []
     assert control_plane.json()["health"] == "critical"
     assert [issue["code"] for issue in control_plane.json()["issues"]] == [
         "worker_fleet_empty"
@@ -1543,6 +1551,173 @@ def test_operations_worker_lifecycle_reports_backlog_failure_and_latency() -> No
     assert worker_types["cloud"]["oldest_running_age_seconds"] >= 110
     assert worker_types["unrouted"]["queued_jobs"] == 1
     assert "other-worker-lifecycle" not in str(payload)
+
+
+def test_operations_run_activity_reports_active_phase_aggregates() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    _, other_workspace = _seed_workspace_with_role(
+        session,
+        email="other-run-activity@example.com",
+        slug="other-run-activity",
+    )
+    now = datetime.now(UTC)
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Delivery Team",
+        team_type="software",
+    )
+    other_team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Other Team",
+        team_type="research",
+    )
+    session.add_all([team, other_team])
+    session.flush()
+    queued_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Queued work",
+        status="queued",
+    )
+    running_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Running work",
+        status="running",
+    )
+    waiting_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Waiting work",
+        status="running",
+    )
+    other_team_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=other_team.id,
+        title="Other team work",
+        status="running",
+    )
+    session.add_all([queued_task, running_task, waiting_task, other_team_task])
+    session.flush()
+    queued_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=queued_task.id,
+        status="queued",
+        input={"api_key": "queued-secret"},
+        created_at=now - timedelta(seconds=120),
+        updated_at=now - timedelta(seconds=120),
+    )
+    running_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=running_task.id,
+        status="running",
+        input={"token": "running-secret"},
+        started_at=now - timedelta(seconds=90),
+        created_at=now - timedelta(seconds=90),
+        updated_at=now - timedelta(seconds=90),
+    )
+    waiting_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=waiting_task.id,
+        status="waiting_runtime",
+        input={"headers": {"authorization": "Bearer hidden"}},
+        started_at=now - timedelta(seconds=400),
+        created_at=now - timedelta(seconds=400),
+        updated_at=now - timedelta(seconds=400),
+    )
+    other_team_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=other_team_task.id,
+        status="running",
+        created_at=now - timedelta(seconds=600),
+        updated_at=now - timedelta(seconds=600),
+    )
+    foreign_run = AgentRun(
+        workspace_id=other_workspace.id,
+        status="running",
+        created_at=now - timedelta(seconds=900),
+        updated_at=now - timedelta(seconds=900),
+    )
+    session.add_all([queued_run, running_run, waiting_run, other_team_run, foreign_run])
+    session.flush()
+    session.add_all(
+        [
+            RunEvent(
+                workspace_id=workspace.id,
+                agent_run_id=running_run.id,
+                event_type="model.request_started",
+                sequence=1,
+                message="Model request started",
+                event_metadata={"api_key": "sk-hidden"},
+                created_at=now - timedelta(seconds=80),
+            ),
+            RunEvent(
+                workspace_id=workspace.id,
+                agent_run_id=waiting_run.id,
+                event_type="runtime.waiting",
+                sequence=1,
+                message="Waiting for runtime",
+                event_metadata={"token": "runtime-token"},
+                created_at=now - timedelta(seconds=300),
+            ),
+            RunEvent(
+                workspace_id=workspace.id,
+                agent_run_id=other_team_run.id,
+                event_type="tool.called",
+                sequence=1,
+                message="Calling tool",
+                event_metadata={},
+                created_at=now - timedelta(seconds=500),
+            ),
+            RunEvent(
+                workspace_id=other_workspace.id,
+                agent_run_id=foreign_run.id,
+                event_type="model.request_started",
+                sequence=1,
+                message="Foreign",
+                event_metadata={},
+                created_at=now - timedelta(seconds=800),
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/run-activity?team_id={team.id}",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["team_id"] == str(team.id)
+    assert payload["total_active_runs"] == 3
+    assert payload["scanned_active_runs"] == 3
+    assert payload["truncated"] is False
+    assert payload["status_counts"] == {
+        "queued": 1,
+        "running": 1,
+        "waiting_runtime": 1,
+    }
+    phases = {item["phase"]: item for item in payload["phases"]}
+    assert phases["queued"]["count"] == 1
+    assert phases["model_running"]["oldest_run"]["latest_event_type"] == (
+        "model.request_started"
+    )
+    assert phases["waiting_runtime"]["oldest_run"]["run_id"] == str(waiting_run.id)
+    assert phases["waiting_runtime"]["oldest_age_seconds"] >= 290
+    assert payload["oldest_active_run"]["run_id"] == str(waiting_run.id)
+    serialized = str(payload)
+    assert "queued-secret" not in serialized
+    assert "running-secret" not in serialized
+    assert "runtime-token" not in serialized
+    assert str(other_team_run.id) not in serialized
+    assert str(foreign_run.id) not in serialized
 
 
 def test_operations_control_plane_summarizes_capacity_and_health_issues() -> None:
