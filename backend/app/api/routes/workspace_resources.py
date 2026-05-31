@@ -1,7 +1,11 @@
+import asyncio
+import json
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
 from redis import Redis
 from sqlalchemy.orm import Session
 
@@ -13,6 +17,7 @@ from backend.app.api.idempotency import (
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
 from backend.app.api.schemas.agents import AgentProfileCreateRequest, AgentProfileResponse
 from backend.app.api.schemas.audit import AuditEventResponse
+from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
 from backend.app.api.schemas.tasks import (
     TaskCorrectionDiagnosticsResponse,
@@ -84,6 +89,7 @@ else:
     RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
+STREAM_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
 
 
 @router.get("/agents", response_model=PageResponse[AgentProfileResponse])
@@ -710,6 +716,82 @@ async def get_task_live_status(
     return TaskLiveStatusResponse.model_validate(status_snapshot)
 
 
+@router.get("/tasks/{task_id}/events/stream")
+async def stream_task_events(
+    task_id: UUID,
+    after_sequence: int = Query(default=0, ge=0),
+    message_limit: int = Query(default=50, ge=1, le=200),
+    poll_seconds: float = Query(default=1.0, ge=0.25, le=10.0),
+    heartbeat_seconds: float = Query(default=15.0, ge=1.0, le=60.0),
+    once: bool = Query(default=False),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> StreamingResponse:
+    service = TaskLiveStatusService(session)
+    initial = service.get_status(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        after_sequence=after_sequence,
+        message_limit=message_limit,
+    )
+    if initial is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    async def event_stream():
+        cursor = after_sequence
+        last_emit_at = asyncio.get_running_loop().time()
+        snapshot = initial
+        while True:
+            messages = _snapshot_messages(snapshot)
+            if messages:
+                cursor = max(_message_sequence(message, cursor) for message in messages)
+            yield _sse_event(
+                "task.snapshot",
+                {
+                    **snapshot,
+                    "stream": {
+                        "cursor": cursor,
+                        "message_count": len(messages),
+                        "complete": _task_stream_complete(snapshot),
+                    },
+                },
+            )
+            last_emit_at = asyncio.get_running_loop().time()
+
+            if once or _task_stream_complete(snapshot):
+                break
+
+            await asyncio.sleep(poll_seconds)
+            session.expire_all()
+            snapshot = service.get_status(
+                workspace_id=context.workspace.id,
+                task_id=task_id,
+                after_sequence=cursor,
+                message_limit=message_limit,
+            )
+            if snapshot is None:
+                yield _sse_event("task.missing", {"task_id": str(task_id), "cursor": cursor})
+                break
+            if not _snapshot_messages(snapshot):
+                now = asyncio.get_running_loop().time()
+                if now - last_emit_at >= heartbeat_seconds:
+                    yield _sse_event(
+                        "heartbeat",
+                        {
+                            "workspace_id": str(context.workspace.id),
+                            "task_id": str(task_id),
+                            "cursor": cursor,
+                        },
+                    )
+                    last_emit_at = now
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 @router.get(
     "/tasks/{task_id}/planning-attempts",
     response_model=PageResponse[TaskPlanningAttemptResponse],
@@ -967,3 +1049,31 @@ async def list_audit_events(
 ) -> PageResponse[AuditEventResponse]:
     items, total = WorkspaceResourceService(session).list_audit_events(context.workspace.id, page)
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+def _sse_event(event_name: str, payload: dict[str, object]) -> str:
+    redacted = redact_sensitive_payload(payload)
+    data = json.dumps(jsonable_encoder(redacted), ensure_ascii=False, sort_keys=True)
+    return f"event: {event_name}\ndata: {data}\n\n"
+
+
+def _snapshot_messages(snapshot: dict[str, object]) -> list[dict[str, object]]:
+    messages = snapshot.get("recent_messages")
+    if not isinstance(messages, list):
+        return []
+    return [message for message in messages if isinstance(message, dict)]
+
+
+def _message_sequence(message: dict[str, object], default: int) -> int:
+    sequence = message.get("sequence")
+    return sequence if isinstance(sequence, int) else default
+
+
+def _task_stream_complete(snapshot: dict[str, object]) -> bool:
+    task = snapshot.get("task")
+    summary = snapshot.get("summary")
+    if not isinstance(task, dict) or not isinstance(summary, dict):
+        return False
+    status_value = task.get("status")
+    active_runs = summary.get("active_run_count")
+    return status_value in STREAM_TERMINAL_TASK_STATUSES and active_runs == 0

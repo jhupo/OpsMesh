@@ -3066,6 +3066,41 @@ def test_task_live_status_api_returns_active_runs_and_message_cursor() -> None:
     assert payload["recent_messages"][0]["agent"]["role"] == "researcher"
 
 
+def test_task_event_stream_returns_redacted_snapshot() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Streaming task",
+        status=TaskStatus.COMPLETED.value,
+    )
+    session.add(task)
+    session.flush()
+    session.add(
+        TaskMessage(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            message_type="step.completed",
+            sequence=1,
+            body="Done",
+            payload={"authorization": "Bearer hidden"},
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/events/stream?once=true",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: task.snapshot" in response.text
+    assert "[redacted]" in response.text
+    assert "Bearer hidden" not in response.text
+
+
 def test_run_api_redacts_sensitive_payloads() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
