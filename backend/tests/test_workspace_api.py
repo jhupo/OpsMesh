@@ -4989,6 +4989,134 @@ def test_task_manager_diagnostics_explains_acceptance_follow_up_and_redacts() ->
     assert "foreign" not in serialized
 
 
+def test_task_collaboration_state_rolls_up_handoff_and_manager_protocol() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-collaboration-state@example.com",
+        slug="other-collaboration-state",
+    )
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="PM",
+        role="project_manager",
+    )
+    developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+    )
+    session.add_all([manager, developer])
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Collaboration state",
+        status="running",
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id), "token": "hidden-plan-token"},
+    )
+    session.add(task)
+    session.flush()
+    planning_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=manager.id,
+        work_package_id="manager-planning",
+        required_role="project_manager",
+        title="Plan work",
+        status="completed",
+        order_index=10,
+    )
+    session.add(planning_step)
+    session.flush()
+    design_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=developer.id,
+        work_package_id="design",
+        required_role="developer",
+        title="Design feature",
+        status="completed",
+        order_index=20,
+        dependencies={"after_step_ids": [str(planning_step.id)], "headers": "hidden"},
+        result_summary="Design ready",
+    )
+    session.add(design_step)
+    session.flush()
+    build_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=developer.id,
+        work_package_id="build",
+        required_role="developer",
+        title="Build feature",
+        status="queued",
+        order_index=30,
+        dependencies={"after_step_ids": [str(design_step.id)], "api_key": "sk-hidden"},
+    )
+    session.add(build_step)
+    session.flush()
+    summary_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=manager.id,
+        work_package_id="manager-summary",
+        required_role="project_manager",
+        title="Review delivery",
+        status="queued",
+        order_index=40,
+        dependencies={"after_step_ids": [str(build_step.id)]},
+    )
+    session.add(summary_step)
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/collaboration-state",
+        headers=_headers(owner.id),
+    )
+    foreign_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks/{task.id}/collaboration-state",
+        headers=_headers(other_owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task_id"] == str(task.id)
+    assert body["summary"]["status"] == "needs_attention"
+    assert set(body["summary"]["blocked_reasons"]) >= {
+        "specialist_steps_incomplete",
+        "acceptance_decision_missing",
+        "handoff_ready_for_downstream",
+    }
+    assert "schedule_downstream_steps" in body["summary"]["recommended_actions"]
+    participants = {item["name"]: item for item in body["participants"]}
+    assert participants["PM"]["collaboration_role"] == "manager"
+    assert participants["PM"]["assigned_step_count"] == 2
+    assert participants["Developer"]["assigned_step_count"] == 2
+    assert participants["Developer"]["completed_step_count"] == 1
+    phases = {item["phase"]: item for item in body["phases"]}
+    assert phases["manager_planning"]["status"] == "completed"
+    assert phases["specialist_execution"]["status"] == "in_progress"
+    assert phases["handoff"]["status"] == "ready"
+    assert phases["handoff"]["recommended_actions"] == ["schedule_downstream_steps"]
+    assert phases["manager_acceptance"]["status"] == "in_progress"
+    handoffs = {item["work_package_id"]: item for item in body["handoffs"]}
+    assert handoffs["design"]["status"] == "ready_for_downstream"
+    assert handoffs["design"]["runnable_downstream_step_ids"] == [str(build_step.id)]
+    assert body["manager"]["blocked_reasons"] == [
+        "specialist_steps_incomplete",
+        "acceptance_decision_missing",
+    ]
+    serialized = str(body)
+    assert "sk-hidden" not in serialized
+    assert "hidden-plan-token" not in serialized
+    assert "hidden" not in serialized
+    assert foreign_response.status_code == 404
+
+
 def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

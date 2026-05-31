@@ -20,6 +20,7 @@ from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
 from backend.app.api.schemas.tasks import (
+    TaskCollaborationStateResponse,
     TaskControlActionRequest,
     TaskControlActionResponse,
     TaskControlDiagnosticsResponse,
@@ -79,6 +80,7 @@ from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.diagnostics import ProjectPlanDiagnosticsService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.tasks.collaboration_state import TaskCollaborationStateService
 from backend.app.tasks.control import TaskControlService
 from backend.app.tasks.control_diagnostics import TaskControlDiagnosticsService
 from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
@@ -1217,6 +1219,24 @@ async def get_task_manager_diagnostics(
     if diagnostics is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskManagerDiagnosticsResponse.model_validate(diagnostics)
+
+
+@router.get(
+    "/tasks/{task_id}/collaboration-state",
+    response_model=TaskCollaborationStateResponse,
+)
+async def get_task_collaboration_state(
+    task_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskCollaborationStateResponse:
+    state_payload = TaskCollaborationStateService(session).get_state(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+    )
+    if state_payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskCollaborationStateResponse.model_validate(state_payload)
 
 
 @router.get("/runs", response_model=PageResponse[AgentRunResponse])

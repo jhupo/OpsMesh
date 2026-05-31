@@ -643,6 +643,26 @@ class TaskExecutionDiagnosticsResponse(BaseModel):
         return redact_sensitive_payload(value)
 
 
+class TaskCollaborationStateResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    generated_at: datetime
+    task: dict[str, object]
+    summary: dict[str, object]
+    participants: list[dict[str, object]]
+    phases: list[dict[str, object]]
+    handoffs: list[dict[str, object]]
+    manager: dict[str, object]
+
+    @field_serializer("task", "summary", "manager")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("participants", "phases", "handoffs")
+    def _serialize_metadata_list(self, value: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
+
 class TaskHandoffQueueItemResponse(BaseModel):
     task_id: UUID
     task_title: str
