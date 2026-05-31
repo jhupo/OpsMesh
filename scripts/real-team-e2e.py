@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
+import warnings
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -42,6 +44,7 @@ class RealTeamE2EConfig:
 
 
 def main() -> int:
+    _configure_process_output()
     config = _config_from_env()
     if config.disable_tracing:
         set_tracing_disabled(True)
@@ -104,6 +107,15 @@ def main() -> int:
             _cleanup(session, queue, workspace, user)
         session.close()
     return exit_code
+
+
+def _configure_process_output() -> None:
+    logging.getLogger("agents").setLevel(logging.ERROR)
+    logging.getLogger("openai.agents").setLevel(logging.ERROR)
+    warnings.filterwarnings(
+        "ignore",
+        message=r"RunState context was serialized from a dataclass.*",
+    )
 
 
 def _config_from_env() -> RealTeamE2EConfig:
