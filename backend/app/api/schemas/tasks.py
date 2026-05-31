@@ -122,6 +122,25 @@ class TaskMessageResponse(TimestampedModel):
         return redact_sensitive_payload(value)
 
 
+class TaskLiveStatusResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    generated_at: datetime
+    task: dict[str, object]
+    summary: dict[str, object]
+    steps: list[dict[str, object]]
+    active_runs: list[dict[str, object]]
+    recent_messages: list[dict[str, object]]
+
+    @field_serializer("task", "summary")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("steps", "active_runs", "recent_messages")
+    def _serialize_metadata_list(self, value: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
+
 class TaskPlanningAttemptResponse(ORMModel):
     id: UUID
     workspace_id: UUID

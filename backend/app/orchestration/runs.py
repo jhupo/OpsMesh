@@ -57,6 +57,11 @@ STEP_STATUS_RUNNING = "running"
 STEP_STATUS_COMPLETED = "completed"
 STEP_STATUS_FAILED = "failed"
 STEP_STATUS_CANCELLED = "cancelled"
+TERMINAL_RUN_STATUSES = {
+    RunStatus.COMPLETED,
+    RunStatus.FAILED,
+    RunStatus.CANCELLED,
+}
 
 
 @dataclass(frozen=True)
@@ -403,6 +408,11 @@ class RunOrchestrationService:
             if not acquired:
                 raise RuntimeError("Agent run is already locked")
 
+            if self._run_cancelled_before_execution(run):
+                self._session.commit()
+                self._session.refresh(run)
+                return run
+
             self._mark_run_started(run)
             used_provider_credentials: set[UUID] = set()
             model_provider_override: dict[str, Any] | None = None
@@ -439,6 +449,11 @@ class RunOrchestrationService:
                     model_provider_override = fallback
                     fallback_selected = True
 
+            if self._run_cancelled_after_model_result(run):
+                self._session.commit()
+                self._session.refresh(run)
+                return run
+
             if fallback_selected and result.raw_output is None:
                 result = AgentRunResult(
                     final_output=result.final_output,
@@ -460,6 +475,51 @@ class RunOrchestrationService:
             self._session.commit()
             self._session.refresh(run)
             return run
+
+    def _run_cancelled_before_execution(self, run: AgentRun) -> bool:
+        self._session.refresh(run)
+        status = RunStatus(run.status)
+        if status == RunStatus.CANCELLED:
+            return True
+        if status in TERMINAL_RUN_STATUSES:
+            return False
+        if not self._linked_task_cancelled(run):
+            return False
+        self._mark_run_cancelled(run, completed_at=datetime.now(UTC))
+        self._append_event(
+            run,
+            "run.skipped_cancelled",
+            "Run was skipped because the linked task was already cancelled",
+        )
+        return True
+
+    def _run_cancelled_after_model_result(self, run: AgentRun) -> bool:
+        self._session.refresh(run)
+        status = RunStatus(run.status)
+        if status == RunStatus.CANCELLED:
+            self._append_event(
+                run,
+                "run.result_discarded_after_cancel",
+                "Model result was discarded because the run was cancelled",
+            )
+            return True
+        if status in TERMINAL_RUN_STATUSES:
+            return False
+        if not self._linked_task_cancelled(run):
+            return False
+        self._mark_run_cancelled(run, completed_at=datetime.now(UTC))
+        self._append_event(
+            run,
+            "run.result_discarded_after_cancel",
+            "Model result was discarded because the linked task was cancelled",
+        )
+        return True
+
+    def _linked_task_cancelled(self, run: AgentRun) -> bool:
+        if run.task_id is None:
+            return False
+        task = self._session.get(Task, run.task_id)
+        return task is not None and TaskStatus(task.status) == TaskStatus.CANCELLED
 
     def run_fake_agent(self, job: JobPayload) -> AgentRun:
         import asyncio

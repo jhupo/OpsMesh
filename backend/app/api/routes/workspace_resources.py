@@ -21,6 +21,7 @@ from backend.app.api.schemas.tasks import (
     TaskCreateRequest,
     TaskExecutionDiagnosticsResponse,
     TaskHandoffQueueResponse,
+    TaskLiveStatusResponse,
     TaskManagerDiagnosticsResponse,
     TaskManagerQueueResponse,
     TaskMessageResponse,
@@ -65,6 +66,7 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
 from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
+from backend.app.tasks.live_status import TaskLiveStatusService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.tasks.observation import TaskObservationService
 from backend.app.tasks.operator_actions import TaskOperatorActionService
@@ -687,6 +689,25 @@ async def list_task_messages(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get("/tasks/{task_id}/live-status", response_model=TaskLiveStatusResponse)
+async def get_task_live_status(
+    task_id: UUID,
+    after_sequence: int = Query(default=0, ge=0),
+    message_limit: int = Query(default=50, ge=1, le=200),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskLiveStatusResponse:
+    status_snapshot = TaskLiveStatusService(session).get_status(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        after_sequence=after_sequence,
+        message_limit=message_limit,
+    )
+    if status_snapshot is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskLiveStatusResponse.model_validate(status_snapshot)
 
 
 @router.get(

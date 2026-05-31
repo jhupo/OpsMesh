@@ -2971,6 +2971,101 @@ def test_task_messages_api_lists_filters_and_enforces_workspace_scope() -> None:
     assert foreign.status_code == 404
 
 
+def test_task_live_status_api_returns_active_runs_and_message_cursor() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Researcher",
+        role="researcher",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Live task",
+        status=TaskStatus.RUNNING.value,
+        priority=7,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        title="Research",
+        work_package_id="research",
+        status="running",
+        order_index=1,
+    )
+    session.add(step)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.RUNNING.value,
+        input={},
+        model="gpt-test",
+        started_at=datetime.now(UTC),
+    )
+    session.add(run)
+    session.flush()
+    session.add_all(
+        [
+            RunEvent(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                event_type="run.started",
+                sequence=1,
+                message="Started",
+                event_metadata={"api_key": "sk-hidden"},
+                created_at=datetime.now(UTC),
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=step.id,
+                agent_run_id=run.id,
+                agent_profile_id=agent.id,
+                message_type="step.started",
+                sequence=1,
+                body="Started",
+                payload={"token": "hidden"},
+            ),
+            TaskMessage(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                task_step_id=step.id,
+                agent_run_id=run.id,
+                agent_profile_id=agent.id,
+                message_type="agent.progress",
+                sequence=2,
+                body="Working",
+                payload={"progress": "drafting"},
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/live-status"
+        "?after_sequence=1&message_limit=10",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["task"]["status"] == TaskStatus.RUNNING.value
+    assert payload["summary"]["active_run_count"] == 1
+    assert payload["summary"]["latest_message_sequence"] == 2
+    assert payload["summary"]["poll_after_seconds"] == 1
+    assert payload["steps"][0]["assigned_agent"]["name"] == "Researcher"
+    assert payload["active_runs"][0]["latest_event"]["metadata"]["api_key"] == "[redacted]"
+    assert [message["sequence"] for message in payload["recent_messages"]] == [2]
+    assert payload["recent_messages"][0]["agent"]["role"] == "researcher"
+
+
 def test_run_api_redacts_sensitive_payloads() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

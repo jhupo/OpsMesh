@@ -1903,6 +1903,102 @@ def test_worker_persists_failed_run_event() -> None:
     assert failed_event is not None
 
 
+def test_worker_skips_cancelled_run_without_starting_model() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add(task)
+    session.flush()
+    run = RunOrchestrationService(session).create_queued_run_for_task(task)
+    session.commit()
+    assert run is not None
+
+    RunOrchestrationService(session).cancel_task(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        actor_user_id=user.id,
+    )
+
+    class ExplodingRunner:
+        async def run(self, request):
+            raise AssertionError("cancelled run should not call the model")
+
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        idempotency_key="cancelled-run",
+    )
+
+    WorkerJobHandler(session, agent_runner=ExplodingRunner()).handle(job)
+
+    stored_run = session.get(AgentRun, run.id)
+    event_types = session.scalars(
+        select(RunEvent.event_type)
+        .where(RunEvent.agent_run_id == run.id)
+        .order_by(RunEvent.sequence.asc())
+    ).all()
+
+    assert stored_run is not None
+    assert stored_run.status == RunStatus.CANCELLED.value
+    assert "run.started" not in event_types
+
+
+def test_worker_discards_model_result_when_run_cancelled_during_execution() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add(task)
+    session.flush()
+    run = RunOrchestrationService(session).create_queued_run_for_task(task)
+    session.commit()
+    assert run is not None
+
+    class CancellingRunner:
+        async def run(self, request):
+            RunOrchestrationService(session).cancel_run(
+                workspace_id=workspace.id,
+                run_id=request.context.run_id,
+                actor_user_id=user.id,
+            )
+            return AgentRunResult(final_output="should be discarded")
+
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        idempotency_key="cancel-during-run",
+    )
+
+    WorkerJobHandler(session, agent_runner=CancellingRunner()).handle(job)
+
+    stored_run = session.get(AgentRun, run.id)
+    stored_task = session.get(Task, task.id)
+    event_types = session.scalars(
+        select(RunEvent.event_type)
+        .where(RunEvent.agent_run_id == run.id)
+        .order_by(RunEvent.sequence.asc())
+    ).all()
+
+    assert stored_run is not None
+    assert stored_run.status == RunStatus.CANCELLED.value
+    assert stored_run.output is None
+    assert stored_task is not None
+    assert stored_task.status == TaskStatus.CANCELLED.value
+    assert "run.completed" not in event_types
+    assert "run.result_discarded_after_cancel" in event_types
+
+
 def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
