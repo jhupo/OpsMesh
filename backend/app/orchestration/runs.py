@@ -32,6 +32,7 @@ from backend.app.capabilities.models import (
 from backend.app.core.config import Settings
 from backend.app.model_providers.resolution import ModelProviderResolutionService
 from backend.app.model_providers.service import ModelProviderCredentialService
+from backend.app.operations.models import WorkerLease
 from backend.app.orchestration.scheduler import WorkspaceScheduler
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.member_matching import MemberMatchingService
@@ -230,8 +231,12 @@ class RunOrchestrationService:
                 ),
             )
         ).all()
+        worker_cancel_requests = 0
         for run in active_runs:
-            self._mark_run_cancelled(run, completed_at=completed_at)
+            worker_cancel_requests += self._mark_run_cancelled(
+                run,
+                completed_at=completed_at,
+            )
 
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
@@ -239,7 +244,11 @@ class RunOrchestrationService:
             action="task.cancelled",
             target_type="task",
             target_id=task.id,
-            metadata={"title": task.title, "cancelled_runs": len(active_runs)},
+            metadata={
+                "title": task.title,
+                "cancelled_runs": len(active_runs),
+                "worker_cancel_requests": worker_cancel_requests,
+            },
         )
         self._session.commit()
         self._session.refresh(task)
@@ -259,7 +268,7 @@ class RunOrchestrationService:
             return None
 
         completed_at = datetime.now(UTC)
-        self._mark_run_cancelled(run, completed_at=completed_at)
+        worker_cancel_requests = self._mark_run_cancelled(run, completed_at=completed_at)
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
             if task is not None and TaskStatus(task.status) not in TERMINAL_TASK_STATUSES:
@@ -275,7 +284,10 @@ class RunOrchestrationService:
             action="run.cancelled",
             target_type="agent_run",
             target_id=run.id,
-            metadata={"task_id": str(run.task_id) if run.task_id is not None else None},
+            metadata={
+                "task_id": str(run.task_id) if run.task_id is not None else None,
+                "worker_cancel_requests": worker_cancel_requests,
+            },
         )
         self._session.commit()
         self._session.refresh(run)
@@ -756,7 +768,7 @@ class RunOrchestrationService:
             if step is not None and step.workspace_id == run.workspace_id:
                 step.status = STEP_STATUS_FAILED
 
-    def _mark_run_cancelled(self, run: AgentRun, *, completed_at: datetime) -> None:
+    def _mark_run_cancelled(self, run: AgentRun, *, completed_at: datetime) -> int:
         require_run_transition(RunStatus(run.status), RunStatus.CANCELLED)
         run.status = RunStatus.CANCELLED.value
         run.error = {
@@ -765,12 +777,44 @@ class RunOrchestrationService:
             "retryable": False,
         }
         run.completed_at = completed_at
-        self._append_event(run, "run.cancelled", "Run was cancelled by a workspace user")
+        worker_cancel_requests = self._record_worker_cancel_requested(
+            run,
+            requested_at=completed_at,
+        )
+        self._append_event(
+            run,
+            "run.cancelled",
+            "Run was cancelled by a workspace user",
+            {"worker_cancel_requests": worker_cancel_requests},
+        )
         self._release_runtime_space_reservations(run, released_at=completed_at)
         if run.task_step_id is not None:
             step = self._session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
                 step.status = STEP_STATUS_CANCELLED
+        return worker_cancel_requests
+
+    def _record_worker_cancel_requested(
+        self,
+        run: AgentRun,
+        *,
+        requested_at: datetime,
+    ) -> int:
+        leases = self._session.scalars(
+            select(WorkerLease).where(
+                WorkerLease.workspace_id == run.workspace_id,
+                WorkerLease.job_type == JobType.AGENT_RUN.value,
+                WorkerLease.resource_id == run.id,
+                WorkerLease.status == "running",
+            )
+        ).all()
+        for lease in leases:
+            lease.lease_metadata = _append_worker_cancel_requested_event(
+                dict(lease.lease_metadata or {}),
+                requested_at=requested_at,
+                attempt=lease.attempt,
+            )
+        return len(leases)
 
     def _agent_result_waiting_runtime(self, result: AgentRunResult) -> bool:
         for event in result.events:
@@ -3344,3 +3388,25 @@ def _dict_list(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _append_worker_cancel_requested_event(
+    metadata: dict[str, object],
+    *,
+    requested_at: datetime,
+    attempt: int,
+) -> dict[str, object]:
+    events = metadata.get("lifecycle_events")
+    lifecycle_events = list(events) if isinstance(events, list) else []
+    event = {
+        "type": "cancel_requested",
+        "at": requested_at.isoformat(),
+        "attempt": attempt,
+        "status": "running",
+    }
+    lifecycle_events.append(event)
+    metadata["cancel_requested"] = True
+    metadata["cancel_requested_at"] = requested_at.isoformat()
+    metadata["lifecycle_events"] = lifecycle_events[-50:]
+    metadata["last_lifecycle_event"] = event
+    return metadata

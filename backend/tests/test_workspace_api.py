@@ -20,6 +20,7 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.operations.models import WorkerLease
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
@@ -3193,6 +3194,23 @@ def test_cancel_task_marks_task_and_active_run_cancelled() -> None:
         json={"title": "Cancel me"},
     )
     task_id = UUID(task_response.json()["id"])
+    run = session.scalar(select(AgentRun).where(AgentRun.task_id == task_id))
+    assert run is not None
+    session.add(
+        WorkerLease(
+            workspace_id=workspace.id,
+            worker_id="worker-cancel-task",
+            queue_name="agent_runs",
+            job_id=uuid4(),
+            job_type="agent.run",
+            resource_id=run.id,
+            status="running",
+            attempt=1,
+            lease_metadata={},
+            started_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
 
     cancelled = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/cancel",
@@ -3218,6 +3236,11 @@ def test_cancel_task_marks_task_and_active_run_cancelled() -> None:
     assert task.status == TaskStatus.CANCELLED.value
     assert run is not None
     assert run.status == RunStatus.CANCELLED.value
+    lease = session.scalar(select(WorkerLease).where(WorkerLease.resource_id == run.id))
+    assert lease is not None
+    assert lease.status == "running"
+    assert lease.lease_metadata["cancel_requested"] is True
+    assert lease.lease_metadata["last_lifecycle_event"]["type"] == "cancel_requested"
     assert "task.cancelled" in actions
 
 
@@ -3232,6 +3255,21 @@ def test_cancel_run_marks_linked_task_cancelled() -> None:
     task_id = UUID(task_response.json()["id"])
     run = session.scalar(select(AgentRun).where(AgentRun.task_id == task_id))
     assert run is not None
+    session.add(
+        WorkerLease(
+            workspace_id=workspace.id,
+            worker_id="worker-cancel-run",
+            queue_name="agent_runs",
+            job_id=uuid4(),
+            job_type="agent.run",
+            resource_id=run.id,
+            status="running",
+            attempt=1,
+            lease_metadata={},
+            started_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
 
     cancelled = client.post(
         f"/api/v1/workspaces/{workspace.id}/runs/{run.id}/cancel",
@@ -3239,10 +3277,14 @@ def test_cancel_run_marks_linked_task_cancelled() -> None:
     )
 
     task = session.get(Task, task_id)
+    lease = session.scalar(select(WorkerLease).where(WorkerLease.resource_id == run.id))
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == RunStatus.CANCELLED.value
     assert task is not None
     assert task.status == TaskStatus.CANCELLED.value
+    assert lease is not None
+    assert lease.status == "running"
+    assert lease.lease_metadata["last_lifecycle_event"]["type"] == "cancel_requested"
 
 
 def test_task_control_pause_instruction_and_resume_are_audited_and_redacted() -> None:
