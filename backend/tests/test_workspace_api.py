@@ -29,7 +29,8 @@ from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.handlers import WorkerJobHandler
+from backend.app.workers.queue import RedisQueue, consume_once
 from backend.app.workspaces.models import Workspace, WorkspaceMember, WorkspaceQuota
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 
@@ -2035,6 +2036,191 @@ def test_create_task_matches_requested_work_packages_to_team_members() -> None:
     assert by_id["frontend-build"]["assigned_agent_profile_id"] == developer.json()["id"]
 
 
+def test_api_team_task_e2e_runs_workers_and_accepts_delivery() -> None:
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+        blocking_timeout_seconds=0,
+    )
+    client, session = _client(queue=queue)
+    owner, workspace = _seed_workspace(session, role="owner")
+    manager = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "PM",
+            "role": "project_manager",
+            "instructions": "Plan, coordinate, and accept delivery.",
+            "model": "manager-model",
+        },
+    )
+    researcher = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Researcher",
+            "role": "researcher",
+            "instructions": "Collect market facts.",
+            "model": "researcher-model",
+        },
+    )
+    analyst = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Analyst",
+            "role": "analyst",
+            "instructions": "Analyze the research output.",
+            "model": "analyst-model",
+        },
+    )
+    assert manager.status_code == 201
+    assert researcher.status_code == 201
+    assert analyst.status_code == 201
+
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={
+            "name": "Market Team",
+            "team_type": "research",
+            "manager_agent_profile_id": manager.json()["id"],
+        },
+    )
+    assert team.status_code == 201
+    team_id = team.json()["id"]
+    researcher_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": researcher.json()["id"],
+            "team_role": "researcher",
+            "department": "Research",
+            "skill_weights": {"market_research": 1.0},
+            "order_index": 1,
+        },
+    )
+    analyst_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": analyst.json()["id"],
+            "team_role": "analyst",
+            "department": "Analysis",
+            "skill_weights": {"analysis": 1.0},
+            "order_index": 2,
+        },
+    )
+    assert researcher_member.status_code == 201
+    assert analyst_member.status_code == 201
+
+    org_chart = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/org-chart",
+        headers=_headers(owner.id),
+    )
+    assert org_chart.status_code == 200
+    assert org_chart.json()["manager_agent"]["id"] == manager.json()["id"]
+    assert org_chart.json()["capacity_summary"]["accepting_members"] == 2
+
+    created_task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={
+            "agent_team_id": team_id,
+            "domain_type": "market_research",
+            "title": "Q2 market analysis",
+            "description": "Produce a concise market analysis.",
+            "priority": 7,
+            "input": {
+                "work_packages": [
+                    {
+                        "package_id": "market-research",
+                        "title": "Market research",
+                        "required_role": "researcher",
+                        "required_skills": ["market_research"],
+                    },
+                    {
+                        "package_id": "market-analysis",
+                        "title": "Market analysis",
+                        "required_role": "analyst",
+                        "required_skills": ["analysis"],
+                        "depends_on": ["market-research"],
+                    },
+                ]
+            },
+        },
+    )
+    assert created_task.status_code == 201
+    task_id = UUID(created_task.json()["id"])
+    assert created_task.json()["status"] == TaskStatus.QUEUED.value
+    assert queue.count_queued(workspace_id=workspace.id) == 1
+
+    handler = WorkerJobHandler(session, queue)
+    handled_jobs = 0
+    while consume_once(queue, handler.handle):
+        handled_jobs += 1
+        assert handled_jobs < 20
+
+    session.expire_all()
+    task = session.get(Task, task_id)
+    steps = session.scalars(
+        select(TaskStep).where(TaskStep.task_id == task_id).order_by(TaskStep.order_index)
+    ).all()
+    runs = session.scalars(select(AgentRun).where(AgentRun.task_id == task_id)).all()
+    messages = session.scalars(
+        select(TaskMessage).where(TaskMessage.task_id == task_id).order_by(TaskMessage.sequence)
+    ).all()
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "task.created",
+            AuditEvent.target_id == str(task_id),
+        )
+    )
+    completed_tasks = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks?status=completed",
+        headers=_headers(owner.id),
+    )
+    timeline = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/timeline",
+        headers=_headers(owner.id),
+    )
+    observation = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/observation",
+        headers=_headers(owner.id),
+    )
+
+    assert handled_jobs == 4
+    assert queue.count_queued(workspace_id=workspace.id) == 0
+    assert task is not None
+    assert task.status == TaskStatus.COMPLETED.value
+    assert task.final_output is not None
+    assert task.final_output["pm_acceptance"]["decision"] == "approved"
+    assert [step.work_package_id for step in steps] == [
+        "manager-planning",
+        "market-research",
+        "market-analysis",
+        "manager-summary",
+    ]
+    assert {run.status for run in runs} == {RunStatus.COMPLETED.value}
+    message_types = [message.message_type for message in messages]
+    assert "planning.completed" in message_types
+    assert message_types.count("step.started") == 4
+    assert message_types.count("step.completed") == 4
+    assert message_types[-1] == "pm.acceptance_decision"
+    assert messages[-1].payload["decision"] == "approved"
+    assert audit is not None
+    assert audit.audit_metadata["initial_run_enqueued"] is True
+    assert completed_tasks.status_code == 200
+    assert completed_tasks.json()["total"] == 1
+    assert completed_tasks.json()["items"][0]["id"] == str(task_id)
+    assert timeline.status_code == 200
+    assert timeline.json()["summary"]["returned_events"] >= 1
+    assert observation.status_code == 200
+    assert observation.json()["summary"]["status"] == TaskStatus.COMPLETED.value
+
+
 def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
@@ -2264,6 +2450,7 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
         },
     )
     task_id = UUID(created_task.json()["id"])
+    initial_queue_depth = queue.count_queued(workspace_id=workspace.id)
     step = session.scalar(
         select(TaskStep).where(
             TaskStep.task_id == task_id,
@@ -2315,7 +2502,8 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
     assert attempts_response.json()["items"][0]["output_snapshot"]["regeneration"][
         "mode"
     ] == "future_only"
-    assert queue.count_queued(workspace_id=workspace.id) == 0
+    assert initial_queue_depth == 1
+    assert queue.count_queued(workspace_id=workspace.id) == initial_queue_depth
 
 
 def test_create_task_rejects_foreign_team_reference() -> None:
@@ -4247,6 +4435,9 @@ def test_retry_failed_run_creates_new_queued_run_and_enqueues_job() -> None:
     task = session.get(Task, task_id)
     assert failed_run is not None
     assert task is not None
+    claimed_initial_job = queue.dequeue()
+    assert claimed_initial_job is not None
+    assert claimed_initial_job.resource_id == failed_run.id
     failed_run.status = RunStatus.FAILED.value
     task.status = TaskStatus.FAILED.value
     session.commit()
@@ -5796,8 +5987,13 @@ def _client(queue: RedisQueue | None = None) -> tuple[TestClient, Session]:
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.dependency_overrides[get_redis_client] = lambda: redis
-    if queue is not None:
-        app.dependency_overrides[get_worker_queue] = lambda: queue
+    worker_queue = queue or RedisQueue(
+        redis=redis,
+        keys=RedisKeyBuilder(app.state.settings.redis_key_prefix),
+        queue_name=app.state.settings.worker_queue_name,
+        blocking_timeout_seconds=0,
+    )
+    app.dependency_overrides[get_worker_queue] = lambda: worker_queue
     return TestClient(app), session
 
 

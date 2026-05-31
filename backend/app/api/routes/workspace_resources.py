@@ -486,6 +486,7 @@ async def create_task(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
+    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> TaskResponse:
     resource_service = WorkspaceResourceService(session, settings)
@@ -504,6 +505,7 @@ async def create_task(
                 workspace_id=context.workspace.id,
                 created_by_user_id=context.user.user_id,
                 data=request,
+                queue=queue,
             ),
             resource_id=lambda created_task: created_task.id,
         )

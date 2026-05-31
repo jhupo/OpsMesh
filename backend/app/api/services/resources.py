@@ -352,6 +352,8 @@ class WorkspaceResourceService:
         workspace_id: UUID,
         created_by_user_id: UUID,
         data: TaskCreateRequest,
+        *,
+        queue: RedisQueue | None = None,
     ) -> Task:
         payload = data.model_dump()
         if data.runtime_space_id is not None:
@@ -377,18 +379,32 @@ class WorkspaceResourceService:
         self._session.flush()
         if task.agent_team_id is not None:
             TaskPlanningAttemptService(self._session).ensure_initial_plan(task)
+        initial_run = None
+        initial_run_enqueued = False
         if task.project_plan is not None or task.agent_team_id is None:
-            RunOrchestrationService(
+            orchestration = RunOrchestrationService(
                 self._session,
+                queue=queue,
                 settings=self._settings,
-            ).create_queued_run_for_task(task)
+            )
+            initial_run = orchestration.create_queued_run_for_task(task)
+            if initial_run is not None and queue is not None:
+                initial_run_enqueued = orchestration.enqueue_run(
+                    initial_run,
+                    created_by_user_id,
+                )
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
             user_id=created_by_user_id,
             action="task.created",
             target_type="task",
             target_id=task.id,
-            metadata={"title": task.title, "domain_type": task.domain_type},
+            metadata={
+                "title": task.title,
+                "domain_type": task.domain_type,
+                "initial_run_id": str(initial_run.id) if initial_run is not None else None,
+                "initial_run_enqueued": initial_run_enqueued,
+            },
         )
         self._session.commit()
         self._session.refresh(task)
