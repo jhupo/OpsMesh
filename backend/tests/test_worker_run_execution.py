@@ -1109,6 +1109,95 @@ def test_pm_summary_revision_decision_materializes_follow_up_steps() -> None:
     assert review_step.review_policy == {"reviewer": "user", "mode": "final_acceptance"}
 
 
+def test_pm_summary_missing_work_matches_team_member_and_queues_follow_up() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task, summary_step, manager = _seed_summary_ready_task(session, user.id, workspace.id)
+    designer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Designer",
+        role="designer",
+        instructions="Design interfaces.",
+        model="designer-model",
+    )
+    session.add(designer)
+    session.flush()
+    task.team_snapshot = {
+        "team": {"manager_agent_profile_id": str(manager.id)},
+        "members": [
+            {
+                "id": str(uuid4()),
+                "agent_profile_id": str(designer.id),
+                "team_role": "designer",
+                "skill_weights": {"ui": 1.0},
+                "accepts_tasks": True,
+            }
+        ],
+    }
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=summary_step.id,
+        agent_profile_id=manager.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    output = json.dumps(
+        {
+            "decision": "add_missing_work",
+            "summary": "Needs an extra UI pass.",
+            "missing_work_packages": [
+                {
+                    "package_id": "ui-polish",
+                    "title": "UI polish",
+                    "required_role": "designer",
+                    "required_skills": ["ui"],
+                    "instruction": "Polish the checkout screen.",
+                }
+            ],
+        }
+    )
+    orchestration = RunOrchestrationService(session)
+    orchestration._mark_run_started(run)
+    orchestration._mark_run_completed(run, output, requested_by_user_id=user.id)
+    session.flush()
+
+    session.refresh(task)
+    follow_up_step = session.scalar(
+        select(TaskStep).where(
+            TaskStep.task_id == task.id,
+            TaskStep.work_package_id == "ui-polish",
+        )
+    )
+    review_step = session.scalar(
+        select(TaskStep).where(
+            TaskStep.task_id == task.id,
+            TaskStep.work_package_id == "manager-summary-revision-1",
+        )
+    )
+    follow_up_run = session.scalar(
+        select(AgentRun).where(
+            AgentRun.task_id == task.id,
+            AgentRun.task_step_id == follow_up_step.id,
+        )
+    )
+
+    assert task.status == TaskStatus.RUNNING.value
+    assert task.final_output["pm_acceptance"]["decision"] == "add_missing_work"
+    assert follow_up_step is not None
+    assert follow_up_step.assigned_agent_profile_id == designer.id
+    assert follow_up_step.required_role == "designer"
+    assert follow_up_step.required_skills == ["ui"]
+    assert follow_up_step.description == "Polish the checkout screen."
+    assert review_step is not None
+    assert review_step.dependencies["after_step_ids"] == [str(follow_up_step.id)]
+    assert follow_up_run is not None
+    assert follow_up_run.agent_profile_id == designer.id
+
+
 def test_team_task_persists_auditable_task_messages() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)

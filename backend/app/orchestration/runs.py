@@ -2537,6 +2537,18 @@ class RunOrchestrationService:
             source_work_package_id = (
                 source_step.work_package_id if source_step is not None else "unknown"
             )
+            required_role = _optional_string(request.get("required_role")) or (
+                source_step.required_role if source_step is not None else "specialist"
+            )
+            required_skills = _string_list(request.get("required_skills")) or (
+                source_step.required_skills if source_step is not None else []
+            )
+            if assigned_agent_profile_id is None:
+                assigned_agent_profile_id = self._match_follow_up_agent(
+                    task,
+                    required_role=required_role,
+                    required_skills=required_skills,
+                )
             dependency_ids = [str(summary_step.id)]
             if source_step is not None:
                 dependency_ids.append(str(source_step.id))
@@ -2546,10 +2558,8 @@ class RunOrchestrationService:
                 runtime_space_id=task.runtime_space_id,
                 assigned_agent_profile_id=assigned_agent_profile_id,
                 work_package_id=f"revision-{source_work_package_id}-{revision_cycle}-{index}",
-                required_role=_optional_string(request.get("required_role"))
-                or (source_step.required_role if source_step is not None else "specialist"),
-                required_skills=_string_list(request.get("required_skills"))
-                or (source_step.required_skills if source_step is not None else []),
+                required_role=required_role,
+                required_skills=required_skills,
                 expected_artifacts=_string_list(request.get("expected_artifacts"))
                 or (source_step.expected_artifacts if source_step is not None else ["revision"]),
                 acceptance_criteria=_string_list(request.get("acceptance_criteria"))
@@ -2584,7 +2594,15 @@ class RunOrchestrationService:
         missing_packages = _dict_list(pm_acceptance.get("missing_work_packages"))
         steps: list[TaskStep] = []
         for index, package in enumerate(missing_packages, start=1):
-            assigned_agent_profile_id = _uuid_or_none(package.get("assigned_agent_profile_id"))
+            required_role = _optional_string(package.get("required_role")) or "specialist"
+            required_skills = _string_list(package.get("required_skills"))
+            assigned_agent_profile_id = _uuid_or_none(
+                package.get("assigned_agent_profile_id")
+            ) or self._match_follow_up_agent(
+                task,
+                required_role=required_role,
+                required_skills=required_skills,
+            )
             package_id = _string_or_default(
                 package.get("package_id"),
                 f"missing-work-{revision_cycle}-{index}",
@@ -2595,8 +2613,8 @@ class RunOrchestrationService:
                 runtime_space_id=task.runtime_space_id,
                 assigned_agent_profile_id=assigned_agent_profile_id,
                 work_package_id=package_id,
-                required_role=_optional_string(package.get("required_role")) or "specialist",
-                required_skills=_string_list(package.get("required_skills")),
+                required_role=required_role,
+                required_skills=required_skills,
                 expected_artifacts=_string_list(package.get("expected_artifacts"))
                 or ["work_summary"],
                 acceptance_criteria=_string_list(package.get("acceptance_criteria"))
@@ -2618,6 +2636,22 @@ class RunOrchestrationService:
             self._session.add(step)
             steps.append(step)
         return steps
+
+    def _match_follow_up_agent(
+        self,
+        task: Task,
+        *,
+        required_role: str,
+        required_skills: list[str],
+    ) -> UUID | None:
+        team_snapshot = task.team_snapshot if isinstance(task.team_snapshot, dict) else {}
+        match = MemberMatchingService(self._session).match(
+            team_snapshot=team_snapshot,
+            required_role=required_role,
+            required_skills=required_skills,
+            workspace_id=task.workspace_id,
+        )
+        return match.agent_profile_id if match is not None else None
 
     def _create_follow_up_pm_review_step(
         self,
