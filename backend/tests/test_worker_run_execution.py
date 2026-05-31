@@ -349,7 +349,12 @@ def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> N
     assert all(run.status == RunStatus.COMPLETED.value for run in runs)
     assert task.final_output is not None
     assert task.final_output["final_output"] == "fake_run_completed"
-    assert [message.message_type for message in messages[:-1]] == [
+    message_types = [message.message_type for message in messages]
+    assert "planning.completed" in message_types
+    step_messages = [
+        message for message in messages if message.message_type.startswith("step.")
+    ]
+    assert [message.message_type for message in step_messages] == [
         "step.started",
         "step.completed",
         "step.started",

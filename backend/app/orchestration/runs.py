@@ -439,6 +439,12 @@ class RunOrchestrationService:
                     model_provider_override = fallback
                     fallback_selected = True
 
+            if fallback_selected and result.raw_output is None:
+                result = AgentRunResult(
+                    final_output=result.final_output,
+                    raw_output={"model": request.model},
+                    events=result.events,
+                )
             self._record_model_provider_success(run, request.model_provider_credential_id)
             self._append_model_provider_used_event(run, request)
             self._audit_model_provider_used(run, request, job, fallback_selected=fallback_selected)
@@ -494,9 +500,10 @@ class RunOrchestrationService:
     def _mark_run_completed(
         self,
         run: AgentRun,
-        result: AgentRunResult,
+        result: AgentRunResult | str,
         requested_by_user_id: UUID | None,
     ) -> None:
+        result = _coerce_agent_run_result(result)
         require_run_transition(RunStatus(run.status), RunStatus.COMPLETED)
         final_output = result.final_output
         run.status = RunStatus.COMPLETED.value
@@ -3108,6 +3115,13 @@ def _run_output_payload(result: AgentRunResult) -> dict[str, object]:
     if result.raw_output is not None:
         payload["raw_output"] = _json_safe_object(result.raw_output)
     return payload
+
+
+def _coerce_agent_run_result(result: AgentRunResult | str) -> AgentRunResult:
+    if isinstance(result, AgentRunResult):
+        return result
+    raw_output = _json_object_from_text(result)
+    return AgentRunResult(final_output=result, raw_output=raw_output)
 
 
 def _json_safe_object(value: object) -> object:
