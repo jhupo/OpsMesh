@@ -99,3 +99,26 @@ class WorkspaceReservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
     released_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+
+class WorkspaceHealthSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "workspace_health_snapshots"
+    __table_args__ = (
+        Index("ix_workspace_health_snapshots_workspace_created", "workspace_id", "created_at"),
+        Index("ix_workspace_health_snapshots_workspace_status", "workspace_id", "status"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    summary: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    risk_items: Mapped[list[dict[str, object]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+    recommended_actions: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    trend_basis: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)

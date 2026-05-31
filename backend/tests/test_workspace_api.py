@@ -7181,8 +7181,20 @@ def test_workspace_health_reports_operational_risks_and_redacts() -> None:
         f"/api/v1/workspaces/{workspace.id}/health",
         headers=_headers(owner.id),
     )
+    snapshot = client.post(
+        f"/api/v1/workspaces/{workspace.id}/health/snapshots",
+        headers=_headers(owner.id),
+    )
+    snapshots = client.get(
+        f"/api/v1/workspaces/{workspace.id}/health/snapshots",
+        headers=_headers(owner.id),
+    )
     forbidden = client.get(
         f"/api/v1/workspaces/{workspace.id}/health",
+        headers=_headers(other_owner.id),
+    )
+    forbidden_snapshot = client.post(
+        f"/api/v1/workspaces/{workspace.id}/health/snapshots",
         headers=_headers(other_owner.id),
     )
 
@@ -7216,9 +7228,20 @@ def test_workspace_health_reports_operational_risks_and_redacts() -> None:
         "inspect_control_diagnostics",
     ]
     assert body["trend_basis"]["mode"] == "snapshot"
+    assert snapshot.status_code == 201
+    snapshot_body = snapshot.json()
+    assert snapshot_body["workspace_id"] == str(workspace.id)
+    assert snapshot_body["status"] == "degraded"
+    assert snapshot_body["score"] == 56
+    assert snapshot_body["trend_basis"]["mode"] == "persisted_snapshot"
+    assert snapshots.status_code == 200
+    assert snapshots.json()["total"] == 1
+    assert snapshots.json()["items"][0]["id"] == snapshot_body["id"]
+    assert snapshots.json()["items"][0]["summary"]["task_count"] == 3
     assert forbidden.status_code == 403
+    assert forbidden_snapshot.status_code == 403
 
-    serialized = str(body)
+    serialized = str(body) + str(snapshot_body) + str(snapshots.json())
     assert "sk-health-task" not in serialized
     assert "health-final-token" not in serialized
     assert "health-step-token" not in serialized

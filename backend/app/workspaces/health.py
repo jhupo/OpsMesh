@@ -12,6 +12,7 @@ from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam
+from backend.app.workspaces.models import WorkspaceHealthSnapshot
 
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,
@@ -69,9 +70,50 @@ class WorkspaceHealthService:
             "recommended_actions": _recommended_actions(risks),
             "trend_basis": {
                 "mode": "snapshot",
-                "message": "Historical trend storage is not enabled for this workspace yet.",
+                "message": "Use health snapshots to persist and compare this score over time.",
             },
         }
+
+    def record_snapshot(self, workspace_id: UUID) -> WorkspaceHealthSnapshot:
+        health = self.get_health(workspace_id)
+        snapshot = WorkspaceHealthSnapshot(
+            workspace_id=workspace_id,
+            status=str(health["status"]),
+            score=int(health["score"]),
+            summary=_dict(health.get("summary")),
+            risk_items=_dict_list(health.get("risk_items")),
+            recommended_actions=_string_list(health.get("recommended_actions")),
+            trend_basis={
+                **_dict(health.get("trend_basis")),
+                "mode": "persisted_snapshot",
+            },
+        )
+        self._session.add(snapshot)
+        self._session.commit()
+        self._session.refresh(snapshot)
+        return snapshot
+
+    def list_snapshots(
+        self,
+        workspace_id: UUID,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[WorkspaceHealthSnapshot], int]:
+        statement = (
+            select(WorkspaceHealthSnapshot)
+            .where(WorkspaceHealthSnapshot.workspace_id == workspace_id)
+            .order_by(WorkspaceHealthSnapshot.created_at.desc(), WorkspaceHealthSnapshot.id.desc())
+        )
+        total = len(
+            self._session.scalars(
+                select(WorkspaceHealthSnapshot.id).where(
+                    WorkspaceHealthSnapshot.workspace_id == workspace_id
+                )
+            ).all()
+        )
+        items = list(self._session.scalars(statement.limit(limit).offset(offset)).all())
+        return items, total
 
     def _team_count(self, workspace_id: UUID) -> int:
         teams = self._session.scalars(
@@ -307,3 +349,19 @@ def _counts(values: object) -> dict[str, int]:
 
 def _int(value: object) -> int:
     return value if isinstance(value, int) else 0
+
+
+def _dict(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
+
+
+def _dict_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]

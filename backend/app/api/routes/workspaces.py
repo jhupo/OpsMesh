@@ -15,6 +15,7 @@ from backend.app.api.schemas.workspaces import (
     WorkspaceCreateRequest,
     WorkspaceExecutionSlotSummaryResponse,
     WorkspaceHealthResponse,
+    WorkspaceHealthSnapshotResponse,
     WorkspaceMemberResponse,
     WorkspaceQuotaResponse,
     WorkspaceQuotaUpsertRequest,
@@ -98,6 +99,41 @@ async def get_workspace_health(
 ) -> WorkspaceHealthResponse:
     health = WorkspaceHealthService(session).get_health(context.workspace.id)
     return WorkspaceHealthResponse.model_validate(health)
+
+
+@router.post(
+    "/{workspace_id}/health/snapshots",
+    response_model=WorkspaceHealthSnapshotResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def record_workspace_health_snapshot(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceHealthSnapshotResponse:
+    snapshot = WorkspaceHealthService(session).record_snapshot(context.workspace.id)
+    return WorkspaceHealthSnapshotResponse.model_validate(snapshot)
+
+
+@router.get(
+    "/{workspace_id}/health/snapshots",
+    response_model=PageResponse[WorkspaceHealthSnapshotResponse],
+)
+async def list_workspace_health_snapshots(
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[WorkspaceHealthSnapshotResponse]:
+    items, total = WorkspaceHealthService(session).list_snapshots(
+        context.workspace.id,
+        limit=page.limit,
+        offset=page.offset,
+    )
+    return PageResponse(
+        items=[WorkspaceHealthSnapshotResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 @router.patch("/{workspace_id}", response_model=WorkspaceResponse)
