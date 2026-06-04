@@ -8,7 +8,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from backend.app.core.resources import recommend_runtime_resources
 
 LogFormat = Literal["json", "text"]
-AgentRunnerBackend = Literal["fake", "openai"]
 _RESOURCE_RECOMMENDATION = recommend_runtime_resources()
 
 
@@ -54,7 +53,6 @@ class Settings(BaseSettings):
     token_hash_pepper: str = Field(default="change-me-token-pepper")
     storage_root: str = Field(default=".chaincloud-storage")
     max_upload_bytes: int = Field(default=10 * 1024 * 1024)
-    agent_runner_backend: AgentRunnerBackend = Field(default="fake")
     api_rate_limit_enabled: bool = Field(default=False)
     api_rate_limit_requests: int = Field(default=600, ge=1)
     api_rate_limit_window_seconds: int = Field(default=60, ge=1)
@@ -78,8 +76,6 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET must be set in production"
                 )
-            if self.agent_runner_backend == "fake":
-                raise ValueError("CHAINCLOUD_AGENT_RUNNER_BACKEND must not be fake in production")
             if "localhost" in self.database_url or "chaincloud:chaincloud" in self.database_url:
                 raise ValueError("CHAINCLOUD_DATABASE_URL must not use local default credentials")
             if self.redis_url == "redis://localhost:6379/0":
@@ -113,7 +109,6 @@ class Settings(BaseSettings):
             "redis_max_connections": self.redis_max_connections,
             "worker_queue_name": self.worker_queue_name,
             "blocking_thread_pool_workers": self.blocking_thread_pool_workers,
-            "agent_runner_backend": self.agent_runner_backend,
             "api_rate_limit_enabled": self.api_rate_limit_enabled,
             "storage_root": self.storage_root,
             "cors_origins_count": len(self.cors_origins),

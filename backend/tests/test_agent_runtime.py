@@ -3,16 +3,20 @@ from uuid import uuid4
 
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
+    AgentRunResult,
     AgentRuntimeContext,
     AgentRuntimeToolContinuation,
     AgentRuntimeToolResult,
 )
 from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.factory import build_agent_runner
-from backend.app.agent_runtime.fake import FakeAgentRunner
 from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
 from backend.app.agents.models import AgentProfile
-from backend.app.core.config import Settings
+
+
+class DeterministicTestRunner:
+    async def run(self, request: AgentRunRequest) -> AgentRunResult:
+        return AgentRunResult(final_output="deterministic_test_run_completed")
 
 
 def test_openai_agents_runner_builds_agent_from_profile() -> None:
@@ -146,7 +150,7 @@ def test_openai_agents_runner_renders_tool_continuations_at_runtime_boundary() -
     assert '"code": "timeout"' in rendered
 
 
-def test_fake_agent_runner_returns_deterministic_output() -> None:
+def test_deterministic_test_runner_returns_deterministic_output() -> None:
     profile = AgentProfile(
         workspace_id=uuid4(),
         name="Fake",
@@ -163,20 +167,13 @@ def test_fake_agent_runner_returns_deterministic_output() -> None:
         ),
     )
 
-    result = asyncio.run(FakeAgentRunner().run(request))
+    result = asyncio.run(DeterministicTestRunner().run(request))
 
-    assert result.final_output == "fake_run_completed"
+    assert result.final_output == "deterministic_test_run_completed"
 
 
-def test_agent_runner_factory_respects_settings_backend() -> None:
-    assert isinstance(
-        build_agent_runner(Settings(environment="test", agent_runner_backend="fake")),
-        FakeAgentRunner,
-    )
-    assert isinstance(
-        build_agent_runner(Settings(environment="test", agent_runner_backend="openai")),
-        OpenAIAgentsRunner,
-    )
+def test_agent_runner_factory_builds_real_runner() -> None:
+    assert isinstance(build_agent_runner(), OpenAIAgentsRunner)
 
 
 def test_openai_agents_runner_raw_output_is_json_safe() -> None:

@@ -20,6 +20,9 @@ from backend.app.api.schemas.audit import AuditEventResponse
 from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
 from backend.app.api.schemas.tasks import (
+    TaskCollaborationRecoveryApplyRequest,
+    TaskCollaborationRecoveryApplyResponse,
+    TaskCollaborationRecoveryPlanResponse,
     TaskCollaborationStateResponse,
     TaskControlActionRequest,
     TaskControlActionResponse,
@@ -80,6 +83,7 @@ from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.diagnostics import ProjectPlanDiagnosticsService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.tasks.collaboration_recovery import TaskCollaborationRecoveryService
 from backend.app.tasks.collaboration_state import TaskCollaborationStateService
 from backend.app.tasks.control import TaskControlService
 from backend.app.tasks.control_diagnostics import TaskControlDiagnosticsService
@@ -1237,6 +1241,52 @@ async def get_task_collaboration_state(
     if state_payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskCollaborationStateResponse.model_validate(state_payload)
+
+
+@router.get(
+    "/tasks/{task_id}/collaboration-recovery-plan",
+    response_model=TaskCollaborationRecoveryPlanResponse,
+)
+async def get_task_collaboration_recovery_plan(
+    task_id: UUID,
+    max_actions: int = Query(default=10, ge=1, le=50),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskCollaborationRecoveryPlanResponse:
+    recovery_plan = TaskCollaborationRecoveryService(session).get_plan(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        max_actions=max_actions,
+    )
+    if recovery_plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskCollaborationRecoveryPlanResponse.model_validate(recovery_plan)
+
+
+@router.post(
+    "/tasks/{task_id}/collaboration-recovery-plan/apply",
+    response_model=TaskCollaborationRecoveryApplyResponse,
+)
+async def apply_task_collaboration_recovery_plan(
+    task_id: UUID,
+    request: TaskCollaborationRecoveryApplyRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> TaskCollaborationRecoveryApplyResponse:
+    response = TaskCollaborationRecoveryService(session).apply_plan(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        actor_user_id=context.user.user_id,
+        dry_run=request.dry_run,
+        actions=request.actions or None,
+        sources=request.sources or None,
+        max_actions=request.max_actions,
+        reason=request.reason,
+        metadata=request.metadata,
+    )
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskCollaborationRecoveryApplyResponse.model_validate(response)
 
 
 @router.get("/runs", response_model=PageResponse[AgentRunResponse])

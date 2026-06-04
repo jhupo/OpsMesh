@@ -12,6 +12,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
@@ -36,6 +37,11 @@ from backend.app.workspaces.models import Workspace, WorkspaceMember, WorkspaceQ
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 TOKEN = "test-token"
+
+
+class DeterministicAgentRunner:
+    async def run(self, request: AgentRunRequest) -> AgentRunResult:
+        return AgentRunResult(final_output="deterministic_run_completed")
 
 
 @pytest.mark.parametrize(
@@ -2525,7 +2531,7 @@ def test_api_team_task_e2e_runs_workers_and_accepts_delivery() -> None:
     assert created_task.json()["status"] == TaskStatus.QUEUED.value
     assert queue.count_queued(workspace_id=workspace.id) == 1
 
-    handler = WorkerJobHandler(session, queue)
+    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
     handled_jobs = 0
     while consume_once(queue, handler.handle):
         handled_jobs += 1
@@ -5117,6 +5123,162 @@ def test_task_collaboration_state_rolls_up_handoff_and_manager_protocol() -> Non
     assert foreign_response.status_code == 404
 
 
+def test_task_collaboration_recovery_plan_dry_run_and_apply_selected_actions() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-collaboration-recovery@example.com",
+        slug="other-collaboration-recovery",
+    )
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="PM",
+        role="project_manager",
+    )
+    developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+    )
+    session.add_all([manager, developer])
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Recover collaboration",
+        status="running",
+        team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},
+        project_plan={"planner_agent_profile_id": str(manager.id), "api_key": "sk-plan"},
+    )
+    session.add(task)
+    session.flush()
+    planning_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=manager.id,
+        work_package_id="manager-planning",
+        required_role="project_manager",
+        title="Plan work",
+        status="completed",
+        order_index=10,
+    )
+    session.add(planning_step)
+    session.flush()
+    source_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=developer.id,
+        work_package_id="design",
+        required_role="developer",
+        title="Design feature",
+        status="completed",
+        order_index=20,
+        dependencies={"after_step_ids": [str(planning_step.id)], "token": "hidden-design"},
+        result_summary="Design ready",
+    )
+    session.add(source_step)
+    session.flush()
+    downstream_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=developer.id,
+        work_package_id="build",
+        required_role="developer",
+        title="Build feature",
+        status="queued",
+        order_index=30,
+        dependencies={"after_step_ids": [str(source_step.id)], "headers": "Bearer hidden"},
+    )
+    manager_summary = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=manager.id,
+        work_package_id="manager-summary",
+        required_role="project_manager",
+        title="Review delivery",
+        status="queued",
+        order_index=40,
+        dependencies={"after_step_ids": [str(downstream_step.id)]},
+    )
+    session.add_all([downstream_step, manager_summary])
+    session.commit()
+
+    plan_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/collaboration-recovery-plan",
+        headers=_headers(owner.id),
+    )
+    dry_run_response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/collaboration-recovery-plan/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": True,
+            "actions": ["schedule_downstream_steps"],
+            "sources": ["handoff"],
+            "metadata": {"api_key": "sk-dry-run"},
+        },
+    )
+    apply_response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/collaboration-recovery-plan/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": False,
+            "actions": ["schedule_downstream_steps"],
+            "sources": ["handoff"],
+            "reason": "Recover ready handoff",
+            "metadata": {"api_key": "sk-apply"},
+        },
+    )
+    foreign_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks/{task.id}/collaboration-recovery-plan",
+        headers=_headers(other_owner.id),
+    )
+
+    assert plan_response.status_code == 200
+    body = plan_response.json()
+    assert body["status"] == "actionable"
+    actions = {item["action"]: item for item in body["action_plan"]}
+    assert actions["schedule_downstream_steps"]["source"] == "handoff"
+    assert actions["schedule_downstream_steps"]["task_step_ids"] == [str(source_step.id)]
+    assert actions["request_manager_review"]["source"] == "manager"
+    assert body["summary"]["action_counts"] == {
+        "request_manager_review": 1,
+        "schedule_downstream_steps": 1,
+    }
+
+    assert dry_run_response.status_code == 200
+    dry_body = dry_run_response.json()
+    assert dry_body["status"] == "dry_run"
+    assert dry_body["eligible_action_count"] == 1
+    assert dry_body["applied_action_count"] == 0
+    assert dry_body["results"][0]["status"] == "would_apply"
+
+    assert apply_response.status_code == 200
+    apply_body = apply_response.json()
+    assert apply_body["status"] == "applied"
+    assert apply_body["eligible_action_count"] == 1
+    assert apply_body["applied_action_count"] == 1
+    assert apply_body["results"][0]["response"]["changed_step_ids"] == [str(downstream_step.id)]
+    session.refresh(downstream_step)
+    assert downstream_step.status == "queued"
+    audit_actions = {
+        item[0]
+        for item in session.execute(
+            select(AuditEvent.action).where(AuditEvent.workspace_id == workspace.id)
+        )
+    }
+    assert "task.operator.schedule_downstream_steps" in audit_actions
+    assert "task.collaboration_recovery.actions_applied" in audit_actions
+    assert foreign_response.status_code == 404
+    serialized = f"{body} {dry_body} {apply_body}"
+    assert "sk-plan" not in serialized
+    assert "hidden-design" not in serialized
+    assert "Bearer hidden" not in serialized
+    assert "sk-dry-run" not in serialized
+    assert "sk-apply" not in serialized
+
+
 def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
@@ -6931,7 +7093,7 @@ def test_task_delivery_decision_approves_or_requests_follow_up_and_redacts() -> 
     acceptance_messages = session.scalars(
         select(TaskMessage)
         .where(TaskMessage.task_id.in_([approved_task.id, follow_up_task.id]))
-        .order_by(TaskMessage.sequence.asc())
+        .order_by(TaskMessage.task_id.asc(), TaskMessage.sequence.asc())
     ).all()
     audit_actions = {
         event.action
@@ -6946,13 +7108,18 @@ def test_task_delivery_decision_approves_or_requests_follow_up_and_redacts() -> 
     assert stored_follow_up.status == TaskStatus.BLOCKED.value
     assert created_step is not None
     assert created_step.dependencies["correction"]["metadata"]["decision"] == "request_changes"
-    assert [message.message_type for message in acceptance_messages] == [
-        "pm.acceptance_decision",
-        "pm.acceptance_decision",
-        "task.correction.created",
-    ]
-    assert acceptance_messages[0].payload["decision"] == "approved"
-    assert acceptance_messages[1].payload["decision"] == "request_revision"
+    message_types = [message.message_type for message in acceptance_messages]
+    assert message_types.count("pm.acceptance_decision") == 2
+    assert message_types.count("task.correction.created") == 1
+    acceptance_decisions = {
+        message.task_id: message.payload["decision"]
+        for message in acceptance_messages
+        if message.message_type == "pm.acceptance_decision"
+    }
+    assert acceptance_decisions == {
+        approved_task.id: "approved",
+        follow_up_task.id: "request_revision",
+    }
     assert {
         "task.delivery.approved",
         "task.delivery.request_changes",

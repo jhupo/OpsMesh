@@ -663,6 +663,58 @@ class TaskCollaborationStateResponse(BaseModel):
         return [redact_sensitive_payload(item) for item in value]
 
 
+class TaskCollaborationRecoveryPlanResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    generated_at: datetime
+    status: str
+    summary: dict[str, object]
+    collaboration: dict[str, object]
+    action_plan: list[dict[str, object]]
+    skipped: list[dict[str, object]]
+
+    @field_serializer("summary", "collaboration")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("action_plan", "skipped")
+    def _serialize_metadata_list(self, value: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
+
+class TaskCollaborationRecoveryApplyRequest(BaseModel):
+    dry_run: bool = True
+    actions: list[str] = Field(default_factory=list, max_length=10)
+    sources: list[str] = Field(default_factory=list, max_length=10)
+    max_actions: int = Field(default=10, ge=1, le=50)
+    reason: str | None = Field(default=None, max_length=1_000)
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class TaskCollaborationRecoveryApplyResponse(BaseModel):
+    workspace_id: UUID
+    task_id: UUID
+    generated_at: datetime
+    dry_run: bool
+    status: str
+    requested_action_count: int
+    eligible_action_count: int
+    applied_action_count: int
+    failed_action_count: int
+    skipped_action_count: int
+    summary: dict[str, object]
+    results: list[dict[str, object]]
+    skipped: list[dict[str, object]]
+
+    @field_serializer("summary")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("results", "skipped")
+    def _serialize_metadata_list(self, value: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [redact_sensitive_payload(item) for item in value]
+
+
 class TaskHandoffQueueItemResponse(BaseModel):
     task_id: UUID
     task_title: str

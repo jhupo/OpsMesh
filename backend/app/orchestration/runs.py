@@ -18,7 +18,7 @@ from backend.app.agent_runtime.contracts import (
 )
 from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.event_mapping import RuntimeEventTaskMessageMapper
-from backend.app.agent_runtime.fake import FakeAgentRunner
+from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
 from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.models import AgentProfile
 from backend.app.audit.service import AuditService
@@ -91,7 +91,7 @@ class RunOrchestrationService:
     ) -> None:
         self._session = session
         self._queue = queue
-        self._agent_runner = agent_runner or FakeAgentRunner()
+        self._agent_runner = agent_runner or OpenAIAgentsRunner()
         self._settings = settings
 
     def create_queued_run_for_task(self, task: Task) -> AgentRun | None:
@@ -602,7 +602,7 @@ class RunOrchestrationService:
         task = self._session.get(Task, run.task_id)
         return task is not None and TaskStatus(task.status) == TaskStatus.CANCELLED
 
-    def run_fake_agent(self, job: JobPayload) -> AgentRun:
+    def run_agent_sync(self, job: JobPayload) -> AgentRun:
         import asyncio
 
         return asyncio.run(self.run_agent(job))

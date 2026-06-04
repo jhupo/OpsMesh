@@ -89,17 +89,9 @@ The Docker entrypoint runs migrations by default. Set `CHAINCLOUD_RUN_MIGRATIONS
 
 ## OpenAI Agents Runner
 
-The deployment defaults to the deterministic fake runner:
-
-```bash
-CHAINCLOUD_AGENT_RUNNER_BACKEND=fake
-```
-
-Use the OpenAI Agents SDK runner after configuring provider credentials:
-
-```bash
-CHAINCLOUD_AGENT_RUNNER_BACKEND=openai
-```
+Deployments always use the OpenAI Agents SDK runner. Unit tests may inject a
+deterministic test runner directly, but deployed API and worker processes should
+not be switched into simulated execution by environment configuration.
 
 Model provider keys should be stored through the workspace API, not raw environment
 variables:

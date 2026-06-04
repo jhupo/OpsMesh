@@ -23,7 +23,7 @@ from backend.app.identity.models import User
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.redis.client import redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runs.models import AgentRun
+from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
@@ -332,11 +332,28 @@ def _summary(
     runs = session.scalars(
         select(AgentRun).where(AgentRun.task_id == task.id).order_by(AgentRun.created_at.asc())
     ).all()
+    run_ids = [run.id for run in runs]
+    events = (
+        session.scalars(
+            select(RunEvent)
+            .where(RunEvent.agent_run_id.in_(run_ids))
+            .order_by(RunEvent.agent_run_id.asc(), RunEvent.sequence.asc())
+        ).all()
+        if run_ids
+        else []
+    )
     messages = session.scalars(
         select(TaskMessage)
         .where(TaskMessage.task_id == task.id)
         .order_by(TaskMessage.sequence.asc())
     ).all()
+    agents = session.scalars(
+        select(AgentProfile).where(AgentProfile.workspace_id == workspace.id)
+    ).all()
+    agent_names = {agent.id: agent.name for agent in agents}
+    events_by_run: dict[object, list[RunEvent]] = {}
+    for event in events:
+        events_by_run.setdefault(event.agent_run_id, []).append(event)
     dead_letters = queue.count_dead_letters(workspace_id=workspace.id)
     queued_jobs = queue.count_queued(workspace_id=workspace.id)
     completed = stored_task.status == "completed"
@@ -348,24 +365,69 @@ def _summary(
         "handled_jobs": len(runs),
         "queued_jobs_remaining": queued_jobs,
         "dead_letters": dead_letters,
-        "step_statuses": [
+        "task_breakdown": [
             {
                 "work_package_id": step.work_package_id,
+                "title": step.title,
+                "required_role": step.required_role,
+                "required_skills": step.required_skills,
                 "status": step.status,
+                "assigned_agent": agent_names.get(step.assigned_agent_profile_id),
                 "agent_profile_id": str(step.assigned_agent_profile_id)
                 if step.assigned_agent_profile_id
                 else None,
+                "result_summary": _truncate(step.result_summary),
             }
             for step in steps
         ],
-        "run_statuses": [run.status for run in runs],
-        "message_types": [message.message_type for message in messages],
+        "runs": [
+            {
+                "run_id": str(run.id),
+                "status": run.status,
+                "model": run.model,
+                "agent": agent_names.get(run.agent_profile_id),
+                "agent_profile_id": str(run.agent_profile_id) if run.agent_profile_id else None,
+                "task_step_id": str(run.task_step_id) if run.task_step_id else None,
+                "lifecycle_events": [
+                    {
+                        "sequence": event.sequence,
+                        "type": event.event_type,
+                        "message": _truncate(event.message),
+                    }
+                    for event in events_by_run.get(run.id, [])
+                ],
+                "final_output": _truncate(
+                    run.output.get("final_output")
+                    if isinstance(run.output, dict)
+                    else None
+                ),
+            }
+            for run in runs
+        ],
+        "task_messages": [
+            {
+                "sequence": message.sequence,
+                "type": message.message_type,
+                "agent": agent_names.get(message.agent_profile_id),
+                "body": _truncate(message.body),
+            }
+            for message in messages
+        ],
         "pm_acceptance": (
             stored_task.final_output.get("pm_acceptance")
             if isinstance(stored_task.final_output, dict)
             else None
         ),
     }
+
+
+def _truncate(value: object, *, limit: int = 240) -> str | None:
+    if value is None:
+        return None
+    text = str(value).replace("\n", " ").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3]}..."
 
 
 def _cleanup(

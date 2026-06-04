@@ -42,7 +42,7 @@ class WorkerJobHandler:
                     self._queue,
                     self._agent_runner,
                     self._settings,
-                ).run_fake_agent(job)
+                ).run_agent_sync(job)
             case JobType.MCP_TOOL_EXECUTION:
                 self._handle_mcp_tool_execution(job)
             case JobType.WORKSPACE_ARCHIVE_EXPORT:

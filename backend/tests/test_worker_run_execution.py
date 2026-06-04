@@ -46,7 +46,12 @@ from backend.app.workers.queue import RedisQueue, consume_once
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 
-def test_task_start_creates_queued_run_and_worker_completes_fake_run() -> None:
+class DeterministicAgentRunner:
+    async def run(self, request: AgentRunRequest) -> AgentRunResult:
+        return AgentRunResult(final_output="deterministic_run_completed")
+
+
+def test_task_start_creates_queued_run_and_worker_completes_injected_runner() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
@@ -72,7 +77,10 @@ def test_task_start_creates_queued_run_and_worker_completes_fake_run() -> None:
     assert task.status == TaskStatus.QUEUED.value
     assert run.status == RunStatus.QUEUED.value
 
-    handled = consume_once(queue, WorkerJobHandler(session, queue).handle)
+    handled = consume_once(
+        queue,
+        WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner()).handle,
+    )
 
     stored_run = session.get(AgentRun, run.id)
     stored_task = session.get(Task, task.id)
@@ -83,7 +91,7 @@ def test_task_start_creates_queued_run_and_worker_completes_fake_run() -> None:
     assert handled is True
     assert stored_run is not None
     assert stored_run.status == RunStatus.COMPLETED.value
-    assert stored_run.output == {"final_output": "fake_run_completed"}
+    assert stored_run.output == {"final_output": "deterministic_run_completed"}
     assert stored_task is not None
     assert stored_task.status == TaskStatus.COMPLETED.value
     assert [event.event_type for event in events] == [
@@ -181,7 +189,7 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
     orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
     session.commit()
 
-    handler = WorkerJobHandler(session, queue)
+    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
     handled_jobs = 0
     while consume_once(queue, handler.handle):
         handled_jobs += 1
@@ -207,7 +215,7 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
     assert steps[3].expected_artifacts == ["final_delivery"]
     assert steps[3].review_policy == {"reviewer": "user", "mode": "final_acceptance"}
     assert [step.status for step in steps] == ["completed"] * 4
-    assert [step.result_summary for step in steps] == ["fake_run_completed"] * 4
+    assert [step.result_summary for step in steps] == ["deterministic_run_completed"] * 4
     assert [run.agent_profile_id for run in ordered_runs] == [
         manager.id,
         researcher.id,
@@ -223,7 +231,7 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
     assert [run.status for run in ordered_runs] == [RunStatus.COMPLETED.value] * 4
     assert task.status == TaskStatus.COMPLETED.value
     assert task.final_output is not None
-    assert task.final_output["final_output"] == "fake_run_completed"
+    assert task.final_output["final_output"] == "deterministic_run_completed"
     assert task.final_output["team_orchestration"] == {
         "steps": [
                 {
@@ -233,7 +241,7 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
                     "work_package_id": step.work_package_id,
                     "required_role": step.required_role,
                     "agent_profile_id": str(step.assigned_agent_profile_id),
-                    "result_summary": "fake_run_completed",
+                    "result_summary": "deterministic_run_completed",
                 }
             for step in steps
         ]
@@ -334,7 +342,7 @@ def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> N
     orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
     session.commit()
 
-    handler = WorkerJobHandler(session, queue)
+    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
     handled = 0
     while consume_once(queue, handler.handle):
         handled += 1
@@ -365,7 +373,7 @@ def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> N
     assert all(run.runtime_space_id == runtime_space.id for run in runs)
     assert all(run.status == RunStatus.COMPLETED.value for run in runs)
     assert task.final_output is not None
-    assert task.final_output["final_output"] == "fake_run_completed"
+    assert task.final_output["final_output"] == "deterministic_run_completed"
     message_types = [message.message_type for message in messages]
     assert "planning.completed" in message_types
     step_messages = [
@@ -696,7 +704,7 @@ def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
     orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
     session.commit()
 
-    handler = WorkerJobHandler(session, queue)
+    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
     assert consume_once(queue, handler.handle) is True
     assert queue.count_queued(workspace_id=workspace.id) == 2
 
@@ -794,7 +802,7 @@ def test_workspace_run_quota_limits_parallel_specialist_scheduling() -> None:
     orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
     session.commit()
 
-    handler = WorkerJobHandler(session, queue)
+    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
     assert consume_once(queue, handler.handle) is True
     session.expire_all()
 
@@ -1814,7 +1822,7 @@ def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
     orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
     session.commit()
 
-    handler = WorkerJobHandler(session, queue)
+    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
     while consume_once(queue, handler.handle):
         pass
 
@@ -2019,6 +2027,45 @@ def test_worker_persists_failed_run_event() -> None:
         "retryable": True,
     }
     assert failed_event is not None
+
+
+def test_worker_flushes_running_status_before_model_call() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add(task)
+    session.flush()
+    run = RunOrchestrationService(session).create_queued_run_for_task(task)
+    session.commit()
+
+    observed_statuses: list[str] = []
+
+    class RefreshingRunner:
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            stored_run = session.get(AgentRun, request.context.run_id)
+            assert stored_run is not None
+            session.refresh(stored_run)
+            observed_statuses.append(stored_run.status)
+            return AgentRunResult(final_output="refreshed_status_completed")
+
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        idempotency_key="flush-running-before-model",
+    )
+
+    WorkerJobHandler(session, agent_runner=RefreshingRunner()).handle(job)
+
+    stored_run = session.get(AgentRun, run.id)
+    assert observed_statuses == [RunStatus.RUNNING.value]
+    assert stored_run is not None
+    assert stored_run.status == RunStatus.COMPLETED.value
 
 
 def test_worker_skips_cancelled_run_without_starting_model() -> None:
@@ -2676,7 +2723,7 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
         idempotency_key="provider-fallback",
     )
 
-    RunOrchestrationService(session, agent_runner=runner, settings=settings).run_fake_agent(job)
+    RunOrchestrationService(session, agent_runner=runner, settings=settings).run_agent_sync(job)
 
     events = session.scalars(
         select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
@@ -2822,7 +2869,7 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
             session,
             agent_runner=FailingRunner(),
             settings=settings,
-        ).run_fake_agent(job)
+        ).run_agent_sync(job)
     except RuntimeError:
         pass
     else:

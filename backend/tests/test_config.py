@@ -98,9 +98,6 @@ def test_production_requires_platform_admin_token() -> None:
 
 
 def test_production_rejects_unsafe_runtime_and_infrastructure_defaults() -> None:
-    with pytest.raises(ValueError, match="AGENT_RUNNER_BACKEND"):
-        _production_settings(agent_runner_backend="fake")
-
     with pytest.raises(ValueError, match="DATABASE_URL"):
         _production_settings(
             database_url="postgresql+psycopg://chaincloud:chaincloud@localhost:5432/chaincloud"
@@ -225,7 +222,6 @@ def _production_settings(**overrides: object) -> Settings:
         "token_hash_pepper": "pepper",
         "enable_api_docs": False,
         "credential_encryption_secret": "credential-secret",
-        "agent_runner_backend": "openai",
         "database_url": "postgresql+psycopg://app:strong@db.example.com:5432/app",
         "redis_url": "redis://redis.example.com:6379/0",
         "cors_origins": ["https://console.example.com"],

@@ -168,7 +168,7 @@ Tasks:
 Deliverables:
 
 - task start creates a queued run
-- worker can complete a fake run end to end
+- worker can complete an injected-runner execution end to end
 
 ## Phase 8: OpenAI Agents SDK Integration
 
