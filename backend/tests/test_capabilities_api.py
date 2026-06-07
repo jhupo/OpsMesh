@@ -2161,6 +2161,128 @@ def test_workspace_capability_governance_repairs_unallowed_agent_mcp_tools() -> 
     assert "Bearer hidden" not in serialized
 
 
+def test_workspace_capability_governance_reenables_disabled_mcp_tools() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "image-tools",
+            "server_type": "http_jsonrpc",
+            "connection": {
+                "url": "https://mcp.example.test/private?token=hidden",
+                "headers": {"Authorization": "Bearer hidden"},
+            },
+        },
+    )
+    allowed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "generate_image", "risk_level": "low"},
+    )
+    disabled = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}"
+        f"/tools/{allowed.json()['id']}/disable",
+        headers=_headers(owner.id),
+    )
+    governance_before = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance",
+        headers=_headers(owner.id),
+    )
+    dry_run = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": True,
+            "actions": ["allow_mcp_tools"],
+            "mcp_server_ids": [server.json()["id"]],
+            "metadata": {"api_key": "sk-allow-dry-run"},
+        },
+    )
+    catalog_after_dry_run = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
+        headers=_headers(owner.id),
+    )
+    applied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": False,
+            "actions": ["allow_mcp_tools"],
+            "mcp_server_ids": [server.json()["id"]],
+            "reason": "restore disabled MCP tool",
+            "metadata": {"api_key": "sk-allow-apply"},
+        },
+    )
+    catalog_after_apply = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
+        headers=_headers(owner.id),
+    )
+
+    assert server.status_code == 201
+    assert allowed.status_code == 201
+    assert disabled.status_code == 200
+    assert disabled.json()["status"] == "disabled"
+    assert governance_before.status_code == 200
+    assert governance_before.json()["mcp_servers"][0]["blocked_reasons"] == [
+        "no_allowed_tools"
+    ]
+    assert governance_before.json()["mcp_servers"][0]["recommended_actions"] == [
+        "allow_mcp_tools"
+    ]
+
+    assert dry_run.status_code == 200
+    dry_body = dry_run.json()
+    assert dry_body["status"] == "dry_run"
+    assert dry_body["eligible_action_count"] == 1
+    assert dry_body["applied_count"] == 0
+    assert dry_body["summary"]["reenabled_mcp_tool_count"] == 1
+    assert dry_body["results"][0]["status"] == "would_apply"
+    assert dry_body["results"][0]["action"] == "allow_mcp_tools"
+    assert dry_body["results"][0]["tool_name"] == "generate_image"
+    assert catalog_after_dry_run.json()["items"][0]["tools"] == []
+
+    assert applied.status_code == 200
+    applied_body = applied.json()
+    assert applied_body["status"] == "applied"
+    assert applied_body["eligible_action_count"] == 1
+    assert applied_body["applied_count"] == 1
+    assert applied_body["summary"]["reenabled_mcp_tool_count"] == 1
+    applied_item = catalog_after_apply.json()["items"][0]
+    assert applied_item["executable"] is True
+    assert applied_item["blocked_reasons"] == []
+    assert [tool["tool_name"] for tool in applied_item["tools"]] == ["generate_image"]
+
+    audit_actions = {
+        event.action
+        for event in session.query(AuditEvent)
+        .filter(AuditEvent.workspace_id == workspace.id)
+        .all()
+    }
+    assert {
+        "capability_governance.actions_applied",
+        "capability_governance.mcp_tool_reenabled",
+    } <= audit_actions
+    reenabled_audit = (
+        session.query(AuditEvent)
+        .filter_by(
+            workspace_id=workspace.id,
+            action="capability_governance.mcp_tool_reenabled",
+        )
+        .one()
+    )
+    assert reenabled_audit.audit_metadata["tool_name"] == "generate_image"
+    assert reenabled_audit.audit_metadata["previous_status"] == "disabled"
+    serialized = str(dry_body) + str(applied_body) + str(reenabled_audit.audit_metadata)
+    assert "sk-allow-dry-run" not in serialized
+    assert "sk-allow-apply" not in serialized
+    assert "token=hidden" not in serialized
+    assert "Bearer hidden" not in serialized
+
+
 def test_workspace_skill_install_can_upgrade_and_disable_without_source_access() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

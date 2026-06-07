@@ -52,6 +52,7 @@ MCP_LIMIT_COUNTED_STATUSES = (
 )
 GOVERNANCE_APPLY_ACTIONS = {
     "allow_or_remove_configured_mcp_tools",
+    "allow_mcp_tools",
     "disable_unusable_skill_installs",
     "disable_blocked_mcp_servers",
     "refresh_mcp_health_check",
@@ -837,6 +838,18 @@ class CapabilityService:
             results.extend(action_results)
             skipped.extend(action_skipped)
             remaining -= len(action_results)
+        if "allow_mcp_tools" in requested_actions and remaining > 0:
+            action_results, action_skipped = self._apply_allow_mcp_tools(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                dry_run=dry_run,
+                mcp_server_ids=set(mcp_server_ids or []),
+                limit=remaining,
+                reason=reason,
+            )
+            results.extend(action_results)
+            skipped.extend(action_skipped)
+            remaining -= len(action_results)
         if "allow_or_remove_configured_mcp_tools" in requested_actions and remaining > 0:
             action_results, action_skipped = (
                 self._apply_remove_unallowed_configured_mcp_tools(
@@ -865,6 +878,9 @@ class CapabilityService:
                 1
                 for item in results
                 if item["action"] == "allow_or_remove_configured_mcp_tools"
+            ),
+            "reenabled_mcp_tool_count": sum(
+                1 for item in results if item["action"] == "allow_mcp_tools"
             ),
             "metadata_keys": sorted((metadata or {}).keys()),
         }
@@ -1048,6 +1064,122 @@ class CapabilityService:
                 )
             )
         return results, skipped
+
+    def _apply_allow_mcp_tools(
+        self,
+        *,
+        workspace_id: UUID,
+        actor_user_id: UUID,
+        dry_run: bool,
+        mcp_server_ids: set[UUID],
+        limit: int,
+        reason: str | None,
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+        catalog_items, _ = self.list_mcp_catalog(
+            workspace_id,
+            PageParams(limit=10_000, offset=0),
+        )
+        results: list[dict[str, object]] = []
+        skipped: list[dict[str, object]] = []
+        for item in catalog_items:
+            server = item.server
+            if server.status != "active":
+                continue
+            if mcp_server_ids and server.id not in mcp_server_ids:
+                continue
+            blocked_reasons = item.blocked_reasons
+            if "no_allowed_tools" not in blocked_reasons:
+                skipped.append(
+                    _governance_skipped(
+                        action="allow_mcp_tools",
+                        resource_type="mcp_server",
+                        resource_id=server.id,
+                        resource_name=server.name,
+                        reason="mcp_server_allowed_tools_not_missing",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            disabled_tools = self._disabled_mcp_tools(workspace_id, server.id)
+            if not disabled_tools:
+                skipped.append(
+                    _governance_skipped(
+                        action="allow_mcp_tools",
+                        resource_type="mcp_server",
+                        resource_id=server.id,
+                        resource_name=server.name,
+                        reason="no_disabled_mcp_tools_to_enable",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            for allow in disabled_tools:
+                if len(results) >= limit:
+                    skipped.append(
+                        _governance_skipped(
+                            action="allow_mcp_tools",
+                            resource_type="mcp_tool_allowlist",
+                            resource_id=allow.id,
+                            resource_name=allow.tool_name,
+                            reason="max_items_reached",
+                            blocked_reasons=blocked_reasons,
+                        )
+                    )
+                    continue
+                if not dry_run:
+                    previous_status = allow.status
+                    allow.status = "active"
+                    AuditService(self._session).record_user_action(
+                        workspace_id=workspace_id,
+                        user_id=actor_user_id,
+                        action="capability_governance.mcp_tool_reenabled",
+                        target_type="mcp_tool_allowlist",
+                        target_id=allow.id,
+                        metadata={
+                            "mcp_server_id": str(server.id),
+                            "server_name": server.name,
+                            "tool_name": allow.tool_name,
+                            "capability_key": allow.capability_key,
+                            "risk_level": allow.risk_level,
+                            "previous_status": previous_status,
+                            "reason": reason,
+                        },
+                    )
+                result = _governance_result(
+                    action="allow_mcp_tools",
+                    resource_type="mcp_tool_allowlist",
+                    resource_id=allow.id,
+                    resource_name=allow.tool_name,
+                    status="would_apply" if dry_run else "applied",
+                    blocked_reasons=blocked_reasons,
+                )
+                result.update(
+                    {
+                        "mcp_server_id": server.id,
+                        "server_name": server.name,
+                        "tool_name": allow.tool_name,
+                        "previous_status": "disabled",
+                    }
+                )
+                results.append(result)
+        return results, skipped
+
+    def _disabled_mcp_tools(
+        self,
+        workspace_id: UUID,
+        mcp_server_id: UUID,
+    ) -> list[McpToolAllowlist]:
+        return list(
+            self._session.scalars(
+                select(McpToolAllowlist)
+                .where(
+                    McpToolAllowlist.workspace_id == workspace_id,
+                    McpToolAllowlist.mcp_server_id == mcp_server_id,
+                    McpToolAllowlist.status == "disabled",
+                )
+                .order_by(McpToolAllowlist.tool_name.asc(), McpToolAllowlist.id.asc())
+            )
+        )
 
     def _apply_remove_unallowed_configured_mcp_tools(
         self,
