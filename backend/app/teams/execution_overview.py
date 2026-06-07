@@ -16,6 +16,7 @@ from backend.app.teams.models import AgentTeam, AgentTeamMember
 ACTIVE_STEP_STATUSES = {"queued", "running", "waiting_approval", "blocked"}
 ACTIVE_RUN_STATUSES = {"queued", "running", "waiting_runtime"}
 DONE_TASK_STATUSES = {"completed", "cancelled", "canceled"}
+REASSIGNABLE_SPECIALIST_STEP_STATUSES = {"blocked", "failed"}
 RISK_LEVELS = ("critical", "high", "medium", "low")
 
 
@@ -58,6 +59,7 @@ class TeamExecutionOverviewService:
         runs_by_task = _group_runs_by_task(runs)
         member_items = _member_items(members, agents, steps, runs)
         staffing_gaps = _staffing_gaps(members, agents, steps)
+        specialist_reassignments = _specialist_reassignments(members, agents, steps)
         task_items = [
             self._task_item(
                 workspace_id=workspace_id,
@@ -88,6 +90,7 @@ class TeamExecutionOverviewService:
                 member_items=member_items,
                 task_items=task_items,
                 staffing_gaps=staffing_gaps,
+                specialist_reassignments=specialist_reassignments,
             ),
             "members": member_items,
             "tasks": task_items,
@@ -308,6 +311,7 @@ def _overview_summary(
     member_items: list[dict[str, object]],
     task_items: list[dict[str, object]],
     staffing_gaps: list[dict[str, object]],
+    specialist_reassignments: list[dict[str, object]],
 ) -> dict[str, object]:
     task_status_counts = Counter(task.status for task in tasks)
     step_status_counts = Counter(step.status for step in steps)
@@ -324,6 +328,7 @@ def _overview_summary(
         task_items=task_items,
         member_items=member_items,
         staffing_gaps=staffing_gaps,
+        specialist_reassignments=specialist_reassignments,
         steps=steps,
         runs=runs,
     )
@@ -331,6 +336,7 @@ def _overview_summary(
         task_items=task_items,
         staffing_gaps=staffing_gaps,
         member_items=member_items,
+        specialist_reassignments=specialist_reassignments,
     )
     delivery_health = _delivery_health(
         task_items=task_items,
@@ -362,6 +368,8 @@ def _overview_summary(
         "overloaded_member_count": sum(1 for item in member_items if item["overloaded"]),
         "staffing_gap_count": len(staffing_gaps),
         "staffing_gap_step_count": sum(int(item["step_count"]) for item in staffing_gaps),
+        "specialist_reassignment_count": len(specialist_reassignments),
+        "specialist_reassignments": specialist_reassignments,
         "total_member_capacity": total_capacity,
         "active_member_task_count": active_member_tasks,
         "available_member_capacity": available_member_capacity,
@@ -372,9 +380,121 @@ def _overview_summary(
             recommended_actions=recommended_actions,
             bottlenecks=bottlenecks,
             staffing_gaps=staffing_gaps,
+            specialist_reassignments=specialist_reassignments,
             task_items=task_items,
         ),
     }
+
+
+def _specialist_reassignments(
+    members: list[AgentTeamMember],
+    agents: dict[UUID, AgentProfile],
+    steps: list[TaskStep],
+) -> list[dict[str, object]]:
+    reassignments: list[dict[str, object]] = []
+    for step in steps:
+        if not _is_reassignable_specialist_step(step):
+            continue
+        replacement = _replacement_member_for_step(
+            step=step,
+            members=members,
+            agents=agents,
+        )
+        if replacement is None:
+            continue
+        member, agent = replacement
+        reassignments.append(
+            {
+                "task_id": step.task_id,
+                "task_step_id": step.id,
+                "step_status": step.status,
+                "required_role": step.required_role,
+                "required_skills": _string_list(step.required_skills),
+                "current_agent_profile_id": step.assigned_agent_profile_id,
+                "replacement_agent_profile_id": member.agent_profile_id,
+                "replacement_agent_name": agent.name,
+                "replacement_agent_role": agent.role,
+                "replacement_team_role": member.team_role,
+                "reason": "blocked_or_failed_specialist_step",
+            }
+        )
+    return reassignments
+
+
+def _is_reassignable_specialist_step(step: TaskStep) -> bool:
+    if step.status not in REASSIGNABLE_SPECIALIST_STEP_STATUSES:
+        return False
+    if step.assigned_agent_profile_id is None:
+        return False
+    if _is_manager_role(step.required_role):
+        return False
+    work_package_id = step.work_package_id or ""
+    return not work_package_id.startswith("manager-")
+
+
+def _replacement_member_for_step(
+    *,
+    step: TaskStep,
+    members: list[AgentTeamMember],
+    agents: dict[UUID, AgentProfile],
+) -> tuple[AgentTeamMember, AgentProfile] | None:
+    candidates: list[tuple[int, int, str, AgentTeamMember, AgentProfile]] = []
+    for member in members:
+        if member.agent_profile_id == step.assigned_agent_profile_id:
+            continue
+        agent = agents.get(member.agent_profile_id)
+        if agent is None or agent.workspace_id != step.workspace_id or agent.status != "active":
+            continue
+        if member.status != "active" or not member.accepts_tasks:
+            continue
+        if _is_manager_role(member.team_role) or _is_manager_role(agent.role):
+            continue
+        if not _member_matches_step(member=member, agent=agent, step=step):
+            continue
+        candidates.append(
+            (
+                _replacement_role_rank(member=member, agent=agent, step=step),
+                member.order_index,
+                str(member.id),
+                member,
+                agent,
+            )
+        )
+    if not candidates:
+        return None
+    _, _, _, member, agent = sorted(candidates, key=lambda item: item[:3])[0]
+    return member, agent
+
+
+def _member_matches_step(
+    *,
+    member: AgentTeamMember,
+    agent: AgentProfile,
+    step: TaskStep,
+) -> bool:
+    required_role = step.required_role
+    if required_role is not None and required_role not in {member.team_role, agent.role}:
+        return False
+    required_skills = _string_list(step.required_skills)
+    if not required_skills:
+        return True
+    member_skills = {str(skill) for skill in member.skill_weights}
+    agent_skills = {str(skill) for skill in agent.skills}
+    return all(skill in member_skills or skill in agent_skills for skill in required_skills)
+
+
+def _replacement_role_rank(
+    *,
+    member: AgentTeamMember,
+    agent: AgentProfile,
+    step: TaskStep,
+) -> int:
+    required_role = step.required_role
+    if required_role is not None and member.team_role == required_role:
+        return 0
+    if required_role is not None and agent.role == required_role:
+        return 1
+    return 2
 
 
 def _staffing_gaps(
@@ -546,6 +666,7 @@ def _summary_recommended_actions(
     task_items: list[dict[str, object]],
     staffing_gaps: list[dict[str, object]],
     member_items: list[dict[str, object]],
+    specialist_reassignments: list[dict[str, object]],
 ) -> list[dict[str, object]]:
     grouped: dict[str, dict[str, object]] = {}
     for gap in staffing_gaps:
@@ -559,6 +680,10 @@ def _summary_recommended_actions(
             _add_summary_action(grouped, action="rebalance_member_load", task_ids=[])
         if "member_not_accepting_tasks" in _string_list(member.get("blocked_reasons")):
             _add_summary_action(grouped, action="review_member_availability", task_ids=[])
+    for reassignment in specialist_reassignments:
+        task_id = reassignment.get("task_id")
+        task_ids = [task_id] if isinstance(task_id, UUID) else []
+        _add_summary_action(grouped, action="reassign_step", task_ids=task_ids)
     for task in task_items:
         task_id = task.get("task_id")
         task_ids = [task_id] if isinstance(task_id, UUID) else []
@@ -576,12 +701,15 @@ def _operator_intervention_plan(
     recommended_actions: list[dict[str, object]],
     bottlenecks: list[dict[str, object]],
     staffing_gaps: list[dict[str, object]],
+    specialist_reassignments: list[dict[str, object]],
     task_items: list[dict[str, object]],
 ) -> list[dict[str, object]]:
     grouped: dict[str, dict[str, object]] = {}
     for item in recommended_actions:
         action = item.get("action")
         if not isinstance(action, str) or not action:
+            continue
+        if action == "reassign_step":
             continue
         grouped[action] = {
             "action": action,
@@ -591,6 +719,8 @@ def _operator_intervention_plan(
     for bottleneck in bottlenecks:
         action = bottleneck.get("recommended_action")
         if not isinstance(action, str) or not action:
+            continue
+        if action == "reassign_step":
             continue
         item = grouped.setdefault(action, {"action": action, "count": 0, "task_ids": []})
         item["count"] = max(int(item["count"]), int(bottleneck.get("count") or 0))
@@ -637,9 +767,70 @@ def _operator_intervention_plan(
             }
         )
     return sorted(
-        plan,
+        [*plan, *_reassign_step_interventions(specialist_reassignments)],
         key=lambda item: (-int(item["priority"]), str(item["action"])),
     )
+
+
+def _reassign_step_interventions(
+    specialist_reassignments: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    interventions: list[dict[str, object]] = []
+    for reassignment in specialist_reassignments:
+        task_id = reassignment.get("task_id")
+        task_step_id = reassignment.get("task_step_id")
+        agent_profile_id = reassignment.get("replacement_agent_profile_id")
+        if not (
+            isinstance(task_id, UUID)
+            and isinstance(task_step_id, UUID)
+            and isinstance(agent_profile_id, UUID)
+        ):
+            continue
+        step_status = str(reassignment.get("step_status") or "unknown")
+        severity = "high" if step_status == "failed" else "medium"
+        reason = str(reassignment.get("reason") or "blocked_or_failed_specialist_step")
+        interventions.append(
+            {
+                "action": "reassign_step",
+                "category": "execution_flow",
+                "severity": severity,
+                "priority": _intervention_priority(severity, 1),
+                "count": 1,
+                "task_ids": [task_id],
+                "task_step_ids": [task_step_id],
+                "agent_profile_id": agent_profile_id,
+                "current_agent_profile_id": reassignment.get("current_agent_profile_id"),
+                "replacement_agent": {
+                    "id": agent_profile_id,
+                    "name": reassignment.get("replacement_agent_name"),
+                    "role": reassignment.get("replacement_agent_role"),
+                    "team_role": reassignment.get("replacement_team_role"),
+                },
+                "automation": "team_operator_action",
+                "operator_action": "reassign_step",
+                "api_route": _intervention_api_route("reassign_step"),
+                "payload_template": {
+                    "action": "reassign_step",
+                    "task_step_ids": [task_step_id],
+                    "agent_profile_id": agent_profile_id,
+                    "reason": "team_execution_overview",
+                    "metadata": {
+                        "source": "team_execution_overview",
+                        "reassignment_reason": reason,
+                    },
+                },
+                "reason_codes": _dedupe_strings(
+                    [
+                        reason,
+                        f"step_status:{step_status}",
+                        f"required_role:{reassignment['required_role']}"
+                        if isinstance(reassignment.get("required_role"), str)
+                        else "required_role:unknown",
+                    ]
+                ),
+            }
+        )
+    return interventions
 
 
 def _intervention_step_ids(
@@ -711,7 +902,11 @@ def _intervention_category(action: str) -> str:
         return "manager_review"
     if action in {"rebalance_member_load", "review_member_availability"}:
         return "team_capacity"
-    if action in {"schedule_downstream_steps", "unblock_or_reassign_specialist_work"}:
+    if action in {
+        "reassign_step",
+        "schedule_downstream_steps",
+        "unblock_or_reassign_specialist_work",
+    }:
         return "execution_flow"
     if action in {"inspect_runtime_capacity", "review_pending_approvals"}:
         return "runtime_operations"
@@ -719,8 +914,13 @@ def _intervention_category(action: str) -> str:
 
 
 def _intervention_automation(action: str) -> str:
-    if action in {"request_manager_review", "schedule_downstream_steps", "requeue_blocked_steps"}:
-        return "operator_action"
+    if action in {
+        "request_manager_review",
+        "reassign_step",
+        "schedule_downstream_steps",
+        "requeue_blocked_steps",
+    }:
+        return "team_operator_action"
     if action == "add_or_hire_team_member":
         return "talent_market"
     if action in {
@@ -733,7 +933,12 @@ def _intervention_automation(action: str) -> str:
 
 
 def _operator_action_name(action: str) -> str | None:
-    if action in {"request_manager_review", "schedule_downstream_steps", "requeue_blocked_steps"}:
+    if action in {
+        "request_manager_review",
+        "reassign_step",
+        "schedule_downstream_steps",
+        "requeue_blocked_steps",
+    }:
         return action
     return None
 
@@ -745,7 +950,7 @@ def _intervention_api_route(action: str) -> str:
             "talent-market/recommendations"
         )
     if _operator_action_name(action) is not None:
-        return "POST /api/v1/workspaces/{workspace_id}/tasks/{task_id}/operator-actions"
+        return "POST /api/v1/workspaces/{workspace_id}/teams/{team_id}/operator-actions"
     if action in {
         "monitor_specialist_execution",
         "inspect_task_diagnostics",
@@ -778,6 +983,7 @@ def _summary_bottlenecks(
     task_items: list[dict[str, object]],
     member_items: list[dict[str, object]],
     staffing_gaps: list[dict[str, object]],
+    specialist_reassignments: list[dict[str, object]],
     steps: list[TaskStep],
     runs: list[AgentRun],
 ) -> list[dict[str, object]]:
@@ -798,6 +1004,30 @@ def _summary_bottlenecks(
                 count=len(staffing_gaps),
                 task_ids=task_ids,
                 recommended_action="add_or_hire_team_member",
+            )
+        )
+
+    if specialist_reassignments:
+        task_ids = sorted(
+            {
+                task_id
+                for reassignment in specialist_reassignments
+                if isinstance((task_id := reassignment.get("task_id")), UUID)
+            },
+            key=str,
+        )
+        bottlenecks.append(
+            _bottleneck(
+                code="specialist_step_reassignment",
+                severity="high"
+                if any(
+                    reassignment.get("step_status") == "failed"
+                    for reassignment in specialist_reassignments
+                )
+                else "medium",
+                count=len(specialist_reassignments),
+                task_ids=task_ids,
+                recommended_action="reassign_step",
             )
         )
 
@@ -1022,3 +1252,7 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _is_manager_role(value: str | None) -> bool:
+    return value in {"project_manager", "manager", "team_manager"}

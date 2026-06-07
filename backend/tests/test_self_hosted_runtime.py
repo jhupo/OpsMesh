@@ -760,6 +760,105 @@ def test_self_hosted_worker_enforces_max_concurrent_jobs() -> None:
     assert next_job.json() is None
 
 
+def test_self_hosted_job_duplicate_claim_with_stale_session_returns_existing_claim() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-duplicate-claim",
+        },
+    )
+    credential = registered.json()["credential_token"]
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    session.add(run)
+    session.commit()
+
+    session_factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+    first_session = session_factory()
+    second_session = session_factory()
+    settings = Settings(environment="test", log_format="text", internal_api_token=TOKEN)
+    try:
+        first_service = SelfHostedRuntimeService(first_session, settings)
+        second_service = SelfHostedRuntimeService(second_session, settings)
+        first_auth = first_service.authenticate_worker(credential)
+        second_auth = second_service.authenticate_worker(credential)
+
+        first_claim = first_service.claim_job(first_auth, run.id)
+        second_claim = second_service.claim_job(second_auth, run.id)
+    finally:
+        first_session.close()
+        second_session.close()
+
+    session.expire_all()
+    claims = session.query(SelfHostedJobClaim).all()
+    events = session.query(RunEvent).filter_by(agent_run_id=run.id).all()
+    assert second_claim.id == first_claim.id
+    assert len(claims) == 1
+    assert claims[0].agent_run_id == run.id
+    assert len(events) == 1
+    assert events[0].event_type == "self_hosted.claimed"
+
+
+def test_self_hosted_job_claim_capacity_uses_fresh_locked_worker_state() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-stale-capacity",
+            "capabilities": {"max_concurrent_jobs": 1},
+        },
+    )
+    credential = registered.json()["credential_token"]
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    first_run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    second_run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    session.add_all([first_run, second_run])
+    session.commit()
+
+    session_factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+    first_session = session_factory()
+    second_session = session_factory()
+    settings = Settings(environment="test", log_format="text", internal_api_token=TOKEN)
+    try:
+        first_service = SelfHostedRuntimeService(first_session, settings)
+        second_service = SelfHostedRuntimeService(second_session, settings)
+        first_auth = first_service.authenticate_worker(credential)
+        second_auth = second_service.authenticate_worker(credential)
+
+        first_claim = first_service.claim_job(first_auth, first_run.id)
+        try:
+            second_service.claim_job(second_auth, second_run.id)
+            second_error = ""
+        except ValueError as exc:
+            second_error = str(exc)
+    finally:
+        first_session.close()
+        second_session.close()
+
+    session.expire_all()
+    assert first_claim.agent_run_id == first_run.id
+    assert "max concurrent jobs" in second_error
+    assert session.query(SelfHostedJobClaim).count() == 1
+    assert session.get(AgentRun, second_run.id).status == "queued"
+
+
 def test_self_hosted_worker_enforces_capability_policy_for_jobs() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
@@ -955,6 +1054,71 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
         "self_hosted.mcp_job_claimed",
         "self_hosted.mcp_job_completed",
     ]
+
+
+def test_self_hosted_mcp_job_duplicate_claim_with_stale_session_is_idempotent() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "node",
+            "machine_id": "machine-mcp-duplicate",
+            "capabilities": {"allowed_tools": ["generate_image"]},
+        },
+    )
+    credential = registered.json()["credential_token"]
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="image-tools",
+        server_type="stdio",
+        connection={"command": "mcp-image"},
+    )
+    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="waiting_runtime")
+    session.add_all([server, run])
+    session.flush()
+    job = SelfHostedMcpJob(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime_id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+    )
+    session.add(job)
+    session.commit()
+
+    session_factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+    first_session = session_factory()
+    second_session = session_factory()
+    settings = Settings(environment="test", log_format="text", internal_api_token=TOKEN)
+    try:
+        first_service = SelfHostedRuntimeService(first_session, settings)
+        second_service = SelfHostedRuntimeService(second_session, settings)
+        first_auth = first_service.authenticate_worker(credential)
+        second_auth = second_service.authenticate_worker(credential)
+
+        first_claim = first_service.claim_mcp_job(first_auth, job.id)
+        second_claim = second_service.claim_mcp_job(second_auth, job.id)
+    finally:
+        first_session.close()
+        second_session.close()
+
+    session.expire_all()
+    claimed_job = session.get(SelfHostedMcpJob, job.id)
+    events = session.query(RunEvent).filter_by(agent_run_id=run.id).all()
+    assert second_claim.id == first_claim.id
+    assert claimed_job.status == "claimed"
+    assert claimed_job.worker_id == first_claim.worker_id
+    assert len(events) == 1
+    assert events[0].event_type == "self_hosted.mcp_job_claimed"
 
 
 def test_self_hosted_mcp_job_poll_skips_incompatible_head_of_queue() -> None:

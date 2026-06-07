@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from sqlalchemy import select
@@ -35,7 +35,7 @@ from backend.app.exports.models import WorkspaceExportJob
 from backend.app.exports.status import WorkspaceExportJobStatus
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.security import safe_filename
-from backend.app.files.storage import LocalStorage
+from backend.app.files.storage import ObjectStorage
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
@@ -210,7 +210,7 @@ class WorkspaceExportService:
         workspace: Workspace,
         user_id: UUID,
         request: WorkspaceArchiveExportRequest,
-        storage: LocalStorage,
+        storage: ObjectStorage,
     ) -> WorkspaceArchiveExportResult:
         metadata = self.build_export(workspace=workspace, user_id=user_id, request=request)
         skipped: list[str] = []
@@ -328,7 +328,7 @@ class WorkspaceExportService:
         *,
         workspace_id: UUID,
         job_id: UUID,
-        storage: LocalStorage,
+        storage: ObjectStorage,
     ) -> tuple[WorkspaceExportJob, bytes]:
         export_job = self.get_export_job(workspace_id=workspace_id, job_id=job_id)
         if export_job is None:
@@ -339,13 +339,45 @@ class WorkspaceExportService:
             raise FileNotFoundError("Export artifact is missing")
         return export_job, storage.read(export_job.storage_key)
 
+    def fail_archive_export_job(
+        self,
+        *,
+        job: JobPayload,
+        error: str,
+    ) -> WorkspaceExportJob | None:
+        export_job = self.get_export_job(workspace_id=job.workspace_id, job_id=job.resource_id)
+        if export_job is None:
+            return None
+        if export_job.status == WorkspaceExportJobStatus.COMPLETED.value:
+            return export_job
+
+        export_job.status = WorkspaceExportJobStatus.FAILED.value
+        export_job.error = error[:1000]
+        export_job.completed_at = datetime.now(UTC)
+        actor_user_id = job.requested_by_user_id
+        workspace = self._session.get(Workspace, job.workspace_id)
+        if actor_user_id is None and workspace is not None:
+            actor_user_id = workspace.owner_user_id
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=job.workspace_id,
+                user_id=actor_user_id,
+                action="workspace.archive_export_job.failed",
+                target_type="workspace_export_job",
+                target_id=export_job.id,
+                metadata={"error": export_job.error},
+            )
+        self._session.commit()
+        self._session.refresh(export_job)
+        return export_job
+
     def verify_archive_export_job(
         self,
         *,
         workspace_id: UUID,
         job_id: UUID,
         user_id: UUID,
-        storage: LocalStorage,
+        storage: ObjectStorage,
     ) -> dict[str, object]:
         export_job, content = self.read_export_job_content(
             workspace_id=workspace_id,
@@ -440,7 +472,7 @@ class WorkspaceExportService:
         user_id: UUID,
         job_id: UUID,
         request: WorkspaceArchiveRestoreDrillRequest,
-        storage: LocalStorage,
+        storage: ObjectStorage,
     ) -> dict[str, object]:
         export_job, archive_bytes = self.read_export_job_content(
             workspace_id=workspace.id,
@@ -505,7 +537,7 @@ class WorkspaceExportService:
         self,
         *,
         job: JobPayload,
-        storage: LocalStorage,
+        storage: ObjectStorage,
     ) -> WorkspaceExportJob:
         export_job = self.get_export_job(workspace_id=job.workspace_id, job_id=job.resource_id)
         if export_job is None:
@@ -534,10 +566,7 @@ class WorkspaceExportService:
                 storage=storage,
             )
             checksum = sha256(result.content).hexdigest()
-            storage_key = (
-                f"workspaces/{workspace.id}/exports/{export_job.id}/"
-                f"{uuid4()}-{safe_filename(result.filename)}"
-            )
+            storage_key = f"workspaces/{workspace.id}/exports/{export_job.id}/archive.zip"
             storage.write(storage_key, result.content)
             export_job.status = WorkspaceExportJobStatus.COMPLETED.value
             export_job.storage_key = storage_key
@@ -1267,7 +1296,7 @@ class WorkspaceExportService:
         user_id: UUID,
         archive_bytes: bytes,
         request: WorkspaceArchiveImportRequest,
-        storage: LocalStorage,
+        storage: ObjectStorage,
     ) -> WorkspaceImportResponse:
         try:
             archive = ZipFile(BytesIO(archive_bytes))
@@ -1379,7 +1408,7 @@ class WorkspaceExportService:
         archive_names: set[str],
         item: dict[str, object],
         response: WorkspaceImportResponse,
-        storage: LocalStorage,
+        storage: ObjectStorage,
         total_bytes: int,
     ) -> int:
         source_id = _string_field(item, "id")
@@ -1453,7 +1482,7 @@ class WorkspaceExportService:
         archive_names: set[str],
         item: dict[str, object],
         response: WorkspaceImportResponse,
-        storage: LocalStorage,
+        storage: ObjectStorage,
         total_bytes: int,
     ) -> int:
         source_id = _string_field(item, "id")
@@ -1656,7 +1685,7 @@ class WorkspaceExportService:
         self,
         *,
         archive: ZipFile,
-        storage: LocalStorage,
+        storage: ObjectStorage,
         storage_key: str,
         archive_name: str,
         size_bytes: int,

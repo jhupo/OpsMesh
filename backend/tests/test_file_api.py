@@ -1,6 +1,7 @@
 from collections.abc import Generator
 from pathlib import Path
 
+import fakeredis
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
@@ -16,6 +17,11 @@ from backend.app.db.session import get_db_session
 from backend.app.files.models import FileAccessEvent
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.memory.jobs import enqueue_workspace_memory_index_job
+from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.workers.dependencies import get_worker_queue
+from backend.app.workers.jobs import JobType
+from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -58,6 +64,43 @@ def test_file_upload_download_and_cross_workspace_denial(tmp_path: Path) -> None
     assert not_found.status_code == 404
 
 
+def test_file_upload_enqueues_workspace_file_memory_index_job(tmp_path: Path) -> None:
+    queue = _queue()
+    client, session = _client(tmp_path, queue=queue)
+    owner, workspace = _seed_workspace(session)
+
+    uploaded = client.post(
+        f"/api/v1/workspaces/{workspace.id}/files",
+        headers=_headers(owner.id),
+        files={"file": ("brief.txt", b"hello", "text/plain")},
+    )
+    job = queue.dequeue()
+
+    assert uploaded.status_code == 201
+    assert job is not None
+    assert job.workspace_id == workspace.id
+    assert str(job.resource_id) == uploaded.json()["id"]
+    assert job.requested_by_user_id == owner.id
+    assert job.job_type == JobType.MEMORY_INDEX
+    assert job.idempotency_key == (
+        f"memory.index:{workspace.id}:workspace_file:{uploaded.json()['id']}"
+    )
+    assert job.routing == {
+        "source": "workspace_file_upload",
+        "source_type": "workspace_file",
+    }
+    assert (
+        enqueue_workspace_memory_index_job(
+            queue=queue,
+            workspace_id=workspace.id,
+            source_type="workspace_file",
+            source_id=job.resource_id,
+            requested_by_user_id=owner.id,
+        )
+        is False
+    )
+
+
 def test_upload_size_limit(tmp_path: Path) -> None:
     client, session = _client(tmp_path, max_upload_bytes=3)
     owner, workspace = _seed_workspace(session)
@@ -93,7 +136,11 @@ def test_upload_sanitizes_filename_and_download_header(tmp_path: Path) -> None:
     assert "\n" not in downloaded.headers["content-disposition"]
 
 
-def _client(tmp_path: Path, max_upload_bytes: int = 1024) -> tuple[TestClient, Session]:
+def _client(
+    tmp_path: Path,
+    max_upload_bytes: int = 1024,
+    queue: RedisQueue | None = None,
+) -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -123,7 +170,17 @@ def _client(tmp_path: Path, max_upload_bytes: int = 1024) -> tuple[TestClient, S
 
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
+    app.dependency_overrides[get_worker_queue] = lambda: queue or _queue()
     return TestClient(app), session
+
+
+def _queue() -> RedisQueue:
+    return RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+        blocking_timeout_seconds=0,
+    )
 
 
 def _seed_workspace(

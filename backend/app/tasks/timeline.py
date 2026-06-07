@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
 from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
 
@@ -242,16 +243,18 @@ def _step_event(step: TaskStep, agents: dict[UUID, AgentProfile]) -> dict[str, o
         "artifact_id": None,
         "sequence": step.order_index,
         "agent": _agent_payload(agent),
-        "metadata": {
-            "work_package_id": step.work_package_id,
-            "required_role": step.required_role,
-            "required_skills": step.required_skills,
-            "expected_artifacts": step.expected_artifacts,
-            "acceptance_criteria_count": len(step.acceptance_criteria),
-            "review_policy": step.review_policy,
-            "dependencies": step.dependencies,
-            "runtime_space_id": _str_or_none(step.runtime_space_id),
-        },
+        "metadata": redact_sensitive_payload(
+            {
+                "work_package_id": step.work_package_id,
+                "required_role": step.required_role,
+                "required_skills": step.required_skills,
+                "expected_artifacts": step.expected_artifacts,
+                "acceptance_criteria_count": len(step.acceptance_criteria),
+                "review_policy": step.review_policy,
+                "dependencies": step.dependencies,
+                "runtime_space_id": _str_or_none(step.runtime_space_id),
+            }
+        ),
     }
 
 
@@ -326,7 +329,7 @@ def _run_event_event(
         "artifact_id": None,
         "sequence": event.sequence,
         "agent": _agent_payload(agent),
-        "metadata": event.event_metadata,
+        "metadata": redact_sensitive_payload(event.event_metadata),
     }
 
 
@@ -349,7 +352,7 @@ def _message_event(
         "artifact_id": None,
         "sequence": message.sequence,
         "agent": _agent_payload(agent),
-        "metadata": message.payload,
+        "metadata": redact_sensitive_payload(message.payload),
     }
 
 
@@ -372,29 +375,33 @@ def _artifact_event(
         "artifact_id": artifact.id,
         "sequence": artifact.version,
         "agent": _agent_payload(agent),
-        "metadata": {
-            "artifact_type": artifact.artifact_type,
-            "content_type": artifact.content_type,
-            "size_bytes": artifact.size_bytes,
-            "checksum_sha256": artifact.checksum_sha256,
-            "work_package_id": artifact.work_package_id,
-            "version": artifact.version,
-            "supersedes_artifact_id": _str_or_none(artifact.supersedes_artifact_id),
-            "review_status": artifact.review_status,
-            "artifact_metadata": artifact.artifact_metadata,
-        },
+        "metadata": redact_sensitive_payload(
+            {
+                "artifact_type": artifact.artifact_type,
+                "content_type": artifact.content_type,
+                "size_bytes": artifact.size_bytes,
+                "checksum_sha256": artifact.checksum_sha256,
+                "work_package_id": artifact.work_package_id,
+                "version": artifact.version,
+                "supersedes_artifact_id": _str_or_none(artifact.supersedes_artifact_id),
+                "review_status": artifact.review_status,
+                "artifact_metadata": artifact.artifact_metadata,
+            }
+        ),
     }
 
 
 def _run_metadata(run: AgentRun) -> dict[str, object]:
-    return {
-        "model": run.model,
-        "runtime_id": _str_or_none(run.runtime_id),
-        "runtime_space_id": _str_or_none(run.runtime_space_id),
-        "input": run.input,
-        "has_output": run.output is not None,
-        "error": run.error,
-    }
+    return redact_sensitive_payload(
+        {
+            "model": run.model,
+            "runtime_id": _str_or_none(run.runtime_id),
+            "runtime_space_id": _str_or_none(run.runtime_space_id),
+            "input": run.input,
+            "has_output": run.output is not None,
+            "error": run.error,
+        }
+    )
 
 
 def _message_summary(message: TaskMessage) -> str:
@@ -440,10 +447,12 @@ def _agent_payload(agent: AgentProfile | None) -> dict[str, object] | None:
     }
 
 
-def _event_sort_key(event: dict[str, object]) -> tuple[datetime, int, int]:
+def _event_sort_key(event: dict[str, object]) -> tuple[float, int, int]:
     occurred_at = event["occurred_at"]
     if not isinstance(occurred_at, datetime):
         occurred_at = datetime.min.replace(tzinfo=UTC)
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=UTC)
     source_order = {
         "task": 0,
         "step": 1,
@@ -454,7 +463,7 @@ def _event_sort_key(event: dict[str, object]) -> tuple[datetime, int, int]:
     }.get(str(event.get("source_type")), 99)
     sequence = event.get("sequence")
     return (
-        occurred_at,
+        occurred_at.timestamp(),
         source_order,
         sequence if isinstance(sequence, int) else 0,
     )

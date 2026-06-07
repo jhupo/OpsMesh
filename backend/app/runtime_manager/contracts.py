@@ -23,6 +23,7 @@ class RuntimeCreateRequest:
     runtime_space_id: str | None = None
     labels: dict[str, str] = field(default_factory=dict)
     mounts: tuple["RuntimeMount", ...] = ()
+    hardening: "RuntimeHardeningPolicy" = field(default_factory=lambda: RuntimeHardeningPolicy())
     working_dir: str | None = None
 
 
@@ -32,6 +33,27 @@ class RuntimeMount:
     target: str
     mount_type: str = "volume"
     read_only: bool = False
+
+
+@dataclass(frozen=True)
+class RuntimeTmpfsMount:
+    target: str
+    size_mb: int
+    mode: str = "rw,noexec,nosuid,nodev"
+
+
+@dataclass(frozen=True)
+class RuntimeHardeningPolicy:
+    cap_drop: tuple[str, ...] = ("ALL",)
+    security_opt: tuple[str, ...] = ("no-new-privileges:true",)
+    read_only_rootfs: bool = True
+    tmpfs: tuple[RuntimeTmpfsMount, ...] = (
+        RuntimeTmpfsMount(target="/tmp", size_mb=64),
+        RuntimeTmpfsMount(target="/var/tmp", size_mb=16),
+    )
+    user: str | None = None
+    user_policy: str = "image_default"
+    user_enforced: bool = False
 
 
 @dataclass(frozen=True)

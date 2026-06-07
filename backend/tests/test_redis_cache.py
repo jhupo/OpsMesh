@@ -1,3 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event, Lock
+
 import fakeredis
 import pytest
 
@@ -64,6 +67,57 @@ def test_cache_get_or_set_only_calls_loader_on_miss() -> None:
     assert calls == 1
 
 
+def test_cache_get_or_set_single_flight_only_runs_loader_once_on_concurrent_miss() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    cache = RedisJsonCache(redis, RedisKeyBuilder("chaincloud"), namespace="operations")
+    loader_started = Event()
+    release_loader = Event()
+    calls = 0
+    calls_lock = Lock()
+
+    def load_value() -> dict[str, int]:
+        nonlocal calls
+        with calls_lock:
+            calls += 1
+        loader_started.set()
+        assert release_loader.wait(timeout=2)
+        return {"value": 42}
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(cache.get_or_set, "expensive-concurrent", load_value)
+            for _ in range(2)
+        ]
+
+        assert loader_started.wait(timeout=2)
+        release_loader.set()
+        results = [future.result(timeout=2) for future in futures]
+
+    assert [result.value for result in results] == [{"value": 42}, {"value": 42}]
+    assert calls == 1
+
+
+def test_cache_get_or_set_releases_lock_and_does_not_cache_loader_exception() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    cache = RedisJsonCache(redis, RedisKeyBuilder("chaincloud"), namespace="operations")
+    calls = 0
+
+    def fail_to_load() -> dict[str, bool]:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("loader failed")
+
+    with pytest.raises(RuntimeError, match="loader failed"):
+        cache.get_or_set("exceptional", fail_to_load)
+
+    assert cache.get("exceptional").found is False
+
+    recovered = cache.get_or_set("exceptional", lambda: {"ok": True})
+
+    assert recovered.value == {"ok": True}
+    assert calls == 1
+
+
 def test_cache_handles_json_null_as_cached_value() -> None:
     cache = RedisJsonCache(
         fakeredis.FakeRedis(decode_responses=True),
@@ -102,6 +156,24 @@ def test_cache_delete_namespace_only_removes_matching_namespace() -> None:
     assert removed == 2
     assert operations_cache.get("one").found is False
     assert tasks_cache.get("one").found is True
+
+
+def test_cache_delete_prefix_only_removes_matching_prefix() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    cache = RedisJsonCache(redis, RedisKeyBuilder("chaincloud"), namespace="operations")
+    tasks_cache = RedisJsonCache(redis, RedisKeyBuilder("chaincloud"), namespace="tasks")
+    cache.set("workspace:one:overview", {"value": 1})
+    cache.set("workspace:one:metrics", {"value": 2})
+    cache.set("workspace:two:overview", {"value": 3})
+    tasks_cache.set("workspace:one:overview", {"value": 4})
+
+    removed = cache.delete_prefix("workspace:one:")
+
+    assert removed == 2
+    assert cache.get("workspace:one:overview").found is False
+    assert cache.get("workspace:one:metrics").found is False
+    assert cache.get("workspace:two:overview").found is True
+    assert tasks_cache.get("workspace:one:overview").found is True
 
 
 def test_cache_rejects_invalid_ttl_and_empty_keys() -> None:

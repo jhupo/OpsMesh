@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, literal_column, select
 from sqlalchemy.orm import Session
 
 from backend.app.memory.models import WorkspaceMemoryEntry
@@ -97,7 +97,7 @@ class PostgresFullTextMemorySearchBackend:
         query = func.plainto_tsquery("simple", request.query)
         vector = func.to_tsvector(
             "simple",
-            func.concat(WorkspaceMemoryEntry.title, " ", WorkspaceMemoryEntry.content),
+            WorkspaceMemoryEntry.title + literal_column("' '") + WorkspaceMemoryEntry.content,
         )
         statement = (
             select(WorkspaceMemoryEntry, func.ts_rank_cd(vector, query).label("score"))

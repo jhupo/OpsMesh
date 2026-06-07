@@ -1,7 +1,8 @@
 import os
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -21,8 +22,17 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
+from backend.app.scheduled_jobs.models import (
+    WorkspaceScheduledJob,
+    WorkspaceScheduledJobEvent,
+)
+from backend.app.scheduled_jobs.service import (
+    ScheduledJobMaintenanceSummary,
+    WorkspaceScheduledJobService,
+)
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.status import TaskStatus
+from backend.app.workers.jobs import JobPayload
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 POSTGRES_TEST_URL_ENV = "CHAINCLOUD_TEST_POSTGRES_URL"
@@ -97,6 +107,65 @@ def test_parallel_schedulers_do_not_over_reserve_runtime_space_quota() -> None:
         assert len(active_reservations) == 1
         assert active_reservations[0].agent_run_id == runs[0].id
         assert active_reservations[0].resource_usage == {"active_runs": 1}
+
+
+def test_parallel_scheduled_job_maintenance_scans_do_not_duplicate_actions() -> None:
+    if _metadata_has_sqlite_json_columns():
+        pytest.skip("PostgreSQL concurrency test must run before SQLite metadata patching")
+
+    with _temporary_postgres_schema() as engine:
+        Base.metadata.create_all(engine)
+        session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+        now = datetime.now(UTC)
+        workspace_id, scheduled_job_id = _seed_due_scheduled_job(session_factory, now=now)
+        barrier = threading.Barrier(2)
+        first_enqueue_started = threading.Event()
+        release_first_enqueue = threading.Event()
+        queue = _BlockingScheduledJobQueue(
+            first_enqueue_started=first_enqueue_started,
+            release_first_enqueue=release_first_enqueue,
+        )
+
+        def scan_once() -> ScheduledJobMaintenanceSummary:
+            with session_factory() as session:
+                barrier.wait(timeout=10)
+                return WorkspaceScheduledJobService(session).enqueue_due(
+                    queue=queue,
+                    now=now,
+                )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(scan_once) for _ in range(2)]
+            assert first_enqueue_started.wait(timeout=10)
+            done, _ = wait(futures, timeout=5, return_when=FIRST_COMPLETED)
+            try:
+                assert len(done) == 1
+            finally:
+                release_first_enqueue.set()
+            summaries = [future.result(timeout=20) for future in futures]
+
+        with session_factory() as session:
+            scheduled_job = session.get(WorkspaceScheduledJob, scheduled_job_id)
+            events = list(
+                session.scalars(
+                    select(WorkspaceScheduledJobEvent).where(
+                        WorkspaceScheduledJobEvent.scheduled_job_id == scheduled_job_id
+                    )
+                ).all()
+            )
+
+        assert scheduled_job is not None
+        assert scheduled_job.workspace_id == workspace_id
+        assert scheduled_job.status == "completed"
+        assert scheduled_job.next_run_at is None
+        assert sum(summary.enqueued for summary in summaries) == 1
+        assert sum(summary.recorded for summary in summaries) == 0
+        assert sum(summary.skipped for summary in summaries) == 0
+        assert len(queue.enqueued_jobs) == 1
+        assert queue.enqueued_jobs[0].workspace_id == workspace_id
+        assert queue.enqueued_jobs[0].resource_id == scheduled_job.resource_id
+        assert len(events) == 1
+        assert events[0].status == "enqueued"
 
 
 class _temporary_postgres_schema:
@@ -182,6 +251,41 @@ def _seed_scheduler_fixture(session_factory: sessionmaker[Session]) -> Scheduler
         )
 
 
+def _seed_due_scheduled_job(
+    session_factory: sessionmaker[Session],
+    *,
+    now: datetime,
+) -> tuple[UUID, UUID]:
+    with session_factory() as session:
+        user = User(email=f"{uuid4()}@example.com", display_name="Owner")
+        workspace = Workspace(
+            owner=user,
+            name="Scheduled Job Workspace",
+            slug=f"scheduled-{uuid4()}",
+            settings={},
+        )
+        membership = WorkspaceMember(workspace=workspace, user=user, role="owner")
+        session.add_all([user, workspace, membership])
+        session.flush()
+        scheduled_job = WorkspaceScheduledJob(
+            workspace_id=workspace.id,
+            created_by_user_id=user.id,
+            name="Concurrent scheduled job",
+            schedule_type="one_shot",
+            schedule_config={"run_at": (now - timedelta(minutes=1)).isoformat()},
+            status="active",
+            action_type="queue_job",
+            job_type="task.plan",
+            resource_id=uuid4(),
+            routing={},
+            metadata_={},
+            next_run_at=now - timedelta(minutes=1),
+        )
+        session.add(scheduled_job)
+        session.commit()
+        return workspace.id, scheduled_job.id
+
+
 def _seed_task_step(
     session: Session,
     *,
@@ -211,6 +315,29 @@ def _seed_task_step(
     session.add(step)
     session.flush()
     return step
+
+
+class _BlockingScheduledJobQueue:
+    def __init__(
+        self,
+        *,
+        first_enqueue_started: threading.Event,
+        release_first_enqueue: threading.Event,
+    ) -> None:
+        self.enqueued_jobs: list[JobPayload] = []
+        self._first_enqueue_started = first_enqueue_started
+        self._release_first_enqueue = release_first_enqueue
+        self._lock = threading.Lock()
+
+    def enqueue(self, job: JobPayload) -> bool:
+        with self._lock:
+            self.enqueued_jobs.append(job)
+            is_first_enqueue = len(self.enqueued_jobs) == 1
+        if is_first_enqueue:
+            self._first_enqueue_started.set()
+            if not self._release_first_enqueue.wait(timeout=10):
+                raise AssertionError("Timed out waiting to release first scheduled job enqueue")
+        return True
 
 
 def _metadata_has_sqlite_json_columns() -> bool:

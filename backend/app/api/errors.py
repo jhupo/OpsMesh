@@ -40,11 +40,17 @@ async def http_exception_handler(
         raise exc
 
     message = exc.detail if isinstance(exc.detail, str) else "Request failed"
+    details = None
+    if isinstance(exc.detail, dict):
+        message = str(exc.detail.get("message") or message)
+        details = {key: value for key, value in exc.detail.items() if key != "message"}
     return error_response(
         status_code=exc.status_code,
         code=_code_for_status(exc.status_code),
         message=message,
         request_id=getattr(request.state, "request_id", None),
+        details=details,
+        headers=exc.headers,
     )
 
 
@@ -70,6 +76,7 @@ def error_response(
     message: str,
     request_id: str | None = None,
     details: dict[str, object] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     payload = {
         "code": code,
@@ -81,6 +88,7 @@ def error_response(
     return JSONResponse(
         status_code=status_code,
         content={"error": payload},
+        headers=headers,
     )
 
 
@@ -98,6 +106,8 @@ def _code_for_status(status_code: int) -> str:
             return "conflict"
         case status.HTTP_413_CONTENT_TOO_LARGE:
             return "payload_too_large"
+        case status.HTTP_429_TOO_MANY_REQUESTS:
+            return "rate_limited"
         case status.HTTP_503_SERVICE_UNAVAILABLE:
             return "service_unavailable"
         case _:

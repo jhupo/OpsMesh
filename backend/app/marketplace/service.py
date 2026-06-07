@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.model_provider_summary import agent_profile_response
 from backend.app.agents.models import AgentProfile
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.marketplace import (
@@ -33,6 +34,7 @@ from backend.app.marketplace.models import (
     TalentListingReview,
     WorkspaceAgentInstall,
 )
+from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 
@@ -670,20 +672,9 @@ class TalentMarketplaceService:
         task: Task,
         response: TaskTalentRecommendationResponse,
     ) -> TaskMessage:
-        next_sequence = (
-            self._session.scalar(
-                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
-                    TaskMessage.workspace_id == task.workspace_id,
-                    TaskMessage.task_id == task.id,
-                )
-            )
-            or 0
-        ) + 1
-        message = TaskMessage(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
+        return TaskMessageAppendService(self._session).append_for_task(
+            task,
             message_type="hr.staffing_recommendation",
-            sequence=next_sequence,
             body=f"HR found {len(response.missing_work_packages)} staffing gap(s).",
             payload={
                 "missing_work_packages": response.missing_work_packages,
@@ -694,9 +685,6 @@ class TalentMarketplaceService:
                 "uncovered_roles": response.uncovered_roles,
             },
         )
-        self._session.add(message)
-        self._session.flush([message])
-        return message
 
     def _append_task_hire_message(
         self,
@@ -705,21 +693,10 @@ class TalentMarketplaceService:
         install: WorkspaceAgentInstall,
         package: dict[str, object],
     ) -> TaskMessage:
-        next_sequence = (
-            self._session.scalar(
-                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
-                    TaskMessage.workspace_id == task.workspace_id,
-                    TaskMessage.task_id == task.id,
-                )
-            )
-            or 0
-        ) + 1
-        message = TaskMessage(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
+        return TaskMessageAppendService(self._session).append_for_task(
+            task,
             agent_profile_id=install.installed_agent_profile_id,
             message_type="hr.hire_confirmed",
-            sequence=next_sequence,
             body=f"Hired agent for work package {package.get('package_id', 'unknown')}.",
             payload={
                 "work_package_id": package.get("package_id"),
@@ -730,9 +707,6 @@ class TalentMarketplaceService:
                 "installed_agent_profile_id": str(install.installed_agent_profile_id),
             },
         )
-        self._session.add(message)
-        self._session.flush([message])
-        return message
 
     def _page(
         self,
@@ -1045,6 +1019,12 @@ def _string_list(value: object) -> list[str]:
 
 
 def _install_response(install: WorkspaceAgentInstall) -> WorkspaceAgentInstallResponse:
+    db_session = Session.object_session(install)
+    if db_session is None:
+        db_session = Session.object_session(install.installed_agent_profile)
+    if db_session is None:
+        raise ValueError("Talent install response requires an attached database session")
+    agent = agent_profile_response(db_session, install.installed_agent_profile)
     return WorkspaceAgentInstallResponse.model_validate(
         {
             "id": install.id,
@@ -1059,7 +1039,7 @@ def _install_response(install: WorkspaceAgentInstall) -> WorkspaceAgentInstallRe
             "installed_version": install.installed_version,
             "pinned_version": install.pinned_version,
             "status": install.status,
-            "agent": install.installed_agent_profile,
+            "agent": agent,
         }
     )
 

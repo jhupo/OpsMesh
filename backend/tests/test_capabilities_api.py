@@ -99,8 +99,20 @@ def test_capability_skill_and_mcp_control_plane() -> None:
     assert "external_ref" not in credential.json()
     assert credential.json()["external_ref_configured"] is True
     assert credential.json()["external_ref_kind"] == "secret"
+    assert credential.json()["secret_metadata"] == {
+        "storage": "external_vault",
+        "provider": "vault",
+        "configured": True,
+        "reference_kind": "secret",
+        "reference_version": None,
+        "encryption_key_id": None,
+        "fingerprint_configured": False,
+        "rotation_state": "provider_managed",
+        "raw_secret_exposed": False,
+    }
     assert credential.json()["secret_fingerprint"] is None
     assert credential.json()["encryption_key_id"] is None
+    assert "secret/image-api-key" not in str(credential.json())
     blocked_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
@@ -196,8 +208,20 @@ def test_hosted_mcp_credentials_are_encrypted_and_not_returned() -> None:
     assert body["external_ref_kind"] is None
     assert body["secret_fingerprint"].startswith("sha256:")
     assert body["encryption_key_id"] == "test"
+    assert body["secret_metadata"] == {
+        "storage": "hosted_encrypted",
+        "provider": "hosted",
+        "configured": True,
+        "reference_kind": None,
+        "reference_version": None,
+        "encryption_key_id": "test",
+        "fingerprint_configured": True,
+        "rotation_state": "current",
+        "raw_secret_exposed": False,
+    }
     assert "secret_payload" not in body
     assert "encrypted_secret_payload" not in body
+    assert "sk-secret" not in str(body)
 
     stored = session.query(McpCredentialReference).filter_by(name="hosted-key").one()
     assert stored.encrypted_secret_payload is not None
@@ -278,6 +302,8 @@ def test_mcp_credentials_can_be_listed_filtered_and_disabled() -> None:
     assert "external_ref" not in listed.json()["items"][0]
     assert listed.json()["items"][0]["external_ref_configured"] is False
     assert listed.json()["items"][0]["secret_fingerprint"] is not None
+    assert listed.json()["items"][0]["secret_metadata"]["storage"] == "hosted_encrypted"
+    assert listed.json()["items"][0]["secret_metadata"]["raw_secret_exposed"] is False
     assert "encrypted_secret_payload" not in listed.json()["items"][0]
     assert disabled.status_code == 200
     assert disabled.json()["status"] == "disabled"

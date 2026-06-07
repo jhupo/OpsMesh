@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
+from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 
@@ -146,6 +147,7 @@ class TaskExecutionDiagnosticsService:
         runs: list[AgentRun],
     ) -> dict[str, object]:
         dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
+        visible_dependencies = redact_sensitive_payload(dependencies)
         dependency_state = _dependency_state(step, step_by_id)
         assigned_agent = (
             agents.get(step.assigned_agent_profile_id)
@@ -170,19 +172,19 @@ class TaskExecutionDiagnosticsService:
             "required_skills": step.required_skills,
             "expected_artifacts": step.expected_artifacts,
             "acceptance_criteria": step.acceptance_criteria,
-            "review_policy": step.review_policy,
-            "dependencies": dependencies,
+            "review_policy": redact_sensitive_payload(step.review_policy),
+            "dependencies": visible_dependencies,
             "dependency_state": dependency_state,
             "assigned_agent": _agent_payload(assigned_agent),
             "assignment_status": _assignment_status(step, assigned_agent),
             "runnable": step.status == "queued" and not blocked_reasons,
             "blocked_reasons": blocked_reasons,
             "scheduling": {
-                "status": dependencies.get("scheduling_status"),
-                "blocked_reason": dependencies.get("blocked_reason"),
-                "blocked_resource_keys": dependencies.get("blocked_resource_keys"),
-                "priority_score": dependencies.get("priority_score"),
-                "scheduled_at": dependencies.get("scheduled_at"),
+                "status": visible_dependencies.get("scheduling_status"),
+                "blocked_reason": visible_dependencies.get("blocked_reason"),
+                "blocked_resource_keys": visible_dependencies.get("blocked_resource_keys"),
+                "priority_score": visible_dependencies.get("priority_score"),
+                "scheduled_at": visible_dependencies.get("scheduled_at"),
             },
             "runs": [_run_payload(run) for run in runs],
             "active_run_ids": [run.id for run in active_runs],
@@ -627,7 +629,7 @@ def _run_payload(run: AgentRun) -> dict[str, object]:
         "runtime_space_id": run.runtime_space_id,
         "started_at": run.started_at,
         "completed_at": run.completed_at,
-        "error": run.error,
+        "error": redact_sensitive_payload(run.error) if isinstance(run.error, dict) else None,
     }
 
 

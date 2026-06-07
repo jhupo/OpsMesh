@@ -30,7 +30,8 @@ def configure_logging(settings: Settings) -> None:
     else:
         formatter = logging.Formatter(
             "%(asctime)s %(levelname)s "
-            "[request_id=%(request_id)s workspace_id=%(workspace_id)s "
+            "[request_id=%(request_id)s trace_id=%(trace_id)s span_id=%(span_id)s "
+            "parent_span_id=%(parent_span_id)s workspace_id=%(workspace_id)s "
             "user_id=%(user_id)s task_id=%(task_id)s run_id=%(run_id)s "
             "worker_id=%(worker_id)s] %(name)s: %(message)s"
         )

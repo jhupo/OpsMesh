@@ -37,12 +37,12 @@ from backend.app.capabilities.models import (
     ToolGroup,
     WorkspaceSkillInstall,
 )
+from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
 
 T = TypeVar("T")
-MCP_HEALTH_CHECK_STALE_AFTER = timedelta(hours=24)
 MCP_LIMIT_COUNTED_STATUSES = (
     "completed",
     "failed",
@@ -126,9 +126,11 @@ class CapabilityService:
         self,
         session: Session,
         secret_service: SecretEncryptionService | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self._session = session
         self._secret_service = secret_service
+        self._settings = settings or get_settings()
 
     def list_capabilities(
         self,
@@ -461,6 +463,7 @@ class CapabilityService:
                 if tool_name in allowed_by_name
                 else 0,
                 workspace_credential_count=workspace_credential_count,
+                stale_after=self._mcp_health_check_stale_after,
             )
             for tool_name in required_tools
         ]
@@ -1396,6 +1399,7 @@ class CapabilityService:
             allowed_tool,
             credential_count=credential_count,
             workspace_credential_count=workspace_credential_count,
+            stale_after=self._mcp_health_check_stale_after,
         )
         credential_status: str | None = None
         execution_mode: str | None = None
@@ -1683,6 +1687,7 @@ class CapabilityService:
             server,
             tools=tools,
             credential_status=credential_status,
+            stale_after=self._mcp_health_check_stale_after,
         )
         return McpCatalogServer(
             server=server,
@@ -1696,6 +1701,10 @@ class CapabilityService:
             connection_summary=_connection_summary(server),
             usage=usage,
         )
+
+    @property
+    def _mcp_health_check_stale_after(self) -> timedelta:
+        return timedelta(seconds=self._settings.mcp_health_check_stale_after_seconds)
 
     def _mcp_usage_by_server_tool(
         self,
@@ -2023,6 +2032,7 @@ def _skill_tool_availability(
     *,
     credential_count: int,
     workspace_credential_count: int,
+    stale_after: timedelta,
 ) -> WorkspaceSkillToolAvailability:
     if allowed_tool is None:
         return WorkspaceSkillToolAvailability(
@@ -2039,7 +2049,7 @@ def _skill_tool_availability(
     blocked_reasons: list[str] = []
     if server.health_status == "unhealthy":
         blocked_reasons.append("server_unhealthy")
-    if _health_check_stale(server):
+    if _health_check_stale(server, stale_after=stale_after):
         blocked_reasons.append("health_check_stale")
     credential_status = _credential_status(
         server,
@@ -2106,13 +2116,14 @@ def _mcp_blocked_reasons(
     *,
     tools: list[McpCatalogTool],
     credential_status: str,
+    stale_after: timedelta,
 ) -> list[str]:
     reasons: list[str] = []
     if server.status != "active":
         reasons.append("server_inactive")
     if server.health_status == "unhealthy":
         reasons.append("server_unhealthy")
-    if _health_check_stale(server):
+    if _health_check_stale(server, stale_after=stale_after):
         reasons.append("health_check_stale")
     if not tools:
         reasons.append("no_allowed_tools")
@@ -2249,12 +2260,12 @@ def _governance_skipped(
     }
 
 
-def _health_check_stale(server: McpServer) -> bool:
+def _health_check_stale(server: McpServer, *, stale_after: timedelta) -> bool:
     checked_at = server.last_health_check_at
     if checked_at is None:
         return False
     normalized = checked_at if checked_at.tzinfo is not None else checked_at.replace(tzinfo=UTC)
-    return datetime.now(UTC) - normalized > MCP_HEALTH_CHECK_STALE_AFTER
+    return datetime.now(UTC) - normalized > stale_after
 
 
 def _mcp_health_error(health_status: str, error_code: str | None) -> str | None:

@@ -580,6 +580,7 @@ async def create_mcp_credential_reference(
             SecretEncryptionService(
                 secret=settings.credential_encryption_secret,
                 key_id=settings.credential_encryption_key_id,
+                previous_secrets=settings.credential_encryption_previous_secrets,
             ),
         ).create_credential_reference(
             context.workspace.id,

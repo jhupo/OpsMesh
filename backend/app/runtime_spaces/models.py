@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -81,6 +81,8 @@ class RuntimeSpaceQuota(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "quota_key",
             name="uq_runtime_space_quotas_space_key",
         ),
+        CheckConstraint("limit_value >= 0", name="limit_value_non_negative"),
+        CheckConstraint("reserved_value >= 0", name="reserved_value_non_negative"),
         Index("ix_runtime_space_quotas_workspace_space", "workspace_id", "runtime_space_id"),
     )
 

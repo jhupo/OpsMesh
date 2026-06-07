@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -51,8 +51,14 @@ class WorkerLease(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "worker_leases"
     __table_args__ = (
         UniqueConstraint("job_id", name="uq_worker_leases_job_id"),
+        CheckConstraint(
+            "status IN ('running', 'completed', 'failed', 'retrying', 'expired')",
+            name="status_valid",
+        ),
+        CheckConstraint("attempt >= 0", name="attempt_non_negative"),
         Index("ix_worker_leases_worker_status", "worker_id", "status"),
         Index("ix_worker_leases_workspace_status", "workspace_id", "status"),
+        Index("ix_worker_leases_status_heartbeat", "status", "last_heartbeat_at"),
         Index("ix_worker_leases_resource", "workspace_id", "job_type", "resource_id"),
     )
 
@@ -74,4 +80,5 @@ class WorkerLease(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=dict,
     )
     started_at: Mapped[datetime] = mapped_column(nullable=False)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)

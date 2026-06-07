@@ -1,5 +1,6 @@
 
 from datetime import UTC, datetime
+from uuid import UUID
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
@@ -7,6 +8,8 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.agent_messages.models import AgentMessage
+from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -17,6 +20,7 @@ from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.memory.search import MemorySearchHit, MemorySearchRequest
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolPermissionError, ToolResourceNotFoundError
 from backend.app.tools.product_tools import ProductToolService
@@ -475,6 +479,122 @@ def test_workspace_memory_write_requires_tool_permission() -> None:
         assert "not allowed" in str(exc)
     else:
         raise AssertionError("Expected missing memory write permission to fail")
+
+
+def test_agent_mailbox_tools_send_and_list_workspace_scoped_messages() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, slug="acme")
+    _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Task")
+    sender = AgentProfile(workspace_id=workspace.id, name="Planner", role="planner")
+    recipient = AgentProfile(workspace_id=workspace.id, name="Builder", role="builder")
+    other_agent = AgentProfile(workspace_id=other_workspace.id, name="Foreign", role="builder")
+    session.add_all([task, sender, recipient, other_agent])
+    session.flush()
+    run = AgentRun(workspace_id=workspace.id, task_id=task.id, agent_profile_id=sender.id)
+    session.add(run)
+    session.commit()
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        allowed_tools=frozenset({"send_agent_message", "list_agent_thread_messages"}),
+    )
+    service = ProductToolService(session)
+
+    sent = service.send_agent_message(
+        context,
+        recipient_agent_profile_id=recipient.id,
+        subject="Implementation handoff",
+        body="Please implement the persistence layer.",
+        payload={"api_key": "sk-hidden", "scope": "backend"},
+    )
+    listed = service.list_agent_thread_messages(
+        context,
+        thread_id=UUID(str(sent["thread"]["id"])),
+    )
+
+    stored = session.query(AgentMessage).one()
+    assert sent["message"]["sender_agent_profile_id"] == str(sender.id)
+    assert sent["message"]["recipient_agent_profile_id"] == str(recipient.id)
+    assert sent["message"]["payload"] == {"api_key": "[redacted]", "scope": "backend"}
+    assert listed["total"] == 1
+    assert listed["items"][0]["payload"] == {"api_key": "[redacted]", "scope": "backend"}
+    assert stored.payload == {"api_key": "sk-hidden", "scope": "backend"}
+
+    try:
+        service.send_agent_message(
+            context,
+            recipient_agent_profile_id=other_agent.id,
+            body="Cross workspace should fail.",
+        )
+    except ToolResourceNotFoundError as exc:
+        assert "workspace" in str(exc)
+    else:
+        raise AssertionError("Expected cross-workspace agent message to fail")
+
+
+def test_agent_mailbox_tools_require_task_team_membership() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, slug="acme")
+    team = AgentTeam(workspace_id=workspace.id, name="Core Team", team_type="delivery")
+    session.add(team)
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Task",
+    )
+    sender = AgentProfile(workspace_id=workspace.id, name="Planner", role="planner")
+    recipient = AgentProfile(workspace_id=workspace.id, name="Builder", role="builder")
+    outsider = AgentProfile(workspace_id=workspace.id, name="Outsider", role="builder")
+    session.add_all([task, sender, recipient, outsider])
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=sender.id,
+                team_role="planner",
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=recipient.id,
+                team_role="builder",
+            ),
+        ]
+    )
+    run = AgentRun(workspace_id=workspace.id, task_id=task.id, agent_profile_id=sender.id)
+    session.add(run)
+    session.commit()
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        allowed_tools=frozenset({"send_agent_message"}),
+    )
+    service = ProductToolService(session)
+
+    sent = service.send_agent_message(
+        context,
+        recipient_agent_profile_id=recipient.id,
+        body="Team handoff.",
+    )
+    try:
+        service.send_agent_message(
+            context,
+            recipient_agent_profile_id=outsider.id,
+            body="Outsider handoff.",
+        )
+    except ToolResourceNotFoundError as exc:
+        assert "task team" in str(exc)
+    else:
+        raise AssertionError("Expected non-team recipient to fail")
+
+    assert sent["message"]["recipient_agent_profile_id"] == str(recipient.id)
 
 
 def test_write_artifact_versions_are_bound_to_work_package() -> None:

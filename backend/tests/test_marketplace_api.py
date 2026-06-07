@@ -164,7 +164,19 @@ def test_talent_install_uses_frozen_public_snapshot_without_private_workspace_re
         api_key_fingerprint="sha256:test",
         encryption_key_id="test-key",
     )
-    session.add(credential)
+    buyer_default_credential = ModelProviderCredential(
+        workspace_id=buyer_workspace.id,
+        created_by_user_id=buyer.id,
+        name="Buyer OpenAI",
+        provider="openai",
+        default_model="gpt-4.1-mini",
+        encrypted_api_key="encrypted-buyer",
+        api_key_fingerprint="sha256:buyer",
+        encryption_key_id="test-key",
+        is_default=True,
+        health_status="healthy",
+    )
+    session.add_all([credential, buyer_default_credential])
     session.flush()
     source_agent = AgentProfile(
         workspace_id=publisher_workspace.id,
@@ -225,6 +237,17 @@ def test_talent_install_uses_frozen_public_snapshot_without_private_workspace_re
     assert agent["instructions"] == "Use the public image workflow."
     assert agent["model"] == "gpt-4.1"
     assert agent["model_provider_credential_id"] is None
+    assert agent["model_provider"]["source"] == "workspace_default"
+    assert agent["model_provider"]["provider"] == "openai"
+    assert agent["model_provider"]["credential_name"] == "Buyer OpenAI"
+    assert agent["model_provider"]["credential_id"] == str(buyer_default_credential.id)
+    assert agent["model_provider"]["selected_model"] == "gpt-4.1"
+    assert agent["model_provider"]["default_model"] == "gpt-4.1-mini"
+    assert agent["model_provider"]["api_key_fingerprint"] == "sha256:buyer"
+    assert agent["model_provider"]["readiness_status"] == "ready"
+    assert str(credential.id) not in str(agent["model_provider"])
+    assert "Publisher OpenAI" not in str(agent["model_provider"])
+    assert "encrypted" not in str(hired.json())
     assert agent["skills"] == {"skills": ["image"], "nested": {}}
     assert agent["tool_policy"] == {"mcp_tools": ["generate_image"], "nested": {}}
     assert agent["runtime_policy"] == {"provider": "docker", "limits": {"cpu": 2}}

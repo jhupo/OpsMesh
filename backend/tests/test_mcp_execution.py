@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
@@ -23,6 +24,7 @@ from backend.app.capabilities.models import (
     McpToolAllowlist,
     McpToolCallLog,
 )
+from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
@@ -268,6 +270,111 @@ def test_mcp_execution_blocks_tool_not_in_runtime_context() -> None:
     assert log.request["authorization_snapshot_version"] == 1
     assert security_event is not None
     assert security_event.reason == "mcp_tool_not_in_runtime_context"
+
+
+def test_mcp_execution_blocks_unhealthy_server_before_adapter_call() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace, snapshot_tools=["generate_image"])
+    server.health_status = "unhealthy"
+    server.last_error = "health_check_failed"
+    session.commit()
+    adapter = RecordingAdapter({"ok": True})
+
+    try:
+        McpToolExecutionService(session, adapter).execute(
+            McpExecutionRequest(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                arguments={"prompt": "mountain"},
+            )
+        )
+    except ToolPermissionError as exc:
+        assert "mcp_server_unhealthy" in str(exc)
+    else:
+        raise AssertionError("Expected unhealthy MCP server to be blocked")
+
+    log = session.scalar(select(McpToolCallLog))
+    security_event = session.scalar(select(SecurityEvent))
+
+    assert adapter.calls == []
+    assert log is not None
+    assert log.status == "blocked"
+    assert log.error is not None
+    assert log.error["code"] == "mcp_server_unhealthy"
+    assert log.request["authorization_snapshot_version"] == 1
+    assert security_event is not None
+    assert security_event.reason == "mcp_server_unhealthy"
+
+
+def test_mcp_execution_blocks_stale_health_check_before_adapter_call() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace, snapshot_tools=["generate_image"])
+    server.health_status = "healthy"
+    server.last_health_check_at = datetime.now(UTC) - timedelta(hours=25)
+    session.commit()
+    adapter = RecordingAdapter({"ok": True})
+
+    try:
+        McpToolExecutionService(session, adapter).execute(
+            McpExecutionRequest(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                arguments={"prompt": "mountain"},
+            )
+        )
+    except ToolPermissionError as exc:
+        assert "mcp_server_health_check_stale" in str(exc)
+    else:
+        raise AssertionError("Expected stale MCP health check to be blocked")
+
+    log = session.scalar(select(McpToolCallLog))
+    security_event = session.scalar(select(SecurityEvent))
+
+    assert adapter.calls == []
+    assert log is not None
+    assert log.status == "blocked"
+    assert log.error is not None
+    assert log.error["code"] == "mcp_server_health_check_stale"
+    assert log.request["authorization_snapshot_version"] == 1
+    assert security_event is not None
+    assert security_event.reason == "mcp_server_health_check_stale"
+
+
+def test_mcp_execution_uses_configured_health_check_stale_window() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace, snapshot_tools=["generate_image"])
+    server.health_status = "healthy"
+    server.last_health_check_at = datetime.now(UTC) - timedelta(hours=25)
+    session.commit()
+    adapter = RecordingAdapter({"ok": True})
+
+    result = McpToolExecutionService(
+        session,
+        adapter,
+        settings=Settings(mcp_health_check_stale_after_seconds=26 * 60 * 60),
+    ).execute(
+        McpExecutionRequest(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            mcp_server_id=server.id,
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+        )
+    )
+
+    log = session.scalar(select(McpToolCallLog))
+
+    assert result.status == "completed"
+    assert adapter.calls
+    assert log is not None
+    assert log.status == "completed"
 
 
 def test_mcp_execution_rejects_cross_workspace_run_context() -> None:

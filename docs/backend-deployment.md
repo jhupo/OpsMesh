@@ -42,6 +42,30 @@ CHAINCLOUD_COMPOSE_FILE=deploy/server/docker-compose.backend.yml scripts/server-
 By default the API binds to `127.0.0.1:8000`. Put Nginx or another controlled ingress in front
 of it before exposing it outside the server.
 
+The same compose file also includes a minimal monitoring stack:
+
+- Prometheus scrapes `api:8000/api/v1/metrics` and loads `deploy/server/monitoring/alert-rules.yml`.
+- Alertmanager loads `deploy/server/monitoring/alertmanager.yml`; the checked-in receiver keeps alerts visible in the UI until an operator adds email, Slack, or webhook routing.
+- Grafana provisions the Prometheus datasource and the `ChainCloud Control Plane` dashboard from `deploy/server/monitoring/grafana`.
+
+Prometheus, Alertmanager, and Grafana bind to `127.0.0.1` by default:
+
+```bash
+CHAINCLOUD_MONITORING_DIR=/opt/chaincloud-app/current/deploy/server/monitoring
+CHAINCLOUD_PROMETHEUS_PORT=9090
+CHAINCLOUD_ALERTMANAGER_PORT=9093
+CHAINCLOUD_GRAFANA_PORT=3000
+CHAINCLOUD_GRAFANA_ADMIN_PASSWORD=replace-with-random-password
+```
+
+Run the smoke test with monitoring checks after the stack starts:
+
+```bash
+CHAINCLOUD_SMOKE_MONITORING=true CHAINCLOUD_COMPOSE_FILE=deploy/server/docker-compose.backend.yml scripts/server-smoke-test.sh
+```
+
+Keep Grafana and Alertmanager behind SSH tunneling, VPN, or authenticated ingress unless a production SSO/auth layer is configured.
+
 ## Production Settings
 
 Before running with `CHAINCLOUD_ENVIRONMENT=production`, set strong values for:
@@ -51,9 +75,11 @@ Before running with `CHAINCLOUD_ENVIRONMENT=production`, set strong values for:
 - `CHAINCLOUD_POSTGRES_PASSWORD`
 - `CHAINCLOUD_ENABLE_API_DOCS=false`
 - `CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET`
+- `CHAINCLOUD_GRAFANA_ADMIN_PASSWORD`
 
 The application refuses to boot in production when default internal secrets are used or API docs are still enabled.
-The credential encryption secret protects hosted MCP credentials stored by the platform. Rotate it by introducing a new `CHAINCLOUD_CREDENTIAL_ENCRYPTION_KEY_ID` and re-encrypting existing hosted secrets before retiring the old key.
+The credential encryption secret protects hosted MCP credentials, model provider keys, and webhook signing secrets stored by the platform. Rotate it by setting a new `CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET` and `CHAINCLOUD_CREDENTIAL_ENCRYPTION_KEY_ID`, while keeping old key material in `CHAINCLOUD_CREDENTIAL_ENCRYPTION_PREVIOUS_SECRETS` as a JSON object keyed by old key ID. Once old encrypted rows have been re-encrypted under the current key, remove the retired key from the previous-secret keyring.
+External vault references can be configured through `CHAINCLOUD_SECRET_VAULT_PROVIDERS` as JSON provider metadata. Admin/configuration responses redact provider URLs to host-only summaries and redact tokens/headers.
 
 API rate limiting is disabled by default for local development. Enable it in shared or production environments:
 
@@ -64,6 +90,8 @@ CHAINCLOUD_API_RATE_LIMIT_WINDOW_SECONDS=60
 ```
 
 Rate limits use Redis fixed windows and fail open if Redis is temporarily unavailable, so cache instability does not take down the API.
+
+Hosted MCP health checks are treated as stale after `CHAINCLOUD_MCP_HEALTH_CHECK_STALE_AFTER_SECONDS` seconds, defaulting to `86400`. Stale or missing MCP health results fail closed, so the platform will avoid using hosted MCP credentials until a fresh healthy check is recorded.
 
 ## Process Commands
 
@@ -87,7 +115,7 @@ alembic upgrade head
 
 The Docker entrypoint runs migrations by default. Set `CHAINCLOUD_RUN_MIGRATIONS=false` for worker-only containers or when migrations are managed by an external release job.
 
-## OpenAI Agents Runner
+## Model Provider Dispatch Runner
 
 The deployment defaults to the deterministic fake runner:
 
@@ -95,10 +123,10 @@ The deployment defaults to the deterministic fake runner:
 CHAINCLOUD_AGENT_RUNNER_BACKEND=fake
 ```
 
-Use the OpenAI Agents SDK runner after configuring provider credentials:
+Use the provider-dispatching runner after configuring provider credentials:
 
 ```bash
-CHAINCLOUD_AGENT_RUNNER_BACKEND=openai
+CHAINCLOUD_AGENT_RUNNER_BACKEND=provider_dispatching
 ```
 
 Model provider keys should be stored through the workspace API, not raw environment
@@ -109,8 +137,25 @@ variables:
 - returns only a fingerprint and never returns the secret
 - agents can reference a credential through `model_provider_credential_id`
 - agents can set `model` to a concrete model or `workspace-default` to use the credential default
+- OpenAI-compatible providers route through the OpenAI Agents SDK; Anthropic/Claude providers
+  route through the native messages runner
 
 If an agent has no credential reference, the worker resolves the workspace default model provider
 credential when one exists.
+
+Run a real OpenAI-compatible gateway smoke only after explicitly authorizing the external
+provider call and exporting a temporary API key in the shell:
+
+```bash
+export OPENAI_API_KEY
+export OPENAI_SMOKE_BASE_URL=https://dash.ovload.com/
+python scripts/openai-gateway-smoke.py --dry-run
+python scripts/openai-gateway-smoke.py --allow-external-provider-call
+```
+
+The smoke script reads the key from the process environment, never stores it in the repo, and
+normalizes root OpenAI-compatible URLs to `/v1` before running the `openai_smoke` pytest marker.
+The dry run prints only redacted configuration and does not make an external provider call. Use
+`OPENAI_SMOKE_MODEL` to override the default smoke model.
 
 The product orchestration layer should continue to talk through the internal agent runtime contract rather than importing provider-specific SDK behavior into API routes.

@@ -27,7 +27,19 @@ def test_settings_defaults_are_local_development_friendly() -> None:
     assert settings.database_statement_timeout_ms == 30_000
     assert settings.blocking_thread_pool_workers == recommendation.blocking_thread_pool_workers
     assert settings.redis_max_connections == recommendation.redis_max_connections
+    assert settings.tracing_enabled is True
     assert settings.request_slow_log_threshold_ms == 1_000
+    assert settings.worker_heartbeat_token is None
+    assert settings.readiness_worker_check_enabled is False
+    assert settings.readiness_worker_stale_after_seconds == 300
+    assert settings.mcp_health_check_stale_after_seconds == 86_400
+    assert settings.audit_event_retention_days is None
+    assert settings.audit_event_worm_enabled is True
+    assert settings.storage_backend == "local"
+    assert settings.external_call_max_attempts == 2
+    assert settings.external_call_circuit_failure_threshold == 5
+    assert settings.external_call_circuit_reset_seconds == 60
+    assert settings.secret_vault_providers == {}
     assert settings.feature_flags == {}
 
 
@@ -97,6 +109,16 @@ def test_production_requires_platform_admin_token() -> None:
         )
 
 
+def test_production_requires_worker_heartbeat_token() -> None:
+    with pytest.raises(ValueError, match="CHAINCLOUD_WORKER_HEARTBEAT_TOKEN"):
+        _production_settings(worker_heartbeat_token=None)
+
+
+def test_production_requires_worker_readiness_check() -> None:
+    with pytest.raises(ValueError, match="CHAINCLOUD_READINESS_WORKER_CHECK_ENABLED"):
+        _production_settings(readiness_worker_check_enabled=False)
+
+
 def test_production_rejects_unsafe_runtime_and_infrastructure_defaults() -> None:
     with pytest.raises(ValueError, match="AGENT_RUNNER_BACKEND"):
         _production_settings(agent_runner_backend="fake")
@@ -122,6 +144,18 @@ def test_settings_redacted_summary_hides_secrets() -> None:
         redis_url="redis://:redis-secret@redis.example.com:6379/0",
         internal_api_token="secret",
         credential_encryption_secret="credential-secret",
+        credential_encryption_key_id="current-key",
+        credential_encryption_previous_secrets={
+            "old-key": "old-credential-secret",
+            "older-key": "older-credential-secret",
+        },
+        secret_vault_providers={
+            "vault": {
+                "url": "https://vault.example.test/v1/secret?token=secret",
+                "token": "vault-secret",
+                "namespace": "platform",
+            }
+        },
         cors_origins=["https://console.example.com"],
         feature_flags={"workspace_memory": True, "docker_runtimes": False},
     )
@@ -130,9 +164,89 @@ def test_settings_redacted_summary_hides_secrets() -> None:
 
     assert summary["database_url"] == "postgresql+psycopg://***:***@db.example.com:5432/app"
     assert summary["redis_url"] == "redis://***:***@redis.example.com:6379/0"
-    assert "secret" not in str(summary)
+    serialized = str(summary)
+    assert "credential-secret" not in serialized
+    assert "old-credential-secret" not in serialized
+    assert "older-credential-secret" not in serialized
+    assert "redis-secret" not in serialized
+    assert "vault-secret" not in serialized
+    assert "token=secret" not in serialized
     assert summary["cors_origins_count"] == 1
+    assert summary["audit_event_retention_days"] is None
+    assert summary["audit_event_worm_enabled"] is True
+    assert summary["storage_backend"] == "local"
+    assert summary["mcp_health_check_stale_after_seconds"] == 86_400
+    assert summary["external_call_max_attempts"] == 2
+    assert summary["external_call_circuit_failure_threshold"] == 5
+    assert summary["external_call_circuit_reset_seconds"] == 60
+    assert summary["tracing_enabled"] is True
+    assert summary["credential_encryption_key_id"] == "current-key"
+    assert summary["credential_encryption_previous_key_ids"] == ["old-key", "older-key"]
+    assert summary["secret_vault_providers"] == {
+        "vault": {
+            "url_configured": True,
+            "url_host": "vault.example.test",
+            "token": "[redacted]",
+            "namespace": "platform",
+        }
+    }
     assert summary["enabled_feature_flags"] == ["workspace_memory"]
+
+
+def test_s3_storage_requires_bucket() -> None:
+    with pytest.raises(ValueError, match="CHAINCLOUD_S3_BUCKET"):
+        Settings(environment="test", storage_backend="s3")
+
+
+def test_s3_storage_blank_optional_settings_are_unset() -> None:
+    settings = Settings(
+        environment="test",
+        storage_backend="s3",
+        s3_bucket=" chaincloud ",
+        s3_endpoint_url=" ",
+        s3_region=" ",
+        s3_access_key_id=" ",
+        s3_secret_access_key=" ",
+        s3_session_token=" ",
+        s3_prefix=" dev ",
+    )
+
+    assert settings.s3_bucket == "chaincloud"
+    assert settings.s3_endpoint_url is None
+    assert settings.s3_region is None
+    assert settings.s3_access_key_id is None
+    assert settings.s3_secret_access_key is None
+    assert settings.s3_session_token is None
+    assert settings.s3_prefix == "dev"
+
+
+def test_s3_storage_redacted_summary_hides_credentials() -> None:
+    settings = Settings(
+        environment="test",
+        storage_backend="s3",
+        s3_bucket="chaincloud",
+        s3_endpoint_url="https://access:secret@minio.example.com:9000",
+        s3_region="us-east-1",
+        s3_prefix="tenant-a",
+        s3_access_key_id="access-key",
+        s3_secret_access_key="secret-key",
+        s3_session_token="session-token",
+        s3_addressing_style="path",
+    )
+
+    summary = settings.redacted_summary()
+
+    assert summary["storage_backend"] == "s3"
+    assert summary["s3_bucket"] == "chaincloud"
+    assert summary["s3_endpoint_url"] == "https://***:***@minio.example.com:9000"
+    assert summary["s3_region"] == "us-east-1"
+    assert summary["s3_prefix"] == "tenant-a"
+    assert summary["s3_access_key_id_configured"] is True
+    assert summary["s3_secret_access_key_configured"] is True
+    assert summary["s3_session_token_configured"] is True
+    assert summary["s3_addressing_style"] == "path"
+    assert "secret-key" not in str(summary)
+    assert "session-token" not in str(summary)
 
 
 def test_database_engine_uses_pool_settings_for_postgres_url() -> None:
@@ -222,10 +336,12 @@ def _production_settings(**overrides: object) -> Settings:
         "environment": "production",
         "internal_api_token": "secret",
         "platform_admin_token": "admin-secret",
+        "worker_heartbeat_token": "worker-heartbeat-secret",
+        "readiness_worker_check_enabled": True,
         "token_hash_pepper": "pepper",
         "enable_api_docs": False,
         "credential_encryption_secret": "credential-secret",
-        "agent_runner_backend": "openai",
+        "agent_runner_backend": "provider_dispatching",
         "database_url": "postgresql+psycopg://app:strong@db.example.com:5432/app",
         "redis_url": "redis://redis.example.com:6379/0",
         "cors_origins": ["https://console.example.com"],

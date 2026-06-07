@@ -9,6 +9,11 @@ from backend.app.api.schemas.redaction import (
     is_sensitive_payload_key,
     redact_sensitive_payload,
 )
+from backend.app.secrets.service import (
+    external_vault_reference_metadata,
+    hosted_secret_metadata,
+    vault_reference_kind,
+)
 
 
 class CapabilityCreateRequest(BaseModel):
@@ -385,13 +390,23 @@ class McpCredentialReferenceResponse(TimestampedModel):
     @property
     def external_ref_kind(self) -> str | None:
         raw_value = getattr(self, "external_ref", None)
-        if not isinstance(raw_value, str) or not raw_value:
-            return None
-        if ":" in raw_value:
-            return raw_value.split(":", 1)[0]
-        if "/" in raw_value:
-            return raw_value.split("/", 1)[0]
-        return "reference"
+        return vault_reference_kind(raw_value) if isinstance(raw_value, str) else None
+
+    @computed_field
+    @property
+    def secret_metadata(self) -> dict[str, object]:
+        if self.secret_fingerprint:
+            return hosted_secret_metadata(
+                provider="hosted",
+                encryption_key_id=self.encryption_key_id,
+                secret_fingerprint=self.secret_fingerprint,
+            ).to_api_dict()
+        raw_value = getattr(self, "external_ref", None)
+        external_ref = raw_value if isinstance(raw_value, str) else ""
+        return external_vault_reference_metadata(
+            provider=self.provider,
+            external_ref=external_ref,
+        ).to_api_dict()
 
 
 class McpToolDescriptor(BaseModel):

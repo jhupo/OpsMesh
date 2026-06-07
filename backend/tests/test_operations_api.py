@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import fakeredis
 from fastapi.testclient import TestClient
+from redis.exceptions import RedisError
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.admin.models import PlatformPolicy
+from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.approvals.models import Approval
 from backend.app.audit.models import AuditEvent
 from backend.app.capabilities.models import McpServer
@@ -22,6 +24,7 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.operations.models import WorkerLease, WorkerNode
+from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
@@ -35,10 +38,14 @@ from backend.app.self_hosted.models import (
     SelfHostedWorker,
 )
 from backend.app.tasks.models import Task, TaskStep
+from backend.app.teams.models import AgentTeam
+from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.jobs import JobPayload, JobType
+from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
+WORKER_HEARTBEAT_TOKEN = "worker-heartbeat-token"
 
 
 def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
@@ -170,11 +177,51 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
             "worker_version": "2026.05.19",
             "hostname": "host-a",
             "capacity": {"max_jobs": 2, "token": "capacity-secret"},
-            "details": {"pid": 123, "headers": {"authorization": "Bearer hidden"}},
+            "details": {
+                "pid": 123,
+                "headers": {"authorization": "Bearer hidden"},
+                "scheduled_job_actions_enqueued": 2,
+                "scheduled_job_actions_recorded": 1,
+                "scheduled_job_actions_skipped": 1,
+                "scheduled_job_actions_enqueued_by_job_type": {
+                    "model_provider.health_check": 1,
+                    "task.plan": 1,
+                },
+                "scheduled_job_actions_recorded_by_job_type": {
+                    "record_due_action": 1,
+                },
+                "scheduled_job_actions_skipped_by_job_type": {
+                    "model_provider.health_check": 1,
+                    "api_key": "sk-worker-schedule",
+                },
+            },
         },
     )
     assert heartbeat.status_code == 200
-    assert heartbeat.json()["details"] == {"pid": 123, "headers": "[redacted]"}
+    heartbeat_details = heartbeat.json()["details"]
+    assert heartbeat_details["pid"] == 123
+    assert heartbeat_details["headers"] == "[redacted]"
+    assert heartbeat_details["trace_id"] == heartbeat.headers["X-Trace-ID"]
+    assert isinstance(heartbeat_details["span_id"], str)
+    assert heartbeat_details["scheduled_job_actions"] == {
+        "enqueued": 2,
+        "recorded": 1,
+        "skipped": 1,
+        "enqueued_by_job_type": {
+            "model_provider.health_check": 1,
+            "task.plan": 1,
+        },
+        "recorded_by_job_type": {"record_due_action": 1},
+        "skipped_by_job_type": {
+            "model_provider.health_check": 1,
+        },
+        "model_provider_health_check": {
+            "enqueued": 1,
+            "recorded": 0,
+            "skipped": 1,
+        },
+    }
+    assert "sk-worker-schedule" not in str(heartbeat.json())
     workers = client.get(
         f"/api/v1/workspaces/{workspace.id}/operations/workers",
         headers=_headers(owner.id),
@@ -187,9 +234,14 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
         "token": "[redacted]",
         "worker_type": "cloud",
     }
-    assert workers.json()["items"][0]["details"] == {
-        "pid": 123,
-        "headers": "[redacted]",
+    worker_details = workers.json()["items"][0]["details"]
+    assert worker_details["pid"] == 123
+    assert worker_details["headers"] == "[redacted]"
+    assert worker_details["trace_id"] == heartbeat.headers["X-Trace-ID"]
+    assert worker_details["scheduled_job_actions"]["model_provider_health_check"] == {
+        "enqueued": 1,
+        "recorded": 0,
+        "skipped": 1,
     }
 
     drain = client.post(
@@ -489,6 +541,405 @@ def test_operations_runtime_events_redact_sensitive_metadata() -> None:
     assert "runtime.example.test/private" not in str(metadata)
 
 
+def test_team_runtime_timeline_aggregates_redacts_and_scopes_events() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    other_owner, other_workspace = _seed_workspace_with_role(
+        session,
+        email="timeline-other@example.com",
+        slug="timeline-other",
+    )
+    now = datetime.now(UTC)
+    team = AgentTeam(workspace_id=workspace.id, name="Ops Team", team_type="software")
+    other_team = AgentTeam(workspace_id=workspace.id, name="Other Team", team_type="software")
+    foreign_team = AgentTeam(
+        workspace_id=other_workspace.id,
+        name="Foreign Team",
+        team_type="software",
+    )
+    session.add_all([team, other_team, foreign_team])
+    session.flush()
+    thread = AgentMessageThread(
+        workspace_id=workspace.id,
+        agent_team_id=team.id,
+        subject="Ops Team runtime",
+        status="active",
+    )
+    other_thread = AgentMessageThread(
+        workspace_id=workspace.id,
+        agent_team_id=other_team.id,
+        subject="Other Team runtime",
+        status="active",
+    )
+    foreign_thread = AgentMessageThread(
+        workspace_id=other_workspace.id,
+        agent_team_id=foreign_team.id,
+        subject="Foreign runtime",
+        status="active",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        title="Timeline task",
+        status="queued",
+    )
+    other_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=other_team.id,
+        title="Other task",
+        status="queued",
+    )
+    session.add_all([thread, other_thread, foreign_thread, task, other_task])
+    session.flush()
+    run = AgentRun(workspace_id=workspace.id, task_id=task.id, status="running")
+    other_team_run = AgentRun(workspace_id=workspace.id, task_id=other_task.id, status="running")
+    queued_loop_job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+        resource_id=team.id,
+        idempotency_key=f"team.execution_loop:{workspace.id}:{team.id}:timeline-queued",
+        routing={"trigger": "manual", "api_key": "sk-queue-timeline"},
+    )
+    retry_loop_job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+        resource_id=team.id,
+        idempotency_key=f"team.execution_loop:{workspace.id}:{team.id}:timeline-retry",
+        attempt=1,
+        max_attempts=3,
+        last_error="retry failed api_key=sk-retry-timeline",
+        last_error_type="RuntimeError",
+        last_failed_at=now - timedelta(seconds=25),
+        routing={"token": "retry-token"},
+    )
+    dead_letter_loop_job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+        resource_id=team.id,
+        idempotency_key=f"team.execution_loop:{workspace.id}:{team.id}:timeline-dead-letter",
+        attempt=3,
+        max_attempts=3,
+        last_error="dead letter base_url=https://dead.timeline.example.test/private",
+        last_error_type="RuntimeError",
+        last_failed_at=now - timedelta(seconds=24),
+        routing={"authorization": "Bearer dead-letter-token"},
+    )
+    other_team_retry_job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+        resource_id=other_team.id,
+        idempotency_key=f"team.execution_loop:{workspace.id}:{other_team.id}:timeline-retry",
+        attempt=1,
+        max_attempts=3,
+        last_error="other retry",
+        last_error_type="RuntimeError",
+        last_failed_at=now - timedelta(seconds=23),
+    )
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="bound-runtime",
+        status="running",
+        connection_status="online",
+        capabilities={
+            "team_runtime": {
+                "workspace_id": str(workspace.id),
+                "team_id": str(team.id),
+                "team_name": team.name,
+            }
+        },
+    )
+    other_runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="other-runtime",
+        status="running",
+        connection_status="online",
+        capabilities={"team_runtime": {"team_id": str(other_team.id)}},
+    )
+    foreign_runtime = WorkspaceRuntime(
+        workspace_id=other_workspace.id,
+        name="foreign-runtime",
+        status="running",
+        connection_status="online",
+        capabilities={"team_runtime": {"team_id": str(foreign_team.id)}},
+    )
+    session.add_all([run, other_team_run, runtime, other_runtime, foreign_runtime])
+    session.flush()
+    keys = RedisKeyBuilder("chaincloud")
+    redis.rpush(keys.queue("agent_runs"), queued_loop_job.model_dump_json())
+    redis.zadd(
+        keys.queue("agent_runs") + ":retry",
+        {
+            retry_loop_job.model_dump_json(): now.timestamp() + 30,
+            other_team_retry_job.model_dump_json(): now.timestamp() + 10,
+        },
+    )
+    redis.rpush(keys.dead_letter_queue("agent_runs"), dead_letter_loop_job.model_dump_json())
+    session.add_all(
+        [
+            AgentMessage(
+                workspace_id=workspace.id,
+                thread_id=thread.id,
+                agent_team_id=team.id,
+                message_type="team.runtime.started",
+                body="Runtime started with token=timeline-secret",
+                payload={"team_id": str(other_team.id), "token": "message-secret"},
+                status="sent",
+                created_at=now - timedelta(seconds=60),
+            ),
+            AgentMessage(
+                workspace_id=workspace.id,
+                thread_id=other_thread.id,
+                agent_team_id=other_team.id,
+                message_type="team.runtime.started",
+                body="Other team runtime started",
+                payload={"team_id": str(team.id)},
+                status="sent",
+                created_at=now - timedelta(seconds=59),
+            ),
+            AgentMessage(
+                workspace_id=other_workspace.id,
+                thread_id=foreign_thread.id,
+                agent_team_id=foreign_team.id,
+                message_type="team.runtime.started",
+                body="Foreign runtime started",
+                payload={"team_id": str(foreign_team.id)},
+                status="sent",
+                created_at=now - timedelta(seconds=58),
+            ),
+            AuditEvent(
+                workspace_id=workspace.id,
+                actor_type="user",
+                actor_id=str(owner.id),
+                user_id=owner.id,
+                action="team.execution_loop.iteration_ran",
+                target_type="agent_team",
+                target_id=str(team.id),
+                audit_metadata={
+                    "summary": "iteration complete token=timeline-meta-secret",
+                    "headers": {"authorization": "Bearer hidden"},
+                },
+                created_at=now - timedelta(seconds=50),
+            ),
+            AuditEvent(
+                workspace_id=workspace.id,
+                actor_type="user",
+                actor_id=str(owner.id),
+                user_id=owner.id,
+                action="team.execution_loop.iteration_ran",
+                target_type="agent_team",
+                target_id=str(other_team.id),
+                audit_metadata={"summary": "other iteration"},
+                created_at=now - timedelta(seconds=49),
+            ),
+            WorkerLease(
+                workspace_id=workspace.id,
+                worker_id="worker-team",
+                queue_name="agent_runs",
+                job_id=uuid4(),
+                job_type=JobType.TEAM_EXECUTION_LOOP.value,
+                resource_id=team.id,
+                status="completed",
+                attempt=1,
+                lease_metadata={"docker_container_id": "lease-container-secret"},
+                started_at=now - timedelta(seconds=40),
+                finished_at=now - timedelta(seconds=30),
+            ),
+            WorkerLease(
+                workspace_id=workspace.id,
+                worker_id="worker-other-team",
+                queue_name="agent_runs",
+                job_id=uuid4(),
+                job_type=JobType.TEAM_EXECUTION_LOOP.value,
+                resource_id=other_team.id,
+                status="completed",
+                attempt=1,
+                lease_metadata={},
+                started_at=now - timedelta(seconds=39),
+                finished_at=now - timedelta(seconds=29),
+            ),
+            RuntimeEvent(
+                workspace_id=workspace.id,
+                workspace_runtime_id=runtime.id,
+                event_type="runtime.heartbeat",
+                message="runtime heartbeat",
+                event_metadata={"base_url": "https://runtime-secret.example.test"},
+                created_at=now - timedelta(seconds=20),
+            ),
+            RuntimeEvent(
+                workspace_id=workspace.id,
+                workspace_runtime_id=other_runtime.id,
+                event_type="runtime.heartbeat",
+                message="other runtime heartbeat",
+                event_metadata={},
+                created_at=now - timedelta(seconds=19),
+            ),
+            RuntimeEvent(
+                workspace_id=other_workspace.id,
+                workspace_runtime_id=foreign_runtime.id,
+                event_type="runtime.heartbeat",
+                message="foreign runtime heartbeat",
+                event_metadata={},
+                created_at=now - timedelta(seconds=18),
+            ),
+            RunEvent(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                event_type="run.tool_called",
+                sequence=1,
+                message="team run event Bearer run-message-secret",
+                event_metadata={"api_key": "run-secret"},
+                created_at=now - timedelta(seconds=10),
+            ),
+            RunEvent(
+                workspace_id=workspace.id,
+                agent_run_id=other_team_run.id,
+                event_type="run.tool_called",
+                sequence=1,
+                message="other team run event",
+                event_metadata={},
+                created_at=now - timedelta(seconds=9),
+            ),
+        ]
+    )
+    session.commit()
+
+    default_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/team-runtimes/{team.id}/timeline",
+        headers=_headers(owner.id),
+    )
+    include_runs_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/team-runtimes/{team.id}/timeline"
+        "?include_runs=true",
+        headers=_headers(owner.id),
+    )
+    filtered_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/team-runtimes/{team.id}/timeline"
+        "?include_runs=true&source_type=runtime_event&event_type=runtime.heartbeat",
+        headers=_headers(owner.id),
+    )
+    without_queue_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/team-runtimes/{team.id}/timeline"
+        "?include_queue=false",
+        headers=_headers(owner.id),
+    )
+    other_workspace_response = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/operations/team-runtimes/{team.id}/timeline",
+        headers=_headers(other_owner.id),
+    )
+
+    assert default_response.status_code == 200
+    default_payload = default_response.json()
+    assert default_payload["summary"]["include_runs"] is False
+    assert default_payload["summary"]["include_queue"] is True
+    assert default_payload["summary"]["total_events"] == 8
+    assert {item["source_type"] for item in default_payload["items"]} == {
+        "agent_message",
+        "audit_event",
+        "queue_job",
+        "runtime_event",
+        "worker_lease",
+    }
+    assert default_payload["summary"]["source_counts"]["queue_job"] == 3
+    assert default_payload["summary"]["event_type_counts"][
+        "team.runtime.queue.scheduled_retry"
+    ] == 1
+    assert default_payload["summary"]["event_type_counts"]["team.runtime.queue.dead_letter"] == 1
+    assert "run_event" not in default_payload["summary"]["source_counts"]
+    assert "Other team runtime started" not in str(default_payload)
+    assert "other runtime heartbeat" not in str(default_payload)
+    assert "Foreign runtime started" not in str(default_payload)
+    assert "message-secret" not in str(default_payload)
+    assert "timeline-secret" not in str(default_payload)
+    assert "timeline-meta-secret" not in str(default_payload)
+    assert "Bearer hidden" not in str(default_payload)
+    assert "lease-container-secret" not in str(default_payload)
+    assert "runtime-secret.example.test" not in str(default_payload)
+    assert "sk-queue-timeline" not in str(default_payload)
+    assert "sk-retry-timeline" not in str(default_payload)
+    assert "retry-token" not in str(default_payload)
+    assert "dead.timeline.example.test/private" not in str(default_payload)
+    assert "dead-letter-token" not in str(default_payload)
+    assert "other retry" not in str(default_payload)
+    assert "[redacted]" in str(default_payload)
+
+    assert include_runs_response.status_code == 200
+    include_runs_payload = include_runs_response.json()
+    assert include_runs_payload["summary"]["include_runs"] is True
+    assert include_runs_payload["summary"]["total_events"] == 9
+    assert include_runs_payload["summary"]["source_counts"]["run_event"] == 1
+    assert any(item["event_type"] == "run.tool_called" for item in include_runs_payload["items"])
+    assert "run-secret" not in str(include_runs_payload)
+    assert "run-message-secret" not in str(include_runs_payload)
+    assert "other team run event" not in str(include_runs_payload)
+
+    assert without_queue_response.status_code == 200
+    without_queue_payload = without_queue_response.json()
+    assert without_queue_payload["summary"]["include_queue"] is False
+    assert without_queue_payload["summary"]["total_events"] == 5
+    assert "queue_job" not in without_queue_payload["summary"]["source_counts"]
+
+    assert filtered_response.status_code == 200
+    assert filtered_response.json()["summary"]["total_events"] == 1
+    assert filtered_response.json()["items"][0]["source_type"] == "runtime_event"
+    assert filtered_response.json()["items"][0]["event_type"] == "runtime.heartbeat"
+    assert other_workspace_response.status_code == 404
+
+
+def test_team_runtime_timeline_degrades_when_queue_snapshot_unavailable() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    _, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    team = AgentTeam(workspace_id=workspace.id, name="Queue Down Team", team_type="software")
+    session.add(team)
+    session.flush()
+    session.add(
+        AuditEvent(
+            workspace_id=workspace.id,
+            actor_type="user",
+            actor_id=str(owner.id),
+            user_id=owner.id,
+            action="team.runtime.started",
+            target_type="agent_team",
+            target_id=str(team.id),
+            audit_metadata={},
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+
+    class UnavailableQueue:
+        queue_name = "agent_runs"
+
+        def list_queued(self, *args, **kwargs):
+            raise RedisError("redis unavailable api_key=sk-queue-down")
+
+        def list_scheduled_retries(self, *args, **kwargs):
+            raise AssertionError("should stop after first queue failure")
+
+        def list_dead_letters(self, *args, **kwargs):
+            raise AssertionError("should stop after first queue failure")
+
+    response = TeamRuntimeTimelineService(session).timeline(
+        workspace_id=workspace.id,
+        team_id=team.id,
+        filters=TimelineFilters(include_queue=True),
+        queue=UnavailableQueue(),
+    )
+
+    assert response is not None
+    assert response.summary.include_queue is True
+    assert response.summary.source_counts == {"audit_event": 1, "queue_job": 1}
+    assert response.summary.event_type_counts["team.runtime.queue.unavailable"] == 1
+    queue_event = next(item for item in response.items if item.source_type == "queue_job")
+    assert queue_event.event_type == "team.runtime.queue.unavailable"
+    assert queue_event.metadata["queue_name"] == "agent_runs"
+    assert queue_event.metadata["error"] == "redis unavailable [redacted]"
+    assert "sk-queue-down" not in str(queue_event.metadata)
+
+
 def test_operations_audit_events_redact_sensitive_metadata() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)
@@ -571,6 +1022,78 @@ def test_worker_heartbeat_capacity_is_bounded_by_platform_policy() -> None:
         "disk_mb": 100000,
         "worker_type": "cloud",
     }
+
+
+def test_worker_heartbeat_requires_configured_token() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis, worker_heartbeat_token=WORKER_HEARTBEAT_TOKEN)
+    owner, workspace = _seed_workspace(session)
+
+    missing = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/worker-heartbeats",
+        headers=_headers(owner.id),
+        json={"worker_id": "worker-token-gated"},
+    )
+    wrong = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/worker-heartbeats",
+        headers=_headers(owner.id, worker_heartbeat_token="wrong-token"),
+        json={"worker_id": "worker-token-gated"},
+    )
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert session.scalar(
+        select(WorkerNode).where(WorkerNode.worker_id == "worker-token-gated")
+    ) is None
+    events = session.scalars(
+        select(SecurityEvent).where(SecurityEvent.action == "worker.heartbeat_token.rejected")
+    ).all()
+    assert len(events) == 2
+    assert {event.workspace_id for event in events} == {workspace.id}
+    assert {event.user_id for event in events} == {owner.id}
+    assert {event.reason for event in events} == {"Invalid or missing worker heartbeat token"}
+    assert {event.event_metadata["has_heartbeat_header"] for event in events} == {False, True}
+
+
+def test_worker_heartbeat_accepts_configured_token() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis, worker_heartbeat_token=WORKER_HEARTBEAT_TOKEN)
+    owner, workspace = _seed_workspace(session)
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/worker-heartbeats",
+        headers=_headers(owner.id, worker_heartbeat_token=WORKER_HEARTBEAT_TOKEN),
+        json={"worker_id": "worker-token-ok", "details": {"pid": 456}},
+    )
+
+    worker = session.scalar(select(WorkerNode).where(WorkerNode.worker_id == "worker-token-ok"))
+    assert response.status_code == 200
+    assert response.json()["details"]["pid"] == 456
+    assert response.json()["details"]["trace_id"] == response.headers["X-Trace-ID"]
+    assert worker is not None
+
+
+def test_worker_heartbeat_rejects_body_workspace_override() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis, worker_heartbeat_token=WORKER_HEARTBEAT_TOKEN)
+    owner, workspace = _seed_workspace(session)
+    _, other_workspace = _seed_workspace_with_role(
+        session,
+        email="other@example.com",
+        slug="other",
+    )
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/worker-heartbeats",
+        headers=_headers(owner.id, worker_heartbeat_token=WORKER_HEARTBEAT_TOKEN),
+        json={
+            "workspace_id": str(other_workspace.id),
+            "worker_id": "worker-cross-scope",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "Heartbeat workspace_id must match path"
 
 
 def test_operations_worker_status_control_quarantines_and_resumes_worker() -> None:
@@ -2626,7 +3149,7 @@ def test_invalid_internal_token_records_security_event() -> None:
     assert event.path == "/api/v1/workspaces"
 
 
-def _client(redis: fakeredis.FakeRedis) -> tuple[TestClient, Session]:
+def _client(redis: fakeredis.FakeRedis, **settings_overrides: object) -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -2637,7 +3160,13 @@ def _client(redis: fakeredis.FakeRedis) -> tuple[TestClient, Session]:
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
-    app = create_app(Settings(environment="test", log_format="text", internal_api_token=TOKEN))
+    settings_values: dict[str, object] = {
+        "environment": "test",
+        "log_format": "text",
+        "internal_api_token": TOKEN,
+    }
+    settings_values.update(settings_overrides)
+    app = create_app(Settings(**settings_values))
 
     def override_db_session() -> Generator[Session, None, None]:
         request_session = session_factory()
@@ -2649,6 +3178,12 @@ def _client(redis: fakeredis.FakeRedis) -> tuple[TestClient, Session]:
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.dependency_overrides[get_redis_client] = lambda: redis
+    app.dependency_overrides[get_worker_queue] = lambda: RedisQueue(
+        redis=redis,
+        keys=RedisKeyBuilder(app.state.settings.redis_key_prefix),
+        queue_name="agent_runs",
+        blocking_timeout_seconds=0,
+    )
     return TestClient(app), session
 
 
@@ -2671,8 +3206,11 @@ def _seed_workspace_with_role(
     return user, workspace
 
 
-def _headers(user_id: object) -> dict[str, str]:
-    return {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(user_id)}
+def _headers(user_id: object, *, worker_heartbeat_token: str | None = None) -> dict[str, str]:
+    headers = {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(user_id)}
+    if worker_heartbeat_token is not None:
+        headers["X-Worker-Heartbeat-Token"] = worker_heartbeat_token
+    return headers
 
 
 def _patch_portable_types_for_sqlite() -> None:

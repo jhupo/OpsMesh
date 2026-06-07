@@ -7,6 +7,7 @@ from typing import TypeVar
 from uuid import UUID
 
 from redis import Redis
+from redis.exceptions import ResponseError
 
 from backend.app.redis.keys import RedisKeyBuilder
 
@@ -15,6 +16,14 @@ STATE_IN_PROGRESS = "in_progress"
 STATE_SUCCEEDED = "succeeded"
 STATE_FAILED = "failed"
 T = TypeVar("T")
+
+_REPLACE_STALE_RESERVATION_SCRIPT = """
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+    redis.call("SET", KEYS[1], ARGV[2], "EX", ARGV[3])
+    return 1
+end
+return 0
+"""
 
 
 class IdempotencyInProgressError(Exception):
@@ -63,11 +72,30 @@ class IdempotencyService:
                 raise IdempotencyInProgressError
             resource_id = current_state.get("resource_id")
             if not isinstance(resource_id, str):
-                self._redis.delete(storage_key)
+                in_progress_state = _encode_idempotency_state(status=STATE_IN_PROGRESS)
+                try:
+                    replaced = self._redis.eval(
+                        _REPLACE_STALE_RESERVATION_SCRIPT,
+                        1,
+                        storage_key,
+                        current_value,
+                        in_progress_state,
+                        str(self._ttl_seconds),
+                    )
+                except ResponseError as exc:
+                    if not _eval_unsupported(exc):
+                        raise
+                    replaced = self._replace_stale_reservation_without_lua(
+                        storage_key,
+                        expected_value=current_value,
+                        replacement_value=in_progress_state,
+                    )
+                if not replaced:
+                    raise IdempotencyInProgressError
                 return IdempotencyReservation(
                     key=storage_key,
                     existing_resource_id=None,
-                    created=False,
+                    created=True,
                 )
             return IdempotencyReservation(
                 key=storage_key,
@@ -118,6 +146,18 @@ class IdempotencyService:
             f"http:{operation}:{idempotency_key.strip()}",
         )
 
+    def _replace_stale_reservation_without_lua(
+        self,
+        storage_key: str,
+        *,
+        expected_value: str,
+        replacement_value: str,
+    ) -> bool:
+        if self._redis.get(storage_key) != expected_value:
+            return False
+        self._redis.set(storage_key, replacement_value, ex=self._ttl_seconds)
+        return True
+
 
 def _encode_idempotency_state(
     *,
@@ -143,6 +183,11 @@ def _decode_idempotency_state(raw_value: str) -> dict[str, object]:
     if status not in {STATE_IN_PROGRESS, STATE_SUCCEEDED, STATE_FAILED}:
         return {"status": STATE_FAILED}
     return payload
+
+
+def _eval_unsupported(exc: ResponseError) -> bool:
+    message = str(exc).lower()
+    return "unknown command" in message and "eval" in message
 
 
 def run_idempotent_create(

@@ -1,7 +1,17 @@
 import json
 from typing import Any, Literal
+from urllib.parse import urlparse
 
-from agents import Agent, ModelSettings, Runner, function_tool
+from agents import (
+    Agent,
+    ModelSettings,
+    RunConfig,
+    RunContextWrapper,
+    Runner,
+    ToolGuardrailFunctionOutput,
+    ToolInputGuardrail,
+    function_tool,
+)
 from agents.models.interface import Model
 from agents.models.openai_provider import OpenAIProvider
 
@@ -11,16 +21,47 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeEvent,
     AgentRuntimeToolExecutor,
 )
+from backend.app.agent_runtime.errors import normalize_agent_error
+from backend.app.core.resilience import CircuitBreakerConfig, async_retry_with_circuit
+from backend.app.model_providers.base_url import normalize_openai_compatible_base_url
+from backend.app.model_providers.model_api import (
+    OPENAI_CHAT_COMPLETIONS_API,
+    OPENAI_RESPONSES_API,
+    canonical_model_api,
+)
+from backend.app.model_providers.provider_keys import model_provider_key
+from backend.app.security.redaction import redact_sensitive_payload
+
+DEFAULT_MODEL_PROVIDER_CIRCUIT_CONFIG = CircuitBreakerConfig()
 
 
 class OpenAIAgentsRunner:
+    def __init__(
+        self,
+        *,
+        max_attempts: int = 1,
+        circuit_config: CircuitBreakerConfig = DEFAULT_MODEL_PROVIDER_CIRCUIT_CONFIG,
+    ) -> None:
+        self._max_attempts = max(1, max_attempts)
+        self._circuit_config = circuit_config
+
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
         agent = self._build_agent(request)
-        result = await Runner.run(
-            agent,
-            self._input_for_request(request),
-            context=request.context,
-            max_turns=request.max_turns,
+        result = await async_retry_with_circuit(
+            key=_model_provider_circuit_key(request),
+            func=lambda: Runner.run(
+                agent,
+                self._input_for_request(request),
+                context=request.context,
+                max_turns=request.max_turns,
+                run_config=self._run_config(request),
+                previous_response_id=request.previous_response_id,
+                conversation_id=request.conversation_id,
+                session=request.session,
+            ),
+            max_attempts=self._max_attempts,
+            circuit_config=self._circuit_config,
+            should_retry=lambda exc: normalize_agent_error(exc).retryable,
         )
         return AgentRunResult(
             final_output=str(result.final_output),
@@ -35,7 +76,8 @@ class OpenAIAgentsRunner:
         if request.api_key is not None or request.base_url is not None:
             model = OpenAIProvider(
                 api_key=request.api_key,
-                base_url=request.base_url,
+                base_url=normalize_openai_compatible_base_url(request.base_url),
+                use_responses=_use_responses_api(request.model_api),
             ).get_model(model_name)
         return Agent(
             name=profile.name,
@@ -58,20 +100,31 @@ class OpenAIAgentsRunner:
         tool_name: str,
         executor: AgentRuntimeToolExecutor,
     ) -> Any:
-        async def call_mcp_tool(ctx: Any, arguments: dict[str, object]) -> dict[str, object]:
+        async def call_mcp_tool(
+            ctx: RunContextWrapper[Any],
+            arguments: dict[str, object],
+        ) -> dict[str, object]:
             result = executor.execute_tool(
                 context=ctx.context,
                 tool_name=tool_name,
                 arguments=arguments,
             )
             if result.status == "completed":
-                return result.output or {}
+                return _tool_response_with_metadata(
+                    tool_name=tool_name,
+                    status=result.status,
+                    payload=result.output or {},
+                    metadata=result.metadata,
+                )
             return {
                 "error": result.error
                 or {
                     "code": "mcp_tool_failed",
                     "message": "MCP tool failed",
-                }
+                },
+                "tool_name": tool_name,
+                "status": result.status,
+                "metadata": result.metadata,
             }
 
         call_mcp_tool.__name__ = f"mcp_{_safe_tool_function_name(tool_name)}"
@@ -84,6 +137,7 @@ class OpenAIAgentsRunner:
             name_override=tool_name,
             description_override=f"Execute the approved MCP tool `{tool_name}`.",
             strict_mode=False,
+            tool_input_guardrails=[_tool_provenance_guardrail(tool_name)],
         )
 
     def _input_for_request(self, request: AgentRunRequest) -> str:
@@ -110,6 +164,18 @@ class OpenAIAgentsRunner:
             + "\n".join(continuation_lines)
         )
 
+    def _run_config(self, request: AgentRunRequest) -> RunConfig | None:
+        if request.tracing is None:
+            return None
+        return RunConfig(
+            workflow_name=request.tracing.workflow_name,
+            trace_id=request.tracing.trace_id,
+            group_id=request.tracing.group_id,
+            trace_metadata=request.tracing.metadata,
+            tracing_disabled=request.tracing.disabled,
+            trace_include_sensitive_data=request.tracing.include_sensitive_data,
+        )
+
     def _model_settings(self, settings: dict[str, object]) -> ModelSettings:
         temperature = self._float_setting(settings, "temperature")
         top_p = self._float_setting(settings, "top_p")
@@ -117,6 +183,7 @@ class OpenAIAgentsRunner:
         presence_penalty = self._float_setting(settings, "presence_penalty")
         max_tokens = self._int_setting(settings, "max_tokens")
         parallel_tool_calls = self._bool_setting(settings, "parallel_tool_calls")
+        tool_choice = self._tool_choice_setting(settings)
         store = self._bool_setting(settings, "store")
         include_usage = self._bool_setting(settings, "include_usage")
         truncation = settings.get("truncation")
@@ -139,6 +206,7 @@ class OpenAIAgentsRunner:
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty,
             max_tokens=max_tokens,
+            tool_choice=tool_choice,
             parallel_tool_calls=parallel_tool_calls,
             truncation=safe_truncation,
             verbosity=safe_verbosity,
@@ -165,6 +233,14 @@ class OpenAIAgentsRunner:
             return value
         return None
 
+    def _tool_choice_setting(self, settings: dict[str, object]) -> str | None:
+        value = settings.get("tool_choice")
+        if not isinstance(value, str) or not value:
+            return None
+        if value in {"auto", "required", "none"}:
+            return value
+        return value if value.replace("_", "").replace("-", "").isalnum() else None
+
     def _safe_raw_output(self, result: Any) -> dict[str, object]:
         payload: dict[str, object] = {"final_output": str(getattr(result, "final_output", ""))}
         sdk_continuation: dict[str, object] = {
@@ -176,6 +252,10 @@ class OpenAIAgentsRunner:
         if isinstance(last_response_id, str) and last_response_id:
             payload["last_response_id"] = last_response_id
             sdk_continuation["last_response_id"] = last_response_id
+        conversation_id = getattr(result, "conversation_id", None)
+        if isinstance(conversation_id, str) and conversation_id:
+            payload["conversation_id"] = conversation_id
+            sdk_continuation["conversation_id"] = conversation_id
         last_agent = getattr(result, "last_agent", None)
         if last_agent is not None:
             payload["last_agent"] = str(getattr(last_agent, "name", last_agent))
@@ -204,7 +284,7 @@ class OpenAIAgentsRunner:
         if usage is not None:
             payload["usage"] = self._jsonable(usage)
         payload["sdk_continuation"] = sdk_continuation
-        return payload
+        return redact_sensitive_payload(payload)
 
     def _runtime_events(self, result: Any) -> list[AgentRuntimeEvent]:
         events: list[AgentRuntimeEvent] = []
@@ -242,7 +322,9 @@ class OpenAIAgentsRunner:
         return AgentRuntimeEvent(
             event_type=event_type,
             message=str(getattr(item, "message", "") or event_type),
-            payload=payload if isinstance(payload, dict) else {"value": payload},
+            payload=redact_sensitive_payload(
+                payload if isinstance(payload, dict) else {"value": payload}
+            ),
         )
 
     def _jsonable(self, value: Any) -> object:
@@ -263,3 +345,83 @@ class OpenAIAgentsRunner:
 def _safe_tool_function_name(tool_name: str) -> str:
     safe = "".join(char if char.isalnum() else "_" for char in tool_name)
     return safe or "tool"
+
+
+def _tool_response_with_metadata(
+    *,
+    tool_name: str,
+    status: str,
+    payload: dict[str, object],
+    metadata: dict[str, object],
+) -> dict[str, object]:
+    response = dict(payload)
+    response.setdefault("tool_name", tool_name)
+    response.setdefault("status", status)
+    response["metadata"] = metadata
+    return response
+
+
+def _tool_provenance_guardrail(tool_name: str) -> ToolInputGuardrail[Any]:
+    async def assert_runtime_tool_provenance(data: Any) -> ToolGuardrailFunctionOutput:
+        runtime_context = getattr(getattr(data, "context", None), "context", None)
+        allowed_tools = _runtime_allowed_tools(runtime_context)
+        allowed = tool_name in allowed_tools
+        return ToolGuardrailFunctionOutput(
+            output_info={
+                "tool_name": tool_name,
+                "guardrail": "runtime_allowed_tool_provenance",
+                "allowed": allowed,
+            },
+            behavior={"type": "allow"}
+            if allowed
+            else {
+                "type": "reject_content",
+                "message": f"Tool {tool_name} is not present in runtime context.",
+            },
+        )
+
+    return ToolInputGuardrail(
+        assert_runtime_tool_provenance,
+        name=f"{tool_name}:runtime_allowed_tool_provenance",
+    )
+
+
+def _runtime_allowed_tools(runtime_context: object) -> tuple[str, ...]:
+    raw_allowed_tools: object
+    if isinstance(runtime_context, dict):
+        raw_allowed_tools = runtime_context.get("allowed_tools", ())
+    else:
+        raw_allowed_tools = getattr(runtime_context, "allowed_tools", ())
+    if not isinstance(raw_allowed_tools, list | tuple):
+        return ()
+    return tuple(tool for tool in raw_allowed_tools if isinstance(tool, str))
+
+
+def _model_provider_circuit_key(request: AgentRunRequest) -> str:
+    provider = model_provider_key(request.provider) or "openai"
+    base_url = normalize_openai_compatible_base_url(request.base_url) or "openai-default"
+    try:
+        parsed = urlparse(base_url)
+    except ValueError:
+        host = "invalid-url"
+    else:
+        host = parsed.netloc or parsed.path or "openai-default"
+    credential = (
+        str(request.model_provider_credential_id)
+        if request.model_provider_credential_id is not None
+        else "no-credential"
+    )
+    model_api = canonical_model_api(request.model_api) or "sdk-default"
+    return (
+        f"model-provider:{provider}:{host}:{credential}:{model_api}:"
+        f"{request.model or request.agent_profile.model}"
+    )
+
+
+def _use_responses_api(model_api: str | None) -> bool | None:
+    normalized = canonical_model_api(model_api)
+    if normalized == OPENAI_CHAT_COMPLETIONS_API:
+        return False
+    if normalized == OPENAI_RESPONSES_API:
+        return True
+    return None

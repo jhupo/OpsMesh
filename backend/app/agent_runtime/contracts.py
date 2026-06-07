@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from typing import Protocol
 from uuid import UUID
 
+from agents.memory import Session as AgentsSession
+
 from backend.app.agents.models import AgentProfile
 
 
@@ -20,6 +22,17 @@ class AgentRuntimeToolResult:
     status: str
     output: dict[str, object] | None = None
     error: dict[str, object] | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class AgentRunTracing:
+    workflow_name: str
+    trace_id: str | None = None
+    group_id: str | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
+    disabled: bool = False
+    include_sensitive_data: bool = False
 
 
 @dataclass(frozen=True)
@@ -48,11 +61,17 @@ class AgentRunRequest:
     context: AgentRuntimeContext
     max_turns: int = 10
     model: str | None = None
+    provider: str | None = None
     base_url: str | None = None
     api_key: str | None = None
+    model_api: str | None = None
     model_provider_credential_id: UUID | None = None
     tool_executor: AgentRuntimeToolExecutor | None = None
     continuations: tuple[AgentRuntimeToolContinuation, ...] = ()
+    session: AgentsSession | None = None
+    previous_response_id: str | None = None
+    conversation_id: str | None = None
+    tracing: AgentRunTracing | None = None
 
 
 @dataclass(frozen=True)

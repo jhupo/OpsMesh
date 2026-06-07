@@ -497,6 +497,34 @@ class RuntimeSpaceService:
             raise ValueError("Runtime space not found")
         return runtime_space
 
+    def require_runtime_space_for_target(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime_space_id: UUID,
+        target_type: str,
+        target_id: UUID,
+    ) -> RuntimeSpace:
+        runtime_space = self.require_runtime_space(workspace_id, runtime_space_id)
+        if runtime_space.scope == "workspace":
+            return runtime_space
+
+        expected_target_type = TARGET_TYPES_BY_SCOPE.get(runtime_space.scope)
+        if expected_target_type != target_type:
+            raise ValueError("Runtime space is not available for this target")
+        binding = self._session.scalar(
+            select(RuntimeSpaceBinding.id).where(
+                RuntimeSpaceBinding.workspace_id == workspace_id,
+                RuntimeSpaceBinding.runtime_space_id == runtime_space_id,
+                RuntimeSpaceBinding.target_type == target_type,
+                RuntimeSpaceBinding.target_id == target_id,
+                RuntimeSpaceBinding.status == "active",
+            )
+        )
+        if binding is None:
+            raise ValueError("Runtime space is not available for this target")
+        return runtime_space
+
     def reserve_run_capacity(
         self,
         *,

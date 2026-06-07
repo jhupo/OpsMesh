@@ -109,6 +109,51 @@ def test_workspace_scheduler_can_allow_multiple_steps_per_task_per_tick() -> Non
     assert decision.blocked_steps == ()
 
 
+def test_workspace_scheduler_policy_override_tightens_team_tick_limits() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(
+        session,
+        settings={"scheduler": {"max_active_runs": 3, "max_steps_per_task_per_tick": 2}},
+    )
+    first_task, first_step = _seed_task_step(session, workspace, title="First", priority=10)
+    _, first_extra_step = _seed_extra_step(session, first_task, title="First extra", order_index=1)
+    second_task, second_step = _seed_task_step(session, workspace, title="Second", priority=8)
+
+    decision = WorkspaceScheduler(session).select_runnable_steps(
+        workspace_id=workspace.id,
+        candidate_steps=[first_step, first_extra_step, second_step],
+        policy_override={"max_runs_to_start_per_tick": 1, "max_steps_per_task_per_tick": 1},
+    )
+
+    assert decision.runnable_steps == (first_step,)
+    assert {step.id for step in decision.blocked_steps} == {
+        first_extra_step.id,
+        second_step.id,
+    }
+    assert first_extra_step.dependencies["blocked_reason"] == "workspace_run_quota_exceeded"
+    assert second_step.dependencies["blocked_reason"] == "workspace_run_quota_exceeded"
+
+
+def test_workspace_scheduler_workspace_pause_overrides_team_policy() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(
+        session,
+        settings={"scheduler": {"paused": True, "pause_reason": "maintenance"}},
+    )
+    _, step = _seed_task_step(session, workspace, title="Paused", priority=10)
+
+    decision = WorkspaceScheduler(session).select_runnable_steps(
+        workspace_id=workspace.id,
+        candidate_steps=[step],
+        policy_override={"max_runs_to_start_per_tick": 1},
+    )
+
+    assert decision.runnable_steps == ()
+    assert decision.blocked_steps == (step,)
+    assert decision.blocked_reason == "maintenance"
+    assert step.dependencies["blocked_reason"] == "maintenance"
+
+
 def test_workspace_scheduler_task_quota_allows_highest_priority_new_tasks() -> None:
     session = _session()
     _, workspace = _seed_workspace(

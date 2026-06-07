@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
 from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
 SUPPORTED_VIEW_TYPES = {"generic", "aigc", "novel", "research", "software"}
@@ -211,7 +212,7 @@ class TaskObservationService:
                             artifact.supersedes_artifact_id
                         ),
                         "review_status": artifact.review_status,
-                        "metadata": artifact.artifact_metadata,
+                        "metadata": redact_sensitive_payload(artifact.artifact_metadata),
                         "created_at": artifact.created_at,
                     },
                 }
@@ -250,7 +251,7 @@ class TaskObservationService:
                     "card_type": "final_output",
                     "title": "Final output",
                     "status": task.status,
-                    "data": task.final_output,
+                    "data": redact_sensitive_payload(task.final_output),
                 }
             )
         return {"key": "review", "title": "Review", "cards": cards}
@@ -288,9 +289,17 @@ class TaskObservationService:
                             "task_step_id": str(step.id),
                             "work_package_id": step.work_package_id,
                             "mode": correction.get("mode"),
-                            "target": correction.get("target"),
+                            "target": redact_sensitive_payload(
+                                correction.get("target")
+                                if isinstance(correction.get("target"), dict)
+                                else {}
+                            ),
                             "instruction": correction.get("instruction"),
-                            "metadata": correction.get("metadata"),
+                            "metadata": redact_sensitive_payload(
+                                correction.get("metadata")
+                                if isinstance(correction.get("metadata"), dict)
+                                else {}
+                            ),
                             "created_at": step.created_at,
                         },
                     }
@@ -326,7 +335,9 @@ class TaskObservationService:
                         "data": {
                             "source": "pm_acceptance",
                             "sequence": message.sequence,
-                            "revision_requests": revision_requests,
+                            "revision_requests": redact_sensitive_payload(
+                                {"items": revision_requests}
+                            )["items"],
                             "created_at": message.created_at,
                         },
                     }
@@ -657,26 +668,28 @@ class TaskObservationService:
             "card_type": "task_step",
             "title": step.title,
             "status": step.status,
-            "data": {
-                "id": str(step.id),
-                "order_index": step.order_index,
-                "work_package_id": step.work_package_id,
-                "required_role": step.required_role,
-                "required_skills": step.required_skills,
-                "expected_artifacts": step.expected_artifacts,
-                "acceptance_criteria": step.acceptance_criteria,
-                "review_policy": step.review_policy,
-                "dependencies": step.dependencies,
-                "result_summary": step.result_summary,
-                "agent": self._agent_payload(agent) if agent is not None else None,
-            },
+            "data": redact_sensitive_payload(
+                {
+                    "id": str(step.id),
+                    "order_index": step.order_index,
+                    "work_package_id": step.work_package_id,
+                    "required_role": step.required_role,
+                    "required_skills": step.required_skills,
+                    "expected_artifacts": step.expected_artifacts,
+                    "acceptance_criteria": step.acceptance_criteria,
+                    "review_policy": step.review_policy,
+                    "dependencies": step.dependencies,
+                    "result_summary": step.result_summary,
+                    "agent": self._agent_payload(agent) if agent is not None else None,
+                }
+            ),
         }
 
     def _agent_payload(self, agent: AgentProfile) -> dict[str, object]:
         return {"id": str(agent.id), "name": agent.name, "role": agent.role, "status": agent.status}
 
     def _safe_message_payload(self, payload: dict[str, object]) -> dict[str, object]:
-        return {key: value for key, value in payload.items() if key not in _SENSITIVE_PAYLOAD_KEYS}
+        return redact_sensitive_payload(payload)
 
     def _list_steps(self, workspace_id: UUID, task_id: UUID) -> list[TaskStep]:
         return list(
@@ -854,7 +867,6 @@ def _aigc_recommended_actions(metrics: dict[str, object]) -> list[str]:
         actions.append("persist_asset_artifact")
     return actions
 
-
 def _novel_recommended_actions(metrics: dict[str, object]) -> list[str]:
     actions: list[str] = []
     if metrics["outline_item_count"] == 0:
@@ -905,14 +917,3 @@ def _software_recommended_actions(metrics: dict[str, object]) -> list[str]:
     if metrics["review_comment_count"] > 0:
         actions.append("resolve_review_comments")
     return actions
-
-
-_SENSITIVE_PAYLOAD_KEYS = {
-    "api_key",
-    "authorization",
-    "credential",
-    "credentials",
-    "encrypted_api_key",
-    "secret",
-    "token",
-}

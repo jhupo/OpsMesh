@@ -10,6 +10,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.tasks import TaskCorrectionRequest
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.service import AuditService
+from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
 STEP_STATUS_QUEUED = "queued"
@@ -165,21 +166,10 @@ class TaskCorrectionService:
         target_payload: dict[str, object],
         created_step_id: UUID | None,
     ) -> TaskMessage:
-        sequence = int(
-            self._session.scalar(
-                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
-                    TaskMessage.workspace_id == task.workspace_id,
-                    TaskMessage.task_id == task.id,
-                )
-            )
-            or 0
-        ) + 1
-        message = TaskMessage(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
+        return TaskMessageAppendService(self._session).append_for_task(
+            task,
             task_step_id=created_step_id,
             message_type="task.correction.created",
-            sequence=sequence,
             body=request.instruction,
             payload={
                 "mode": request.mode,
@@ -190,9 +180,6 @@ class TaskCorrectionService:
                 "metadata": request.metadata,
             },
         )
-        self._session.add(message)
-        self._session.flush()
-        return message
 
     def _require_step(self, task: Task, step_id: UUID) -> TaskStep:
         step = self._session.scalar(

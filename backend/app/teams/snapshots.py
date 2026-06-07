@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.model_providers.model_api import configured_model_api
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 
@@ -108,6 +109,7 @@ def _agent_snapshot(agent: AgentProfile | None) -> dict[str, object] | None:
         "instructions": agent.instructions,
         "model": agent.model,
         "model_provider_credential_id": _str_or_none(agent.model_provider_credential_id),
+        "model_api": configured_model_api(agent.model_settings or {}),
         "capabilities": agent.capabilities,
         "skills": agent.skills,
         "tool_policy": agent.tool_policy,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.exc import OperationalError
 
+from backend.app.db import session as db_session_module
 from backend.app.db.transactions import (
     TransactionRetryExhaustedError,
     TransactionRetryPolicy,
@@ -88,16 +89,33 @@ def test_sqlstate_from_error_supports_pgcode_attribute() -> None:
     assert sqlstate_from_error(error) == "55P03"
 
 
+def test_get_db_session_rolls_back_on_dependency_exception(monkeypatch) -> None:
+    session = FakeSession()
+    monkeypatch.setattr(db_session_module, "SessionLocal", lambda: session)
+    dependency = db_session_module.get_db_session()
+
+    assert next(dependency) is session
+    with pytest.raises(RuntimeError, match="boom"):
+        dependency.throw(RuntimeError("boom"))
+
+    assert session.rollbacks == 1
+    assert session.closes == 1
+
+
 class FakeSession:
     def __init__(self) -> None:
         self.commits = 0
         self.rollbacks = 0
+        self.closes = 0
 
     def commit(self) -> None:
         self.commits += 1
 
     def rollback(self) -> None:
         self.rollbacks += 1
+
+    def close(self) -> None:
+        self.closes += 1
 
 
 class SqlStateError(Exception):

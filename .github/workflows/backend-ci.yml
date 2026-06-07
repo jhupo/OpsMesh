@@ -1,0 +1,94 @@
+name: Backend CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: chaincloud
+          POSTGRES_USER: chaincloud
+          POSTGRES_PASSWORD: chaincloud
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chaincloud -d chaincloud"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      CHAINCLOUD_DATABASE_URL: postgresql+psycopg://chaincloud:chaincloud@localhost:5432/chaincloud
+      CHAINCLOUD_REDIS_URL: redis://localhost:6379/0
+      CHAINCLOUD_ENVIRONMENT: test
+      CHAINCLOUD_LOG_FORMAT: text
+      CHAINCLOUD_WORKER_HEARTBEAT_TOKEN: worker-heartbeat-secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Test
+        run: uv run pytest
+
+      - name: Run migrations
+        run: uv run alembic upgrade head
+
+      - name: Check Alembic drift
+        run: uv run alembic check
+
+      - name: Build backend image
+        run: docker build -t chaincloud-backend:${{ github.sha }} .
+
+      - name: Smoke backend image
+        run: >-
+          docker run --rm --entrypoint python
+          chaincloud-backend:${{ github.sha }}
+          -c "import backend.app.main; print('image-ok')"
+
+      - name: Validate compose files
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f deploy/server/docker-compose.backend.yml config --quiet
+
+      - name: Generate image SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: chaincloud-backend:${{ github.sha }}
+          format: spdx-json
+          output-file: chaincloud-backend.spdx.json
+
+      - name: Scan backend image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: chaincloud-backend:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"

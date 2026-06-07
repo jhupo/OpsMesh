@@ -5,13 +5,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.artifacts.models import Artifact
 from backend.app.files.security import validate_runtime_relative_path
-from backend.app.files.storage import LocalStorage
+from backend.app.files.storage import ObjectStorage
 from backend.app.tools.context import ToolContext
 from backend.app.tools.product_tools import ProductToolService
 
 
 class RuntimeFileService:
-    def __init__(self, session: Session, storage: LocalStorage, runtime_root: str) -> None:
+    def __init__(self, session: Session, storage: ObjectStorage, runtime_root: str) -> None:
         self._session = session
         self._storage = storage
         self._runtime_root = Path(runtime_root).resolve()

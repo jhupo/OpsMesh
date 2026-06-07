@@ -20,6 +20,7 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.runtime_manager.contracts import RuntimeCommandResult
 from backend.app.runtimes.models import RuntimeCommand, WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
+from backend.app.security.egress import EgressUrlPolicy
 
 
 def test_http_jsonrpc_mcp_adapter_posts_tool_call_and_injects_hosted_headers() -> None:
@@ -41,7 +42,10 @@ def test_http_jsonrpc_mcp_adapter_posts_tool_call_and_injects_hosted_headers() -
     )
 
     with JsonRpcServer({"result": {"content": [{"type": "text", "text": "ok"}]}}) as server:
-        response = HttpJsonRpcMcpToolAdapter(secret_service=secret_service).call(
+        response = HttpJsonRpcMcpToolAdapter(
+            secret_service=secret_service,
+            egress_policy=_local_test_egress_policy(),
+        ).call(
             server=McpServer(
                 workspace_id=uuid4(),
                 name="http-tools",
@@ -68,6 +72,33 @@ def test_http_jsonrpc_mcp_adapter_posts_tool_call_and_injects_hosted_headers() -
     }
 
 
+def test_http_jsonrpc_mcp_adapter_retries_retryable_status() -> None:
+    with JsonRpcServer(
+        [
+            {"error": {"code": 500, "message": "temporary"}},
+            {"result": {"ok": True}},
+        ],
+        status_codes=[500, 200],
+    ) as server:
+        response = HttpJsonRpcMcpToolAdapter(
+            egress_policy=_local_test_egress_policy(),
+        ).call(
+            server=McpServer(
+                workspace_id=uuid4(),
+                name="http-tools",
+                server_type="http",
+                connection={"url": server.url},
+            ),
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+            credential_refs=[],
+            timeout_seconds=5,
+        )
+
+    assert response == {"ok": True}
+    assert len(server.requests) == 2
+
+
 def test_http_jsonrpc_mcp_adapter_sanitizes_remote_errors() -> None:
     with JsonRpcServer(
         {
@@ -78,7 +109,7 @@ def test_http_jsonrpc_mcp_adapter_sanitizes_remote_errors() -> None:
         }
     ) as server:
         try:
-            HttpJsonRpcMcpToolAdapter().call(
+            HttpJsonRpcMcpToolAdapter(egress_policy=_local_test_egress_policy()).call(
                 server=McpServer(
                     workspace_id=uuid4(),
                     name="http-tools",
@@ -112,7 +143,10 @@ def test_hosted_mcp_adapter_delegates_to_remote_http_transport() -> None:
     )
 
     with JsonRpcServer({"result": {"ok": True}}) as server:
-        response = HostedMcpToolAdapter(secret_service=secret_service).call(
+        response = HostedMcpToolAdapter(
+            secret_service=secret_service,
+            egress_policy=_local_test_egress_policy(),
+        ).call(
             server=McpServer(
                 workspace_id=uuid4(),
                 name="hosted-tools",
@@ -147,6 +181,26 @@ def test_hosted_mcp_adapter_blocks_missing_remote_transport() -> None:
         assert exc.code == "mcp_hosted_transport_unsupported"
     else:
         raise AssertionError("Expected hosted MCP without remote transport to be blocked")
+
+
+def test_http_mcp_adapter_blocks_private_egress_before_request() -> None:
+    try:
+        HttpJsonRpcMcpToolAdapter().call(
+            server=McpServer(
+                workspace_id=uuid4(),
+                name="http-tools",
+                server_type="http",
+                connection={"url": "http://127.0.0.1/mcp"},
+            ),
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+            credential_refs=[],
+            timeout_seconds=5,
+        )
+    except McpExecutionError as exc:
+        assert exc.code == "mcp_server_url_invalid"
+    else:
+        raise AssertionError("Expected private MCP egress URL to be blocked")
 
 
 def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> None:
@@ -272,9 +326,24 @@ def test_mcp_adapter_resolver_selects_remote_adapters_and_blocks_unsafe_direct_s
     assert isinstance(stdio_adapter, UnsupportedMcpToolAdapter)
 
 
+def _local_test_egress_policy() -> EgressUrlPolicy:
+    return EgressUrlPolicy(
+        allowed_schemes=frozenset({"http", "https"}),
+        allow_private_addresses=True,
+    )
+
+
 class JsonRpcServer:
-    def __init__(self, response_body: dict[str, object]) -> None:
-        self._response_body = response_body
+    def __init__(
+        self,
+        response_body: dict[str, object] | list[dict[str, object]],
+        *,
+        status_codes: list[int] | None = None,
+    ) -> None:
+        self._response_bodies = (
+            response_body if isinstance(response_body, list) else [response_body]
+        )
+        self._status_codes = status_codes or [200]
         self.requests: list[dict[str, Any]] = []
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -302,10 +371,11 @@ class JsonRpcServer:
                 response = {
                     "jsonrpc": "2.0",
                     "id": parent.requests[-1]["body"].get("id"),
-                    **parent._response_body,
+                    **parent._response_body_for_request(),
                 }
+                status_code = parent._status_code_for_request()
                 response_bytes = json.dumps(response).encode("utf-8")
-                self.send_response(200)
+                self.send_response(status_code)
                 self.send_header("content-type", "application/json")
                 self.send_header("content-length", str(len(response_bytes)))
                 self.end_headers()
@@ -325,6 +395,14 @@ class JsonRpcServer:
             self._server.server_close()
         if self._thread is not None:
             self._thread.join(timeout=5)
+
+    def _response_body_for_request(self) -> dict[str, object]:
+        index = min(len(self.requests) - 1, len(self._response_bodies) - 1)
+        return self._response_bodies[index]
+
+    def _status_code_for_request(self) -> int:
+        index = min(len(self.requests) - 1, len(self._status_codes) - 1)
+        return self._status_codes[index]
 
 
 class RecordingRuntimeManager:

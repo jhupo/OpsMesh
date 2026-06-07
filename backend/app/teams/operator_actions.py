@@ -7,11 +7,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.operator_actions import TaskOperatorActionService
-from backend.app.teams.models import AgentTeam
+from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 TERMINAL_TASK_STATUSES = {"completed", "cancelled", "canceled"}
 TEAM_OPERATOR_ACTIONS = {
     "request_manager_review",
+    "reassign_step",
     "requeue_blocked_steps",
     "schedule_downstream_steps",
 }
@@ -32,6 +33,7 @@ class TeamOperatorActionService:
         action: str,
         task_ids: list[UUID],
         task_step_ids: list[UUID],
+        agent_profile_id: UUID | None,
         max_tasks: int,
         instruction: str | None,
         reason: str | None,
@@ -47,6 +49,13 @@ class TeamOperatorActionService:
         )
         if team is None:
             return None
+        if action == "reassign_step":
+            if agent_profile_id is None:
+                raise ValueError("reassign_step requires agent_profile_id")
+            if not task_step_ids:
+                raise ValueError("reassign_step requires task_step_ids")
+            if agent_profile_id not in self._team_agent_ids(team):
+                raise ValueError("Agent profile not found in team")
 
         step_ids_by_task, step_warnings = self._step_ids_by_task(
             workspace_id=workspace_id,
@@ -78,7 +87,7 @@ class TeamOperatorActionService:
                     actor_user_id=actor_user_id,
                     action=action,
                     task_step_ids=step_ids_by_task.get(task.id, []),
-                    agent_profile_id=None,
+                    agent_profile_id=agent_profile_id,
                     instruction=instruction,
                     reason=reason or "team_operator_action",
                     metadata=_team_action_metadata(team_id, metadata),
@@ -106,6 +115,7 @@ class TeamOperatorActionService:
             "workspace_id": workspace_id,
             "team_id": team_id,
             "action": action,
+            "agent_profile_id": agent_profile_id,
             "status": "applied" if applied_count else "noop",
             "requested_task_count": (
                 len(effective_task_ids) if effective_task_ids else len(selected_tasks)
@@ -172,6 +182,21 @@ class TeamOperatorActionService:
                 statement.order_by(Task.priority.desc(), Task.updated_at.desc(), Task.id.asc())
             )
         )
+
+    def _team_agent_ids(self, team: AgentTeam) -> set[UUID]:
+        agent_ids = {
+            member_agent_id
+            for member_agent_id in self._session.scalars(
+                select(AgentTeamMember.agent_profile_id).where(
+                    AgentTeamMember.workspace_id == team.workspace_id,
+                    AgentTeamMember.agent_team_id == team.id,
+                    AgentTeamMember.status == "active",
+                )
+            )
+        }
+        if team.manager_agent_profile_id is not None:
+            agent_ids.add(team.manager_agent_profile_id)
+        return agent_ids
 
 
 def _team_action_metadata(team_id: UUID, metadata: dict[str, object]) -> dict[str, object]:

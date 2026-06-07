@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from uuid import UUID, uuid4
 
@@ -13,10 +14,23 @@ from backend.app.capabilities.execution import (
     McpToolAdapter,
 )
 from backend.app.capabilities.models import McpCredentialReference, McpServer
+from backend.app.core.resilience import CircuitBreakerConfig, retry_with_circuit
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
+from backend.app.security.egress import (
+    MCP_EGRESS_URL_POLICY,
+    EgressUrlPolicy,
+    EgressUrlValidationError,
+    validate_egress_url,
+)
 from backend.app.self_hosted.service import SelfHostedRuntimeService
+
+MCP_REMOTE_CALL_CIRCUIT_CONFIG = CircuitBreakerConfig(
+    failure_threshold=5,
+    reset_after_seconds=60,
+)
+MCP_REMOTE_CALL_MAX_ATTEMPTS = 2
 
 
 @dataclass(frozen=True)
@@ -37,8 +51,14 @@ class McpAdapterResolver:
 
 
 class HttpJsonRpcMcpToolAdapter:
-    def __init__(self, *, secret_service: SecretEncryptionService | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        secret_service: SecretEncryptionService | None = None,
+        egress_policy: EgressUrlPolicy = MCP_EGRESS_URL_POLICY,
+    ) -> None:
         self._secret_service = secret_service
+        self._egress_policy = egress_policy
 
     def call(
         self,
@@ -55,8 +75,7 @@ class HttpJsonRpcMcpToolAdapter:
         )
         if not url:
             raise McpExecutionError("HTTP MCP server is missing url", code="mcp_server_url_missing")
-        if not url.lower().startswith(("https://", "http://")):
-            raise McpExecutionError("HTTP MCP server url is invalid", code="mcp_server_url_invalid")
+        _validate_mcp_url(url, egress_policy=self._egress_policy, transport="http")
 
         headers = {
             "content-type": "application/json",
@@ -79,24 +98,12 @@ class HttpJsonRpcMcpToolAdapter:
             headers=headers,
             method="POST",
         )
-        try:
-            with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
-                raw_body = response.read()
-        except HTTPError as exc:
-            raise McpExecutionError(
-                f"HTTP MCP server returned status {exc.code}",
-                code="mcp_http_status_error",
-            ) from exc
-        except URLError as exc:
-            raise McpExecutionError(
-                "HTTP MCP server request failed",
-                code="mcp_http_request_failed",
-            ) from exc
-        except TimeoutError as exc:
-            raise McpExecutionError(
-                "HTTP MCP server request timed out",
-                code="mcp_http_timeout",
-            ) from exc
+        raw_body = _call_remote_mcp(
+            request=request,
+            timeout_seconds=timeout_seconds,
+            circuit_key=_mcp_circuit_key(url, transport="http"),
+            transport="http",
+        )
 
         try:
             body = json.loads(raw_body.decode("utf-8"))
@@ -167,8 +174,7 @@ class SseMcpToolAdapter(HttpJsonRpcMcpToolAdapter):
         )
         if not url:
             raise McpExecutionError("SSE MCP server is missing url", code="mcp_server_url_missing")
-        if not url.lower().startswith(("https://", "http://")):
-            raise McpExecutionError("SSE MCP server url is invalid", code="mcp_server_url_invalid")
+        _validate_mcp_url(url, egress_policy=self._egress_policy, transport="sse")
 
         headers = {
             "content-type": "application/json",
@@ -191,32 +197,31 @@ class SseMcpToolAdapter(HttpJsonRpcMcpToolAdapter):
             headers=headers,
             method="POST",
         )
-        try:
-            with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
-                raw_body = response.read()
-        except HTTPError as exc:
-            raise McpExecutionError(
-                f"SSE MCP server returned status {exc.code}",
-                code="mcp_sse_status_error",
-            ) from exc
-        except URLError as exc:
-            raise McpExecutionError(
-                "SSE MCP server request failed",
-                code="mcp_sse_request_failed",
-            ) from exc
-        except TimeoutError as exc:
-            raise McpExecutionError(
-                "SSE MCP server request timed out",
-                code="mcp_sse_timeout",
-            ) from exc
+        raw_body = _call_remote_mcp(
+            request=request,
+            timeout_seconds=timeout_seconds,
+            circuit_key=_mcp_circuit_key(url, transport="sse"),
+            transport="sse",
+        )
 
         return _result_from_sse_body(raw_body)
 
 
 class HostedMcpToolAdapter:
-    def __init__(self, *, secret_service: SecretEncryptionService | None = None) -> None:
-        self._http_adapter = HttpJsonRpcMcpToolAdapter(secret_service=secret_service)
-        self._sse_adapter = SseMcpToolAdapter(secret_service=secret_service)
+    def __init__(
+        self,
+        *,
+        secret_service: SecretEncryptionService | None = None,
+        egress_policy: EgressUrlPolicy = MCP_EGRESS_URL_POLICY,
+    ) -> None:
+        self._http_adapter = HttpJsonRpcMcpToolAdapter(
+            secret_service=secret_service,
+            egress_policy=egress_policy,
+        )
+        self._sse_adapter = SseMcpToolAdapter(
+            secret_service=secret_service,
+            egress_policy=egress_policy,
+        )
 
     def call(
         self,
@@ -365,6 +370,80 @@ class UnsupportedMcpToolAdapter:
 def _string_setting(payload: dict[str, object], key: str) -> str | None:
     value = payload.get(key)
     return value if isinstance(value, str) else None
+
+
+def _validate_mcp_url(url: str, *, egress_policy: EgressUrlPolicy, transport: str) -> None:
+    try:
+        validate_egress_url(url, policy=egress_policy)
+    except EgressUrlValidationError as exc:
+        raise McpExecutionError(
+            f"{transport.upper()} MCP server url is invalid",
+            code="mcp_server_url_invalid",
+        ) from exc
+
+
+def _call_remote_mcp(
+    *,
+    request: Request,
+    timeout_seconds: int,
+    circuit_key: str,
+    transport: str,
+) -> bytes:
+    return retry_with_circuit(
+        key=circuit_key,
+        func=lambda: _read_url(request, timeout_seconds=timeout_seconds, transport=transport),
+        max_attempts=MCP_REMOTE_CALL_MAX_ATTEMPTS,
+        circuit_config=MCP_REMOTE_CALL_CIRCUIT_CONFIG,
+        should_retry=_is_retryable_mcp_error,
+    )
+
+
+def _read_url(request: Request, *, timeout_seconds: int, transport: str) -> bytes:
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
+            return response.read()
+    except HTTPError as exc:
+        if exc.code == 408 or exc.code == 429 or exc.code >= 500:
+            code = f"mcp_{transport}_retryable_status_error"
+        else:
+            code = f"mcp_{transport}_status_error"
+        raise McpExecutionError(
+            f"{transport.upper()} MCP server returned status {exc.code}",
+            code=code,
+        ) from exc
+    except URLError as exc:
+        raise McpExecutionError(
+            f"{transport.upper()} MCP server request failed",
+            code=f"mcp_{transport}_request_failed",
+        ) from exc
+    except TimeoutError as exc:
+        raise McpExecutionError(
+            f"{transport.upper()} MCP server request timed out",
+            code=f"mcp_{transport}_timeout",
+        ) from exc
+
+
+def _is_retryable_mcp_error(exc: Exception) -> bool:
+    return isinstance(exc, McpExecutionError) and exc.code in {
+        "mcp_http_request_failed",
+        "mcp_http_timeout",
+        "mcp_http_retryable_status_error",
+        "mcp_sse_request_failed",
+        "mcp_sse_timeout",
+        "mcp_sse_retryable_status_error",
+    }
+
+
+def _mcp_circuit_key(url: str, *, transport: str) -> str:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        host = "invalid-url"
+        path = ""
+    else:
+        host = parsed.netloc or "missing-host"
+        path = parsed.path or "/"
+    return f"mcp:{transport}:{host}:{path}"
 
 
 def _string_dict_setting(payload: dict[str, object], key: str) -> dict[str, str]:

@@ -18,7 +18,10 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.files.security import content_disposition_attachment
-from backend.app.files.storage import LocalStorage
+from backend.app.files.storage import create_storage
+from backend.app.memory.jobs import enqueue_workspace_memory_index_job
+from backend.app.workers.dependencies import get_worker_queue
+from backend.app.workers.queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["files"])
 
@@ -29,7 +32,7 @@ def file_service(
 ) -> WorkspaceFileService:
     return WorkspaceFileService(
         session=session,
-        storage=LocalStorage(settings.storage_root),
+        storage=create_storage(settings),
         max_upload_bytes=settings.max_upload_bytes,
     )
 
@@ -49,6 +52,7 @@ async def upload_file(
     file: UploadFile = File(...),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     service: WorkspaceFileService = Depends(file_service),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> WorkspaceFileResponse:
     content = await file.read()
     try:
@@ -64,6 +68,14 @@ async def upload_file(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=str(exc),
         ) from exc
+    enqueue_workspace_memory_index_job(
+        queue=queue,
+        workspace_id=context.workspace.id,
+        source_type="workspace_file",
+        source_id=stored_file.id,
+        requested_by_user_id=context.user.user_id,
+        routing={"source": "workspace_file_upload"},
+    )
     return WorkspaceFileResponse.model_validate(stored_file)
 
 
