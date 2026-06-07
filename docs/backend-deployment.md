@@ -66,6 +66,28 @@ CHAINCLOUD_SMOKE_MONITORING=true CHAINCLOUD_COMPOSE_FILE=deploy/server/docker-co
 
 Keep Grafana and Alertmanager behind SSH tunneling, VPN, or authenticated ingress unless a production SSO/auth layer is configured.
 
+## Isolated Remote Backend Validation
+
+For backend closure checks on a remote host, use the isolated validation script instead of
+connecting to an existing server database:
+
+```bash
+scripts/remote-backend-validation.sh
+```
+
+The script creates a disposable Docker network, one temporary Postgres container, one temporary
+Redis container, and one temporary Python test container. It installs the backend package plus
+`pytest`, `fakeredis`, and `ruff`, runs targeted pytest/ruff checks, and then removes the
+containers/network with a shell trap. It does not connect to `chaincloud-postgres`.
+
+Override the targeted checks when needed:
+
+```bash
+CHAINCLOUD_REMOTE_PYTEST_ARGS="backend/tests/test_operations_api.py -k operations_overview" \
+CHAINCLOUD_REMOTE_RUFF_ARGS="backend/app/operations/service.py backend/tests/test_operations_api.py" \
+scripts/remote-backend-validation.sh
+```
+
 ## Production Settings
 
 Before running with `CHAINCLOUD_ENVIRONMENT=production`, set strong values for:
