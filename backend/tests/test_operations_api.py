@@ -14,9 +14,10 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.admin.models import PlatformPolicy
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval
 from backend.app.audit.models import AuditEvent
-from backend.app.capabilities.models import McpServer
+from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -39,7 +40,7 @@ from backend.app.self_hosted.models import (
     SelfHostedWorker,
 )
 from backend.app.tasks.models import Task, TaskStep
-from backend.app.teams.models import AgentTeam
+from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
@@ -561,6 +562,66 @@ def test_team_runtime_timeline_aggregates_redacts_and_scopes_events() -> None:
     )
     session.add_all([team, other_team, foreign_team])
     session.flush()
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="MCP Operator",
+        role="operator",
+        tool_policy={"mcp_tools": ["search_docs"]},
+    )
+    other_agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Other Operator",
+        role="operator",
+        tool_policy={"mcp_tools": ["other_tool"]},
+    )
+    mcp_server = McpServer(
+        workspace_id=workspace.id,
+        name="docs-tools",
+        server_type="http_jsonrpc",
+        connection={"url": "https://mcp.example.test/private/rpc?token=hidden"},
+        status="active",
+        health_status="healthy",
+    )
+    other_mcp_server = McpServer(
+        workspace_id=workspace.id,
+        name="other-tools",
+        server_type="http_jsonrpc",
+        connection={"url": "https://other-mcp.example.test/private"},
+        status="active",
+        health_status="healthy",
+    )
+    session.add_all([agent, other_agent, mcp_server, other_mcp_server])
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=agent.id,
+                team_role="specialist",
+                status="active",
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=other_team.id,
+                agent_profile_id=other_agent.id,
+                team_role="specialist",
+                status="active",
+            ),
+            McpToolAllowlist(
+                workspace_id=workspace.id,
+                mcp_server_id=mcp_server.id,
+                tool_name="search_docs",
+                status="active",
+            ),
+            McpToolAllowlist(
+                workspace_id=workspace.id,
+                mcp_server_id=other_mcp_server.id,
+                tool_name="other_tool",
+                status="active",
+            ),
+        ]
+    )
     thread = AgentMessageThread(
         workspace_id=workspace.id,
         agent_team_id=team.id,
@@ -729,11 +790,48 @@ def test_team_runtime_timeline_aggregates_redacts_and_scopes_events() -> None:
                 actor_type="user",
                 actor_id=str(owner.id),
                 user_id=owner.id,
+                action="capability_governance.mcp_health_check_refreshed",
+                target_type="mcp_server",
+                target_id=str(mcp_server.id),
+                audit_metadata={
+                    "name": mcp_server.name,
+                    "previous": {
+                        "health_status": "unhealthy",
+                        "last_error_configured": True,
+                    },
+                    "health_status": "healthy",
+                    "last_error_configured": False,
+                    "blocked_reasons": ["mcp_server_health_check_stale"],
+                    "connection": {
+                        "remote_host": "mcp.example.test",
+                        "url": "https://mcp.example.test/private/rpc?token=hidden",
+                        "headers": {"authorization": "Bearer mcp-timeline-secret"},
+                    },
+                    "reason": "refresh token=mcp-governance-secret",
+                },
+                created_at=now - timedelta(seconds=48),
+            ),
+            AuditEvent(
+                workspace_id=workspace.id,
+                actor_type="user",
+                actor_id=str(owner.id),
+                user_id=owner.id,
                 action="team.execution_loop.iteration_ran",
                 target_type="agent_team",
                 target_id=str(other_team.id),
                 audit_metadata={"summary": "other iteration"},
                 created_at=now - timedelta(seconds=49),
+            ),
+            AuditEvent(
+                workspace_id=workspace.id,
+                actor_type="user",
+                actor_id=str(owner.id),
+                user_id=owner.id,
+                action="capability_governance.mcp_health_check_refreshed",
+                target_type="mcp_server",
+                target_id=str(other_mcp_server.id),
+                audit_metadata={"name": other_mcp_server.name, "health_status": "healthy"},
+                created_at=now - timedelta(seconds=47),
             ),
             WorkerLease(
                 workspace_id=workspace.id,
@@ -835,26 +933,47 @@ def test_team_runtime_timeline_aggregates_redacts_and_scopes_events() -> None:
     default_payload = default_response.json()
     assert default_payload["summary"]["include_runs"] is False
     assert default_payload["summary"]["include_queue"] is True
-    assert default_payload["summary"]["total_events"] == 8
+    assert default_payload["summary"]["total_events"] == 9
     assert {item["source_type"] for item in default_payload["items"]} == {
         "agent_message",
         "audit_event",
+        "mcp_governance",
         "queue_job",
         "runtime_event",
         "worker_lease",
     }
     assert default_payload["summary"]["source_counts"]["queue_job"] == 3
+    assert default_payload["summary"]["source_counts"]["mcp_governance"] == 1
     assert default_payload["summary"]["event_type_counts"][
         "team.runtime.queue.scheduled_retry"
     ] == 1
     assert default_payload["summary"]["event_type_counts"]["team.runtime.queue.dead_letter"] == 1
+    assert default_payload["summary"]["event_type_counts"][
+        "capability_governance.mcp_health_check_refreshed"
+    ] == 1
+    mcp_governance_event = next(
+        item for item in default_payload["items"] if item["source_type"] == "mcp_governance"
+    )
+    assert mcp_governance_event["message"] == (
+        "MCP health check refreshed for docs-tools: healthy"
+    )
+    assert mcp_governance_event["metadata"]["target_id"] == str(mcp_server.id)
+    assert mcp_governance_event["metadata"]["audit_metadata"]["connection"] == {
+        "remote_host": "mcp.example.test",
+        "url": "https://mcp.example.test/private/rpc?[redacted]",
+        "headers": "[redacted]",
+    }
     assert "run_event" not in default_payload["summary"]["source_counts"]
     assert "Other team runtime started" not in str(default_payload)
     assert "other runtime heartbeat" not in str(default_payload)
+    assert "other-tools" not in str(default_payload)
     assert "Foreign runtime started" not in str(default_payload)
     assert "message-secret" not in str(default_payload)
     assert "timeline-secret" not in str(default_payload)
     assert "timeline-meta-secret" not in str(default_payload)
+    assert "mcp-governance-secret" not in str(default_payload)
+    assert "mcp-timeline-secret" not in str(default_payload)
+    assert "token=hidden" not in str(default_payload)
     assert "Bearer hidden" not in str(default_payload)
     assert "lease-container-secret" not in str(default_payload)
     assert "runtime-secret.example.test" not in str(default_payload)
@@ -869,7 +988,7 @@ def test_team_runtime_timeline_aggregates_redacts_and_scopes_events() -> None:
     assert include_runs_response.status_code == 200
     include_runs_payload = include_runs_response.json()
     assert include_runs_payload["summary"]["include_runs"] is True
-    assert include_runs_payload["summary"]["total_events"] == 9
+    assert include_runs_payload["summary"]["total_events"] == 10
     assert include_runs_payload["summary"]["source_counts"]["run_event"] == 1
     assert any(item["event_type"] == "run.tool_called" for item in include_runs_payload["items"])
     assert "run-secret" not in str(include_runs_payload)
@@ -879,7 +998,7 @@ def test_team_runtime_timeline_aggregates_redacts_and_scopes_events() -> None:
     assert without_queue_response.status_code == 200
     without_queue_payload = without_queue_response.json()
     assert without_queue_payload["summary"]["include_queue"] is False
-    assert without_queue_payload["summary"]["total_events"] == 5
+    assert without_queue_payload["summary"]["total_events"] == 6
     assert "queue_job" not in without_queue_payload["summary"]["source_counts"]
 
     assert filtered_response.status_code == 200

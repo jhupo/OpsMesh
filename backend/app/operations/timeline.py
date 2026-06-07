@@ -12,12 +12,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_messages.models import AgentMessage
+from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.operations import (
     TeamRuntimeTimelineEventResponse,
     TeamRuntimeTimelineResponse,
     TeamRuntimeTimelineSummaryResponse,
 )
 from backend.app.audit.models import AuditEvent
+from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.operations.models import WorkerLease
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
@@ -101,6 +103,7 @@ class TeamRuntimeTimelineService:
             *self._audit_events(workspace_id, team_id, filters),
             *self._scheduler_scan(workspace_id, team_id, filters),
             *self._blocked_steps(workspace_id, team_id, filters),
+            *self._mcp_governance_events(workspace_id, team_id, filters),
             *self._worker_leases(workspace_id, team_id, filters),
             *self._runtime_events(workspace_id, runtime_ids, filters),
         ]
@@ -409,6 +412,83 @@ class TeamRuntimeTimelineService:
             )
         return events
 
+    def _mcp_governance_events(
+        self,
+        workspace_id: UUID,
+        team_id: UUID,
+        filters: TimelineFilters,
+    ) -> list[_TimelineEvent]:
+        server_ids = self._team_mcp_server_ids(workspace_id, team_id)
+        if not server_ids:
+            return []
+        statement = select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace_id,
+            AuditEvent.target_type == "mcp_server",
+            AuditEvent.target_id.in_({str(server_id) for server_id in server_ids}),
+            AuditEvent.action.in_(
+                {
+                    "capability_governance.mcp_health_check_refreshed",
+                    "capability_governance.mcp_server_disabled",
+                }
+            ),
+        )
+        statement = _apply_time_filters(statement, AuditEvent.created_at, filters)
+        audit_events = self._session.scalars(statement).all()
+        return [
+            _TimelineEvent(
+                id=f"mcp_governance:{event.id}",
+                source_type="mcp_governance",
+                event_type=event.action,
+                occurred_at=_aware_datetime(event.created_at),
+                resource_id=str(event.id),
+                message=_mcp_governance_message(event),
+                metadata={
+                    "audit_event_id": str(event.id),
+                    "actor_type": event.actor_type,
+                    "actor_id": event.actor_id,
+                    "user_id": str(event.user_id) if event.user_id is not None else None,
+                    "target_type": event.target_type,
+                    "target_id": event.target_id,
+                    "audit_metadata": dict(event.audit_metadata or {}),
+                },
+            )
+            for event in audit_events
+        ]
+
+    def _team_mcp_server_ids(self, workspace_id: UUID, team_id: UUID) -> set[UUID]:
+        configured_tools = self._team_configured_mcp_tools(workspace_id, team_id)
+        if not configured_tools:
+            return set()
+        statement = (
+            select(McpToolAllowlist.mcp_server_id)
+            .join(McpServer, McpServer.id == McpToolAllowlist.mcp_server_id)
+            .where(
+                McpToolAllowlist.workspace_id == workspace_id,
+                McpToolAllowlist.status == "active",
+                McpServer.workspace_id == workspace_id,
+            )
+        )
+        if "*" not in configured_tools:
+            statement = statement.where(McpToolAllowlist.tool_name.in_(configured_tools))
+        return set(self._session.scalars(statement).all())
+
+    def _team_configured_mcp_tools(self, workspace_id: UUID, team_id: UUID) -> set[str]:
+        rows = self._session.scalars(
+            select(AgentProfile.tool_policy)
+            .join(AgentTeamMember, AgentTeamMember.agent_profile_id == AgentProfile.id)
+            .where(
+                AgentTeamMember.workspace_id == workspace_id,
+                AgentTeamMember.agent_team_id == team_id,
+                AgentTeamMember.status == "active",
+                AgentProfile.workspace_id == workspace_id,
+                AgentProfile.status == "active",
+            )
+        ).all()
+        configured: set[str] = set()
+        for policy in rows:
+            configured.update(_configured_mcp_tools(policy))
+        return configured
+
     def _runtime_events(
         self,
         workspace_id: UUID,
@@ -634,6 +714,28 @@ def _datetime_from_value(value: object) -> datetime | None:
 
 def _queue_job_time(job: Any) -> datetime:
     return _aware_datetime(job.last_failed_at or job.created_at)
+
+
+def _configured_mcp_tools(policy: object) -> set[str]:
+    if not isinstance(policy, dict):
+        return set()
+    raw_tools = policy.get("mcp_tools")
+    if not isinstance(raw_tools, list):
+        return set()
+    return {tool for tool in raw_tools if isinstance(tool, str) and tool}
+
+
+def _mcp_governance_message(event: AuditEvent) -> str:
+    metadata = event.audit_metadata if isinstance(event.audit_metadata, dict) else {}
+    name = metadata.get("name")
+    target = name if isinstance(name, str) and name else event.target_id
+    if event.action == "capability_governance.mcp_health_check_refreshed":
+        status = metadata.get("health_status")
+        status_text = status if isinstance(status, str) and status else "recorded"
+        return f"MCP health check refreshed for {target}: {status_text}"
+    if event.action == "capability_governance.mcp_server_disabled":
+        return f"MCP server disabled by governance: {target}"
+    return event.action
 
 
 def _redact_secret_like_text(value: str) -> str:
