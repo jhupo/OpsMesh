@@ -51,6 +51,7 @@ MCP_LIMIT_COUNTED_STATUSES = (
     "waiting_self_hosted",
 )
 GOVERNANCE_APPLY_ACTIONS = {
+    "allow_or_remove_configured_mcp_tools",
     "disable_unusable_skill_installs",
     "disable_blocked_mcp_servers",
     "refresh_mcp_health_check",
@@ -836,6 +837,19 @@ class CapabilityService:
             results.extend(action_results)
             skipped.extend(action_skipped)
             remaining -= len(action_results)
+        if "allow_or_remove_configured_mcp_tools" in requested_actions and remaining > 0:
+            action_results, action_skipped = (
+                self._apply_remove_unallowed_configured_mcp_tools(
+                    workspace_id=workspace_id,
+                    actor_user_id=actor_user_id,
+                    dry_run=dry_run,
+                    limit=remaining,
+                    reason=reason,
+                )
+            )
+            results.extend(action_results)
+            skipped.extend(action_skipped)
+            remaining -= len(action_results)
 
         summary = {
             "disabled_skill_install_count": sum(
@@ -846,6 +860,11 @@ class CapabilityService:
             ),
             "refreshed_mcp_health_check_count": sum(
                 1 for item in results if item["action"] == "refresh_mcp_health_check"
+            ),
+            "repaired_agent_mcp_policy_count": sum(
+                1
+                for item in results
+                if item["action"] == "allow_or_remove_configured_mcp_tools"
             ),
             "metadata_keys": sorted((metadata or {}).keys()),
         }
@@ -1028,6 +1047,87 @@ class CapabilityService:
                     blocked_reasons=blocked_reasons,
                 )
             )
+        return results, skipped
+
+    def _apply_remove_unallowed_configured_mcp_tools(
+        self,
+        *,
+        workspace_id: UUID,
+        actor_user_id: UUID,
+        dry_run: bool,
+        limit: int,
+        reason: str | None,
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+        agents = self._session.scalars(
+            select(AgentProfile)
+            .where(AgentProfile.workspace_id == workspace_id)
+            .order_by(AgentProfile.name.asc(), AgentProfile.id.asc())
+        ).all()
+        results: list[dict[str, object]] = []
+        skipped: list[dict[str, object]] = []
+        for agent in agents:
+            diagnostics = self.agent_tool_policy_diagnostics(workspace_id, agent.id)
+            blocked_reasons = _string_list(diagnostics.get("blocked_reasons"))
+            missing_tools = _string_list(diagnostics.get("missing_policy_tools"))
+            if not missing_tools:
+                skipped.append(
+                    _governance_skipped(
+                        action="allow_or_remove_configured_mcp_tools",
+                        resource_type="agent_profile",
+                        resource_id=agent.id,
+                        resource_name=agent.name,
+                        reason="agent_mcp_policy_already_allowed",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            if len(results) >= limit:
+                skipped.append(
+                    _governance_skipped(
+                        action="allow_or_remove_configured_mcp_tools",
+                        resource_type="agent_profile",
+                        resource_id=agent.id,
+                        resource_name=agent.name,
+                        reason="max_items_reached",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            current_tools = _string_list(agent.tool_policy.get("mcp_tools"))
+            repaired_tools = [tool for tool in current_tools if tool not in set(missing_tools)]
+            if not dry_run:
+                next_policy = dict(agent.tool_policy)
+                next_policy["mcp_tools"] = repaired_tools
+                agent.tool_policy = next_policy
+                AuditService(self._session).record_user_action(
+                    workspace_id=workspace_id,
+                    user_id=actor_user_id,
+                    action="capability_governance.agent_mcp_policy_repaired",
+                    target_type="agent_profile",
+                    target_id=agent.id,
+                    metadata={
+                        "agent_name": agent.name,
+                        "removed_mcp_tools": missing_tools,
+                        "remaining_mcp_tools": repaired_tools,
+                        "blocked_reasons": blocked_reasons,
+                        "reason": reason,
+                    },
+                )
+            result = _governance_result(
+                action="allow_or_remove_configured_mcp_tools",
+                resource_type="agent_profile",
+                resource_id=agent.id,
+                resource_name=agent.name,
+                status="would_apply" if dry_run else "applied",
+                blocked_reasons=blocked_reasons,
+            )
+            result.update(
+                {
+                    "removed_mcp_tools": missing_tools,
+                    "remaining_mcp_tools": repaired_tools,
+                }
+            )
+            results.append(result)
         return results, skipped
 
     def _apply_refresh_mcp_health_checks(
