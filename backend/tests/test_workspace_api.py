@@ -2957,6 +2957,30 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
         },
     )
     session.add(blocked_step)
+    queued_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=blocked_task.id,
+        task_step_id=blocked_step.id,
+        agent_profile_id=developer.id,
+        status=RunStatus.QUEUED.value,
+        model="claude-opus-4-6",
+        input={
+            "authorization_snapshot": {
+                "model_provider": {
+                    "provider": "openai-compatible",
+                    "credential_id": str(credential.id),
+                    "credential_reference": f"model_provider_credentials:{credential.id}",
+                    "model_api": "chat_completions",
+                    "readiness_status": "degraded",
+                    "reasons": [],
+                    "warnings": ["model_provider_health_unknown"],
+                    "api_key": "sk-run-provider-secret",
+                    "base_url": "https://run-provider.example.test/private",
+                }
+            }
+        },
+    )
+    session.add(queued_run)
     session.commit()
     session.add(
         WorkspaceMemoryEntry(
@@ -3244,6 +3268,17 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     assert provider_management["credential_count"] == 2
     assert provider_management["active_credential_count"] == 2
     assert provider_management["default_credential_id"] == str(default_credential.id)
+    run_diagnostics = provider_management["run_diagnostics"]
+    assert run_diagnostics["total"] == 1
+    assert run_diagnostics["items"][0]["run_id"] == str(queued_run.id)
+    assert run_diagnostics["items"][0]["provider_snapshot_source"] == "frozen_run_snapshot"
+    assert run_diagnostics["items"][0]["provider"] == "openai-compatible"
+    assert run_diagnostics["items"][0]["model_api"] == "chat_completions"
+    assert run_diagnostics["items"][0]["credential_reference"] == (
+        f"model_provider_credentials:{credential.id}"
+    )
+    assert "sk-run-provider-secret" not in str(run_diagnostics)
+    assert "run-provider.example.test/private" not in str(run_diagnostics)
     provider_options = {
         item["id"]: item for item in provider_management["credentials"]
     }
@@ -4115,6 +4150,116 @@ def test_team_execution_loop_records_skipped_runtime_heartbeat() -> None:
     assert body["last_iteration"]["status"] == "skipped"
     assert body["last_iteration"]["summary"]["runtime_status"] == "paused"
     assert body["last_message_at"] is not None
+
+
+def test_team_execution_loop_marks_runtime_stalled_after_repeated_noop() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    credential = ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
+    ).create(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        name="Workspace OpenAI",
+        provider="openai",
+        api_key="sk-stall-provider",
+        default_model="gpt-4.1-mini",
+        base_url=None,
+        is_default=True,
+    )
+    credential.health_status = "healthy"
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="PM",
+        role="project_manager",
+        model="workspace-default",
+    )
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="Stall Runtime",
+        status="running",
+        connection_status="online",
+        limits={},
+        network_policy={},
+        capabilities={},
+    )
+    session.add_all([manager, runtime])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Stall Detection Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+        default_task_policy={
+            "team_runtime": {
+                "status": "running",
+                "workspace_runtime_id": str(runtime.id),
+            }
+        },
+    )
+    session.add(team)
+    session.flush()
+    session.add(
+        AgentTeamMember(
+            workspace_id=workspace.id,
+            agent_team_id=team.id,
+            agent_profile_id=manager.id,
+            team_role="project_manager",
+            order_index=1,
+        )
+    )
+    session.commit()
+
+    for _ in range(3):
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/execution-loop/run",
+            headers=_headers(owner.id),
+            json={
+                "dry_run": False,
+                "apply_command_center_actions": False,
+                "finalize_ready_tasks": False,
+                "enqueue_runs": False,
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "noop"
+
+    runtime_state = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/runtime",
+        headers=_headers(owner.id),
+    )
+    command_center = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/command-center",
+        headers=_headers(owner.id),
+    )
+    console = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/operations-console",
+        headers=_headers(owner.id),
+    )
+
+    assert runtime_state.status_code == 200
+    runtime_body = runtime_state.json()
+    assert runtime_body["runtime_health"] == "degraded"
+    assert runtime_body["metadata"]["stall_count"] == 3
+    assert runtime_body["metadata"]["stall_reason"] == "no_progress"
+    assert runtime_body["metadata"]["stalled_at"]
+    assert command_center.status_code == 200
+    stall_action = next(
+        item
+        for item in command_center.json()["action_plan"]
+        if item["action"] == "review_team_runtime_stall"
+    )
+    assert stall_action["source"] == "team_runtime"
+    assert stall_action["action"] == "review_team_runtime_stall"
+    assert stall_action["reason"] == "no_progress"
+    assert stall_action["stall_count"] == 3
+    assert console.status_code == 200
+    readiness = console.json()["readiness"]
+    assert readiness["status"] == "stalled"
+    assert readiness["ready"] is False
+    assert readiness["stall"]["count"] == 3
+    assert readiness["next_operator_action"]["action"] == "review_team_runtime_stall"
 
 
 def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> None:

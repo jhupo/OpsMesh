@@ -621,6 +621,158 @@ def test_mcp_catalog_and_policy_diagnostics_block_stale_health_checks() -> None:
     assert "token-like-value-is-not-stored" not in str(refreshed_body)
 
 
+def test_mcp_unhealthy_health_check_redacts_error_code_in_responses_and_audit() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "unhealthy-remote-tools",
+            "server_type": "http_jsonrpc",
+            "connection": {"url": "https://mcp.example.test/rpc"},
+        },
+    )
+    checked = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/health-check",
+        headers=_headers(owner.id),
+        json={
+            "health_status": "unhealthy",
+            "error_code": "api_key=sk-health-secret",
+        },
+    )
+    listed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+    )
+    catalog = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
+        headers=_headers(owner.id),
+    )
+    audit = session.query(AuditEvent).filter_by(
+        workspace_id=workspace.id,
+        action="mcp_server.health_check_recorded",
+    ).one()
+    stored_server = session.get(McpServer, UUID(server.json()["id"]))
+
+    assert server.status_code == 201
+    assert checked.status_code == 200
+    assert checked.json()["health_status"] == "unhealthy"
+    assert checked.json()["last_error"] == "[redacted]"
+    assert listed.json()["items"][0]["last_error"] == "[redacted]"
+    assert catalog.json()["items"][0]["last_error"] == "[redacted]"
+    assert stored_server is not None
+    assert stored_server.last_error == "[redacted]"
+    assert audit.audit_metadata["last_error_configured"] is True
+    assert audit.audit_metadata["error_code"] == "[redacted]"
+    serialized = str(checked.json()) + str(listed.json()) + str(catalog.json())
+    serialized += str(audit.audit_metadata)
+    assert "sk-health-secret" not in serialized
+    assert "api_key=sk-health-secret" not in serialized
+    assert "[redacted]" in serialized
+
+
+def test_workspace_capability_governance_can_refresh_stale_mcp_health_checks() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "refreshable-remote-tools",
+            "server_type": "http_jsonrpc",
+            "connection": {
+                "url": "https://mcp.example.test/private/rpc?token=hidden",
+                "headers": {"Authorization": "Bearer hidden"},
+            },
+        },
+    )
+    allowed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "search_docs"},
+    )
+    stored_server = session.get(McpServer, UUID(server.json()["id"]))
+    assert stored_server is not None
+    stored_server.health_status = "healthy"
+    stored_server.last_health_check_at = datetime(2026, 1, 1, tzinfo=UTC)
+    session.commit()
+
+    dry_run = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": True,
+            "actions": ["refresh_mcp_health_check"],
+            "mcp_server_ids": [server.json()["id"]],
+            "metadata": {"token": "hidden-refresh-dry-run"},
+        },
+    )
+    applied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": False,
+            "actions": ["refresh_mcp_health_check"],
+            "mcp_server_ids": [server.json()["id"]],
+            "reason": "refresh stale MCP health",
+            "metadata": {"api_key": "sk-refresh-health"},
+        },
+    )
+    refreshed_catalog = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
+        headers=_headers(owner.id),
+    )
+    audit = session.query(AuditEvent).filter_by(
+        workspace_id=workspace.id,
+        action="capability_governance.mcp_health_check_refreshed",
+    ).one()
+
+    assert server.status_code == 201
+    assert allowed.status_code == 201
+    assert dry_run.status_code == 200
+    dry_body = dry_run.json()
+    assert dry_body["status"] == "dry_run"
+    assert dry_body["eligible_action_count"] == 1
+    assert dry_body["applied_count"] == 0
+    assert dry_body["results"][0]["action"] == "refresh_mcp_health_check"
+    assert dry_body["results"][0]["health_status"] == "healthy"
+    assert dry_body["results"][0]["connection"] == {
+        "requires_credentials": False,
+        "remote_host": "mcp.example.test",
+        "has_remote_url": True,
+        "has_stdio_command": False,
+    }
+    assert "hidden-refresh-dry-run" not in str(dry_body)
+    assert "private/rpc" not in str(dry_body)
+    assert "Bearer hidden" not in str(dry_body)
+
+    assert applied.status_code == 200
+    body = applied.json()
+    assert body["status"] == "applied"
+    assert body["eligible_action_count"] == 1
+    assert body["applied_count"] == 1
+    assert body["summary"]["refreshed_mcp_health_check_count"] == 1
+    assert body["results"][0]["health_status"] == "healthy"
+    refreshed_item = refreshed_catalog.json()["items"][0]
+    assert refreshed_item["executable"] is True
+    assert refreshed_item["blocked_reasons"] == []
+    session.refresh(stored_server)
+    assert stored_server.health_status == "healthy"
+    assert stored_server.last_error is None
+    assert stored_server.last_health_check_at is not None
+    assert audit.audit_metadata["health_status"] == "healthy"
+    assert audit.audit_metadata["last_error_configured"] is False
+    serialized = str(body) + str(audit.audit_metadata)
+    assert "sk-refresh-health" not in serialized
+    assert "private/rpc" not in serialized
+    assert "Bearer hidden" not in serialized
+
+
 def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

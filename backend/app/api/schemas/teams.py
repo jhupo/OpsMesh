@@ -404,6 +404,7 @@ class AgentTeamOperationsConsoleProviderManagementResponse(BaseModel):
     default_credential_id: UUID | None = None
     credentials: list[dict[str, object]] = Field(default_factory=list)
     agent_bindings: list[dict[str, object]] = Field(default_factory=list)
+    run_diagnostics: dict[str, object] = Field(default_factory=dict)
     suggested_actions: list[AgentTeamOperationsConsoleActionPlanItem] = Field(
         default_factory=list
     )
@@ -414,6 +415,10 @@ class AgentTeamOperationsConsoleProviderManagementResponse(BaseModel):
         value: list[dict[str, object]],
     ) -> list[dict[str, object]]:
         return [redact_sensitive_payload(item) for item in value]
+
+    @field_serializer("run_diagnostics")
+    def _serialize_run_diagnostics(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
     @field_serializer("suggested_actions")
     def _serialize_suggested_actions(
@@ -485,6 +490,28 @@ class AgentTeamOperationsConsoleControlsResponse(BaseModel):
         ]
 
 
+class AgentTeamOperationsConsoleReadinessResponse(BaseModel):
+    status: str
+    ready: bool
+    runtime_health: str
+    runtime_status: str
+    workspace_runtime_status: str | None = None
+    stall: dict[str, object] = Field(default_factory=dict)
+    mailbox_unread_count: int = 0
+    queue_backlog: int = 0
+    blocked_step_count: int = 0
+    provider_blocked: bool = False
+    action_plan_count: int = 0
+    next_operator_action: dict[str, object] | None = None
+
+    @field_serializer("stall", "next_operator_action")
+    def _serialize_metadata(
+        self,
+        value: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
+
+
 class AgentTeamOperationsConsoleResponse(BaseModel):
     workspace_id: UUID
     team_id: UUID
@@ -497,6 +524,7 @@ class AgentTeamOperationsConsoleResponse(BaseModel):
     sessions: AgentTeamOperationsConsoleSessionsResponse
     mailbox: AgentTeamOperationsConsoleMailboxResponse
     controls: AgentTeamOperationsConsoleControlsResponse
+    readiness: AgentTeamOperationsConsoleReadinessResponse
 
 
 class AgentTeamCommandCenterApplyRequest(BaseModel):

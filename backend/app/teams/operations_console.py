@@ -30,7 +30,10 @@ from backend.app.model_providers.service import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,
 )
+from backend.app.runs.models import AgentRun
+from backend.app.runs.status import RunStatus
 from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.tasks.models import Task
 from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.runtime import TeamRuntimeService, TeamRuntimeState
@@ -39,6 +42,12 @@ from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
 
 INTERNAL_POLICY_KEYS = {"team_runtime", "team_runtime_thread_id"}
+PROVIDER_RUN_STATUSES = {
+    RunStatus.QUEUED.value,
+    RunStatus.RUNNING.value,
+    RunStatus.WAITING_RUNTIME.value,
+    RunStatus.WAITING_APPROVAL.value,
+}
 
 
 class TeamOperationsConsoleService:
@@ -106,6 +115,17 @@ class TeamOperationsConsoleService:
             workspace_id=workspace_id,
             team_id=team_id,
         )
+        mailbox = self._mailbox_payload(
+            runtime_state=runtime_state,
+            message_limit=max(message_limit, 0),
+        )
+        controls = _controls_payload(
+            runtime_state,
+            command_center,
+            runtime_queue,
+            provider_management,
+            runtime_blocking,
+        )
         return {
             "workspace_id": workspace_id,
             "team_id": team_id,
@@ -134,16 +154,16 @@ class TeamOperationsConsoleService:
                 ],
                 "total": len(sessions),
             },
-            "mailbox": self._mailbox_payload(
-                runtime_state=runtime_state,
-                message_limit=max(message_limit, 0),
-            ),
-            "controls": _controls_payload(
+            "mailbox": mailbox,
+            "controls": controls,
+            "readiness": _readiness_payload(
                 runtime_state,
                 command_center,
                 runtime_queue,
                 provider_management,
                 runtime_blocking,
+                mailbox,
+                controls,
             ),
         }
 
@@ -238,6 +258,10 @@ class TeamOperationsConsoleService:
                 for credential in credentials
             ],
             "agent_bindings": agent_bindings,
+            "run_diagnostics": self._provider_run_diagnostics_payload(
+                workspace_id=workspace_id,
+                members=members,
+            ),
             "suggested_actions": _provider_management_suggested_actions(agent_bindings),
         }
 
@@ -294,6 +318,77 @@ class TeamOperationsConsoleService:
             "reasons": _string_list(summary.get("reasons")),
             "warnings": _string_list(summary.get("warnings")),
             "available_credential_ids": _active_credential_ids(credential_by_id.values()),
+        }
+
+    def _provider_run_diagnostics_payload(
+        self,
+        *,
+        workspace_id: UUID,
+        members: list[AgentTeamMember],
+        limit: int = 20,
+    ) -> dict[str, object]:
+        if not members:
+            return {"total": 0, "items": [], "truncated": False}
+        team_id = members[0].agent_team_id
+        runs = list(
+            self._session.scalars(
+                select(AgentRun)
+                .join(Task, Task.id == AgentRun.task_id)
+                .where(
+                    AgentRun.workspace_id == workspace_id,
+                    AgentRun.status.in_(PROVIDER_RUN_STATUSES),
+                    Task.workspace_id == workspace_id,
+                    Task.agent_team_id == team_id,
+                )
+                .order_by(AgentRun.updated_at.desc(), AgentRun.created_at.desc())
+                .limit(limit + 1)
+            )
+        )
+        items = [
+            self._provider_run_payload(run)
+            for run in runs[:limit]
+        ]
+        return redact_sensitive_payload(
+            {
+                "total": len(runs),
+                "items": items,
+                "truncated": len(runs) > limit,
+                "statuses": sorted(
+                    {
+                        str(item.get("status"))
+                        for item in items
+                        if isinstance(item.get("status"), str)
+                    }
+                ),
+            }
+        )
+
+    def _provider_run_payload(self, run: AgentRun) -> dict[str, object]:
+        snapshot = _run_model_provider_snapshot(run.input)
+        agent = (
+            self._session.get(AgentProfile, run.agent_profile_id)
+            if run.agent_profile_id is not None
+            else None
+        )
+        live_provider = _agent_model_provider_payload(agent) if agent is not None else {}
+        provider = snapshot or live_provider
+        return {
+            "run_id": run.id,
+            "task_id": run.task_id,
+            "task_step_id": run.task_step_id,
+            "agent_profile_id": run.agent_profile_id,
+            "status": run.status,
+            "model": run.model or provider.get("selected_model"),
+            "provider_snapshot_source": "frozen_run_snapshot" if snapshot else "live_agent",
+            "provider": provider.get("provider"),
+            "credential_id": _uuid_or_none(provider.get("credential_id")),
+            "credential_reference": provider.get("credential_reference"),
+            "model_api": provider.get("model_api"),
+            "readiness_status": provider.get("readiness_status"),
+            "reasons": _string_list(provider.get("reasons")),
+            "warnings": _string_list(provider.get("warnings")),
+            "created_at": run.created_at,
+            "updated_at": run.updated_at,
         }
 
     def _agent_mailbox_payload(
@@ -495,6 +590,99 @@ def _controls_payload(
         + _runtime_queue_suggested_actions(runtime_queue)
         + _runtime_blocked_step_suggested_actions(runtime_blocking),
     }
+
+
+def _readiness_payload(
+    runtime_state: TeamRuntimeState,
+    command_center: dict[str, object] | None,
+    runtime_queue: dict[str, object],
+    provider_management: dict[str, object],
+    runtime_blocking: dict[str, object],
+    mailbox: dict[str, object],
+    controls: dict[str, object],
+) -> dict[str, object]:
+    runtime_metadata = dict(runtime_state.metadata)
+    stall_count = _int_value(runtime_metadata.get("stall_count"))
+    stall_threshold = _positive_int(runtime_metadata.get("stall_threshold"), 3)
+    stalled_at = runtime_metadata.get("stalled_at")
+    provider_blocked = any(
+        isinstance(item, dict) and item.get("readiness_status") == "blocked"
+        for item in provider_management.get("agent_bindings", [])
+        if isinstance(item, dict)
+    )
+    blocked_step_count = _int_value(
+        _runtime_blocked_steps_payload(runtime_blocking).get("count")
+    )
+    queue_backlog = (
+        _int_value(runtime_queue.get("queued"))
+        + _int_value(runtime_queue.get("scheduled_retry"))
+        + _int_value(runtime_queue.get("dead_letter"))
+    )
+    suggested_actions = [
+        item for item in controls.get("suggested_actions", []) if isinstance(item, dict)
+    ]
+    suggested_actions.sort(
+        key=lambda item: _int_value(item.get("priority")),
+        reverse=True,
+    )
+    next_action = suggested_actions[0] if suggested_actions else None
+    readiness_status = _readiness_status(
+        runtime_state=runtime_state,
+        stalled=bool(stalled_at) or stall_count >= stall_threshold,
+        provider_blocked=provider_blocked,
+        blocked_step_count=blocked_step_count,
+        queue_backlog=queue_backlog,
+    )
+    return redact_sensitive_payload(
+        {
+            "status": readiness_status,
+            "ready": readiness_status == "ready",
+            "runtime_health": runtime_state.runtime_health,
+            "runtime_status": runtime_state.status,
+            "workspace_runtime_status": runtime_state.runtime_status,
+            "stall": {
+                "count": stall_count,
+                "threshold": stall_threshold,
+                "reason": runtime_metadata.get("stall_reason"),
+                "stalled_at": stalled_at,
+            },
+            "mailbox_unread_count": _int_value(mailbox.get("unread_count")),
+            "queue_backlog": queue_backlog,
+            "blocked_step_count": blocked_step_count,
+            "provider_blocked": provider_blocked,
+            "action_plan_count": _int_value(
+                _dict(command_center.get("summary") if command_center else {}).get(
+                    "action_plan_count"
+                )
+            ),
+            "next_operator_action": next_action,
+        }
+    )
+
+
+def _readiness_status(
+    *,
+    runtime_state: TeamRuntimeState,
+    stalled: bool,
+    provider_blocked: bool,
+    blocked_step_count: int,
+    queue_backlog: int,
+) -> str:
+    if runtime_state.status in {"paused", "stopped"}:
+        return runtime_state.status
+    if stalled:
+        return "stalled"
+    if provider_blocked:
+        return "provider_blocked"
+    if runtime_state.runtime_health in {"stale", "degraded"}:
+        return runtime_state.runtime_health
+    if blocked_step_count > 0:
+        return "blocked"
+    if queue_backlog > 0:
+        return "working"
+    if runtime_state.runtime_health == "healthy" and runtime_state.runtime_status == "running":
+        return "ready"
+    return runtime_state.runtime_health or "unknown"
 
 
 def _agent_payload(agent: AgentProfile | None) -> dict[str, object] | None:
@@ -784,6 +972,15 @@ def _runtime_blocked_step_suggested_actions(
             "task_step_ids": _unique_strings(item.get("task_step_id") for item in steps),
         }
     ]
+
+
+def _run_model_provider_snapshot(input_payload: object) -> dict[str, object]:
+    payload = _dict(input_payload)
+    authorization_snapshot = _dict(payload.get("authorization_snapshot"))
+    snapshot = _dict(authorization_snapshot.get("model_provider"))
+    if snapshot:
+        return snapshot
+    return _dict(payload.get("model_provider"))
 
 
 def _model_provider_credential_option_payload(

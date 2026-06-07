@@ -31,6 +31,8 @@ TEAM_RUNTIME_THREAD_KEY = "team_runtime_thread_id"
 TEAM_RUNTIME_SESSION_SCOPE = "team_runtime"
 TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY = "workspace_runtime_id"
 TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS = 300
+TEAM_RUNTIME_STALL_THRESHOLD = 3
+TEAM_RUNTIME_STALL_STATUSES = {"noop", "skipped"}
 
 
 @dataclass(frozen=True)
@@ -399,14 +401,24 @@ class TeamRuntimeService:
             "recorded_at": recorded_at,
             "actor_user_id": str(actor_user_id),
         }
+        stall_update = _stall_metadata_update(
+            runtime_metadata=runtime_metadata,
+            status=status,
+            summary=summary,
+            recorded_at=recorded_at,
+        )
         runtime_metadata.update(
             {
                 "last_iteration": last_iteration,
                 "iteration_count": iteration_count,
                 "last_heartbeat_at": recorded_at,
                 "heartbeat_status": status,
+                **stall_update,
             }
         )
+        if status not in TEAM_RUNTIME_STALL_STATUSES:
+            for key in ("stall_count", "stall_reason", "stalled_at", "stall_threshold"):
+                runtime_metadata.pop(key, None)
         runtime_metadata.pop("last_worker_failure", None)
         policy[TEAM_RUNTIME_STATUS_KEY] = runtime_metadata
         team.default_task_policy = policy
@@ -1058,9 +1070,50 @@ def _runtime_health(
         return "stale"
     if metadata.get("heartbeat_status") == "skipped":
         return "degraded"
+    if _runtime_stalled(metadata):
+        return "degraded"
     if _last_worker_failure_active(metadata):
         return "degraded"
     return "healthy"
+
+
+def _stall_metadata_update(
+    *,
+    runtime_metadata: dict[str, object],
+    status: str,
+    summary: dict[str, object],
+    recorded_at: str,
+) -> dict[str, object]:
+    if status not in TEAM_RUNTIME_STALL_STATUSES:
+        return {}
+    stall_count = _int(runtime_metadata.get("stall_count")) + 1
+    reason = _stall_reason(summary)
+    update: dict[str, object] = {
+        "stall_count": stall_count,
+        "stall_reason": reason,
+        "stall_threshold": TEAM_RUNTIME_STALL_THRESHOLD,
+    }
+    if stall_count >= TEAM_RUNTIME_STALL_THRESHOLD:
+        update["stalled_at"] = runtime_metadata.get("stalled_at") or recorded_at
+    return update
+
+
+def _stall_reason(summary: dict[str, object]) -> str:
+    for key in ("reason", "scheduled_run_skip_reason"):
+        value = summary.get(key)
+        if isinstance(value, str) and value:
+            return value
+    if _int(summary.get("eligible_action_count")) > 0:
+        return "eligible_actions_not_applied"
+    if _int(summary.get("skipped_task_count")) > 0:
+        return "tasks_not_finalizable"
+    return "no_progress"
+
+
+def _runtime_stalled(metadata: dict[str, object]) -> bool:
+    if metadata.get("stalled_at"):
+        return True
+    return _int(metadata.get("stall_count")) >= TEAM_RUNTIME_STALL_THRESHOLD
 
 
 def _last_worker_failure_active(metadata: dict[str, object]) -> bool:

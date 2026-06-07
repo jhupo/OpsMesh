@@ -8,6 +8,7 @@ from backend.app.api.schemas.common import ORMModel, TimestampedModel
 from backend.app.api.schemas.redaction import (
     is_sensitive_payload_key,
     redact_sensitive_payload,
+    redact_sensitive_text,
 )
 from backend.app.secrets.service import (
     external_vault_reference_metadata,
@@ -336,6 +337,10 @@ class McpServerResponse(TimestampedModel):
     def _serialize_connection(self, connection: dict[str, object]) -> dict[str, object]:
         return _redacted_connection(connection)
 
+    @field_serializer("last_error")
+    def _serialize_last_error(self, value: str | None) -> str | None:
+        return redact_sensitive_text(value) if value is not None else None
+
 
 class McpToolAllowRequest(BaseModel):
     tool_name: str = Field(min_length=1, max_length=160)
@@ -478,6 +483,10 @@ class McpCatalogServerResponse(BaseModel):
     tools: list[McpCatalogToolResponse]
     created_at: datetime
     updated_at: datetime
+
+    @field_serializer("last_error")
+    def _serialize_last_error(self, value: str | None) -> str | None:
+        return redact_sensitive_text(value) if value is not None else None
 
 
 class McpToolCallLogRequest(BaseModel):

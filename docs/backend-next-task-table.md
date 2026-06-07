@@ -50,3 +50,28 @@ Frontend remains out of scope. Billing remains out of scope.
 3. Validate runtime behavior on `192.168.2.17` before committing.
 4. Commit and push after each verified goal.
 5. Keep frontend and billing out of scope.
+
+## Active Productization Phase
+
+This phase starts after the persistent team runtime operations layer. The backend now has
+team runtime state, mailbox/session recovery, operations-console metadata, worker
+maintenance enqueue, model-provider protocol selection, and SDK tracing provenance.
+The remaining work is to turn those pieces into production-grade operating loops.
+
+| Order | Priority | Goal | Current Status | Acceptance Evidence |
+| --- | --- | --- | --- | --- |
+| 1 | P0 | Multi-agent project execution E2E closure | In progress | A workspace/team can run a project through plan quality checks, specialist work, handoff, manager review, requeue/finalize, stall detection, and recovery after worker restart with redacted operations-console evidence |
+| 2 | P0 | Provider/model operations closure | Pending | Each agent can declare provider/model/protocol; operations APIs expose readiness, fallback, budget/limit metadata, failure reasons, and redacted provenance for OpenAI, OpenAI-compatible, and Anthropic paths |
+| 3 | P1 | MCP tool permission production closure | In progress | Workspace/team/agent tool-policy matrix can explain, dry-run, apply, and audit permission remediation; governance apply now supports MCP health-check refresh for stale/unhealthy servers with redacted evidence |
+| 4 | P1 | Workspace data lifecycle production closure | Pending | Backup, restore drill, retention, import conflict preview, integrity verification, and recovery recommendations form an auditable closed loop with scheduled-job evidence |
+| 5 | P1 | Long-running reliability proof | Pending | Targeted local tests plus isolated `192.168.2.17` Postgres/Redis validation cover restart recovery, stale heartbeat handling, queue dedupe, provider-readiness blocking, and redaction |
+
+## Immediate Backend Work Queue
+
+| Order | Priority | Task | Status | Notes |
+| --- | --- | --- | --- | --- |
+| 1 | P0 | Add a team execution readiness/recovery summary that combines runtime health, mailbox backlog, handoff queue, manager queue, provider readiness, and recommended next operator action | Done | Operations console now returns readiness status, stall state, queue/mailbox/blocking counts, and the next redacted operator action; repeated no-progress loop iterations mark the runtime stalled |
+| 2 | P0 | Add provider/model operation diagnostics per team member and per queued run | Done | Operations console provider management returns per-member bindings plus active/queued run diagnostics with frozen run provider metadata, protocol, credential reference, readiness reasons, warnings, and redaction |
+| 3 | P1 | Add MCP permission remediation evidence to operations/timeline APIs | In progress | Capability governance apply now records redacted MCP health refresh evidence; remaining work is timeline rollup and broader permission repair actions |
+| 4 | P1 | Add lifecycle recovery-action rollup to workspace operations responses | Pending | Show latest backup, latest restore drill, retention safety, conflict-preview status, and the next safe remediation |
+| 5 | P1 | Add one isolated remote validation script/table entry for the above closures | Pending | Must use disposable Docker network/Postgres/Redis, never `chaincloud-postgres` |

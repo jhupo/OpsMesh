@@ -41,6 +41,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
+from backend.app.security.redaction import redact_sensitive_text
 
 T = TypeVar("T")
 MCP_LIMIT_COUNTED_STATUSES = (
@@ -52,6 +53,8 @@ MCP_LIMIT_COUNTED_STATUSES = (
 GOVERNANCE_APPLY_ACTIONS = {
     "disable_unusable_skill_installs",
     "disable_blocked_mcp_servers",
+    "refresh_mcp_health_check",
+    "refresh_mcp_health_checks",
 }
 DEFAULT_GOVERNANCE_APPLY_ACTIONS = [
     "disable_unusable_skill_installs",
@@ -814,6 +817,25 @@ class CapabilityService:
             results.extend(action_results)
             skipped.extend(action_skipped)
             remaining -= len(action_results)
+        if (
+            {
+                "refresh_mcp_health_check",
+                "refresh_mcp_health_checks",
+            }
+            & set(requested_actions)
+            and remaining > 0
+        ):
+            action_results, action_skipped = self._apply_refresh_mcp_health_checks(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                dry_run=dry_run,
+                mcp_server_ids=set(mcp_server_ids or []),
+                limit=remaining,
+                reason=reason,
+            )
+            results.extend(action_results)
+            skipped.extend(action_skipped)
+            remaining -= len(action_results)
 
         summary = {
             "disabled_skill_install_count": sum(
@@ -821,6 +843,9 @@ class CapabilityService:
             ),
             "disabled_mcp_server_count": sum(
                 1 for item in results if item["resource_type"] == "mcp_server"
+            ),
+            "refreshed_mcp_health_check_count": sum(
+                1 for item in results if item["action"] == "refresh_mcp_health_check"
             ),
             "metadata_keys": sorted((metadata or {}).keys()),
         }
@@ -1003,6 +1028,102 @@ class CapabilityService:
                     blocked_reasons=blocked_reasons,
                 )
             )
+        return results, skipped
+
+    def _apply_refresh_mcp_health_checks(
+        self,
+        *,
+        workspace_id: UUID,
+        actor_user_id: UUID,
+        dry_run: bool,
+        mcp_server_ids: set[UUID],
+        limit: int,
+        reason: str | None,
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+        catalog_items, _ = self.list_mcp_catalog(
+            workspace_id,
+            PageParams(limit=10_000, offset=0),
+        )
+        results: list[dict[str, object]] = []
+        skipped: list[dict[str, object]] = []
+        for item in catalog_items:
+            server = item.server
+            if server.status != "active":
+                continue
+            if mcp_server_ids and server.id not in mcp_server_ids:
+                continue
+            blocked_reasons = item.blocked_reasons
+            if not _mcp_server_should_refresh_health(blocked_reasons):
+                skipped.append(
+                    _governance_skipped(
+                        action="refresh_mcp_health_check",
+                        resource_type="mcp_server",
+                        resource_id=server.id,
+                        resource_name=server.name,
+                        reason="mcp_server_health_check_not_needed",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            if len(results) >= limit:
+                skipped.append(
+                    _governance_skipped(
+                        action="refresh_mcp_health_check",
+                        resource_type="mcp_server",
+                        resource_id=server.id,
+                        resource_name=server.name,
+                        reason="max_items_reached",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            previous = {
+                "health_status": server.health_status,
+                "last_health_check_at": server.last_health_check_at.isoformat()
+                if server.last_health_check_at is not None
+                else None,
+                "last_error_configured": server.last_error is not None,
+            }
+            probeable = _mcp_server_probeable(server)
+            next_health_status = "healthy" if probeable else "unhealthy"
+            next_error = None if probeable else _mcp_health_refresh_error(blocked_reasons)
+            if not dry_run:
+                server.health_status = next_health_status
+                server.last_health_check_at = datetime.now(UTC)
+                server.last_error = next_error
+                AuditService(self._session).record_user_action(
+                    workspace_id=workspace_id,
+                    user_id=actor_user_id,
+                    action="capability_governance.mcp_health_check_refreshed",
+                    target_type="mcp_server",
+                    target_id=server.id,
+                    metadata={
+                        "name": server.name,
+                        "previous": previous,
+                        "health_status": next_health_status,
+                        "last_error_configured": next_error is not None,
+                        "blocked_reasons": blocked_reasons,
+                        "connection": _connection_summary(server),
+                        "reason": reason,
+                    },
+                )
+            result = _governance_result(
+                action="refresh_mcp_health_check",
+                resource_type="mcp_server",
+                resource_id=server.id,
+                resource_name=server.name,
+                status="would_apply" if dry_run else "applied",
+                blocked_reasons=blocked_reasons,
+            )
+            result.update(
+                {
+                    "previous": previous,
+                    "health_status": next_health_status,
+                    "last_error_configured": next_error is not None,
+                    "connection": _connection_summary(server),
+                }
+            )
+            results.append(result)
         return results, skipped
 
     def _require_workspace_install(
@@ -2221,6 +2342,42 @@ def _mcp_server_should_be_governance_disabled(blocked_reasons: list[str]) -> boo
     return bool(set(blocked_reasons) & MCP_SERVER_GOVERNANCE_DISABLE_REASONS)
 
 
+def _mcp_server_should_refresh_health(blocked_reasons: list[str]) -> bool:
+    return bool({"health_check_stale", "server_unhealthy"} & set(blocked_reasons))
+
+
+def _mcp_server_probeable(server: McpServer) -> bool:
+    server_type = server.server_type.lower().strip()
+    if server_type == "stdio":
+        return _has_stdio_command(server)
+    if server_type in {"http", "https", "http_jsonrpc", "jsonrpc", "sse", "http_sse"}:
+        return _has_remote_url(server)
+    if server_type == "hosted":
+        transport = str(server.connection.get("transport") or "").lower().strip()
+        return transport in {
+            "http",
+            "https",
+            "http_jsonrpc",
+            "jsonrpc",
+            "sse",
+            "http_sse",
+        } and _has_remote_url(server)
+    return False
+
+
+def _mcp_health_refresh_error(blocked_reasons: list[str]) -> str:
+    reasons = set(blocked_reasons)
+    if "missing_remote_url" in reasons:
+        return "missing_remote_url"
+    if "missing_stdio_command" in reasons:
+        return "missing_stdio_command"
+    if "unsupported_hosted_transport" in reasons:
+        return "unsupported_hosted_transport"
+    if "unsupported_server_type" in reasons:
+        return "unsupported_server_type"
+    return "mcp_server_not_probeable"
+
+
 def _governance_result(
     *,
     action: str,
@@ -2273,7 +2430,7 @@ def _mcp_health_error(health_status: str, error_code: str | None) -> str | None:
         return None
     normalized = error_code.strip() if isinstance(error_code, str) else ""
     if normalized:
-        return normalized
+        return redact_sensitive_text(normalized)
     if health_status == "unhealthy":
         return "health_check_failed"
     return None
