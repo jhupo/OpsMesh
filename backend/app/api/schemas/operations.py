@@ -236,6 +236,11 @@ class OperationsOverviewResponse(BaseModel):
     offline_runtimes: int
     workers_online: int
     security_warnings: int
+    data_lifecycle: dict[str, object] = Field(default_factory=dict)
+
+    @field_serializer("data_lifecycle")
+    def _serialize_data_lifecycle(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class QueueLatencyResponse(BaseModel):

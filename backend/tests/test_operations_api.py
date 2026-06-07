@@ -21,6 +21,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
+from backend.app.exports.models import WorkspaceExportJob
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.operations.models import WorkerLease, WorkerNode
@@ -1206,6 +1207,138 @@ def test_operations_overview_uses_workspace_scoped_short_cache() -> None:
     assert refreshed_response.json()["failed_runs"] == 1
 
 
+def test_operations_overview_includes_workspace_data_lifecycle_rollup() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    client, session = _client(redis)
+    owner, workspace = _seed_workspace(session)
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {
+                "enabled": True,
+                "schedule": "daily",
+                "target": {
+                    "remote_url": "https://backup.example.test/private",
+                    "token": "backup-token",
+                },
+            },
+            "retention": {
+                "enabled": True,
+                "default_retention_days": 30,
+            },
+        }
+    }
+    now = datetime.now(UTC)
+    export_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="completed",
+        request={"api_key": "sk-export-secret"},
+        storage_key="archives/workspace.zip",
+        filename="workspace.zip",
+        content_type="application/zip",
+        size_bytes=2048,
+        checksum_sha256="a" * 64,
+        started_at=now - timedelta(minutes=10),
+        completed_at=now - timedelta(minutes=9),
+        created_at=now - timedelta(minutes=11),
+        job_metadata={
+            "manifest_counts": {
+                "agents": 0,
+                "teams": 0,
+                "tasks": 0,
+                "task_steps": 0,
+                "runs": 0,
+                "files": 0,
+                "artifacts": 0,
+                "runtime_spaces": 0,
+                "skill_installs": 0,
+                "audit_events": 0,
+            },
+            "token": "export-token",
+        },
+    )
+    restore_drill = AuditEvent(
+        workspace_id=workspace.id,
+        actor_type="user",
+        actor_id=str(owner.id),
+        user_id=owner.id,
+        action="workspace.archive_restore_drill.completed",
+        target_type="workspace_export_job",
+        target_id=str(export_job.id),
+        audit_metadata={
+            "source_export_job_id": str(export_job.id),
+            "passed": True,
+            "token": "restore-token",
+        },
+        created_at=now - timedelta(minutes=5),
+    )
+    archive_import = AuditEvent(
+        workspace_id=workspace.id,
+        actor_type="user",
+        actor_id=str(owner.id),
+        user_id=owner.id,
+        action="workspace.archive_import.created",
+        target_type="workspace_export_job",
+        target_id=str(export_job.id),
+        audit_metadata={
+            "source_export_job_id": str(export_job.id),
+            "created_counts": {"agents": 0},
+            "token": "archive-import-token",
+        },
+        created_at=now - timedelta(minutes=4),
+    )
+    import_preview = AuditEvent(
+        workspace_id=workspace.id,
+        actor_type="user",
+        actor_id=str(owner.id),
+        user_id=owner.id,
+        action="workspace.import.previewed",
+        target_type="workspace",
+        target_id=str(workspace.id),
+        audit_metadata={
+            "required_resolution_count": 1,
+            "suggested_resolution_count": 2,
+            "conflict_counts": {"agents": 1},
+            "token": "preview-token",
+        },
+        created_at=now - timedelta(minutes=3),
+    )
+    session.add_all([export_job, restore_drill, archive_import, import_preview])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/overview",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    lifecycle = response.json()["data_lifecycle"]
+    assert lifecycle["status"] == "ready_with_warnings"
+    assert lifecycle["ready"] is True
+    assert lifecycle["warnings"] == ["import_previews_have_required_resolutions"]
+    assert lifecycle["recommended_actions"] == ["resolve_import_conflicts_before_restore"]
+    assert lifecycle["next_safe_action"] == "resolve_import_conflicts_before_restore"
+    assert lifecycle["latest_backup"]["job_id"] == str(export_job.id)
+    assert lifecycle["latest_backup"]["storage_object_configured"] is True
+    assert lifecycle["latest_backup"]["checksum_configured"] is True
+    assert lifecycle["latest_restore_drill"]["action"] == (
+        "workspace.archive_restore_drill.completed"
+    )
+    assert lifecycle["retention_safety"]["retention_enabled"] is True
+    assert lifecycle["retention_safety"]["protected_by_successful_archive"] is True
+    assert lifecycle["import_conflict_preview"]["preview_count"] == 1
+    assert lifecycle["import_conflict_preview"]["required_resolution_count"] == 1
+    assert lifecycle["import_conflict_preview"]["suggested_resolution_count"] == 2
+    serialized = str(response.json())
+    assert "backup-token" not in serialized
+    assert "export-token" not in serialized
+    assert "restore-token" not in serialized
+    assert "archive-import-token" not in serialized
+    assert "preview-token" not in serialized
+    assert "backup.example.test/private" not in serialized
+
+
 def test_operations_capacity_uses_workspace_scoped_short_cache() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)
@@ -1300,6 +1433,51 @@ def test_operations_aggregates_return_zero_metrics_for_empty_workspace() -> None
         "offline_runtimes": 0,
         "workers_online": 0,
         "security_warnings": 0,
+        "data_lifecycle": {
+            "status": "blocked",
+            "ready": False,
+            "blocked_reasons": [
+                "backup_policy_not_enabled",
+                "no_successful_archive_export",
+                "no_archive_import_test_recorded",
+            ],
+            "warnings": [],
+            "recommended_actions": [
+                "enable_backup_policy",
+                "run_archive_export",
+                "run_restore_import_test",
+            ],
+            "next_safe_action": "enable_backup_policy",
+            "latest_backup": {
+                "job_id": None,
+                "status": None,
+                "completed_at": None,
+                "storage_object_configured": False,
+                "checksum_configured": False,
+                "size_bytes": None,
+            },
+            "latest_restore_drill": {
+                "event_id": None,
+                "created_at": None,
+                "action": None,
+            },
+            "retention_safety": {
+                "retention_enabled": False,
+                "backup_policy_enabled": False,
+                "protected_by_successful_archive": False,
+                "warnings": [
+                    "retention_policy_not_enabled",
+                    "backup_policy_not_enabled",
+                    "no_successful_archive_export",
+                ],
+            },
+            "import_conflict_preview": {
+                "preview_count": 0,
+                "required_resolution_count": 0,
+                "suggested_resolution_count": 0,
+                "latest_preview_at": None,
+            },
+        },
     }
     assert capacity.json()["worker_capacity"]["workers_total"] == 0
     assert capacity.json()["worker_capacity"]["available_slots"] == 0
