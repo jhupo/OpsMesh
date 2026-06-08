@@ -7,7 +7,6 @@ DEFAULT_FEATURE_FLAGS: dict[str, bool] = {
     "docker_runtimes": True,
     "mcp_tools": True,
     "operations_aggregates": True,
-    "real_openai_runner": False,
     "runtime_shell": True,
     "self_hosted_runtimes": True,
     "talent_marketplace": True,

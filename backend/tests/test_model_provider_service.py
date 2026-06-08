@@ -477,7 +477,7 @@ def test_resolve_preserves_non_openai_provider_and_base_url() -> None:
         default_model="claude-sonnet-4-5",
         base_url="https://api.anthropic.com/",
         is_default=True,
-        budget_metadata={"model_api": "responses"},
+        budget_metadata={"model_api": "anthropic_messages"},
     )
 
     resolved = service.resolve_for_agent(
@@ -770,20 +770,16 @@ def test_resolve_rejects_cross_workspace_credential() -> None:
         raise AssertionError("Expected cross-workspace credential to be rejected")
 
 
-def test_resolve_without_default_falls_back_to_agent_model() -> None:
+def test_resolve_without_default_fails_closed() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
 
-    resolved = _service(session).resolve_for_agent(
-        workspace_id=workspace.id,
-        agent_credential_id=None,
-        agent_model="gpt-4.1",
-    )
-
-    assert resolved.credential_id is None
-    assert resolved.api_key is None
-    assert resolved.base_url is None
-    assert resolved.model == "gpt-4.1"
+    with pytest.raises(ValueError, match="No available model provider credential"):
+        _service(session).resolve_for_agent(
+            workspace_id=workspace.id,
+            agent_credential_id=None,
+            agent_model="gpt-4.1",
+        )
 
 
 def test_rotate_key_updates_secret_material_without_changing_metadata() -> None:
@@ -912,16 +908,14 @@ def test_disable_removes_credential_from_default_resolution() -> None:
         credential_id=credential.id,
         actor_user_id=user.id,
     )
-    resolved = service.resolve_for_agent(
-        workspace_id=workspace.id,
-        agent_credential_id=None,
-        agent_model="gpt-4.1",
-    )
-
     assert disabled.status == "disabled"
     assert disabled.is_default is False
-    assert resolved.credential_id is None
-    assert resolved.model == "gpt-4.1"
+    with pytest.raises(ValueError, match="No available model provider credential"):
+        service.resolve_for_agent(
+            workspace_id=workspace.id,
+            agent_credential_id=None,
+            agent_model="gpt-4.1",
+        )
 
 
 def test_resolve_rejects_disabled_agent_override_credential() -> None:

@@ -56,6 +56,10 @@ class ResolvedModelProvider:
     credential_id: UUID | None
 
 
+class ModelProviderUnavailableError(ValueError):
+    pass
+
+
 class ModelProviderCredentialService:
     def __init__(
         self,
@@ -432,13 +436,8 @@ class ModelProviderCredentialService:
         else:
             credential = self._default_credential(workspace_id)
         if credential is None:
-            return ResolvedModelProvider(
-                provider=None,
-                model=agent_model,
-                base_url=None,
-                api_key=None,
-                model_api=None,
-                credential_id=None,
+            raise ModelProviderUnavailableError(
+                "No available model provider credential for workspace"
             )
         payload = self._secret_service.decrypt_payload(credential.encrypted_api_key)
         api_key = payload.get("api_key")

@@ -38,7 +38,7 @@ from backend.app.capabilities.models import (
     McpToolAllowlist,
     WorkspaceSkillInstall,
 )
-from backend.app.core.config import Settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.trace_context import current_trace_metadata, with_current_trace_metadata
 from backend.app.memory.run_capture import AgentRunMemoryCaptureService
 from backend.app.model_providers.metadata import budget_is_exhausted
@@ -49,7 +49,10 @@ from backend.app.model_providers.model_api import (
 )
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.model_providers.resolution import ModelProviderResolutionService
-from backend.app.model_providers.service import ModelProviderCredentialService
+from backend.app.model_providers.service import (
+    ModelProviderCredentialService,
+    ModelProviderUnavailableError,
+)
 from backend.app.orchestration.scheduler import WorkspaceScheduler
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.member_matching import MemberMatchingService
@@ -112,8 +115,8 @@ class RunOrchestrationService:
     ) -> None:
         self._session = session
         self._queue = queue
-        self._settings = settings
-        self._agent_runner = agent_runner or build_agent_runner(settings)
+        self._settings = settings or get_settings()
+        self._agent_runner = agent_runner or build_agent_runner(self._settings)
 
     def create_queued_run_for_task(self, task: Task) -> AgentRun | None:
         existing_run = self._existing_active_task_run(task)
@@ -531,11 +534,18 @@ class RunOrchestrationService:
             model_provider_override: dict[str, Any] | None = None
             fallback_selected = False
             while True:
-                request = self._build_agent_request(
-                    run,
-                    job,
-                    model_provider_override=model_provider_override,
-                )
+                try:
+                    request = self._build_agent_request(
+                        run,
+                        job,
+                        model_provider_override=model_provider_override,
+                    )
+                except ModelProviderUnavailableError as exc:
+                    self._append_model_provider_unavailable_event(run, exc)
+                    self._mark_run_failed(run, exc)
+                    self._session.commit()
+                    self._session.refresh(run)
+                    return run
                 self._append_context_built_event(run, request)
                 if request.model_provider_credential_id is not None:
                     used_provider_credentials.add(request.model_provider_credential_id)
@@ -1132,6 +1142,20 @@ class RunOrchestrationService:
         )
         self._append_team_runtime_model_provider_event(run, event)
 
+    def _append_model_provider_unavailable_event(
+        self,
+        run: AgentRun,
+        exc: Exception,
+    ) -> None:
+        error = normalize_agent_error(exc)
+        event = self._append_event(
+            run,
+            "model_provider.unavailable",
+            "Model provider was unavailable before the run started",
+            {"reason": error.as_dict()},
+        )
+        self._append_team_runtime_model_provider_event(run, event)
+
     def _audit_model_provider_fallback_unavailable(
         self,
         run: AgentRun,
@@ -1678,15 +1702,6 @@ class RunOrchestrationService:
     ) -> dict[str, Any]:
         if override is not None:
             return override
-        if self._settings is None:
-            return {
-                "model": profile.model,
-                "provider": None,
-                "base_url": None,
-                "api_key": None,
-                "model_api": _model_api(profile.model_settings),
-                "model_provider_credential_id": None,
-            }
         snapshot = self._authorization_snapshot_for_run(run).get("model_provider")
         credential_id = profile.model_provider_credential_id
         agent_model = profile.model
@@ -1720,15 +1735,6 @@ class RunOrchestrationService:
         model_api: str | None = None,
         prefer_model_api: bool = False,
     ) -> dict[str, Any]:
-        if self._settings is None:
-            return {
-                "model": agent_model,
-                "provider": None,
-                "base_url": None,
-                "api_key": None,
-                "model_api": canonical_model_api(model_api),
-                "model_provider_credential_id": None,
-            }
         model_api = canonical_model_api(model_api)
         resolved = ModelProviderCredentialService(
             self._session,
@@ -1757,8 +1763,6 @@ class RunOrchestrationService:
         run: AgentRun,
         credential_id: UUID | None,
     ) -> None:
-        if self._settings is None:
-            return
         ModelProviderCredentialService(
             self._session,
             self._secret_service(),
@@ -1770,8 +1774,6 @@ class RunOrchestrationService:
         credential_id: UUID | None,
         exc: Exception,
     ) -> None:
-        if self._settings is None:
-            return
         error = normalize_agent_error(exc)
         ModelProviderCredentialService(
             self._session,

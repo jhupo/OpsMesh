@@ -62,6 +62,11 @@ class DeterministicAgentRunner:
         return AgentRunResult(final_output="deterministic_run_completed")
 
 
+class ExplodingAgentRunner:
+    async def run(self, request: AgentRunRequest) -> AgentRunResult:
+        raise AssertionError("runner should not be called")
+
+
 def test_task_start_creates_queued_run_and_worker_completes_injected_runner() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
@@ -118,6 +123,49 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
     assert events[2].event_metadata["allowed_tool_count"] == 0
     assert events[3].event_metadata["model"] == "gpt-4.1"
     assert events[4].event_metadata["runtime_event_count"] == 0
+
+
+def test_worker_fails_closed_without_model_provider_credential() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, with_default_provider=False)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add(task)
+    session.flush()
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+    orchestration = RunOrchestrationService(session, queue)
+    run = orchestration.create_queued_run_for_task(task)
+    orchestration.enqueue_run(run, requested_by_user_id=user.id)
+    session.commit()
+
+    handled = consume_once(
+        queue,
+        WorkerJobHandler(session, queue, agent_runner=ExplodingAgentRunner()).handle,
+    )
+
+    stored_run = session.get(AgentRun, run.id)
+    stored_task = session.get(Task, task.id)
+    event_types = session.scalars(
+        select(RunEvent.event_type)
+        .where(RunEvent.agent_run_id == run.id)
+        .order_by(RunEvent.sequence)
+    ).all()
+
+    assert handled is True
+    assert stored_run is not None
+    assert stored_run.status == RunStatus.FAILED.value
+    assert stored_task is not None
+    assert stored_task.status == TaskStatus.FAILED.value
+    assert "model.request_started" not in event_types
+    assert "model_provider.unavailable" in event_types
 
 
 def test_run_activity_maps_precise_execution_lifecycle_events() -> None:
@@ -3280,16 +3328,18 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
 
     assert request.context.allowed_tools == ("generate_image", "write_artifact")
     assert request.model_api == "chat_completions"
+    provider_credential_id = request.context.metadata["model_provider_credential_id"]
+    assert isinstance(provider_credential_id, str)
     assert request.context.metadata | {
         "persistent_session_key": None,
         "persistent_session_mode": None,
     } == {
         "agent_profile_id": str(agent.id),
-        "agent_role": "designer",
-        "run_model": agent.model,
-        "model_provider_provider": None,
-        "model_provider_credential_id": None,
-        "model_provider_model_api": "chat_completions",
+            "agent_role": "designer",
+            "run_model": agent.model,
+            "model_provider_provider": "openai",
+            "model_provider_credential_id": provider_credential_id,
+            "model_provider_model_api": "chat_completions",
         "authorization_scope": "workspace",
         "authorized_workspace_id": str(workspace.id),
         "authorized_task_id": str(task.id),
@@ -3615,7 +3665,9 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
         "agent_profile_id": str(agent.id),
         "agent_role": "designer",
         "run_model": agent.model,
-        "model_provider_credential_id": None,
+        "model_provider_provider": "openai",
+        "model_provider_credential_id": request.context.metadata["model_provider_credential_id"],
+        "model_provider_model_api": None,
         "authorization_scope": "workspace",
         "authorized_workspace_id": str(workspace.id),
         "authorized_task_id": str(task.id),
@@ -5394,13 +5446,45 @@ def _session() -> Session:
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
 
-def _seed_workspace(session: Session) -> tuple[User, Workspace]:
+def _seed_workspace(
+    session: Session,
+    *,
+    with_default_provider: bool = True,
+) -> tuple[User, Workspace]:
     user = User(email="owner@example.com", display_name="Owner")
     workspace = Workspace(owner=user, name="Acme", slug="acme", settings={})
     membership = WorkspaceMember(workspace=workspace, user=user, role="owner")
     session.add_all([user, workspace, membership])
     session.commit()
+    if with_default_provider:
+        _seed_default_model_provider(
+            session,
+            workspace_id=workspace.id,
+            user_id=user.id,
+        )
     return user, workspace
+
+
+def _seed_default_model_provider(
+    session: Session,
+    *,
+    workspace_id: UUID,
+    user_id: UUID,
+    api_key: str = "sk-unit-test-provider",
+) -> None:
+    ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(secret="change-me-credential-encryption-secret", key_id="local"),
+    ).create(
+        workspace_id=workspace_id,
+        created_by_user_id=user_id,
+        name="Unit test provider",
+        provider="openai",
+        api_key=api_key,
+        default_model="gpt-4.1",
+        base_url=None,
+        is_default=True,
+    )
 
 
 def _seed_summary_ready_task(

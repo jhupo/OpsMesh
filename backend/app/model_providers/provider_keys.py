@@ -1,10 +1,9 @@
 import re
 
-OPENAI_COMPATIBLE_PROVIDERS = {"", "openai", "openai-compatible"}
+OPENAI_COMPATIBLE_PROVIDERS = {"openai", "openai-compatible"}
 ANTHROPIC_PROVIDERS = {"anthropic", "claude"}
 
 _PROVIDER_ALIASES = {
-    "": "openai",
     "api-openai-com": "openai",
     "open-ai": "openai",
     "openai": "openai",
