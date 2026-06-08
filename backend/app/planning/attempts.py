@@ -13,6 +13,7 @@ from backend.app.planning.project_plans import (
     ProjectPlanValidationError,
     validate_project_plan,
 )
+from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
@@ -163,26 +164,12 @@ class TaskPlanningAttemptService:
         body: str,
         payload: dict[str, object],
     ) -> TaskMessage:
-        sequence = (
-            self._session.scalar(
-                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
-                    TaskMessage.workspace_id == task.workspace_id,
-                    TaskMessage.task_id == task.id,
-                )
-            )
-            or 0
-        ) + 1
-        message = TaskMessage(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
+        return TaskMessageAppendService(self._session).append_for_task(
+            task,
             message_type=message_type,
-            sequence=sequence,
             body=body,
             payload=payload,
         )
-        self._session.add(message)
-        self._session.flush([message])
-        return message
 
 
 def _planner_agent_profile_id(task: Task) -> UUID | None:

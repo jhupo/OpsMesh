@@ -43,6 +43,63 @@ services:
       api:
         condition: service_healthy
 
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: ${CHAINCLOUD_PROMETHEUS_CONTAINER:-chaincloud-prometheus}
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "${CHAINCLOUD_PROMETHEUS_BIND:-127.0.0.1}:${CHAINCLOUD_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ${CHAINCLOUD_MONITORING_DIR:-./monitoring}/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${CHAINCLOUD_MONITORING_DIR:-./monitoring}/alert-rules.yml:/etc/prometheus/rules/chaincloud.yml:ro
+      - chaincloud_prometheus_data:/prometheus
+    networks:
+      - backend_runtime
+    depends_on:
+      api:
+        condition: service_healthy
+      alertmanager:
+        condition: service_started
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: ${CHAINCLOUD_ALERTMANAGER_CONTAINER:-chaincloud-alertmanager}
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    ports:
+      - "${CHAINCLOUD_ALERTMANAGER_BIND:-127.0.0.1}:${CHAINCLOUD_ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ${CHAINCLOUD_MONITORING_DIR:-./monitoring}/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - chaincloud_alertmanager_data:/alertmanager
+    networks:
+      - backend_runtime
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: ${CHAINCLOUD_GRAFANA_CONTAINER:-chaincloud-grafana}
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${CHAINCLOUD_GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${CHAINCLOUD_GRAFANA_ADMIN_PASSWORD:-replace-me}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "${CHAINCLOUD_GRAFANA_BIND:-127.0.0.1}:${CHAINCLOUD_GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ${CHAINCLOUD_MONITORING_DIR:-./monitoring}/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${CHAINCLOUD_MONITORING_DIR:-./monitoring}/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - chaincloud_grafana_data:/var/lib/grafana
+    networks:
+      - backend_runtime
+    depends_on:
+      prometheus:
+        condition: service_started
+
 networks:
   backend_runtime:
     external: true
@@ -50,3 +107,6 @@ networks:
 
 volumes:
   chaincloud_app_storage:
+  chaincloud_prometheus_data:
+  chaincloud_alertmanager_data:
+  chaincloud_grafana_data:

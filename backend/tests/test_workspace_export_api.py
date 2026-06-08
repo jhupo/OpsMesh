@@ -528,6 +528,88 @@ def test_workspace_recovery_readiness_blocks_stale_archive_backup(tmp_path: Path
     assert body["restore_readiness"]["recommended_actions"] == ["run_archive_export"]
 
 
+def test_workspace_recovery_readiness_blocks_failed_archive_integrity_check(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-integrity-recovery@example.com",
+        slug="owner-integrity-recovery",
+    )
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {
+                "enabled": True,
+                "target_type": "manual_export",
+                "max_archive_age_days": 30,
+            },
+        }
+    }
+    completed_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="completed",
+        storage_key="workspaces/owner-integrity-recovery/exports/archive.zip",
+        filename="archive.zip",
+        content_type="application/zip",
+        size_bytes=123,
+        checksum_sha256="c" * 64,
+        completed_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        job_metadata={"manifest_counts": {"agents": 0}},
+    )
+    session.add(completed_job)
+    session.flush()
+    restore_test = AuditEvent(
+        workspace_id=workspace.id,
+        actor_type="user",
+        actor_id=str(owner.id),
+        user_id=owner.id,
+        action="workspace.archive_import.created",
+        target_type="workspace",
+        target_id=str(workspace.id),
+        audit_metadata={},
+        created_at=datetime.now(UTC),
+    )
+    integrity_check = AuditEvent(
+        workspace_id=workspace.id,
+        actor_type="user",
+        actor_id=str(owner.id),
+        user_id=owner.id,
+        action="workspace.archive_export_job.integrity_checked",
+        target_type="workspace_export_job",
+        target_id=str(completed_job.id),
+        audit_metadata={
+            "verified": False,
+            "failed_checks": ["checksum_matches", "zip_readable"],
+        },
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([restore_test, integrity_check])
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    integrity = body["archive_integrity"]
+    assert integrity["latest_check_verified"] is False
+    assert integrity["latest_check_failed_checks"] == ["checksum_matches", "zip_readable"]
+    assert integrity["latest_check_covers_latest_successful_archive"] is True
+    assert body["restore_readiness"]["ready"] is False
+    assert body["restore_readiness"]["blocked_reasons"] == [
+        "latest_archive_integrity_check_failed"
+    ]
+    assert body["restore_readiness"]["recommended_actions"] == [
+        "repair_or_regenerate_archive_export"
+    ]
+
+
 def test_workspace_recovery_readiness_actions_dry_run_and_apply_archive_export(
     tmp_path: Path,
 ) -> None:
@@ -782,6 +864,139 @@ def test_workspace_recovery_readiness_actions_run_restore_import_test(
         ]
         is True
     )
+
+
+def test_workspace_recovery_readiness_actions_verify_stale_archive_integrity(
+    tmp_path: Path,
+) -> None:
+    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-recovery-integrity-action@example.com",
+        slug="owner-recovery-integrity-action",
+    )
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(
+            worker_id="recovery-integrity-action-worker",
+            queue_name="agent_runs",
+        ),
+        settings=Settings(
+            environment="test",
+            log_format="text",
+            internal_api_token=TOKEN,
+            storage_root=str(tmp_path),
+        ),
+    )
+    first_created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
+        headers=_headers(owner.id),
+        json={"include_audit_events": False},
+    )
+    assert first_created.status_code == 202
+    first_job_id = first_created.json()["id"]
+    assert runner.run_once() is True
+    first_verified = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{first_job_id}/verify",
+        headers=_headers(owner.id),
+    )
+    assert first_verified.status_code == 200
+    assert first_verified.json()["verified"] is True
+
+    second_created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
+        headers=_headers(owner.id),
+        json={"include_audit_events": False},
+    )
+    assert second_created.status_code == 202
+    second_job_id = second_created.json()["id"]
+    assert runner.run_once() is True
+
+    readiness = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness",
+        headers=_headers(owner.id),
+    )
+    assert readiness.status_code == 200
+    readiness_body = readiness.json()
+    assert (
+        readiness_body["archive_integrity"][
+            "latest_check_covers_latest_successful_archive"
+        ]
+        is False
+    )
+    assert "latest_archive_integrity_check_stale" in readiness_body[
+        "restore_readiness"
+    ]["warnings"]
+    assert "verify_latest_archive_integrity" in readiness_body["restore_readiness"][
+        "recommended_actions"
+    ]
+
+    dry_run = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness/actions/apply",
+        headers=_headers(owner.id),
+        json={"actions": ["verify_latest_archive_integrity"]},
+    )
+
+    assert dry_run.status_code == 200
+    dry_body = dry_run.json()
+    assert dry_body["dry_run"] is True
+    assert dry_body["requested_actions"] == ["verify_latest_archive_integrity"]
+    assert dry_body["results"][0]["status"] == "would_apply"
+    assert dry_body["results"][0]["resource_id"] == second_job_id
+
+    applied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness/actions/apply",
+        headers=_headers(owner.id),
+        json={
+            "dry_run": False,
+            "actions": ["verify_latest_archive_integrity"],
+            "metadata": {"token": "integrity-secret"},
+            "reason": "refresh stale integrity check",
+        },
+    )
+
+    assert applied.status_code == 200
+    body = applied.json()
+    assert body["status"] == "applied"
+    assert body["applied_count"] == 1
+    assert body["summary"]["archive_integrity_checks_completed"] == 1
+    assert body["results"][0]["resource_id"] == second_job_id
+    assert body["results"][0]["metadata"]["verified"] is True
+    assert body["results"][0]["metadata"]["failed_checks"] == []
+    assert "integrity-secret" not in json.dumps(body)
+    assert (
+        session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.workspace_id == workspace.id,
+                AuditEvent.action
+                == "workspace.recovery_readiness.archive_integrity_verified",
+            )
+        )
+        is not None
+    )
+
+    refreshed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness",
+        headers=_headers(owner.id),
+    )
+    assert refreshed.status_code == 200
+    refreshed_integrity = refreshed.json()["archive_integrity"]
+    assert refreshed_integrity["latest_check_verified"] is True
+    assert refreshed_integrity["latest_check_covers_latest_successful_archive"] is True
+    assert refreshed_integrity["latest_check"]["target_id"] == second_job_id
+
+    duplicate = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness/actions/apply",
+        headers=_headers(owner.id),
+        json={"dry_run": False, "actions": ["verify_latest_archive_integrity"]},
+    )
+
+    assert duplicate.status_code == 200
+    duplicate_body = duplicate.json()
+    assert duplicate_body["status"] == "noop"
+    assert duplicate_body["skipped_count"] == 1
+    assert duplicate_body["skipped"][0]["reason"] == "archive_integrity_already_verified"
 
 
 def test_workspace_recovery_readiness_warns_when_backup_schedule_is_overdue(

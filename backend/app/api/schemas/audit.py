@@ -18,6 +18,8 @@ class AuditEventResponse(ORMModel):
     target_type: str
     target_id: str
     audit_metadata: dict[str, object]
+    previous_hash: str | None
+    current_hash: str | None
     created_at: datetime
 
     @field_serializer("audit_metadata")

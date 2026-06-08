@@ -115,6 +115,7 @@ class WorkerLeaseResponse(TimestampedModel):
     attempt: int
     lease_metadata: dict[str, object]
     started_at: datetime
+    last_heartbeat_at: datetime | None
     finished_at: datetime | None
 
     @field_serializer("lease_metadata")
@@ -235,6 +236,11 @@ class OperationsOverviewResponse(BaseModel):
     offline_runtimes: int
     workers_online: int
     security_warnings: int
+    data_lifecycle: dict[str, object] = Field(default_factory=dict)
+
+    @field_serializer("data_lifecycle")
+    def _serialize_data_lifecycle(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class QueueLatencyResponse(BaseModel):
@@ -672,6 +678,39 @@ class OperationsControlPlaneResponse(BaseModel):
     mcp_jobs: OperationsMcpJobsResponse
     self_hosted_machines: OperationsSelfHostedMachinesResponse
     issues: list[OperationsControlPlaneIssueResponse]
+
+
+class TeamRuntimeTimelineEventResponse(BaseModel):
+    id: str
+    source_type: str
+    event_type: str
+    occurred_at: datetime
+    resource_id: str
+    message: str
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+    @field_serializer("metadata")
+    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
+class TeamRuntimeTimelineSummaryResponse(BaseModel):
+    total_events: int
+    returned_events: int
+    source_counts: dict[str, int]
+    event_type_counts: dict[str, int]
+    include_runs: bool
+    include_queue: bool
+
+
+class TeamRuntimeTimelineResponse(BaseModel):
+    workspace_id: UUID
+    team_id: UUID
+    generated_at: datetime
+    limit: int
+    offset: int
+    summary: TeamRuntimeTimelineSummaryResponse
+    items: list[TeamRuntimeTimelineEventResponse]
 
 
 class AuditEventFilterResponse(BaseModel):

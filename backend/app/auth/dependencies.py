@@ -16,7 +16,7 @@ from backend.app.security.service import SecurityAuditService
 
 AUTHORIZATION_HEADER = Header(default=None)
 SETTINGS_DEPENDENCY = Depends(get_settings)
-USER_ID_HEADER = Header(alias="X-User-ID")
+USER_ID_HEADER = Header(default=None, alias="X-User-ID")
 DB_SESSION_DEPENDENCY = Depends(get_db_session)
 
 
@@ -26,8 +26,8 @@ async def require_internal_token(
     settings: Settings = SETTINGS_DEPENDENCY,
     session: Session = DB_SESSION_DEPENDENCY,
 ) -> None:
-    token = authorization.removeprefix("Bearer ").strip() if authorization else ""
-    valid = any(compare_digest(token, candidate) for candidate in settings.internal_api_tokens)
+    token = _bearer_token(authorization)
+    valid = _is_internal_token(token, settings)
     if not valid:
         SecurityAuditService(session).record_request_event(
             request=request,
@@ -46,24 +46,81 @@ async def require_internal_token(
 
 async def get_current_user(
     request: Request,
-    x_user_id: UUID = USER_ID_HEADER,
+    authorization: str | None = AUTHORIZATION_HEADER,
+    x_user_id: UUID | None = USER_ID_HEADER,
+    settings: Settings = SETTINGS_DEPENDENCY,
     session: Session = DB_SESSION_DEPENDENCY,
-    _: None = Depends(require_internal_token),  # noqa: B008
 ) -> AuthenticatedUser:
+    token = _bearer_token(authorization)
+    service = AuthorizationService(session)
+    if token:
+        try:
+            user = service.authenticate_user_token(token, settings)
+            session.commit()
+            set_log_context(user_id=user.user_id)
+            return user
+        except AuthenticationError as exc:
+            session.rollback()
+            if not _is_internal_token(token, settings):
+                action = (
+                    "auth.internal_token.rejected"
+                    if x_user_id is not None
+                    else "auth.user_token.rejected"
+                )
+                metadata: dict[str, object] = {"has_authorization_header": True}
+                if action == "auth.user_token.rejected":
+                    metadata["token_fingerprint"] = (
+                        AuthorizationService.fingerprint_user_token(token)
+                    )
+                _record_auth_failure(
+                    session=session,
+                    request=request,
+                    action=action,
+                    reason=exc.message,
+                    metadata=metadata,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or missing authorization token",
+                ) from exc
+
+    if not _is_internal_token(token, settings):
+        _record_auth_failure(
+            session=session,
+            request=request,
+            action="auth.internal_token.rejected",
+            reason="Invalid or missing authorization token",
+            metadata={"has_authorization_header": bool(authorization)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing authorization token",
+        )
+    if x_user_id is None:
+        _record_auth_failure(
+            session=session,
+            request=request,
+            action="auth.user.rejected",
+            reason="Missing X-User-ID for internal authentication",
+            metadata={"auth_scheme": "internal_token"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Missing X-User-ID for internal authentication",
+        )
     try:
-        user = AuthorizationService(session).authenticate_user(x_user_id)
+        user = service.authenticate_user(x_user_id)
         set_log_context(user_id=user.user_id)
         return user
     except AuthenticationError as exc:
-        SecurityAuditService(session).record_request_event(
+        _record_auth_failure(
+            session=session,
             request=request,
             action="auth.user.rejected",
-            outcome="denied",
-            severity="warning",
             reason=exc.message,
             user_id=x_user_id,
+            metadata={"auth_scheme": "internal_token"},
         )
-        session.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.message) from exc
 
 
@@ -103,3 +160,39 @@ def workspace_dependency(action: WorkspaceAction) -> Callable[..., object]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.message) from exc
 
     return require_workspace_context
+
+
+def _bearer_token(authorization: str | None) -> str:
+    if not authorization:
+        return ""
+    scheme, _, credentials = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not credentials:
+        return ""
+    return credentials.strip()
+
+
+def _is_internal_token(token: str, settings: Settings) -> bool:
+    return bool(token) and any(
+        compare_digest(token, candidate) for candidate in settings.internal_api_tokens
+    )
+
+
+def _record_auth_failure(
+    *,
+    session: Session,
+    request: Request,
+    action: str,
+    reason: str,
+    user_id: UUID | None = None,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    SecurityAuditService(session).record_request_event(
+        request=request,
+        action=action,
+        outcome="denied",
+        severity="warning",
+        reason=reason,
+        user_id=user_id,
+        metadata=metadata,
+    )
+    session.commit()

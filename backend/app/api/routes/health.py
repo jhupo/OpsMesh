@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from redis import Redis
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from starlette import status
 
 from backend.app.core.config import Settings
 from backend.app.db.session import get_db_session
+from backend.app.files.storage import create_storage
+from backend.app.operations.models import WorkerNode
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 
@@ -78,11 +80,15 @@ def readiness_check(
         "redis": _check_redis(redis),
         "storage": _check_storage(settings),
         "worker_queue": _check_worker_queue(redis, settings),
+        "workers_online": _check_workers_online(session, settings),
     }
-    if any(value != "ok" for value in dependencies.values()):
+    if any(_dependency_failed(value) for value in dependencies.values()):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service dependencies are not ready",
+            detail={
+                "message": "Service dependencies are not ready",
+                "dependencies": dependencies,
+            },
         )
 
     return ReadinessResponse(
@@ -109,11 +115,10 @@ def _check_redis(redis: RedisClient) -> str:
 
 def _check_storage(settings: Settings) -> str:
     try:
-        root = Path(settings.storage_root)
-        root.mkdir(parents=True, exist_ok=True)
-        probe = root / ".healthcheck"
-        probe.write_text("ok", encoding="utf-8")
-        probe.unlink(missing_ok=True)
+        storage = create_storage(settings)
+        probe = ".healthcheck"
+        storage.write(probe, b"ok")
+        storage.delete(probe)
     except Exception:
         return "unavailable"
     return "ok"
@@ -126,3 +131,36 @@ def _check_worker_queue(redis: RedisClient, settings: Settings) -> str:
     except Exception:
         return "unavailable"
     return "ok"
+
+
+def _check_workers_online(session: Session, settings: Settings) -> str:
+    if not settings.readiness_worker_check_enabled:
+        return "disabled"
+    try:
+        stale_before = datetime.now(UTC) - timedelta(
+            seconds=settings.readiness_worker_stale_after_seconds
+        )
+        workers = session.scalars(
+            select(WorkerNode).where(
+                WorkerNode.queue_name == settings.worker_queue_name,
+                WorkerNode.status == "online",
+                WorkerNode.drain_requested_at.is_(None),
+            )
+        ).all()
+    except Exception:
+        return "unavailable"
+    if not workers:
+        return "none_online"
+    if any(_aware_datetime(worker.last_seen_at) >= stale_before for worker in workers):
+        return "ok"
+    return "stale"
+
+
+def _dependency_failed(value: str) -> bool:
+    return value not in {"ok", "disabled"}
+
+
+def _aware_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value

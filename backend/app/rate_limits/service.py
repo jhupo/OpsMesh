@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import time
 
@@ -18,9 +19,16 @@ class RateLimitDecision:
 
 
 class RedisFixedWindowRateLimiter:
-    def __init__(self, redis: Redis[str], *, key_prefix: str) -> None:
+    def __init__(
+        self,
+        redis: Redis[str],
+        *,
+        key_prefix: str,
+        clock: Callable[[], float] = time,
+    ) -> None:
         self._redis = redis
         self._key_prefix = key_prefix
+        self._clock = clock
 
     def check(
         self,
@@ -29,7 +37,7 @@ class RedisFixedWindowRateLimiter:
         limit: int,
         window_seconds: int,
     ) -> RateLimitDecision:
-        now = int(time())
+        now = int(self._clock())
         window_id = now // window_seconds
         reset = (window_id + 1) * window_seconds
         key = f"{self._key_prefix}:rate-limit:{identifier}:{window_id}"

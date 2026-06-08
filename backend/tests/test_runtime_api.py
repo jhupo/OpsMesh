@@ -121,6 +121,12 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
     assert created.json()["limits"]["max_processes"] == 64
     assert docker.created_requests[0].image == "python:3.12-slim"
     assert docker.created_requests[0].network_disabled is True
+    assert docker.created_requests[0].hardening.cap_drop == ("ALL",)
+    assert docker.created_requests[0].hardening.security_opt == ("no-new-privileges:true",)
+    assert docker.created_requests[0].hardening.read_only_rootfs is True
+    assert created.json()["capabilities"]["hardening"]["cap_drop"] == ["ALL"]
+    assert created.json()["capabilities"]["hardening"]["read_only_rootfs"] is True
+    assert created.json()["capabilities"]["hardening"]["user"]["enforced"] is False
 
     forbidden = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/runtimes/{runtime_id}/start",

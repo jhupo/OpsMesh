@@ -18,10 +18,13 @@ from backend.app.capabilities.models import (
     McpToolAllowlist,
     McpToolCallLog,
 )
+from backend.app.core.config import Settings, get_settings
+from backend.app.core.trace_context import with_current_trace_metadata
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.security.models import SecurityEvent
-from backend.app.tasks.models import Task, TaskMessage
+from backend.app.tasks.message_append import TaskMessageAppendService
+from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
 from backend.app.tools.errors import ToolPermissionError, ToolResourceNotFoundError
@@ -104,9 +107,11 @@ class McpToolExecutionService:
         self,
         session: Session,
         adapter: McpToolAdapter | McpToolAdapterResolver,
+        settings: Settings | None = None,
     ) -> None:
         self._session = session
         self._adapter_or_resolver = adapter
+        self._settings = settings or get_settings()
 
     def execute(self, request: McpExecutionRequest) -> McpExecutionResult:
         run = self._require_run(request.workspace_id, request.agent_run_id)
@@ -115,6 +120,7 @@ class McpToolExecutionService:
         self._require_runtime_context_tool(request)
         allow, server = self._resolve_allowed_tool(request)
         self._require_snapshot_tool(snapshot, request)
+        self._require_server_health(request, server)
         policy = _mcp_policy(snapshot, allow)
         policy_decision = PlatformPolicyService(self._session).risky_execution_policy()
         if _is_high_risk_tool(allow) and policy_decision.high_risk_tool_mode == "block":
@@ -361,6 +367,13 @@ class McpToolExecutionService:
             self._block(request, "mcp_tool_not_in_run_snapshot")
         self._block(request, "mcp_tool_snapshot_missing")
 
+    def _require_server_health(self, request: McpExecutionRequest, server: McpServer) -> None:
+        if server.health_status == "unhealthy":
+            self._block(request, "mcp_server_unhealthy", mcp_server_id=server.id)
+        stale_after = timedelta(seconds=self._settings.mcp_health_check_stale_after_seconds)
+        if _mcp_health_check_stale(server, stale_after=stale_after):
+            self._block(request, "mcp_server_health_check_stale", mcp_server_id=server.id)
+
     def _enforce_payload_size(self, payload: dict[str, object], max_bytes: int) -> None:
         size = len(_canonical_payload(payload).encode("utf-8"))
         if size > max_bytes:
@@ -575,7 +588,7 @@ class McpToolExecutionService:
                 event_type=event_type,
                 sequence=sequence,
                 message=message,
-                event_metadata=metadata,
+                event_metadata=with_current_trace_metadata(metadata),
                 created_at=datetime.now(UTC),
             )
         )
@@ -590,19 +603,15 @@ class McpToolExecutionService:
     ) -> None:
         if run.task_id is None:
             return
-        sequence = _next_task_message_sequence(self._session, run.workspace_id, run.task_id)
-        self._session.add(
-            TaskMessage(
-                workspace_id=run.workspace_id,
-                task_id=run.task_id,
-                task_step_id=run.task_step_id,
-                agent_run_id=run.id,
-                agent_profile_id=run.agent_profile_id,
-                message_type=message_type,
-                sequence=sequence,
-                body=body,
-                payload=payload,
-            )
+        TaskMessageAppendService(self._session).append(
+            workspace_id=run.workspace_id,
+            task_id=run.task_id,
+            task_step_id=run.task_step_id,
+            agent_run_id=run.id,
+            agent_profile_id=run.agent_profile_id,
+            message_type=message_type,
+            body=body,
+            payload=payload,
         )
 
     def _block(
@@ -690,14 +699,16 @@ class McpToolExecutionService:
                 path="internal:mcp_tool_execution",
                 method="WORKER",
                 reason=reason,
-                event_metadata={
-                    "agent_run_id": str(request.agent_run_id),
-                    "mcp_server_id": str(resolved_server_id)
-                    if resolved_server_id is not None
-                    else None,
-                    "tool_name": request.tool_name,
-                    **_snapshot_audit_metadata(snapshot),
-                },
+                event_metadata=with_current_trace_metadata(
+                    {
+                        "agent_run_id": str(request.agent_run_id),
+                        "mcp_server_id": str(resolved_server_id)
+                        if resolved_server_id is not None
+                        else None,
+                        "tool_name": request.tool_name,
+                        **_snapshot_audit_metadata(snapshot),
+                    }
+                ),
                 created_at=datetime.now(UTC),
             )
         )
@@ -729,6 +740,14 @@ def _authorization_snapshot(run: AgentRun) -> dict[str, object]:
     run_input = run.input if isinstance(run.input, dict) else {}
     snapshot = run_input.get("authorization_snapshot")
     return snapshot if isinstance(snapshot, dict) else {}
+
+
+def _mcp_health_check_stale(server: McpServer, *, stale_after: timedelta) -> bool:
+    checked_at = server.last_health_check_at
+    if checked_at is None:
+        return False
+    normalized = checked_at if checked_at.tzinfo is not None else checked_at.replace(tzinfo=UTC)
+    return datetime.now(UTC) - normalized > stale_after
 
 
 def _snapshot_audit_metadata(snapshot: dict[str, object]) -> dict[str, object]:
@@ -828,16 +847,6 @@ def _next_run_event_sequence(session: Session, workspace_id: UUID, run_id: UUID)
         select(func.coalesce(func.max(RunEvent.sequence), 0)).where(
             RunEvent.workspace_id == workspace_id,
             RunEvent.agent_run_id == run_id,
-        )
-    )
-    return int(current or 0) + 1
-
-
-def _next_task_message_sequence(session: Session, workspace_id: UUID, task_id: UUID) -> int:
-    current = session.scalar(
-        select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
-            TaskMessage.workspace_id == workspace_id,
-            TaskMessage.task_id == task_id,
         )
     )
     return int(current or 0) + 1

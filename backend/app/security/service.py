@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from starlette.requests import Request
 
 from backend.app.security.models import SecurityEvent
+from backend.app.security.redaction import redact_sensitive_payload
 
 
 class SecurityAuditService:
@@ -37,7 +38,7 @@ class SecurityAuditService:
             path=request.url.path,
             method=request.method,
             reason=reason,
-            event_metadata=metadata or {},
+            event_metadata=redact_sensitive_payload(metadata or {}),
             created_at=datetime.now(UTC),
         )
         self._session.add(event)

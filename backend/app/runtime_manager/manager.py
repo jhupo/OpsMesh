@@ -12,6 +12,7 @@ from backend.app.runtime_manager.contracts import (
     DockerRuntimeClient,
     RuntimeCommandResult,
     RuntimeCreateRequest,
+    RuntimeHardeningPolicy,
     RuntimeLimits,
     RuntimeMount,
 )
@@ -78,8 +79,14 @@ class RuntimeManager:
             runtime_space_id=runtime_space_id,
             network_disabled=network_disabled,
         )
+        hardening_policy = _default_runtime_hardening_policy()
+        hardening_metadata = _runtime_hardening_metadata(
+            hardening_policy,
+            isolation_metadata=isolation_metadata,
+        )
         runtime.capabilities = {
             "isolation": isolation_metadata,
+            "hardening": hardening_metadata,
             "policy_resolution": dict(policy_metadata or {}),
             "managed_resources": {
                 "docker_volumes": [isolation_metadata["workspace_mount"]["docker_volume"]],
@@ -121,6 +128,7 @@ class RuntimeManager:
                             target=isolation_metadata["workspace_mount"]["target"],
                         ),
                     ),
+                    hardening=hardening_policy,
                     working_dir=isolation_metadata["workspace_mount"]["target"],
                 )
             )
@@ -140,6 +148,7 @@ class RuntimeManager:
                 "limits": dict(runtime.limits),
                 "network_policy": dict(runtime.network_policy),
                 "isolation": isolation_metadata,
+                "hardening": hardening_metadata,
                 "policy_resolution": dict(policy_metadata or {}),
                 "runtime_space_reservation_key": reservation_key
                 if runtime_space_id is not None
@@ -153,6 +162,7 @@ class RuntimeManager:
             metadata={
                 "isolation": isolation_metadata,
                 "network_policy": dict(runtime.network_policy),
+                "hardening": hardening_metadata,
                 "policy_resolution": dict(policy_metadata or {}),
             },
         )
@@ -760,6 +770,47 @@ def _runtime_isolation_metadata(
         "network": {
             "disabled": network_disabled,
             "mode": "none" if network_disabled else "bridge",
+        },
+    }
+
+
+def _default_runtime_hardening_policy() -> RuntimeHardeningPolicy:
+    return RuntimeHardeningPolicy()
+
+
+def _runtime_hardening_metadata(
+    policy: RuntimeHardeningPolicy,
+    *,
+    isolation_metadata: dict[str, object],
+) -> dict[str, object]:
+    writable_paths: list[dict[str, object]] = []
+    workspace_mount = isolation_metadata.get("workspace_mount")
+    if isinstance(workspace_mount, dict):
+        writable_paths.append(
+            {
+                "type": workspace_mount.get("type", "volume"),
+                "target": workspace_mount.get("target"),
+                "mode": workspace_mount.get("mode", "rw"),
+            }
+        )
+    writable_paths.extend(
+        {
+            "type": "tmpfs",
+            "target": tmpfs.target,
+            "mode": tmpfs.mode,
+            "size_mb": tmpfs.size_mb,
+        }
+        for tmpfs in policy.tmpfs
+    )
+    return {
+        "cap_drop": list(policy.cap_drop),
+        "security_opt": list(policy.security_opt),
+        "read_only_rootfs": policy.read_only_rootfs,
+        "writable_paths": writable_paths,
+        "user": {
+            "value": policy.user,
+            "policy": policy.user_policy,
+            "enforced": policy.user_enforced,
         },
     }
 

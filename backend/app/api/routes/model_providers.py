@@ -9,6 +9,8 @@ from backend.app.api.schemas.model_providers import (
     ModelProviderCredentialResponse,
     ModelProviderCredentialRotateKeyRequest,
     ModelProviderCredentialUpdateRequest,
+    ModelProviderHealthCheckRequest,
+    ModelProviderHealthCheckResponse,
     ModelProviderUsageAuditResponse,
 )
 from backend.app.audit.models import AuditEvent
@@ -17,8 +19,10 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
+from backend.app.model_providers.model_api import canonical_model_api
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.secrets.service import SecretEncryptionService
+from backend.app.security.egress import EgressUrlValidationError
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/model-provider-credentials",
@@ -33,8 +37,21 @@ async def list_model_provider_credentials(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> PageResponse[ModelProviderCredentialResponse]:
-    items, total = _service(session, settings).list(context.workspace.id, page)
-    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+    service = _service(session, settings)
+    items, total = service.list(context.workspace.id, page)
+    return PageResponse(
+        items=[
+            _credential_response(
+                service,
+                workspace_id=context.workspace.id,
+                credential=credential,
+            )
+            for credential in items
+        ],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 @router.get("/usage-audit", response_model=PageResponse[ModelProviderUsageAuditResponse])
@@ -69,17 +86,28 @@ async def create_model_provider_credential(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> ModelProviderCredentialResponse:
-    credential = _service(session, settings).create(
+    try:
+        credential = _service(session, settings).create(
+            workspace_id=context.workspace.id,
+            created_by_user_id=context.user.user_id,
+            name=request.name,
+            provider=request.provider,
+            api_key=request.api_key,
+            default_model=request.default_model,
+            base_url=str(request.base_url) if request.base_url is not None else None,
+            model_api=request.model_api,
+            is_default=request.is_default,
+            budget_metadata=request.budget_metadata,
+        )
+    except EgressUrlValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise _model_provider_http_error(exc) from exc
+    return _credential_response(
+        _service(session, settings),
         workspace_id=context.workspace.id,
-        created_by_user_id=context.user.user_id,
-        name=request.name,
-        provider=request.provider,
-        api_key=request.api_key,
-        default_model=request.default_model,
-        base_url=str(request.base_url) if request.base_url is not None else None,
-        is_default=request.is_default,
+        credential=credential,
     )
-    return ModelProviderCredentialResponse.model_validate(credential)
 
 
 @router.patch("/{credential_id}", response_model=ModelProviderCredentialResponse)
@@ -99,11 +127,20 @@ async def update_model_provider_credential(
             provider=request.provider,
             default_model=request.default_model,
             base_url=str(request.base_url) if request.base_url is not None else None,
+            model_api=request.model_api,
+            model_api_provided="model_api" in request.model_fields_set,
             is_default=request.is_default,
+            budget_metadata=request.budget_metadata,
         )
+    except EgressUrlValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return ModelProviderCredentialResponse.model_validate(credential)
+        raise _model_provider_http_error(exc) from exc
+    return _credential_response(
+        _service(session, settings),
+        workspace_id=context.workspace.id,
+        credential=credential,
+    )
 
 
 @router.post("/{credential_id}/rotate-key", response_model=ModelProviderCredentialResponse)
@@ -123,7 +160,57 @@ async def rotate_model_provider_credential_key(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return ModelProviderCredentialResponse.model_validate(credential)
+    return _credential_response(
+        _service(session, settings),
+        workspace_id=context.workspace.id,
+        credential=credential,
+    )
+
+
+@router.post("/{credential_id}/health-check", response_model=ModelProviderHealthCheckResponse)
+async def check_model_provider_credential_health(
+    credential_id: UUID,
+    request: ModelProviderHealthCheckRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> ModelProviderHealthCheckResponse:
+    probes = tuple(dict.fromkeys(request.probes or ["models", "inference"]))
+    invalid_probes = sorted(set(probes) - {"models", "inference"})
+    if invalid_probes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported provider health probe: {', '.join(invalid_probes)}",
+        )
+    service = _service(session, settings)
+    try:
+        result = await service.run_health_check(
+            workspace_id=context.workspace.id,
+            credential_id=credential_id,
+            actor_user_id=context.user.user_id,
+            probes=probes,
+            timeout_seconds=request.timeout_seconds,
+        )
+        credential = service.get(
+            workspace_id=context.workspace.id,
+            credential_id=credential_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if credential is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model provider credential not found",
+        )
+    return ModelProviderHealthCheckResponse(
+        credential=_credential_response(
+            service,
+            workspace_id=context.workspace.id,
+            credential=credential,
+        ),
+        status=result.status,
+        checks=[check.as_dict() for check in result.checks],
+    )
 
 
 @router.post("/{credential_id}/set-default", response_model=ModelProviderCredentialResponse)
@@ -141,7 +228,11 @@ async def set_default_model_provider_credential(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return ModelProviderCredentialResponse.model_validate(credential)
+    return _credential_response(
+        _service(session, settings),
+        workspace_id=context.workspace.id,
+        credential=credential,
+    )
 
 
 @router.post("/{credential_id}/disable", response_model=ModelProviderCredentialResponse)
@@ -159,7 +250,11 @@ async def disable_model_provider_credential(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return ModelProviderCredentialResponse.model_validate(credential)
+    return _credential_response(
+        _service(session, settings),
+        workspace_id=context.workspace.id,
+        credential=credential,
+    )
 
 
 def _service(session: Session, settings: Settings) -> ModelProviderCredentialService:
@@ -168,7 +263,35 @@ def _service(session: Session, settings: Settings) -> ModelProviderCredentialSer
         SecretEncryptionService(
             secret=settings.credential_encryption_secret,
             key_id=settings.credential_encryption_key_id,
+            previous_secrets=settings.credential_encryption_previous_secrets,
         ),
+    )
+
+
+def _model_provider_http_error(exc: ValueError) -> HTTPException:
+    message = str(exc)
+    code = (
+        status.HTTP_404_NOT_FOUND
+        if "not found" in message.lower()
+        else status.HTTP_400_BAD_REQUEST
+    )
+    return HTTPException(status_code=code, detail=message)
+
+
+def _credential_response(
+    service: ModelProviderCredentialService,
+    *,
+    workspace_id: UUID,
+    credential: object,
+) -> ModelProviderCredentialResponse:
+    response = ModelProviderCredentialResponse.model_validate(credential)
+    return response.model_copy(
+        update={
+            "scheduled_health_check": service.health_check_schedule_summary(
+                workspace_id=workspace_id,
+                credential_id=response.id,
+            )
+        }
     )
 
 
@@ -184,7 +307,9 @@ def _usage_audit_response(event: AuditEvent) -> ModelProviderUsageAuditResponse:
         task_id=_string_or_none(metadata.get("task_id")),
         task_step_id=_string_or_none(metadata.get("task_step_id")),
         agent_profile_id=_string_or_none(metadata.get("agent_profile_id")),
+        provider=_string_or_none(metadata.get("provider")),
         model=_string_or_none(metadata.get("model")),
+        model_api=_model_api_or_none(metadata.get("model_api")),
         credential_id=_string_or_none(metadata.get("credential_id")),
         fallback_selected=metadata.get("fallback_selected")
         if isinstance(metadata.get("fallback_selected"), bool)
@@ -235,8 +360,16 @@ def _sanitized_provider_ref(value: object) -> dict[str, object] | None:
     if not isinstance(value, dict):
         return None
     sanitized: dict[str, object] = {}
-    for key in ("model", "credential_id"):
+    for key in ("provider", "model", "model_api", "credential_id"):
         item = value.get(key)
-        if isinstance(item, str):
+        if key == "model_api":
+            model_api = _model_api_or_none(item)
+            if model_api is not None:
+                sanitized[key] = model_api
+        elif isinstance(item, str):
             sanitized[key] = item
     return sanitized
+
+
+def _model_api_or_none(value: object) -> str | None:
+    return canonical_model_api(value)

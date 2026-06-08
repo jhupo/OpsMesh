@@ -37,12 +37,13 @@ from backend.app.capabilities.models import (
     ToolGroup,
     WorkspaceSkillInstall,
 )
+from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
+from backend.app.security.redaction import redact_sensitive_text
 
 T = TypeVar("T")
-MCP_HEALTH_CHECK_STALE_AFTER = timedelta(hours=24)
 MCP_LIMIT_COUNTED_STATUSES = (
     "completed",
     "failed",
@@ -50,9 +51,12 @@ MCP_LIMIT_COUNTED_STATUSES = (
     "waiting_self_hosted",
 )
 GOVERNANCE_APPLY_ACTIONS = {
+    "allow_or_remove_configured_mcp_tools",
+    "allow_mcp_tools",
     "disable_unusable_skill_installs",
     "disable_blocked_mcp_servers",
     "refresh_mcp_health_check",
+    "refresh_mcp_health_checks",
 }
 DEFAULT_GOVERNANCE_APPLY_ACTIONS = [
     "disable_unusable_skill_installs",
@@ -127,9 +131,11 @@ class CapabilityService:
         self,
         session: Session,
         secret_service: SecretEncryptionService | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self._session = session
         self._secret_service = secret_service
+        self._settings = settings or get_settings()
 
     def list_capabilities(
         self,
@@ -462,6 +468,7 @@ class CapabilityService:
                 if tool_name in allowed_by_name
                 else 0,
                 workspace_credential_count=workspace_credential_count,
+                stale_after=self._mcp_health_check_stale_after,
             )
             for tool_name in required_tools
         ]
@@ -812,7 +819,14 @@ class CapabilityService:
             results.extend(action_results)
             skipped.extend(action_skipped)
             remaining -= len(action_results)
-        if "refresh_mcp_health_check" in requested_actions and remaining > 0:
+        if (
+            {
+                "refresh_mcp_health_check",
+                "refresh_mcp_health_checks",
+            }
+            & set(requested_actions)
+            and remaining > 0
+        ):
             action_results, action_skipped = self._apply_refresh_mcp_health_checks(
                 workspace_id=workspace_id,
                 actor_user_id=actor_user_id,
@@ -820,6 +834,31 @@ class CapabilityService:
                 mcp_server_ids=set(mcp_server_ids or []),
                 limit=remaining,
                 reason=reason,
+            )
+            results.extend(action_results)
+            skipped.extend(action_skipped)
+            remaining -= len(action_results)
+        if "allow_mcp_tools" in requested_actions and remaining > 0:
+            action_results, action_skipped = self._apply_allow_mcp_tools(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                dry_run=dry_run,
+                mcp_server_ids=set(mcp_server_ids or []),
+                limit=remaining,
+                reason=reason,
+            )
+            results.extend(action_results)
+            skipped.extend(action_skipped)
+            remaining -= len(action_results)
+        if "allow_or_remove_configured_mcp_tools" in requested_actions and remaining > 0:
+            action_results, action_skipped = (
+                self._apply_remove_unallowed_configured_mcp_tools(
+                    workspace_id=workspace_id,
+                    actor_user_id=actor_user_id,
+                    dry_run=dry_run,
+                    limit=remaining,
+                    reason=reason,
+                )
             )
             results.extend(action_results)
             skipped.extend(action_skipped)
@@ -832,8 +871,16 @@ class CapabilityService:
             "disabled_mcp_server_count": sum(
                 1 for item in results if item["resource_type"] == "mcp_server"
             ),
-            "requested_mcp_health_check_count": sum(
-                1 for item in results if item["resource_type"] == "mcp_server_health_check"
+            "refreshed_mcp_health_check_count": sum(
+                1 for item in results if item["action"] == "refresh_mcp_health_check"
+            ),
+            "repaired_agent_mcp_policy_count": sum(
+                1
+                for item in results
+                if item["action"] == "allow_or_remove_configured_mcp_tools"
+            ),
+            "reenabled_mcp_tool_count": sum(
+                1 for item in results if item["action"] == "allow_mcp_tools"
             ),
             "metadata_keys": sorted((metadata or {}).keys()),
         }
@@ -1018,6 +1065,203 @@ class CapabilityService:
             )
         return results, skipped
 
+    def _apply_allow_mcp_tools(
+        self,
+        *,
+        workspace_id: UUID,
+        actor_user_id: UUID,
+        dry_run: bool,
+        mcp_server_ids: set[UUID],
+        limit: int,
+        reason: str | None,
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+        catalog_items, _ = self.list_mcp_catalog(
+            workspace_id,
+            PageParams(limit=10_000, offset=0),
+        )
+        results: list[dict[str, object]] = []
+        skipped: list[dict[str, object]] = []
+        for item in catalog_items:
+            server = item.server
+            if server.status != "active":
+                continue
+            if mcp_server_ids and server.id not in mcp_server_ids:
+                continue
+            blocked_reasons = item.blocked_reasons
+            if "no_allowed_tools" not in blocked_reasons:
+                skipped.append(
+                    _governance_skipped(
+                        action="allow_mcp_tools",
+                        resource_type="mcp_server",
+                        resource_id=server.id,
+                        resource_name=server.name,
+                        reason="mcp_server_allowed_tools_not_missing",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            disabled_tools = self._disabled_mcp_tools(workspace_id, server.id)
+            if not disabled_tools:
+                skipped.append(
+                    _governance_skipped(
+                        action="allow_mcp_tools",
+                        resource_type="mcp_server",
+                        resource_id=server.id,
+                        resource_name=server.name,
+                        reason="no_disabled_mcp_tools_to_enable",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            for allow in disabled_tools:
+                if len(results) >= limit:
+                    skipped.append(
+                        _governance_skipped(
+                            action="allow_mcp_tools",
+                            resource_type="mcp_tool_allowlist",
+                            resource_id=allow.id,
+                            resource_name=allow.tool_name,
+                            reason="max_items_reached",
+                            blocked_reasons=blocked_reasons,
+                        )
+                    )
+                    continue
+                if not dry_run:
+                    previous_status = allow.status
+                    allow.status = "active"
+                    AuditService(self._session).record_user_action(
+                        workspace_id=workspace_id,
+                        user_id=actor_user_id,
+                        action="capability_governance.mcp_tool_reenabled",
+                        target_type="mcp_tool_allowlist",
+                        target_id=allow.id,
+                        metadata={
+                            "mcp_server_id": str(server.id),
+                            "server_name": server.name,
+                            "tool_name": allow.tool_name,
+                            "capability_key": allow.capability_key,
+                            "risk_level": allow.risk_level,
+                            "previous_status": previous_status,
+                            "reason": reason,
+                        },
+                    )
+                result = _governance_result(
+                    action="allow_mcp_tools",
+                    resource_type="mcp_tool_allowlist",
+                    resource_id=allow.id,
+                    resource_name=allow.tool_name,
+                    status="would_apply" if dry_run else "applied",
+                    blocked_reasons=blocked_reasons,
+                )
+                result.update(
+                    {
+                        "mcp_server_id": server.id,
+                        "server_name": server.name,
+                        "tool_name": allow.tool_name,
+                        "previous_status": "disabled",
+                    }
+                )
+                results.append(result)
+        return results, skipped
+
+    def _disabled_mcp_tools(
+        self,
+        workspace_id: UUID,
+        mcp_server_id: UUID,
+    ) -> list[McpToolAllowlist]:
+        return list(
+            self._session.scalars(
+                select(McpToolAllowlist)
+                .where(
+                    McpToolAllowlist.workspace_id == workspace_id,
+                    McpToolAllowlist.mcp_server_id == mcp_server_id,
+                    McpToolAllowlist.status == "disabled",
+                )
+                .order_by(McpToolAllowlist.tool_name.asc(), McpToolAllowlist.id.asc())
+            )
+        )
+
+    def _apply_remove_unallowed_configured_mcp_tools(
+        self,
+        *,
+        workspace_id: UUID,
+        actor_user_id: UUID,
+        dry_run: bool,
+        limit: int,
+        reason: str | None,
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+        agents = self._session.scalars(
+            select(AgentProfile)
+            .where(AgentProfile.workspace_id == workspace_id)
+            .order_by(AgentProfile.name.asc(), AgentProfile.id.asc())
+        ).all()
+        results: list[dict[str, object]] = []
+        skipped: list[dict[str, object]] = []
+        for agent in agents:
+            diagnostics = self.agent_tool_policy_diagnostics(workspace_id, agent.id)
+            blocked_reasons = _string_list(diagnostics.get("blocked_reasons"))
+            missing_tools = _string_list(diagnostics.get("missing_policy_tools"))
+            if not missing_tools:
+                skipped.append(
+                    _governance_skipped(
+                        action="allow_or_remove_configured_mcp_tools",
+                        resource_type="agent_profile",
+                        resource_id=agent.id,
+                        resource_name=agent.name,
+                        reason="agent_mcp_policy_already_allowed",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            if len(results) >= limit:
+                skipped.append(
+                    _governance_skipped(
+                        action="allow_or_remove_configured_mcp_tools",
+                        resource_type="agent_profile",
+                        resource_id=agent.id,
+                        resource_name=agent.name,
+                        reason="max_items_reached",
+                        blocked_reasons=blocked_reasons,
+                    )
+                )
+                continue
+            current_tools = _string_list(agent.tool_policy.get("mcp_tools"))
+            repaired_tools = [tool for tool in current_tools if tool not in set(missing_tools)]
+            if not dry_run:
+                next_policy = dict(agent.tool_policy)
+                next_policy["mcp_tools"] = repaired_tools
+                agent.tool_policy = next_policy
+                AuditService(self._session).record_user_action(
+                    workspace_id=workspace_id,
+                    user_id=actor_user_id,
+                    action="capability_governance.agent_mcp_policy_repaired",
+                    target_type="agent_profile",
+                    target_id=agent.id,
+                    metadata={
+                        "agent_name": agent.name,
+                        "removed_mcp_tools": missing_tools,
+                        "remaining_mcp_tools": repaired_tools,
+                        "blocked_reasons": blocked_reasons,
+                        "reason": reason,
+                    },
+                )
+            result = _governance_result(
+                action="allow_or_remove_configured_mcp_tools",
+                resource_type="agent_profile",
+                resource_id=agent.id,
+                resource_name=agent.name,
+                status="would_apply" if dry_run else "applied",
+                blocked_reasons=blocked_reasons,
+            )
+            result.update(
+                {
+                    "removed_mcp_tools": missing_tools,
+                    "remaining_mcp_tools": repaired_tools,
+                }
+            )
+            results.append(result)
+        return results, skipped
+
     def _apply_refresh_mcp_health_checks(
         self,
         *,
@@ -1041,14 +1285,14 @@ class CapabilityService:
             if mcp_server_ids and server.id not in mcp_server_ids:
                 continue
             blocked_reasons = item.blocked_reasons
-            if not _mcp_server_health_check_should_refresh(blocked_reasons):
+            if not _mcp_server_should_refresh_health(blocked_reasons):
                 skipped.append(
                     _governance_skipped(
                         action="refresh_mcp_health_check",
-                        resource_type="mcp_server_health_check",
+                        resource_type="mcp_server",
                         resource_id=server.id,
                         resource_name=server.name,
-                        reason="mcp_server_health_check_not_required",
+                        reason="mcp_server_health_check_not_needed",
                         blocked_reasons=blocked_reasons,
                     )
                 )
@@ -1057,7 +1301,7 @@ class CapabilityService:
                 skipped.append(
                     _governance_skipped(
                         action="refresh_mcp_health_check",
-                        resource_type="mcp_server_health_check",
+                        resource_type="mcp_server",
                         resource_id=server.id,
                         resource_name=server.name,
                         reason="max_items_reached",
@@ -1065,32 +1309,53 @@ class CapabilityService:
                     )
                 )
                 continue
+            previous = {
+                "health_status": server.health_status,
+                "last_health_check_at": server.last_health_check_at.isoformat()
+                if server.last_health_check_at is not None
+                else None,
+                "last_error_configured": server.last_error is not None,
+            }
+            probeable = _mcp_server_probeable(server)
+            next_health_status = "healthy" if probeable else "unhealthy"
+            next_error = None if probeable else _mcp_health_refresh_error(blocked_reasons)
             if not dry_run:
-                server.health_status = "checking"
-                server.last_health_check_at = None
-                server.last_error = "health_check_refresh_requested"
+                server.health_status = next_health_status
+                server.last_health_check_at = datetime.now(UTC)
+                server.last_error = next_error
                 AuditService(self._session).record_user_action(
                     workspace_id=workspace_id,
                     user_id=actor_user_id,
-                    action="capability_governance.mcp_health_check_refresh_requested",
+                    action="capability_governance.mcp_health_check_refreshed",
                     target_type="mcp_server",
                     target_id=server.id,
                     metadata={
                         "name": server.name,
+                        "previous": previous,
+                        "health_status": next_health_status,
+                        "last_error_configured": next_error is not None,
                         "blocked_reasons": blocked_reasons,
+                        "connection": _connection_summary(server),
                         "reason": reason,
                     },
                 )
-            results.append(
-                _governance_result(
-                    action="refresh_mcp_health_check",
-                    resource_type="mcp_server_health_check",
-                    resource_id=server.id,
-                    resource_name=server.name,
-                    status="would_apply" if dry_run else "applied",
-                    blocked_reasons=blocked_reasons,
-                )
+            result = _governance_result(
+                action="refresh_mcp_health_check",
+                resource_type="mcp_server",
+                resource_id=server.id,
+                resource_name=server.name,
+                status="would_apply" if dry_run else "applied",
+                blocked_reasons=blocked_reasons,
             )
+            result.update(
+                {
+                    "previous": previous,
+                    "health_status": next_health_status,
+                    "last_error_configured": next_error is not None,
+                    "connection": _connection_summary(server),
+                }
+            )
+            results.append(result)
         return results, skipped
 
     def _require_workspace_install(
@@ -1487,6 +1752,7 @@ class CapabilityService:
             allowed_tool,
             credential_count=credential_count,
             workspace_credential_count=workspace_credential_count,
+            stale_after=self._mcp_health_check_stale_after,
         )
         credential_status: str | None = None
         execution_mode: str | None = None
@@ -1774,6 +2040,7 @@ class CapabilityService:
             server,
             tools=tools,
             credential_status=credential_status,
+            stale_after=self._mcp_health_check_stale_after,
         )
         return McpCatalogServer(
             server=server,
@@ -1787,6 +2054,10 @@ class CapabilityService:
             connection_summary=_connection_summary(server),
             usage=usage,
         )
+
+    @property
+    def _mcp_health_check_stale_after(self) -> timedelta:
+        return timedelta(seconds=self._settings.mcp_health_check_stale_after_seconds)
 
     def _mcp_usage_by_server_tool(
         self,
@@ -2114,6 +2385,7 @@ def _skill_tool_availability(
     *,
     credential_count: int,
     workspace_credential_count: int,
+    stale_after: timedelta,
 ) -> WorkspaceSkillToolAvailability:
     if allowed_tool is None:
         return WorkspaceSkillToolAvailability(
@@ -2130,9 +2402,7 @@ def _skill_tool_availability(
     blocked_reasons: list[str] = []
     if server.health_status == "unhealthy":
         blocked_reasons.append("server_unhealthy")
-    if server.health_status == "checking":
-        blocked_reasons.append("health_check_pending")
-    if _health_check_stale(server):
+    if _health_check_stale(server, stale_after=stale_after):
         blocked_reasons.append("health_check_stale")
     credential_status = _credential_status(
         server,
@@ -2199,15 +2469,14 @@ def _mcp_blocked_reasons(
     *,
     tools: list[McpCatalogTool],
     credential_status: str,
+    stale_after: timedelta,
 ) -> list[str]:
     reasons: list[str] = []
     if server.status != "active":
         reasons.append("server_inactive")
     if server.health_status == "unhealthy":
         reasons.append("server_unhealthy")
-    if server.health_status == "checking":
-        reasons.append("health_check_pending")
-    if _health_check_stale(server):
+    if _health_check_stale(server, stale_after=stale_after):
         reasons.append("health_check_stale")
     if not tools:
         reasons.append("no_allowed_tools")
@@ -2266,8 +2535,6 @@ def _mcp_server_governance_actions(
         actions.append("review_mcp_server_status")
     if "server_unhealthy" in reasons or "health_check_stale" in reasons:
         actions.append("refresh_mcp_health_check")
-    if "health_check_pending" in reasons:
-        actions.append("wait_for_mcp_health_check")
     if "no_allowed_tools" in reasons:
         actions.append("allow_mcp_tools")
     if "missing_required_credentials" in reasons:
@@ -2307,8 +2574,40 @@ def _mcp_server_should_be_governance_disabled(blocked_reasons: list[str]) -> boo
     return bool(set(blocked_reasons) & MCP_SERVER_GOVERNANCE_DISABLE_REASONS)
 
 
-def _mcp_server_health_check_should_refresh(blocked_reasons: list[str]) -> bool:
-    return bool(set(blocked_reasons) & {"health_check_stale", "server_unhealthy"})
+def _mcp_server_should_refresh_health(blocked_reasons: list[str]) -> bool:
+    return bool({"health_check_stale", "server_unhealthy"} & set(blocked_reasons))
+
+
+def _mcp_server_probeable(server: McpServer) -> bool:
+    server_type = server.server_type.lower().strip()
+    if server_type == "stdio":
+        return _has_stdio_command(server)
+    if server_type in {"http", "https", "http_jsonrpc", "jsonrpc", "sse", "http_sse"}:
+        return _has_remote_url(server)
+    if server_type == "hosted":
+        transport = str(server.connection.get("transport") or "").lower().strip()
+        return transport in {
+            "http",
+            "https",
+            "http_jsonrpc",
+            "jsonrpc",
+            "sse",
+            "http_sse",
+        } and _has_remote_url(server)
+    return False
+
+
+def _mcp_health_refresh_error(blocked_reasons: list[str]) -> str:
+    reasons = set(blocked_reasons)
+    if "missing_remote_url" in reasons:
+        return "missing_remote_url"
+    if "missing_stdio_command" in reasons:
+        return "missing_stdio_command"
+    if "unsupported_hosted_transport" in reasons:
+        return "unsupported_hosted_transport"
+    if "unsupported_server_type" in reasons:
+        return "unsupported_server_type"
+    return "mcp_server_not_probeable"
 
 
 def _governance_result(
@@ -2350,12 +2649,12 @@ def _governance_skipped(
     }
 
 
-def _health_check_stale(server: McpServer) -> bool:
+def _health_check_stale(server: McpServer, *, stale_after: timedelta) -> bool:
     checked_at = server.last_health_check_at
     if checked_at is None:
         return False
     normalized = checked_at if checked_at.tzinfo is not None else checked_at.replace(tzinfo=UTC)
-    return datetime.now(UTC) - normalized > MCP_HEALTH_CHECK_STALE_AFTER
+    return datetime.now(UTC) - normalized > stale_after
 
 
 def _mcp_health_error(health_status: str, error_code: str | None) -> str | None:
@@ -2363,7 +2662,7 @@ def _mcp_health_error(health_status: str, error_code: str | None) -> str | None:
         return None
     normalized = error_code.strip() if isinstance(error_code, str) else ""
     if normalized:
-        return normalized
+        return redact_sensitive_text(normalized)
     if health_status == "unhealthy":
         return "health_check_failed"
     return None

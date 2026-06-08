@@ -51,13 +51,14 @@ class WorkspaceScheduler:
         *,
         workspace_id: UUID,
         candidate_steps: list[TaskStep],
+        policy_override: dict[str, object] | None = None,
     ) -> SchedulingDecision:
         if not candidate_steps:
             return SchedulingDecision((), (), None, None)
-        policy = self._policy_for(workspace_id)
+        policy = self._policy_for(workspace_id, override=policy_override)
         if policy.paused:
             reason = policy.pause_reason or "workspace_scheduler_paused"
-            self._mark_blocked(candidate_steps, reason)
+            self._mark_blocked(candidate_steps, reason, policy=policy)
             return SchedulingDecision(
                 (),
                 tuple(candidate_steps),
@@ -70,7 +71,11 @@ class WorkspaceScheduler:
             policy,
         )
         if not task_quota_allowed_steps:
-            self._mark_blocked(task_quota_blocked_steps, "workspace_task_quota_exceeded")
+            self._mark_blocked(
+                task_quota_blocked_steps,
+                "workspace_task_quota_exceeded",
+                policy=policy,
+            )
             return SchedulingDecision(
                 (),
                 tuple(task_quota_blocked_steps),
@@ -79,7 +84,7 @@ class WorkspaceScheduler:
             )
 
         available_slots = self._available_run_slots(workspace_id, policy)
-        ordered_steps = self._order_steps(task_quota_allowed_steps)
+        ordered_steps = self._order_steps(task_quota_allowed_steps, policy=policy)
         ordered_steps, resource_blocked_steps = self._apply_resource_limits(
             ordered_steps,
             policy,
@@ -91,9 +96,17 @@ class WorkspaceScheduler:
             )
             if available_slots <= 0:
                 blocked = [*ordered_steps, *resource_blocked_steps, *task_quota_blocked_steps]
-                self._mark_blocked(ordered_steps, "workspace_run_quota_exceeded")
-                self._mark_blocked(resource_blocked_steps, "workspace_resource_quota_exceeded")
-                self._mark_blocked(task_quota_blocked_steps, "workspace_task_quota_exceeded")
+                self._mark_blocked(ordered_steps, "workspace_run_quota_exceeded", policy=policy)
+                self._mark_blocked(
+                    resource_blocked_steps,
+                    "workspace_resource_quota_exceeded",
+                    policy=policy,
+                )
+                self._mark_blocked(
+                    task_quota_blocked_steps,
+                    "workspace_task_quota_exceeded",
+                    policy=policy,
+                )
                 return SchedulingDecision(
                     (),
                     tuple(blocked),
@@ -110,15 +123,27 @@ class WorkspaceScheduler:
             )
             blocked = [*ordered_steps[len(runnable) :], *resource_blocked_steps]
 
-        self._mark_runnable(runnable)
+        self._mark_runnable(runnable, policy=policy)
         if blocked:
             run_blocked_steps = [step for step in blocked if step not in resource_blocked_steps]
             if run_blocked_steps:
-                self._mark_blocked(run_blocked_steps, "workspace_run_quota_exceeded")
+                self._mark_blocked(
+                    run_blocked_steps,
+                    "workspace_run_quota_exceeded",
+                    policy=policy,
+                )
             if resource_blocked_steps:
-                self._mark_blocked(resource_blocked_steps, "workspace_resource_quota_exceeded")
+                self._mark_blocked(
+                    resource_blocked_steps,
+                    "workspace_resource_quota_exceeded",
+                    policy=policy,
+                )
         if task_quota_blocked_steps:
-            self._mark_blocked(task_quota_blocked_steps, "workspace_task_quota_exceeded")
+            self._mark_blocked(
+                task_quota_blocked_steps,
+                "workspace_task_quota_exceeded",
+                policy=policy,
+            )
         all_blocked = [*blocked, *task_quota_blocked_steps]
         return SchedulingDecision(
             runnable_steps=tuple(runnable),
@@ -131,27 +156,33 @@ class WorkspaceScheduler:
             available_run_slots=available_slots,
         )
 
-    def _policy_for(self, workspace_id: UUID) -> WorkspaceSchedulerPolicy:
+    def _policy_for(
+        self,
+        workspace_id: UUID,
+        *,
+        override: dict[str, object] | None = None,
+    ) -> WorkspaceSchedulerPolicy:
         workspace = self._session.get(Workspace, workspace_id)
         raw_settings = workspace.settings if workspace is not None else {}
         raw_scheduler = raw_settings.get("scheduler") if isinstance(raw_settings, dict) else None
         scheduler = raw_scheduler if isinstance(raw_scheduler, dict) else {}
+        effective_scheduler = _merged_scheduler_policy(scheduler, override)
         return WorkspaceSchedulerPolicy(
             paused=scheduler.get("paused") is True,
             pause_reason=_non_empty_string_or_none(scheduler.get("pause_reason")),
-            max_active_runs=_positive_int_or_none(scheduler.get("max_active_runs")),
-            max_running_tasks=_positive_int_or_none(scheduler.get("max_running_tasks")),
+            max_active_runs=_positive_int_or_none(effective_scheduler.get("max_active_runs")),
+            max_running_tasks=_positive_int_or_none(effective_scheduler.get("max_running_tasks")),
             max_runs_to_start_per_tick=_positive_int_or_none(
-                scheduler.get("max_runs_to_start_per_tick")
+                effective_scheduler.get("max_runs_to_start_per_tick")
             ),
             max_steps_per_task_per_tick=_positive_int_or_default(
-                scheduler.get("max_steps_per_task_per_tick"),
+                effective_scheduler.get("max_steps_per_task_per_tick"),
                 1,
             ),
             starvation_boost_after_seconds=_positive_int_or_none(
-                scheduler.get("starvation_boost_after_seconds")
+                effective_scheduler.get("starvation_boost_after_seconds")
             ),
-            resource_limits=_positive_number_dict(scheduler.get("resource_limits")),
+            resource_limits=_positive_number_dict(effective_scheduler.get("resource_limits")),
         )
 
     def _available_run_slots(
@@ -205,7 +236,7 @@ class WorkspaceScheduler:
         selected_new_task_ids: set[UUID] = set()
         allowed_steps: list[TaskStep] = []
         blocked_steps: list[TaskStep] = []
-        for step in self._order_steps(candidate_steps):
+        for step in self._order_steps(candidate_steps, policy=policy):
             if step.task_id in already_running_task_ids:
                 allowed_steps.append(step)
                 continue
@@ -246,9 +277,12 @@ class WorkspaceScheduler:
             allowed_steps.append(step)
         return allowed_steps, blocked_steps
 
-
-    def _order_steps(self, steps: list[TaskStep]) -> list[TaskStep]:
-        policy = self._policy_for(steps[0].workspace_id)
+    def _order_steps(
+        self,
+        steps: list[TaskStep],
+        *,
+        policy: WorkspaceSchedulerPolicy,
+    ) -> list[TaskStep]:
         task_ids = {step.task_id for step in steps}
         task_rank = {
             task_id: _TaskRank(priority=int(priority or 0), created_at=created_at)
@@ -310,7 +344,12 @@ class WorkspaceScheduler:
                 active_task_ids.append(task_id)
         return ordered
 
-    def _mark_runnable(self, steps: list[TaskStep]) -> None:
+    def _mark_runnable(
+        self,
+        steps: list[TaskStep],
+        *,
+        policy: WorkspaceSchedulerPolicy,
+    ) -> None:
         scheduled_at = datetime.now(UTC).isoformat()
         for step in steps:
             dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
@@ -318,16 +357,22 @@ class WorkspaceScheduler:
             dependencies.pop("blocked_reason", None)
             dependencies.pop("blocked_resource_keys", None)
             dependencies["scheduled_at"] = scheduled_at
-            dependencies["priority_score"] = self._step_priority_score(step)
+            dependencies["priority_score"] = self._step_priority_score(step, policy=policy)
             step.dependencies = dependencies
 
-    def _mark_blocked(self, steps: list[TaskStep], reason: str) -> None:
+    def _mark_blocked(
+        self,
+        steps: list[TaskStep],
+        reason: str,
+        *,
+        policy: WorkspaceSchedulerPolicy,
+    ) -> None:
         for step in steps:
             dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
             dependencies["scheduling_status"] = "blocked"
             dependencies["blocked_reason"] = reason
             dependencies.pop("scheduled_at", None)
-            dependencies["priority_score"] = self._step_priority_score(step)
+            dependencies["priority_score"] = self._step_priority_score(step, policy=policy)
             step.dependencies = dependencies
 
     def _set_blocked_resource_keys(self, step: TaskStep, keys: list[str]) -> None:
@@ -335,8 +380,12 @@ class WorkspaceScheduler:
         dependencies["blocked_resource_keys"] = keys
         step.dependencies = dependencies
 
-    def _step_priority_score(self, step: TaskStep) -> int:
-        policy = self._policy_for(step.workspace_id)
+    def _step_priority_score(
+        self,
+        step: TaskStep,
+        *,
+        policy: WorkspaceSchedulerPolicy,
+    ) -> int:
         task = self._session.get(Task, step.task_id)
         return _priority_score(
             int(task.priority if task is not None else 0),
@@ -349,6 +398,26 @@ def _positive_int_or_none(value: object) -> int | None:
     if isinstance(value, int) and value > 0:
         return value
     return None
+
+
+def _merged_scheduler_policy(
+    workspace_scheduler: dict[str, object],
+    override: dict[str, object] | None,
+) -> dict[str, object]:
+    if not override:
+        return workspace_scheduler
+    effective = dict(workspace_scheduler)
+    for key in (
+        "max_active_runs",
+        "max_running_tasks",
+        "max_runs_to_start_per_tick",
+        "max_steps_per_task_per_tick",
+        "starvation_boost_after_seconds",
+        "resource_limits",
+    ):
+        if key in override:
+            effective[key] = override[key]
+    return effective
 
 
 def _positive_int_or_default(value: object, default: int) -> int:

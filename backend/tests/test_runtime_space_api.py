@@ -229,6 +229,38 @@ def test_runtime_space_rejects_cross_workspace_team_binding() -> None:
     assert forbidden.status_code == 201
 
 
+def test_team_scoped_runtime_space_cannot_be_used_by_another_team_task() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    team_a = AgentTeam(workspace_id=workspace.id, name="Team A", team_type="research")
+    team_b = AgentTeam(workspace_id=workspace.id, name="Team B", team_type="research")
+    session.add_all([team_a, team_b])
+    session.commit()
+
+    runtime_space = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runtime-spaces",
+        headers=_headers(owner.id),
+        json={
+            "name": "Team A space",
+            "scope": "team",
+            "target_id": str(team_a.id),
+        },
+    )
+    denied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={
+            "title": "Wrong team runtime",
+            "agent_team_id": str(team_b.id),
+            "runtime_space_id": runtime_space.json()["id"],
+        },
+    )
+
+    assert runtime_space.status_code == 201
+    assert denied.status_code == 400
+    assert "Runtime space is not available for this target" in denied.json()["error"]["message"]
+
+
 def test_runtime_space_pause_and_resume_clears_blocked_steps() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

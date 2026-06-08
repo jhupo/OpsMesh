@@ -6,7 +6,9 @@ from typing import Any, TypeVar, cast
 from uuid import UUID
 
 from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import Select, func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.app.admin.policies import PlatformPolicyService
@@ -61,6 +63,8 @@ from backend.app.api.schemas.operations import (
 from backend.app.approvals.models import Approval
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
+from backend.app.core.metrics import GaugeMetric
+from backend.app.core.trace_context import current_trace_metadata, with_current_trace_metadata
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.orchestration.blocked_reasons import explain_blocked_reason
 from backend.app.orchestration.runs import RunOrchestrationService
@@ -78,14 +82,24 @@ from backend.app.self_hosted.models import (
     SelfHostedWorker,
 )
 from backend.app.tasks.models import Task, TaskStep
+from backend.app.teams.models import AgentTeam
+from backend.app.teams.runtime import (
+    TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,
+    TEAM_RUNTIME_STATUS_KEY,
+    TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
+)
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
+from backend.app.workspaces.data_lifecycle import WorkspaceDataLifecycleService
 from backend.app.workspaces.models import Workspace
 
 T = TypeVar("T")
 RUNNING_LEASE_STATUSES = {"running"}
 TERMINAL_LEASE_STATUSES = {"completed", "failed", "expired"}
 LIFECYCLE_EVENTS_LIMIT = 50
+PROMETHEUS_WORKER_STALE_AFTER_SECONDS = 300
+PROMETHEUS_QUEUE_SCAN_LIMIT = 1_000
+ACTIVE_RUNTIME_RUN_STATUSES = {"queued", "running", "waiting_approval"}
 
 
 @dataclass(frozen=True)
@@ -141,6 +155,7 @@ class OperationsService:
         capacity: dict[str, object] | None = None,
         workspace_id: UUID | None = None,
     ) -> WorkerHeartbeat:
+        details = _worker_heartbeat_details(with_current_trace_metadata(details))
         heartbeat = self._session.scalar(
             select(WorkerHeartbeat).where(
                 WorkerHeartbeat.worker_id == worker_id,
@@ -201,12 +216,12 @@ class OperationsService:
     ) -> WorkerNode:
         node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
         now = last_seen_at or datetime.now(UTC)
-        normalized_capacity = _bounded_worker_capacity(
-            capacity,
-            worker_type,
-            PlatformPolicyService(self._session).worker_control_policy().capacity_caps(),
-        )
         if node is None:
+            normalized_capacity = _bounded_worker_capacity(
+                capacity,
+                worker_type,
+                PlatformPolicyService(self._session).worker_control_policy().capacity_caps(),
+            )
             node = WorkerNode(
                 worker_id=worker_id,
                 worker_type=worker_type,
@@ -220,6 +235,11 @@ class OperationsService:
             )
             self._session.add(node)
         else:
+            normalized_capacity = _bounded_worker_capacity(
+                _merge_worker_capacity(node.capacity, capacity),
+                worker_type,
+                PlatformPolicyService(self._session).worker_control_policy().capacity_caps(),
+            )
             node.worker_type = worker_type
             node.status = _next_worker_node_status(node, status)
             node.queue_name = queue_name
@@ -435,11 +455,22 @@ class OperationsService:
                 lease_metadata=_append_worker_lifecycle_events(
                     metadata or {},
                     [
-                        _worker_lifecycle_event("claimed", now, attempt=job.attempt),
-                        _worker_lifecycle_event("started", now, attempt=job.attempt),
+                        _worker_lifecycle_event(
+                            "claimed",
+                            now,
+                            attempt=job.attempt,
+                            metadata=current_trace_metadata(),
+                        ),
+                        _worker_lifecycle_event(
+                            "started",
+                            now,
+                            attempt=job.attempt,
+                            metadata=current_trace_metadata(),
+                        ),
                     ],
                 ),
                 started_at=now,
+                last_heartbeat_at=now,
             )
             self._session.add(lease)
         else:
@@ -451,11 +482,22 @@ class OperationsService:
             lease.lease_metadata = _append_worker_lifecycle_events(
                 existing_metadata | (metadata or {}),
                 [
-                    _worker_lifecycle_event("claimed", now, attempt=job.attempt),
-                    _worker_lifecycle_event("started", now, attempt=job.attempt),
+                    _worker_lifecycle_event(
+                        "claimed",
+                        now,
+                        attempt=job.attempt,
+                        metadata=current_trace_metadata(),
+                    ),
+                    _worker_lifecycle_event(
+                        "started",
+                        now,
+                        attempt=job.attempt,
+                        metadata=current_trace_metadata(),
+                    ),
                 ],
             )
             lease.started_at = now
+            lease.last_heartbeat_at = now
             lease.finished_at = None
         self._session.commit()
         self._session.refresh(lease)
@@ -482,6 +524,7 @@ class OperationsService:
                     finished_at,
                     attempt=lease.attempt,
                     status=status,
+                    metadata=current_trace_metadata(),
                 )
             ],
         )
@@ -516,6 +559,7 @@ class OperationsService:
             )
         ).all()
         for lease in leases:
+            lease.last_heartbeat_at = at
             lease.lease_metadata = _append_worker_lifecycle_events(
                 dict(lease.lease_metadata or {}),
                 [
@@ -524,6 +568,7 @@ class OperationsService:
                         at,
                         attempt=lease.attempt,
                         status=status,
+                        metadata=current_trace_metadata(),
                     )
                 ],
             )
@@ -535,9 +580,10 @@ class OperationsService:
         stale_after_seconds: int = 900,
     ) -> int:
         cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
+        freshness = func.coalesce(WorkerLease.last_heartbeat_at, WorkerLease.started_at)
         statement = select(WorkerLease).where(
             WorkerLease.status.in_(RUNNING_LEASE_STATUSES),
-            WorkerLease.started_at < cutoff,
+            freshness < cutoff,
         )
         if workspace_id is not None:
             statement = statement.where(WorkerLease.workspace_id == workspace_id)
@@ -558,6 +604,7 @@ class OperationsService:
                         expired_at,
                         attempt=lease.attempt,
                         status="expired",
+                        metadata=current_trace_metadata(),
                     )
                 ],
             )
@@ -789,6 +836,7 @@ class OperationsService:
                         expired_at,
                         attempt=lease.attempt,
                         status="expired",
+                        metadata=current_trace_metadata(),
                     )
                 ],
             )
@@ -836,6 +884,57 @@ class OperationsService:
             dead_letter=dead,
             idempotency_keys=idempotency_keys,
         )
+
+    def prometheus_gauges(
+        self,
+        queue_name: str,
+        *,
+        worker_stale_after_seconds: int = PROMETHEUS_WORKER_STALE_AFTER_SECONDS,
+        queue_scan_limit: int = PROMETHEUS_QUEUE_SCAN_LIMIT,
+    ) -> list[GaugeMetric]:
+        now = datetime.now(UTC)
+        gauges: list[GaugeMetric] = []
+
+        try:
+            queue = self.queue_metrics(queue_name)
+            gauges.extend(
+                [
+                    GaugeMetric(
+                        "chaincloud_queue_jobs",
+                        queue.queued,
+                        labels={"queue_name": queue_name, "state": "queued"},
+                        help_text="Jobs currently waiting in Redis queues.",
+                    ),
+                    GaugeMetric(
+                        "chaincloud_queue_jobs",
+                        queue.dead_letter,
+                        labels={"queue_name": queue_name, "state": "dead_letter"},
+                        help_text="Jobs currently waiting in Redis queues.",
+                    ),
+                    GaugeMetric(
+                        "chaincloud_queue_idempotency_keys",
+                        queue.idempotency_keys,
+                        labels={"queue_name": queue_name},
+                        help_text="Active Redis idempotency keys for queued work.",
+                    ),
+                    GaugeMetric(
+                        "chaincloud_queue_oldest_queued_age_seconds",
+                        self._oldest_queued_age_seconds(queue_name, now, queue_scan_limit) or 0,
+                        labels={"queue_name": queue_name},
+                        help_text="Age of the oldest queued job seen in the queue scan.",
+                    ),
+                ]
+            )
+        except (OSError, RedisError, TimeoutError):
+            pass
+
+        try:
+            gauges.extend(self._prometheus_worker_gauges(now, worker_stale_after_seconds))
+            gauges.extend(self._prometheus_runtime_gauges())
+            gauges.extend(self._prometheus_team_runtime_gauges(now))
+        except SQLAlchemyError:
+            pass
+        return gauges
 
     def queue_insights(
         self,
@@ -1404,6 +1503,7 @@ class OperationsService:
             statement = statement.where(AuditEvent.action == action)
         if target_type is not None:
             statement = statement.where(AuditEvent.target_type == target_type)
+        statement = AuditService(self._session).apply_retention_to_statement(statement)
         return self._page(statement.order_by(AuditEvent.created_at.desc()), page)
 
     def filter_security_events(
@@ -1513,6 +1613,75 @@ class OperationsService:
             "offline_runtimes": int(offline_runtimes or 0),
             "workers_online": int(workers_online or 0),
             "security_warnings": int(recent_security_events or 0),
+            "data_lifecycle": self._data_lifecycle_rollup(workspace_id),
+        }
+
+    def _data_lifecycle_rollup(self, workspace_id: UUID) -> dict[str, object]:
+        readiness = WorkspaceDataLifecycleService(self._session).get_recovery_readiness(
+            workspace_id=workspace_id
+        )
+        if readiness is None:
+            return {
+                "status": "unknown",
+                "ready": False,
+                "blocked_reasons": ["workspace_not_found"],
+                "warnings": [],
+                "recommended_actions": [],
+            }
+        restore_readiness = _dict_value(readiness.get("restore_readiness"))
+        retention_safety = _dict_value(readiness.get("retention_safety"))
+        latest_backup = _dict_value(readiness.get("latest_successful_archive_export"))
+        latest_restore_drill = _dict_value(readiness.get("latest_restore_drill"))
+        import_conflict_history = _dict_value(
+            restore_readiness.get("import_conflict_history")
+        )
+        blocked_reasons = _string_list(restore_readiness.get("blocked_reasons"))
+        warnings = _string_list(restore_readiness.get("warnings"))
+        recommended_actions = _string_list(restore_readiness.get("recommended_actions"))
+        return {
+            "status": _data_lifecycle_status(
+                ready=restore_readiness.get("ready") is True,
+                blocked_reasons=blocked_reasons,
+                warnings=warnings,
+            ),
+            "ready": restore_readiness.get("ready") is True,
+            "blocked_reasons": blocked_reasons,
+            "warnings": warnings,
+            "recommended_actions": recommended_actions,
+            "next_safe_action": recommended_actions[0] if recommended_actions else None,
+            "latest_backup": {
+                "job_id": _string_or_none(latest_backup.get("id")),
+                "status": latest_backup.get("status"),
+                "completed_at": _iso_datetime_or_none(latest_backup.get("completed_at")),
+                "storage_object_configured": latest_backup.get("has_storage_object") is True,
+                "checksum_configured": latest_backup.get("checksum_sha256") is not None,
+                "size_bytes": latest_backup.get("size_bytes"),
+            },
+            "latest_restore_drill": {
+                "event_id": _string_or_none(latest_restore_drill.get("id")),
+                "created_at": _iso_datetime_or_none(latest_restore_drill.get("created_at")),
+                "action": latest_restore_drill.get("action"),
+            },
+            "retention_safety": {
+                "retention_enabled": retention_safety.get("retention_enabled") is True,
+                "backup_policy_enabled": retention_safety.get("backup_policy_enabled") is True,
+                "protected_by_successful_archive": (
+                    retention_safety.get("protected_by_successful_archive") is True
+                ),
+                "warnings": _string_list(retention_safety.get("warnings")),
+            },
+            "import_conflict_preview": {
+                "preview_count": _int_value(import_conflict_history.get("total_previews")),
+                "required_resolution_count": _int_value(
+                    import_conflict_history.get("required_resolution_count")
+                ),
+                "suggested_resolution_count": _int_value(
+                    import_conflict_history.get("suggested_resolution_count")
+                ),
+                "latest_preview_at": _iso_datetime_or_none(
+                    import_conflict_history.get("latest_previewed_at")
+                ),
+            },
         }
 
     def capacity_payload(self, workspace_id: UUID, queue_name: str) -> OperationsCapacityResponse:
@@ -2739,6 +2908,216 @@ class OperationsService:
             return 0
         return sum(1 for _ in self._redis.scan_iter(pattern))
 
+    def _oldest_queued_age_seconds(
+        self,
+        queue_name: str,
+        now: datetime,
+        scan_limit: int,
+    ) -> int | None:
+        if self._redis is None:
+            return None
+        queue = RedisQueue(self._redis, self._keys, queue_name)
+        return _oldest_job_age(now, queue.peek(limit=scan_limit))
+
+    def _prometheus_worker_gauges(
+        self,
+        now: datetime,
+        stale_after_seconds: int,
+    ) -> list[GaugeMetric]:
+        stale_cutoff = now - timedelta(seconds=stale_after_seconds)
+        worker_states = {"online": 0, "offline": 0, "stale": 0}
+        nodes = self._session.scalars(select(WorkerNode)).all()
+        for node in nodes:
+            if _aware_datetime(node.last_seen_at) < stale_cutoff:
+                worker_states["stale"] += 1
+            elif node.status == "online":
+                worker_states["online"] += 1
+            elif node.status == "offline":
+                worker_states["offline"] += 1
+
+        gauges = [
+            GaugeMetric(
+                "chaincloud_workers",
+                count,
+                labels={"state": state},
+                help_text="Worker nodes by operational state.",
+            )
+            for state, count in sorted(worker_states.items())
+        ]
+
+        lease_counts = {
+            status: int(count)
+            for status, count in self._session.execute(
+                select(WorkerLease.status, func.count())
+                .where(WorkerLease.status.in_(["running", "failed"]))
+                .group_by(WorkerLease.status)
+            ).all()
+        }
+        gauges.extend(
+            GaugeMetric(
+                "chaincloud_worker_leases",
+                lease_counts.get(status, 0),
+                labels={"status": status},
+                help_text="Worker leases by lifecycle status.",
+            )
+            for status in ("running", "failed")
+        )
+        return gauges
+
+    def _prometheus_runtime_gauges(self) -> list[GaugeMetric]:
+        gauges: list[GaugeMetric] = []
+        active_runs_by_runtime = dict(
+            self._session.execute(
+                select(AgentRun.runtime_id, func.count())
+                .where(
+                    AgentRun.runtime_id.is_not(None),
+                    AgentRun.status.in_(ACTIVE_RUNTIME_RUN_STATUSES),
+                )
+                .group_by(AgentRun.runtime_id)
+            ).all()
+        )
+        grouped: dict[tuple[str, str], dict[str, int]] = {}
+        for runtime in self._session.scalars(select(WorkspaceRuntime)).all():
+            key = (runtime.runtime_provider, runtime.runtime_type)
+            bucket = grouped.setdefault(key, {"capacity_slots": 0, "active_runs": 0})
+            bucket["capacity_slots"] += _runtime_capacity_slots(runtime)
+            bucket["active_runs"] += int(active_runs_by_runtime.get(runtime.id, 0))
+
+        for (provider, runtime_type), values in sorted(grouped.items()):
+            labels = {"provider": provider, "runtime_type": runtime_type}
+            capacity_slots = values["capacity_slots"]
+            active_runs = values["active_runs"]
+            saturation = active_runs / capacity_slots if capacity_slots > 0 else 0.0
+            gauges.extend(
+                [
+                    GaugeMetric(
+                        "chaincloud_runtime_capacity_slots",
+                        capacity_slots,
+                        labels=labels,
+                        help_text="Runtime capacity slots by provider and runtime type.",
+                    ),
+                    GaugeMetric(
+                        "chaincloud_runtime_active_runs",
+                        active_runs,
+                        labels=labels,
+                        help_text="Active runs assigned to runtimes by provider and type.",
+                    ),
+                    GaugeMetric(
+                        "chaincloud_runtime_saturation_ratio",
+                        round(saturation, 4),
+                        labels=labels,
+                        help_text="Runtime active-run saturation by provider and type.",
+                    ),
+                ]
+            )
+
+        quota_rows = self._session.execute(
+            select(
+                RuntimeSpaceQuota.quota_key,
+                RuntimeSpaceQuota.unit,
+                func.sum(RuntimeSpaceQuota.reserved_value),
+                func.sum(RuntimeSpaceQuota.limit_value),
+            )
+            .where(RuntimeSpaceQuota.status == "active")
+            .group_by(RuntimeSpaceQuota.quota_key, RuntimeSpaceQuota.unit)
+        ).all()
+        for quota_key, unit, reserved, limit in sorted(quota_rows):
+            labels = {"quota_key": quota_key, "unit": unit}
+            reserved_value = int(reserved or 0)
+            limit_value = int(limit or 0)
+            usage = reserved_value / limit_value if limit_value > 0 else 0.0
+            gauges.extend(
+                [
+                    GaugeMetric(
+                        "chaincloud_runtime_space_quota_reserved",
+                        reserved_value,
+                        labels=labels,
+                        help_text="Reserved runtime space quota by quota key.",
+                    ),
+                    GaugeMetric(
+                        "chaincloud_runtime_space_quota_limit",
+                        limit_value,
+                        labels=labels,
+                        help_text="Configured runtime space quota limit by quota key.",
+                    ),
+                    GaugeMetric(
+                        "chaincloud_runtime_space_quota_usage_ratio",
+                        round(usage, 4),
+                        labels=labels,
+                        help_text="Runtime space quota usage ratio by quota key.",
+                    ),
+                ]
+            )
+        return gauges
+
+    def _prometheus_team_runtime_gauges(self, now: datetime) -> list[GaugeMetric]:
+        teams = self._session.scalars(select(AgentTeam).where(AgentTeam.status == "active")).all()
+        runtime_ids = {
+            runtime_id
+            for team in teams
+            for runtime_id in [_team_runtime_workspace_runtime_id(team)]
+            if runtime_id is not None
+        }
+        runtimes = {
+            runtime.id: runtime
+            for runtime in self._session.scalars(
+                select(WorkspaceRuntime).where(WorkspaceRuntime.id.in_(runtime_ids))
+            ).all()
+        } if runtime_ids else {}
+        health_counts = {
+            "starting": 0,
+            "healthy": 0,
+            "stale": 0,
+            "degraded": 0,
+            "paused": 0,
+            "stopped": 0,
+        }
+        iteration_count = 0
+        scheduled_loop_enabled = 0
+        for team in teams:
+            runtime_metadata = _team_runtime_metadata(team)
+            if not runtime_metadata:
+                continue
+            runtime_id = _team_runtime_workspace_runtime_id(team)
+            health = _team_runtime_health_for_metrics(
+                runtime_metadata=runtime_metadata,
+                runtime=runtimes.get(runtime_id) if runtime_id is not None else None,
+                generated_at=now,
+            )
+            health_counts[health] = health_counts.get(health, 0) + 1
+            iteration_count += _non_negative_int(runtime_metadata.get("iteration_count"))
+            scheduling_policy = runtime_metadata.get("scheduling_policy")
+            if not isinstance(scheduling_policy, dict) or (
+                scheduling_policy.get("scheduled_loop_enabled") is not False
+            ):
+                scheduled_loop_enabled += 1
+        gauges = [
+            GaugeMetric(
+                "chaincloud_team_runtimes",
+                count,
+                labels={"health": health},
+                help_text="Team runtimes by low-cardinality runtime health.",
+            )
+            for health, count in sorted(health_counts.items())
+        ]
+        gauges.append(
+            GaugeMetric(
+                "chaincloud_team_runtime_iterations_total",
+                iteration_count,
+                labels={},
+                help_text="Total persisted team runtime iterations across active teams.",
+            )
+        )
+        gauges.append(
+            GaugeMetric(
+                "chaincloud_team_runtime_scheduled_loops",
+                scheduled_loop_enabled,
+                labels={"state": "enabled"},
+                help_text="Active team runtimes with scheduled loop cadence enabled.",
+            )
+        )
+        return gauges
+
     def _redis_count(self, value: object) -> int:
         return int(cast(int, value))
 
@@ -2793,6 +3172,79 @@ def _positive_int(value: object, fallback: int) -> int:
     return max(1, fallback)
 
 
+def _non_negative_int(value: object) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return max(0, value)
+    if isinstance(value, str):
+        try:
+            return max(0, int(value))
+        except ValueError:
+            return 0
+    return 0
+
+
+def _team_runtime_metadata(team: AgentTeam) -> dict[str, object]:
+    policy = team.default_task_policy if isinstance(team.default_task_policy, dict) else {}
+    runtime_metadata = policy.get(TEAM_RUNTIME_STATUS_KEY)
+    return dict(runtime_metadata) if isinstance(runtime_metadata, dict) else {}
+
+
+def _team_runtime_workspace_runtime_id(team: AgentTeam) -> UUID | None:
+    runtime_id = _team_runtime_metadata(team).get(TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY)
+    if isinstance(runtime_id, UUID):
+        return runtime_id
+    if isinstance(runtime_id, str) and runtime_id:
+        try:
+            return UUID(runtime_id)
+        except ValueError:
+            return None
+    return None
+
+
+def _team_runtime_health_for_metrics(
+    *,
+    runtime_metadata: dict[str, object],
+    runtime: WorkspaceRuntime | None,
+    generated_at: datetime,
+) -> str:
+    status = runtime_metadata.get("status")
+    if status == "paused":
+        return "paused"
+    if status == "stopped" or status is None:
+        return "stopped"
+    if runtime is None and runtime_metadata.get(TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY):
+        return "degraded"
+    if runtime is not None and (
+        runtime.status != "running" or runtime.connection_status in {"offline", "error"}
+    ):
+        return "degraded"
+    if runtime_metadata.get("heartbeat_status") == "skipped":
+        return "degraded"
+    last_heartbeat_at = _datetime_from_metadata(runtime_metadata.get("last_heartbeat_at"))
+    if last_heartbeat_at is None:
+        return "starting"
+    if generated_at - last_heartbeat_at > timedelta(
+        seconds=TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS
+    ):
+        return "stale"
+    return "healthy"
+
+
+def _datetime_from_metadata(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
 def _append_worker_lifecycle_events(
     metadata: dict[str, object],
     events: list[dict[str, object]],
@@ -2812,6 +3264,7 @@ def _worker_lifecycle_event(
     *,
     attempt: int,
     status: str | None = None,
+    metadata: dict[str, object] | None = None,
 ) -> dict[str, object]:
     event: dict[str, object] = {
         "type": event_type,
@@ -2820,6 +3273,8 @@ def _worker_lifecycle_event(
     }
     if status is not None:
         event["status"] = status
+    if metadata:
+        event.update(metadata)
     return event
 
 
@@ -2958,6 +3413,15 @@ def _worker_capacity(capacity: dict[str, object] | None, worker_type: str) -> di
     return normalized
 
 
+def _merge_worker_capacity(
+    current: dict[str, object] | None,
+    incoming: dict[str, object] | None,
+) -> dict[str, object]:
+    merged = dict(current or {})
+    merged.update(dict(incoming or {}))
+    return merged
+
+
 def _next_worker_node_status(node: WorkerNode, heartbeat_status: str) -> str:
     if node.drain_requested_at is not None:
         return "draining"
@@ -3037,6 +3501,37 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _dict_value(value: object) -> dict[str, object]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _string_or_none(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _iso_datetime_or_none(value: object) -> str | None:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _data_lifecycle_status(
+    *,
+    ready: bool,
+    blocked_reasons: list[str],
+    warnings: list[str],
+) -> str:
+    if ready:
+        return "ready_with_warnings" if warnings else "ready"
+    if blocked_reasons:
+        return "blocked"
+    return "unknown"
 
 
 def _self_hosted_machine_warning(
@@ -3145,6 +3640,53 @@ def _normalized_stale_run_statuses(statuses: list[str] | None) -> set[RunStatus]
             raise ValueError(f"Unsupported stale run status: {status}")
         normalized.add(run_status)
     return normalized
+
+
+def _worker_heartbeat_details(details: dict[str, object]) -> dict[str, object]:
+    normalized = dict(details)
+    enqueued = _int_value(normalized.get("scheduled_job_actions_enqueued"))
+    recorded = _int_value(normalized.get("scheduled_job_actions_recorded"))
+    skipped = _int_value(normalized.get("scheduled_job_actions_skipped"))
+    enqueued_by_type = _string_int_dict(
+        normalized.get("scheduled_job_actions_enqueued_by_job_type")
+    )
+    recorded_by_type = _string_int_dict(
+        normalized.get("scheduled_job_actions_recorded_by_job_type")
+    )
+    skipped_by_type = _string_int_dict(
+        normalized.get("scheduled_job_actions_skipped_by_job_type")
+    )
+    if not any((enqueued, recorded, skipped, enqueued_by_type, recorded_by_type, skipped_by_type)):
+        return normalized
+    provider_health_job_type = JobType.MODEL_PROVIDER_HEALTH_CHECK.value
+    normalized["scheduled_job_actions"] = {
+        "enqueued": enqueued,
+        "recorded": recorded,
+        "skipped": skipped,
+        "enqueued_by_job_type": enqueued_by_type,
+        "recorded_by_job_type": recorded_by_type,
+        "skipped_by_job_type": skipped_by_type,
+        "model_provider_health_check": {
+            "enqueued": enqueued_by_type.get(provider_health_job_type, 0),
+            "recorded": recorded_by_type.get(provider_health_job_type, 0),
+            "skipped": skipped_by_type.get(provider_health_job_type, 0),
+        },
+    }
+    return normalized
+
+
+def _string_int_dict(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(key): item
+        for key, item in value.items()
+        if isinstance(item, int) and not isinstance(item, bool)
+    }
+
+
+def _int_value(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 def _stale_run_age_anchor(run: AgentRun) -> datetime | None:

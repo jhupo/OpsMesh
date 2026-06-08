@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping, Sequence
+import time
+import uuid
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TypeAlias
 
@@ -28,6 +30,10 @@ class CachedValue:
 
 
 class RedisJsonCache:
+    _DEFAULT_LOCK_TTL_SECONDS = 30
+    _DEFAULT_LOCK_WAIT_TIMEOUT_SECONDS = 5.0
+    _DEFAULT_LOCK_RETRY_INTERVAL_SECONDS = 0.025
+
     def __init__(
         self,
         redis: Redis[str],
@@ -80,17 +86,69 @@ class RedisJsonCache:
         loader: Callable[[], JsonValue],
         *,
         ttl_seconds: int | None = None,
+        lock_ttl_seconds: int = _DEFAULT_LOCK_TTL_SECONDS,
+        lock_wait_timeout_seconds: float = _DEFAULT_LOCK_WAIT_TIMEOUT_SECONDS,
+        lock_retry_interval_seconds: float = _DEFAULT_LOCK_RETRY_INTERVAL_SECONDS,
     ) -> CachedValue:
-        cached = self.get(key)
-        if cached.found:
-            return cached
+        self._validate_lock_options(
+            lock_ttl_seconds=lock_ttl_seconds,
+            lock_wait_timeout_seconds=lock_wait_timeout_seconds,
+            lock_retry_interval_seconds=lock_retry_interval_seconds,
+        )
 
-        value = loader()
-        storage_key = self.set(key, value, ttl_seconds=ttl_seconds)
-        return CachedValue(key=storage_key, found=True, value=value)
+        deadline = time.monotonic() + lock_wait_timeout_seconds
+        lock_key = self._lock_key(key)
+
+        while True:
+            cached = self.get(key)
+            if cached.found:
+                return cached
+
+            lock_token = uuid.uuid4().hex
+            lock_acquired = self._redis.set(
+                lock_key,
+                lock_token,
+                nx=True,
+                ex=lock_ttl_seconds,
+            )
+            if lock_acquired:
+                try:
+                    cached = self.get(key)
+                    if cached.found:
+                        return cached
+
+                    value = loader()
+                    storage_key = self.set(key, value, ttl_seconds=ttl_seconds)
+                    return CachedValue(key=storage_key, found=True, value=value)
+                finally:
+                    self._release_lock(lock_key, lock_token)
+
+            cached = self.get(key)
+            if cached.found:
+                return cached
+
+            remaining_wait = deadline - time.monotonic()
+            if remaining_wait <= 0:
+                raise TimeoutError(f"cache loader lock timed out for key {cached.key}")
+
+            time.sleep(min(lock_retry_interval_seconds, remaining_wait))
 
     def delete(self, key: str) -> int:
         return int(self._redis.delete(self._storage_key(key)))
+
+    def delete_many(self, keys: Iterable[str]) -> int:
+        storage_keys = [self._storage_key(key) for key in keys]
+        if not storage_keys:
+            return 0
+        return int(self._redis.delete(*storage_keys))
+
+    def delete_prefix(self, prefix: str) -> int:
+        normalized_prefix = self._normalize_key(prefix)
+        pattern = self._keys.cache(self._namespace, f"{normalized_prefix}*")
+        matched_keys = list(self._redis.scan_iter(pattern))
+        if not matched_keys:
+            return 0
+        return int(self._redis.delete(*matched_keys))
 
     def delete_namespace(self) -> int:
         pattern = self._keys.cache(self._namespace, "*")
@@ -100,13 +158,47 @@ class RedisJsonCache:
         return int(self._redis.delete(*matched_keys))
 
     def _storage_key(self, key: str) -> str:
+        normalized_key = self._normalize_key(key)
+        return self._keys.cache(self._namespace, normalized_key)
+
+    def _lock_key(self, key: str) -> str:
+        normalized_key = self._normalize_key(key)
+        return self._join_key("cache-lock", self._namespace, normalized_key)
+
+    def _normalize_key(self, key: str) -> str:
         normalized_key = key.strip()
         if not normalized_key:
             raise ValueError("cache key must not be empty")
-        return self._keys.cache(self._namespace, normalized_key)
+        return normalized_key
 
     def _resolve_ttl(self, ttl_seconds: int | None) -> int:
         resolved_ttl = self._default_ttl_seconds if ttl_seconds is None else ttl_seconds
         if resolved_ttl <= 0:
             raise ValueError("ttl_seconds must be greater than zero")
         return resolved_ttl
+
+    def _release_lock(self, lock_key: str, lock_token: str) -> None:
+        current_token = self._redis.get(lock_key)
+        if isinstance(current_token, bytes):
+            current_token = current_token.decode()
+        if current_token == lock_token:
+            self._redis.delete(lock_key)
+
+    def _validate_lock_options(
+        self,
+        *,
+        lock_ttl_seconds: int,
+        lock_wait_timeout_seconds: float,
+        lock_retry_interval_seconds: float,
+    ) -> None:
+        if lock_ttl_seconds <= 0:
+            raise ValueError("lock_ttl_seconds must be greater than zero")
+        if lock_wait_timeout_seconds <= 0:
+            raise ValueError("lock_wait_timeout_seconds must be greater than zero")
+        if lock_retry_interval_seconds <= 0:
+            raise ValueError("lock_retry_interval_seconds must be greater than zero")
+
+    def _join_key(self, *parts: str) -> str:
+        clean_parts = [self._keys.prefix.strip(":")]
+        clean_parts.extend(part.strip(":") for part in parts if part)
+        return ":".join(clean_parts)

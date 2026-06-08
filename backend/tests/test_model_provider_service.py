@@ -1,9 +1,12 @@
-from datetime import UTC, datetime
+import asyncio
+from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.api.pagination import PageParams
@@ -11,10 +14,41 @@ from backend.app.audit.models import AuditEvent
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.model_providers import service as model_provider_service_module
+from backend.app.model_providers.health import (
+    ModelProviderHealthCheck,
+    ModelProviderHealthCheckResult,
+)
+from backend.app.model_providers.model_api import (
+    model_api_for_agent_provider,
+    unsupported_agent_model_api,
+)
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.workspaces.models import Workspace, WorkspaceMember
+
+
+def test_agent_model_api_override_is_limited_to_provider_supported_protocols() -> None:
+    assert model_api_for_agent_provider(
+        "openai-compatible",
+        {"model_api": "response"},
+        {"model_api": "chat-completions"},
+    ) == "responses"
+    assert unsupported_agent_model_api(
+        "openai-compatible",
+        {"model_api": "response"},
+    ) is None
+
+    assert model_api_for_agent_provider(
+        "anthropic",
+        {"model_api": "response"},
+        {"model_api": "chat-completions"},
+    ) == "anthropic_messages"
+    assert unsupported_agent_model_api(
+        "anthropic",
+        {"model_api": "response"},
+    ) == "responses"
 
 
 def test_create_encrypts_api_key_and_records_audit() -> None:
@@ -47,7 +81,260 @@ def test_create_encrypts_api_key_and_records_audit() -> None:
     assert audit.audit_metadata["name"] == "OpenAI"
     assert audit.audit_metadata["base_url_configured"] is True
     assert audit.audit_metadata["base_url_host"] == "api.openai.com"
+    assert audit.audit_metadata["model_api"] is None
+    assert audit.audit_metadata["model_apis"] == ["responses", "chat_completions"]
+    assert audit.audit_metadata["default_model_api"] is None
     assert "base_url" not in audit.audit_metadata
+
+
+def test_create_normalizes_openai_compatible_base_url() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Gateway",
+        provider="openai-compatible",
+        api_key="sk-secret",
+        default_model="provider/default",
+        base_url="https://dash.ovload.com/",
+        is_default=False,
+    )
+
+    assert credential.base_url == "https://dash.ovload.com/v1"
+
+
+def test_create_canonicalizes_provider_alias_and_normalizes_matching_base_url() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Gateway",
+        provider=" OpenAI_Compatible ",
+        api_key="sk-secret",
+        default_model="provider/default",
+        base_url="https://dash.ovload.com/",
+        is_default=False,
+    )
+
+    assert credential.provider == "openai-compatible"
+    assert credential.base_url == "https://dash.ovload.com/v1"
+
+
+def test_create_canonicalizes_human_provider_aliases() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+
+    anthropic = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Claude",
+        provider="Claude API",
+        api_key="anthropic-key",
+        default_model="claude-sonnet-4-5",
+        base_url="https://api.anthropic.com/",
+        is_default=False,
+    )
+    gateway = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Gateway",
+        provider="OpenAI Compatible Gateway",
+        api_key="sk-secret",
+        default_model="provider/default",
+        base_url="https://dash.ovload.com/",
+        is_default=False,
+    )
+
+    assert anthropic.provider == "anthropic"
+    assert anthropic.base_url == "https://api.anthropic.com"
+    assert gateway.provider == "openai-compatible"
+    assert gateway.base_url == "https://dash.ovload.com/v1"
+
+
+def test_update_normalizes_openai_compatible_base_url_and_drops_query() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Gateway",
+        provider="openai-compatible",
+        api_key="sk-secret",
+        default_model="provider/default",
+        base_url=None,
+        is_default=False,
+    )
+
+    updated = service.update(
+        workspace_id=workspace.id,
+        credential_id=credential.id,
+        actor_user_id=user.id,
+        base_url="https://dash.ovload.com/?token=secret",
+    )
+
+    assert updated.base_url == "https://dash.ovload.com/v1"
+
+
+def test_update_can_set_and_clear_model_api() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Gateway",
+        provider="openai-compatible",
+        api_key="sk-secret",
+        default_model="provider/default",
+        base_url="https://dash.ovload.com/v1",
+        is_default=False,
+    )
+
+    updated = service.update(
+        workspace_id=workspace.id,
+        credential_id=credential.id,
+        actor_user_id=user.id,
+        model_api="response",
+        model_api_provided=True,
+    )
+    assert updated.budget_metadata["model_api"] == "responses"
+
+    cleared = service.update(
+        workspace_id=workspace.id,
+        credential_id=credential.id,
+        actor_user_id=user.id,
+        model_api=None,
+        model_api_provided=True,
+    )
+
+    assert "model_api" not in cleared.budget_metadata
+
+
+def test_model_provider_rejects_unknown_or_unsupported_model_api() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+
+    with pytest.raises(ValueError, match="Unsupported model_api"):
+        service.create(
+            workspace_id=workspace.id,
+            created_by_user_id=user.id,
+            name="Gateway",
+            provider="openai-compatible",
+            api_key="sk-secret",
+            default_model="provider/default",
+            base_url="https://dash.ovload.com/v1",
+            is_default=False,
+            model_api="streaming-v3",
+        )
+
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Anthropic",
+        provider="anthropic",
+        api_key="anthropic-key",
+        default_model="claude-sonnet-4-5",
+        base_url="https://api.anthropic.com/",
+        is_default=False,
+    )
+
+    with pytest.raises(ValueError, match="not supported by provider"):
+        service.update(
+            workspace_id=workspace.id,
+            credential_id=credential.id,
+            actor_user_id=user.id,
+            model_api="response",
+            model_api_provided=True,
+        )
+
+
+def test_update_canonicalizes_provider_alias_before_base_url_normalization() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Anthropic",
+        provider="Claude",
+        api_key="anthropic-key",
+        default_model="claude-sonnet-4-5",
+        base_url="https://api.anthropic.com/",
+        is_default=False,
+    )
+
+    updated = service.update(
+        workspace_id=workspace.id,
+        credential_id=credential.id,
+        actor_user_id=user.id,
+        provider=" OpenAI_Compatible ",
+        base_url="https://dash.ovload.com/",
+    )
+
+    assert updated.provider == "openai-compatible"
+    assert updated.base_url == "https://dash.ovload.com/v1"
+
+
+def test_update_provider_alias_renormalizes_existing_base_url() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Gateway",
+        provider="Claude",
+        api_key="anthropic-key",
+        default_model="claude-sonnet-4-5",
+        base_url="https://dash.ovload.com/",
+        is_default=False,
+    )
+
+    updated = service.update(
+        workspace_id=workspace.id,
+        credential_id=credential.id,
+        actor_user_id=user.id,
+        provider="OpenAI_Compatible",
+    )
+
+    assert updated.provider == "openai-compatible"
+    assert updated.base_url == "https://dash.ovload.com/v1"
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://127.0.0.1/v1",
+        "https://localhost/v1",
+        "https://169.254.169.254/latest/meta-data",
+        "https://10.0.0.1/v1",
+    ],
+)
+def test_create_rejects_unsafe_base_url(base_url: str) -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+
+    with pytest.raises(ValueError):
+        service.create(
+            workspace_id=workspace.id,
+            created_by_user_id=user.id,
+            name="Unsafe",
+            provider="openai-compatible",
+            api_key="sk-secret",
+            default_model="provider/default",
+            base_url=base_url,
+            is_default=False,
+        )
 
 
 def test_setting_new_default_unsets_previous_default_in_same_workspace() -> None:
@@ -85,6 +372,44 @@ def test_setting_new_default_unsets_previous_default_in_same_workspace() -> None
     assert stored_second.is_default is True
 
 
+def test_database_enforces_single_active_default_per_workspace() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    active_default = _raw_credential(
+        workspace_id=workspace.id,
+        user_id=user.id,
+        name="Active Default",
+        is_default=True,
+        status="active",
+    )
+    disabled_default = _raw_credential(
+        workspace_id=workspace.id,
+        user_id=user.id,
+        name="Disabled Default",
+        is_default=True,
+        status="disabled",
+    )
+    session.add_all([active_default, disabled_default])
+    session.commit()
+
+    session.add(
+        _raw_credential(
+            workspace_id=workspace.id,
+            user_id=user.id,
+            name="Second Active Default",
+            is_default=True,
+            status="active",
+        )
+    )
+
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+    else:
+        raise AssertionError("Expected database to reject two active defaults in one workspace")
+
+
 def test_resolve_uses_workspace_default_when_agent_has_no_override() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
@@ -110,6 +435,285 @@ def test_resolve_uses_workspace_default_when_agent_has_no_override() -> None:
     assert resolved.api_key == "sk-default"
     assert resolved.base_url == "https://api.openai.com/v1"
     assert resolved.model == "gpt-4.1-mini"
+
+
+def test_resolve_exposes_configured_model_api() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Gateway",
+        provider="openai-compatible",
+        api_key="sk-gateway",
+        default_model="gateway-model",
+        base_url="https://llm.example.test/v1",
+        is_default=True,
+        model_api="chat-completions",
+    )
+
+    resolved = service.resolve_for_agent(
+        workspace_id=workspace.id,
+        agent_credential_id=None,
+        agent_model="workspace-default",
+    )
+
+    assert resolved.credential_id == credential.id
+    assert resolved.model_api == "chat_completions"
+    assert credential.budget_metadata["model_api"] == "chat_completions"
+
+
+def test_resolve_preserves_non_openai_provider_and_base_url() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Anthropic",
+        provider="anthropic",
+        api_key="anthropic-key",
+        default_model="claude-sonnet-4-5",
+        base_url="https://api.anthropic.com/",
+        is_default=True,
+        budget_metadata={"model_api": "responses"},
+    )
+
+    resolved = service.resolve_for_agent(
+        workspace_id=workspace.id,
+        agent_credential_id=None,
+        agent_model="workspace-default",
+    )
+
+    assert credential.base_url == "https://api.anthropic.com"
+    assert resolved.provider == "anthropic"
+    assert resolved.base_url == "https://api.anthropic.com"
+    assert resolved.model == "claude-sonnet-4-5"
+    assert resolved.model_api == "anthropic_messages"
+
+
+def test_anthropic_health_check_uses_default_messages_model_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Anthropic",
+        provider="anthropic",
+        api_key="anthropic-key",
+        default_model="claude-sonnet-4-5",
+        base_url="https://api.anthropic.com",
+        is_default=True,
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_probe(target, *, probes, timeout_seconds):
+        captured["provider"] = target.provider
+        captured["model_api"] = target.model_api
+        captured["probes"] = probes
+        captured["timeout_seconds"] = timeout_seconds
+        return ModelProviderHealthCheckResult(
+            status="healthy",
+            checks=(
+                ModelProviderHealthCheck(
+                    name="inference",
+                    status="passed",
+                    metadata={"model_api": target.model_api},
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(model_provider_service_module, "probe_model_provider", fake_probe)
+
+    result = asyncio.run(
+        service.run_health_check(
+            workspace_id=workspace.id,
+            credential_id=credential.id,
+            actor_user_id=user.id,
+            probes=("inference",),
+            timeout_seconds=2,
+        )
+    )
+
+    assert result.status == "healthy"
+    assert captured == {
+        "provider": "anthropic",
+        "model_api": "anthropic_messages",
+        "probes": ("inference",),
+        "timeout_seconds": 2,
+    }
+
+
+def test_resolve_skips_unhealthy_default_and_uses_workspace_fallback() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    primary = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Primary",
+        provider="openai",
+        api_key="sk-primary",
+        default_model="primary-model",
+        base_url=None,
+        is_default=True,
+    )
+    backup = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Backup",
+        provider="openai",
+        api_key="sk-backup",
+        default_model="backup-model",
+        base_url=None,
+        is_default=False,
+    )
+
+    for _ in range(3):
+        service.record_failure(
+            workspace_id=workspace.id,
+            credential_id=primary.id,
+            error_code="RuntimeError",
+            error_message="provider unavailable",
+        )
+    resolved = service.resolve_for_agent(
+        workspace_id=workspace.id,
+        agent_credential_id=None,
+        agent_model="workspace-default",
+    )
+
+    assert primary.failure_count == 3
+    assert primary.health_status == "unhealthy"
+    assert resolved.credential_id == backup.id
+    assert resolved.api_key == "sk-backup"
+    assert resolved.model == "backup-model"
+
+
+def test_resolve_skips_disabled_default_and_uses_workspace_fallback() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    primary = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Primary",
+        provider="openai",
+        api_key="sk-primary",
+        default_model="primary-model",
+        base_url=None,
+        is_default=True,
+    )
+    backup = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Backup",
+        provider="openai",
+        api_key="sk-backup",
+        default_model="backup-model",
+        base_url=None,
+        is_default=False,
+    )
+
+    service.disable(
+        workspace_id=workspace.id,
+        credential_id=primary.id,
+        actor_user_id=user.id,
+    )
+    resolved = service.resolve_for_agent(
+        workspace_id=workspace.id,
+        agent_credential_id=None,
+        agent_model="workspace-default",
+    )
+
+    assert primary.status == "disabled"
+    assert primary.is_default is False
+    assert resolved.credential_id == backup.id
+    assert resolved.model == "backup-model"
+
+
+def test_resolve_skips_budget_exhausted_default() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    primary = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Primary",
+        provider="openai",
+        api_key="sk-primary",
+        default_model="primary-model",
+        base_url=None,
+        is_default=True,
+        budget_metadata={"limits": {"calls": 1}, "usage": {"calls": 1}},
+    )
+    backup = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Backup",
+        provider="openai",
+        api_key="sk-backup",
+        default_model="backup-model",
+        base_url=None,
+        is_default=False,
+    )
+
+    resolved = service.resolve_for_agent(
+        workspace_id=workspace.id,
+        agent_credential_id=None,
+        agent_model="workspace-default",
+    )
+
+    assert primary.budget_metadata == {"limits": {"calls": 1}, "usage": {"calls": 1}}
+    assert resolved.credential_id == backup.id
+    assert resolved.model == "backup-model"
+
+
+def test_resolve_treats_future_exhausted_until_as_temporarily_exhausted() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    primary = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Primary",
+        provider="openai",
+        api_key="sk-primary",
+        default_model="primary-model",
+        base_url=None,
+        is_default=True,
+        budget_metadata={"exhausted_until": (datetime.now(UTC) + timedelta(minutes=5)).isoformat()},
+    )
+    backup = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Backup",
+        provider="openai",
+        api_key="sk-backup",
+        default_model="backup-model",
+        base_url=None,
+        is_default=False,
+    )
+
+    exhausted = service.resolve_for_agent(
+        workspace_id=workspace.id,
+        agent_credential_id=None,
+        agent_model="workspace-default",
+    )
+    primary.budget_metadata = {
+        "exhausted_until": (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+    }
+    available = service.resolve_for_agent(
+        workspace_id=workspace.id,
+        agent_credential_id=None,
+        agent_model="workspace-default",
+    )
+
+    assert exhausted.credential_id == backup.id
+    assert available.credential_id == primary.id
 
 
 def test_resolve_agent_override_can_use_specific_model() -> None:
@@ -253,6 +857,41 @@ def test_update_audit_redacts_full_base_url() -> None:
     assert "secret" not in str(audit.audit_metadata)
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://127.0.0.1/v1",
+        "https://localhost/v1",
+        "https://169.254.169.254/latest/meta-data",
+        "https://10.0.0.1/v1",
+    ],
+)
+def test_update_rejects_unsafe_base_url(base_url: str) -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Router",
+        provider="openai-compatible",
+        api_key="sk-router",
+        default_model="router/default",
+        base_url="https://router.example.test/v1",
+        is_default=False,
+    )
+
+    with pytest.raises(ValueError):
+        service.update(
+            workspace_id=workspace.id,
+            credential_id=credential.id,
+            actor_user_id=user.id,
+            base_url=base_url,
+        )
+
+    assert credential.base_url == "https://router.example.test/v1"
+
+
 def test_disable_removes_credential_from_default_resolution() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
@@ -342,12 +981,120 @@ def test_records_provider_health_success_and_failure() -> None:
     assert credential.last_failure_at is not None
     assert credential.last_failure_code == "RateLimitError"
     assert credential.last_failure_message == "rate limited"
+    assert credential.failure_count == 1
 
     service.record_success(workspace_id=workspace.id, credential_id=credential.id)
     assert credential.health_status == "healthy"
+    assert credential.failure_count == 0
     assert credential.last_success_at is not None
     assert credential.last_failure_code is None
     assert credential.last_failure_message is None
+
+
+def test_health_check_persists_result_and_records_redacted_audit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Claude Gateway",
+        provider="openai-compatible",
+        api_key="sk-health-check",
+        default_model="claude-opus-4-6",
+        base_url="https://dash.ovload.com/v1",
+        is_default=False,
+        budget_metadata={"model_api": "chat-completions"},
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_probe(target, *, probes, timeout_seconds):
+        captured["provider"] = target.provider
+        captured["model"] = target.model
+        captured["api_key"] = target.api_key
+        captured["base_url"] = target.base_url
+        captured["model_api"] = target.model_api
+        captured["probes"] = probes
+        captured["timeout_seconds"] = timeout_seconds
+        return ModelProviderHealthCheckResult(
+            status="degraded",
+            checks=(
+                ModelProviderHealthCheck(
+                    name="models",
+                    status="passed",
+                    metadata={"model_count": 4, "model_present": True},
+                ),
+                ModelProviderHealthCheck(
+                    name="inference",
+                    status="failed",
+                    code="permission_denied",
+                    message=(
+                        "Your request was blocked api_key=sk-health-check "
+                        "Bearer health-token "
+                        "base_url=https://dash.ovload.com/v1/private"
+                    ),
+                    metadata={
+                        "status_code": 403,
+                        "api_key": "sk-health-check",
+                        "authorization": "Bearer health-token",
+                        "base_url": "https://dash.ovload.com/v1/private",
+                    },
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(model_provider_service_module, "probe_model_provider", fake_probe)
+
+    result = asyncio.run(
+        service.run_health_check(
+            workspace_id=workspace.id,
+            credential_id=credential.id,
+            actor_user_id=user.id,
+            probes=("models", "inference"),
+            timeout_seconds=3,
+        )
+    )
+    session.refresh(credential)
+
+    assert result.status == "degraded"
+    assert captured == {
+        "provider": "openai-compatible",
+        "model": "claude-opus-4-6",
+        "api_key": "sk-health-check",
+        "base_url": "https://dash.ovload.com/v1",
+        "model_api": "chat_completions",
+        "probes": ("models", "inference"),
+        "timeout_seconds": 3,
+    }
+    assert credential.health_status == "degraded"
+    assert credential.failure_count == 1
+    assert credential.budget_metadata["model_api"] == "chat_completions"
+    assert credential.last_failure_code == "permission_denied"
+    assert credential.last_failure_message == "[redacted]"
+    audit = session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.action == "model_provider_credential.health_checked"
+        )
+    ).one()
+    assert audit.audit_metadata["status"] == "degraded"
+    assert audit.audit_metadata["model_api"] == "chat_completions"
+    assert audit.audit_metadata["model_apis"] == ["responses", "chat_completions"]
+    assert audit.audit_metadata["default_model_api"] is None
+    assert audit.audit_metadata["base_url_host"] == "dash.ovload.com"
+    assert audit.audit_metadata["checks"][1]["code"] == "permission_denied"
+    assert audit.audit_metadata["checks"][1]["message"] == "[redacted]"
+    assert audit.audit_metadata["checks"][1]["metadata"] == {
+        "status_code": 403,
+        "api_key": "[redacted]",
+        "authorization": "[redacted]",
+        "base_url": "[redacted]",
+    }
+    assert "sk-health-check" not in str(audit.audit_metadata)
+    assert "Bearer health-token" not in str(audit.audit_metadata)
+    assert "dash.ovload.com/v1/private" not in str(audit.audit_metadata)
+    assert "dash.ovload.com/v1" not in str(audit.audit_metadata)
 
 
 def test_usage_audit_lists_only_sanitized_provider_events_for_workspace() -> None:
@@ -449,6 +1196,28 @@ def _seed_workspace(
     session.add_all([user, workspace, membership])
     session.commit()
     return user, workspace
+
+
+def _raw_credential(
+    *,
+    workspace_id,
+    user_id,
+    name: str,
+    is_default: bool,
+    status: str,
+) -> ModelProviderCredential:
+    return ModelProviderCredential(
+        workspace_id=workspace_id,
+        created_by_user_id=user_id,
+        name=name,
+        provider="openai",
+        default_model="gpt-4.1",
+        encrypted_api_key=f"encrypted-{name}",
+        api_key_fingerprint=f"sha256:{name}",
+        encryption_key_id="test-key",
+        is_default=is_default,
+        status=status,
+    )
 
 
 def _patch_portable_types_for_sqlite() -> None:

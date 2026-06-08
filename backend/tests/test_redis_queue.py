@@ -1,8 +1,9 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import fakeredis
 import pytest
 
+from backend.app.core.trace_context import TraceContext, trace_context
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue, consume_once
@@ -28,6 +29,68 @@ def test_enqueue_is_idempotent_and_dequeue_round_trips_payload() -> None:
     stored = queue.dequeue()
 
     assert stored == job
+    assert queue.count_processing() == 1
+    assert queue.ack(job) is True
+    assert queue.count_processing() == 0
+    assert queue.dequeue() is None
+
+
+def test_enqueue_propagates_current_trace_context_to_job_payload() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
+    parent = TraceContext(
+        trace_id="0123456789abcdef0123456789abcdef",
+        span_id="abcdef0123456789",
+    )
+
+    with trace_context(parent):
+        assert queue.enqueue(_job()) is True
+
+    stored = queue.dequeue()
+
+    assert stored is not None
+    assert stored.trace_id == parent.trace_id
+    assert stored.parent_span_id == parent.span_id
+    assert stored.span_id is not None
+    assert stored.span_id != parent.span_id
+
+
+def test_dequeue_leases_job_until_processing_reclaim() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(
+        redis=redis,
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+        visibility_timeout_seconds=1,
+    )
+    job = _job()
+    queue.enqueue(job)
+
+    leased = queue.dequeue()
+
+    assert leased == job
+    assert queue.count_queued() == 0
+    assert queue.count_processing() == 1
+    assert queue.dequeue() is None
+
+    reclaimed = queue.reclaim_expired(now=9_999_999_999)
+
+    assert reclaimed == [job]
+    assert queue.count_processing() == 0
+    assert queue.count_queued() == 1
+    assert queue.dequeue() == job
+
+
+def test_force_enqueue_preserves_retry_override_behavior() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
+    job = _job()
+
+    assert queue.enqueue(job) is True
+    assert queue.enqueue(job, force=True) is True
+
+    assert queue.dequeue() == job
+    assert queue.dequeue() == job
     assert queue.dequeue() is None
 
 
@@ -44,6 +107,26 @@ def test_dequeue_matching_skips_unmatched_head_job_without_dropping_it() -> None
     )
 
     assert matched == self_hosted_job
+    assert queue.dequeue() == docker_job
+    assert queue.dequeue() is None
+
+
+def test_blocking_dequeue_matching_does_not_fallback_to_incompatible_job() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(
+        redis=redis,
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+        blocking_timeout_seconds=1,
+    )
+    docker_job = _job(routing={"runtime_modes": ["docker"]})
+    queue.enqueue(docker_job)
+
+    matched = queue.dequeue_matching(
+        lambda job: job.routing.get("runtime_modes") == ["self_hosted"],
+    )
+
+    assert matched is None
     assert queue.dequeue() == docker_job
     assert queue.dequeue() is None
 
@@ -130,7 +213,50 @@ def test_consume_once_requeues_failed_job_then_dead_letters() -> None:
     queue.retry_or_dead_letter(retry)
     raw_dead_letter = redis.lpop(keys.dead_letter_queue("agent_runs"))
     assert raw_dead_letter is not None
-    assert JobPayload.model_validate_json(raw_dead_letter).attempt == 2
+    dead_letter = JobPayload.model_validate_json(raw_dead_letter)
+    assert dead_letter.attempt == 2
+    assert dead_letter.last_error is None
+
+
+def test_retry_can_be_delayed_and_reclaimed_with_error_metadata() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
+    job = _job(max_attempts=2)
+
+    queue.retry_or_dead_letter(
+        job,
+        error=RuntimeError("temporary boom"),
+        delay_seconds=30,
+        now=100,
+    )
+
+    assert queue.count_queued() == 0
+    assert queue.count_scheduled_retries() == 1
+    assert queue.reclaim_due_retries(now=129) == []
+
+    reclaimed = queue.reclaim_due_retries(now=130)
+
+    assert len(reclaimed) == 1
+    assert reclaimed[0].attempt == 1
+    assert reclaimed[0].last_error == "temporary boom"
+    assert reclaimed[0].last_error_type == "RuntimeError"
+    assert reclaimed[0].last_failed_at is not None
+    assert queue.count_scheduled_retries() == 0
+    assert queue.dequeue() == reclaimed[0]
+
+
+def test_consume_once_acks_successful_job() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
+    job = _job()
+    handled: list[JobPayload] = []
+    queue.enqueue(job)
+
+    assert consume_once(queue, handled.append) is True
+
+    assert handled == [job]
+    assert queue.count_queued() == 0
+    assert queue.count_processing() == 0
 
 
 def test_dead_letter_jobs_can_be_listed_and_requeued() -> None:
@@ -151,17 +277,89 @@ def test_dead_letter_jobs_can_be_listed_and_requeued() -> None:
     assert queue.dequeue() == requeued
 
 
+def test_queue_list_views_filter_before_applying_limit() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("chaincloud"), queue_name="agent_runs")
+    workspace_id = uuid4()
+    target_resource_id = uuid4()
+    other_resource_id = uuid4()
+    other_queued = _job(
+        workspace_id=workspace_id,
+        resource_id=other_resource_id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+    )
+    target_queued = _job(
+        workspace_id=workspace_id,
+        resource_id=target_resource_id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+    )
+    other_retry = _job(
+        workspace_id=workspace_id,
+        resource_id=other_resource_id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+        max_attempts=2,
+    )
+    target_retry = _job(
+        workspace_id=workspace_id,
+        resource_id=target_resource_id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+        max_attempts=2,
+    )
+    other_dead = _job(
+        workspace_id=workspace_id,
+        resource_id=other_resource_id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+        max_attempts=1,
+    )
+    target_dead = _job(
+        workspace_id=workspace_id,
+        resource_id=target_resource_id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+        max_attempts=1,
+    )
+
+    queue.enqueue(other_queued)
+    queue.enqueue(target_queued)
+    queue.retry_or_dead_letter(other_retry, delay_seconds=60, now=100)
+    queue.retry_or_dead_letter(target_retry, delay_seconds=60, now=100)
+    queue.retry_or_dead_letter(other_dead)
+    queue.retry_or_dead_letter(target_dead)
+
+    assert queue.list_queued(
+        1,
+        workspace_id=workspace_id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+        resource_id=target_resource_id,
+    ) == [target_queued]
+    assert queue.list_scheduled_retries(
+        1,
+        workspace_id=workspace_id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+        resource_id=target_resource_id,
+    ) == [target_retry.next_attempt()]
+    assert queue.list_dead_letters(
+        1,
+        workspace_id=workspace_id,
+        job_type=JobType.TEAM_EXECUTION_LOOP,
+        resource_id=target_resource_id,
+    ) == [target_dead.next_attempt()]
+
+
 def _job(
     max_attempts: int = 3,
     routing: dict[str, object] | None = None,
     priority: int = 0,
+    workspace_id: UUID | None = None,
+    resource_id: UUID | None = None,
+    job_type: JobType = JobType.AGENT_RUN,
 ) -> JobPayload:
-    workspace_id = uuid4()
+    workspace_id = workspace_id or uuid4()
+    resource_id = resource_id or uuid4()
     return JobPayload(
         workspace_id=workspace_id,
-        job_type=JobType.AGENT_RUN,
-        resource_id=uuid4(),
-        idempotency_key=f"agent.run:{workspace_id}:resource",
+        job_type=job_type,
+        resource_id=resource_id,
+        idempotency_key=f"{job_type}:{workspace_id}:{resource_id}",
         max_attempts=max_attempts,
         routing=routing or {},
         priority=priority,

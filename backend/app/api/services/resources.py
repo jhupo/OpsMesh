@@ -5,6 +5,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.service import AgentManagementService
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.agents import AgentProfileCreateRequest
 from backend.app.api.schemas.tasks import (
@@ -20,12 +21,12 @@ from backend.app.api.schemas.teams import (
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
 from backend.app.core.config import Settings
-from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.service import RuntimeSpaceService
+from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.snapshots import build_team_snapshot
@@ -35,7 +36,11 @@ T = TypeVar("T")
 
 
 class WorkspaceResourceService:
-    def __init__(self, session: Session, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        session: Session,
+        settings: Settings | None = None,
+    ) -> None:
         self._session = session
         self._settings = settings
 
@@ -45,10 +50,7 @@ class WorkspaceResourceService:
         page: PageParams,
         status: str | None = None,
     ) -> tuple[list[AgentProfile], int]:
-        statement = select(AgentProfile).where(AgentProfile.workspace_id == workspace_id)
-        if status is not None:
-            statement = statement.where(AgentProfile.status == status)
-        return self._page(statement.order_by(AgentProfile.created_at.desc()), page)
+        return AgentManagementService(self._session).list_agents(workspace_id, page, status)
 
     def create_agent(
         self,
@@ -56,49 +58,14 @@ class WorkspaceResourceService:
         data: AgentProfileCreateRequest,
         actor_user_id: UUID | None = None,
     ) -> AgentProfile:
-        if data.model_provider_credential_id is not None:
-            self._require_model_provider_credential(
-                workspace_id,
-                data.model_provider_credential_id,
-            )
-        agent = AgentProfile(workspace_id=workspace_id, **data.model_dump())
-        self._session.add(agent)
-        self._session.flush()
-        if actor_user_id is not None:
-            AuditService(self._session).record_user_action(
-                workspace_id=workspace_id,
-                user_id=actor_user_id,
-                action="agent.created",
-                target_type="agent_profile",
-                target_id=agent.id,
-                metadata={"name": agent.name, "role": agent.role},
-            )
-        self._session.commit()
-        self._session.refresh(agent)
-        return agent
+        return AgentManagementService(self._session).create_agent(
+            workspace_id,
+            data,
+            actor_user_id,
+        )
 
     def get_agent(self, workspace_id: UUID, agent_id: UUID) -> AgentProfile | None:
-        return self._session.scalar(
-            select(AgentProfile).where(
-                AgentProfile.workspace_id == workspace_id,
-                AgentProfile.id == agent_id,
-            )
-        )
-
-    def _require_model_provider_credential(
-        self,
-        workspace_id: UUID,
-        credential_id: UUID,
-    ) -> None:
-        credential = self._session.scalar(
-            select(ModelProviderCredential.id).where(
-                ModelProviderCredential.workspace_id == workspace_id,
-                ModelProviderCredential.id == credential_id,
-                ModelProviderCredential.status == "active",
-            )
-        )
-        if credential is None:
-            raise ValueError("Model provider credential not found")
+        return AgentManagementService(self._session).get_agent(workspace_id, agent_id)
 
     def list_teams(self, workspace_id: UUID, page: PageParams) -> tuple[list[AgentTeam], int]:
         statement = (
@@ -201,9 +168,11 @@ class WorkspaceResourceService:
         actor_user_id: UUID | None = None,
     ) -> AgentTeam:
         if data.runtime_space_id is not None:
-            RuntimeSpaceService(self._session).require_runtime_space(
-                workspace_id,
-                data.runtime_space_id,
+            RuntimeSpaceService(self._session).require_runtime_space_for_target(
+                workspace_id=workspace_id,
+                runtime_space_id=data.runtime_space_id,
+                target_type="workspace",
+                target_id=workspace_id,
             )
         if data.manager_agent_profile_id is not None:
             self._require_agent(workspace_id, data.manager_agent_profile_id)
@@ -356,15 +325,36 @@ class WorkspaceResourceService:
         queue: RedisQueue | None = None,
     ) -> Task:
         payload = data.model_dump()
-        if data.runtime_space_id is not None:
-            RuntimeSpaceService(self._session).require_runtime_space(
-                workspace_id,
-                data.runtime_space_id,
-            )
+        runtime_spaces = RuntimeSpaceService(self._session)
+        team = None
         if data.agent_team_id is not None:
             team = self._require_team(workspace_id, data.agent_team_id)
+        if data.runtime_space_id is not None:
+            if team is not None:
+                runtime_spaces.require_runtime_space_for_target(
+                    workspace_id=workspace_id,
+                    runtime_space_id=data.runtime_space_id,
+                    target_type="agent_team",
+                    target_id=team.id,
+                )
+            else:
+                runtime_spaces.require_runtime_space_for_target(
+                    workspace_id=workspace_id,
+                    runtime_space_id=data.runtime_space_id,
+                    target_type="workspace",
+                    target_id=workspace_id,
+                )
+        if team is not None:
             if payload.get("runtime_space_id") is None:
                 payload["runtime_space_id"] = team.runtime_space_id
+            runtime_space_id = _uuid_or_none(payload.get("runtime_space_id"))
+            if runtime_space_id is not None:
+                runtime_spaces.require_runtime_space_for_target(
+                    workspace_id=workspace_id,
+                    runtime_space_id=runtime_space_id,
+                    target_type="agent_team",
+                    target_id=team.id,
+                )
             payload["team_snapshot"] = build_team_snapshot(
                 self._session,
                 workspace_id=workspace_id,
@@ -523,10 +513,10 @@ class WorkspaceResourceService:
                 settings=self._settings,
             ).create_queued_run_for_task(task)
             if enqueue_run and run is not None:
-                RunOrchestrationService(self._session, queue=queue).enqueue_run(
-                    run,
-                    actor_user_id,
-                )
+                RunOrchestrationService(
+                    self._session,
+                    queue=queue,
+                ).enqueue_run(run, actor_user_id)
         self._append_task_message(
             task,
             "planning.regenerated",
@@ -620,11 +610,10 @@ class WorkspaceResourceService:
         workspace_id: UUID,
         page: PageParams,
     ) -> tuple[list[AuditEvent], int]:
-        statement = (
+        statement = AuditService(self._session, self._settings).apply_retention_to_statement(
             select(AuditEvent)
             .where(AuditEvent.workspace_id == workspace_id)
-            .order_by(AuditEvent.created_at.desc())
-        )
+        ).order_by(AuditEvent.created_at.desc())
         return self._page(statement, page)
 
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
@@ -684,26 +673,12 @@ class WorkspaceResourceService:
         message_type: str,
         payload: dict[str, object],
     ) -> TaskMessage:
-        next_sequence = (
-            self._session.scalar(
-                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
-                    TaskMessage.workspace_id == task.workspace_id,
-                    TaskMessage.task_id == task.id,
-                )
-            )
-            or 0
-        ) + 1
-        message = TaskMessage(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
+        return TaskMessageAppendService(self._session).append_for_task(
+            task,
             message_type=message_type,
-            sequence=next_sequence,
             body="Project plan regenerated for future work.",
             payload=payload,
         )
-        self._session.add(message)
-        self._session.flush([message])
-        return message
 
     def _require_team_member(
         self,
@@ -736,6 +711,14 @@ def _serializable_team_member_value(value: object) -> object:
     if isinstance(value, UUID):
         return str(value)
     return value
+
+
+def _uuid_or_none(value: object) -> UUID | None:
+    if value is None:
+        return None
+    if isinstance(value, UUID):
+        return value
+    return UUID(str(value))
 
 
 def _team_org_member_node(

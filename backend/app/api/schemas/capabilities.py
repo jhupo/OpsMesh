@@ -8,6 +8,12 @@ from backend.app.api.schemas.common import ORMModel, TimestampedModel
 from backend.app.api.schemas.redaction import (
     is_sensitive_payload_key,
     redact_sensitive_payload,
+    redact_sensitive_text,
+)
+from backend.app.secrets.service import (
+    external_vault_reference_metadata,
+    hosted_secret_metadata,
+    vault_reference_kind,
 )
 
 
@@ -331,6 +337,10 @@ class McpServerResponse(TimestampedModel):
     def _serialize_connection(self, connection: dict[str, object]) -> dict[str, object]:
         return _redacted_connection(connection)
 
+    @field_serializer("last_error")
+    def _serialize_last_error(self, value: str | None) -> str | None:
+        return redact_sensitive_text(value) if value is not None else None
+
 
 class McpToolAllowRequest(BaseModel):
     tool_name: str = Field(min_length=1, max_length=160)
@@ -385,13 +395,23 @@ class McpCredentialReferenceResponse(TimestampedModel):
     @property
     def external_ref_kind(self) -> str | None:
         raw_value = getattr(self, "external_ref", None)
-        if not isinstance(raw_value, str) or not raw_value:
-            return None
-        if ":" in raw_value:
-            return raw_value.split(":", 1)[0]
-        if "/" in raw_value:
-            return raw_value.split("/", 1)[0]
-        return "reference"
+        return vault_reference_kind(raw_value) if isinstance(raw_value, str) else None
+
+    @computed_field
+    @property
+    def secret_metadata(self) -> dict[str, object]:
+        if self.secret_fingerprint:
+            return hosted_secret_metadata(
+                provider="hosted",
+                encryption_key_id=self.encryption_key_id,
+                secret_fingerprint=self.secret_fingerprint,
+            ).to_api_dict()
+        raw_value = getattr(self, "external_ref", None)
+        external_ref = raw_value if isinstance(raw_value, str) else ""
+        return external_vault_reference_metadata(
+            provider=self.provider,
+            external_ref=external_ref,
+        ).to_api_dict()
 
 
 class McpToolDescriptor(BaseModel):
@@ -463,6 +483,10 @@ class McpCatalogServerResponse(BaseModel):
     tools: list[McpCatalogToolResponse]
     created_at: datetime
     updated_at: datetime
+
+    @field_serializer("last_error")
+    def _serialize_last_error(self, value: str | None) -> str | None:
+        return redact_sensitive_text(value) if value is not None else None
 
 
 class McpToolCallLogRequest(BaseModel):

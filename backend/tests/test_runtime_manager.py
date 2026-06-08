@@ -131,6 +131,14 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
 
     assert docker.created_requests[0].limits == limits
     assert docker.created_requests[0].network_disabled is True
+    assert docker.created_requests[0].hardening.cap_drop == ("ALL",)
+    assert docker.created_requests[0].hardening.security_opt == ("no-new-privileges:true",)
+    assert docker.created_requests[0].hardening.read_only_rootfs is True
+    assert [tmpfs.target for tmpfs in docker.created_requests[0].hardening.tmpfs] == [
+        "/tmp",
+        "/var/tmp",
+    ]
+    assert docker.created_requests[0].hardening.user_enforced is False
     assert docker.created_requests[0].workspace_id == str(workspace.id)
     assert docker.created_requests[0].runtime_id == str(runtime.id)
     assert docker.created_requests[0].runtime_space_id == str(runtime_space.id)
@@ -154,6 +162,8 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     assert lease.status == "released"
     assert lease.released_at is not None
     assert lease.docker_container_id == "container-123"
+    assert lease.lease_metadata["hardening"]["cap_drop"] == ["ALL"]
+    assert lease.lease_metadata["hardening"]["read_only_rootfs"] is True
     assert [event.event_type for event in events] == [
         "runtime.created",
         "runtime.lease_acquired",
@@ -163,6 +173,16 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
         "runtime.deleted",
     ]
     assert events[0].event_metadata["isolation"]["workspace_mount"]["target"] == "/workspace"
+    assert events[0].event_metadata["hardening"]["cap_drop"] == ["ALL"]
+    assert events[0].event_metadata["hardening"]["security_opt"] == [
+        "no-new-privileges:true"
+    ]
+    assert events[0].event_metadata["hardening"]["read_only_rootfs"] is True
+    assert events[0].event_metadata["hardening"]["user"] == {
+        "value": None,
+        "policy": "image_default",
+        "enforced": False,
+    }
     assert events[1].event_metadata["runtime_lease_id"] == str(lease.id)
     assert events[2].event_metadata["runtime_lease_id"] == str(lease.id)
     assert events[-1].event_metadata["cleanup"]["action"] == "delete"
@@ -182,6 +202,21 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     assert space_events[1].event_metadata["runtime_status"] == "created"
     assert runtime.capabilities["isolation"]["workspace_id"] == str(workspace.id)
     assert runtime.capabilities["isolation"]["runtime_space_id"] == str(runtime_space.id)
+    assert runtime.capabilities["hardening"]["writable_paths"] == [
+        {"type": "volume", "target": "/workspace", "mode": "rw"},
+        {
+            "type": "tmpfs",
+            "target": "/tmp",
+            "mode": "rw,noexec,nosuid,nodev",
+            "size_mb": 64,
+        },
+        {
+            "type": "tmpfs",
+            "target": "/var/tmp",
+            "mode": "rw,noexec,nosuid,nodev",
+            "size_mb": 16,
+        },
+    ]
     assert runtime.capabilities["managed_resources"]["docker_volumes"] == [
         docker.created_requests[0].mounts[0].source
     ]
@@ -992,6 +1027,18 @@ def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch
     assert container_id == "container-abc"
     assert command[command.index("--pids-limit") + 1] == "96"
     assert command[command.index("--storage-opt") + 1] == "size=2048m"
+    assert command[command.index("--cap-drop") + 1] == "ALL"
+    assert command[command.index("--security-opt") + 1] == "no-new-privileges:true"
+    assert "--read-only" in command
+    tmpfs_values = [
+        value
+        for index, value in enumerate(command)
+        if index > 0 and command[index - 1] == "--tmpfs"
+    ]
+    assert tmpfs_values == [
+        "/tmp:rw,noexec,nosuid,nodev,size=64m",
+        "/var/tmp:rw,noexec,nosuid,nodev,size=16m",
+    ]
     assert "--mount" in command
     assert command[command.index("--workdir") + 1] == "/workspace"
     assert "chaincloud.runtime_id=runtime-1" in command

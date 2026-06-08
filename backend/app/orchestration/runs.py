@@ -9,16 +9,25 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.agent_messages.models import AgentMessage
+from backend.app.agent_messages.service import AgentMailboxService
 from backend.app.agent_runtime.contracts import (
     AgentRunner,
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
     AgentRuntimeToolContinuation,
+    AgentRunTracing,
 )
 from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.event_mapping import RuntimeEventTaskMessageMapper
-from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
+from backend.app.agent_runtime.factory import build_agent_runner
+from backend.app.agent_runtime.session_management import PersistentAgentSessionManagementService
+from backend.app.agent_runtime.sessions import (
+    PersistentAgentSession,
+    PersistentAgentSessionRef,
+    SQLAlchemyAgentSession,
+)
 from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.models import AgentProfile
 from backend.app.audit.service import AuditService
@@ -30,6 +39,15 @@ from backend.app.capabilities.models import (
     WorkspaceSkillInstall,
 )
 from backend.app.core.config import Settings
+from backend.app.core.trace_context import current_trace_metadata, with_current_trace_metadata
+from backend.app.memory.run_capture import AgentRunMemoryCaptureService
+from backend.app.model_providers.metadata import budget_is_exhausted
+from backend.app.model_providers.model_api import (
+    canonical_model_api,
+    model_api_for_agent_provider,
+    model_api_options_for_provider,
+)
+from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.model_providers.resolution import ModelProviderResolutionService
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.orchestration.scheduler import WorkspaceScheduler
@@ -42,10 +60,13 @@ from backend.app.runs.status import RunStatus, require_run_transition
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceReservation
 from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.secrets.service import SecretEncryptionService
+from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.teams.runtime import TeamRuntimeService, team_bound_runtime_id
 from backend.app.teams.snapshots import build_team_snapshot
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.lease_lifecycle import mark_agent_run_worker_cancel_requested
@@ -91,8 +112,8 @@ class RunOrchestrationService:
     ) -> None:
         self._session = session
         self._queue = queue
-        self._agent_runner = agent_runner or OpenAIAgentsRunner()
         self._settings = settings
+        self._agent_runner = agent_runner or build_agent_runner(settings)
 
     def create_queued_run_for_task(self, task: Task) -> AgentRun | None:
         existing_run = self._existing_active_task_run(task)
@@ -108,6 +129,7 @@ class RunOrchestrationService:
             generic_run = AgentRun(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                runtime_id=self._team_bound_runtime_id(task),
                 runtime_space_id=task.runtime_space_id,
                 status=RunStatus.QUEUED.value,
                 input={"task_id": str(task.id), "title": task.title},
@@ -185,6 +207,7 @@ class RunOrchestrationService:
         scheduled_steps = self._scheduler().select_runnable_steps(
             workspace_id=workspace_id,
             candidate_steps=candidates,
+            policy_override=self._team_scheduler_policy(workspace_id, team_id),
         ).runnable_steps
         runs: list[AgentRun] = []
         for step in scheduled_steps:
@@ -292,6 +315,22 @@ class RunOrchestrationService:
         self._session.commit()
         self._session.refresh(run)
         return run
+
+    def _team_scheduler_policy(
+        self,
+        workspace_id: UUID,
+        team_id: UUID,
+    ) -> dict[str, object] | None:
+        team = self._session.scalar(
+            select(AgentTeam).where(
+                AgentTeam.workspace_id == workspace_id,
+                AgentTeam.id == team_id,
+            )
+        )
+        if team is None or not isinstance(team.default_task_policy, dict):
+            return None
+        scheduler = team.default_task_policy.get("scheduler")
+        return dict(scheduler) if isinstance(scheduler, dict) else None
 
     def retry_failed_run(
         self,
@@ -487,6 +526,7 @@ class RunOrchestrationService:
 
             self._append_run_claimed_event(run, job)
             self._mark_run_started(run)
+            self._session.commit()
             used_provider_credentials: set[UUID] = set()
             model_provider_override: dict[str, Any] | None = None
             fallback_selected = False
@@ -651,8 +691,10 @@ class RunOrchestrationService:
         run.status = RunStatus.COMPLETED.value
         run.output = _run_output_payload(result)
         run.completed_at = datetime.now(UTC)
+        self._sync_provider_conversation_id(run)
         self._append_event(run, "run.completed", "Run completed")
         self._release_runtime_space_reservations(run, released_at=run.completed_at)
+        self._capture_and_compact_completed_run(run, result)
 
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
@@ -720,6 +762,63 @@ class RunOrchestrationService:
                         run=run,
                         pm_acceptance=pm_acceptance,
                     )
+
+    def _capture_and_compact_completed_run(
+        self,
+        run: AgentRun,
+        result: AgentRunResult,
+    ) -> None:
+        profile = self._profile_for_memory_policy(run)
+        if profile is None:
+            return
+        task = self._task_for_memory_policy(run)
+        AgentRunMemoryCaptureService(self._session).capture_completed_run(
+            run,
+            result,
+            profile=profile,
+            task=task,
+        )
+        self._compact_persistent_session_for_completed_run(run, profile=profile, task=task)
+
+    def _profile_for_memory_policy(self, run: AgentRun) -> AgentProfile | None:
+        if run.agent_profile_id is None:
+            return None
+        profile = self._session.get(AgentProfile, run.agent_profile_id)
+        if profile is None or profile.workspace_id != run.workspace_id:
+            return None
+        return profile
+
+    def _task_for_memory_policy(self, run: AgentRun) -> Task | None:
+        if run.task_id is None:
+            return None
+        task = self._session.get(Task, run.task_id)
+        if task is None or task.workspace_id != run.workspace_id:
+            return None
+        return task
+
+    def _compact_persistent_session_for_completed_run(
+        self,
+        run: AgentRun,
+        *,
+        profile: AgentProfile,
+        task: Task | None,
+    ) -> None:
+        if profile.id is None:
+            return
+        ref = self._persistent_session_ref_for_run(run, task, profile)
+        persistent_session = self._session.scalar(
+            select(PersistentAgentSession).where(
+                PersistentAgentSession.workspace_id == run.workspace_id,
+                PersistentAgentSession.session_key == ref.session_key,
+            )
+        )
+        if persistent_session is None:
+            return
+        PersistentAgentSessionManagementService(self._session).compact_if_needed(
+            workspace_id=run.workspace_id,
+            session_id=persistent_session.id,
+            policy=profile.memory_policy,
+        )
 
     def _mark_run_failed(self, run: AgentRun, exc: Exception) -> None:
         require_run_transition(RunStatus(run.status), RunStatus.FAILED)
@@ -845,7 +944,9 @@ class RunOrchestrationService:
             "Model provider handled the run",
             {
                 "model_provider": {
+                    "provider": request.provider,
                     "model": request.model,
+                    "model_api": request.model_api,
                     "credential_id": str(request.model_provider_credential_id)
                     if request.model_provider_credential_id is not None
                     else None,
@@ -997,6 +1098,8 @@ class RunOrchestrationService:
                 if run.agent_profile_id is not None
                 else None,
                 "model": request.model,
+                "model_api": request.model_api,
+                "provider": request.provider,
                 "credential_id": str(request.model_provider_credential_id)
                 if request.model_provider_credential_id is not None
                 else None,
@@ -1011,20 +1114,23 @@ class RunOrchestrationService:
         exc: Exception,
     ) -> None:
         error = normalize_agent_error(exc)
-        self._append_event(
+        event = self._append_event(
             run,
             "model_provider.fallback_unavailable",
             "Model provider fallback was unavailable",
             {
                 "reason": error.as_dict(),
                 "failed_provider": {
+                    "provider": request.provider,
                     "model": request.model,
+                    "model_api": request.model_api,
                     "credential_id": str(request.model_provider_credential_id)
                     if request.model_provider_credential_id is not None
                     else None,
                 },
             },
         )
+        self._append_team_runtime_model_provider_event(run, event)
 
     def _audit_model_provider_fallback_unavailable(
         self,
@@ -1050,7 +1156,9 @@ class RunOrchestrationService:
                 else None,
                 "reason": error.as_dict(),
                 "failed_provider": {
+                    "provider": request.provider,
                     "model": request.model,
+                    "model_api": request.model_api,
                     "credential_id": str(request.model_provider_credential_id)
                     if request.model_provider_credential_id is not None
                     else None,
@@ -1080,12 +1188,58 @@ class RunOrchestrationService:
             event_type=event_type,
             sequence=next_sequence,
             message=message,
-            event_metadata=metadata or {},
+            event_metadata=redact_sensitive_payload(with_current_trace_metadata(metadata)),
             created_at=datetime.now(UTC),
         )
         self._session.add(event)
         self._session.flush([event])
         return event
+
+    def _append_team_runtime_model_provider_event(
+        self,
+        run: AgentRun,
+        event: RunEvent,
+    ) -> None:
+        if run.task_id is None:
+            return
+        task = self._session.get(Task, run.task_id)
+        if task is None or task.workspace_id != run.workspace_id or task.agent_team_id is None:
+            return
+        runtime_state = TeamRuntimeService(self._session).get_state(
+            workspace_id=run.workspace_id,
+            team_id=task.agent_team_id,
+            initialize=True,
+        )
+        if runtime_state is None or runtime_state.thread_id is None:
+            return
+        team = self._session.get(AgentTeam, task.agent_team_id)
+        if team is None or team.workspace_id != run.workspace_id:
+            return
+        sender_agent_id = team.manager_agent_profile_id or run.agent_profile_id
+        message = AgentMessage(
+            workspace_id=run.workspace_id,
+            thread_id=runtime_state.thread_id,
+            task_id=task.id,
+            agent_team_id=task.agent_team_id,
+            sender_agent_profile_id=sender_agent_id,
+            recipient_agent_profile_id=run.agent_profile_id or sender_agent_id,
+            message_type=f"team.runtime.{event.event_type}",
+            body=event.message,
+            payload={
+                "run_id": str(run.id),
+                "run_event_id": str(event.id),
+                "task_id": str(task.id),
+                "task_step_id": str(run.task_step_id) if run.task_step_id is not None else None,
+                "agent_profile_id": str(run.agent_profile_id)
+                if run.agent_profile_id is not None
+                else None,
+                "event_metadata": dict(event.event_metadata or {}),
+            },
+            status="sent",
+            created_at=event.created_at,
+        )
+        self._session.add(message)
+        self._session.flush([message])
 
     def _append_task_message(
         self,
@@ -1099,29 +1253,16 @@ class RunOrchestrationService:
         agent_profile_id: UUID | None = None,
         payload: dict[str, object] | None = None,
     ) -> TaskMessage:
-        next_sequence = (
-            self._session.scalar(
-                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
-                    TaskMessage.workspace_id == workspace_id,
-                    TaskMessage.task_id == task_id,
-                )
-            )
-            or 0
-        ) + 1
-        message = TaskMessage(
+        return TaskMessageAppendService(self._session).append(
             workspace_id=workspace_id,
             task_id=task_id,
             task_step_id=task_step_id,
             agent_run_id=agent_run_id,
             agent_profile_id=agent_profile_id,
             message_type=message_type,
-            sequence=next_sequence,
             body=body,
             payload=payload or {},
         )
-        self._session.add(message)
-        self._session.flush([message])
-        return message
 
     def _map_runtime_events_to_task_messages(
         self,
@@ -1190,9 +1331,11 @@ class RunOrchestrationService:
             "agent_profile_id": str(profile.id) if profile.id is not None else None,
             "agent_role": profile.role,
             "run_model": model_provider["model"],
+            "model_provider_provider": model_provider["provider"],
             "model_provider_credential_id": str(model_provider["model_provider_credential_id"])
             if model_provider["model_provider_credential_id"] is not None
             else None,
+            "model_provider_model_api": model_provider["model_api"],
             "authorization_scope": "workspace",
             "authorized_workspace_id": str(run.workspace_id),
             "authorized_task_id": str(task.id) if task is not None else None,
@@ -1200,6 +1343,27 @@ class RunOrchestrationService:
             "authorization_snapshot_version": authorization_snapshot.get("version"),
         }
         metadata.update(step_context)
+        metadata.update(self._mailbox_context_for_run(run, task, profile))
+        metadata.update(self._team_context_for_run(run, task, profile))
+        metadata.update(current_trace_metadata())
+        persistent_session_ref = self._persistent_session_ref_for_run(run, task, profile)
+        persistent_session = self._persistent_session_for_run(
+            run,
+            task,
+            profile,
+            ref=persistent_session_ref,
+        )
+        if persistent_session is not None:
+            metadata["persistent_session_key"] = persistent_session.session_id
+            metadata["persistent_session_mode"] = "sdk_session"
+        provider_continuation = self._provider_continuation_for_run(
+            run=run,
+            session_ref=persistent_session_ref,
+        )
+        if provider_continuation["previous_response_id"] is not None:
+            metadata["previous_response_id"] = provider_continuation["previous_response_id"]
+        if provider_continuation["conversation_id"] is not None:
+            metadata["conversation_id"] = provider_continuation["conversation_id"]
         continuations = _tool_continuations_for_run(run.input)
         if continuations:
             metadata["tool_continuations"] = [
@@ -1210,6 +1374,13 @@ class RunOrchestrationService:
                 }
                 for item in continuations
             ]
+        tracing = _agent_run_tracing(
+            run=run,
+            task=task,
+            profile=profile,
+            allowed_tools=allowed_tools,
+            metadata=metadata,
+        )
         return AgentRunRequest(
             agent_profile=profile,
             input_text=self._input_text_for_run(run),
@@ -1222,8 +1393,10 @@ class RunOrchestrationService:
                 metadata=metadata,
             ),
             model=model_provider["model"],
+            provider=model_provider["provider"],
             base_url=model_provider["base_url"],
             api_key=model_provider["api_key"],
+            model_api=model_provider["model_api"],
             model_provider_credential_id=model_provider["model_provider_credential_id"],
             tool_executor=BackendToolExecutor.for_mcp_adapter(
                 self._session,
@@ -1232,6 +1405,226 @@ class RunOrchestrationService:
             if allowed_tools
             else None,
             continuations=continuations,
+            session=persistent_session,
+            previous_response_id=provider_continuation["previous_response_id"],
+            conversation_id=provider_continuation["conversation_id"],
+            tracing=tracing,
+        )
+
+    def _persistent_session_for_run(
+        self,
+        run: AgentRun,
+        task: Task | None,
+        profile: AgentProfile,
+        ref: PersistentAgentSessionRef | None = None,
+    ) -> SQLAlchemyAgentSession | None:
+        if profile.id is None:
+            return None
+        ref = ref or self._persistent_session_ref_for_run(run, task, profile)
+        return SQLAlchemyAgentSession(
+            db_session=self._session,
+            ref=ref,
+            agent_profile_id=profile.id,
+            agent_team_id=task.agent_team_id if task is not None else None,
+            task_id=task.id if task is not None and task.agent_team_id is None else None,
+            metadata={
+                "agent_role": profile.role,
+                "source": "run_orchestration",
+            },
+        )
+
+    def _provider_continuation_for_run(
+        self,
+        *,
+        run: AgentRun,
+        session_ref: PersistentAgentSessionRef,
+    ) -> dict[str, str | None]:
+        persistent_session = self._session.scalar(
+            select(PersistentAgentSession).where(
+                PersistentAgentSession.workspace_id == session_ref.workspace_id,
+                PersistentAgentSession.session_key == session_ref.session_key,
+            )
+        )
+        previous_run = self._latest_completed_run_for_session(run, session_ref)
+        return {
+            "previous_response_id": _sdk_continuation_last_response_id(previous_run),
+            "conversation_id": persistent_session.openai_conversation_id
+            if persistent_session is not None
+            else None,
+        }
+
+    def _latest_completed_run_for_session(
+        self,
+        run: AgentRun,
+        session_ref: PersistentAgentSessionRef,
+    ) -> AgentRun | None:
+        statement = select(AgentRun).where(
+            AgentRun.workspace_id == run.workspace_id,
+            AgentRun.id != run.id,
+            AgentRun.agent_profile_id == run.agent_profile_id,
+            AgentRun.status == RunStatus.COMPLETED.value,
+            AgentRun.output.is_not(None),
+        )
+        if session_ref.scope_type == "task_agent":
+            task_id = _uuid_or_none(session_ref.scope_id.split(":", 1)[0])
+            if task_id is None:
+                return None
+            statement = statement.where(AgentRun.task_id == task_id)
+        elif session_ref.scope_type == "team_agent":
+            team_id = _uuid_or_none(session_ref.scope_id.split(":", 1)[0])
+            if team_id is None:
+                return None
+            statement = statement.join(Task, Task.id == AgentRun.task_id).where(
+                Task.agent_team_id == team_id,
+            )
+        elif session_ref.scope_type != "workspace_agent":
+            return None
+        return self._session.scalar(
+            statement.order_by(AgentRun.completed_at.desc().nullslast(), AgentRun.updated_at.desc())
+        )
+
+    def _sync_provider_conversation_id(self, run: AgentRun) -> None:
+        conversation_id = _sdk_continuation_conversation_id(run)
+        if conversation_id is None:
+            return
+        task = self._authorized_task_for_run(run)
+        profile = self._authorized_profile_for_run(run)
+        if profile is None:
+            return
+        session_ref = self._persistent_session_ref_for_run(run, task, profile)
+        persistent_session = self._session.scalar(
+            select(PersistentAgentSession).where(
+                PersistentAgentSession.workspace_id == session_ref.workspace_id,
+                PersistentAgentSession.session_key == session_ref.session_key,
+            )
+        )
+        if persistent_session is None:
+            return
+        persistent_session.openai_conversation_id = conversation_id
+        persistent_session.updated_at = datetime.now(UTC)
+        self._session.flush([persistent_session])
+
+    def _mailbox_context_for_run(
+        self,
+        run: AgentRun,
+        task: Task | None,
+        profile: AgentProfile,
+    ) -> dict[str, object]:
+        if profile.id is None:
+            return {}
+        thread_id: UUID | None = None
+        task_id: UUID | None = None
+        if task is not None and task.agent_team_id is not None:
+            runtime_state = TeamRuntimeService(self._session).get_state(
+                workspace_id=run.workspace_id,
+                team_id=task.agent_team_id,
+                initialize=True,
+            )
+            thread_id = runtime_state.thread_id if runtime_state is not None else None
+        else:
+            task_id = run.task_id
+        scope = _mailbox_scope_metadata(thread_id=thread_id, task_id=task_id)
+        inbox = AgentMailboxService(self._session).get_agent_inbox(
+            run.workspace_id,
+            profile.id,
+            latest_limit=5,
+            unread_only=True,
+            thread_id=thread_id,
+            task_id=task_id,
+        )
+        latest_messages = inbox.get("latest_messages")
+        return {
+            "agent_mailbox": {
+                "scope": scope,
+                "thread_count": inbox.get("thread_count", 0),
+                "message_count": inbox.get("message_count", 0),
+                "unread_count": inbox.get("unread_count", 0),
+                "pending_count": inbox.get("pending_count", 0),
+                "latest_unread_messages": [
+                    _mailbox_message_context(message)
+                    for message in latest_messages
+                    if isinstance(message, AgentMessage)
+                ]
+                if isinstance(latest_messages, list)
+                else [],
+            }
+        }
+
+    def _team_context_for_run(
+        self,
+        run: AgentRun,
+        task: Task | None,
+        profile: AgentProfile,
+    ) -> dict[str, object]:
+        if task is None or task.agent_team_id is None:
+            return {}
+        team = self._session.scalar(
+            select(AgentTeam).where(
+                AgentTeam.workspace_id == run.workspace_id,
+                AgentTeam.id == task.agent_team_id,
+            )
+        )
+        if team is None:
+            return {}
+        runtime_state = TeamRuntimeService(self._session).get_state(
+            workspace_id=run.workspace_id,
+            team_id=team.id,
+            initialize=True,
+        )
+        member = self._session.scalar(
+            select(AgentTeamMember).where(
+                AgentTeamMember.workspace_id == run.workspace_id,
+                AgentTeamMember.agent_team_id == team.id,
+                AgentTeamMember.agent_profile_id == profile.id,
+                AgentTeamMember.status == "active",
+            )
+        )
+        members = list(
+            self._session.scalars(
+                select(AgentTeamMember)
+                .where(
+                    AgentTeamMember.workspace_id == run.workspace_id,
+                    AgentTeamMember.agent_team_id == team.id,
+                    AgentTeamMember.status == "active",
+                )
+                .order_by(AgentTeamMember.order_index.asc(), AgentTeamMember.id.asc())
+            )
+        )
+        return {
+            "team_context": {
+                "team_id": str(team.id),
+                "team_name": team.name,
+                "team_type": team.team_type,
+                "team_status": team.status,
+                "manager_agent_profile_id": str(team.manager_agent_profile_id)
+                if team.manager_agent_profile_id is not None
+                else None,
+                "current_member": _team_member_context(member),
+                "members": [_team_member_context(item) for item in members],
+                "runtime": _team_runtime_context(runtime_state),
+            }
+        }
+
+    def _persistent_session_ref_for_run(
+        self,
+        run: AgentRun,
+        task: Task | None,
+        profile: AgentProfile,
+    ) -> PersistentAgentSessionRef:
+        if task is not None and task.agent_team_id is not None:
+            scope_type = "team_agent"
+            scope_id = f"{task.agent_team_id}:{profile.id}"
+        elif task is not None:
+            scope_type = "task_agent"
+            scope_id = f"{task.id}:{profile.id}"
+        else:
+            scope_type = "workspace_agent"
+            scope_id = str(profile.id)
+        return PersistentAgentSessionRef(
+            session_key=f"{run.workspace_id}:{scope_type}:{scope_id}",
+            workspace_id=run.workspace_id,
+            scope_type=scope_type,
+            scope_id=scope_id,
         )
 
     def _validate_job_scope(self, run: AgentRun, job: JobPayload) -> None:
@@ -1245,9 +1638,15 @@ class RunOrchestrationService:
     def _mcp_secret_service(self) -> SecretEncryptionService | None:
         if self._settings is None:
             return None
+        return self._secret_service()
+
+    def _secret_service(self) -> SecretEncryptionService:
+        if self._settings is None:
+            raise ValueError("Settings are required for secret encryption")
         return SecretEncryptionService(
             secret=self._settings.credential_encryption_secret,
             key_id=self._settings.credential_encryption_key_id,
+            previous_secrets=self._settings.credential_encryption_previous_secrets,
         )
 
     def _authorized_task_for_run(self, run: AgentRun) -> Task | None:
@@ -1282,22 +1681,34 @@ class RunOrchestrationService:
         if self._settings is None:
             return {
                 "model": profile.model,
+                "provider": None,
                 "base_url": None,
                 "api_key": None,
+                "model_api": _model_api(profile.model_settings),
                 "model_provider_credential_id": None,
             }
         snapshot = self._authorization_snapshot_for_run(run).get("model_provider")
         credential_id = profile.model_provider_credential_id
         agent_model = profile.model
+        prefer_model_api = False
         if isinstance(snapshot, dict):
-            credential_id = _uuid_or_none(snapshot.get("credential_id"))
-            selected_model = snapshot.get("selected_model")
-            if isinstance(selected_model, str) and selected_model:
-                agent_model = selected_model
+            source = snapshot.get("source")
+            if source == "agent_override":
+                credential_id = _uuid_or_none(snapshot.get("credential_id"))
+                selected_model = snapshot.get("selected_model")
+                if isinstance(selected_model, str) and selected_model:
+                    agent_model = selected_model
+            model_api = canonical_model_api(snapshot.get("model_api"))
+            prefer_model_api = "model_api" in snapshot
+        else:
+            model_api = _model_api(profile.model_settings)
+            prefer_model_api = model_api is not None
         return self._resolve_model_provider(
             workspace_id=run.workspace_id,
             credential_id=credential_id,
             agent_model=agent_model,
+            model_api=model_api,
+            prefer_model_api=prefer_model_api,
         )
 
     def _resolve_model_provider(
@@ -1306,20 +1717,22 @@ class RunOrchestrationService:
         workspace_id: UUID,
         credential_id: UUID | None,
         agent_model: str,
+        model_api: str | None = None,
+        prefer_model_api: bool = False,
     ) -> dict[str, Any]:
         if self._settings is None:
             return {
                 "model": agent_model,
+                "provider": None,
                 "base_url": None,
                 "api_key": None,
+                "model_api": canonical_model_api(model_api),
                 "model_provider_credential_id": None,
             }
+        model_api = canonical_model_api(model_api)
         resolved = ModelProviderCredentialService(
             self._session,
-            SecretEncryptionService(
-                secret=self._settings.credential_encryption_secret,
-                key_id=self._settings.credential_encryption_key_id,
-            ),
+            self._secret_service(),
         ).resolve_for_agent(
             workspace_id=workspace_id,
             agent_credential_id=credential_id,
@@ -1327,8 +1740,15 @@ class RunOrchestrationService:
         )
         return {
             "model": resolved.model,
+            "provider": resolved.provider,
             "base_url": resolved.base_url,
             "api_key": resolved.api_key,
+            "model_api": _effective_resolved_model_api(
+                provider=resolved.provider,
+                resolved_model_api=resolved.model_api,
+                requested_model_api=model_api,
+                prefer_requested=prefer_model_api,
+            ),
             "model_provider_credential_id": resolved.credential_id,
         }
 
@@ -1341,10 +1761,7 @@ class RunOrchestrationService:
             return
         ModelProviderCredentialService(
             self._session,
-            SecretEncryptionService(
-                secret=self._settings.credential_encryption_secret,
-                key_id=self._settings.credential_encryption_key_id,
-            ),
+            self._secret_service(),
         ).record_success(workspace_id=run.workspace_id, credential_id=credential_id)
 
     def _record_model_provider_failure(
@@ -1358,10 +1775,7 @@ class RunOrchestrationService:
         error = normalize_agent_error(exc)
         ModelProviderCredentialService(
             self._session,
-            SecretEncryptionService(
-                secret=self._settings.credential_encryption_secret,
-                key_id=self._settings.credential_encryption_key_id,
-            ),
+            self._secret_service(),
         ).record_failure(
             workspace_id=run.workspace_id,
             credential_id=credential_id,
@@ -1413,14 +1827,16 @@ class RunOrchestrationService:
                 agent_model=str(selected_model),
             ).as_dict()
             snapshot["source"] = "fallback_policy"
-            self._append_event(
+            event = self._append_event(
                 run,
                 "model_provider.fallback_selected",
                 "Model provider fallback selected",
                 {
                     "reason": error.as_dict(),
                     "failed_provider": {
+                        "provider": failed_request.provider,
                         "model": failed_request.model,
+                        "model_api": failed_request.model_api,
                         "credential_id": str(failed_request.model_provider_credential_id)
                         if failed_request.model_provider_credential_id is not None
                         else None,
@@ -1428,6 +1844,7 @@ class RunOrchestrationService:
                     "model_provider": snapshot,
                 },
             )
+            self._append_team_runtime_model_provider_event(run, event)
             return model_provider
         return None
 
@@ -1454,6 +1871,9 @@ class RunOrchestrationService:
             return str(run.input)
 
         parts = [task.title, task.description]
+        team_context_text = self._team_context_text_for_run(run, task)
+        if team_context_text:
+            parts.append(team_context_text)
         if run.task_step_id is not None:
             step = self._session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
@@ -1472,6 +1892,34 @@ class RunOrchestrationService:
                 if previous_summaries:
                     parts.append("Completed step summaries:\n" + "\n".join(previous_summaries))
         return "\n\n".join(part for part in parts if part).strip()
+
+    def _team_context_text_for_run(self, run: AgentRun, task: Task) -> str:
+        if task.agent_team_id is None:
+            return ""
+        team = self._session.scalar(
+            select(AgentTeam).where(
+                AgentTeam.workspace_id == run.workspace_id,
+                AgentTeam.id == task.agent_team_id,
+            )
+        )
+        if team is None:
+            return ""
+        runtime_state = TeamRuntimeService(self._session).get_state(
+            workspace_id=run.workspace_id,
+            team_id=team.id,
+            initialize=True,
+        )
+        runtime_status = (
+            f"{runtime_state.status}/{runtime_state.runtime_status}"
+            if runtime_state is not None
+            else "unknown"
+        )
+        return (
+            "Team context:\n"
+            f"- Team: {team.name} ({team.team_type})\n"
+            f"- Runtime: {runtime_status}\n"
+            "- Use agent mailbox tools to read handoffs and coordinate with teammates."
+        )
 
     def _allowed_tools_for_profile(self, profile: AgentProfile) -> tuple[str, ...]:
         tool_policy = profile.tool_policy if isinstance(profile.tool_policy, dict) else {}
@@ -1926,16 +2374,22 @@ class RunOrchestrationService:
             if step.assigned_agent_profile_id is not None
             else None
         )
+        agent_snapshot = _team_snapshot_agent_for_profile(
+            task.team_snapshot,
+            step.assigned_agent_profile_id,
+        )
         authorization_snapshot = self._build_authorization_snapshot(
             task,
             step,
             profile,
+            agent_snapshot=agent_snapshot,
         )
         run = AgentRun(
             workspace_id=task.workspace_id,
             task_id=task.id,
             task_step_id=step.id,
             agent_profile_id=step.assigned_agent_profile_id,
+            runtime_id=self._team_bound_runtime_id(task),
             runtime_space_id=step.runtime_space_id or task.runtime_space_id,
             status=RunStatus.QUEUED.value,
             input={
@@ -1987,7 +2441,33 @@ class RunOrchestrationService:
                 released_at=datetime.now(UTC),
             )
             return None
-        run = self._create_run_for_step(task, step)
+        try:
+            run = self._create_run_for_step(task, step)
+        except ValueError as exc:
+            WorkspaceQuotaService(self._session).release_reservation(
+                workspace_reservation_result.reservation,
+                released_at=datetime.now(UTC),
+            )
+            if reservation is not None:
+                RuntimeSpaceService(self._session).release_reservation_by_key(
+                    workspace_id=reservation.workspace_id,
+                    runtime_space_id=reservation.runtime_space_id,
+                    reservation_key=reservation.reservation_key,
+                    released_at=datetime.now(UTC),
+                )
+            self._mark_step_scheduling_blocked(
+                step,
+                "model_provider_unavailable",
+                details={
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                    "model_provider": self._model_provider_blocked_details(
+                        task.workspace_id,
+                        step,
+                    ),
+                },
+            )
+            return None
         WorkspaceQuotaService(self._session).attach_reservation_to_run(
             workspace_reservation_result.reservation,
             run.id,
@@ -2147,6 +2627,8 @@ class RunOrchestrationService:
         task: Task,
         step: TaskStep,
         profile: AgentProfile | None,
+        *,
+        agent_snapshot: dict[str, object] | None = None,
     ) -> dict[str, object]:
         allowed_tools = self._allowed_tools_for_profile(profile) if profile is not None else ()
         tool_policy = profile.tool_policy if profile is not None else {}
@@ -2154,7 +2636,11 @@ class RunOrchestrationService:
         memory_policy = profile.memory_policy if profile is not None else {}
         approval_policy = profile.approval_policy if profile is not None else {}
         installed_skills = self._installed_skill_snapshots(task.workspace_id, profile)
-        model_provider = self._model_provider_snapshot(task.workspace_id, profile)
+        model_provider = self._model_provider_snapshot(
+            task.workspace_id,
+            profile,
+            agent_snapshot=agent_snapshot,
+        )
         return {
             "version": 1,
             "workspace_id": str(task.workspace_id),
@@ -2193,14 +2679,98 @@ class RunOrchestrationService:
         self,
         workspace_id: UUID,
         profile: AgentProfile | None,
+        *,
+        agent_snapshot: dict[str, object] | None = None,
     ) -> dict[str, object]:
-        agent_model = profile.model if profile is not None else "gpt-4.1"
-        credential_id = profile.model_provider_credential_id if profile is not None else None
-        return ModelProviderResolutionService(self._session).resolve_snapshot_for_agent(
+        agent_model = (
+            _optional_string(agent_snapshot.get("model"))
+            if agent_snapshot is not None
+            else None
+        ) or (profile.model if profile is not None else "gpt-4.1")
+        credential_id = (
+            _uuid_or_none(agent_snapshot.get("model_provider_credential_id"))
+            if agent_snapshot is not None
+            else None
+        )
+        if credential_id is None and agent_snapshot is None and profile is not None:
+            credential_id = profile.model_provider_credential_id
+        agent_model_settings = (
+            {"model_api": agent_snapshot.get("model_api")}
+            if agent_snapshot is not None and "model_api" in agent_snapshot
+            else profile.model_settings
+            if profile is not None
+            else None
+        )
+        snapshot = ModelProviderResolutionService(self._session).resolve_snapshot_for_agent(
             workspace_id=workspace_id,
             agent_credential_id=credential_id,
             agent_model=agent_model,
         ).as_dict()
+        snapshot["model_api"] = model_api_for_agent_provider(
+            snapshot.get("provider") if isinstance(snapshot.get("provider"), str) else None,
+            agent_model_settings,
+            {"model_api": snapshot.get("model_api")},
+        )
+        return snapshot
+
+    def _model_provider_blocked_details(
+        self,
+        workspace_id: UUID,
+        step: TaskStep,
+    ) -> dict[str, object]:
+        profile = (
+            self._session.get(AgentProfile, step.assigned_agent_profile_id)
+            if step.assigned_agent_profile_id is not None
+            else None
+        )
+        agent_model = profile.model if profile is not None else None
+        credential_id = (
+            profile.model_provider_credential_id if profile is not None else None
+        )
+        agent_model_settings = profile.model_settings if profile is not None else None
+        agent_model_api = _model_api(agent_model_settings) if profile is not None else None
+        details: dict[str, object] = {
+            "source": "agent_override" if credential_id is not None else "workspace_default",
+            "agent_profile_id": str(profile.id) if profile is not None else None,
+            "agent_model": agent_model,
+            "model_api": agent_model_api,
+            "credential_id": str(credential_id) if credential_id is not None else None,
+            "credential_reference": f"model_provider_credentials:{credential_id}"
+            if credential_id is not None
+            else None,
+        }
+        if credential_id is None:
+            return details
+
+        credential = self._session.scalar(
+            select(ModelProviderCredential).where(
+                ModelProviderCredential.workspace_id == workspace_id,
+                ModelProviderCredential.id == credential_id,
+            )
+        )
+        if credential is None:
+            details["credential_found"] = False
+            return details
+
+        details.update(
+            {
+                "credential_found": True,
+                "credential_name": credential.name,
+                "provider": credential.provider,
+                "default_model": credential.default_model,
+                "model_api": model_api_for_agent_provider(
+                    credential.provider,
+                    agent_model_settings,
+                    credential.budget_metadata,
+                ),
+                "credential_status": credential.status,
+                "credential_health_status": credential.health_status,
+                "budget_exhausted": budget_is_exhausted(credential.budget_metadata),
+                "last_failure_code": credential.last_failure_code,
+                "is_default": credential.is_default,
+            }
+        )
+        return redact_sensitive_payload(details)
 
     def _installed_skill_snapshots(
         self,
@@ -2410,12 +2980,23 @@ class RunOrchestrationService:
         dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
         dependencies.pop("scheduling_status", None)
         dependencies.pop("blocked_reason", None)
+        dependencies.pop("blocked_details", None)
+        dependencies.pop("blocked_resource_keys", None)
+        dependencies.pop("priority_score", None)
         step.dependencies = dependencies
 
-    def _mark_step_scheduling_blocked(self, step: TaskStep, reason: str) -> None:
+    def _mark_step_scheduling_blocked(
+        self,
+        step: TaskStep,
+        reason: str,
+        *,
+        details: dict[str, object] | None = None,
+    ) -> None:
         dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
         dependencies["scheduling_status"] = "blocked"
         dependencies["blocked_reason"] = reason
+        if details is not None:
+            dependencies["blocked_details"] = details
         step.dependencies = dependencies
 
     def _release_runtime_space_reservations(
@@ -2440,6 +3021,8 @@ class RunOrchestrationService:
         priority = self._run_job_priority(run)
         if priority:
             routing["priority"] = priority
+        if run.runtime_id is not None:
+            routing["workspace_runtime_id"] = str(run.runtime_id)
         if run.runtime_space_id is None:
             return routing
         routing["runtime_space_id"] = str(run.runtime_space_id)
@@ -2473,6 +3056,19 @@ class RunOrchestrationService:
         if task is None or task.workspace_id != run.workspace_id:
             return 0
         return int(task.priority or 0)
+
+    def _team_bound_runtime_id(self, task: Task) -> UUID | None:
+        if task.agent_team_id is None:
+            return None
+        team = self._session.scalar(
+            select(AgentTeam).where(
+                AgentTeam.workspace_id == task.workspace_id,
+                AgentTeam.id == task.agent_team_id,
+            )
+        )
+        if team is None:
+            return None
+        return team_bound_runtime_id(team)
 
     def _scheduler(self) -> WorkspaceScheduler:
         return WorkspaceScheduler(self._session)
@@ -3076,6 +3672,7 @@ def build_default_queue(redis_client: Any, settings: Any) -> RedisQueue:
         redis=redis_client,
         keys=RedisKeyBuilder(settings.redis_key_prefix),
         queue_name=settings.worker_queue_name,
+        tracing_enabled=settings.tracing_enabled,
     )
 
 
@@ -3107,6 +3704,35 @@ def _int_or_default(value: object, default: int) -> int:
     return default
 
 
+def _team_snapshot_agent_for_profile(
+    team_snapshot: object,
+    agent_profile_id: UUID | None,
+) -> dict[str, object] | None:
+    if agent_profile_id is None or not isinstance(team_snapshot, dict):
+        return None
+    expected_id = str(agent_profile_id)
+    raw_members = team_snapshot.get("members")
+    if isinstance(raw_members, list):
+        for member in raw_members:
+            if not isinstance(member, dict):
+                continue
+            if str(member.get("agent_profile_id") or "") != expected_id:
+                continue
+            agent = member.get("agent")
+            if isinstance(agent, dict):
+                return agent
+            break
+    raw_agents = team_snapshot.get("agents")
+    if isinstance(raw_agents, list):
+        for agent in raw_agents:
+            if not isinstance(agent, dict):
+                continue
+            snapshot_id = agent.get("id") or agent.get("agent_profile_id")
+            if str(snapshot_id or "") == expected_id:
+                return agent
+    return None
+
+
 def _optional_string(value: object) -> str | None:
     return value if isinstance(value, str) else None
 
@@ -3114,6 +3740,30 @@ def _optional_string(value: object) -> str | None:
 def _optional_string_from_metadata(metadata: dict[str, object], key: str) -> str | None:
     value = metadata.get(key)
     return value if isinstance(value, str) else None
+
+
+def _model_api(settings: dict[str, object] | None) -> str | None:
+    if settings is None:
+        return None
+    value = settings.get("model_api")
+    return canonical_model_api(value)
+
+
+def _effective_resolved_model_api(
+    *,
+    provider: str | None,
+    resolved_model_api: str | None,
+    requested_model_api: str | None,
+    prefer_requested: bool,
+) -> str | None:
+    requested = canonical_model_api(requested_model_api)
+    if (
+        prefer_requested
+        and requested is not None
+        and requested in model_api_options_for_provider(provider)
+    ):
+        return requested
+    return resolved_model_api or requested
 
 
 def _string_or_default(value: object, default: str) -> str:
@@ -3291,6 +3941,214 @@ def _tool_continuations_for_run(
             )
         )
     return tuple(continuations)
+
+
+def _agent_run_tracing(
+    *,
+    run: AgentRun,
+    task: Task | None,
+    profile: AgentProfile,
+    allowed_tools: tuple[str, ...],
+    metadata: dict[str, object],
+) -> AgentRunTracing:
+    trace_metadata = _trace_metadata_for_agent_run(
+        run=run,
+        task=task,
+        profile=profile,
+        allowed_tools=allowed_tools,
+        metadata=metadata,
+    )
+    return AgentRunTracing(
+        workflow_name=_agent_run_workflow_name(task),
+        trace_id=_optional_trace_string(metadata.get("trace_id")),
+        group_id=_agent_run_trace_group_id(run, task, metadata),
+        metadata=trace_metadata,
+    )
+
+
+def _trace_metadata_for_agent_run(
+    *,
+    run: AgentRun,
+    task: Task | None,
+    profile: AgentProfile,
+    allowed_tools: tuple[str, ...],
+    metadata: dict[str, object],
+) -> dict[str, object]:
+    trace_metadata: dict[str, object] = {
+        "workspace_id": str(run.workspace_id),
+        "run_id": str(run.id),
+        "task_id": str(run.task_id) if run.task_id is not None else None,
+        "task_step_id": str(run.task_step_id) if run.task_step_id is not None else None,
+        "agent_profile_id": str(profile.id) if profile.id is not None else None,
+        "agent_role": profile.role,
+        "run_model": metadata.get("run_model"),
+        "model_provider_provider": metadata.get("model_provider_provider"),
+        "model_provider_credential_id": metadata.get("model_provider_credential_id"),
+        "model_provider_model_api": metadata.get("model_provider_model_api"),
+        "authorization_snapshot_version": metadata.get("authorization_snapshot_version"),
+        "allowed_tools": list(allowed_tools),
+    }
+    for key in ("trace_id", "span_id", "parent_span_id", "persistent_session_key"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value:
+            trace_metadata[key] = value
+    team_context = metadata.get("team_context")
+    if isinstance(team_context, dict):
+        trace_metadata["team"] = _team_trace_metadata(team_context)
+    tool_continuations = metadata.get("tool_continuations")
+    if isinstance(tool_continuations, list):
+        trace_metadata["tool_continuations"] = [
+            item
+            for item in (_json_safe(item) for item in tool_continuations)
+            if isinstance(item, dict)
+        ]
+    if task is not None:
+        trace_metadata["agent_team_id"] = str(task.agent_team_id) if task.agent_team_id else None
+    return {key: value for key, value in trace_metadata.items() if value is not None}
+
+
+def _agent_run_workflow_name(task: Task | None) -> str:
+    if task is not None and task.agent_team_id is not None:
+        return "chaincloud.team_agent_run"
+    return "chaincloud.agent_run"
+
+
+def _agent_run_trace_group_id(
+    run: AgentRun,
+    task: Task | None,
+    metadata: dict[str, object],
+) -> str:
+    persistent_session_key = metadata.get("persistent_session_key")
+    if isinstance(persistent_session_key, str) and persistent_session_key:
+        return persistent_session_key
+    if task is not None and task.agent_team_id is not None:
+        return f"team:{task.agent_team_id}"
+    if run.task_id is not None:
+        return f"task:{run.task_id}"
+    return f"workspace:{run.workspace_id}"
+
+
+def _team_trace_metadata(team_context: dict[str, object]) -> dict[str, object]:
+    trace_team: dict[str, object] = {}
+    for key in ("team_id", "team_name", "team_type", "team_status"):
+        value = team_context.get(key)
+        if isinstance(value, str) and value:
+            trace_team[key] = value
+    current_member = team_context.get("current_member")
+    if isinstance(current_member, dict):
+        trace_team["current_member"] = {
+            key: value
+            for key, value in current_member.items()
+            if key in {"agent_profile_id", "team_role", "status"} and isinstance(value, str)
+        }
+    runtime = team_context.get("runtime")
+    if isinstance(runtime, dict):
+        runtime_metadata: dict[str, object] = {}
+        for key in (
+            "status",
+            "workspace_runtime_id",
+            "runtime_status",
+            "runtime_space_id",
+            "thread_id",
+            "team_session_id",
+        ):
+            value = runtime.get(key)
+            if isinstance(value, str) and value:
+                runtime_metadata[key] = value
+        member_session_count = runtime.get("member_session_count")
+        if isinstance(member_session_count, int) and not isinstance(
+            member_session_count,
+            bool,
+        ):
+            runtime_metadata["member_session_count"] = member_session_count
+        if runtime_metadata:
+            trace_team["runtime"] = runtime_metadata
+    return trace_team
+
+
+def _optional_trace_string(value: object) -> str | None:
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _json_safe(value: object) -> object:
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_json_safe(item) for item in value]
+    return str(value)
+
+
+def _mailbox_message_context(message: AgentMessage) -> dict[str, object]:
+    return {
+        "id": str(message.id),
+        "thread_id": str(message.thread_id),
+        "task_id": str(message.task_id) if message.task_id is not None else None,
+        "agent_team_id": str(message.agent_team_id) if message.agent_team_id is not None else None,
+        "sender_agent_profile_id": str(message.sender_agent_profile_id)
+        if message.sender_agent_profile_id is not None
+        else None,
+        "message_type": message.message_type,
+        "status": message.status,
+        "created_at": message.created_at.isoformat(),
+        "body_preview": redact_sensitive_text(message.body[:500]),
+    }
+
+
+def _mailbox_scope_metadata(
+    *,
+    thread_id: UUID | None,
+    task_id: UUID | None,
+) -> dict[str, str]:
+    scope: dict[str, str] = {}
+    if thread_id is not None:
+        scope["thread_id"] = str(thread_id)
+    if task_id is not None:
+        scope["task_id"] = str(task_id)
+    return scope
+
+
+def _team_member_context(member: AgentTeamMember | None) -> dict[str, object] | None:
+    if member is None:
+        return None
+    return {
+        "member_id": str(member.id),
+        "agent_profile_id": str(member.agent_profile_id),
+        "reports_to_member_id": str(member.reports_to_member_id)
+        if member.reports_to_member_id is not None
+        else None,
+        "team_role": member.team_role,
+        "department": member.department,
+        "position_title": member.position_title,
+        "responsibilities": [
+            item for item in member.responsibilities if isinstance(item, str)
+        ][:20],
+        "accepts_tasks": member.accepts_tasks,
+        "max_concurrent_tasks": member.max_concurrent_tasks,
+    }
+
+
+def _team_runtime_context(runtime_state: object | None) -> dict[str, object] | None:
+    if runtime_state is None:
+        return None
+    return {
+        "status": getattr(runtime_state, "status", None),
+        "workspace_runtime_id": str(getattr(runtime_state, "workspace_runtime_id", ""))
+        if getattr(runtime_state, "workspace_runtime_id", None) is not None
+        else None,
+        "runtime_status": getattr(runtime_state, "runtime_status", None),
+        "runtime_space_id": str(getattr(runtime_state, "runtime_space_id", ""))
+        if getattr(runtime_state, "runtime_space_id", None) is not None
+        else None,
+        "thread_id": str(getattr(runtime_state, "thread_id", "")),
+        "team_session_id": str(getattr(runtime_state, "team_session_id", "")),
+        "member_session_count": getattr(runtime_state, "member_session_count", 0),
+    }
 
 
 def _skill_snapshot_matches(
@@ -3479,6 +4337,32 @@ def _run_output_payload(result: AgentRunResult) -> dict[str, object]:
     if result.raw_output is not None:
         payload["raw_output"] = _json_safe_object(result.raw_output)
     return payload
+
+
+def _sdk_continuation_last_response_id(run: AgentRun | None) -> str | None:
+    if run is None or not isinstance(run.output, dict):
+        return None
+    raw_output = run.output.get("raw_output")
+    if not isinstance(raw_output, dict):
+        return None
+    sdk_continuation = raw_output.get("sdk_continuation")
+    if not isinstance(sdk_continuation, dict):
+        return None
+    last_response_id = sdk_continuation.get("last_response_id")
+    return last_response_id if isinstance(last_response_id, str) and last_response_id else None
+
+
+def _sdk_continuation_conversation_id(run: AgentRun) -> str | None:
+    if not isinstance(run.output, dict):
+        return None
+    raw_output = run.output.get("raw_output")
+    if not isinstance(raw_output, dict):
+        return None
+    sdk_continuation = raw_output.get("sdk_continuation")
+    if not isinstance(sdk_continuation, dict):
+        return None
+    conversation_id = sdk_continuation.get("conversation_id")
+    return conversation_id if isinstance(conversation_id, str) and conversation_id else None
 
 
 def _coerce_agent_run_result(result: AgentRunResult | str) -> AgentRunResult:

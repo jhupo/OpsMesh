@@ -17,8 +17,10 @@ from backend.app.domains.models import RevisionRequest
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.tasks.models import TaskMessage, TaskStep
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.jobs import JobType
+from backend.app.workers.handlers import WorkerJobHandler
+from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
@@ -94,10 +96,20 @@ def test_task_view_returns_domain_state_comments_and_revisions() -> None:
     assert body["review_comments"][0]["body"] == "节奏太慢，开头要更抓人"
     assert body["revision_requests"][0]["instruction"] == "重写开头三段，加强冲突"
     assert session.query(RevisionRequest).count() == 1
-    job = queue.dequeue()
+    job = _dequeue_job_type(queue, JobType.TASK_PLAN)
     assert job is not None
     assert job.job_type == JobType.TASK_PLAN
     assert str(job.resource_id) == task_id
+
+    WorkerJobHandler(session=session, queue=queue).handle(job)
+
+    stored_revision = session.query(RevisionRequest).one()
+    step = session.query(TaskStep).one()
+    message = session.query(TaskMessage).filter_by(message_type="revision.planned").one()
+    assert stored_revision.status == "planned"
+    assert step.work_package_id == f"revision-{stored_revision.id.hex[:12]}"
+    assert step.description == stored_revision.instruction
+    assert message.payload["revision_request_id"] == str(stored_revision.id)
 
 
 def test_task_view_redacts_sensitive_domain_metadata() -> None:
@@ -238,8 +250,8 @@ def _client(queue: RedisQueue | None = None) -> tuple[TestClient, Session]:
 
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
-    if queue is not None:
-        app.dependency_overrides[get_worker_queue] = lambda: queue
+    worker_queue = queue or _queue()
+    app.dependency_overrides[get_worker_queue] = lambda: worker_queue
     return TestClient(app), session
 
 
@@ -267,6 +279,13 @@ def _queue() -> RedisQueue:
         keys=RedisKeyBuilder("chaincloud"),
         queue_name="agent_runs",
     )
+
+
+def _dequeue_job_type(queue: RedisQueue, job_type: JobType) -> JobPayload | None:
+    while True:
+        job = queue.dequeue()
+        if job is None or job.job_type == job_type:
+            return job
 
 
 def _patch_portable_types_for_sqlite() -> None:

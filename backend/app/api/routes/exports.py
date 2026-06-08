@@ -29,7 +29,7 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.files.security import content_disposition_attachment
-from backend.app.files.storage import LocalStorage
+from backend.app.files.storage import create_storage
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.data_lifecycle import WorkspaceDataLifecycleService
@@ -79,7 +79,7 @@ async def apply_workspace_recovery_readiness_actions(
             workspace_id=context.workspace.id,
             user_id=context.user.user_id,
             queue=queue,
-            storage=LocalStorage(settings.storage_root),
+            storage=create_storage(settings),
             dry_run=request.dry_run,
             actions=request.actions,
             reason=request.reason,
@@ -189,7 +189,7 @@ async def export_workspace_archive(
         workspace=context.workspace,
         user_id=context.user.user_id,
         request=request,
-        storage=LocalStorage(settings.storage_root),
+        storage=create_storage(settings),
     )
     return Response(
         content=result.content,
@@ -244,7 +244,7 @@ async def download_workspace_archive_export_job(
         export_job, content = WorkspaceExportService(session).read_export_job_content(
             workspace_id=context.workspace.id,
             job_id=job_id,
-            storage=LocalStorage(settings.storage_root),
+            storage=create_storage(settings),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -276,7 +276,7 @@ async def verify_workspace_archive_export_job(
             workspace_id=context.workspace.id,
             job_id=job_id,
             user_id=context.user.user_id,
-            storage=LocalStorage(settings.storage_root),
+            storage=create_storage(settings),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -304,7 +304,7 @@ async def run_workspace_archive_restore_drill(
             user_id=context.user.user_id,
             job_id=job_id,
             request=request,
-            storage=LocalStorage(settings.storage_root),
+            storage=create_storage(settings),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -351,7 +351,7 @@ async def import_workspace_archive(
             user_id=context.user.user_id,
             archive_bytes=content,
             request=request,
-            storage=LocalStorage(settings.storage_root),
+            storage=create_storage(settings),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -394,7 +394,7 @@ async def preview_workspace_archive_import(
             user_id=context.user.user_id,
             archive_bytes=content,
             request=request,
-            storage=LocalStorage(settings.storage_root),
+            storage=create_storage(settings),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

@@ -4,8 +4,13 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 
+from backend.app.core.trace_context import parent_span_id_var, span_id_var, trace_id_var
+
 LOG_CONTEXT_FIELDS = (
     "request_id",
+    "trace_id",
+    "span_id",
+    "parent_span_id",
     "workspace_id",
     "user_id",
     "task_id",
@@ -22,6 +27,9 @@ worker_id_var: ContextVar[str | None] = ContextVar("worker_id", default=None)
 
 _CONTEXT_VARS = {
     "request_id": request_id_var,
+    "trace_id": trace_id_var,
+    "span_id": span_id_var,
+    "parent_span_id": parent_span_id_var,
     "workspace_id": workspace_id_var,
     "user_id": user_id_var,
     "task_id": task_id_var,

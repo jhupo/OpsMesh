@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.auth.errors import AuthenticationError, PermissionDeniedError
 from backend.app.auth.permissions import WorkspaceAction, role_allows
 from backend.app.auth.service import AuthorizationService
+from backend.app.core.config import Settings
 from backend.app.db.base import Base
-from backend.app.identity.models import User
+from backend.app.identity.models import User, UserAPIToken
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 
@@ -85,6 +86,161 @@ def test_authenticate_user_rejects_inactive_user() -> None:
         AuthorizationService(session).authenticate_user(user.id)
 
 
+def test_user_api_tokens_store_hash_and_authenticate_user() -> None:
+    session = _session()
+    settings = _settings()
+    user = User(email="token-owner@example.com", display_name="Token Owner")
+    session.add(user)
+    session.commit()
+
+    created = AuthorizationService(session).create_user_api_token(
+        user_id=user.id,
+        name="local cli",
+        settings=settings,
+    )
+
+    stored = session.get(UserAPIToken, created.record.id)
+    assert stored is not None
+    assert created.token.startswith("ccut_")
+    assert stored.token_hash != created.token
+    assert stored.fingerprint.startswith("sha256:")
+    assert created.token not in str(stored.__dict__)
+    authenticated = AuthorizationService(session).authenticate_user_token(
+        created.token,
+        settings,
+    )
+    assert authenticated.user_id == user.id
+
+
+def test_user_api_token_authentication_rejects_revoked_token() -> None:
+    session = _session()
+    settings = _settings()
+    user = User(email="revoked-token@example.com", display_name="Revoked Token")
+    session.add(user)
+    session.commit()
+    created = AuthorizationService(session).create_user_api_token(
+        user_id=user.id,
+        name="temporary",
+        settings=settings,
+    )
+
+    revoked = AuthorizationService(session).revoke_user_api_token(
+        user_id=user.id,
+        token_id=created.record.id,
+    )
+
+    assert revoked is not None
+    assert revoked.status == "revoked"
+    with pytest.raises(AuthenticationError, match="Invalid or inactive user token"):
+        AuthorizationService(session).authenticate_user_token(created.token, settings)
+
+
+def test_user_api_token_authentication_rejects_disabled_user() -> None:
+    session = _session()
+    settings = _settings()
+    user = User(email="disabled-token-user@example.com", display_name="Disabled")
+    session.add(user)
+    session.commit()
+    created = AuthorizationService(session).create_user_api_token(
+        user_id=user.id,
+        name="owned by disabled user",
+        settings=settings,
+    )
+    user.status = "disabled"
+    session.commit()
+
+    with pytest.raises(AuthenticationError, match="Invalid or inactive user token"):
+        AuthorizationService(session).authenticate_user_token(created.token, settings)
+
+
+def test_register_and_password_login_store_hash_not_plaintext() -> None:
+    session = _session()
+    settings = _settings()
+    service = AuthorizationService(session)
+
+    user = service.register_user(
+        email="Password.Owner@Example.COM",
+        display_name="Password Owner",
+        password="correct horse battery staple",
+    )
+    created = service.login_with_password(
+        email="password.owner@example.com",
+        password="correct horse battery staple",
+        settings=settings,
+    )
+
+    stored = session.get(User, user.id)
+    assert stored is not None
+    assert stored.email == "password.owner@example.com"
+    assert stored.password_hash is not None
+    assert stored.password_hash != "correct horse battery staple"
+    assert "correct horse battery staple" not in str(stored.__dict__)
+    assert created.token.startswith("ccut_")
+
+
+def test_password_login_rejects_wrong_password() -> None:
+    session = _session()
+    settings = _settings()
+    service = AuthorizationService(session)
+    service.register_user(
+        email="wrong-password@example.com",
+        display_name="Wrong Password",
+        password="correct horse battery staple",
+    )
+
+    with pytest.raises(AuthenticationError, match="Invalid email or password"):
+        service.login_with_password(
+            email="wrong-password@example.com",
+            password="incorrect password",
+            settings=settings,
+        )
+
+
+def test_change_password_and_revoke_all_user_api_tokens() -> None:
+    session = _session()
+    settings = _settings()
+    service = AuthorizationService(session)
+    user = service.register_user(
+        email="change-password@example.com",
+        display_name="Change Password",
+        password="old password value",
+    )
+    first = service.login_with_password(
+        email=user.email,
+        password="old password value",
+        settings=settings,
+    )
+    second = service.create_user_api_token(
+        user_id=user.id,
+        name="extra token",
+        settings=settings,
+    )
+
+    service.change_password(
+        user_id=user.id,
+        current_password="old password value",
+        new_password="new password value",
+    )
+    revoked = service.revoke_all_user_api_tokens(user_id=user.id)
+
+    assert len(revoked) == 2
+    with pytest.raises(AuthenticationError, match="Invalid email or password"):
+        service.login_with_password(
+            email=user.email,
+            password="old password value",
+            settings=settings,
+        )
+    service.login_with_password(
+        email=user.email,
+        password="new password value",
+        settings=settings,
+    )
+    with pytest.raises(AuthenticationError, match="Invalid or inactive user token"):
+        service.authenticate_user_token(first.token, settings)
+    with pytest.raises(AuthenticationError, match="Invalid or inactive user token"):
+        service.authenticate_user_token(second.token, settings)
+
+
 def test_worker_resource_workspace_mismatch_is_rejected() -> None:
     session = _session()
     service = AuthorizationService(session)
@@ -116,6 +272,15 @@ def _seed_workspace(
     session.add_all([user, workspace, membership])
     session.commit()
     return user, workspace
+
+
+def _settings() -> Settings:
+    return Settings(
+        environment="test",
+        internal_api_token="internal-token",
+        token_hash_pepper="test-pepper",
+        database_url="sqlite+pysqlite:///:memory:",
+    )
 
 
 def _patch_portable_types_for_sqlite() -> None:

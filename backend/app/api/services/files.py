@@ -10,14 +10,14 @@ from backend.app.api.pagination import PageParams
 from backend.app.artifacts.models import Artifact
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.files.security import safe_filename
-from backend.app.files.storage import LocalStorage
+from backend.app.files.storage import ObjectStorage
 from backend.app.tasks.models import Task, TaskStep
 
 T = TypeVar("T")
 
 
 class WorkspaceFileService:
-    def __init__(self, session: Session, storage: LocalStorage, max_upload_bytes: int) -> None:
+    def __init__(self, session: Session, storage: ObjectStorage, max_upload_bytes: int) -> None:
         self._session = session
         self._storage = storage
         self._max_upload_bytes = max_upload_bytes

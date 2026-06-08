@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime
+from hmac import compare_digest
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
@@ -44,6 +46,7 @@ from backend.app.api.schemas.operations import (
     StaleRunRecoveryRequest,
     StaleRunRecoveryResponse,
     StaleRunsDiagnosticsResponse,
+    TeamRuntimeTimelineResponse,
     WorkerHeartbeatRequest,
     WorkerHeartbeatResponse,
     WorkerLeaseResponse,
@@ -57,9 +60,13 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.operations.service import OperationsService
+from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
 from backend.app.redis.cache import RedisJsonCache
 from backend.app.redis.dependencies import get_cache_service, get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.security.service import SecurityAuditService
+from backend.app.workers.dependencies import get_worker_queue
+from backend.app.workers.queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]
@@ -69,24 +76,108 @@ else:
 router = APIRouter(prefix="/workspaces/{workspace_id}/operations", tags=["operations"])
 
 
-@router.post("/worker-heartbeats", response_model=WorkerHeartbeatResponse)
-async def record_worker_heartbeat(
-    request: WorkerHeartbeatRequest,
+@router.get(
+    "/team-runtimes/{team_id}/timeline",
+    response_model=TeamRuntimeTimelineResponse,
+)
+async def team_runtime_timeline(
+    team_id: UUID,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    source_type: str | None = Query(default=None),
+    event_type: str | None = Query(default=None),
+    since: datetime | None = Query(default=None),
+    until: datetime | None = Query(default=None),
+    include_runs: bool = Query(default=False),
+    include_queue: bool = Query(default=True),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> TeamRuntimeTimelineResponse:
+    if since is not None and until is not None and since > until:
+        raise HTTPException(status_code=400, detail="since must be before until")
+    response = TeamRuntimeTimelineService(session).timeline(
+        workspace_id=context.workspace.id,
+        team_id=team_id,
+        filters=TimelineFilters(
+            limit=limit,
+            offset=offset,
+            source_type=source_type,
+            event_type=event_type,
+            since=since,
+            until=until,
+            include_runs=include_runs,
+            include_queue=include_queue,
+        ),
+        queue=queue,
+    )
+    if response is None:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return response
+
+
+@router.post("/worker-heartbeats", response_model=WorkerHeartbeatResponse)
+async def record_worker_heartbeat(
+    payload: WorkerHeartbeatRequest,
+    request: Request,
+    worker_heartbeat_token: str | None = Header(default=None, alias="X-Worker-Heartbeat-Token"),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
 ) -> WorkerHeartbeatResponse:
+    if payload.workspace_id is not None and payload.workspace_id != context.workspace.id:
+        raise HTTPException(status_code=400, detail="Heartbeat workspace_id must match path")
+    _require_worker_heartbeat_token(
+        request=request,
+        context=context,
+        settings=settings,
+        session=session,
+        presented_token=worker_heartbeat_token,
+    )
     heartbeat = OperationsService(session).record_worker_heartbeat(
-        workspace_id=request.workspace_id or context.workspace.id,
-        worker_id=request.worker_id,
-        worker_type=request.worker_type,
-        status=request.status,
-        queue_name=request.queue_name,
-        details=request.details,
-        worker_version=request.worker_version,
-        hostname=request.hostname,
-        capacity=request.capacity,
+        workspace_id=context.workspace.id,
+        worker_id=payload.worker_id,
+        worker_type=payload.worker_type,
+        status=payload.status,
+        queue_name=payload.queue_name,
+        details=payload.details,
+        worker_version=payload.worker_version,
+        hostname=payload.hostname,
+        capacity=payload.capacity,
     )
     return WorkerHeartbeatResponse.model_validate(heartbeat)
+
+
+def _require_worker_heartbeat_token(
+    *,
+    request: Request,
+    context: WorkspaceContext,
+    settings: Settings,
+    session: Session,
+    presented_token: str | None,
+) -> None:
+    expected_token = (settings.worker_heartbeat_token or "").strip()
+    if not expected_token:
+        return
+    candidate = (presented_token or "").strip()
+    if compare_digest(candidate, expected_token):
+        return
+
+    SecurityAuditService(session).record_request_event(
+        request=request,
+        action="worker.heartbeat_token.rejected",
+        outcome="denied",
+        severity="warning",
+        reason="Invalid or missing worker heartbeat token",
+        workspace_id=context.workspace.id,
+        user_id=context.user.user_id,
+        metadata={"has_heartbeat_header": bool(presented_token)},
+    )
+    session.commit()
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or missing worker heartbeat token",
+    )
 
 
 @router.get("/workers", response_model=PageResponse[WorkerNodeResponse])

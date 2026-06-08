@@ -4,7 +4,7 @@ from hashlib import sha256
 from secrets import token_urlsafe
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.admin.policies import PlatformPolicyService
@@ -233,8 +233,9 @@ class SelfHostedRuntimeService:
 
     def claim_job(self, auth: AuthenticatedWorker, agent_run_id: UUID) -> SelfHostedJobClaim:
         self._require_self_hosted_enabled()
+        auth = self._locked_auth_for_claim(auth)
         self._require_worker_accepting_jobs(auth)
-        run = self._session.get(AgentRun, agent_run_id)
+        run = self._locked_agent_run(agent_run_id)
         if (
             run is None
             or run.workspace_id != auth.worker.workspace_id
@@ -255,10 +256,30 @@ class SelfHostedRuntimeService:
             raise ValueError("Self-hosted worker has reached max concurrent jobs")
         if run.status != RunStatus.QUEUED.value:
             raise ValueError("Agent run is not queued")
-        self._ensure_self_hosted_job_slot(auth, run)
         now = datetime.now(UTC)
-        run.status = RunStatus.RUNNING.value
-        run.started_at = now
+        claimed = self._session.execute(
+            update(AgentRun)
+            .where(
+                AgentRun.id == run.id,
+                AgentRun.workspace_id == run.workspace_id,
+                AgentRun.runtime_id == auth.runtime.id,
+                AgentRun.status == RunStatus.QUEUED.value,
+            )
+            .values(status=RunStatus.RUNNING.value, started_at=now)
+        )
+        if claimed.rowcount != 1:
+            self._session.refresh(run)
+            existing_claim = self._locked_job_claim_for_run(run)
+            if existing_claim is not None:
+                if (
+                    existing_claim.worker_id == auth.worker.id
+                    and existing_claim.status == "claimed"
+                ):
+                    return existing_claim
+                raise ValueError("Agent run is already claimed")
+            raise ValueError("Agent run is not queued")
+        self._session.refresh(run)
+        self._ensure_self_hosted_job_slot(auth, run)
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
             if task is not None:
@@ -395,17 +416,36 @@ class SelfHostedRuntimeService:
 
     def claim_mcp_job(self, auth: AuthenticatedWorker, mcp_job_id: UUID) -> SelfHostedMcpJob:
         self._require_self_hosted_enabled()
+        auth = self._locked_auth_for_claim(auth)
         self._require_worker_accepting_jobs(auth)
-        job = self._require_mcp_job(auth, mcp_job_id)
+        job = self._locked_mcp_job(auth, mcp_job_id)
+        if job is None:
+            raise ValueError("Self-hosted MCP job not found")
+        if job.status == "claimed" and job.worker_id == auth.worker.id:
+            return job
         if not self._worker_mcp_capacity_allows(auth):
             raise ValueError("Self-hosted worker has reached max concurrent MCP jobs")
         if not self._worker_can_accept_mcp_job(auth, job):
             raise ValueError("Self-hosted MCP job is not compatible with worker")
         if job.status != "queued":
             raise ValueError("Self-hosted MCP job is not queued")
-        job.status = "claimed"
-        job.worker_id = auth.worker.id
-        job.claimed_at = datetime.now(UTC)
+        now = datetime.now(UTC)
+        claimed = self._session.execute(
+            update(SelfHostedMcpJob)
+            .where(
+                SelfHostedMcpJob.id == job.id,
+                SelfHostedMcpJob.workspace_id == auth.worker.workspace_id,
+                SelfHostedMcpJob.workspace_runtime_id == auth.runtime.id,
+                SelfHostedMcpJob.status == "queued",
+            )
+            .values(status="claimed", worker_id=auth.worker.id, claimed_at=now)
+        )
+        if claimed.rowcount != 1:
+            self._session.refresh(job)
+            if job.status == "claimed" and job.worker_id == auth.worker.id:
+                return job
+            raise ValueError("Self-hosted MCP job is not queued")
+        self._session.refresh(job)
         run = self._session.get(AgentRun, job.agent_run_id)
         if run is not None:
             self._append_run_event(
@@ -1162,6 +1202,75 @@ class SelfHostedRuntimeService:
             raise ValueError(f"Self-hosted runtime is {auth.runtime.status}")
         if auth.runtime.connection_status == "degraded":
             raise ValueError("Self-hosted runtime is degraded")
+
+    def _locked_auth_for_claim(self, auth: AuthenticatedWorker) -> AuthenticatedWorker:
+        worker = self._session.scalar(
+            select(SelfHostedWorker)
+            .where(
+                SelfHostedWorker.id == auth.worker.id,
+                SelfHostedWorker.workspace_id == auth.worker.workspace_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        runtime = self._session.scalar(
+            select(WorkspaceRuntime)
+            .where(
+                WorkspaceRuntime.id == auth.runtime.id,
+                WorkspaceRuntime.workspace_id == auth.worker.workspace_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if worker is None or runtime is None:
+            raise ValueError("Runtime credential is orphaned")
+        self._lock_sqlite_worker_capacity_row(worker)
+        return AuthenticatedWorker(worker=worker, runtime=runtime, credential=auth.credential)
+
+    def _lock_sqlite_worker_capacity_row(self, worker: SelfHostedWorker) -> None:
+        if self._session.get_bind().dialect.name != "sqlite":
+            return
+        self._session.execute(
+            update(SelfHostedWorker)
+            .where(SelfHostedWorker.id == worker.id)
+            .values(status=SelfHostedWorker.status)
+        )
+        self._session.expire(worker)
+
+    def _locked_agent_run(self, agent_run_id: UUID) -> AgentRun | None:
+        return self._session.scalar(
+            select(AgentRun)
+            .where(AgentRun.id == agent_run_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
+    def _locked_mcp_job(
+        self,
+        auth: AuthenticatedWorker,
+        mcp_job_id: UUID,
+    ) -> SelfHostedMcpJob | None:
+        return self._session.scalar(
+            select(SelfHostedMcpJob)
+            .where(
+                SelfHostedMcpJob.id == mcp_job_id,
+                SelfHostedMcpJob.workspace_id == auth.worker.workspace_id,
+                SelfHostedMcpJob.workspace_runtime_id == auth.runtime.id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
+    def _locked_job_claim_for_run(self, run: AgentRun) -> SelfHostedJobClaim | None:
+        return self._session.scalar(
+            select(SelfHostedJobClaim)
+            .where(
+                SelfHostedJobClaim.workspace_id == run.workspace_id,
+                SelfHostedJobClaim.agent_run_id == run.id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
 
     def _worker_capacity_allows(self, auth: AuthenticatedWorker) -> bool:
         max_concurrent_jobs = _positive_int(auth.worker.capabilities.get("max_concurrent_jobs"))

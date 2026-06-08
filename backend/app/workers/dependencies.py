@@ -6,4 +6,5 @@ from backend.app.workers.queue import RedisQueue
 
 
 def get_worker_queue(request: Request) -> RedisQueue:
-    return build_default_queue(redis_client, request.app.state.settings)
+    app_redis_client = getattr(request.app.state, "redis_client", None)
+    return build_default_queue(app_redis_client or redis_client, request.app.state.settings)

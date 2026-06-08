@@ -3,13 +3,16 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import fakeredis
-from sqlalchemy import create_engine, select
+import pytest
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult, AgentRuntimeEvent
+from backend.app.agent_runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval
 from backend.app.audit.models import AuditEvent
@@ -24,6 +27,7 @@ from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.models import TaskPlanningAttempt
@@ -36,14 +40,21 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
+from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue, consume_once
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.workspaces.models import (
+    Workspace,
+    WorkspaceMember,
+    WorkspaceQuota,
+    WorkspaceReservation,
+)
 
 
 class DeterministicAgentRunner:
@@ -115,6 +126,213 @@ def test_run_activity_maps_precise_execution_lifecycle_events() -> None:
     assert activity_phase("running", "model.request_started") == "model_running"
     assert activity_phase("running", "model.response_received") == "model_processing"
     assert activity_phase("running", "model.request_failed") == "model_failed"
+
+
+def test_completed_run_auto_capture_writes_workspace_memory_when_enabled() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer token=agent-name-secret",
+        role="writer",
+        instructions="Write clearly.",
+        memory_policy={"auto_capture": True},
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft launch note token=task-title-secret",
+        status=TaskStatus.RUNNING.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.RUNNING.value,
+        input={"request_metadata": {"api_key": "should-not-be-captured"}},
+    )
+    session.add(run)
+    session.flush()
+
+    RunOrchestrationService(session)._mark_run_completed(
+        run,
+        AgentRunResult(final_output="Launch note complete with token=memory-secret."),
+        requested_by_user_id=user.id,
+    )
+
+    entry = session.scalar(
+        select(WorkspaceMemoryEntry).where(
+            WorkspaceMemoryEntry.workspace_id == workspace.id,
+            WorkspaceMemoryEntry.source_type == "agent_run",
+            WorkspaceMemoryEntry.source_id == str(run.id),
+            WorkspaceMemoryEntry.entry_type == "agent_run_summary",
+        )
+    )
+    assert entry is not None
+    assert entry.created_by_agent_profile_id == agent.id
+    assert entry.created_by_agent_run_id == run.id
+    assert entry.content == "Launch note complete with [redacted]"
+    assert "memory-secret" not in entry.content
+    assert entry.memory_metadata["agent"]["profile_id"] == str(agent.id)
+    assert entry.memory_metadata["task"]["id"] == str(task.id)
+    serialized_metadata = json.dumps(entry.memory_metadata)
+    assert "api_key" not in serialized_metadata
+    assert "agent-name-secret" not in serialized_metadata
+    assert "task-title-secret" not in serialized_metadata
+
+
+def test_completed_run_auto_capture_disabled_by_default() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        instructions="Write clearly.",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft launch note",
+        status=TaskStatus.RUNNING.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.RUNNING.value,
+        input={},
+    )
+    session.add(run)
+    session.flush()
+
+    RunOrchestrationService(session)._mark_run_completed(
+        run,
+        AgentRunResult(final_output="Launch note complete."),
+        requested_by_user_id=user.id,
+    )
+
+    assert session.scalar(select(WorkspaceMemoryEntry)) is None
+
+
+def test_completed_run_auto_capture_is_idempotent_for_same_run() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        instructions="Write clearly.",
+        memory_policy={"auto_capture": True},
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft launch note",
+        status=TaskStatus.RUNNING.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.RUNNING.value,
+        input={},
+    )
+    session.add(run)
+    session.flush()
+    service = RunOrchestrationService(session)
+
+    service._mark_run_completed(
+        run,
+        AgentRunResult(final_output="Launch note complete."),
+        requested_by_user_id=user.id,
+    )
+    run.status = RunStatus.RUNNING.value
+    session.flush()
+    service._mark_run_completed(
+        run,
+        AgentRunResult(final_output="Launch note complete again."),
+        requested_by_user_id=user.id,
+    )
+
+    assert session.scalar(select(func.count(WorkspaceMemoryEntry.id))) == 1
+
+
+def test_completed_run_auto_compacts_existing_persistent_session() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        instructions="Write clearly.",
+        memory_policy={
+            "auto_compact_enabled": True,
+            "session_max_items": 3,
+            "session_keep_recent_items": 1,
+            "summary_role": "system",
+        },
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft launch note",
+        status=TaskStatus.RUNNING.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.RUNNING.value,
+        input={},
+    )
+    session.add(run)
+    session.flush()
+    persistent_session = PersistentAgentSession(
+        workspace_id=workspace.id,
+        session_key=f"{workspace.id}:task_agent:{task.id}:{agent.id}",
+        scope_type="task_agent",
+        scope_id=f"{task.id}:{agent.id}",
+        agent_profile_id=agent.id,
+        task_id=task.id,
+        session_metadata={"source": "test"},
+    )
+    session.add(persistent_session)
+    session.flush()
+    for sequence, content in enumerate(["one", "two", "three", "four"], start=1):
+        session.add(
+            PersistentAgentSessionItem(
+                workspace_id=workspace.id,
+                persistent_session_id=persistent_session.id,
+                sequence=sequence,
+                item={"role": "user", "content": content},
+            )
+        )
+    session.flush()
+
+    RunOrchestrationService(session)._mark_run_completed(
+        run,
+        AgentRunResult(final_output="Launch note complete."),
+        requested_by_user_id=user.id,
+    )
+
+    items = session.scalars(
+        select(PersistentAgentSessionItem)
+        .where(PersistentAgentSessionItem.persistent_session_id == persistent_session.id)
+        .order_by(PersistentAgentSessionItem.sequence)
+    ).all()
+    assert [item.sequence for item in items] == [1, 2]
+    assert items[0].item["role"] == "system"
+    assert "folded_items: 3" in str(items[0].item["content"])
+    assert items[1].item["content"] == "four"
 
 
 def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
@@ -828,6 +1046,331 @@ def test_workspace_run_quota_limits_parallel_specialist_scheduling() -> None:
         for step in specialist_steps
         if step.id not in queued_step_ids
     )
+
+
+def test_team_scheduler_policy_limits_team_steps_without_relaxing_workspace_policy() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    workspace.settings = {"scheduler": {"max_active_runs": 3}}
+    manager = AgentProfile(workspace_id=workspace.id, name="Manager", role="manager")
+    developer = AgentProfile(workspace_id=workspace.id, name="Developer", role="developer")
+    session.add_all([manager, developer])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Policy Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+        default_task_policy={"scheduler": {"max_runs_to_start_per_tick": 1}},
+    )
+    session.add(team)
+    session.flush()
+    session.add(
+        AgentTeamMember(
+            workspace_id=workspace.id,
+            agent_team_id=team.id,
+            agent_profile_id=developer.id,
+            team_role="developer",
+            order_index=1,
+        )
+    )
+    first_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="First team task",
+        priority=10,
+        status=TaskStatus.QUEUED.value,
+    )
+    second_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Second team task",
+        priority=9,
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add_all([first_task, second_task])
+    session.flush()
+    first_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=first_task.id,
+        assigned_agent_profile_id=developer.id,
+        title="First build",
+        status="queued",
+        order_index=0,
+    )
+    second_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=second_task.id,
+        assigned_agent_profile_id=developer.id,
+        title="Second build",
+        status="queued",
+        order_index=0,
+    )
+    session.add_all([first_step, second_step])
+    session.flush()
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+
+    runs = RunOrchestrationService(session, queue).schedule_team_steps(
+        workspace_id=workspace.id,
+        team_id=team.id,
+        requested_by_user_id=user.id,
+    )
+
+    assert [run.task_id for run in runs] == [first_task.id]
+    assert queue.count_queued(workspace_id=workspace.id) == 1
+    assert second_step.dependencies["blocked_reason"] == "workspace_run_quota_exceeded"
+
+
+def test_team_scheduler_blocks_step_when_model_provider_unavailable() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    credential = ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
+    ).create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Blocked provider",
+        provider="openai-compatible",
+        api_key="sk-scheduler-provider-blocked",
+        default_model="gpt-4.1-mini",
+        base_url="https://provider.example.test/v1",
+        is_default=False,
+        budget_metadata={"model_api": "chat-completions"},
+    )
+    credential.health_status = "unhealthy"
+    credential.failure_count = 3
+    developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+        model="workspace-default",
+        model_provider_credential_id=credential.id,
+        model_settings={"model_api": "response"},
+    )
+    session.add(developer)
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Provider blocked team",
+        team_type="software",
+        manager_agent_profile_id=developer.id,
+    )
+    session.add(team)
+    session.flush()
+    session.add(
+        AgentTeamMember(
+            workspace_id=workspace.id,
+            agent_team_id=team.id,
+            agent_profile_id=developer.id,
+            team_role="developer",
+        )
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Blocked provider task",
+        priority=10,
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=developer.id,
+        title="Build with blocked provider",
+        status="queued",
+        order_index=0,
+    )
+    session.add(step)
+    session.flush()
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+
+    runs = RunOrchestrationService(session, queue).schedule_team_steps(
+        workspace_id=workspace.id,
+        team_id=team.id,
+        requested_by_user_id=user.id,
+    )
+
+    assert runs == []
+    assert queue.count_queued(workspace_id=workspace.id) == 0
+    assert step.dependencies["scheduling_status"] == "blocked"
+    assert step.dependencies["blocked_reason"] == "model_provider_unavailable"
+    assert step.dependencies["blocked_details"]["error_type"] == "ValueError"
+    assert "unavailable" in step.dependencies["blocked_details"]["message"]
+    blocked_provider = step.dependencies["blocked_details"]["model_provider"]
+    assert blocked_provider["source"] == "agent_override"
+    assert blocked_provider["agent_profile_id"] == str(developer.id)
+    assert blocked_provider["agent_model"] == "workspace-default"
+    assert blocked_provider["credential_id"] == str(credential.id)
+    assert blocked_provider["credential_reference"] == (
+        f"model_provider_credentials:{credential.id}"
+    )
+    assert blocked_provider["credential_status"] == "active"
+    assert blocked_provider["credential_health_status"] == "unhealthy"
+    assert blocked_provider["budget_exhausted"] is False
+    assert blocked_provider["provider"] == "openai-compatible"
+    assert blocked_provider["default_model"] == "gpt-4.1-mini"
+    assert blocked_provider["model_api"] == "responses"
+    assert session.scalars(select(AgentRun)).all() == []
+    assert "sk-scheduler-provider-blocked" not in str(step.dependencies)
+    assert "provider.example.test/v1" not in str(step.dependencies)
+
+
+def test_team_scheduler_releases_reservations_when_model_provider_unavailable() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    workspace_quota = WorkspaceQuota(
+        workspace_id=workspace.id,
+        quota_key="active_runs",
+        limit_value=1,
+        reserved_value=0,
+        unit="count",
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Provider blocked runtime space",
+        scope="team",
+    )
+    session.add_all([workspace_quota, runtime_space])
+    session.flush()
+    runtime_quota = RuntimeSpaceQuota(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        quota_key="active_runs",
+        limit_value=1,
+        reserved_value=0,
+        unit="count",
+    )
+    credential = ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
+    ).create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Blocked provider",
+        provider="openai-compatible",
+        api_key="sk-scheduler-release-blocked",
+        default_model="gpt-4.1-mini",
+        base_url="https://provider.example.test/v1",
+        is_default=False,
+        budget_metadata={"model_api": "chat-completions"},
+    )
+    credential.health_status = "unhealthy"
+    credential.failure_count = 3
+    developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+        model="workspace-default",
+        model_provider_credential_id=credential.id,
+    )
+    session.add_all([runtime_quota, developer])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Provider blocked team",
+        team_type="software",
+        manager_agent_profile_id=developer.id,
+        runtime_space_id=runtime_space.id,
+    )
+    session.add(team)
+    session.flush()
+    session.add(
+        AgentTeamMember(
+            workspace_id=workspace.id,
+            agent_team_id=team.id,
+            agent_profile_id=developer.id,
+            team_role="developer",
+        )
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        runtime_space_id=runtime_space.id,
+        title="Blocked provider task",
+        priority=10,
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=developer.id,
+        runtime_space_id=runtime_space.id,
+        title="Build with blocked provider",
+        status="queued",
+        order_index=0,
+    )
+    session.add(step)
+    session.flush()
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("chaincloud"),
+        queue_name="agent_runs",
+    )
+
+    runs = RunOrchestrationService(session, queue).schedule_team_steps(
+        workspace_id=workspace.id,
+        team_id=team.id,
+        requested_by_user_id=user.id,
+    )
+
+    workspace_reservations = session.scalars(
+        select(WorkspaceReservation).where(
+            WorkspaceReservation.workspace_id == workspace.id,
+        )
+    ).all()
+    runtime_reservations = session.scalars(
+        select(RuntimeSpaceReservation).where(
+            RuntimeSpaceReservation.runtime_space_id == runtime_space.id,
+        )
+    ).all()
+
+    assert runs == []
+    assert queue.count_queued(workspace_id=workspace.id) == 0
+    assert session.scalars(select(AgentRun)).all() == []
+    assert step.dependencies["scheduling_status"] == "blocked"
+    assert step.dependencies["blocked_reason"] == "model_provider_unavailable"
+    assert step.dependencies["blocked_details"]["error_type"] == "ValueError"
+    assert "unavailable" in step.dependencies["blocked_details"]["message"]
+    blocked_provider = step.dependencies["blocked_details"]["model_provider"]
+    assert blocked_provider["source"] == "agent_override"
+    assert blocked_provider["agent_profile_id"] == str(developer.id)
+    assert blocked_provider["agent_model"] == "workspace-default"
+    assert blocked_provider["credential_id"] == str(credential.id)
+    assert blocked_provider["credential_reference"] == (
+        f"model_provider_credentials:{credential.id}"
+    )
+    assert blocked_provider["credential_status"] == "active"
+    assert blocked_provider["credential_health_status"] == "unhealthy"
+    assert blocked_provider["budget_exhausted"] is False
+    assert blocked_provider["model_api"] == "chat_completions"
+    assert "sk-scheduler-release-blocked" not in str(step.dependencies)
+    assert "provider.example.test/v1" not in str(step.dependencies)
+    assert workspace_quota.reserved_value == 0
+    assert runtime_quota.reserved_value == 0
+    assert len(workspace_reservations) == 1
+    assert len(runtime_reservations) == 1
+    assert workspace_reservations[0].status == "released"
+    assert runtime_reservations[0].status == "released"
+    assert workspace_reservations[0].agent_run_id is None
+    assert runtime_reservations[0].agent_run_id is None
 
 
 def test_workspace_scheduler_starts_higher_priority_task_first() -> None:
@@ -1572,6 +2115,16 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
             "metadata": {},
         }
     ]
+    assert request.tracing is not None
+    assert request.tracing.workflow_name == "chaincloud.agent_run"
+    assert request.tracing.group_id == f"task:{task.id}"
+    assert request.tracing.metadata["tool_continuations"] == [
+        {
+            "tool_name": "generate_image",
+            "status": "completed",
+            "metadata": {},
+        }
+    ]
     assert "Completed runtime tool results" not in request.input_text
     assert "img_123" not in request.input_text
     assert "do not include this original prompt" not in request.input_text
@@ -1580,6 +2133,11 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
 def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
+    settings = Settings(
+        environment="test",
+        credential_encryption_secret="unit-test-secret",
+        credential_encryption_key_id="test-key",
+    )
     credential = ModelProviderCredentialService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
@@ -1592,6 +2150,7 @@ def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> Non
         default_model="router/default",
         base_url="https://llm.example.test/v1",
         is_default=True,
+        budget_metadata={"model_api": "chat_completions"},
     )
     agent = AgentProfile(
         workspace_id=workspace.id,
@@ -1648,10 +2207,157 @@ def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> Non
     assert snapshot["base_url_host"] == "llm.example.test"
     assert snapshot["base_url_configured"] is True
     assert snapshot["api_key_fingerprint"] == credential.api_key_fingerprint
+    assert snapshot["model_api"] == "chat_completions"
+    assert snapshot["model_capability"] == {
+        "provider": "openai-compatible",
+        "model": "*",
+        "display_name": "OpenAI-compatible model",
+        "capabilities": ["tools", "json_mode", "streaming"],
+        "supports_tools": True,
+        "supports_vision": False,
+        "supports_json_mode": True,
+        "supports_streaming": True,
+        "context_window_tokens": None,
+        "notes": "Actual support depends on the upstream gateway and selected model.",
+    }
+    assert snapshot["credential_status"] == "active"
+    assert snapshot["credential_health_status"] == "unknown"
+    assert snapshot["failure_count"] == 0
+    assert snapshot["budget_exhausted"] is False
+    assert snapshot["last_failure_code"] is None
     assert "api_key" not in snapshot
     assert "base_url" not in snapshot
     assert [event.event_type for event in events] == ["model_provider.resolved"]
     assert events[0].event_metadata == {"model_provider": snapshot}
+
+    run.input = {
+        **run.input,
+        "authorization_snapshot": {
+            **run.input["authorization_snapshot"],
+            "model_provider": {
+                **snapshot,
+                "model_api": "chat-completions",
+            },
+        },
+    }
+    credential.budget_metadata = {"model_api": "responses"}
+    session.flush([credential])
+    request = RunOrchestrationService(session, settings=settings)._build_agent_request(
+        run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="frozen-model-api",
+        ),
+    )
+
+    assert request.model_api == "chat_completions"
+
+
+def test_queued_team_run_uses_frozen_agent_model_provider_protocol() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    settings = Settings(
+        environment="test",
+        credential_encryption_secret="unit-test-secret",
+        credential_encryption_key_id="test-key",
+    )
+    credential = ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
+    ).create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Router",
+        provider="openai-compatible",
+        api_key="sk-never-freeze",
+        default_model="router/default",
+        base_url="https://llm.example.test/v1",
+        is_default=True,
+        budget_metadata={"model_api": "responses"},
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        model="db-model",
+        model_provider_credential_id=credential.id,
+        model_settings={"model_api": "responses"},
+    )
+    team = AgentTeam(workspace_id=workspace.id, name="Writing Team", team_type="writing")
+    session.add_all([agent, team])
+    session.flush()
+    member = AgentTeamMember(
+        workspace_id=workspace.id,
+        agent_team_id=team.id,
+        agent_profile_id=agent.id,
+        team_role="writer",
+    )
+    session.add(member)
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        team_snapshot={
+            "snapshot_version": 1,
+            "team": {"id": str(team.id), "name": team.name},
+            "members": [
+                {
+                    "id": str(member.id),
+                    "agent_profile_id": str(agent.id),
+                    "team_role": "writer",
+                    "accepts_tasks": True,
+                    "agent": {
+                        "id": str(agent.id),
+                        "name": "Frozen Writer",
+                        "role": "writer",
+                        "model": "snapshot-model",
+                        "model_provider_credential_id": str(credential.id),
+                        "model_api": "chat-completions",
+                    },
+                }
+            ],
+            "agents": [],
+        },
+        project_plan={
+            "plan_version": 1,
+            "work_packages": [
+                {
+                    "package_id": "draft",
+                    "title": "Draft",
+                    "assigned_agent_profile_id": str(agent.id),
+                    "required_role": "writer",
+                }
+            ],
+        },
+        title="Draft chapter",
+    )
+    session.add(task)
+    session.flush()
+
+    run = RunOrchestrationService(session).create_queued_run_for_task(task)
+    snapshot = run.input["authorization_snapshot"]["model_provider"]
+    request = RunOrchestrationService(session, settings=settings)._build_agent_request(
+        run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="frozen-agent-provider-protocol",
+        ),
+    )
+
+    assert run.model == "snapshot-model"
+    assert snapshot["agent_model"] == "snapshot-model"
+    assert snapshot["selected_model"] == "snapshot-model"
+    assert snapshot["model_api"] == "chat_completions"
+    assert request.model == "snapshot-model"
+    assert request.model_api == "chat_completions"
+    assert request.context.metadata["model_provider_model_api"] == "chat_completions"
 
 
 def test_disabled_skill_install_is_not_in_future_run_snapshot() -> None:
@@ -1733,6 +2439,140 @@ def test_disabled_skill_install_is_not_in_future_run_snapshot() -> None:
 
     assert first_snapshot["installed_skills"][0]["source_checksum"] == "sha256:v1"
     assert second_snapshot["installed_skills"] == []
+
+
+def test_agent_request_restores_provider_native_continuation_from_persistent_session() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        model="gpt-4.1",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft continued note",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    session.add(
+        PersistentAgentSession(
+            workspace_id=workspace.id,
+            session_key=f"{workspace.id}:task_agent:{task.id}:{agent.id}",
+            scope_type="task_agent",
+            scope_id=f"{task.id}:{agent.id}",
+            agent_profile_id=agent.id,
+            task_id=task.id,
+            openai_conversation_id="conv_existing",
+        )
+    )
+    first_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.COMPLETED.value,
+        completed_at=datetime.now(UTC) - timedelta(minutes=1),
+        output={
+            "final_output": "Earlier result",
+            "raw_output": {
+                "sdk_continuation": {
+                    "last_response_id": "resp_previous",
+                    "resume_input": [{"role": "user", "content": "continue"}],
+                }
+            },
+        },
+    )
+    second_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add_all([first_run, second_run])
+    session.commit()
+
+    class CapturingRunner:
+        def __init__(self) -> None:
+            self.requests: list[AgentRunRequest] = []
+
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            self.requests.append(request)
+            return AgentRunResult(final_output="continued")
+
+    runner = CapturingRunner()
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=second_run.id,
+        requested_by_user_id=user.id,
+        idempotency_key="provider-native-continuation",
+    )
+
+    RunOrchestrationService(session, agent_runner=runner).run_agent_sync(job)
+
+    assert len(runner.requests) == 1
+    request = runner.requests[0]
+    assert request.previous_response_id == "resp_previous"
+    assert request.conversation_id == "conv_existing"
+    assert request.context.metadata["previous_response_id"] == "resp_previous"
+    assert request.context.metadata["conversation_id"] == "conv_existing"
+
+
+def test_completed_run_updates_persistent_session_conversation_id() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        model="gpt-4.1",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft continued note",
+        status=TaskStatus.RUNNING.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    persistent_session = PersistentAgentSession(
+        workspace_id=workspace.id,
+        session_key=f"{workspace.id}:task_agent:{task.id}:{agent.id}",
+        scope_type="task_agent",
+        scope_id=f"{task.id}:{agent.id}",
+        agent_profile_id=agent.id,
+        task_id=task.id,
+        openai_conversation_id="conv_old",
+    )
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.RUNNING.value,
+        input={},
+    )
+    session.add_all([persistent_session, run])
+    session.flush()
+
+    RunOrchestrationService(session)._mark_run_completed(
+        run,
+        AgentRunResult(
+            final_output="continued",
+            raw_output={
+                "sdk_continuation": {
+                    "conversation_id": "conv_new",
+                    "last_response_id": "resp_new",
+                }
+            },
+        ),
+        requested_by_user_id=user.id,
+    )
+
+    assert persistent_session.openai_conversation_id == "conv_new"
 
 
 def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
@@ -2265,12 +3105,10 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
         .where(TaskMessage.task_id == task.id)
         .order_by(TaskMessage.sequence)
     ).all()
-    event_types = [
-        event.event_type
-        for event in session.scalars(
-            select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
-        )
-    ]
+    events = session.scalars(
+        select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
+    ).all()
+    event_types = [event.event_type for event in events]
 
     runtime_messages = [
         message
@@ -2300,6 +3138,13 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
     assert runtime_messages[4].payload["base_url"] == "[redacted]"
     assert "debug.trace" in event_types
     assert "debug.trace" not in {message.message_type for message in messages}
+    serialized_events = json.dumps([event.event_metadata for event in events])
+    assert "sk-secret" not in serialized_events
+    assert "hidden-token" not in serialized_events
+    assert "Bearer hidden" not in serialized_events
+    assert "secret-ref" not in serialized_events
+    assert "https://secret.example" not in serialized_events
+    assert "[redacted]" in serialized_events
 
 
 def test_worker_persists_structured_task_progress_from_agent_output() -> None:
@@ -2409,6 +3254,7 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         name="Designer",
         role="designer",
         instructions="Design assets.",
+        model_settings={"model_api": "chat-completions"},
         tool_policy={"mcp_tools": ["generate_image", 42, "write_artifact"]},
     )
     session.add_all([task, agent])
@@ -2433,17 +3279,284 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
     request = RunOrchestrationService(session)._build_agent_request(run, job)
 
     assert request.context.allowed_tools == ("generate_image", "write_artifact")
-    assert request.context.metadata == {
+    assert request.model_api == "chat_completions"
+    assert request.context.metadata | {
+        "persistent_session_key": None,
+        "persistent_session_mode": None,
+    } == {
         "agent_profile_id": str(agent.id),
         "agent_role": "designer",
         "run_model": agent.model,
+        "model_provider_provider": None,
         "model_provider_credential_id": None,
+        "model_provider_model_api": "chat_completions",
         "authorization_scope": "workspace",
         "authorized_workspace_id": str(workspace.id),
         "authorized_task_id": str(task.id),
         "tool_policy_source": "agent_profile",
         "authorization_snapshot_version": None,
+        "agent_mailbox": {
+            "scope": {"task_id": str(task.id)},
+            "thread_count": 0,
+            "message_count": 0,
+            "unread_count": 0,
+            "pending_count": 0,
+            "latest_unread_messages": [],
+        },
+        "persistent_session_key": None,
+        "persistent_session_mode": None,
     }
+    assert request.context.metadata["persistent_session_mode"] == "sdk_session"
+    assert isinstance(request.context.metadata["persistent_session_key"], str)
+
+
+def test_agent_request_includes_unread_mailbox_context() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Inbox task",
+        status=TaskStatus.QUEUED.value,
+    )
+    sender = AgentProfile(workspace_id=workspace.id, name="Planner", role="planner")
+    recipient = AgentProfile(workspace_id=workspace.id, name="Builder", role="builder")
+    session.add_all([task, sender, recipient])
+    session.flush()
+    thread = AgentMessageThread(workspace_id=workspace.id, task_id=task.id, subject="Handoff")
+    session.add(thread)
+    session.flush()
+    message = AgentMessage(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        thread_id=thread.id,
+        sender_agent_profile_id=sender.id,
+        recipient_agent_profile_id=recipient.id,
+        message_type="handoff",
+        body="Please continue with token hidden-mailbox-token and key sk-mailbox-secret.",
+        payload={"token": "hidden-mailbox-token"},
+    )
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=recipient.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add_all([message, run])
+    session.commit()
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        requested_by_user_id=user.id,
+        idempotency_key="mailbox-context",
+    )
+
+    request = RunOrchestrationService(session)._build_agent_request(run, job)
+
+    mailbox = request.context.metadata["agent_mailbox"]
+    assert mailbox["thread_count"] == 1
+    assert mailbox["message_count"] == 1
+    assert mailbox["unread_count"] == 1
+    assert mailbox["scope"] == {"task_id": str(task.id)}
+    assert mailbox["latest_unread_messages"] == [
+        {
+            "id": str(message.id),
+            "thread_id": str(thread.id),
+            "task_id": str(task.id),
+            "agent_team_id": None,
+            "sender_agent_profile_id": str(sender.id),
+            "message_type": "handoff",
+            "status": "sent",
+            "created_at": message.created_at.isoformat(),
+            "body_preview": "[redacted]",
+        }
+    ]
+    assert "hidden-mailbox-token" not in str(mailbox)
+    assert "sk-mailbox-secret" not in str(mailbox)
+
+
+def test_agent_request_mailbox_context_is_scoped_to_current_task() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    current_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Current inbox task",
+        status=TaskStatus.QUEUED.value,
+    )
+    other_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Other inbox task",
+        status=TaskStatus.QUEUED.value,
+    )
+    sender = AgentProfile(workspace_id=workspace.id, name="Planner", role="planner")
+    recipient = AgentProfile(workspace_id=workspace.id, name="Builder", role="builder")
+    session.add_all([current_task, other_task, sender, recipient])
+    session.flush()
+    current_thread = AgentMessageThread(
+        workspace_id=workspace.id,
+        task_id=current_task.id,
+        subject="Current handoff",
+    )
+    other_thread = AgentMessageThread(
+        workspace_id=workspace.id,
+        task_id=other_task.id,
+        subject="Other handoff",
+    )
+    session.add_all([current_thread, other_thread])
+    session.flush()
+    current_message = AgentMessage(
+        workspace_id=workspace.id,
+        task_id=current_task.id,
+        thread_id=current_thread.id,
+        sender_agent_profile_id=sender.id,
+        recipient_agent_profile_id=recipient.id,
+        message_type="handoff",
+        body="Use the current task handoff.",
+    )
+    other_message = AgentMessage(
+        workspace_id=workspace.id,
+        task_id=other_task.id,
+        thread_id=other_thread.id,
+        sender_agent_profile_id=sender.id,
+        recipient_agent_profile_id=recipient.id,
+        message_type="handoff",
+        body="This belongs to another task.",
+    )
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=current_task.id,
+        agent_profile_id=recipient.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add_all([current_message, other_message, run])
+    session.commit()
+
+    request = RunOrchestrationService(session)._build_agent_request(
+        run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="task-scoped-mailbox-context",
+        ),
+    )
+
+    mailbox = request.context.metadata["agent_mailbox"]
+    assert mailbox["thread_count"] == 1
+    assert mailbox["message_count"] == 1
+    assert mailbox["unread_count"] == 1
+    assert mailbox["scope"] == {"task_id": str(current_task.id)}
+    assert mailbox["latest_unread_messages"][0]["id"] == str(current_message.id)
+    assert str(other_message.id) not in str(mailbox)
+    assert "another task" not in str(mailbox)
+
+
+def test_team_agent_mailbox_context_is_scoped_to_runtime_thread() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    sender = AgentProfile(workspace_id=workspace.id, name="Planner", role="planner")
+    recipient = AgentProfile(workspace_id=workspace.id, name="Builder", role="builder")
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Runtime Team",
+        team_type="software",
+        manager_agent_profile_id=sender.id,
+    )
+    session.add_all([sender, recipient, team])
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=sender.id,
+                team_role="Planner",
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=recipient.id,
+                team_role="Builder",
+            ),
+        ]
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Team runtime task",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add(task)
+    session.flush()
+    runtime_state = TeamRuntimeService(session).get_state(
+        workspace_id=workspace.id,
+        team_id=team.id,
+        initialize=True,
+    )
+    assert runtime_state is not None
+    assert runtime_state.thread_id is not None
+    other_thread = AgentMessageThread(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        subject="Task-local handoff",
+    )
+    session.add(other_thread)
+    session.flush()
+    runtime_message = AgentMessage(
+        workspace_id=workspace.id,
+        thread_id=runtime_state.thread_id,
+        agent_team_id=team.id,
+        sender_agent_profile_id=sender.id,
+        recipient_agent_profile_id=recipient.id,
+        message_type="handoff",
+        body="Use the shared runtime handoff.",
+    )
+    other_message = AgentMessage(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        thread_id=other_thread.id,
+        sender_agent_profile_id=sender.id,
+        recipient_agent_profile_id=recipient.id,
+        message_type="handoff",
+        body="This task-local handoff should not enter runtime inbox.",
+    )
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=recipient.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add_all([runtime_message, other_message, run])
+    session.commit()
+
+    request = RunOrchestrationService(session)._build_agent_request(
+        run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="team-runtime-scoped-mailbox-context",
+        ),
+    )
+
+    mailbox = request.context.metadata["agent_mailbox"]
+    assert mailbox["thread_count"] == 1
+    assert mailbox["message_count"] == 1
+    assert mailbox["unread_count"] == 1
+    assert mailbox["scope"] == {"thread_id": str(runtime_state.thread_id)}
+    assert mailbox["latest_unread_messages"][0]["id"] == str(runtime_message.id)
+    assert mailbox["latest_unread_messages"][0]["agent_team_id"] == str(team.id)
+    assert str(other_message.id) not in str(mailbox)
+    assert "task-local handoff" not in str(mailbox)
 
 
 def test_agent_request_includes_authorized_task_step_context() -> None:
@@ -2498,7 +3611,7 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
     request = RunOrchestrationService(session)._build_agent_request(run, job)
 
     assert request.context.allowed_tools == ("generate_image", "write_artifact")
-    assert request.context.metadata == {
+    expected_metadata = {
         "agent_profile_id": str(agent.id),
         "agent_role": "designer",
         "run_model": agent.model,
@@ -2517,6 +3630,12 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
         "acceptance_criteria": ["Deck follows the brand system."],
         "review_policy": {"reviewer": "manager", "mode": "manager_review"},
     }
+    assert request.context.metadata | expected_metadata == request.context.metadata
+    assert request.context.metadata["agent_mailbox"]["unread_count"] == 0
+    assert request.context.metadata["persistent_session_mode"] == "sdk_session"
+    assert request.tracing is not None
+    assert request.tracing.group_id == request.context.metadata["persistent_session_key"]
+    assert request.tracing.metadata["task_step_id"] == str(step.id)
 
 
 def test_agent_request_allows_snapshot_to_narrow_agent_tools() -> None:
@@ -2586,11 +3705,12 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         name="Custom Provider",
-        provider="openai-compatible",
-        api_key="sk-custom",
-        default_model="provider-default-model",
-        base_url="https://llm.example.test/v1",
+        provider="anthropic",
+        api_key="anthropic-key",
+        default_model="claude-sonnet-4-5",
+        base_url="https://api.anthropic.com",
         is_default=True,
+        budget_metadata={"model_api": "anthropic_messages"},
     )
     task = Task(
         workspace_id=workspace.id,
@@ -2605,6 +3725,7 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
         instructions="Write.",
         model="workspace-default",
         model_provider_credential_id=credential.id,
+        model_settings={"model_api": "response"},
     )
     session.add_all([task, agent])
     session.flush()
@@ -2629,11 +3750,275 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
         ),
     )
 
-    assert request.model == "provider-default-model"
-    assert request.base_url == "https://llm.example.test/v1"
-    assert request.api_key == "sk-custom"
+    assert request.model == "claude-sonnet-4-5"
+    assert request.provider == "anthropic"
+    assert request.base_url == "https://api.anthropic.com"
+    assert request.api_key == "anthropic-key"
+    assert request.model_api == "anthropic_messages"
     assert request.model_provider_credential_id == credential.id
+    assert request.context.metadata["run_model"] == "claude-sonnet-4-5"
+    assert request.context.metadata["model_provider_provider"] == "anthropic"
     assert request.context.metadata["model_provider_credential_id"] == str(credential.id)
+    assert request.context.metadata["model_provider_model_api"] == "anthropic_messages"
+    assert request.tracing is not None
+    assert request.tracing.metadata["run_model"] == "claude-sonnet-4-5"
+    assert request.tracing.metadata["model_provider_provider"] == "anthropic"
+    assert request.tracing.metadata["model_provider_credential_id"] == str(credential.id)
+    assert request.tracing.metadata["model_provider_model_api"] == "anthropic_messages"
+    serialized_tracing = json.dumps(request.tracing.metadata)
+    assert "api_key" not in serialized_tracing
+    assert "base_url" not in serialized_tracing
+
+
+def test_agent_request_model_api_overrides_credential_default_protocol() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    settings = Settings(
+        environment="test",
+        credential_encryption_secret="test-secret",
+        credential_encryption_key_id="test-key",
+    )
+    credential = ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(
+            secret=settings.credential_encryption_secret,
+            key_id=settings.credential_encryption_key_id,
+        ),
+    ).create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Router",
+        provider="openai-compatible",
+        api_key="router-key",
+        default_model="router/default",
+        base_url="https://router.example.test/v1",
+        is_default=True,
+        budget_metadata={"model_api": "chat-completions"},
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Custom",
+        role="writer",
+        instructions="Write.",
+        model="workspace-default",
+        model_provider_credential_id=credential.id,
+        model_settings={"model_api": "response"},
+    )
+    session.add_all([task, agent])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    request = RunOrchestrationService(session, settings=settings)._build_agent_request(
+        run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="agent-model-api-override",
+        ),
+    )
+
+    assert request.model == "router/default"
+    assert request.model_api == "responses"
+    assert request.context.metadata["model_provider_model_api"] == "responses"
+    assert request.tracing is not None
+    assert request.tracing.metadata["model_provider_model_api"] == "responses"
+
+
+def test_agent_request_re_resolves_workspace_default_snapshot_when_provider_unhealthy() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    settings = Settings(
+        environment="test",
+        credential_encryption_secret="test-secret",
+        credential_encryption_key_id="test-key",
+    )
+    service = ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(
+            secret=settings.credential_encryption_secret,
+            key_id=settings.credential_encryption_key_id,
+        ),
+    )
+    primary = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Primary Default",
+        provider="openai-compatible",
+        api_key="sk-primary",
+        default_model="primary-default",
+        base_url="https://primary.example.test/v1",
+        is_default=True,
+    )
+    backup = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Backup",
+        provider="openai-compatible",
+        api_key="sk-backup",
+        default_model="backup-default",
+        base_url="https://backup.example.test/v1",
+        is_default=False,
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Defaulted",
+        role="writer",
+        instructions="Write.",
+        model="workspace-default",
+    )
+    session.add_all([task, agent])
+    session.flush()
+    snapshot = RunOrchestrationService(
+        session,
+        settings=settings,
+    )._model_provider_snapshot(workspace.id, agent)
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={"authorization_snapshot": {"model_provider": snapshot}},
+    )
+    session.add(run)
+    session.commit()
+
+    primary.health_status = "unhealthy"
+    session.commit()
+
+    request = RunOrchestrationService(session, settings=settings)._build_agent_request(
+        run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="provider-snapshot-reresolve",
+        ),
+    )
+
+    assert snapshot["source"] == "workspace_default"
+    assert snapshot["credential_id"] == str(primary.id)
+    assert request.model == "backup-default"
+    assert request.api_key == "sk-backup"
+    assert request.base_url == "https://backup.example.test/v1"
+    assert request.model_provider_credential_id == backup.id
+
+
+def test_agent_request_does_not_fallback_explicit_inactive_provider_override() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    settings = Settings(
+        environment="test",
+        credential_encryption_secret="test-secret",
+        credential_encryption_key_id="test-key",
+    )
+    service = ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(
+            secret=settings.credential_encryption_secret,
+            key_id=settings.credential_encryption_key_id,
+        ),
+    )
+    inactive = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Explicit Inactive",
+        provider="openai-compatible",
+        api_key="sk-inactive-explicit",
+        default_model="inactive-model",
+        base_url="https://inactive.example.test/v1",
+        is_default=False,
+    )
+    inactive.status = "inactive"
+    backup = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Workspace Backup",
+        provider="openai-compatible",
+        api_key="sk-backup",
+        default_model="backup-model",
+        base_url="https://backup.example.test/v1",
+        is_default=True,
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Explicit",
+        role="writer",
+        instructions="Write.",
+        model="workspace-default",
+        model_provider_credential_id=inactive.id,
+    )
+    session.add_all([task, agent])
+    session.flush()
+    snapshot = {
+        "source": "agent_override",
+        "selected_model": "inactive-model",
+        "agent_model": "workspace-default",
+        "credential_id": str(inactive.id),
+        "credential_reference": f"model_provider_credentials:{inactive.id}",
+        "credential_name": "Explicit Inactive",
+        "provider": "openai-compatible",
+        "default_model": "inactive-model",
+        "base_url_host": "inactive.example.test",
+        "base_url_configured": True,
+        "api_key_fingerprint": inactive.api_key_fingerprint,
+        "is_default": False,
+        "model_api": None,
+    }
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={"authorization_snapshot": {"model_provider": snapshot}},
+    )
+    session.add(run)
+    session.commit()
+
+    with pytest.raises(ValueError, match="not found or unavailable"):
+        RunOrchestrationService(session, settings=settings)._build_agent_request(
+            run,
+            JobPayload(
+                workspace_id=workspace.id,
+                job_type=JobType.AGENT_RUN,
+                resource_id=run.id,
+                requested_by_user_id=user.id,
+                idempotency_key="explicit-inactive-provider",
+            ),
+        )
+
+    assert snapshot["source"] == "agent_override"
+    assert snapshot["credential_id"] == str(inactive.id)
+    assert backup.status == "active"
+    assert "sk-inactive-explicit" not in str(snapshot)
 
 
 def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
@@ -2660,6 +4045,7 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
         default_model="primary-model",
         base_url="https://primary.example.test/v1",
         is_default=False,
+        budget_metadata={"model_api": "chat_completions"},
     )
     backup = service.create(
         workspace_id=workspace.id,
@@ -2670,6 +4056,7 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
         default_model="backup-default",
         base_url="https://backup.example.test/v1",
         is_default=False,
+        budget_metadata={"model_api": "responses"},
     )
     workspace.settings = {
         "model_provider_fallback": {
@@ -2686,13 +4073,32 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
         model="primary-model",
         model_provider_credential_id=primary.id,
     )
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Fallback Team",
+        team_type="software",
+        manager_agent_profile_id=agent.id,
+        default_task_policy={"team_runtime": {"status": "running"}},
+    )
+    session.add_all([agent, team])
+    session.flush()
+    session.add(
+        AgentTeamMember(
+            workspace_id=workspace.id,
+            agent_team_id=team.id,
+            agent_profile_id=agent.id,
+            team_role="developer",
+            order_index=1,
+        )
+    )
     task = Task(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
+        agent_team_id=team.id,
         title="Draft report",
         status=TaskStatus.QUEUED.value,
     )
-    session.add_all([agent, task])
+    session.add(task)
     session.flush()
     run = AgentRun(
         workspace_id=workspace.id,
@@ -2711,7 +4117,11 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
             self.requests.append(request)
             if len(self.requests) == 1:
-                raise RuntimeError("primary provider unavailable")
+                raise RuntimeError(
+                    "primary provider unavailable api_key=sk-fallback-secret "
+                    "Bearer fallback-token "
+                    "base_url=https://primary.example.test/v1/private"
+                )
             return AgentRunResult(final_output=f"handled by {request.model}")
 
     runner = FallbackRunner()
@@ -2739,13 +4149,24 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
             AuditEvent.target_id == str(run.id),
         )
     )
+    team_message = session.scalar(
+        select(AgentMessage).where(
+            AgentMessage.workspace_id == workspace.id,
+            AgentMessage.agent_team_id == team.id,
+            AgentMessage.message_type == "team.runtime.model_provider.fallback_selected",
+        )
+    )
 
     assert [request.model for request in runner.requests] == ["primary-model", "backup-model"]
     assert runner.requests[0].api_key == "sk-primary"
     assert runner.requests[1].api_key == "sk-backup"
+    assert [request.model_api for request in runner.requests] == [
+        "chat_completions",
+        "responses",
+    ]
     assert primary.health_status == "degraded"
     assert primary.last_failure_code == "RuntimeError"
-    assert primary.last_failure_message == "primary provider unavailable"
+    assert primary.last_failure_message == "[redacted]"
     assert primary.last_failure_at is not None
     assert backup.health_status == "healthy"
     assert backup.last_success_at is not None
@@ -2755,27 +4176,361 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
         "raw_output": {"model": "backup-model"},
     }
     assert fallback_event.event_metadata["reason"]["code"] == "RuntimeError"
+    assert fallback_event.event_metadata["reason"]["message"] == "[redacted]"
     assert fallback_event.event_metadata["failed_provider"] == {
+        "provider": "openai-compatible",
         "model": "primary-model",
+        "model_api": "chat_completions",
         "credential_id": str(primary.id),
     }
+    serialized_event = json.dumps(fallback_event.event_metadata)
+    assert "sk-fallback-secret" not in serialized_event
+    assert "Bearer fallback-token" not in serialized_event
+    assert "https://primary.example.test/v1/private" not in serialized_event
+    assert "primary.example.test/v1/private" not in serialized_event
+    assert "sk-primary" not in serialized_event
+    assert "sk-backup" not in serialized_event
     selected = fallback_event.event_metadata["model_provider"]
     assert selected["source"] == "fallback_policy"
     assert selected["credential_id"] == str(backup.id)
     assert selected["selected_model"] == "backup-model"
+    assert selected["model_api"] == "responses"
+    assert selected["model_capability"] == {
+        "provider": "openai-compatible",
+        "model": "*",
+        "display_name": "OpenAI-compatible model",
+        "capabilities": ["tools", "json_mode", "streaming"],
+        "supports_tools": True,
+        "supports_vision": False,
+        "supports_json_mode": True,
+        "supports_streaming": True,
+        "context_window_tokens": None,
+        "notes": "Actual support depends on the upstream gateway and selected model.",
+    }
+    assert selected["credential_status"] == "active"
+    assert selected["credential_health_status"] == "unknown"
+    assert selected["failure_count"] == 0
+    assert selected["budget_exhausted"] is False
+    assert selected["last_failure_code"] is None
     assert "api_key" not in selected
     assert "base_url" not in selected
     assert used_event.event_metadata["model_provider"] == {
+        "provider": "openai-compatible",
         "model": "backup-model",
+        "model_api": "responses",
         "credential_id": str(backup.id),
     }
+    assert team_message is not None
+    assert team_message.task_id == task.id
+    assert team_message.payload["run_id"] == str(run.id)
+    assert team_message.payload["run_event_id"] == str(fallback_event.id)
+    assert team_message.payload["event_metadata"]["model_provider"]["credential_id"] == str(
+        backup.id
+    )
+    serialized_message = json.dumps(team_message.payload)
+    assert "sk-fallback-secret" not in serialized_message
+    assert "Bearer fallback-token" not in serialized_message
+    assert "primary.example.test/v1/private" not in serialized_message
     assert audit is not None
     assert audit.actor_id == str(user.id)
     assert audit.audit_metadata["model"] == "backup-model"
+    assert audit.audit_metadata["model_api"] == "responses"
+    assert audit.audit_metadata["provider"] == "openai-compatible"
     assert audit.audit_metadata["credential_id"] == str(backup.id)
     assert audit.audit_metadata["fallback_selected"] is True
     assert "api_key" not in audit.audit_metadata
     assert "base_url" not in audit.audit_metadata
+
+
+def test_worker_falls_back_across_model_provider_vendors() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    settings = Settings(
+        environment="test",
+        credential_encryption_secret="test-secret",
+        credential_encryption_key_id="test-key",
+    )
+    service = ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(
+            secret=settings.credential_encryption_secret,
+            key_id=settings.credential_encryption_key_id,
+        ),
+    )
+    primary = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Primary OpenAI Gateway",
+        provider="openai-compatible",
+        api_key="sk-primary",
+        default_model="primary-model",
+        base_url="https://primary.example.test/v1",
+        is_default=False,
+        budget_metadata={"model_api": "chat_completions"},
+    )
+    anthropic_backup = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Claude Backup",
+        provider="anthropic",
+        api_key="anthropic-key",
+        default_model="claude-sonnet-4-5",
+        base_url="https://api.anthropic.com",
+        is_default=False,
+    )
+    workspace.settings = {
+        "model_provider_fallback": {
+            "enabled": True,
+            "retry_error_codes": ["RuntimeError"],
+            "candidates": [
+                {
+                    "credential_id": str(anthropic_backup.id),
+                    "model": "claude-sonnet-4-5",
+                }
+            ],
+        }
+    }
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        instructions="Write.",
+        model="primary-model",
+        model_provider_credential_id=primary.id,
+    )
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Unavailable Fallback Team",
+        team_type="software",
+        manager_agent_profile_id=agent.id,
+        default_task_policy={"team_runtime": {"status": "running"}},
+    )
+    session.add_all([agent, team])
+    session.flush()
+    session.add(
+        AgentTeamMember(
+            workspace_id=workspace.id,
+            agent_team_id=team.id,
+            agent_profile_id=agent.id,
+            team_role="developer",
+            order_index=1,
+        )
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add(task)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    class FallbackRunner:
+        def __init__(self) -> None:
+            self.requests: list[AgentRunRequest] = []
+
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            self.requests.append(request)
+            if len(self.requests) == 1:
+                raise RuntimeError("primary provider unavailable")
+            return AgentRunResult(final_output=f"handled by {request.provider}")
+
+    runner = FallbackRunner()
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        requested_by_user_id=user.id,
+        idempotency_key="cross-provider-fallback",
+    )
+
+    RunOrchestrationService(session, agent_runner=runner, settings=settings).run_agent_sync(job)
+
+    fallback_event = session.scalar(
+        select(RunEvent).where(
+            RunEvent.agent_run_id == run.id,
+            RunEvent.event_type == "model_provider.fallback_selected",
+        )
+    )
+    audit = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "model_provider.used",
+            AuditEvent.target_id == str(run.id),
+        )
+    )
+
+    assert [(request.provider, request.model) for request in runner.requests] == [
+        ("openai-compatible", "primary-model"),
+        ("anthropic", "claude-sonnet-4-5"),
+    ]
+    assert runner.requests[1].api_key == "anthropic-key"
+    assert runner.requests[1].base_url == "https://api.anthropic.com"
+    assert runner.requests[1].model_api == "anthropic_messages"
+    assert fallback_event is not None
+    assert fallback_event.event_metadata["failed_provider"] == {
+        "provider": "openai-compatible",
+        "model": "primary-model",
+        "model_api": "chat_completions",
+        "credential_id": str(primary.id),
+    }
+    selected = fallback_event.event_metadata["model_provider"]
+    assert selected["provider"] == "anthropic"
+    assert selected["credential_id"] == str(anthropic_backup.id)
+    assert selected["selected_model"] == "claude-sonnet-4-5"
+    assert selected["model_api"] == "anthropic_messages"
+    assert "api_key" not in selected
+    assert "base_url" not in selected
+    assert audit is not None
+    assert audit.audit_metadata["provider"] == "anthropic"
+    assert audit.audit_metadata["model"] == "claude-sonnet-4-5"
+    assert audit.audit_metadata["model_api"] == "anthropic_messages"
+    assert audit.audit_metadata["credential_id"] == str(anthropic_backup.id)
+
+
+def test_worker_skips_budget_exhausted_model_provider_fallback() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    settings = Settings(
+        environment="test",
+        credential_encryption_secret="test-secret",
+        credential_encryption_key_id="test-key",
+    )
+    service = ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(
+            secret=settings.credential_encryption_secret,
+            key_id=settings.credential_encryption_key_id,
+        ),
+    )
+    primary = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Primary",
+        provider="openai-compatible",
+        api_key="sk-primary",
+        default_model="primary-model",
+        base_url=None,
+        is_default=False,
+    )
+    exhausted = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Exhausted",
+        provider="openai-compatible",
+        api_key="sk-exhausted",
+        default_model="exhausted-model",
+        base_url=None,
+        is_default=False,
+        budget_metadata={"limits": {"calls": 1}, "usage": {"calls": 1}},
+    )
+    backup = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Backup",
+        provider="openai-compatible",
+        api_key="sk-backup",
+        default_model="backup-model",
+        base_url=None,
+        is_default=False,
+    )
+    workspace.settings = {
+        "model_provider_fallback": {
+            "enabled": True,
+            "retry_error_codes": ["RuntimeError"],
+            "candidates": [
+                {"credential_id": str(exhausted.id), "model": "exhausted-model"},
+                {"credential_id": str(backup.id), "model": "backup-model"},
+            ],
+        }
+    }
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        instructions="Write.",
+        model="primary-model",
+        model_provider_credential_id=primary.id,
+    )
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Unavailable Fallback Team",
+        team_type="software",
+        manager_agent_profile_id=agent.id,
+        default_task_policy={"team_runtime": {"status": "running"}},
+    )
+    session.add_all([agent, team])
+    session.flush()
+    session.add(
+        AgentTeamMember(
+            workspace_id=workspace.id,
+            agent_team_id=team.id,
+            agent_profile_id=agent.id,
+            team_role="developer",
+            order_index=1,
+        )
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Draft report",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add(task)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    class FallbackRunner:
+        def __init__(self) -> None:
+            self.requests: list[AgentRunRequest] = []
+
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            self.requests.append(request)
+            if len(self.requests) == 1:
+                raise RuntimeError("primary provider unavailable")
+            return AgentRunResult(final_output=f"handled by {request.model}")
+
+    runner = FallbackRunner()
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        requested_by_user_id=user.id,
+        idempotency_key="provider-budget-fallback",
+    )
+
+    RunOrchestrationService(session, agent_runner=runner, settings=settings).run_agent_sync(job)
+
+    fallback_event = session.scalar(
+        select(RunEvent).where(
+            RunEvent.agent_run_id == run.id,
+            RunEvent.event_type == "model_provider.fallback_selected",
+        )
+    )
+    assert [request.model for request in runner.requests] == ["primary-model", "backup-model"]
+    assert all(request.model != "exhausted-model" for request in runner.requests)
+    assert fallback_event is not None
+    assert fallback_event.event_metadata["model_provider"]["credential_id"] == str(backup.id)
+    assert run.status == RunStatus.COMPLETED.value
 
 
 def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
@@ -2834,13 +4589,32 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
         model="primary-model",
         model_provider_credential_id=primary.id,
     )
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Unavailable Fallback Team",
+        team_type="software",
+        manager_agent_profile_id=agent.id,
+        default_task_policy={"team_runtime": {"status": "running"}},
+    )
+    session.add_all([agent, team])
+    session.flush()
+    session.add(
+        AgentTeamMember(
+            workspace_id=workspace.id,
+            agent_team_id=team.id,
+            agent_profile_id=agent.id,
+            team_role="developer",
+            order_index=1,
+        )
+    )
     task = Task(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
+        agent_team_id=team.id,
         title="Draft report",
         status=TaskStatus.QUEUED.value,
     )
-    session.add_all([agent, task])
+    session.add(task)
     session.flush()
     run = AgentRun(
         workspace_id=workspace.id,
@@ -2854,7 +4628,11 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
 
     class FailingRunner:
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
-            raise RuntimeError("primary provider unavailable")
+            raise RuntimeError(
+                "primary provider unavailable api_key=sk-unavailable-secret "
+                "Bearer unavailable-token "
+                "base_url=https://primary.example.test/v1/private"
+            )
 
     job = JobPayload(
         workspace_id=workspace.id,
@@ -2894,22 +4672,52 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
             AuditEvent.target_id == str(run.id),
         )
     )
+    team_message = session.scalar(
+        select(AgentMessage).where(
+            AgentMessage.workspace_id == workspace.id,
+            AgentMessage.agent_team_id == team.id,
+            AgentMessage.message_type == "team.runtime.model_provider.fallback_unavailable",
+        )
+    )
     assert "model_provider.fallback_selected" not in event_types
     assert fallback_unavailable_event is not None
     assert fallback_unavailable_event.event_metadata["failed_provider"] == {
+        "provider": "openai",
         "model": "primary-model",
+        "model_api": None,
         "credential_id": str(primary.id),
     }
     assert fallback_unavailable_event.event_metadata["reason"]["code"] == "RuntimeError"
+    assert fallback_unavailable_event.event_metadata["reason"]["message"] == "[redacted]"
+    serialized_event = json.dumps(fallback_unavailable_event.event_metadata)
+    assert "sk-unavailable-secret" not in serialized_event
+    assert "Bearer unavailable-token" not in serialized_event
+    assert "https://primary.example.test/v1/private" not in serialized_event
+    assert "primary.example.test/v1/private" not in serialized_event
     assert "api_key" not in fallback_unavailable_event.event_metadata
     assert "base_url" not in fallback_unavailable_event.event_metadata
+    assert team_message is not None
+    assert team_message.task_id == task.id
+    assert team_message.payload["run_id"] == str(run.id)
+    assert team_message.payload["run_event_id"] == str(fallback_unavailable_event.id)
+    assert team_message.payload["event_metadata"]["reason"]["message"] == "[redacted]"
+    serialized_message = json.dumps(team_message.payload)
+    assert "sk-unavailable-secret" not in serialized_message
+    assert "Bearer unavailable-token" not in serialized_message
+    assert "primary.example.test/v1/private" not in serialized_message
     assert audit is not None
     assert audit.audit_metadata["failed_provider"]["credential_id"] == str(primary.id)
-    assert audit.audit_metadata["reason"]["message"] == "primary provider unavailable"
+    assert audit.audit_metadata["failed_provider"]["model_api"] is None
+    assert audit.audit_metadata["reason"]["message"] == "[redacted]"
+    serialized_audit = json.dumps(audit.audit_metadata)
+    assert "sk-unavailable-secret" not in serialized_audit
+    assert "Bearer unavailable-token" not in serialized_audit
+    assert "base_url" not in serialized_audit
+    assert "https://primary.example.test/v1/private" not in serialized_audit
     assert "api_key" not in audit.audit_metadata
     assert "base_url" not in audit.audit_metadata
     assert run.status == RunStatus.FAILED.value
-    assert run.error["message"] == "primary provider unavailable"
+    assert run.error["message"] == "[redacted]"
 
 
 def test_agent_request_rejects_foreign_workspace_agent_profile() -> None:
@@ -3255,6 +5063,286 @@ def test_agent_request_rejects_authorization_snapshot_skill_provenance_mismatch(
         assert "skill provenance mismatch" in str(exc)
     else:
         raise AssertionError("Expected skill provenance mismatch to be rejected")
+
+
+def test_team_agent_runs_share_persistent_sdk_session_across_tasks() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Team Runtime Space",
+        status="active",
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Researcher",
+        role="researcher",
+        instructions="Keep long-running company context.",
+        model="researcher-model",
+    )
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Research Team",
+        team_type="research",
+        runtime_space_id=runtime_space.id,
+    )
+    session.add_all([runtime_space, agent, team])
+    session.flush()
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_space_id=runtime_space.id,
+        name="Research runtime",
+        status="running",
+        connection_status="online",
+    )
+    session.add(runtime)
+    session.flush()
+    team.default_task_policy = {
+        "team_runtime": {
+            "status": "running",
+            "workspace_runtime_id": str(runtime.id),
+            "last_heartbeat_at": datetime.now(UTC).isoformat(),
+        }
+    }
+    session.add(
+        AgentTeamMember(
+            workspace_id=workspace.id,
+            agent_team_id=team.id,
+            agent_profile_id=agent.id,
+            team_role="Research",
+        )
+    )
+    first_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="First market question",
+    )
+    second_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Second market question",
+    )
+    session.add_all([first_task, second_task])
+    session.flush()
+    first_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=first_task.id,
+        assigned_agent_profile_id=agent.id,
+        title="Research first",
+        status="queued",
+    )
+    second_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=second_task.id,
+        assigned_agent_profile_id=agent.id,
+        title="Research second",
+        status="queued",
+    )
+    session.add_all([first_step, second_step])
+    session.flush()
+    orchestration = RunOrchestrationService(session)
+    first_run = orchestration._create_run_for_step(first_task, first_step)
+    second_run = orchestration._create_run_for_step(second_task, second_step)
+
+    first_request = RunOrchestrationService(session)._build_agent_request(
+        first_run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=first_run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="first-persistent-session",
+        ),
+    )
+    second_request = RunOrchestrationService(session)._build_agent_request(
+        second_run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=second_run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="second-persistent-session",
+        ),
+    )
+
+    assert first_request.session is not None
+    assert second_request.session is not None
+    assert first_request.session.session_id == second_request.session.session_id
+    assert first_request.session.session_id == f"{workspace.id}:team_agent:{team.id}:{agent.id}"
+    assert first_request.context.metadata["persistent_session_mode"] == "sdk_session"
+    assert first_request.context.metadata["team_context"]["team_id"] == str(team.id)
+    assert first_request.context.metadata["team_context"]["current_member"]["team_role"] == (
+        "Research"
+    )
+    assert first_request.context.metadata["team_context"]["runtime"]["status"] == "running"
+    assert first_request.context.metadata["team_context"]["runtime"]["workspace_runtime_id"] == (
+        str(runtime.id)
+    )
+    assert first_request.context.metadata["team_context"]["runtime"]["runtime_space_id"] == (
+        str(runtime_space.id)
+    )
+    assert first_request.tracing is not None
+    assert first_request.tracing.workflow_name == "chaincloud.team_agent_run"
+    assert first_request.tracing.group_id == first_request.session.session_id
+    assert first_request.tracing.metadata["team"]["team_id"] == str(team.id)
+    assert first_request.tracing.metadata["team"]["current_member"]["team_role"] == "Research"
+    assert first_request.tracing.metadata["team"]["runtime"] == {
+        "status": "running",
+        "workspace_runtime_id": str(runtime.id),
+        "runtime_status": "running",
+        "runtime_space_id": str(runtime_space.id),
+        "thread_id": first_request.context.metadata["team_context"]["runtime"]["thread_id"],
+        "team_session_id": first_request.context.metadata["team_context"]["runtime"][
+            "team_session_id"
+        ],
+        "member_session_count": 1,
+    }
+    assert first_request.tracing.metadata["persistent_session_key"] == (
+        first_request.session.session_id
+    )
+    assert "Team context:" in first_request.input_text
+    assert "Research Team" in first_request.input_text
+
+
+def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    planner = AgentProfile(
+        workspace_id=workspace.id,
+        name="Planner",
+        role="planner",
+        tool_policy={
+            "allowed_tools": [
+                "send_agent_message",
+                "get_agent_inbox",
+                "mark_agent_message_read",
+            ]
+        },
+    )
+    builder = AgentProfile(
+        workspace_id=workspace.id,
+        name="Builder",
+        role="builder",
+        tool_policy={
+            "allowed_tools": [
+                "send_agent_message",
+                "get_agent_inbox",
+                "mark_agent_message_read",
+            ]
+        },
+    )
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Product Team",
+        team_type="software",
+        manager_agent_profile_id=planner.id,
+    )
+    session.add_all([planner, builder, team])
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=planner.id,
+                team_role="Planner",
+                order_index=1,
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=builder.id,
+                team_role="Builder",
+                order_index=2,
+            ),
+        ]
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Build mailbox flow",
+    )
+    session.add(task)
+    session.flush()
+    planner_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=planner.id,
+        title="Plan handoff",
+        status="queued",
+        order_index=1,
+    )
+    builder_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=builder.id,
+        title="Build handoff",
+        status="queued",
+        order_index=2,
+    )
+    session.add_all([planner_step, builder_step])
+    session.flush()
+    orchestration = RunOrchestrationService(session)
+    planner_run = orchestration._create_run_for_step(task, planner_step)
+    builder_run = orchestration._create_run_for_step(task, builder_step)
+    session.commit()
+
+    planner_request = RunOrchestrationService(session)._build_agent_request(
+        planner_run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=planner_run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="planner-mailbox-context",
+        ),
+    )
+    assert planner_request.context.allowed_tools == (
+        "send_agent_message",
+        "get_agent_inbox",
+        "mark_agent_message_read",
+    )
+    assert planner_request.session is not None
+    send_result = planner_request.tool_executor.execute_tool(
+        context=planner_request.context,
+        tool_name="send_agent_message",
+        arguments={
+            "recipient_agent_profile_id": str(builder.id),
+            "subject": "Builder handoff",
+            "body": "Start with the runtime ensure path.",
+        },
+    )
+    assert send_result.status == "completed"
+    assert send_result.output is not None
+    assert send_result.output["thread"]["id"] == (
+        planner_request.context.metadata["agent_mailbox"]["scope"]["thread_id"]
+    )
+    assert send_result.output["thread"]["task_id"] is None
+    assert send_result.output["thread"]["agent_team_id"] == str(team.id)
+    assert send_result.output["message"]["task_id"] is None
+    assert send_result.output["message"]["agent_team_id"] == str(team.id)
+
+    builder_request = RunOrchestrationService(session)._build_agent_request(
+        builder_run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=builder_run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="builder-mailbox-context",
+        ),
+    )
+    assert builder_request.session is not None
+    assert builder_request.session.session_id == f"{workspace.id}:team_agent:{team.id}:{builder.id}"
+    assert builder_request.context.metadata["agent_mailbox"]["unread_count"] == 1
+    assert builder_request.context.metadata["agent_mailbox"]["latest_unread_messages"][0][
+        "body_preview"
+    ] == "Start with the runtime ensure path."
+    assert builder_request.context.metadata["team_context"]["team_name"] == "Product Team"
+    assert "Team context:" in builder_request.input_text
 
 
 def test_stale_running_runs_are_recovered_as_failed() -> None:

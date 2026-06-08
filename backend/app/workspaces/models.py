@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -58,10 +58,62 @@ class WorkspaceMember(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     user: Mapped["User"] = relationship(back_populates="workspace_memberships")
 
 
+class WorkspaceInvite(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "workspace_invites"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_workspace_invites_token_hash"),
+        Index(
+            "uq_workspace_invites_active_workspace_email",
+            "workspace_id",
+            "email",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
+        ),
+        Index("ix_workspace_invites_workspace_status", "workspace_id", "status"),
+        Index("ix_workspace_invites_email_status", "email", "status"),
+        Index("ix_workspace_invites_fingerprint", "fingerprint"),
+        Index("ix_workspace_invites_invitee_user_id", "invitee_user_id"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(80), nullable=False)
+    inviter_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    invitee_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    accepted_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    revoked_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    expires_at: Mapped[datetime] = mapped_column(nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    workspace: Mapped[Workspace] = relationship()
+
+
 class WorkspaceQuota(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "workspace_quotas"
     __table_args__ = (
         UniqueConstraint("workspace_id", "quota_key", name="uq_workspace_quotas_key"),
+        CheckConstraint("limit_value >= 0", name="limit_value_non_negative"),
+        CheckConstraint("reserved_value >= 0", name="reserved_value_non_negative"),
         Index("ix_workspace_quotas_workspace_status", "workspace_id", "status"),
     )
 

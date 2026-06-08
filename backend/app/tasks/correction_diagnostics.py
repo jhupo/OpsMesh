@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.artifacts.models import Artifact
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
+from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
 ACTIVE_RUN_STATUSES = {
@@ -93,9 +94,9 @@ class TaskCorrectionDiagnosticsService:
                 payload.get("target_type"),
                 str,
             ) else target.get("target_type"),
-            "target": target,
+            "target": redact_sensitive_payload(target),
             "instruction": message.body,
-            "metadata": metadata,
+            "metadata": redact_sensitive_payload(metadata),
             "actor_user_id": _uuid_or_none(payload.get("actor_user_id")),
             "created_step": _step_payload(step),
             "runs": [_run_payload(run) for run in runs],
@@ -258,7 +259,7 @@ def _run_payload(run: AgentRun) -> dict[str, object]:
         "status": run.status,
         "started_at": run.started_at,
         "completed_at": run.completed_at,
-        "error": run.error,
+        "error": redact_sensitive_payload(run.error) if isinstance(run.error, dict) else None,
     }
 
 

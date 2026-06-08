@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.audit.service import AuditService
+from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
 TASK_OPERATOR_ACTIONS = {
@@ -379,20 +380,9 @@ class TaskOperatorActionService:
         reason: str | None,
         metadata: dict[str, object],
     ) -> TaskMessage:
-        next_sequence = (
-            self._session.scalar(
-                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
-                    TaskMessage.workspace_id == task.workspace_id,
-                    TaskMessage.task_id == task.id,
-                )
-            )
-            or 0
-        ) + 1
-        message = TaskMessage(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
+        return TaskMessageAppendService(self._session).append_for_task(
+            task,
             message_type=f"task.operator.{action}",
-            sequence=next_sequence,
             body=f"Operator action applied: {action}.",
             payload={
                 "action": action,
@@ -404,9 +394,6 @@ class TaskOperatorActionService:
                 "metadata": metadata,
             },
         )
-        self._session.add(message)
-        self._session.flush([message])
-        return message
 
     def _wake_task(self, task: Task, affected_step_ids: object) -> None:
         if not affected_step_ids:

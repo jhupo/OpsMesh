@@ -33,6 +33,21 @@ class DockerCliRuntimeClient(DockerRuntimeClient):
             "--network",
             "none" if request.network_disabled else "bridge",
         ]
+        for capability in request.hardening.cap_drop:
+            command.extend(["--cap-drop", capability])
+        for security_opt in request.hardening.security_opt:
+            command.extend(["--security-opt", security_opt])
+        if request.hardening.read_only_rootfs:
+            command.append("--read-only")
+        for tmpfs in request.hardening.tmpfs:
+            command.extend(
+                [
+                    "--tmpfs",
+                    f"{tmpfs.target}:{tmpfs.mode},size={tmpfs.size_mb}m",
+                ]
+            )
+        if request.hardening.user is not None:
+            command.extend(["--user", request.hardening.user])
         for key, value in sorted(labels.items()):
             command.extend(["--label", f"{key}={value}"])
         for mount in request.mounts:

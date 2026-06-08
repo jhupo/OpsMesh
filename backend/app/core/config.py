@@ -6,8 +6,10 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from backend.app.core.resources import recommend_runtime_resources
+from backend.app.secrets.service import redact_secret_provider_configs
 
 LogFormat = Literal["json", "text"]
+StorageBackend = Literal["local", "s3"]
 _RESOURCE_RECOMMENDATION = recommend_runtime_resources()
 
 
@@ -43,26 +45,63 @@ class Settings(BaseSettings):
     redis_health_check_interval_seconds: int = Field(default=30, ge=0)
     redis_key_prefix: str = Field(default="chaincloud")
     worker_queue_name: str = Field(default="agent_runs")
+    readiness_worker_check_enabled: bool = Field(default=False)
+    readiness_worker_stale_after_seconds: int = Field(default=300, ge=60)
+    mcp_health_check_stale_after_seconds: int = Field(default=24 * 60 * 60, ge=1)
     blocking_thread_pool_workers: int = Field(
         default=_RESOURCE_RECOMMENDATION.blocking_thread_pool_workers,
         ge=1,
     )
+    tracing_enabled: bool = Field(default=True)
     request_slow_log_threshold_ms: int = Field(default=1_000, ge=1)
     internal_api_token: str = Field(default="change-me-in-production")
     platform_admin_token: str | None = Field(default=None)
+    worker_heartbeat_token: str | None = Field(default=None)
     token_hash_pepper: str = Field(default="change-me-token-pepper")
+    audit_event_retention_days: int | None = Field(default=None, ge=1)
+    audit_event_worm_enabled: bool = Field(default=True)
+    storage_backend: StorageBackend = Field(default="local")
     storage_root: str = Field(default=".chaincloud-storage")
+    s3_bucket: str = Field(default="")
+    s3_endpoint_url: str | None = Field(default=None)
+    s3_region: str | None = Field(default=None)
+    s3_prefix: str = Field(default="")
+    s3_access_key_id: str | None = Field(default=None)
+    s3_secret_access_key: str | None = Field(default=None)
+    s3_session_token: str | None = Field(default=None)
+    s3_use_ssl: bool = Field(default=True)
+    s3_addressing_style: Literal["auto", "virtual", "path"] = Field(default="auto")
     max_upload_bytes: int = Field(default=10 * 1024 * 1024)
+    external_call_max_attempts: int = Field(default=2, ge=1, le=5)
+    external_call_circuit_failure_threshold: int = Field(default=5, ge=1, le=100)
+    external_call_circuit_reset_seconds: int = Field(default=60, ge=1, le=3_600)
     api_rate_limit_enabled: bool = Field(default=False)
     api_rate_limit_requests: int = Field(default=600, ge=1)
     api_rate_limit_window_seconds: int = Field(default=60, ge=1)
     credential_encryption_secret: str = Field(default="change-me-credential-encryption-secret")
     credential_encryption_key_id: str = Field(default="local")
+    credential_encryption_previous_secrets: dict[str, str] = Field(default_factory=dict)
+    secret_vault_providers: dict[str, dict[str, object]] = Field(default_factory=dict)
     runtime_allowed_images: list[str] = Field(default_factory=lambda: ["python:3.12-slim"])
     feature_flags: dict[str, bool] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
+        self.s3_bucket = self.s3_bucket.strip()
+        self.s3_prefix = self.s3_prefix.strip()
+        for field_name in (
+            "s3_endpoint_url",
+            "s3_region",
+            "s3_access_key_id",
+            "s3_secret_access_key",
+            "s3_session_token",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                stripped = value.strip()
+                setattr(self, field_name, stripped or None)
+        if self.storage_backend == "s3" and not self.s3_bucket.strip():
+            raise ValueError("CHAINCLOUD_S3_BUCKET must be set when CHAINCLOUD_STORAGE_BACKEND=s3")
         if self.environment.lower() in {"production", "prod"}:
             if self.internal_api_token == "change-me-in-production":
                 raise ValueError("CHAINCLOUD_INTERNAL_API_TOKEN must be set in production")
@@ -75,6 +114,12 @@ class Settings(BaseSettings):
             if self.credential_encryption_secret == "change-me-credential-encryption-secret":
                 raise ValueError(
                     "CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET must be set in production"
+                )
+            if not self.worker_heartbeat_token or not self.worker_heartbeat_token.strip():
+                raise ValueError("CHAINCLOUD_WORKER_HEARTBEAT_TOKEN must be set in production")
+            if not self.readiness_worker_check_enabled:
+                raise ValueError(
+                    "CHAINCLOUD_READINESS_WORKER_CHECK_ENABLED must be true in production"
                 )
             if "localhost" in self.database_url or "chaincloud:chaincloud" in self.database_url:
                 raise ValueError("CHAINCLOUD_DATABASE_URL must not use local default credentials")
@@ -108,9 +153,42 @@ class Settings(BaseSettings):
             "redis_url": _redact_url(self.redis_url),
             "redis_max_connections": self.redis_max_connections,
             "worker_queue_name": self.worker_queue_name,
+            "readiness_worker_check_enabled": self.readiness_worker_check_enabled,
+            "readiness_worker_stale_after_seconds": self.readiness_worker_stale_after_seconds,
+            "mcp_health_check_stale_after_seconds": (
+                self.mcp_health_check_stale_after_seconds
+            ),
             "blocking_thread_pool_workers": self.blocking_thread_pool_workers,
+            "tracing_enabled": self.tracing_enabled,
+            "external_call_max_attempts": self.external_call_max_attempts,
+            "external_call_circuit_failure_threshold": (
+                self.external_call_circuit_failure_threshold
+            ),
+            "external_call_circuit_reset_seconds": self.external_call_circuit_reset_seconds,
             "api_rate_limit_enabled": self.api_rate_limit_enabled,
+            "audit_event_retention_days": self.audit_event_retention_days,
+            "audit_event_worm_enabled": self.audit_event_worm_enabled,
+            "storage_backend": self.storage_backend,
             "storage_root": self.storage_root,
+            "s3_bucket": self.s3_bucket if self.storage_backend == "s3" else "",
+            "s3_endpoint_url": _redact_url(self.s3_endpoint_url)
+            if self.s3_endpoint_url is not None
+            else None,
+            "s3_region": self.s3_region,
+            "s3_prefix": self.s3_prefix,
+            "s3_access_key_id_configured": bool(self.s3_access_key_id),
+            "s3_secret_access_key_configured": bool(self.s3_secret_access_key),
+            "s3_session_token_configured": bool(self.s3_session_token),
+            "s3_use_ssl": self.s3_use_ssl,
+            "s3_addressing_style": self.s3_addressing_style,
+            "secret_vault_providers": redact_secret_provider_configs(
+                self.secret_vault_providers
+            ),
+            "credential_encryption_key_id": self.credential_encryption_key_id,
+            "credential_encryption_previous_key_ids": sorted(
+                self.credential_encryption_previous_secrets
+            ),
+            "worker_heartbeat_token_configured": bool(self.worker_heartbeat_token),
             "cors_origins_count": len(self.cors_origins),
             "enabled_feature_flags": sorted(
                 key for key, value in self.feature_flags.items() if value

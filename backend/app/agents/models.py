@@ -1,6 +1,7 @@
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,11 +37,60 @@ class AgentProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     approval_policy: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_versioned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     team_memberships: Mapped[list["AgentTeamMember"]] = relationship(
         back_populates="agent_profile",
         cascade="all, delete-orphan",
     )
+    versions: Mapped[list["AgentProfileVersion"]] = relationship(
+        back_populates="agent_profile",
+        cascade="all, delete-orphan",
+    )
+
+
+class AgentProfileVersion(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "agent_profile_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "agent_profile_id",
+            "version",
+            name="uq_agent_profile_versions_profile_version",
+        ),
+        Index(
+            "ix_agent_profile_versions_workspace_profile",
+            "workspace_id",
+            "agent_profile_id",
+        ),
+        Index("ix_agent_profile_versions_workspace_created", "workspace_id", "created_at"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    agent_profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("agent_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    changed_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    change_reason: Mapped[str | None] = mapped_column(String(1_000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    agent_profile: Mapped[AgentProfile] = relationship(back_populates="versions")
 
 
 from backend.app.teams.models import AgentTeamMember  # noqa: E402

@@ -21,6 +21,9 @@ def test_log_context_filter_adds_standard_fields_to_records() -> None:
 
     with log_context(
         request_id="req-1",
+        trace_id="0123456789abcdef0123456789abcdef",
+        span_id="0123456789abcdef",
+        parent_span_id="abcdef0123456789",
         workspace_id=workspace_id,
         user_id=user_id,
         run_id=run_id,
@@ -30,6 +33,9 @@ def test_log_context_filter_adds_standard_fields_to_records() -> None:
 
     assert accepted is True
     assert record.request_id == "req-1"
+    assert record.trace_id == "0123456789abcdef0123456789abcdef"
+    assert record.span_id == "0123456789abcdef"
+    assert record.parent_span_id == "abcdef0123456789"
     assert record.workspace_id == str(workspace_id)
     assert record.user_id == str(user_id)
     assert record.task_id is None

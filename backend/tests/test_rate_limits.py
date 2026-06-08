@@ -8,7 +8,7 @@ from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
 
 def test_redis_fixed_window_limiter_blocks_after_limit() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    limiter = RedisFixedWindowRateLimiter(redis, key_prefix="chaincloud")
+    limiter = RedisFixedWindowRateLimiter(redis, key_prefix="chaincloud", clock=lambda: 120.0)
 
     first = limiter.check(identifier="client-1", limit=2, window_seconds=60)
     second = limiter.check(identifier="client-1", limit=2, window_seconds=60)
