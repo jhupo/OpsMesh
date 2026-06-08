@@ -57,14 +57,22 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE agent_messages AS message
-        SET agent_team_id = COALESCE(thread.agent_team_id, task.agent_team_id)
+        SET agent_team_id = thread.agent_team_id
         FROM agent_message_threads AS thread
-        LEFT JOIN tasks AS task
-          ON task.id = message.task_id
-         AND task.workspace_id = message.workspace_id
         WHERE message.thread_id = thread.id
           AND message.workspace_id = thread.workspace_id
-          AND COALESCE(thread.agent_team_id, task.agent_team_id) IS NOT NULL
+          AND thread.agent_team_id IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        UPDATE agent_messages AS message
+        SET agent_team_id = task.agent_team_id
+        FROM tasks AS task
+        WHERE message.agent_team_id IS NULL
+          AND message.task_id = task.id
+          AND message.workspace_id = task.workspace_id
+          AND task.agent_team_id IS NOT NULL
         """
     )
     op.create_index(
