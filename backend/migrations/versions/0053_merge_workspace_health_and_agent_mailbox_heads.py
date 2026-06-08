@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-revision: str = "0053_merge_workspace_health_and_agent_mailbox_heads"
+revision: str = "0053_merge_heads"
 down_revision: tuple[str, str] = (
     "0037_workspace_health_snapshots",
     "0052_agent_team_mailbox",
