@@ -60,6 +60,7 @@ def main() -> int:
     session = SessionLocal()
     workspace: Workspace | None = None
     user: User | None = None
+    task: Task | None = None
     exit_code = 1
     try:
         user, workspace = _seed_workspace(session, suffix)
@@ -89,6 +90,11 @@ def main() -> int:
         exit_code = 0 if summary["status"] == "ok" else 1
     except Exception as exc:
         session.rollback()
+        partial_summary = (
+            _summary(session, queue, workspace, task)
+            if workspace is not None and task is not None
+            else None
+        )
         print(
             json.dumps(
                 {
@@ -96,6 +102,8 @@ def main() -> int:
                     "error_type": type(exc).__name__,
                     "error": str(exc),
                     "workspace_id": str(workspace.id) if workspace is not None else None,
+                    "task_id": str(task.id) if task is not None else None,
+                    "partial_summary": partial_summary,
                 },
                 ensure_ascii=False,
             ),
