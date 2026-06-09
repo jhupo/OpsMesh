@@ -3633,6 +3633,9 @@ def test_team_operations_console_provider_readiness_blocks_unhealthy_default() -
     )
     primary.health_status = "unhealthy"
     primary.failure_count = 3
+    primary.last_failure_at = datetime.now(UTC)
+    primary.last_failure_code = "InternalServerError"
+    primary.last_failure_message = "Provider failed with sk-primary-readiness"
     manager = AgentProfile(
         workspace_id=workspace.id,
         name="PM",
@@ -3691,8 +3694,14 @@ def test_team_operations_console_provider_readiness_blocks_unhealthy_default() -
     assert readiness_member["model_api"] == "responses"
     assert readiness_member["readiness_status"] == "blocked"
     assert readiness_member["reasons"] == ["model_provider_unhealthy"]
+    assert readiness_member["failure_count"] == 3
+    assert readiness_member["last_failure_code"] == "InternalServerError"
+    assert readiness_member["last_failure_message"] == "[redacted]"
     assert provider_action["source"] == "provider_readiness"
     assert provider_action["model_api"] == "responses"
+    assert provider_action["failure_count"] == 3
+    assert provider_action["last_failure_code"] == "InternalServerError"
+    assert provider_action["last_failure_message"] == "[redacted]"
     assert backup.status == "active"
     assert "sk-primary-readiness" not in str(body)
     assert "sk-backup-readiness" not in str(body)

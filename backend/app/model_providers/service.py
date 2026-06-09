@@ -479,8 +479,6 @@ class ModelProviderCredentialService:
         credential = self.get(workspace_id=workspace_id, credential_id=credential_id)
         return credential if self._is_selectable(credential) else None
 
-        return None
-
     def _is_selectable(self, credential: ModelProviderCredential | None) -> bool:
         if credential is None:
             return False

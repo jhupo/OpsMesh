@@ -20,6 +20,7 @@ from backend.app.model_providers.service import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,
 )
+from backend.app.security.redaction import redact_sensitive_text
 from backend.app.teams.models import AgentTeamMember
 
 BLOCKING_HEALTH_STATUSES = {"unhealthy"}
@@ -195,6 +196,18 @@ class TeamProviderReadinessService:
             "credential_health_status": (
                 credential.health_status if credential is not None else None
             ),
+            "failure_count": credential.failure_count if credential is not None else 0,
+            "last_failure_at": (
+                credential.last_failure_at if credential is not None else None
+            ),
+            "last_failure_code": (
+                credential.last_failure_code if credential is not None else None
+            ),
+            "last_failure_message": (
+                redact_sensitive_text(credential.last_failure_message)
+                if credential is not None and credential.last_failure_message is not None
+                else None
+            ),
             "budget_exhausted": (
                 budget_is_exhausted(credential.budget_metadata)
                 if credential is not None
@@ -323,6 +336,10 @@ def _action_plan(
                 "model_apis": item["model_apis"],
                 "default_model_api": item["default_model_api"],
                 "reasons": item["reasons"],
+                "failure_count": item.get("failure_count", 0),
+                "last_failure_at": item.get("last_failure_at"),
+                "last_failure_code": item.get("last_failure_code"),
+                "last_failure_message": item.get("last_failure_message"),
                 "task_ids": [],
                 "task_step_ids": [],
             }
@@ -348,6 +365,10 @@ def _action_plan(
                 "default_model_api": item["default_model_api"],
                 "warnings": item["warnings"],
                 "reasons": item["reasons"],
+                "failure_count": item.get("failure_count", 0),
+                "last_failure_at": item.get("last_failure_at"),
+                "last_failure_code": item.get("last_failure_code"),
+                "last_failure_message": item.get("last_failure_message"),
                 "task_ids": [],
                 "task_step_ids": [],
             }
