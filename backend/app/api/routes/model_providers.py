@@ -23,6 +23,7 @@ from backend.app.model_providers.model_api import canonical_model_api
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import EgressUrlValidationError
+from backend.app.security.redaction import redact_sensitive_payload_item
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/model-provider-credentials",
@@ -348,11 +349,13 @@ def _sanitized_metadata(value: object) -> dict[str, object] | None:
             sanitized[key_text] = nested if nested is not None else {}
         elif isinstance(item, list):
             sanitized[key_text] = [
-                _sanitized_metadata(entry) if isinstance(entry, dict) else entry
+                _sanitized_metadata(entry)
+                if isinstance(entry, dict)
+                else redact_sensitive_payload_item(entry)
                 for entry in item
             ]
         else:
-            sanitized[key_text] = item
+            sanitized[key_text] = redact_sensitive_payload_item(item)
     return sanitized
 
 

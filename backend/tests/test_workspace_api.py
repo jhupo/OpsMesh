@@ -6754,6 +6754,29 @@ def test_model_provider_usage_audit_api_is_scoped_and_redacted() -> None:
                 },
             ),
             AuditEvent(
+                workspace_id=workspace.id,
+                actor_type="user",
+                actor_id=str(owner.id),
+                user_id=owner.id,
+                action="model_provider.request_failed",
+                target_type="agent_run",
+                target_id="run-3",
+                created_at=datetime.now(UTC),
+                audit_metadata={
+                    "task_id": "task-3",
+                    "task_step_id": "step-3",
+                    "agent_profile_id": "agent-3",
+                    "provider": "openai-compatible",
+                    "model": "gpt-5.5",
+                    "model_api": "chat_completions",
+                    "credential_id": "credential-3",
+                    "reason": {
+                        "code": "InternalServerError",
+                        "message": "upstream failed with sk-hidden token",
+                    },
+                },
+            ),
+            AuditEvent(
                 workspace_id=other_workspace.id,
                 actor_type="user",
                 actor_id=str(other_owner.id),
@@ -6777,14 +6800,20 @@ def test_model_provider_usage_audit_api_is_scoped_and_redacted() -> None:
         "?action=model_provider.fallback_unavailable",
         headers=_headers(owner.id),
     )
+    failed_only = client.get(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-credentials/usage-audit"
+        "?action=model_provider.request_failed",
+        headers=_headers(owner.id),
+    )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["total"] == 2
-    assert {item["run_id"] for item in payload["items"]} == {"run-1", "run-2"}
+    assert payload["total"] == 3
+    assert {item["run_id"] for item in payload["items"]} == {"run-1", "run-2", "run-3"}
     serialized = str(payload)
     assert "sk-secret" not in serialized
     assert "sk-primary" not in serialized
+    assert "sk-hidden" not in serialized
     assert "secret.example.test" not in serialized
     assert "primary.example.test" not in serialized
     used = next(item for item in payload["items"] if item["run_id"] == "run-1")
@@ -6801,6 +6830,18 @@ def test_model_provider_usage_audit_api_is_scoped_and_redacted() -> None:
         "model": "primary-model",
         "model_api": "chat_completions",
         "credential_id": "credential-2",
+    }
+    assert failed_only.status_code == 200
+    assert failed_only.json()["total"] == 1
+    failed = failed_only.json()["items"][0]
+    assert failed["run_id"] == "run-3"
+    assert failed["provider"] == "openai-compatible"
+    assert failed["model"] == "gpt-5.5"
+    assert failed["model_api"] == "chat_completions"
+    assert failed["credential_id"] == "credential-3"
+    assert failed["reason"] == {
+        "code": "InternalServerError",
+        "message": "[redacted]",
     }
 
 
