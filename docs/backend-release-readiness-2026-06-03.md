@@ -46,34 +46,43 @@ Result:
 
 ## Remote Real E2E Status
 
-The existing remote deployment can run the E2E script inside the API container, but it is old.
-It failed with:
+Current server-test deployment on `192.168.2.17` is release `61945a0`. The API
+container is healthy and the worker starts under
+`deploy/server/docker-compose.backend.yml`.
+
+The real HTTP E2E creates a workspace, model provider credential, three agents, a team,
+and a task, then decomposes the task into manager planning, researcher, analyst, and
+manager summary work packages. The worker claims the first manager-planning run and
+starts a real `gpt-5.5` request through the configured OpenAI-compatible provider.
+
+The current blocker is upstream provider capacity, not task decomposition or queue
+dispatch. The provider returns:
 
 ```text
-Invalid run transition: queued -> completed
+503 No available accounts: no available accounts
 ```
 
-The retained diagnostic data showed that the first run stayed `queued` with only
-`model_provider.resolved` recorded. The local code now has a regression test proving the run
-status is flushed to `running` before the model runner is called.
+The run records `run.claimed`, `run.context_built`, `model.request_started`,
+`model.request_failed`, and `run.failed`. Provider usage audit now records
+`model_provider.request_failed` with the task, step, agent, run, credential, model,
+protocol, provider, and redacted failure reason. The HTTP E2E script treats this as a
+failed E2E with `diagnosis=provider_request_failed`, rather than reporting missing
+platform evidence.
 
 ## Release Blocker
 
-The updated local code has not been deployed to `192.168.2.17`.
+There is no deployment blocker for release `61945a0`. The remaining blocker for full
+real-provider completion is a provider key/account with available upstream capacity.
 
-Safe next options require explicit approval:
-
-1. Commit and push the current local branch/changes, then build a new server release from GitHub.
-2. Sync the current local workspace to a new release directory on `192.168.2.17`, then build and restart.
-
-After deployment, rerun:
+Rerun the HTTP E2E inside the API container:
 
 ```bash
-docker exec -e CHAINCLOUD_REAL_E2E_API_KEY=... \
-  -e CHAINCLOUD_REAL_E2E_BASE_URL=https://dash.ovload.com/v1 \
-  -e CHAINCLOUD_REAL_E2E_MODEL=gpt-5.5 \
-  -e CHAINCLOUD_REAL_E2E_MAX_JOBS=12 \
-  chaincloud-api python scripts/real-team-e2e.py
+docker exec -e CHAINCLOUD_HTTP_E2E_API_URL=http://127.0.0.1:8000/api/v1 \
+  -e CHAINCLOUD_HTTP_E2E_API_KEY=... \
+  -e CHAINCLOUD_HTTP_E2E_BASE_URL=https://dash.ovload.com/ \
+  -e CHAINCLOUD_HTTP_E2E_MODEL=gpt-5.5 \
+  -e CHAINCLOUD_HTTP_E2E_TIMEOUT_SECONDS=240 \
+  chaincloud-api python /app/scripts/real-team-http-e2e.py
 ```
 
 Do not print or store the real API key in logs or docs.

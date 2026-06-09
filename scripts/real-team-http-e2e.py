@@ -619,7 +619,8 @@ def _evaluate_evidence(
     run_events: list[dict[str, object]],
     provider_usage_audit: dict[str, Any],
 ) -> dict[str, object]:
-    required_event_types = {"run.claimed", "model.request_started", "model_provider.used"}
+    required_event_types = {"run.claimed", "model.request_started"}
+    success_event_types = {"model_provider.used"}
     observed_event_types = {
         event.get("event_type")
         for item in run_events
@@ -627,6 +628,7 @@ def _evaluate_evidence(
         if isinstance(item.get("events"), list) and isinstance(event, dict)
     }
     missing_event_types = sorted(required_event_types - observed_event_types)
+    missing_success_event_types = sorted(success_event_types - observed_event_types)
     fallback_event_types = sorted(
         event_type
         for event_type in observed_event_types
@@ -642,16 +644,33 @@ def _evaluate_evidence(
         and item.get("action") == "model_provider.used"
         and item.get("task_id") == task_id
     ]
+    matching_failures = [
+        item
+        for item in audit_items
+        if isinstance(item, dict)
+        and item.get("action") == "model_provider.request_failed"
+        and item.get("task_id") == task_id
+    ]
     used_created_credential = any(
         item.get("credential_id") == credential_id
         and item.get("fallback_selected") is not True
         for item in matching_usage
         if isinstance(item, dict)
     )
+    failed_created_credential = any(
+        item.get("credential_id") == credential_id
+        for item in matching_failures
+        if isinstance(item, dict)
+    )
+    provider_request_failed = (
+        "model.request_failed" in observed_event_types or bool(matching_failures)
+    )
     failures: list[str] = []
     if timed_out:
         failures.append("timed_out")
-    if task_status != "completed":
+    if provider_request_failed:
+        failures.append("provider_request_failed")
+    elif task_status != "completed":
         failures.append("task_not_completed")
     if not run_items:
         failures.append("no_runs_for_task")
@@ -659,21 +678,32 @@ def _evaluate_evidence(
         failures.append("missing_required_run_events")
     if fallback_event_types:
         failures.append("provider_fallback_event_observed")
-    if not matching_usage:
+    if not matching_usage and not matching_failures:
         failures.append("missing_model_provider_usage_audit")
     if matching_usage and not used_created_credential:
         failures.append("model_provider_usage_did_not_match_created_credential")
+    if matching_failures and not failed_created_credential:
+        failures.append("model_provider_failure_did_not_match_created_credential")
     return {
         "passed": not failures,
         "failures": failures,
+        "diagnosis": "provider_request_failed"
+        if provider_request_failed
+        else "completed"
+        if not failures
+        else "platform_incomplete",
         "required_event_types": sorted(required_event_types),
+        "success_event_types": sorted(success_event_types),
         "observed_event_types": sorted(
             event_type for event_type in observed_event_types if isinstance(event_type, str)
         ),
         "missing_event_types": missing_event_types,
+        "missing_success_event_types": missing_success_event_types,
         "fallback_event_types": fallback_event_types,
         "matching_model_provider_usage_count": len(matching_usage),
+        "matching_model_provider_failure_count": len(matching_failures),
         "used_created_credential": used_created_credential,
+        "failed_created_credential": failed_created_credential,
     }
 
 
