@@ -15,12 +15,17 @@ import httpx
 TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
 SECRET_KEYS = {
     "api_key",
+    "apikey",
+    "access_token",
     "authorization",
     "encrypted_api_key",
     "password",
+    "private_key",
+    "refresh_token",
     "secret",
     "token",
 }
+SECRET_VALUES: set[str] = set()
 
 
 @dataclass(frozen=True)
@@ -420,27 +425,36 @@ def _build_summary(
         client,
         f"/workspaces/{workspace_id}/tasks/{task_id}/timeline?limit=200",
     )
-    diagnostics = _try_request(
+    diagnostics = _required_get(
         client,
         f"/workspaces/{workspace_id}/tasks/{task_id}/execution-diagnostics",
     )
-    messages = _try_request(
+    messages = _required_get(
         client,
         f"/workspaces/{workspace_id}/tasks/{task_id}/messages?limit=200",
     )
-    runs = _try_request(client, f"/workspaces/{workspace_id}/runs?limit=100")
+    runs = _required_get(client, f"/workspaces/{workspace_id}/runs?limit=100")
     run_items = runs.get("items") if isinstance(runs.get("items"), list) else []
+    task_run_items = [
+        run
+        for run in run_items
+        if isinstance(run, dict) and run.get("task_id") == task_id
+    ]
     run_events = [
         {
             "run_id": run.get("id"),
-            "events": _try_request(
+            "events": _required_get(
                 client,
                 f"/workspaces/{workspace_id}/runs/{run.get('id')}/events?limit=200",
             ).get("items", []),
         }
-        for run in run_items
+        for run in task_run_items
         if isinstance(run, dict) and isinstance(run.get("id"), str)
     ]
+    provider_usage_audit = _required_get(
+        client,
+        f"/workspaces/{workspace_id}/model-provider-credentials/usage-audit?limit=50",
+    )
     operations = {
         "queue_metrics": _try_request(
             client,
@@ -454,14 +468,21 @@ def _build_summary(
             client,
             f"/workspaces/{workspace_id}/teams/{team_id}/operations-console",
         ),
-        "provider_usage_audit": _try_request(
-            client,
-            f"/workspaces/{workspace_id}/model-provider-credentials/usage-audit?limit=50",
-        ),
+        "provider_usage_audit": provider_usage_audit,
     }
+    evidence = _evaluate_evidence(
+        resources=resources,
+        task_id=task_id,
+        task_status=task_status,
+        timed_out=timed_out,
+        run_items=task_run_items,
+        run_events=run_events,
+        provider_usage_audit=provider_usage_audit,
+    )
     return {
-        "status": "ok" if task_status == "completed" and not timed_out else "failed",
+        "status": "ok" if evidence["passed"] else "failed",
         "timed_out": timed_out,
+        "evidence": evidence,
         "resources": _resource_ids(resources),
         "created": {
             "workspace": _select(resources["workspace"], "id", "name", "slug", "status"),
@@ -495,7 +516,7 @@ def _build_summary(
         "messages": messages.get("items", []),
         "timeline": timeline,
         "execution_diagnostics": diagnostics,
-        "runs": run_items,
+        "runs": task_run_items,
         "run_events": run_events,
         "operations": operations,
         "requests": client.request_log,
@@ -560,6 +581,7 @@ def _config_from_env_and_args() -> HttpTeamE2EConfig:
     if missing:
         raise RuntimeError(f"Missing required configuration: {', '.join(missing)}")
     model_api = str(args.model_api).strip() if args.model_api is not None else None
+    SECRET_VALUES.add(str(args.api_key))
     return HttpTeamE2EConfig(
         api_url=str(args.api_url),
         provider_api_key=str(args.api_key),
@@ -578,6 +600,81 @@ def _try_request(client: ChainCloudHTTPClient, path: str) -> dict[str, Any]:
         return client.request("GET", path)
     except Exception as exc:
         return {"status": "unavailable", "error": str(exc)}
+
+
+def _required_get(client: ChainCloudHTTPClient, path: str) -> dict[str, Any]:
+    payload = client.request("GET", path)
+    if payload.get("status") == "unavailable":
+        raise RuntimeError(f"Required evidence endpoint unavailable: {path}")
+    return payload
+
+
+def _evaluate_evidence(
+    *,
+    resources: dict[str, Any],
+    task_id: str,
+    task_status: object,
+    timed_out: bool,
+    run_items: list[Any],
+    run_events: list[dict[str, object]],
+    provider_usage_audit: dict[str, Any],
+) -> dict[str, object]:
+    required_event_types = {"run.claimed", "model.request_started", "model_provider.used"}
+    observed_event_types = {
+        event.get("event_type")
+        for item in run_events
+        for event in item.get("events", [])
+        if isinstance(item.get("events"), list) and isinstance(event, dict)
+    }
+    missing_event_types = sorted(required_event_types - observed_event_types)
+    fallback_event_types = sorted(
+        event_type
+        for event_type in observed_event_types
+        if isinstance(event_type, str) and "fallback" in event_type
+    )
+    credential_id = _resource_ids(resources).get("credential_id")
+    audit_items = provider_usage_audit.get("items")
+    audit_items = audit_items if isinstance(audit_items, list) else []
+    matching_usage = [
+        item
+        for item in audit_items
+        if isinstance(item, dict)
+        and item.get("action") == "model_provider.used"
+        and item.get("task_id") == task_id
+    ]
+    used_created_credential = any(
+        item.get("credential_id") == credential_id
+        and item.get("fallback_selected") is not True
+        for item in matching_usage
+        if isinstance(item, dict)
+    )
+    failures: list[str] = []
+    if timed_out:
+        failures.append("timed_out")
+    if task_status != "completed":
+        failures.append("task_not_completed")
+    if not run_items:
+        failures.append("no_runs_for_task")
+    if missing_event_types:
+        failures.append("missing_required_run_events")
+    if fallback_event_types:
+        failures.append("provider_fallback_event_observed")
+    if not matching_usage:
+        failures.append("missing_model_provider_usage_audit")
+    if matching_usage and not used_created_credential:
+        failures.append("model_provider_usage_did_not_match_created_credential")
+    return {
+        "passed": not failures,
+        "failures": failures,
+        "required_event_types": sorted(required_event_types),
+        "observed_event_types": sorted(
+            event_type for event_type in observed_event_types if isinstance(event_type, str)
+        ),
+        "missing_event_types": missing_event_types,
+        "fallback_event_types": fallback_event_types,
+        "matching_model_provider_usage_count": len(matching_usage),
+        "used_created_credential": used_created_credential,
+    }
 
 
 def _require_id(payload: dict[str, Any], label: str) -> str:
@@ -618,13 +715,20 @@ def _redact(value: object) -> object:
     if isinstance(value, dict):
         redacted: dict[str, object] = {}
         for key, item in value.items():
-            if key.lower() in SECRET_KEYS or key.lower().endswith("_key"):
+            normalized_key = key.lower().replace("-", "_")
+            if normalized_key in SECRET_KEYS or normalized_key.endswith("_key"):
                 redacted[key] = "[redacted]"
             else:
                 redacted[key] = _redact(item)
         return redacted
     if isinstance(value, list):
         return [_redact(item) for item in value]
+    if isinstance(value, str):
+        redacted_value = value
+        for secret in SECRET_VALUES:
+            if secret:
+                redacted_value = redacted_value.replace(secret, "[redacted]")
+        return redacted_value
     return value
 
 

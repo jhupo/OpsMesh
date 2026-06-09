@@ -54,8 +54,8 @@ Incomplete or basic-only areas:
   for preview tokens, renames, dependency mappings, policy/quota decisions, disabled skills, and
   checksum replacement.
 - Model provider selection exists. Queued runs now freeze per-agent/default provider resolution
-  metadata without storing secrets, worker execution can use a workspace-scoped fallback policy,
-  and provider credentials track health state plus last success/failure details.
+  metadata without storing secrets, worker execution fails closed when the resolved credential is
+  unavailable, and provider credentials track health state plus last success/failure details.
 - Operations APIs expose short-cached overview, capacity, scheduler, outcomes, runtime capacity,
   MCP job, queue insight, and unified control-plane health aggregates.
 - Workspace memory now has explicit durable memory entries plus workspace-scoped lexical search
@@ -537,23 +537,23 @@ Current state:
 - Provider credentials are stored securely.
 - Queued team runs now include a run-level provider resolution snapshot and a
   `model_provider.resolved` run event.
-- Worker execution supports workspace-scoped provider fallback with same-workspace credential
-  enforcement.
+- Worker execution uses the resolved provider only; unavailable credentials fail closed instead of
+  silently switching providers.
 - Provider credentials expose `health_status`, `last_success_at`, `last_failure_at`,
   `last_failure_code`, and `last_failure_message`.
-- Workspaces expose a sanitized provider usage audit API for selected provider, fallback
-  decisions, failed provider reference, and reason metadata.
+- Workspaces expose a sanitized provider usage audit API for selected provider and failure reason
+  metadata.
 
 Build:
 
 - Resolve model provider at run creation and snapshot provider ID, base URL host, model, key
   fingerprint/reference, and source policy without raw API keys.
-- Add retry/fallback policy for provider errors, rate limits, and model unavailability. (Done for
-  workspace settings policy.)
+- Fail closed for provider errors, rate limits, and model unavailability instead of silently
+  switching credentials. (Done for worker execution and provider readiness.)
 - Record which provider/model actually handled each run. (Done with `model_provider.used` run
   events.)
-- Prevent fallback from crossing user/workspace policy boundaries. (Done for credential
-  resolution.)
+- Prevent implicit provider substitution across user/workspace policy boundaries. (Done for
+  credential resolution.)
 - Add cost fields as optional metadata only; billing remains out of scope.
 
 API/data changes:
@@ -561,41 +561,25 @@ API/data changes:
 - Extend run authorization snapshot and run events with provider resolution metadata. (Done for
   queued team runs.)
 - Add provider health status and last failure reason. (Done.)
-- Add audit action for provider selection and fallback. (Done with `model_provider.used`
-  audit events that mark whether fallback was selected.)
-- Add workspace usage audit endpoint for provider selection and fallback history. (Done with
+- Add audit action for provider selection. (Done with `model_provider.used`
+  audit events.)
+- Add workspace usage audit endpoint for provider selection history. (Done with
   `GET /api/v1/workspaces/{workspace_id}/model-provider-credentials/usage-audit`.)
 
 Tests:
 
 - [x] agent-specific provider overrides workspace default
 - [x] provider resolution snapshot excludes raw API keys and full base URLs
-- [x] failed primary provider falls back only to allowed provider
-- [x] fallback event records reason without leaking key/base URL secret
+- [x] failed primary provider marks the run failed without switching credentials
+- [x] model request failure records reason without leaking key/base URL secret
 - [x] provider usage audit API is workspace-scoped and redacts secrets
-- [x] disallowed fallback fails the run cleanly and records sanitized fallback-unavailable
-  run/audit evidence
+- [x] legacy provider substitution policy is ignored by worker execution and no substitution
+  events are emitted
 
 Acceptance:
 
-- every agent run can be traced to the exact model provider policy used, including fallback decisions
-
-Policy shape:
-
-```json
-{
-  "model_provider_fallback": {
-    "enabled": true,
-    "retry_error_codes": ["RuntimeError"],
-    "candidates": [
-      {
-        "credential_id": "workspace-credential-uuid",
-        "model": "backup-model"
-      }
-    ]
-  }
-}
-```
+- every agent run can be traced to the exact model provider policy used, and no worker execution
+  silently substitutes another provider
 
 ## P1: Operations Dashboard Aggregate APIs
 

@@ -3603,7 +3603,7 @@ def test_team_operations_console_marks_inactive_provider_not_selectable() -> Non
     assert "inactive-console.example.test/v1" not in str(body)
 
 
-def test_team_operations_console_provider_readiness_uses_workspace_fallback() -> None:
+def test_team_operations_console_provider_readiness_blocks_unhealthy_default() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
     service = ModelProviderCredentialService(
@@ -3671,32 +3671,29 @@ def test_team_operations_console_provider_readiness_uses_workspace_fallback() ->
     readiness = body["command_center"]["provider_readiness"]
     readiness_member = readiness["members"][0]
     provider_action = body["command_center"]["action_plan"][0]
-    assert binding["source"] == "workspace_fallback"
-    assert binding["credential_id"] == str(backup.id)
-    assert binding["credential_reference"] == f"model_provider_credentials:{backup.id}"
-    assert binding["selected_model"] == "backup-model"
-    assert binding["provider"] == "openai-compatible"
+    assert binding["source"] == "agent_model"
+    assert binding["credential_id"] is None
+    assert binding["credential_reference"] is None
+    assert binding["selected_model"] == "workspace-default"
+    assert binding["provider"] is None
     assert binding["model_api"] == "responses"
-    assert binding["readiness_status"] == "degraded"
-    assert binding["warnings"] == ["model_provider_unknown"]
-    assert readiness["status"] == "degraded"
-    assert readiness["runtime_blocked_member_count"] == 0
-    assert readiness["runtime_degraded_member_count"] == 1
-    assert readiness_member["credential_id"] == str(backup.id)
+    assert binding["readiness_status"] == "blocked"
+    assert binding["reasons"] == ["model_provider_unavailable"]
+    assert readiness["status"] == "blocked"
+    assert readiness["runtime_blocked_member_count"] == 1
+    assert readiness["runtime_degraded_member_count"] == 0
+    assert readiness_member["credential_id"] == str(primary.id)
     assert readiness_member["credential_reference"] == (
-        f"model_provider_credentials:{backup.id}"
+        f"model_provider_credentials:{primary.id}"
     )
-    assert readiness_member["provider"] == "openai-compatible"
-    assert readiness_member["model"] == "backup-model"
+    assert readiness_member["provider"] == "openai"
+    assert readiness_member["model"] == "primary-model"
     assert readiness_member["model_api"] == "responses"
-    assert readiness_member["readiness_status"] == "degraded"
-    assert readiness_member["reasons"] == []
-    assert readiness_member["warnings"] == [
-        "model_provider_unknown",
-        "model_provider_health_check_not_scheduled",
-    ]
+    assert readiness_member["readiness_status"] == "blocked"
+    assert readiness_member["reasons"] == ["model_provider_unhealthy"]
     assert provider_action["source"] == "provider_readiness"
     assert provider_action["model_api"] == "responses"
+    assert backup.status == "active"
     assert "sk-primary-readiness" not in str(body)
     assert "sk-backup-readiness" not in str(body)
     assert "backup-readiness.example.test/v1" not in str(body)
@@ -7251,7 +7248,7 @@ def test_run_api_redacts_sensitive_payloads() -> None:
             "result": {"token": "hidden-token"},
             "sdk_continuation": {
                 "provider": "openai_agents",
-                "mode": "runner_level_fallback",
+                "mode": "sdk_continuation_snapshot",
                 "resume_input": [
                     {
                         "role": "tool",

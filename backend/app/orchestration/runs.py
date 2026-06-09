@@ -74,7 +74,6 @@ from backend.app.teams.snapshots import build_team_snapshot
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.lease_lifecycle import mark_agent_run_worker_cancel_requested
 from backend.app.workers.queue import RedisQueue
-from backend.app.workspaces.models import Workspace
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 STEP_STATUS_QUEUED = "queued"
@@ -530,70 +529,38 @@ class RunOrchestrationService:
             self._append_run_claimed_event(run, job)
             self._mark_run_started(run)
             self._session.commit()
-            used_provider_credentials: set[UUID] = set()
-            model_provider_override: dict[str, Any] | None = None
-            fallback_selected = False
-            while True:
-                try:
-                    request = self._build_agent_request(
-                        run,
-                        job,
-                        model_provider_override=model_provider_override,
-                    )
-                except ModelProviderUnavailableError as exc:
-                    self._append_model_provider_unavailable_event(run, exc)
-                    self._mark_run_failed(run, exc)
-                    self._session.commit()
-                    self._session.refresh(run)
-                    return run
-                self._append_context_built_event(run, request)
-                if request.model_provider_credential_id is not None:
-                    used_provider_credentials.add(request.model_provider_credential_id)
-                try:
-                    self._append_model_request_started_event(
-                        run,
-                        request,
-                        fallback_selected=fallback_selected,
-                    )
-                    result = await self._agent_runner.run(request)
-                    self._append_model_response_received_event(run, request, result)
-                    break
-                except Exception as exc:
-                    self._append_model_request_failed_event(run, request, exc)
-                    self._record_model_provider_failure(
-                        run,
-                        request.model_provider_credential_id,
-                        exc,
-                    )
-                    fallback = self._next_model_provider_fallback(
-                        run=run,
-                        failed_request=request,
-                        exc=exc,
-                        used_provider_credentials=used_provider_credentials,
-                    )
-                    if fallback is None:
-                        self._append_model_provider_fallback_unavailable_event(run, request, exc)
-                        self._audit_model_provider_fallback_unavailable(run, request, job, exc)
-                        self._mark_run_failed(run, exc)
-                        self._session.commit()
-                        raise
-                    model_provider_override = fallback
-                    fallback_selected = True
+            try:
+                request = self._build_agent_request(run, job)
+            except ModelProviderUnavailableError as exc:
+                self._append_model_provider_unavailable_event(run, exc)
+                self._mark_run_failed(run, exc)
+                self._session.commit()
+                self._session.refresh(run)
+                return run
+            self._append_context_built_event(run, request)
+            try:
+                self._append_model_request_started_event(run, request, fallback_selected=False)
+                result = await self._agent_runner.run(request)
+                self._append_model_response_received_event(run, request, result)
+            except Exception as exc:
+                self._append_model_request_failed_event(run, request, exc)
+                self._record_model_provider_failure(
+                    run,
+                    request.model_provider_credential_id,
+                    exc,
+                )
+                self._mark_run_failed(run, exc)
+                self._session.commit()
+                raise
 
             if self._run_cancelled_after_model_result(run):
                 self._session.commit()
                 self._session.refresh(run)
                 return run
 
-            if fallback_selected and result.raw_output is None:
-                result = AgentRunResult(
-                    final_output=result.final_output,
-                    raw_output={"model": request.model},
-                    events=result.events,
-                )
             self._record_model_provider_success(run, request.model_provider_credential_id)
             self._append_model_provider_used_event(run, request)
-            self._audit_model_provider_used(run, request, job, fallback_selected=fallback_selected)
+            self._audit_model_provider_used(run, request, job, fallback_selected=False)
             self._map_runtime_events_to_task_messages(run, result)
             if self._agent_result_waiting_runtime(result) or self._run_has_waiting_runtime_event(
                 run
@@ -1117,31 +1084,6 @@ class RunOrchestrationService:
             },
         )
 
-    def _append_model_provider_fallback_unavailable_event(
-        self,
-        run: AgentRun,
-        request: AgentRunRequest,
-        exc: Exception,
-    ) -> None:
-        error = normalize_agent_error(exc)
-        event = self._append_event(
-            run,
-            "model_provider.fallback_unavailable",
-            "Model provider fallback was unavailable",
-            {
-                "reason": error.as_dict(),
-                "failed_provider": {
-                    "provider": request.provider,
-                    "model": request.model,
-                    "model_api": request.model_api,
-                    "credential_id": str(request.model_provider_credential_id)
-                    if request.model_provider_credential_id is not None
-                    else None,
-                },
-            },
-        )
-        self._append_team_runtime_model_provider_event(run, event)
-
     def _append_model_provider_unavailable_event(
         self,
         run: AgentRun,
@@ -1155,40 +1097,6 @@ class RunOrchestrationService:
             {"reason": error.as_dict()},
         )
         self._append_team_runtime_model_provider_event(run, event)
-
-    def _audit_model_provider_fallback_unavailable(
-        self,
-        run: AgentRun,
-        request: AgentRunRequest,
-        job: JobPayload,
-        exc: Exception,
-    ) -> None:
-        if job.requested_by_user_id is None:
-            return
-        error = normalize_agent_error(exc)
-        AuditService(self._session).record_user_action(
-            workspace_id=run.workspace_id,
-            user_id=job.requested_by_user_id,
-            action="model_provider.fallback_unavailable",
-            target_type="agent_run",
-            target_id=run.id,
-            metadata={
-                "task_id": str(run.task_id) if run.task_id is not None else None,
-                "task_step_id": str(run.task_step_id) if run.task_step_id is not None else None,
-                "agent_profile_id": str(run.agent_profile_id)
-                if run.agent_profile_id is not None
-                else None,
-                "reason": error.as_dict(),
-                "failed_provider": {
-                    "provider": request.provider,
-                    "model": request.model,
-                    "model_api": request.model_api,
-                    "credential_id": str(request.model_provider_credential_id)
-                    if request.model_provider_credential_id is not None
-                    else None,
-                },
-            },
-        )
 
     def _append_event(
         self,
@@ -1784,88 +1692,6 @@ class RunOrchestrationService:
             error_code=error.code,
             error_message=error.message,
         )
-
-    def _next_model_provider_fallback(
-        self,
-        *,
-        run: AgentRun,
-        failed_request: AgentRunRequest,
-        exc: Exception,
-        used_provider_credentials: set[UUID],
-    ) -> dict[str, Any] | None:
-        policy = self._workspace_model_provider_fallback_policy(run.workspace_id)
-        if policy is None:
-            return None
-        error = normalize_agent_error(exc)
-        if not error.retryable:
-            return None
-        retry_error_codes = policy.get("retry_error_codes")
-        if isinstance(retry_error_codes, list) and retry_error_codes:
-            allowed_codes = {code for code in retry_error_codes if isinstance(code, str)}
-            if error.code not in allowed_codes:
-                return None
-        candidates = policy.get("candidates")
-        if not isinstance(candidates, list):
-            return None
-        for candidate in candidates:
-            parsed = _fallback_candidate(candidate)
-            if parsed is None:
-                continue
-            credential_id, model = parsed
-            if credential_id in used_provider_credentials:
-                continue
-            try:
-                model_provider = self._resolve_model_provider(
-                    workspace_id=run.workspace_id,
-                    credential_id=credential_id,
-                    agent_model=model or "workspace-default",
-                )
-            except ValueError:
-                continue
-            selected_model = model_provider["model"]
-            snapshot = ModelProviderResolutionService(self._session).resolve_snapshot_for_agent(
-                workspace_id=run.workspace_id,
-                agent_credential_id=credential_id,
-                agent_model=str(selected_model),
-            ).as_dict()
-            snapshot["source"] = "fallback_policy"
-            event = self._append_event(
-                run,
-                "model_provider.fallback_selected",
-                "Model provider fallback selected",
-                {
-                    "reason": error.as_dict(),
-                    "failed_provider": {
-                        "provider": failed_request.provider,
-                        "model": failed_request.model,
-                        "model_api": failed_request.model_api,
-                        "credential_id": str(failed_request.model_provider_credential_id)
-                        if failed_request.model_provider_credential_id is not None
-                        else None,
-                    },
-                    "model_provider": snapshot,
-                },
-            )
-            self._append_team_runtime_model_provider_event(run, event)
-            return model_provider
-        return None
-
-    def _workspace_model_provider_fallback_policy(
-        self,
-        workspace_id: UUID,
-    ) -> dict[str, object] | None:
-        workspace = self._session.get(Workspace, workspace_id)
-        settings = workspace.settings if workspace is not None else None
-        if not isinstance(settings, dict):
-            return None
-        raw_policy = settings.get("model_provider_fallback")
-        if raw_policy is None:
-            raw_policy = settings.get("model_provider_fallback_policy")
-        if not isinstance(raw_policy, dict):
-            return None
-        if raw_policy.get("enabled") is not True:
-            return None
-        return raw_policy
 
     def _input_text_for_run(self, run: AgentRun) -> str:
         task = self._session.get(Task, run.task_id) if run.task_id is not None else None
@@ -4234,21 +4060,6 @@ def _run_model_from_snapshot(
         if isinstance(selected_model, str) and selected_model:
             return selected_model
     return profile.model if profile is not None else None
-
-
-def _fallback_candidate(value: object) -> tuple[UUID, str | None] | None:
-    if isinstance(value, str):
-        credential_id = _uuid_or_none(value)
-        return (credential_id, None) if credential_id is not None else None
-    if not isinstance(value, dict):
-        return None
-    credential_id = _uuid_or_none(
-        value.get("credential_id") or value.get("model_provider_credential_id")
-    )
-    if credential_id is None:
-        return None
-    model = value.get("model")
-    return credential_id, model if isinstance(model, str) and model else None
 
 
 def _stale_recovery_anchor(run: AgentRun) -> datetime | None:

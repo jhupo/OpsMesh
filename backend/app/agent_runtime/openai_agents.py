@@ -72,13 +72,13 @@ class OpenAIAgentsRunner:
     def _build_agent(self, request: AgentRunRequest) -> Agent[Any]:
         profile = request.agent_profile
         model_name = request.model or profile.model
-        model: str | Model = model_name
-        if request.api_key is not None or request.base_url is not None:
-            model = OpenAIProvider(
-                api_key=request.api_key,
-                base_url=normalize_openai_compatible_base_url(request.base_url),
-                use_responses=_use_responses_api(request.model_api),
-            ).get_model(model_name)
+        if request.api_key is None:
+            raise ValueError("OpenAI-compatible runtime requires an explicit provider API key")
+        model: str | Model = OpenAIProvider(
+            api_key=request.api_key,
+            base_url=normalize_openai_compatible_base_url(request.base_url),
+            use_responses=_use_responses_api(request.model_api),
+        ).get_model(model_name)
         return Agent(
             name=profile.name,
             instructions=profile.instructions,
@@ -245,7 +245,7 @@ class OpenAIAgentsRunner:
         payload: dict[str, object] = {"final_output": str(getattr(result, "final_output", ""))}
         sdk_continuation: dict[str, object] = {
             "provider": "openai_agents",
-            "mode": "runner_level_fallback",
+            "mode": "sdk_continuation_snapshot",
             "native_tool_call_continuation": False,
         }
         last_response_id = getattr(result, "last_response_id", None)
@@ -411,7 +411,7 @@ def _model_provider_circuit_key(request: AgentRunRequest) -> str:
         if request.model_provider_credential_id is not None
         else "no-credential"
     )
-    model_api = canonical_model_api(request.model_api) or "sdk-default"
+    model_api = canonical_model_api(request.model_api) or "unspecified"
     return (
         f"model-provider:{provider}:{host}:{credential}:{model_api}:"
         f"{request.model or request.agent_profile.model}"

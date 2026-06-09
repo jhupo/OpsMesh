@@ -468,10 +468,6 @@ class ModelProviderCredentialService:
         )
         if self._is_selectable(default):
             return default
-        return self._fallback_credential(
-            workspace_id,
-            exclude_id=default.id if default is not None else None,
-        )
 
     def _selectable_credential(
         self,
@@ -482,28 +478,6 @@ class ModelProviderCredentialService:
         credential = self.get(workspace_id=workspace_id, credential_id=credential_id)
         return credential if self._is_selectable(credential) else None
 
-    def _fallback_credential(
-        self,
-        workspace_id: UUID,
-        *,
-        exclude_id: UUID | None = None,
-    ) -> ModelProviderCredential | None:
-        statement = (
-            select(ModelProviderCredential)
-            .where(
-                ModelProviderCredential.workspace_id == workspace_id,
-                ModelProviderCredential.status == "active",
-            )
-            .order_by(
-                ModelProviderCredential.is_default.desc(),
-                ModelProviderCredential.created_at.desc(),
-            )
-        )
-        if exclude_id is not None:
-            statement = statement.where(ModelProviderCredential.id != exclude_id)
-        for credential in self._session.scalars(statement):
-            if self._is_selectable(credential):
-                return credential
         return None
 
     def _is_selectable(self, credential: ModelProviderCredential | None) -> bool:

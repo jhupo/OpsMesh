@@ -83,7 +83,7 @@ def _write_dry_run(config: OpenAIGatewaySmokeConfig, *, stream: TextIO) -> None:
     stream.write(f"api_key_length={len(config.api_key)}\n")
     stream.write(f"base_url={config.base_url or 'openai-default'}\n")
     stream.write(f"model={config.model}\n")
-    stream.write(f"model_api={config.model_api or 'sdk-default'}\n")
+    stream.write(f"model_api={config.model_api or 'unspecified'}\n")
     stream.write(f"pytest_args={' '.join(config.pytest_args)}\n")
 
 

@@ -284,9 +284,9 @@ Operator controls:
 
 - disable a provider
 - rotate encrypted hosted credentials
-- inspect provider fallback decisions without exposing secrets
+- inspect provider selection and failure decisions without exposing secrets
 - enforce per-agent and workspace model allowlists
-- prevent fallback across workspace boundaries
+- prevent implicit provider substitution across workspace boundaries
 
 ### MCP, Skills, And Tools
 

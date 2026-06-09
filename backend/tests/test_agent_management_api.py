@@ -65,17 +65,14 @@ def test_agent_management_lifecycle_versions_and_sessions() -> None:
         "model_api": "responses",
     }
     assert created.json()["model_provider"]["model_api"] == "responses"
-    assert created.json()["model_provider"]["model_apis"] == [
-        "responses",
-        "chat_completions",
-    ]
+    assert created.json()["model_provider"]["model_apis"] == []
     assert created.json()["model_provider"]["default_model_api"] is None
-    assert created.json()["model_provider"]["model_capability"]["provider"] == "openai"
-    assert created.json()["model_provider"]["model_capability"]["supports_tools"] is True
+    assert created.json()["model_provider"]["model_capability"] is None
     assert created.json()["model_provider"]["credential_status"] is None
     assert created.json()["model_provider"]["credential_health_status"] is None
     assert created.json()["model_provider"]["budget_exhausted"] is False
-    assert created.json()["model_provider"]["readiness_status"] == "ready"
+    assert created.json()["model_provider"]["readiness_status"] == "blocked"
+    assert created.json()["model_provider"]["reasons"] == ["model_provider_unavailable"]
 
     updated = client.patch(
         f"/api/v1/workspaces/{workspace.id}/agents/{agent_id}",

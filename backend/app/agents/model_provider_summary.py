@@ -152,8 +152,8 @@ def _agent_model_provider_health_summary(
             "credential_health_status": None,
             "failure_count": 0,
             "budget_exhausted": False,
-            "readiness_status": "ready",
-            "reasons": [],
+            "readiness_status": "blocked",
+            "reasons": ["model_provider_unavailable"],
             "warnings": [],
         }
     credential = db_session.get(ModelProviderCredential, credential_id)
@@ -193,9 +193,7 @@ def _agent_model_provider_health_summary(
 def _capability_provider(snapshot: ModelProviderResolutionSnapshot) -> str | None:
     if snapshot.provider is not None:
         return snapshot.provider
-    if snapshot.agent_model == "workspace-default":
-        return None
-    return "openai"
+    return None
 
 
 def _selected_model(agent_model: str, credential: ModelProviderCredential) -> str:

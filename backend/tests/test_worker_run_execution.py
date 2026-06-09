@@ -4073,7 +4073,7 @@ def test_agent_request_does_not_fallback_explicit_inactive_provider_override() -
     assert "sk-inactive-explicit" not in str(snapshot)
 
 
-def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
+def test_worker_fails_closed_without_model_provider_fallback() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     settings = Settings(
@@ -4162,21 +4162,19 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
     session.add(run)
     session.commit()
 
-    class FallbackRunner:
+    class FailingRunner:
         def __init__(self) -> None:
             self.requests: list[AgentRunRequest] = []
 
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
             self.requests.append(request)
-            if len(self.requests) == 1:
-                raise RuntimeError(
-                    "primary provider unavailable api_key=sk-fallback-secret "
-                    "Bearer fallback-token "
-                    "base_url=https://primary.example.test/v1/private"
-                )
-            return AgentRunResult(final_output=f"handled by {request.model}")
+            raise RuntimeError(
+                "primary provider unavailable api_key=sk-fallback-secret "
+                "Bearer fallback-token "
+                "base_url=https://primary.example.test/v1/private"
+            )
 
-    runner = FallbackRunner()
+    runner = FailingRunner()
     job = JobPayload(
         workspace_id=workspace.id,
         job_type=JobType.AGENT_RUN,
@@ -4185,15 +4183,13 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
         idempotency_key="provider-fallback",
     )
 
-    RunOrchestrationService(session, agent_runner=runner, settings=settings).run_agent_sync(job)
+    with pytest.raises(RuntimeError):
+        RunOrchestrationService(session, agent_runner=runner, settings=settings).run_agent_sync(job)
 
     events = session.scalars(
         select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
     ).all()
-    fallback_event = next(
-        event for event in events if event.event_type == "model_provider.fallback_selected"
-    )
-    used_event = next(event for event in events if event.event_type == "model_provider.used")
+    event_types = {event.event_type for event in events}
     audit = session.scalar(
         select(AuditEvent).where(
             AuditEvent.workspace_id == workspace.id,
@@ -4209,89 +4205,19 @@ def test_worker_falls_back_to_allowed_workspace_model_provider() -> None:
         )
     )
 
-    assert [request.model for request in runner.requests] == ["primary-model", "backup-model"]
+    assert [request.model for request in runner.requests] == ["primary-model"]
     assert runner.requests[0].api_key == "sk-primary"
-    assert runner.requests[1].api_key == "sk-backup"
-    assert [request.model_api for request in runner.requests] == [
-        "chat_completions",
-        "responses",
-    ]
+    assert [request.model_api for request in runner.requests] == ["chat_completions"]
     assert primary.health_status == "degraded"
     assert primary.last_failure_code == "RuntimeError"
     assert primary.last_failure_message == "[redacted]"
     assert primary.last_failure_at is not None
-    assert backup.health_status == "healthy"
-    assert backup.last_success_at is not None
-    assert run.status == RunStatus.COMPLETED.value
-    assert run.output == {
-        "final_output": "handled by backup-model",
-        "raw_output": {"model": "backup-model"},
-    }
-    assert fallback_event.event_metadata["reason"]["code"] == "RuntimeError"
-    assert fallback_event.event_metadata["reason"]["message"] == "[redacted]"
-    assert fallback_event.event_metadata["failed_provider"] == {
-        "provider": "openai-compatible",
-        "model": "primary-model",
-        "model_api": "chat_completions",
-        "credential_id": str(primary.id),
-    }
-    serialized_event = json.dumps(fallback_event.event_metadata)
-    assert "sk-fallback-secret" not in serialized_event
-    assert "Bearer fallback-token" not in serialized_event
-    assert "https://primary.example.test/v1/private" not in serialized_event
-    assert "primary.example.test/v1/private" not in serialized_event
-    assert "sk-primary" not in serialized_event
-    assert "sk-backup" not in serialized_event
-    selected = fallback_event.event_metadata["model_provider"]
-    assert selected["source"] == "fallback_policy"
-    assert selected["credential_id"] == str(backup.id)
-    assert selected["selected_model"] == "backup-model"
-    assert selected["model_api"] == "responses"
-    assert selected["model_capability"] == {
-        "provider": "openai-compatible",
-        "model": "*",
-        "display_name": "OpenAI-compatible model",
-        "capabilities": ["tools", "json_mode", "streaming"],
-        "supports_tools": True,
-        "supports_vision": False,
-        "supports_json_mode": True,
-        "supports_streaming": True,
-        "context_window_tokens": None,
-        "notes": "Actual support depends on the upstream gateway and selected model.",
-    }
-    assert selected["credential_status"] == "active"
-    assert selected["credential_health_status"] == "unknown"
-    assert selected["failure_count"] == 0
-    assert selected["budget_exhausted"] is False
-    assert selected["last_failure_code"] is None
-    assert "api_key" not in selected
-    assert "base_url" not in selected
-    assert used_event.event_metadata["model_provider"] == {
-        "provider": "openai-compatible",
-        "model": "backup-model",
-        "model_api": "responses",
-        "credential_id": str(backup.id),
-    }
-    assert team_message is not None
-    assert team_message.task_id == task.id
-    assert team_message.payload["run_id"] == str(run.id)
-    assert team_message.payload["run_event_id"] == str(fallback_event.id)
-    assert team_message.payload["event_metadata"]["model_provider"]["credential_id"] == str(
-        backup.id
-    )
-    serialized_message = json.dumps(team_message.payload)
-    assert "sk-fallback-secret" not in serialized_message
-    assert "Bearer fallback-token" not in serialized_message
-    assert "primary.example.test/v1/private" not in serialized_message
-    assert audit is not None
-    assert audit.actor_id == str(user.id)
-    assert audit.audit_metadata["model"] == "backup-model"
-    assert audit.audit_metadata["model_api"] == "responses"
-    assert audit.audit_metadata["provider"] == "openai-compatible"
-    assert audit.audit_metadata["credential_id"] == str(backup.id)
-    assert audit.audit_metadata["fallback_selected"] is True
-    assert "api_key" not in audit.audit_metadata
-    assert "base_url" not in audit.audit_metadata
+    assert backup.health_status == "unknown"
+    assert backup.last_success_at is None
+    assert run.status == RunStatus.FAILED.value
+    assert "model_provider.fallback_selected" not in event_types
+    assert team_message is None
+    assert audit is None
 
 
 def test_worker_falls_back_across_model_provider_vendors() -> None:
@@ -4450,7 +4376,7 @@ def test_worker_falls_back_across_model_provider_vendors() -> None:
     assert audit.audit_metadata["credential_id"] == str(anthropic_backup.id)
 
 
-def test_worker_skips_budget_exhausted_model_provider_fallback() -> None:
+def test_worker_ignores_budget_exhausted_model_provider_fallback_policy() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     settings = Settings(
@@ -4551,17 +4477,15 @@ def test_worker_skips_budget_exhausted_model_provider_fallback() -> None:
     session.add(run)
     session.commit()
 
-    class FallbackRunner:
+    class FailingRunner:
         def __init__(self) -> None:
             self.requests: list[AgentRunRequest] = []
 
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
             self.requests.append(request)
-            if len(self.requests) == 1:
-                raise RuntimeError("primary provider unavailable")
-            return AgentRunResult(final_output=f"handled by {request.model}")
+            raise RuntimeError("primary provider unavailable")
 
-    runner = FallbackRunner()
+    runner = FailingRunner()
     job = JobPayload(
         workspace_id=workspace.id,
         job_type=JobType.AGENT_RUN,
@@ -4570,7 +4494,8 @@ def test_worker_skips_budget_exhausted_model_provider_fallback() -> None:
         idempotency_key="provider-budget-fallback",
     )
 
-    RunOrchestrationService(session, agent_runner=runner, settings=settings).run_agent_sync(job)
+    with pytest.raises(RuntimeError):
+        RunOrchestrationService(session, agent_runner=runner, settings=settings).run_agent_sync(job)
 
     fallback_event = session.scalar(
         select(RunEvent).where(
@@ -4578,11 +4503,13 @@ def test_worker_skips_budget_exhausted_model_provider_fallback() -> None:
             RunEvent.event_type == "model_provider.fallback_selected",
         )
     )
-    assert [request.model for request in runner.requests] == ["primary-model", "backup-model"]
+    assert [request.model for request in runner.requests] == ["primary-model"]
     assert all(request.model != "exhausted-model" for request in runner.requests)
-    assert fallback_event is not None
-    assert fallback_event.event_metadata["model_provider"]["credential_id"] == str(backup.id)
-    assert run.status == RunStatus.COMPLETED.value
+    assert all(request.model != "backup-model" for request in runner.requests)
+    assert fallback_event is None
+    assert exhausted.status == "active"
+    assert backup.status == "active"
+    assert run.status == RunStatus.FAILED.value
 
 
 def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
@@ -4732,42 +4659,11 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
         )
     )
     assert "model_provider.fallback_selected" not in event_types
-    assert fallback_unavailable_event is not None
-    assert fallback_unavailable_event.event_metadata["failed_provider"] == {
-        "provider": "openai",
-        "model": "primary-model",
-        "model_api": None,
-        "credential_id": str(primary.id),
-    }
-    assert fallback_unavailable_event.event_metadata["reason"]["code"] == "RuntimeError"
-    assert fallback_unavailable_event.event_metadata["reason"]["message"] == "[redacted]"
-    serialized_event = json.dumps(fallback_unavailable_event.event_metadata)
-    assert "sk-unavailable-secret" not in serialized_event
-    assert "Bearer unavailable-token" not in serialized_event
-    assert "https://primary.example.test/v1/private" not in serialized_event
-    assert "primary.example.test/v1/private" not in serialized_event
-    assert "api_key" not in fallback_unavailable_event.event_metadata
-    assert "base_url" not in fallback_unavailable_event.event_metadata
-    assert team_message is not None
-    assert team_message.task_id == task.id
-    assert team_message.payload["run_id"] == str(run.id)
-    assert team_message.payload["run_event_id"] == str(fallback_unavailable_event.id)
-    assert team_message.payload["event_metadata"]["reason"]["message"] == "[redacted]"
-    serialized_message = json.dumps(team_message.payload)
-    assert "sk-unavailable-secret" not in serialized_message
-    assert "Bearer unavailable-token" not in serialized_message
-    assert "primary.example.test/v1/private" not in serialized_message
-    assert audit is not None
-    assert audit.audit_metadata["failed_provider"]["credential_id"] == str(primary.id)
-    assert audit.audit_metadata["failed_provider"]["model_api"] is None
-    assert audit.audit_metadata["reason"]["message"] == "[redacted]"
-    serialized_audit = json.dumps(audit.audit_metadata)
-    assert "sk-unavailable-secret" not in serialized_audit
-    assert "Bearer unavailable-token" not in serialized_audit
-    assert "base_url" not in serialized_audit
-    assert "https://primary.example.test/v1/private" not in serialized_audit
-    assert "api_key" not in audit.audit_metadata
-    assert "base_url" not in audit.audit_metadata
+    assert "model_provider.fallback_unavailable" not in event_types
+    assert fallback_unavailable_event is None
+    assert team_message is None
+    assert audit is None
+    assert foreign.status == "active"
     assert run.status == RunStatus.FAILED.value
     assert run.error["message"] == "[redacted]"
 

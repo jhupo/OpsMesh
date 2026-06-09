@@ -32,7 +32,7 @@ class DeterministicTestRunner:
         return AgentRunResult(final_output="deterministic_test_run_completed")
 
 
-def test_openai_agents_runner_builds_agent_from_profile() -> None:
+def test_openai_agents_runner_requires_explicit_provider_api_key() -> None:
     profile = AgentProfile(
         workspace_id=uuid4(),
         name="Researcher",
@@ -58,11 +58,43 @@ def test_openai_agents_runner_builds_agent_from_profile() -> None:
         ),
     )
 
+    with pytest.raises(ValueError, match="explicit provider API key"):
+        OpenAIAgentsRunner()._build_agent(request)
+
+
+def test_openai_agents_runner_builds_agent_from_explicit_provider() -> None:
+    profile = AgentProfile(
+        workspace_id=uuid4(),
+        name="Researcher",
+        role="researcher",
+        instructions="Research carefully.",
+        model="gpt-4.1",
+        model_settings={
+            "temperature": 0.2,
+            "max_tokens": 500,
+            "tool_choice": "required",
+            "verbosity": "low",
+            "metadata": {"team": "research"},
+            "unsupported": {"nested": True},
+        },
+    )
+    request = AgentRunRequest(
+        agent_profile=profile,
+        input_text="Find market trends",
+        context=AgentRuntimeContext(
+            workspace_id=profile.workspace_id,
+            task_id=None,
+            run_id=uuid4(),
+        ),
+        api_key="sk-test",
+        base_url="https://llm.example.test/v1",
+    )
+
     agent = OpenAIAgentsRunner()._build_agent(request)
 
     assert agent.name == "Researcher"
     assert agent.instructions == "Research carefully."
-    assert agent.model == "gpt-4.1"
+    assert agent.model.model == "gpt-4.1"
     assert agent.model_settings.temperature == 0.2
     assert agent.model_settings.max_tokens == 500
     assert agent.model_settings.tool_choice == "required"
@@ -904,7 +936,7 @@ def test_openai_agents_runner_raw_output_is_json_safe() -> None:
         "usage": {"requests": 1},
         "sdk_continuation": {
             "provider": "openai_agents",
-            "mode": "runner_level_fallback",
+            "mode": "sdk_continuation_snapshot",
             "native_tool_call_continuation": False,
             "last_response_id": "resp_123",
             "conversation_id": "conv_123",

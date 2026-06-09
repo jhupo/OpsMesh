@@ -225,39 +225,20 @@ def _agent_model_provider_credential(
             )
         )
         return credential
-    return _workspace_selectable_default_or_fallback_credential(session, agent.workspace_id)
+    return _workspace_default_credential(session, agent.workspace_id)
 
 
-def _workspace_selectable_default_or_fallback_credential(
+def _workspace_default_credential(
     session: Session,
     workspace_id: UUID,
 ) -> ModelProviderCredential | None:
-    default = session.scalar(
+    return session.scalar(
         select(ModelProviderCredential).where(
             ModelProviderCredential.workspace_id == workspace_id,
             ModelProviderCredential.is_default.is_(True),
             ModelProviderCredential.status == "active",
         )
     )
-    if _credential_selectable(default):
-        return default
-    statement = (
-        select(ModelProviderCredential)
-        .where(
-            ModelProviderCredential.workspace_id == workspace_id,
-            ModelProviderCredential.status == "active",
-        )
-        .order_by(
-            ModelProviderCredential.is_default.desc(),
-            ModelProviderCredential.created_at.desc(),
-        )
-    )
-    if default is not None:
-        statement = statement.where(ModelProviderCredential.id != default.id)
-    for credential in session.scalars(statement):
-        if _credential_selectable(credential):
-            return credential
-    return None
 
 
 def _credential_selectable(credential: ModelProviderCredential | None) -> bool:

@@ -529,11 +529,11 @@ Tasks:
 - [x] Improve self-hosted machine policy controls, quotas, and revocation audit trails.
 - [x] Add import conflict previews for workspace archives.
 - [x] Add stricter Docker runtime quota enforcement and cleanup verification.
-- [x] Add per-agent model provider audit events and fallback handling.
+- [x] Add per-agent model provider audit events and fail-closed handling.
   - [x] Freeze provider resolution metadata into queued run authorization snapshots.
   - [x] Emit `model_provider.resolved` run events without raw API keys or full base URLs.
-  - [x] Add workspace-scoped provider fallback policy.
-  - [x] Emit fallback selection and final provider-used run events.
+  - [x] Reject implicit provider substitution when the resolved credential is unavailable.
+  - [x] Emit final provider-used run events.
   - [x] Track provider health and last failure reason.
   - [x] Redact full model-provider base URLs from credential management audit events.
 - [x] Add operations dashboards APIs for worker capacity, queue latency, and runtime saturation.

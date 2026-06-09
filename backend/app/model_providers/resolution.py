@@ -91,7 +91,7 @@ class ModelProviderResolutionService:
         else:
             credential = self._default_credential(workspace_id)
             if credential is not None:
-                source = "workspace_default" if credential.is_default else "workspace_fallback"
+                source = "workspace_default"
 
         selected_model = _selected_model(agent_model, credential)
         capability_provider = _capability_provider(agent_model, credential)
@@ -174,22 +174,6 @@ class ModelProviderResolutionService:
         )
         if _is_selectable(default):
             return default
-        statement = (
-            select(ModelProviderCredential)
-            .where(
-                ModelProviderCredential.workspace_id == workspace_id,
-                ModelProviderCredential.status == "active",
-            )
-            .order_by(
-                ModelProviderCredential.is_default.desc(),
-                ModelProviderCredential.created_at.desc(),
-            )
-        )
-        if default is not None:
-            statement = statement.where(ModelProviderCredential.id != default.id)
-        for credential in self._session.scalars(statement):
-            if _is_selectable(credential):
-                return credential
         return None
 
 
@@ -226,9 +210,7 @@ def _capability_provider(
 ) -> str | None:
     if credential is not None:
         return credential.provider
-    if agent_model == "workspace-default":
-        return None
-    return "openai"
+    return None
 
 
 def _model_capability_payload(

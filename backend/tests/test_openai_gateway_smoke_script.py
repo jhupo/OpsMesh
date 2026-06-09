@@ -73,7 +73,7 @@ def test_openai_gateway_smoke_dry_run_redacts_key_and_skips_pytest(
     assert "api_key_length=14" in output
     assert "sk-test-secret" not in output
     assert "base_url=https://dash.ovload.com/v1" in output
-    assert "model_api=sdk-default" in output
+    assert "model_api=unspecified" in output
     assert "pytest_args=-k uses_tool" in output
 
 

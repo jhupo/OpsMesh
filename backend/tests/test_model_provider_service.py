@@ -24,7 +24,10 @@ from backend.app.model_providers.model_api import (
     unsupported_agent_model_api,
 )
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.service import ModelProviderCredentialService
+from backend.app.model_providers.service import (
+    ModelProviderCredentialService,
+    ModelProviderUnavailableError,
+)
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
@@ -548,7 +551,7 @@ def test_anthropic_health_check_uses_default_messages_model_api(
     }
 
 
-def test_resolve_skips_unhealthy_default_and_uses_workspace_fallback() -> None:
+def test_resolve_fails_closed_when_default_provider_is_unhealthy() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     service = _service(session)
@@ -580,20 +583,19 @@ def test_resolve_skips_unhealthy_default_and_uses_workspace_fallback() -> None:
             error_code="RuntimeError",
             error_message="provider unavailable",
         )
-    resolved = service.resolve_for_agent(
-        workspace_id=workspace.id,
-        agent_credential_id=None,
-        agent_model="workspace-default",
-    )
+    with pytest.raises(ModelProviderUnavailableError):
+        service.resolve_for_agent(
+            workspace_id=workspace.id,
+            agent_credential_id=None,
+            agent_model="workspace-default",
+        )
 
     assert primary.failure_count == 3
     assert primary.health_status == "unhealthy"
-    assert resolved.credential_id == backup.id
-    assert resolved.api_key == "sk-backup"
-    assert resolved.model == "backup-model"
+    assert backup.status == "active"
 
 
-def test_resolve_skips_disabled_default_and_uses_workspace_fallback() -> None:
+def test_resolve_fails_closed_when_default_provider_is_disabled() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     service = _service(session)
@@ -623,19 +625,19 @@ def test_resolve_skips_disabled_default_and_uses_workspace_fallback() -> None:
         credential_id=primary.id,
         actor_user_id=user.id,
     )
-    resolved = service.resolve_for_agent(
-        workspace_id=workspace.id,
-        agent_credential_id=None,
-        agent_model="workspace-default",
-    )
+    with pytest.raises(ModelProviderUnavailableError):
+        service.resolve_for_agent(
+            workspace_id=workspace.id,
+            agent_credential_id=None,
+            agent_model="workspace-default",
+        )
 
     assert primary.status == "disabled"
     assert primary.is_default is False
-    assert resolved.credential_id == backup.id
-    assert resolved.model == "backup-model"
+    assert backup.status == "active"
 
 
-def test_resolve_skips_budget_exhausted_default() -> None:
+def test_resolve_fails_closed_when_default_budget_is_exhausted() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     service = _service(session)
@@ -661,15 +663,15 @@ def test_resolve_skips_budget_exhausted_default() -> None:
         is_default=False,
     )
 
-    resolved = service.resolve_for_agent(
-        workspace_id=workspace.id,
-        agent_credential_id=None,
-        agent_model="workspace-default",
-    )
+    with pytest.raises(ModelProviderUnavailableError):
+        service.resolve_for_agent(
+            workspace_id=workspace.id,
+            agent_credential_id=None,
+            agent_model="workspace-default",
+        )
 
     assert primary.budget_metadata == {"limits": {"calls": 1}, "usage": {"calls": 1}}
-    assert resolved.credential_id == backup.id
-    assert resolved.model == "backup-model"
+    assert backup.status == "active"
 
 
 def test_resolve_treats_future_exhausted_until_as_temporarily_exhausted() -> None:
@@ -687,7 +689,7 @@ def test_resolve_treats_future_exhausted_until_as_temporarily_exhausted() -> Non
         is_default=True,
         budget_metadata={"exhausted_until": (datetime.now(UTC) + timedelta(minutes=5)).isoformat()},
     )
-    backup = service.create(
+    service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         name="Backup",
@@ -698,11 +700,12 @@ def test_resolve_treats_future_exhausted_until_as_temporarily_exhausted() -> Non
         is_default=False,
     )
 
-    exhausted = service.resolve_for_agent(
-        workspace_id=workspace.id,
-        agent_credential_id=None,
-        agent_model="workspace-default",
-    )
+    with pytest.raises(ModelProviderUnavailableError):
+        service.resolve_for_agent(
+            workspace_id=workspace.id,
+            agent_credential_id=None,
+            agent_model="workspace-default",
+        )
     primary.budget_metadata = {
         "exhausted_until": (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
     }
@@ -712,7 +715,6 @@ def test_resolve_treats_future_exhausted_until_as_temporarily_exhausted() -> Non
         agent_model="workspace-default",
     )
 
-    assert exhausted.credential_id == backup.id
     assert available.credential_id == primary.id
 
 
