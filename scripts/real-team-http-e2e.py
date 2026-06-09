@@ -431,7 +431,7 @@ def _build_summary(
     )
     messages = _required_get(
         client,
-        f"/workspaces/{workspace_id}/tasks/{task_id}/messages?limit=200",
+        f"/workspaces/{workspace_id}/tasks/{task_id}/messages?limit=100",
     )
     runs = _required_get(client, f"/workspaces/{workspace_id}/runs?limit=100")
     run_items = runs.get("items") if isinstance(runs.get("items"), list) else []
@@ -445,7 +445,7 @@ def _build_summary(
             "run_id": run.get("id"),
             "events": _required_get(
                 client,
-                f"/workspaces/{workspace_id}/runs/{run.get('id')}/events?limit=200",
+                f"/workspaces/{workspace_id}/runs/{run.get('id')}/events?limit=100",
             ).get("items", []),
         }
         for run in task_run_items
