@@ -3370,7 +3370,18 @@ def test_agent_request_includes_unread_mailbox_context() -> None:
         status=TaskStatus.QUEUED.value,
     )
     sender = AgentProfile(workspace_id=workspace.id, name="Planner", role="planner")
-    recipient = AgentProfile(workspace_id=workspace.id, name="Builder", role="builder")
+    recipient = AgentProfile(
+        workspace_id=workspace.id,
+        name="Builder",
+        role="builder",
+        tool_policy={
+            "allowed_tools": [
+                "get_agent_inbox",
+                "list_agent_thread_messages",
+                "mark_agent_message_read",
+            ]
+        },
+    )
     session.add_all([task, sender, recipient])
     session.flush()
     thread = AgentMessageThread(workspace_id=workspace.id, task_id=task.id, subject="Handoff")
@@ -3425,6 +3436,16 @@ def test_agent_request_includes_unread_mailbox_context() -> None:
     ]
     assert "hidden-mailbox-token" not in str(mailbox)
     assert "sk-mailbox-secret" not in str(mailbox)
+    assert "Runtime capabilities and evidence:" in request.input_text
+    assert (
+        "Available tools: get_agent_inbox, list_agent_thread_messages, "
+        "mark_agent_message_read"
+    ) in request.input_text
+    assert "Latest unread mailbox messages:" in request.input_text
+    assert "handoff" in request.input_text
+    assert "[redacted]" in request.input_text
+    assert "hidden-mailbox-token" not in request.input_text
+    assert "sk-mailbox-secret" not in request.input_text
 
 
 def test_agent_request_mailbox_context_is_scoped_to_current_task() -> None:
@@ -5291,6 +5312,14 @@ def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
     ] == "Start with the runtime ensure path."
     assert builder_request.context.metadata["team_context"]["team_name"] == "Product Team"
     assert "Team context:" in builder_request.input_text
+    assert "Use mailbox tools to read handoffs and coordinate with teammates" in (
+        builder_request.input_text
+    )
+    assert "Available tools:" in builder_request.input_text
+    assert "get_agent_inbox" in builder_request.input_text
+    assert "send_agent_message" in builder_request.input_text
+    assert "Latest unread mailbox messages:" in builder_request.input_text
+    assert "Start with the runtime ensure path." in builder_request.input_text
 
 
 def test_stale_running_runs_are_recovered_as_failed() -> None:

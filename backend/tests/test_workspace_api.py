@@ -9541,6 +9541,16 @@ def test_task_timeline_returns_execution_events_and_redacts_metadata() -> None:
             "prompt": "build",
             "base_url": "https://router.example.test/private",
             "headers": {"authorization": "Bearer hidden"},
+            "authorization_snapshot": {
+                "allowed_tools": ["write_artifact", "read_workspace_file"],
+                "model_provider": {
+                    "provider": "openai-compatible",
+                    "selected_model": "gpt-test",
+                    "model_api": "responses",
+                    "api_key": "sk-provider-hidden",
+                    "base_url": "https://provider.example.test/private",
+                },
+            },
         },
         output={"result": "ok", "token": "hidden-token"},
         error={"api_key": "sk-run"},
@@ -9653,8 +9663,21 @@ def test_task_timeline_returns_execution_events_and_redacts_metadata() -> None:
     assert by_type["step.created"]["agent"]["name"] == "Developer"
     assert by_type["step.created"]["metadata"]["review_policy"]["headers"] == "[redacted]"
     assert by_type["step.created"]["metadata"]["dependencies"]["token"] == "[redacted]"
-    assert by_type["run.created"]["metadata"]["input"]["base_url"] == "[redacted]"
-    assert by_type["run.created"]["metadata"]["input"]["headers"] == "[redacted]"
+    assert by_type["run.created"]["metadata"]["input_keys"] == [
+        "authorization_snapshot",
+        "base_url",
+        "headers",
+        "prompt",
+    ]
+    assert "input" not in by_type["run.created"]["metadata"]
+    assert by_type["run.created"]["metadata"]["run_scope_snapshot"] == {
+        "allowed_tools": ["write_artifact", "read_workspace_file"],
+        "model_provider": {
+            "provider": "openai-compatible",
+            "selected_model": "gpt-test",
+            "model_api": "responses",
+        },
+    }
     assert by_type["run.created"]["metadata"]["error"]["api_key"] == "[redacted]"
     assert by_type["tool.completed"]["metadata"]["secret"] == "[redacted]"
     assert by_type["pm.acceptance_decision"]["summary"] == "Needs review"
@@ -9667,6 +9690,8 @@ def test_task_timeline_returns_execution_events_and_redacts_metadata() -> None:
     serialized = str(body)
     assert "sk-task" not in serialized
     assert "router.example.test/private" not in serialized
+    assert "provider.example.test/private" not in serialized
+    assert "sk-provider-hidden" not in serialized
     assert "hidden-token" not in serialized
     assert "tool-secret" not in serialized
     assert "sk-message" not in serialized

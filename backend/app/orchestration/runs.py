@@ -28,7 +28,7 @@ from backend.app.agent_runtime.sessions import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
 )
-from backend.app.agent_runtime.tools import BackendToolExecutor
+from backend.app.agent_runtime.tools import PRODUCT_TOOL_NAMES, BackendToolExecutor
 from backend.app.agents.models import AgentProfile
 from backend.app.audit.service import AuditService
 from backend.app.capabilities.adapters import McpAdapterResolver
@@ -1348,7 +1348,11 @@ class RunOrchestrationService:
         )
         return AgentRunRequest(
             agent_profile=profile,
-            input_text=self._input_text_for_run(run),
+            input_text=self._input_text_for_run(
+                run,
+                allowed_tools=allowed_tools,
+                runtime_metadata=metadata,
+            ),
             context=AgentRuntimeContext(
                 workspace_id=run.workspace_id,
                 task_id=run.task_id,
@@ -1726,19 +1730,32 @@ class RunOrchestrationService:
             error_message=error.message,
         )
 
-    def _input_text_for_run(self, run: AgentRun) -> str:
+    def _input_text_for_run(
+        self,
+        run: AgentRun,
+        *,
+        allowed_tools: tuple[str, ...] = (),
+        runtime_metadata: dict[str, object] | None = None,
+    ) -> str:
         task = self._session.get(Task, run.task_id) if run.task_id is not None else None
         if task is None:
             return str(run.input)
 
         parts = [task.title, task.description]
-        team_context_text = self._team_context_text_for_run(run, task)
+        team_context_text = self._team_context_text_for_run(
+            run,
+            task,
+            allowed_tools=allowed_tools,
+        )
         if team_context_text:
             parts.append(team_context_text)
         if run.task_step_id is not None:
             step = self._session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
                 parts.append(f"Current step: {step.title}\n{step.description}".strip())
+                step_context_text = self._step_context_text(step)
+                if step_context_text:
+                    parts.append(step_context_text)
                 if self._is_pm_summary_step(step):
                     parts.append(
                         "PM acceptance output: return JSON with decision "
@@ -1752,9 +1769,21 @@ class RunOrchestrationService:
                 )
                 if previous_summaries:
                     parts.append("Completed step summaries:\n" + "\n".join(previous_summaries))
+        runtime_context_text = self._runtime_context_text(
+            allowed_tools=allowed_tools,
+            metadata=runtime_metadata or {},
+        )
+        if runtime_context_text:
+            parts.append(runtime_context_text)
         return "\n\n".join(part for part in parts if part).strip()
 
-    def _team_context_text_for_run(self, run: AgentRun, task: Task) -> str:
+    def _team_context_text_for_run(
+        self,
+        run: AgentRun,
+        task: Task,
+        *,
+        allowed_tools: tuple[str, ...] = (),
+    ) -> str:
         if task.agent_team_id is None:
             return ""
         team = self._session.scalar(
@@ -1775,12 +1804,86 @@ class RunOrchestrationService:
             if runtime_state is not None
             else "unknown"
         )
-        return (
-            "Team context:\n"
-            f"- Team: {team.name} ({team.team_type})\n"
-            f"- Runtime: {runtime_status}\n"
-            "- Use agent mailbox tools to read handoffs and coordinate with teammates."
+        lines = [
+            "Team context:",
+            f"- Team: {team.name} ({team.team_type})",
+            f"- Runtime: {runtime_status}",
+        ]
+        mailbox_tools = _mailbox_tool_names(allowed_tools)
+        if mailbox_tools:
+            lines.append(
+                "- Use mailbox tools to read handoffs and coordinate with teammates: "
+                + ", ".join(mailbox_tools)
+            )
+        else:
+            lines.append("- Mailbox tools are not attached for this run.")
+        return "\n".join(lines)
+
+    def _step_context_text(self, step: TaskStep) -> str:
+        lines: list[str] = []
+        if step.work_package_id:
+            lines.append(f"- Work package: {redact_sensitive_text(step.work_package_id)}")
+        if step.required_role:
+            lines.append(f"- Required role: {redact_sensitive_text(step.required_role)}")
+        required_skills = _runtime_text_list(step.required_skills)
+        if required_skills:
+            lines.append("- Required skills: " + ", ".join(required_skills))
+        expected_artifacts = _runtime_text_list(step.expected_artifacts)
+        if expected_artifacts:
+            lines.append("- Expected artifacts: " + "; ".join(expected_artifacts))
+        acceptance_criteria = _runtime_text_list(step.acceptance_criteria)
+        if acceptance_criteria:
+            lines.append("- Acceptance criteria: " + "; ".join(acceptance_criteria))
+        review_policy = redact_sensitive_payload(step.review_policy)
+        if isinstance(review_policy, dict) and review_policy:
+            lines.append(
+                "- Review policy keys: " + ", ".join(sorted(str(key) for key in review_policy))
+            )
+        return "Current step requirements:\n" + "\n".join(lines) if lines else ""
+
+    def _runtime_context_text(
+        self,
+        *,
+        allowed_tools: tuple[str, ...],
+        metadata: dict[str, object],
+    ) -> str:
+        lines: list[str] = ["Runtime capabilities and evidence:"]
+        if allowed_tools:
+            lines.append("- Available tools: " + ", ".join(sorted(allowed_tools)))
+            product_tools = sorted(tool for tool in allowed_tools if tool in PRODUCT_TOOL_NAMES)
+            mcp_tools = sorted(tool for tool in allowed_tools if tool not in PRODUCT_TOOL_NAMES)
+            if product_tools:
+                lines.append("- Product tools: " + ", ".join(product_tools))
+            if mcp_tools:
+                lines.append("- MCP tools: " + ", ".join(mcp_tools))
+        else:
+            lines.append("- Available tools: none attached to this run.")
+
+        mailbox = metadata.get("agent_mailbox")
+        if isinstance(mailbox, dict):
+            unread_count = mailbox.get("unread_count", 0)
+            pending_count = mailbox.get("pending_count", 0)
+            lines.append(f"- Mailbox: {unread_count} unread, {pending_count} pending.")
+            latest_messages = mailbox.get("latest_unread_messages")
+            if isinstance(latest_messages, list) and latest_messages:
+                lines.append("- Latest unread mailbox messages:")
+                for message in latest_messages[:5]:
+                    rendered = _runtime_mailbox_message_line(message)
+                    if rendered:
+                        lines.append(f"  - {rendered}")
+            elif _mailbox_tool_names(allowed_tools):
+                lines.append("- No unread mailbox messages were found in this run scope.")
+
+        if _mailbox_tool_names(allowed_tools):
+            lines.append(
+                "- For complete handoff threads, call get_agent_inbox or "
+                "list_agent_thread_messages before claiming missing team context."
+            )
+        lines.append(
+            "- Treat this section as platform evidence. Do not claim missing platform "
+            "context unless it is absent here and unavailable through listed tools."
         )
+        return "\n".join(lines)
 
     def _allowed_tools_for_profile(self, profile: AgentProfile) -> tuple[str, ...]:
         tool_policy = profile.tool_policy if isinstance(profile.tool_policy, dict) else {}
@@ -3959,6 +4062,45 @@ def _mailbox_message_context(message: AgentMessage) -> dict[str, object]:
         "created_at": message.created_at.isoformat(),
         "body_preview": redact_sensitive_text(message.body[:500]),
     }
+
+
+def _mailbox_tool_names(allowed_tools: tuple[str, ...]) -> list[str]:
+    mailbox_tools = {
+        "get_agent_inbox",
+        "list_agent_thread_messages",
+        "mark_agent_message_read",
+        "send_agent_message",
+    }
+    return sorted(tool for tool in allowed_tools if tool in mailbox_tools)
+
+
+def _runtime_text_list(value: object, *, limit: int = 8) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    rendered: list[str] = []
+    for item in value:
+        if isinstance(item, str) and item:
+            rendered.append(redact_sensitive_text(item))
+        elif isinstance(item, dict) and item:
+            safe_item = redact_sensitive_payload(item)
+            rendered.append(json.dumps(safe_item, sort_keys=True, ensure_ascii=False))
+        if len(rendered) >= limit:
+            break
+    return rendered
+
+
+def _runtime_mailbox_message_line(message: object) -> str:
+    if not isinstance(message, dict):
+        return ""
+    message_type = message.get("message_type")
+    created_at = message.get("created_at")
+    body_preview = message.get("body_preview")
+    parts = [
+        str(part)
+        for part in (message_type, created_at, body_preview)
+        if isinstance(part, str) and part
+    ]
+    return redact_sensitive_text(" | ".join(parts))
 
 
 def _mailbox_scope_metadata(

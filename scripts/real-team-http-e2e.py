@@ -619,7 +619,12 @@ def _evaluate_evidence(
     run_events: list[dict[str, object]],
     provider_usage_audit: dict[str, Any],
 ) -> dict[str, object]:
-    required_event_types = {"run.claimed", "model.request_started"}
+    required_event_types = {
+        "run.claimed",
+        "model.request_started",
+        "model.response_received",
+        "run.completed",
+    }
     success_event_types = {"model_provider.used"}
     observed_event_types = {
         event.get("event_type")
@@ -676,6 +681,8 @@ def _evaluate_evidence(
         failures.append("no_runs_for_task")
     if missing_event_types:
         failures.append("missing_required_run_events")
+    if missing_success_event_types:
+        failures.append("missing_success_run_events")
     if fallback_event_types:
         failures.append("provider_fallback_event_observed")
     if not matching_usage and not matching_failures:

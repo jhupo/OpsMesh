@@ -392,16 +392,58 @@ def _artifact_event(
 
 
 def _run_metadata(run: AgentRun) -> dict[str, object]:
+    run_input = run.input if isinstance(run.input, dict) else {}
     return redact_sensitive_payload(
         {
             "model": run.model,
             "runtime_id": _str_or_none(run.runtime_id),
             "runtime_space_id": _str_or_none(run.runtime_space_id),
-            "input": run.input,
+            "input_keys": sorted(str(key) for key in run_input),
+            "run_scope_snapshot": _run_scope_snapshot_summary(run_input),
             "has_output": run.output is not None,
             "error": run.error,
         }
     )
+
+
+def _run_scope_snapshot_summary(run_input: dict[str, object]) -> dict[str, object] | None:
+    snapshot = run_input.get("authorization_snapshot")
+    if not isinstance(snapshot, dict):
+        return None
+
+    summary: dict[str, object] = {}
+    for key in (
+        "version",
+        "workspace_id",
+        "task_id",
+        "task_step_id",
+        "agent_profile_id",
+        "runtime_space_id",
+    ):
+        value = snapshot.get(key)
+        if value is not None:
+            summary[key] = value
+
+    allowed_tools = snapshot.get("allowed_tools")
+    if isinstance(allowed_tools, list):
+        summary["allowed_tools"] = [tool for tool in allowed_tools if isinstance(tool, str)]
+
+    model_provider = snapshot.get("model_provider")
+    if isinstance(model_provider, dict):
+        summary["model_provider"] = {
+            key: model_provider.get(key)
+            for key in (
+                "provider",
+                "selected_model",
+                "model_api",
+                "readiness_status",
+                "reasons",
+                "warnings",
+            )
+            if model_provider.get(key) is not None
+        }
+
+    return summary or None
 
 
 def _message_summary(message: TaskMessage) -> str:
