@@ -1,0 +1,15 @@
+RESOURCE_STATUS_ACTIVE = "active"
+RESOURCE_STATUS_PENDING_APPROVAL = "pending_approval"
+RESOURCE_STATUS_REJECTED = "rejected"
+
+DEFAULT_RESOURCE_REVIEW_MODEL = "codex-auto-review"
+RESOURCE_REVIEW_SETTINGS_KEY = "resource_review"
+SEMANTIC_REVIEW_SETTINGS_KEY = "semantic_review"
+MODEL_REQUEST_REVIEW_SETTINGS_KEY = "model_request_review"
+
+REVIEW_TYPE_AGENT_PROFILE = "resource.agent_profile"
+REVIEW_TYPE_CAPABILITY = "resource.capability"
+REVIEW_TYPE_SKILL = "resource.skill"
+REVIEW_TYPE_MCP_SERVER = "resource.mcp_server"
+REVIEW_TYPE_MCP_TOOL_ALLOWLIST = "resource.mcp_tool_allowlist"
+REVIEW_TYPE_MCP_CREDENTIAL_REFERENCE = "resource.mcp_credential_reference"

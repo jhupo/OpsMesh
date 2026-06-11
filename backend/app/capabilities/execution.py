@@ -20,9 +20,11 @@ from backend.app.capabilities.models import (
 )
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.trace_context import with_current_trace_metadata
+from backend.app.reviews.tool_execution import ToolExecutionReview, ToolExecutionReviewService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.security.models import SecurityEvent
+from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService
@@ -135,6 +137,41 @@ class McpToolExecutionService:
             max_calls_per_run=policy.max_calls_per_run,
             max_calls_per_hour=policy.max_calls_per_hour,
         )
+        execution_review = ToolExecutionReviewService(
+            self._session,
+            self._settings,
+        ).review_mcp_tool_call(
+            workspace_id=request.workspace_id,
+            tool_name=request.tool_name,
+            arguments=request.arguments,
+            allowlist_policy=allow.policy,
+            allowlist_risk_level=allow.risk_level,
+            requires_approval=allow.requires_approval,
+            context={
+                "agent_run_id": str(run.id),
+                "task_id": str(run.task_id) if run.task_id is not None else None,
+                "task_step_id": str(run.task_step_id) if run.task_step_id is not None else None,
+                "agent_profile_id": str(run.agent_profile_id)
+                if run.agent_profile_id is not None
+                else None,
+                "mcp_server_id": str(server.id),
+                **_snapshot_audit_metadata(snapshot),
+            },
+        )
+        if not execution_review.approved:
+            review_reason = (
+                "mcp_tool_requires_approval"
+                if allow.requires_approval
+                else "mcp_tool_execution_review_requires_approval"
+            )
+            return self._request_tool_approval(
+                request,
+                run,
+                allow,
+                server,
+                reason=review_reason,
+                execution_review=execution_review,
+            )
         if allow.requires_approval:
             return self._request_tool_approval(
                 request,
@@ -142,6 +179,7 @@ class McpToolExecutionService:
                 allow,
                 server,
                 reason="mcp_tool_requires_approval",
+                execution_review=execution_review,
             )
         if (
             _is_high_risk_tool(allow)
@@ -153,6 +191,7 @@ class McpToolExecutionService:
                 allow,
                 server,
                 reason="mcp_high_risk_tool_requires_approval",
+                execution_review=execution_review,
             )
 
         self._append_run_event(
@@ -226,7 +265,7 @@ class McpToolExecutionService:
             )
         except ToolPermissionError:
             raise
-        except Exception as exc:
+        except McpExecutionError as exc:
             latency_ms = _latency_ms(started)
             error = _normalized_error(exc)
             log = self._log_call(
@@ -264,6 +303,27 @@ class McpToolExecutionService:
                 log_id=log.id,
                 latency_ms=latency_ms,
             )
+        except Exception as exc:
+            latency_ms = _latency_ms(started)
+            error = {"code": "mcp_adapter_crashed", "message": exc.__class__.__name__}
+            self._log_call(
+                request=request,
+                server_id=server.id,
+                status="failed",
+                response=None,
+                error={**error, "latency_ms": latency_ms},
+                snapshot=snapshot,
+                run=run,
+                latency_ms=latency_ms,
+            )
+            self._append_run_event(
+                run=run,
+                event_type="tool.failed",
+                message=request.tool_name,
+                metadata={"tool_kind": "mcp", "error": error, "latency_ms": latency_ms},
+            )
+            self._session.flush()
+            raise
 
         latency_ms = _latency_ms(started)
         log = self._log_call(
@@ -504,6 +564,7 @@ class McpToolExecutionService:
         server: McpServer,
         *,
         reason: str,
+        execution_review: ToolExecutionReview | None = None,
     ) -> McpExecutionResult:
         snapshot = _authorization_snapshot(run)
         log = self._log_call(
@@ -516,22 +577,31 @@ class McpToolExecutionService:
             run=run,
             latency_ms=0,
         )
-        ApprovalService(self._session).create_approval(
+        approval = ApprovalService(self._session).create_approval(
             workspace_id=request.workspace_id,
             task_id=run.task_id,
             agent_run_id=run.id,
             requested_by_agent_profile_id=run.agent_profile_id,
             approval_type="mcp.tool",
-            risk_level=allow.risk_level,
+            risk_level=(
+                execution_review.risk_level
+                if execution_review is not None
+                else allow.risk_level
+            ),
             payload={
                 "tool_name": request.tool_name,
                 "mcp_server_id": str(server.id),
                 "arguments_sha256": _payload_hash(request.arguments),
+                "arguments_preview": redact_sensitive_payload(request.arguments),
                 "reason": reason,
                 "requires_approval": allow.requires_approval,
+                "execution_review": execution_review.approval_payload()
+                if execution_review is not None
+                else None,
                 **_snapshot_audit_metadata(snapshot),
             },
         )
+        log.approval_id = approval.id
         run.status = RunStatus.WAITING_APPROVAL.value
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)
@@ -546,6 +616,12 @@ class McpToolExecutionService:
                 "mcp_server_id": str(server.id),
                 "tool_name": request.tool_name,
                 "risk_level": allow.risk_level,
+                "review_risk_level": execution_review.risk_level
+                if execution_review is not None
+                else allow.risk_level,
+                "review_reasons": execution_review.reasons
+                if execution_review is not None
+                else [],
                 "reason": reason,
                 "requires_approval": allow.requires_approval,
                 **_snapshot_audit_metadata(snapshot),
@@ -559,6 +635,12 @@ class McpToolExecutionService:
                 "tool_name": request.tool_name,
                 "mcp_server_id": str(server.id),
                 "risk_level": allow.risk_level,
+                "review_risk_level": execution_review.risk_level
+                if execution_review is not None
+                else allow.risk_level,
+                "review_reasons": execution_review.reasons
+                if execution_review is not None
+                else [],
                 "reason": reason,
                 "requires_approval": allow.requires_approval,
             },

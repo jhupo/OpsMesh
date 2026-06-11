@@ -2,6 +2,7 @@ from collections.abc import Generator
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
@@ -19,11 +20,28 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.model_providers.service import ModelProviderCredentialService
+from backend.app.reviews.llm import LlmReviewResult, _parse_review_result
 from backend.app.runs.models import AgentRun
+from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
+
+
+@pytest.fixture(autouse=True)
+def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return LlmReviewResult(
+            required=False,
+            risk_level="low",
+            reasons=["llm_review.approved"],
+            signals={"reviewer": "llm", "verdict": "approve"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", fake_review)
 
 
 def test_capability_skill_and_mcp_control_plane() -> None:
@@ -71,6 +89,7 @@ def test_capability_skill_and_mcp_control_plane() -> None:
         },
     )
     assert server.status_code == 201
+    assert server.json()["status"] == "active"
 
     allowed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
@@ -84,6 +103,7 @@ def test_capability_skill_and_mcp_control_plane() -> None:
         },
     )
     assert allowed.status_code == 201
+    assert allowed.json()["status"] == "active"
     credential = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials",
         headers=_headers(owner.id),
@@ -119,6 +139,16 @@ def test_capability_skill_and_mcp_control_plane() -> None:
         json={"tool_name": "delete_image", "risk_level": "high"},
     )
     assert blocked_tool.status_code == 201
+    assert blocked_tool.json()["status"] == "active"
+    approvals = client.get(
+        f"/api/v1/workspaces/{workspace.id}/approvals?status=pending",
+        headers=_headers(owner.id),
+    )
+    assert approvals.status_code == 200
+    assert all(
+        item["payload"].get("target_id") != blocked_tool.json()["id"]
+        for item in approvals.json()["items"]
+    )
 
     agent = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
@@ -176,6 +206,280 @@ def test_capability_skill_and_mcp_control_plane() -> None:
         "mcp_credential.created",
         "agent.created",
     } <= actions
+
+
+def test_llm_resource_review_can_require_admin_approval(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, with_review_provider=False)
+    encrypted = SecretEncryptionService(
+        secret="test-credential-secret",
+        key_id="test",
+    ).encrypt_payload({"api_key": "sk-test"})
+    credential = ModelProviderCredential(
+        workspace_id=workspace.id,
+        name="reviewer",
+        provider="openai",
+        base_url="https://reviewer.example.test/v1",
+        default_model="gpt-5.5",
+        encrypted_api_key=encrypted.ciphertext,
+        api_key_fingerprint=encrypted.fingerprint,
+        encryption_key_id=encrypted.key_id,
+        is_default=True,
+        status="active",
+        health_status="healthy",
+    )
+    session.add(credential)
+    session.commit()
+
+    def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return LlmReviewResult(
+            required=True,
+            risk_level="high",
+            reasons=["llm_review.detected_broad_authority"],
+            signals={
+                "reviewer": "llm",
+                "verdict": "needs_admin_review",
+                "findings": [
+                    {
+                        "severity": "high",
+                        "category": "permissions",
+                        "message": "Tool grants broad authority.",
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", fake_review)
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "normal-remote-tools",
+            "server_type": "http_jsonrpc",
+            "connection": {"url": "https://mcp.example.test/rpc"},
+        },
+    )
+    approvals = client.get(
+        f"/api/v1/workspaces/{workspace.id}/approvals?status=pending",
+        headers=_headers(owner.id),
+    )
+
+    assert server.status_code == 201
+    assert server.json()["status"] == "pending_approval"
+    approval = approvals.json()["items"][0]
+    assert approval["risk_level"] == "high"
+    assert approval["payload"]["review"]["signals"]["reviewer"] == "llm"
+    assert approval["payload"]["review"]["signals"]["verdict"] == "needs_admin_review"
+
+
+def test_llm_resource_review_unknown_verdict_fails_closed() -> None:
+    review = _parse_review_result(
+        {
+            "verdict": "maybe",
+            "risk_level": "low",
+            "reasons": [],
+            "findings": [],
+        }
+    )
+
+    assert review.required is True
+    assert review.risk_level == "high"
+    assert review.reasons[0] == "llm_review.unknown_verdict_requires_admin"
+    assert review.signals["verdict"] == "needs_admin_review"
+
+
+def test_operator_cannot_approve_resource_review(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    operator = User(email="operator@example.com", display_name="Operator")
+    session.add_all(
+        [
+            operator,
+            WorkspaceMember(workspace_id=workspace.id, user=operator, role="operator"),
+        ]
+    )
+    session.commit()
+
+    def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return LlmReviewResult(
+            required=True,
+            risk_level="high",
+            reasons=["llm_review.detected_broad_authority"],
+            signals={"reviewer": "llm", "verdict": "needs_admin_review"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", fake_review)
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={"name": "dangerous-tools", "server_type": "stdio"},
+    )
+    approval = client.get(
+        f"/api/v1/workspaces/{workspace.id}/approvals?status=pending",
+        headers=_headers(owner.id),
+    ).json()["items"][0]
+    operator_list = client.get(
+        f"/api/v1/workspaces/{workspace.id}/approvals?status=pending",
+        headers=_headers(operator.id),
+    )
+    denied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/approvals/{approval['id']}/approve",
+        headers=_headers(operator.id),
+        json={"reason": "operator should not approve resource review"},
+    )
+    approved = client.post(
+        f"/api/v1/workspaces/{workspace.id}/approvals/{approval['id']}/approve",
+        headers=_headers(owner.id),
+        json={"reason": "owner approves resource review"},
+    )
+
+    assert server.status_code == 201
+    assert operator_list.status_code == 200
+    assert operator_list.json()["items"] == []
+    assert operator_list.json()["total"] == 0
+    assert denied.status_code == 403
+    assert approved.status_code == 200
+
+
+def test_resource_review_uses_admin_configured_review_model(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, with_review_provider=False)
+    encrypted_default = SecretEncryptionService(
+        secret="test-credential-secret",
+        key_id="test",
+    ).encrypt_payload({"api_key": "sk-default"})
+    encrypted_review = SecretEncryptionService(
+        secret="test-credential-secret",
+        key_id="test",
+    ).encrypt_payload({"api_key": "sk-review"})
+    default_credential = ModelProviderCredential(
+        workspace_id=workspace.id,
+        name="default",
+        provider="openai",
+        base_url="https://default.example.test/v1",
+        default_model="gpt-5.5",
+        encrypted_api_key=encrypted_default.ciphertext,
+        api_key_fingerprint=encrypted_default.fingerprint,
+        encryption_key_id=encrypted_default.key_id,
+        is_default=True,
+        status="active",
+        health_status="healthy",
+    )
+    review_credential = ModelProviderCredential(
+        workspace_id=workspace.id,
+        name="reviewer",
+        provider="openai-compatible",
+        base_url="https://reviewer.example.test/v1",
+        default_model="router/default",
+        encrypted_api_key=encrypted_review.ciphertext,
+        api_key_fingerprint=encrypted_review.fingerprint,
+        encryption_key_id=encrypted_review.key_id,
+        is_default=False,
+        status="active",
+        health_status="healthy",
+    )
+    session.add_all([default_credential, review_credential])
+    session.flush()
+    workspace.settings = {
+        "resource_review": {
+            "semantic_review": {
+                "enabled": True,
+                "model_provider_credential_id": str(review_credential.id),
+                "model": "workspace-review-large",
+                "timeout_seconds": 7,
+                "fail_closed": True,
+            }
+        }
+    }
+    session.commit()
+    captured: dict[str, object] = {}
+
+    def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
+        provider = kwargs["provider"]
+        captured["credential_id"] = provider.credential_id
+        captured["model"] = provider.model
+        captured["api_key"] = provider.api_key
+        captured["timeout_seconds"] = kwargs["timeout_seconds"]
+        return LlmReviewResult(
+            required=False,
+            risk_level="low",
+            reasons=["llm_review.approved"],
+            signals={"reviewer": "llm", "verdict": "approve"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", fake_review)
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "normal-remote-tools",
+            "server_type": "http_jsonrpc",
+            "connection": {"url": "https://mcp.example.test/rpc"},
+        },
+    )
+
+    assert server.status_code == 201
+    assert server.json()["status"] == "active"
+    assert captured == {
+        "credential_id": review_credential.id,
+        "model": "workspace-review-large",
+        "api_key": "sk-review",
+        "timeout_seconds": 7,
+    }
+
+
+def test_resource_review_defaults_to_codex_auto_review_model(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, with_review_provider=False)
+    encrypted = SecretEncryptionService(
+        secret="test-credential-secret",
+        key_id="test",
+    ).encrypt_payload({"api_key": "sk-default"})
+    credential = ModelProviderCredential(
+        workspace_id=workspace.id,
+        name="default",
+        provider="openai",
+        base_url="https://default.example.test/v1",
+        default_model="gpt-5.5",
+        encrypted_api_key=encrypted.ciphertext,
+        api_key_fingerprint=encrypted.fingerprint,
+        encryption_key_id=encrypted.key_id,
+        is_default=True,
+        status="active",
+        health_status="healthy",
+    )
+    session.add(credential)
+    session.commit()
+    captured: dict[str, object] = {}
+
+    def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
+        provider = kwargs["provider"]
+        captured["model"] = provider.model
+        captured["timeout_seconds"] = kwargs["timeout_seconds"]
+        return LlmReviewResult(
+            required=False,
+            risk_level="low",
+            reasons=["llm_review.approved"],
+            signals={"reviewer": "llm", "verdict": "approve"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", fake_review)
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "normal-remote-tools",
+            "server_type": "http_jsonrpc",
+            "connection": {"url": "https://mcp.example.test/rpc"},
+        },
+    )
+
+    assert server.status_code == 201
+    assert captured == {"model": "codex-auto-review", "timeout_seconds": 20.0}
 
 
 def test_hosted_mcp_credentials_are_encrypted_and_not_returned() -> None:
@@ -1619,6 +1923,7 @@ def test_workspace_tool_policy_matrix_summarizes_agent_tool_access() -> None:
             "risk_level": "high",
         },
     )
+    _approve_resource_review(client, workspace.id, owner.id, allowed.json()["id"])
     designer = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
         headers=_headers(owner.id),
@@ -1638,6 +1943,7 @@ def test_workspace_tool_policy_matrix_summarizes_agent_tool_access() -> None:
             "tool_policy": {"mcp_tools": ["delete_image"]},
         },
     )
+    _approve_resource_review(client, workspace.id, owner.id, reviewer.json()["id"])
 
     response = client.get(
         f"/api/v1/workspaces/{workspace.id}/capabilities/tool-policy-matrix",
@@ -1737,6 +2043,7 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
             "risk_level": "high",
         },
     )
+    _approve_resource_review(client, workspace.id, owner.id, allowed.json()["id"])
     failed_log = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
         headers=_headers(owner.id),
@@ -1759,6 +2066,7 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
             "model_settings": {"api_key": "sk-agent"},
         },
     )
+    _approve_resource_review(client, workspace.id, owner.id, agent.json()["id"])
     foreign_server = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers",
         headers=_headers(other.id),
@@ -2074,6 +2382,7 @@ def test_workspace_capability_governance_repairs_unallowed_agent_mcp_tools() -> 
             "model_settings": {"api_key": "sk-agent-policy"},
         },
     )
+    _approve_resource_review(client, workspace.id, owner.id, agent.json()["id"])
     dry_run = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
         headers=_headers(owner.id),
@@ -2536,17 +2845,70 @@ def _seed_workspace(
     email: str = "owner@example.com",
     slug: str = "owner",
     role: str = "owner",
+    with_review_provider: bool = True,
 ) -> tuple[User, Workspace]:
     user = User(email=email, display_name=email.split("@")[0])
     workspace = Workspace(owner=user, name=slug.title(), slug=slug, settings={})
     membership = WorkspaceMember(workspace=workspace, user=user, role=role)
     session.add_all([user, workspace, membership])
     session.commit()
+    if with_review_provider:
+        _seed_default_model_provider(session, workspace_id=workspace.id, user_id=user.id)
     return user, workspace
+
+
+def _seed_default_model_provider(
+    session: Session,
+    *,
+    workspace_id: UUID,
+    user_id: UUID,
+) -> None:
+    ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(secret="test-credential-secret", key_id="test"),
+    ).create(
+        workspace_id=workspace_id,
+        created_by_user_id=user_id,
+        name="Unit test review provider",
+        provider="openai",
+        api_key="sk-unit-test-review-provider",
+        default_model="gpt-5.5",
+        base_url=None,
+        is_default=True,
+    )
 
 
 def _headers(user_id: object) -> dict[str, str]:
     return {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(user_id)}
+
+
+def _approve_resource_review(
+    client: TestClient,
+    workspace_id: UUID,
+    user_id: UUID,
+    target_id: str,
+) -> None:
+    approvals = client.get(
+        f"/api/v1/workspaces/{workspace_id}/approvals?status=pending",
+        headers=_headers(user_id),
+    )
+    assert approvals.status_code == 200
+    approval = next(
+        (
+            item
+            for item in approvals.json()["items"]
+            if item["payload"].get("target_id") == target_id
+        ),
+        None,
+    )
+    if approval is None:
+        return
+    approved = client.post(
+        f"/api/v1/workspaces/{workspace_id}/approvals/{approval['id']}/approve",
+        headers=_headers(user_id),
+        json={"reason": "test resource review"},
+    )
+    assert approved.status_code == 200
 
 
 def _patch_portable_types_for_sqlite() -> None:

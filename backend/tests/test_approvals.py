@@ -9,10 +9,17 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.api.pagination import PageParams
 from backend.app.approvals.service import ApprovalService
+from backend.app.capabilities.models import McpServer
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.reviews.constants import (
+    RESOURCE_STATUS_ACTIVE,
+    RESOURCE_STATUS_PENDING_APPROVAL,
+    RESOURCE_STATUS_REJECTED,
+    REVIEW_TYPE_MCP_SERVER,
+)
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task
@@ -94,6 +101,70 @@ def test_list_approvals_filters_by_status() -> None:
 
     assert total == 1
     assert items[0].status == "pending"
+
+
+def test_approval_approve_activates_pending_resource_review_target() -> None:
+    session = _session()
+    user, workspace, _, _ = _seed_run(session)
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="Dangerous MCP",
+        server_type="stdio",
+        connection={"command": "npx", "args": ["danger"]},
+        status=RESOURCE_STATUS_PENDING_APPROVAL,
+    )
+    session.add(server)
+    session.flush()
+    approval = ApprovalService(session).create_approval(
+        workspace_id=workspace.id,
+        task_id=None,
+        agent_run_id=None,
+        requested_by_agent_profile_id=None,
+        approval_type=REVIEW_TYPE_MCP_SERVER,
+        risk_level="high",
+        payload={
+            "kind": "resource_review",
+            "target_type": "mcp_server",
+            "target_id": str(server.id),
+        },
+    )
+    session.commit()
+
+    ApprovalService(session).approve(approval, user.id, "trusted")
+
+    assert server.status == RESOURCE_STATUS_ACTIVE
+
+
+def test_approval_reject_marks_pending_resource_review_target_rejected() -> None:
+    session = _session()
+    user, workspace, _, _ = _seed_run(session)
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="Dangerous MCP",
+        server_type="stdio",
+        connection={"command": "npx", "args": ["danger"]},
+        status=RESOURCE_STATUS_PENDING_APPROVAL,
+    )
+    session.add(server)
+    session.flush()
+    approval = ApprovalService(session).create_approval(
+        workspace_id=workspace.id,
+        task_id=None,
+        agent_run_id=None,
+        requested_by_agent_profile_id=None,
+        approval_type=REVIEW_TYPE_MCP_SERVER,
+        risk_level="high",
+        payload={
+            "kind": "resource_review",
+            "target_type": "mcp_server",
+            "target_id": str(server.id),
+        },
+    )
+    session.commit()
+
+    ApprovalService(session).reject(approval, user.id, "too broad")
+
+    assert server.status == RESOURCE_STATUS_REJECTED
 
 
 def _seed_run(session: Session) -> tuple[User, Workspace, Task, AgentRun]:

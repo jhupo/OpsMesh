@@ -459,6 +459,41 @@ class ModelProviderCredentialService:
             credential_id=credential.id,
         )
 
+    def resolve_for_review(
+        self,
+        *,
+        workspace_id: UUID,
+        credential_id: UUID | None,
+        review_model: str,
+    ) -> ResolvedModelProvider:
+        credential = (
+            self._selectable_credential(
+                workspace_id=workspace_id,
+                credential_id=credential_id,
+            )
+            if credential_id is not None
+            else self._default_credential(workspace_id)
+        )
+        if credential is None:
+            raise ModelProviderUnavailableError(
+                "No available model provider credential for resource review"
+            )
+        payload = self._secret_service.decrypt_payload(credential.encrypted_api_key)
+        api_key = payload.get("api_key")
+        if not isinstance(api_key, str) or not api_key:
+            raise ValueError("Review model provider credential is missing api_key")
+        return ResolvedModelProvider(
+            provider=credential.provider,
+            model=review_model,
+            base_url=credential.base_url,
+            api_key=api_key,
+            model_api=model_api_for_provider(
+                credential.provider,
+                credential.budget_metadata,
+            ),
+            credential_id=credential.id,
+        )
+
     def _default_credential(self, workspace_id: UUID) -> ModelProviderCredential | None:
         default = self._session.scalar(
             select(ModelProviderCredential).where(

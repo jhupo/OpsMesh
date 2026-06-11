@@ -17,17 +17,26 @@ from backend.app.api.schemas.agents import (
     AgentProfileUpdateRequest,
 )
 from backend.app.audit.service import AuditService
+from backend.app.core.config import Settings
 from backend.app.model_providers.model_api import (
     canonical_model_api,
     default_model_api,
     model_api_for_agent_provider,
     model_api_options_for_provider,
     require_known_model_api,
+    require_provider_model_api,
     unsupported_agent_model_api,
 )
 from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.reviews.constants import (
+    RESOURCE_STATUS_ACTIVE,
+    RESOURCE_STATUS_PENDING_APPROVAL,
+    RESOURCE_STATUS_REJECTED,
+    REVIEW_TYPE_AGENT_PROFILE,
+)
+from backend.app.reviews.service import ResourceReview, ResourceReviewService
 
-AGENT_STATUS_ACTIVE = "active"
+AGENT_STATUS_ACTIVE = RESOURCE_STATUS_ACTIVE
 AGENT_STATUS_ARCHIVED = "archived"
 
 AGENT_PROFILE_FIELDS = (
@@ -45,6 +54,19 @@ AGENT_PROFILE_FIELDS = (
     "memory_policy",
     "approval_policy",
 )
+AGENT_PROFILE_REVIEW_FIELDS = {
+    "name",
+    "role",
+    "instructions",
+    "capabilities",
+    "skills",
+    "tool_policy",
+    "runtime_policy",
+    "approval_policy",
+    "model",
+    "model_provider_credential_id",
+    "model_settings",
+}
 
 JSON_PROFILE_FIELDS = (
     "model_settings",
@@ -80,8 +102,9 @@ CREATE_DEFAULTS: dict[str, object] = {
 
 
 class AgentManagementService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self._session = session
+        self._settings = settings
 
     def list_agents(
         self,
@@ -111,18 +134,45 @@ class AgentManagementService:
             workspace_id,
             values["model_provider_credential_id"],
         )
+        self._validate_agent_model_api(
+            workspace_id,
+            values["model_provider_credential_id"],
+            values["model_settings"],
+        )
 
         now = datetime.now(UTC)
+        review = ResourceReviewService(self._session, self._settings).review_agent_profile(
+            workspace_id=workspace_id,
+            name=str(values["name"]),
+            role=str(values["role"]),
+            instructions=str(values["instructions"]),
+            capabilities=dict(values["capabilities"]),
+            skills=dict(values["skills"]),
+            tool_policy=dict(values["tool_policy"]),
+            runtime_policy=dict(values["runtime_policy"]),
+            approval_policy=dict(values["approval_policy"]),
+        )
         profile = AgentProfile(
             workspace_id=workspace_id,
             **values,
-            status=AGENT_STATUS_ACTIVE,
+            status=RESOURCE_STATUS_PENDING_APPROVAL if review.required else AGENT_STATUS_ACTIVE,
             version=1,
             archived_at=None,
             last_versioned_at=now,
         )
         self._session.add(profile)
         self._session.flush()
+        if review.required:
+            ResourceReviewService(self._session, self._settings).request_resource_review(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                approval_type=REVIEW_TYPE_AGENT_PROFILE,
+                target_type="agent_profile",
+                target_id=profile.id,
+                target_name=profile.name,
+                review=review,
+                snapshot=_profile_snapshot(profile),
+            )
         self._record_version(
             profile,
             changed_by_user_id=actor_user_id,
@@ -131,8 +181,13 @@ class AgentManagementService:
         self._audit_profile_change(
             profile,
             actor_user_id=actor_user_id,
-            action="agent.created",
+            action="agent.created" if not review.required else "agent.review_requested",
             changed_fields=sorted(AGENT_PROFILE_FIELDS),
+            extra_metadata={
+                "review_required": review.required,
+                "review_risk_level": review.risk_level,
+                "review_reasons": review.reasons,
+            },
         )
         self._session.commit()
         self._session.refresh(profile)
@@ -161,9 +216,27 @@ class AgentManagementService:
                 workspace_id,
                 values["model_provider_credential_id"],
             )
+        self._validate_agent_model_api(
+            workspace_id,
+            values.get("model_provider_credential_id", profile.model_provider_credential_id),
+            values.get("model_settings", profile.model_settings),
+        )
 
         for field, value in values.items():
             setattr(profile, field, self._copy_json_value(field, value))
+        review = self._review_agent_update_if_needed(profile, values)
+        if review is not None and review.required:
+            profile.status = RESOURCE_STATUS_PENDING_APPROVAL
+            ResourceReviewService(self._session, self._settings).request_resource_review(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                approval_type=REVIEW_TYPE_AGENT_PROFILE,
+                target_type="agent_profile",
+                target_id=profile.id,
+                target_name=profile.name,
+                review=review,
+                snapshot=_profile_snapshot(profile),
+            )
         self._bump_version(
             profile,
             changed_by_user_id=actor_user_id,
@@ -172,13 +245,41 @@ class AgentManagementService:
         self._audit_profile_change(
             profile,
             actor_user_id=actor_user_id,
-            action="agent.updated",
+            action=(
+                "agent.review_requested"
+                if review is not None and review.required
+                else "agent.updated"
+            ),
             changed_fields=sorted(values),
             before_snapshot=before_snapshot,
+            extra_metadata={
+                "review_required": review.required if review is not None else False,
+                "review_risk_level": review.risk_level if review is not None else None,
+                "review_reasons": review.reasons if review is not None else [],
+            },
         )
         self._session.commit()
         self._session.refresh(profile)
         return profile
+
+    def _review_agent_update_if_needed(
+        self,
+        profile: AgentProfile,
+        values: dict[str, Any],
+    ) -> ResourceReview | None:
+        if not AGENT_PROFILE_REVIEW_FIELDS.intersection(values):
+            return None
+        return ResourceReviewService(self._session, self._settings).review_agent_profile(
+            workspace_id=profile.workspace_id,
+            name=profile.name,
+            role=profile.role,
+            instructions=profile.instructions,
+            capabilities=dict(profile.capabilities or {}),
+            skills=dict(profile.skills or {}),
+            tool_policy=dict(profile.tool_policy or {}),
+            runtime_policy=dict(profile.runtime_policy or {}),
+            approval_policy=dict(profile.approval_policy or {}),
+        )
 
     def archive_agent(
         self,
@@ -217,6 +318,8 @@ class AgentManagementService:
         profile = self._require_profile(workspace_id, agent_profile_id)
         if profile.status == AGENT_STATUS_ACTIVE:
             return profile
+        if profile.status in {RESOURCE_STATUS_PENDING_APPROVAL, RESOURCE_STATUS_REJECTED}:
+            raise ValueError("Agent profile requires approval before activation")
         before_snapshot = _profile_snapshot(profile)
         profile.status = AGENT_STATUS_ACTIVE
         profile.archived_at = None
@@ -325,6 +428,11 @@ class AgentManagementService:
             raise ValueError("Agent profile version snapshot is incomplete")
         credential_id = _uuid_or_none(values["model_provider_credential_id"])
         self._validate_model_provider_credential(workspace_id, credential_id)
+        self._validate_agent_model_api(
+            workspace_id,
+            credential_id,
+            values["model_settings"],
+        )
 
         for field, value in values.items():
             if field == "model_provider_credential_id":
@@ -439,6 +547,31 @@ class AgentManagementService:
             raise ValueError("Model provider credential not found")
         if credential.status != "active":
             raise ValueError("Model provider credential is not active")
+
+    def _validate_agent_model_api(
+        self,
+        workspace_id: UUID,
+        credential_id: object,
+        model_settings: object,
+    ) -> None:
+        if not isinstance(model_settings, Mapping):
+            return
+        model_api = model_settings.get("model_api")
+        if model_api is None:
+            return
+        credential_uuid = _uuid_or_none(credential_id)
+        if credential_uuid is None:
+            require_known_model_api(model_api)
+            return
+        credential = self._session.scalar(
+            select(ModelProviderCredential).where(
+                ModelProviderCredential.workspace_id == workspace_id,
+                ModelProviderCredential.id == credential_uuid,
+            )
+        )
+        if credential is None:
+            return
+        require_provider_model_api(credential.provider, model_api)
 
     def _normalize_create_payload(
         self,
@@ -692,15 +825,19 @@ def _model_provider_audit_summary(
         credential.provider,
         dict(model_settings or {}),
     )
+    try:
+        effective_model_api = model_api_for_agent_provider(
+            credential.provider,
+            dict(model_settings or {}),
+            credential.budget_metadata,
+        )
+    except ValueError:
+        effective_model_api = None
     payload = {
         "credential_id": str(credential.id),
         "provider": credential.provider,
         "default_model": credential.default_model,
-        "model_api": model_api_for_agent_provider(
-            credential.provider,
-            dict(model_settings or {}),
-            credential.budget_metadata,
-        ),
+        "model_api": effective_model_api,
         "model_apis": list(model_api_options_for_provider(credential.provider)),
         "default_model_api": default_model_api(credential.provider),
         "credential_status": credential.status,

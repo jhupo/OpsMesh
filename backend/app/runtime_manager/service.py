@@ -351,10 +351,6 @@ def _as_int(value: object, fallback: int) -> int:
 def _runtime_space_policy(runtime_space: RuntimeSpace) -> dict[str, object]:
     policy = _dict_value(runtime_space.policy)
     runtime_policy = _dict_value(policy.get("runtime"))
-    if not runtime_policy:
-        runtime_policy = _dict_value(policy.get("runtime_policy"))
-    if not runtime_policy:
-        runtime_policy = policy
     network_policy = _dict_value(runtime_space.network_policy)
     storage_policy = _dict_value(runtime_space.storage_policy)
     merged = dict(runtime_policy)
@@ -367,27 +363,17 @@ def _runtime_space_policy(runtime_space: RuntimeSpace) -> dict[str, object]:
 
 def _team_runtime_policy(team: AgentTeam) -> dict[str, object]:
     default_policy = _dict_value(team.default_task_policy)
-    runtime_policy = _dict_value(default_policy.get("runtime"))
-    if not runtime_policy:
-        runtime_policy = _dict_value(default_policy.get("runtime_policy"))
-    if runtime_policy:
-        return runtime_policy
-    coordination_rules = _dict_value(team.coordination_rules)
-    return _dict_value(coordination_rules.get("runtime_policy"))
+    return _dict_value(default_policy.get("runtime"))
 
 
 def _policy_disables_network(policy: dict[str, object]) -> bool:
-    if policy.get("network_disabled") is True:
-        return True
-    mode = policy.get("network_mode")
     network = policy.get("network")
-    if isinstance(network, str):
-        mode = network
     if isinstance(network, dict):
         if network.get("disabled") is True:
             return True
-        mode = network.get("mode", mode)
-    return isinstance(mode, str) and mode.lower() in {"none", "disabled", "off"}
+        mode = network.get("mode")
+        return isinstance(mode, str) and mode.lower() in {"none", "disabled", "off"}
+    return False
 
 
 def _apply_limit_caps(
@@ -436,24 +422,18 @@ def _apply_limit_caps(
 
 def _limit_caps(policy: dict[str, object]) -> dict[str, int | float]:
     source = dict(_dict_value(policy.get("limits")))
-    for key, value in policy.items():
-        if key not in {"limits", "network", "storage"}:
-            source.setdefault(key, value)
-    aliases = {
-        "cpu_count": ("cpu_count", "max_cpu_count", "cpu", "max_cpu"),
-        "memory_mb": ("memory_mb", "max_memory_mb", "memory", "max_memory"),
-        "disk_mb": ("disk_mb", "max_disk_mb", "storage_mb", "max_storage_mb"),
-        "timeout_seconds": ("timeout_seconds", "max_timeout_seconds"),
-        "max_output_bytes": ("max_output_bytes",),
-        "max_processes": ("max_processes",),
-    }
     caps: dict[str, int | float] = {}
-    for target, names in aliases.items():
-        for name in names:
-            value = _positive_number(source.get(name))
-            if value is not None:
-                caps[target] = value
-                break
+    for target in (
+        "cpu_count",
+        "memory_mb",
+        "disk_mb",
+        "timeout_seconds",
+        "max_output_bytes",
+        "max_processes",
+    ):
+        value = _positive_number(source.get(target))
+        if value is not None:
+            caps[target] = value
     return caps
 
 

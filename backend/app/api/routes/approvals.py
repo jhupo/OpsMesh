@@ -8,7 +8,7 @@ from backend.app.api.schemas.approvals import ApprovalDecisionRequest, ApprovalR
 from backend.app.approvals.service import ApprovalService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
+from backend.app.auth.permissions import WorkspaceAction, WorkspaceRole
 from backend.app.db.session import get_db_session
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/approvals", tags=["approvals"])
@@ -25,6 +25,7 @@ async def list_approvals(
         context.workspace.id,
         page,
         status_filter,
+        include_resource_reviews=_can_review_resources(context),
     )
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
@@ -40,6 +41,7 @@ async def approve(
     approval = service.get_scoped(context.workspace.id, approval_id)
     if approval is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
+    _require_resource_review_admin(context, approval.payload)
     return ApprovalResponse.model_validate(
         service.approve(approval, context.user.user_id, request.reason)
     )
@@ -56,6 +58,22 @@ async def reject(
     approval = service.get_scoped(context.workspace.id, approval_id)
     if approval is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
+    _require_resource_review_admin(context, approval.payload)
     return ApprovalResponse.model_validate(
         service.reject(approval, context.user.user_id, request.reason)
     )
+
+
+def _require_resource_review_admin(context: WorkspaceContext, payload: object) -> None:
+    if not isinstance(payload, dict) or payload.get("kind") != "resource_review":
+        return
+    if _can_review_resources(context):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Resource review approvals require a workspace admin",
+    )
+
+
+def _can_review_resources(context: WorkspaceContext) -> bool:
+    return context.role in {WorkspaceRole.OWNER, WorkspaceRole.ADMIN}

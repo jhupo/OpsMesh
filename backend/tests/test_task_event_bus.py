@@ -1,4 +1,8 @@
 import asyncio
+import time
+from collections import defaultdict
+from datetime import UTC, datetime
+from threading import Condition
 from uuid import uuid4
 
 import fakeredis
@@ -9,7 +13,7 @@ from backend.app.api.routes.workspace_resources import (
     _sse_event,
     _task_event_stream_payload,
 )
-from backend.app.tasks.events import InMemoryTaskEventBus, RedisTaskEventBus
+from backend.app.tasks.events import RedisTaskEventBus, TaskEvent
 
 
 def test_redis_task_event_bus_publishes_and_reads_stream_events() -> None:
@@ -145,3 +149,83 @@ def test_task_event_stream_reader_falls_back_when_redis_is_unavailable() -> None
 class _FailingTaskEventBus:
     def read(self, **_: object) -> object:
         raise ConnectionError("redis unavailable")
+
+
+class InMemoryTaskEventBus:
+    def __init__(self) -> None:
+        self._events: dict[tuple[object, object], list[TaskEvent]] = defaultdict(list)
+        self._condition = Condition()
+        self._sequence = 0
+
+    def publish(
+        self,
+        *,
+        workspace_id: object,
+        task_id: object,
+        event_type: str,
+        payload: dict[str, object] | None = None,
+        event_id: str | None = None,
+        outbox_id: str | None = None,
+    ) -> str:
+        with self._condition:
+            self._sequence += 1
+            stream_id = f"{int(time.time() * 1000)}-{self._sequence}"
+            event_payload = dict(payload or {})
+            if event_id is not None:
+                event_payload["event_id"] = event_id
+            if outbox_id is not None:
+                event_payload["outbox_id"] = outbox_id
+            self._events[(workspace_id, task_id)].append(
+                TaskEvent(
+                    id=stream_id,
+                    workspace_id=workspace_id,  # type: ignore[arg-type]
+                    task_id=task_id,  # type: ignore[arg-type]
+                    event_type=event_type,
+                    payload=event_payload,
+                    created_at=datetime.now(UTC),
+                    event_id=event_id,
+                    outbox_id=outbox_id,
+                )
+            )
+            self._condition.notify_all()
+            return stream_id
+
+    def read(
+        self,
+        *,
+        workspace_id: object,
+        task_id: object,
+        after_id: str,
+        count: int = 10,
+        block_ms: int = 0,
+    ) -> list[TaskEvent]:
+        deadline = time.monotonic() + (max(0, block_ms) / 1000)
+        with self._condition:
+            while True:
+                events = [
+                    event
+                    for event in self._events.get((workspace_id, task_id), [])
+                    if after_id != "$" and _stream_id_gt(event.id, after_id)
+                ][: max(1, count)]
+                if events or block_ms <= 0:
+                    return events
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return []
+                self._condition.wait(timeout=remaining)
+
+
+def _stream_id_gt(left: str, right: str) -> bool:
+    return _stream_id_tuple(left) > _stream_id_tuple(right)
+
+
+def _stream_id_tuple(value: str) -> tuple[int, int]:
+    if value in {"", "0"}:
+        return (0, 0)
+    if value == "$":
+        return (2**63 - 1, 2**63 - 1)
+    first, _, second = value.partition("-")
+    try:
+        return (int(first), int(second or 0))
+    except ValueError:
+        return (0, 0)

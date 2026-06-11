@@ -53,6 +53,14 @@ def agent_model_provider_summary(
                 credential.provider,
                 agent.model_settings,
             )
+            try:
+                effective_model_api = model_api_for_agent_provider(
+                    credential.provider,
+                    agent.model_settings,
+                    credential.budget_metadata,
+                )
+            except ValueError:
+                effective_model_api = None
             payload = {
                 "source": "agent_override",
                 "selected_model": _selected_model(agent.model, credential),
@@ -66,11 +74,7 @@ def agent_model_provider_summary(
                 "base_url_configured": bool(credential.base_url),
                 "api_key_fingerprint": credential.api_key_fingerprint,
                 "is_default": credential.is_default,
-                "model_api": model_api_for_agent_provider(
-                    credential.provider,
-                    agent.model_settings,
-                    credential.budget_metadata,
-                ),
+                "model_api": effective_model_api,
                 "requested_model_api": unsupported_model_api,
                 "model_apis": list(model_api_options_for_provider(credential.provider)),
                 "default_model_api": default_model_api(credential.provider),
@@ -81,10 +85,11 @@ def agent_model_provider_summary(
             }
             payload.update(_agent_model_provider_health_summary(db_session, credential.id))
             if unsupported_model_api is not None:
-                payload["warnings"] = [
-                    *list(payload.get("warnings", [])),
-                    "model_api_override_unsupported",
-                ]
+                reasons = list(payload.get("reasons", []))
+                if "model_api_override_unsupported" not in reasons:
+                    reasons.append("model_api_override_unsupported")
+                payload["reasons"] = reasons
+                payload["readiness_status"] = "blocked"
             return payload
         return {
             "source": "unavailable",
@@ -113,16 +118,22 @@ def agent_model_provider_summary(
             "reasons": ["model_provider_unavailable"],
             "warnings": [],
         }
-    summary = snapshot.as_dict()
-    summary["model_api"] = model_api_for_agent_provider(
-        snapshot.provider,
-        agent.model_settings,
-        {"model_api": summary.get("model_api")},
-    ) or summary.get("model_api")
     unsupported_model_api = unsupported_agent_model_api(
         snapshot.provider,
         agent.model_settings,
     )
+    summary = snapshot.as_dict()
+    try:
+        summary["model_api"] = (
+            model_api_for_agent_provider(
+                snapshot.provider,
+                agent.model_settings,
+                {"model_api": summary.get("model_api")},
+            )
+            or summary.get("model_api")
+        )
+    except ValueError:
+        summary["model_api"] = None
     summary["requested_model_api"] = unsupported_model_api
     summary["model_capability"] = _model_capability_payload(
         _capability_provider(snapshot),
@@ -130,10 +141,11 @@ def agent_model_provider_summary(
     )
     summary.update(_agent_model_provider_health_summary(db_session, snapshot))
     if unsupported_model_api is not None:
-        summary["warnings"] = [
-            *list(summary.get("warnings", [])),
-            "model_api_override_unsupported",
-        ]
+        reasons = list(summary.get("reasons", []))
+        if "model_api_override_unsupported" not in reasons:
+            reasons.append("model_api_override_unsupported")
+        summary["reasons"] = reasons
+        summary["readiness_status"] = "blocked"
     return summary
 
 

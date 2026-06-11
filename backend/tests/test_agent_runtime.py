@@ -235,16 +235,16 @@ def test_openai_agents_runner_circuit_key_separates_provider_aliases() -> None:
     ) != openai_runtime._model_provider_circuit_key(compatible_request)
 
 
-def test_openai_agents_runner_canonicalizes_model_api_aliases() -> None:
-    assert openai_runtime._use_responses_api("response") is True
+def test_openai_agents_runner_uses_only_canonical_model_api_values() -> None:
+    assert openai_runtime._use_responses_api("response") is None
     assert openai_runtime._use_responses_api("responses") is True
-    assert openai_runtime._use_responses_api("chat") is False
-    assert openai_runtime._use_responses_api("chat-completions") is False
+    assert openai_runtime._use_responses_api("chat") is None
+    assert openai_runtime._use_responses_api("chat-completions") is None
     assert openai_runtime._use_responses_api("chat_completions") is False
     assert openai_runtime._use_responses_api("future-api") is None
 
 
-def test_openai_agents_runner_circuit_key_canonicalizes_model_api_aliases() -> None:
+def test_openai_agents_runner_circuit_key_uses_canonical_model_api() -> None:
     profile = AgentProfile(
         workspace_id=uuid4(),
         name="Researcher",
@@ -258,16 +258,6 @@ def test_openai_agents_runner_circuit_key_canonicalizes_model_api_aliases() -> N
         task_id=None,
         run_id=uuid4(),
     )
-    chat_dash_request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Find market trends",
-        context=context,
-        model="gpt-4.1-mini",
-        provider="openai-compatible",
-        base_url="https://llm.example.test/v1",
-        api_key="sk-test",
-        model_api="chat-completions",
-    )
     chat_underscore_request = AgentRunRequest(
         agent_profile=profile,
         input_text="Find market trends",
@@ -279,11 +269,8 @@ def test_openai_agents_runner_circuit_key_canonicalizes_model_api_aliases() -> N
         model_api="chat_completions",
     )
 
-    assert openai_runtime._model_provider_circuit_key(
-        chat_dash_request
-    ) == openai_runtime._model_provider_circuit_key(chat_underscore_request)
     assert ":chat_completions:" in openai_runtime._model_provider_circuit_key(
-        chat_dash_request
+        chat_underscore_request
     )
 
 
@@ -306,6 +293,7 @@ def test_openai_agents_runner_registers_allowed_mcp_tools() -> None:
             allowed_tools=("generate_image", "search.web"),
         ),
         tool_executor=RecordingToolExecutor(),
+        api_key="sk-test",
     )
 
     agent = OpenAIAgentsRunner()._build_agent(request)
@@ -423,7 +411,7 @@ def test_provider_dispatching_runner_routes_by_request_provider() -> None:
     assert openai_runner.requests == []
 
 
-def test_provider_dispatching_runner_accepts_provider_aliases() -> None:
+def test_provider_dispatching_runner_accepts_formal_provider_keys() -> None:
     class RecordingRunner:
         def __init__(self, name: str) -> None:
             self.name = name
@@ -462,7 +450,7 @@ def test_provider_dispatching_runner_accepts_provider_aliases() -> None:
                 )
             )
         ).final_output
-        for provider in (" Claude API ", "OpenAI Compatible Gateway")
+        for provider in ("anthropic", "openai-compatible")
     ]
 
     assert results == ["anthropic", "openai"]
@@ -470,7 +458,7 @@ def test_provider_dispatching_runner_accepts_provider_aliases() -> None:
     assert len(openai_runner.requests) == 1
 
 
-def test_anthropic_runner_circuit_key_canonicalizes_provider_and_separates_hosts() -> None:
+def test_anthropic_runner_circuit_key_uses_formal_provider_and_separates_hosts() -> None:
     profile = AgentProfile(
         workspace_id=uuid4(),
         name="Claude",
@@ -482,14 +470,6 @@ def test_anthropic_runner_circuit_key_canonicalizes_provider_and_separates_hosts
         workspace_id=profile.workspace_id,
         task_id=None,
         run_id=uuid4(),
-    )
-    alias_request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Summarize.",
-        context=context,
-        provider="Claude API",
-        base_url="https://api.anthropic.com/private",
-        api_key="anthropic-key",
     )
     canonical_request = AgentRunRequest(
         agent_profile=profile,
@@ -508,17 +488,15 @@ def test_anthropic_runner_circuit_key_canonicalizes_provider_and_separates_hosts
         api_key="anthropic-key",
     )
 
-    alias_key = anthropic_runtime._model_provider_circuit_key(alias_request)
     canonical_key = anthropic_runtime._model_provider_circuit_key(canonical_request)
     router_key = anthropic_runtime._model_provider_circuit_key(router_request)
 
-    assert alias_key == canonical_key
-    assert alias_key.startswith(
+    assert canonical_key.startswith(
         "model-provider:anthropic:api.anthropic.com:no-credential:"
         "anthropic_messages:claude-sonnet-4-6"
     )
-    assert router_key != alias_key
-    assert "private" not in alias_key
+    assert router_key != canonical_key
+    assert "private" not in canonical_key
     assert "private" not in router_key
 
 
@@ -1006,6 +984,7 @@ def test_openai_agents_runner_passes_persistent_session_to_sdk(
         session=session,
         previous_response_id="resp_previous",
         conversation_id="conv_123",
+        api_key="sk-test",
     )
 
     result = asyncio.run(OpenAIAgentsRunner().run(request))
@@ -1059,6 +1038,7 @@ def test_openai_agents_runner_passes_tracing_run_config_to_sdk(
                 "persistent_session_key": "workspace:team_agent:team-1:agent-1",
             },
         ),
+        api_key="sk-test",
     )
 
     result = asyncio.run(OpenAIAgentsRunner().run(request))
@@ -1168,6 +1148,7 @@ def test_openai_agents_runner_tools_include_provenance_guardrail() -> None:
             allowed_tools=("generate_image",),
         ),
         tool_executor=RecordingToolExecutor(),
+        api_key="sk-test",
     )
 
     tool = OpenAIAgentsRunner()._build_agent(request).tools[0]

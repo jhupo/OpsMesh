@@ -11,7 +11,6 @@ from redis.exceptions import ResponseError
 
 from backend.app.redis.keys import RedisKeyBuilder
 
-PROCESSING_VALUE = "processing"
 STATE_IN_PROGRESS = "in_progress"
 STATE_SUCCEEDED = "succeeded"
 STATE_FAILED = "failed"
@@ -171,12 +170,10 @@ def _encode_idempotency_state(
 
 
 def _decode_idempotency_state(raw_value: str) -> dict[str, object]:
-    if raw_value == PROCESSING_VALUE:
-        return {"status": STATE_IN_PROGRESS}
     try:
         payload = json.loads(raw_value)
     except json.JSONDecodeError:
-        return {"status": STATE_SUCCEEDED, "resource_id": raw_value}
+        return {"status": STATE_FAILED}
     if not isinstance(payload, dict):
         return {"status": STATE_FAILED}
     status = payload.get("status")

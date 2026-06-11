@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.admin.policies import PlatformPolicyService
 from backend.app.approvals.service import ApprovalService
+from backend.app.core.config import Settings
+from backend.app.reviews.tool_execution import ToolExecutionReview, ToolExecutionReviewService
 from backend.app.runs.models import RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.manager import RuntimeManager
@@ -39,10 +41,12 @@ class RuntimeToolService:
         session: Session,
         runtime_manager: RuntimeManager,
         policy: RuntimeToolPolicy | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self._session = session
         self._runtime_manager = runtime_manager
         self._policy = policy or RuntimeToolPolicy()
+        self._settings = settings
 
     def execute_shell(
         self,
@@ -69,23 +73,29 @@ class RuntimeToolService:
                 status="blocked",
                 reason="High-risk runtime commands are disabled by platform safety policy",
             )
-        if high_risk_command and risky_policy.high_risk_tool_mode == "require_workspace_approval":
-            ApprovalService(self._session).create_approval(
-                workspace_id=context.workspace_id,
-                task_id=context.task_id,
-                agent_run_id=context.agent_run_id,
-                requested_by_agent_profile_id=None,
-                approval_type="runtime.command",
-                risk_level="high",
-                payload={"command": command, "runtime_id": str(runtime.id)},
+        execution_review = ToolExecutionReviewService(
+            self._session,
+            self._settings,
+        ).review_runtime_command(
+            workspace_id=context.workspace_id,
+            command=command,
+            context=_runtime_review_context(context, runtime),
+        )
+        if (
+            not execution_review.approved
+            or high_risk_command
+            and risky_policy.high_risk_tool_mode == "require_workspace_approval"
+        ):
+            self._request_runtime_command_approval(
+                context,
+                runtime=runtime,
+                command=command,
+                execution_review=execution_review,
             )
-            self._mark_waiting_approval(context)
-            self._append_tool_event(context, "approval.requested", "runtime_shell")
-            self._session.flush()
             return RuntimeToolResult(
                 status="waiting_approval",
                 approval_required=True,
-                reason="Command requires approval",
+                reason="Runtime command requires approval",
             )
 
         record = self._runtime_manager.execute_command(
@@ -96,6 +106,31 @@ class RuntimeToolService:
         self._append_tool_event(context, "tool.completed", "runtime_shell")
         self._session.flush()
         return self._from_record(record)
+
+    def _request_runtime_command_approval(
+        self,
+        context: ToolContext,
+        *,
+        runtime: WorkspaceRuntime,
+        command: list[str],
+        execution_review: ToolExecutionReview,
+    ) -> None:
+        ApprovalService(self._session).create_approval(
+            workspace_id=context.workspace_id,
+            task_id=context.task_id,
+            agent_run_id=context.agent_run_id,
+            requested_by_agent_profile_id=None,
+            approval_type="runtime.command",
+            risk_level=execution_review.risk_level,
+            payload={
+                "command_preview": command,
+                "runtime_id": str(runtime.id),
+                "execution_review": execution_review.approval_payload(),
+            },
+        )
+        self._mark_waiting_approval(context)
+        self._append_tool_event(context, "approval.requested", "runtime_shell")
+        self._session.flush()
 
     def _from_record(self, record: RuntimeCommand) -> RuntimeToolResult:
         return RuntimeToolResult(
@@ -139,3 +174,15 @@ class RuntimeToolService:
             task = self._session.get(Task, context.task_id)
             if task is not None:
                 TaskStateService().transition(task, TaskStatus.WAITING_APPROVAL)
+
+
+def _runtime_review_context(
+    context: ToolContext,
+    runtime: WorkspaceRuntime,
+) -> dict[str, object]:
+    return {
+        "agent_run_id": str(context.agent_run_id) if context.agent_run_id is not None else None,
+        "task_id": str(context.task_id) if context.task_id is not None else None,
+        "runtime_id": str(runtime.id),
+        "runtime_provider": runtime.runtime_provider,
+    }

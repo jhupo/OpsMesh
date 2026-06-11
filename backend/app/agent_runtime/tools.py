@@ -8,6 +8,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
+from backend.app.approvals.service import ApprovalService
 from backend.app.artifacts.models import Artifact
 from backend.app.capabilities.adapters import (
     DockerRuntimeStdioMcpToolAdapter,
@@ -23,13 +24,18 @@ from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings, get_settings
 from backend.app.files.models import WorkspaceFile
 from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.reviews.tool_execution import ToolExecutionReview, ToolExecutionReviewService
 from backend.app.runs.models import AgentRun
+from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.runtime_manager.dependencies import get_docker_runtime_client
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.security.redaction import redact_sensitive_text
 from backend.app.self_hosted.service import SelfHostedRuntimeService
+from backend.app.tasks.models import Task
+from backend.app.tasks.service import TaskStateService
+from backend.app.tasks.status import TaskStatus
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
 from backend.app.tools.product_tools import ProductToolService
@@ -90,7 +96,7 @@ class BackendToolExecutor:
             )
         resolver = ContextualMcpAdapterResolver(
             session=self._session,
-            fallback=self._adapter,
+            default_adapter=self._adapter,
             context=context,
             settings=self._settings,
             docker_client=self._docker_client,
@@ -130,6 +136,34 @@ class BackendToolExecutor:
         tool_name: str,
         arguments: dict[str, object],
     ) -> AgentRuntimeToolResult:
+        execution_review = ToolExecutionReviewService(
+            self._session,
+            self._settings,
+        ).review_product_tool_call(
+            workspace_id=context.workspace_id,
+            tool_name=tool_name,
+            arguments=arguments,
+            context=_product_review_context(context),
+        )
+        if not execution_review.approved:
+            self._request_product_tool_approval(
+                context=context,
+                tool_name=tool_name,
+                execution_review=execution_review,
+            )
+            return AgentRuntimeToolResult(
+                status="waiting_approval",
+                error=None,
+                metadata=_tool_metadata(
+                    context=context,
+                    tool_name=tool_name,
+                    tool_kind="product",
+                    extra={
+                        "review_risk_level": execution_review.risk_level,
+                        "review_reasons": execution_review.reasons,
+                    },
+                ),
+            )
         product_context = ToolContext(
             workspace_id=context.workspace_id,
             agent_run_id=context.run_id,
@@ -264,18 +298,54 @@ class BackendToolExecutor:
             ),
         )
 
+    def _request_product_tool_approval(
+        self,
+        *,
+        context: AgentRuntimeContext,
+        tool_name: str,
+        execution_review: ToolExecutionReview,
+    ) -> None:
+        ApprovalService(self._session).create_approval(
+            workspace_id=context.workspace_id,
+            task_id=context.task_id,
+            agent_run_id=context.run_id,
+            requested_by_agent_profile_id=_agent_profile_id_for_context(
+                self._session,
+                context,
+            ),
+            approval_type="product.tool",
+            risk_level=execution_review.risk_level,
+            payload={
+                "tool_name": tool_name,
+                "reason": "product_tool_execution_review_requires_approval",
+                "execution_review": execution_review.approval_payload(),
+            },
+        )
+        run = self._session.get(AgentRun, context.run_id)
+        if run is not None and run.workspace_id == context.workspace_id:
+            run.status = RunStatus.WAITING_APPROVAL.value
+        if context.task_id is not None:
+            task = self._session.get(Task, context.task_id)
+            if (
+                task is not None
+                and task.workspace_id == context.workspace_id
+                and task.status == TaskStatus.RUNNING.value
+            ):
+                TaskStateService().transition(task, TaskStatus.WAITING_APPROVAL)
+        self._session.commit()
+
 
 class ContextualMcpAdapterResolver:
     def __init__(
         self,
         session: Session,
-        fallback: McpToolAdapter | McpToolAdapterResolver,
+        default_adapter: McpToolAdapter | McpToolAdapterResolver,
         context: AgentRuntimeContext,
         settings: Settings | None = None,
         docker_client: DockerRuntimeClient | None = None,
     ) -> None:
         self._session = session
-        self._fallback = fallback
+        self._default_adapter = default_adapter
         self._context = context
         self._settings = settings
         self._docker_client = docker_client
@@ -284,7 +354,7 @@ class ContextualMcpAdapterResolver:
         run = self._current_run()
         runtime = self._runtime_for_run(run)
         if server.server_type != "stdio":
-            return self._fallback_adapter(server)
+            return self._default_adapter_for(server)
         if (
             run is not None
             and runtime is not None
@@ -301,12 +371,12 @@ class ContextualMcpAdapterResolver:
                 runtime_manager=RuntimeManager(self._session, docker_client),
                 runtime=runtime,
             )
-        return self._fallback_adapter(server)
+        return self._default_adapter_for(server)
 
-    def _fallback_adapter(self, server: McpServer) -> McpToolAdapter:
-        if isinstance(self._fallback, McpToolAdapterResolver):
-            return self._fallback.resolve(server)
-        return self._fallback
+    def _default_adapter_for(self, server: McpServer) -> McpToolAdapter:
+        if isinstance(self._default_adapter, McpToolAdapterResolver):
+            return self._default_adapter.resolve(server)
+        return self._default_adapter
 
     def _current_run(self) -> AgentRun | None:
         run = self._session.get(AgentRun, self._context.run_id)
@@ -426,6 +496,25 @@ def _tool_metadata(
     if extra:
         metadata.update(extra)
     return metadata
+
+
+def _product_review_context(context: AgentRuntimeContext) -> dict[str, object]:
+    return {
+        "agent_run_id": str(context.run_id),
+        "task_id": str(context.task_id) if context.task_id is not None else None,
+        "allowed_tools": list(context.allowed_tools),
+        "metadata": dict(context.metadata),
+    }
+
+
+def _agent_profile_id_for_context(
+    session: Session,
+    context: AgentRuntimeContext,
+) -> UUID | None:
+    run = session.get(AgentRun, context.run_id)
+    if run is None or run.workspace_id != context.workspace_id:
+        return None
+    return run.agent_profile_id
 
 
 def _uuid_argument(arguments: dict[str, object], key: str) -> UUID:

@@ -14,7 +14,7 @@ from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.tasks.event_outbox import TaskEventOutboxPublisher, TaskEventOutboxService
-from backend.app.tasks.events import InMemoryTaskEventBus, RedisTaskEventBus
+from backend.app.tasks.events import RedisTaskEventBus, TaskEvent
 from backend.app.tasks.models import Task, TaskEventOutbox
 from backend.app.workers.queue import RedisQueue
 from backend.app.workers.runner import WorkerRunner, WorkerRunnerConfig
@@ -209,3 +209,53 @@ class _FailingTaskEventBus:
         block_ms: int = 0,
     ) -> list[object]:
         return []
+
+
+class InMemoryTaskEventBus:
+    def __init__(self) -> None:
+        self._events: dict[tuple[UUID, UUID], list[TaskEvent]] = {}
+        self._sequence = 0
+
+    def publish(
+        self,
+        *,
+        workspace_id: UUID,
+        task_id: UUID,
+        event_type: str,
+        payload: dict[str, object] | None = None,
+        event_id: str | None = None,
+        outbox_id: str | None = None,
+    ) -> str:
+        self._sequence += 1
+        stream_id = f"1-{self._sequence}"
+        event_payload = dict(payload or {})
+        if event_id is not None:
+            event_payload["event_id"] = event_id
+        if outbox_id is not None:
+            event_payload["outbox_id"] = outbox_id
+        self._events.setdefault((workspace_id, task_id), []).append(
+            TaskEvent(
+                id=stream_id,
+                workspace_id=workspace_id,
+                task_id=task_id,
+                event_type=event_type,
+                payload=event_payload,
+                event_id=event_id,
+                outbox_id=outbox_id,
+            )
+        )
+        return stream_id
+
+    def read(
+        self,
+        *,
+        workspace_id: UUID,
+        task_id: UUID,
+        after_id: str,
+        count: int = 10,
+        block_ms: int = 0,
+    ) -> list[TaskEvent]:
+        if after_id == "$":
+            return []
+        events = self._events.get((workspace_id, task_id), [])
+        return [event for event in events if event.id > after_id][:count]

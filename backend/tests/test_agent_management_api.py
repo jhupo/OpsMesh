@@ -3,6 +3,7 @@ from collections.abc import Generator
 from uuid import UUID
 
 import fakeredis
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
@@ -26,12 +27,29 @@ from backend.app.main import create_app
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.reviews.service import ResourceReview
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
+
+
+@pytest.fixture(autouse=True)
+def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return ResourceReview(
+            required=False,
+            risk_level="low",
+            reasons=["llm_review.approved"],
+            signals={"reviewer": "llm", "verdict": "approve"},
+        )
+
+    monkeypatch.setattr(
+        "backend.app.reviews.service.ResourceReviewService.review_agent_profile",
+        fake_review,
+    )
 
 
 def test_agent_management_lifecycle_versions_and_sessions() -> None:
@@ -50,7 +68,7 @@ def test_agent_management_lifecycle_versions_and_sessions() -> None:
             "name": "Researcher",
             "role": "researcher",
             "instructions": "Remember the company strategy.",
-            "model_api": "response",
+            "model_api": "responses",
             "model_settings": {"temperature": 0.2},
         },
     )
@@ -301,6 +319,17 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
     )
     session.commit()
 
+    unsupported_create = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Unsupported Provider Agent",
+            "role": "researcher",
+            "model": "workspace-default",
+            "model_provider_credential_id": str(primary.id),
+            "model_api": "responses",
+        },
+    )
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
         headers=_headers(owner.id),
@@ -309,7 +338,7 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
             "role": "researcher",
             "model": "workspace-default",
             "model_provider_credential_id": str(primary.id),
-            "model_api": "response",
+            "model_api": "anthropic_messages",
             "model_settings": {
                 "temperature": 0.2,
                 "api_key": "sk-agent-model-settings-secret",
@@ -326,7 +355,7 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
         headers=_headers(owner.id),
         json={
             "model_provider_credential_id": str(backup.id),
-            "model_api": "response",
+            "model_api": "responses",
         },
     )
     cross_workspace_patch = client.patch(
@@ -365,6 +394,8 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
         json={"reason": "Restore disabled model provider"},
     )
 
+    assert unsupported_create.status_code == 400
+    assert "not supported by provider anthropic" in unsupported_create.json()["error"]["message"]
     assert created.status_code == 201
     assert created.json()["model_provider_credential_id"] == str(primary.id)
     assert created.json()["model_provider"] == {
@@ -381,7 +412,7 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
         "api_key_fingerprint": primary.api_key_fingerprint,
         "is_default": False,
         "model_api": "anthropic_messages",
-        "requested_model_api": "responses",
+        "requested_model_api": None,
         "model_apis": ["anthropic_messages"],
         "default_model_api": "anthropic_messages",
         "model_capability": {
@@ -403,7 +434,7 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
         "last_failure_code": None,
         "readiness_status": "degraded",
         "reasons": [],
-        "warnings": ["model_provider_unknown", "model_api_override_unsupported"],
+        "warnings": ["model_provider_unknown"],
     }
     assert "sk-agent-model-settings-secret" not in json.dumps(created.json())
     assert versions.status_code == 200
@@ -509,6 +540,39 @@ def test_agent_management_rejects_null_mutable_fields() -> None:
     )
     assert null_clone.status_code == 400
     assert "cannot be null" in null_clone.json()["error"]["message"]
+
+
+def test_agent_update_requires_resource_review_for_high_impact_changes(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Planner", "role": "planner"},
+    )
+    assert created.status_code == 201
+
+    def review_agent_profile(self, **kwargs):  # noqa: ANN001, ANN202
+        return ResourceReview(
+            required="production" in str(kwargs.get("instructions", "")).lower(),
+            risk_level="high",
+            reasons=["llm_review.detected_broad_authority"],
+            signals={"reviewer": "llm", "verdict": "needs_admin_review"},
+        )
+
+    monkeypatch.setattr(
+        "backend.app.reviews.service.ResourceReviewService.review_agent_profile",
+        review_agent_profile,
+    )
+
+    updated = client.patch(
+        f"/api/v1/workspaces/{workspace.id}/agents/{created.json()['id']}",
+        headers=_headers(owner.id),
+        json={"instructions": "Deploy to production without extra confirmation."},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["status"] == "pending_approval"
 
 
 def test_agent_management_patch_rejects_unknown_status_field() -> None:

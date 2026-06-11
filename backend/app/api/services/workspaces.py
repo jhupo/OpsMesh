@@ -24,6 +24,11 @@ from backend.app.auth.permissions import WorkspaceRole
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import commit_or_raise_conflict
 from backend.app.identity.models import User
+from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.reviews.constants import (
+    RESOURCE_REVIEW_SETTINGS_KEY,
+    SEMANTIC_REVIEW_SETTINGS_KEY,
+)
 from backend.app.workspaces.models import (
     Workspace,
     WorkspaceInvite,
@@ -152,10 +157,14 @@ class WorkspaceService:
     ) -> Workspace:
         old_status = workspace.status
         old_scheduler = _scheduler_settings(workspace.settings)
+        old_resource_review = _resource_review_settings(workspace.settings)
         updates = data.model_dump(exclude_unset=True)
+        if "settings" in updates:
+            self._validate_resource_review_settings(workspace.id, updates["settings"])
         for field, value in updates.items():
             setattr(workspace, field, value)
         new_scheduler = _scheduler_settings(workspace.settings)
+        new_resource_review = _resource_review_settings(workspace.settings)
         if actor_user_id is not None:
             if workspace.status != old_status:
                 AuditService(self._session).record_user_action(
@@ -174,6 +183,15 @@ class WorkspaceService:
                     target_type="workspace",
                     target_id=workspace.id,
                     metadata={"before": old_scheduler, "after": new_scheduler},
+                )
+            if new_resource_review != old_resource_review:
+                AuditService(self._session).record_user_action(
+                    workspace_id=workspace.id,
+                    user_id=actor_user_id,
+                    action="workspace.resource_review_policy_updated",
+                    target_type="workspace",
+                    target_id=workspace.id,
+                    metadata={"before": old_resource_review, "after": new_resource_review},
                 )
         self._session.commit()
         self._session.refresh(workspace)
@@ -793,6 +811,28 @@ class WorkspaceService:
             return user
         return None
 
+    def _validate_resource_review_settings(
+        self,
+        workspace_id: UUID,
+        settings: object,
+    ) -> None:
+        if not isinstance(settings, dict):
+            return
+        semantic = _resource_review_settings(settings)
+        credential_id = _uuid_or_none(semantic.get("model_provider_credential_id"))
+        if credential_id is None:
+            return
+        credential = self._session.scalar(
+            select(ModelProviderCredential).where(
+                ModelProviderCredential.workspace_id == workspace_id,
+                ModelProviderCredential.id == credential_id,
+            )
+        )
+        if credential is None:
+            raise ValueError("Resource review model provider credential not found")
+        if credential.status != "active":
+            raise ValueError("Resource review model provider credential is not active")
+
     def _expire_workspace_invites(self, workspace_id: UUID) -> int:
         now = datetime.now(UTC)
         expired = list(
@@ -831,6 +871,26 @@ def _scheduler_settings(settings: dict[str, object]) -> dict[str, object]:
     if not isinstance(raw_scheduler, dict):
         return {}
     return dict(raw_scheduler)
+
+
+def _resource_review_settings(settings: dict[str, object]) -> dict[str, object]:
+    raw_resource_review = settings.get(RESOURCE_REVIEW_SETTINGS_KEY)
+    if not isinstance(raw_resource_review, dict):
+        return {}
+    raw_semantic = raw_resource_review.get(SEMANTIC_REVIEW_SETTINGS_KEY)
+    if not isinstance(raw_semantic, dict):
+        return {}
+    return dict(raw_semantic)
+
+
+def _uuid_or_none(value: object) -> UUID | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, UUID):
+        return value
+    if isinstance(value, str):
+        return UUID(value)
+    raise ValueError("Expected UUID value")
 
 
 def _quota_snapshot(quota: WorkspaceQuota) -> dict[str, object]:

@@ -1,0 +1,1 @@
+"""Resource review domain."""

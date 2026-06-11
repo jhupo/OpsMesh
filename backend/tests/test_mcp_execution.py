@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -28,11 +29,29 @@ from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.reviews.service import ResourceReview, ResourceReviewService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tools.errors import ToolPermissionError, ToolResourceNotFoundError
 from backend.app.workspaces.models import Workspace, WorkspaceMember
+
+
+@pytest.fixture(autouse=True)
+def _approve_semantic_tool_execution_review(monkeypatch: pytest.MonkeyPatch) -> None:
+    def approved_review(self: ResourceReviewService, **_: object) -> ResourceReview:
+        return ResourceReview(
+            required=False,
+            risk_level="low",
+            reasons=["llm_review.approved"],
+            signals={"reviewer": "codex-auto-review"},
+        )
+
+    monkeypatch.setattr(
+        ResourceReviewService,
+        "review_tool_execution",
+        approved_review,
+    )
 
 
 def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -> None:
@@ -480,24 +499,41 @@ def test_mcp_execution_rejects_oversized_payload_and_logs_failure() -> None:
     assert [event.event_type for event in events] == ["tool.called", "tool.failed"]
 
 
-def test_mcp_execution_normalizes_adapter_errors() -> None:
+def test_mcp_execution_raises_unknown_adapter_errors_after_logging() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
     run, server = _seed_run_with_mcp_tool(session, workspace)
 
-    result = McpToolExecutionService(session, FailingAdapter()).execute(
-        McpExecutionRequest(
-            workspace_id=workspace.id,
-            agent_run_id=run.id,
-            mcp_server_id=server.id,
-            tool_name="generate_image",
-            arguments={"prompt": "mountain"},
+    with pytest.raises(RuntimeError):
+        McpToolExecutionService(session, FailingAdapter()).execute(
+            McpExecutionRequest(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                arguments={"prompt": "mountain"},
+            )
         )
+
+    log = session.scalar(select(McpToolCallLog))
+    event = session.scalar(
+        select(RunEvent)
+        .where(RunEvent.event_type == "tool.failed")
+        .order_by(RunEvent.sequence.desc())
     )
 
-    assert result.status == "failed"
-    assert result.error == {"code": "mcp_adapter_failed", "message": "RuntimeError"}
-    assert "sk-secret" not in str(result.error)
+    assert log is not None
+    assert log.status == "failed"
+    assert log.error is not None
+    assert log.error["code"] == "mcp_adapter_crashed"
+    assert log.error["message"] == "RuntimeError"
+    assert event is not None
+    assert event.event_metadata["error"] == {
+        "code": "mcp_adapter_crashed",
+        "message": "RuntimeError",
+    }
+    assert "sk-secret" not in str(log.error)
+    assert "sk-secret" not in str(event.event_metadata)
 
 
 def test_mcp_execution_sends_high_risk_tool_to_approval_by_default() -> None:
@@ -557,9 +593,49 @@ def test_mcp_execution_sends_explicit_approval_tool_to_approval() -> None:
     assert approval.payload["authorization_snapshot_version"] == 1
     assert log is not None
     assert log.status == "waiting_approval"
+    assert log.approval_id == approval.id
 
 
-def test_mcp_execution_allows_high_risk_tool_when_platform_policy_allows_it() -> None:
+def test_mcp_execution_review_sends_sensitive_arguments_to_admin_approval() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace, risk_level="low")
+    adapter = RecordingAdapter({"ok": True})
+
+    result = McpToolExecutionService(session, adapter).execute(
+        McpExecutionRequest(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            mcp_server_id=server.id,
+            tool_name="generate_image",
+            arguments={
+                "prompt": "write production token to artifact",
+                "api_key": "sk-secret",
+            },
+        )
+    )
+
+    approval = session.scalar(select(Approval))
+    log = session.scalar(select(McpToolCallLog))
+
+    assert result.status == "waiting_approval"
+    assert adapter.calls == []
+    assert approval is not None
+    assert approval.approval_type == "mcp.tool"
+    assert approval.risk_level == "high"
+    assert approval.payload["reason"] == "mcp_tool_execution_review_requires_approval"
+    assert approval.payload["arguments_preview"]["api_key"] == "[redacted]"
+    assert approval.payload["execution_review"]["risk_level"] == "high"
+    assert "tool.arguments.contains_sensitive_keys" in approval.payload["execution_review"][
+        "reasons"
+    ]
+    assert log is not None
+    assert log.status == "waiting_approval"
+    assert log.approval_id == approval.id
+    assert "sk-secret" not in str(approval.payload)
+
+
+def test_mcp_execution_review_still_requires_approval_for_high_risk_tool() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
     _seed_risky_policy(session, high_risk_tool_mode="allow")
@@ -576,8 +652,12 @@ def test_mcp_execution_allows_high_risk_tool_when_platform_policy_allows_it() ->
         )
     )
 
-    assert result.status == "completed"
-    assert adapter.calls
+    approval = session.scalar(select(Approval))
+
+    assert result.status == "waiting_approval"
+    assert adapter.calls == []
+    assert approval is not None
+    assert approval.payload["reason"] == "mcp_tool_execution_review_requires_approval"
 
 
 def test_mcp_execution_blocks_high_risk_tool_when_platform_policy_blocks_it() -> None:

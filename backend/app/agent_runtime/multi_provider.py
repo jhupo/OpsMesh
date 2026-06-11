@@ -24,11 +24,8 @@ class ProviderDispatchingAgentRunner:
         return await self._runner_for(request).run(request)
 
     def _runner_for(self, request: AgentRunRequest) -> AgentRunner:
-        provider = model_provider_key(request.provider)
-        if provider == "fake":
-            raise ValueError("Fake model provider is not supported at runtime")
         if is_openai_compatible_provider(request.provider):
             return self._openai_runner
         if is_anthropic_provider(request.provider):
             return self._anthropic_runner
-        raise ValueError(f"Unsupported model provider: {request.provider}")
+        raise ValueError(f"Unsupported model provider: {model_provider_key(request.provider)}")

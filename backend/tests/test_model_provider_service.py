@@ -33,25 +33,35 @@ from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 
 def test_agent_model_api_override_is_limited_to_provider_supported_protocols() -> None:
-    assert model_api_for_agent_provider(
-        "openai-compatible",
-        {"model_api": "response"},
-        {"model_api": "chat-completions"},
-    ) == "responses"
-    assert unsupported_agent_model_api(
-        "openai-compatible",
-        {"model_api": "response"},
-    ) is None
+    assert (
+        model_api_for_agent_provider(
+            "openai-compatible",
+            {"model_api": "responses"},
+            {"model_api": "chat_completions"},
+        )
+        == "responses"
+    )
+    assert (
+        unsupported_agent_model_api(
+            "openai-compatible",
+            {"model_api": "responses"},
+        )
+        is None
+    )
 
-    assert model_api_for_agent_provider(
-        "anthropic",
-        {"model_api": "response"},
-        {"model_api": "chat-completions"},
-    ) == "anthropic_messages"
-    assert unsupported_agent_model_api(
-        "anthropic",
-        {"model_api": "response"},
-    ) == "responses"
+    with pytest.raises(ValueError, match="not supported"):
+        model_api_for_agent_provider(
+            "anthropic",
+            {"model_api": "responses"},
+            {"model_api": "chat_completions"},
+        )
+    assert (
+        unsupported_agent_model_api(
+            "anthropic",
+            {"model_api": "responses"},
+        )
+        == "responses"
+    )
 
 
 def test_create_encrypts_api_key_and_records_audit() -> None:
@@ -109,58 +119,6 @@ def test_create_normalizes_openai_compatible_base_url() -> None:
     assert credential.base_url == "https://dash.ovload.com/v1"
 
 
-def test_create_canonicalizes_provider_alias_and_normalizes_matching_base_url() -> None:
-    session = _session()
-    user, workspace = _seed_workspace(session)
-    service = _service(session)
-
-    credential = service.create(
-        workspace_id=workspace.id,
-        created_by_user_id=user.id,
-        name="Gateway",
-        provider=" OpenAI_Compatible ",
-        api_key="sk-secret",
-        default_model="provider/default",
-        base_url="https://dash.ovload.com/",
-        is_default=False,
-    )
-
-    assert credential.provider == "openai-compatible"
-    assert credential.base_url == "https://dash.ovload.com/v1"
-
-
-def test_create_canonicalizes_human_provider_aliases() -> None:
-    session = _session()
-    user, workspace = _seed_workspace(session)
-    service = _service(session)
-
-    anthropic = service.create(
-        workspace_id=workspace.id,
-        created_by_user_id=user.id,
-        name="Claude",
-        provider="Claude API",
-        api_key="anthropic-key",
-        default_model="claude-sonnet-4-5",
-        base_url="https://api.anthropic.com/",
-        is_default=False,
-    )
-    gateway = service.create(
-        workspace_id=workspace.id,
-        created_by_user_id=user.id,
-        name="Gateway",
-        provider="OpenAI Compatible Gateway",
-        api_key="sk-secret",
-        default_model="provider/default",
-        base_url="https://dash.ovload.com/",
-        is_default=False,
-    )
-
-    assert anthropic.provider == "anthropic"
-    assert anthropic.base_url == "https://api.anthropic.com"
-    assert gateway.provider == "openai-compatible"
-    assert gateway.base_url == "https://dash.ovload.com/v1"
-
-
 def test_update_normalizes_openai_compatible_base_url_and_drops_query() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
@@ -205,7 +163,7 @@ def test_update_can_set_and_clear_model_api() -> None:
         workspace_id=workspace.id,
         credential_id=credential.id,
         actor_user_id=user.id,
-        model_api="response",
+        model_api="responses",
         model_api_provided=True,
     )
     assert updated.budget_metadata["model_api"] == "responses"
@@ -255,12 +213,12 @@ def test_model_provider_rejects_unknown_or_unsupported_model_api() -> None:
             workspace_id=workspace.id,
             credential_id=credential.id,
             actor_user_id=user.id,
-            model_api="response",
+            model_api="responses",
             model_api_provided=True,
         )
 
 
-def test_update_canonicalizes_provider_alias_before_base_url_normalization() -> None:
+def test_update_provider_uses_formal_provider_key_before_base_url_normalization() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     service = _service(session)
@@ -268,7 +226,7 @@ def test_update_canonicalizes_provider_alias_before_base_url_normalization() -> 
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         name="Anthropic",
-        provider="Claude",
+        provider="anthropic",
         api_key="anthropic-key",
         default_model="claude-sonnet-4-5",
         base_url="https://api.anthropic.com/",
@@ -279,7 +237,7 @@ def test_update_canonicalizes_provider_alias_before_base_url_normalization() -> 
         workspace_id=workspace.id,
         credential_id=credential.id,
         actor_user_id=user.id,
-        provider=" OpenAI_Compatible ",
+        provider="openai-compatible",
         base_url="https://dash.ovload.com/",
     )
 
@@ -287,7 +245,7 @@ def test_update_canonicalizes_provider_alias_before_base_url_normalization() -> 
     assert updated.base_url == "https://dash.ovload.com/v1"
 
 
-def test_update_provider_alias_renormalizes_existing_base_url() -> None:
+def test_update_provider_renormalizes_existing_base_url() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     service = _service(session)
@@ -295,7 +253,7 @@ def test_update_provider_alias_renormalizes_existing_base_url() -> None:
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         name="Gateway",
-        provider="Claude",
+        provider="anthropic",
         api_key="anthropic-key",
         default_model="claude-sonnet-4-5",
         base_url="https://dash.ovload.com/",
@@ -306,7 +264,7 @@ def test_update_provider_alias_renormalizes_existing_base_url() -> None:
         workspace_id=workspace.id,
         credential_id=credential.id,
         actor_user_id=user.id,
-        provider="OpenAI_Compatible",
+        provider="openai-compatible",
     )
 
     assert updated.provider == "openai-compatible"
@@ -440,6 +398,50 @@ def test_resolve_uses_workspace_default_when_agent_has_no_override() -> None:
     assert resolved.model == "gpt-4.1-mini"
 
 
+def test_resolve_for_review_uses_configured_review_model() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = _service(session)
+    default_credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Default",
+        provider="openai",
+        api_key="sk-default",
+        default_model="gpt-5.5",
+        base_url="https://api.openai.com/v1",
+        is_default=True,
+    )
+    review_credential = service.create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Review",
+        provider="openai-compatible",
+        api_key="sk-review",
+        default_model="router/default",
+        base_url="https://reviewer.example.test/v1",
+        is_default=False,
+    )
+
+    default_review = service.resolve_for_review(
+        workspace_id=workspace.id,
+        credential_id=None,
+        review_model="codex-auto-review",
+    )
+    configured_review = service.resolve_for_review(
+        workspace_id=workspace.id,
+        credential_id=review_credential.id,
+        review_model="workspace-review-large",
+    )
+
+    assert default_review.credential_id == default_credential.id
+    assert default_review.model == "codex-auto-review"
+    assert default_review.api_key == "sk-default"
+    assert configured_review.credential_id == review_credential.id
+    assert configured_review.model == "workspace-review-large"
+    assert configured_review.api_key == "sk-review"
+
+
 def test_resolve_exposes_configured_model_api() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
@@ -453,7 +455,7 @@ def test_resolve_exposes_configured_model_api() -> None:
         default_model="gateway-model",
         base_url="https://llm.example.test/v1",
         is_default=True,
-        model_api="chat-completions",
+        model_api="chat_completions",
     )
 
     resolved = service.resolve_for_agent(
@@ -1002,7 +1004,7 @@ def test_health_check_persists_result_and_records_redacted_audit(
         default_model="claude-opus-4-6",
         base_url="https://dash.ovload.com/v1",
         is_default=False,
-        budget_metadata={"model_api": "chat-completions"},
+        budget_metadata={"model_api": "chat_completions"},
     )
     captured: dict[str, object] = {}
 
@@ -1070,9 +1072,7 @@ def test_health_check_persists_result_and_records_redacted_audit(
     assert credential.last_failure_code == "permission_denied"
     assert credential.last_failure_message == "[redacted]"
     audit = session.scalars(
-        select(AuditEvent).where(
-            AuditEvent.action == "model_provider_credential.health_checked"
-        )
+        select(AuditEvent).where(AuditEvent.action == "model_provider_credential.health_checked")
     ).one()
     assert audit.audit_metadata["status"] == "degraded"
     assert audit.audit_metadata["model_api"] == "chat_completions"

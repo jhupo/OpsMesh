@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import json
-import time
-from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from threading import Condition
 from typing import Protocol, cast
 from uuid import UUID
 
@@ -146,86 +143,6 @@ class RedisTaskEventBus:
         return f"{prefix}:workspace:{workspace_id}:task:{task_id}:events"
 
 
-class InMemoryTaskEventBus:
-    def __init__(self) -> None:
-        self._events: dict[tuple[UUID, UUID], list[TaskEvent]] = defaultdict(list)
-        self._condition = Condition()
-        self._sequence = 0
-
-    def publish(
-        self,
-        *,
-        workspace_id: UUID,
-        task_id: UUID,
-        event_type: str,
-        payload: dict[str, object] | None = None,
-        event_id: str | None = None,
-        outbox_id: str | None = None,
-    ) -> str:
-        with self._condition:
-            self._sequence += 1
-            stream_id = f"{int(time.time() * 1000)}-{self._sequence}"
-            event_payload = _with_event_identity(
-                payload,
-                event_id=event_id,
-                outbox_id=outbox_id,
-            )
-            event = TaskEvent(
-                id=stream_id,
-                workspace_id=workspace_id,
-                task_id=task_id,
-                event_type=event_type,
-                payload=event_payload,
-                event_id=event_id,
-                outbox_id=outbox_id,
-            )
-            self._events[(workspace_id, task_id)].append(event)
-            self._condition.notify_all()
-            return stream_id
-
-    def read(
-        self,
-        *,
-        workspace_id: UUID,
-        task_id: UUID,
-        after_id: str,
-        count: int = 10,
-        block_ms: int = 0,
-    ) -> list[TaskEvent]:
-        deadline = time.monotonic() + (max(0, block_ms) / 1000)
-        with self._condition:
-            while True:
-                events = self._read_now(
-                    workspace_id=workspace_id,
-                    task_id=task_id,
-                    after_id=after_id,
-                    count=count,
-                )
-                if events or block_ms <= 0:
-                    return events
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    return []
-                self._condition.wait(timeout=remaining)
-
-    def _read_now(
-        self,
-        *,
-        workspace_id: UUID,
-        task_id: UUID,
-        after_id: str,
-        count: int,
-    ) -> list[TaskEvent]:
-        if after_id == "$":
-            return []
-        events = self._events.get((workspace_id, task_id), [])
-        return [
-            event
-            for event in events
-            if _stream_id_gt(event.id, after_id)
-        ][: max(1, count)]
-
-
 def _event_from_fields(*, stream_id: str, fields: dict[str, str]) -> TaskEvent:
     payload = _decode_payload(fields.get("payload"))
     stable_event_id = _identity_value(fields.get("event_id"), payload.get("event_id"))
@@ -268,18 +185,20 @@ def _decode_payload(raw_payload: str | None) -> dict[str, object]:
         return {}
     try:
         payload = json.loads(raw_payload)
-    except json.JSONDecodeError:
-        return {"raw": raw_payload}
-    return payload if isinstance(payload, dict) else {"value": payload}
+    except json.JSONDecodeError as exc:
+        raise ValueError("Task event payload must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Task event payload must be a JSON object")
+    return payload
 
 
 def _decode_datetime(raw_value: str | None) -> datetime:
     if not raw_value:
-        return datetime.now(UTC)
+        raise ValueError("Task event created_at is required")
     try:
         value = datetime.fromisoformat(raw_value)
-    except ValueError:
-        return datetime.now(UTC)
+    except ValueError as exc:
+        raise ValueError("Task event created_at must be an ISO datetime") from exc
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 

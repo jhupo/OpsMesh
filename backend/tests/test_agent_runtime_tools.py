@@ -1,5 +1,6 @@
 from uuid import UUID, uuid4
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -15,6 +16,7 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.reviews.service import ResourceReview, ResourceReviewService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import RuntimeCommandResult
@@ -23,6 +25,23 @@ from backend.app.self_hosted.models import SelfHostedMcpJob
 from backend.app.tasks.models import Task
 from backend.app.tools.errors import ToolPermissionError
 from backend.app.workspaces.models import Workspace, WorkspaceMember
+
+
+@pytest.fixture(autouse=True)
+def _approve_semantic_tool_execution_review(monkeypatch: pytest.MonkeyPatch) -> None:
+    def approved_review(self: ResourceReviewService, **_: object) -> ResourceReview:
+        return ResourceReview(
+            required=False,
+            risk_level="low",
+            reasons=["llm_review.approved"],
+            signals={"reviewer": "codex-auto-review"},
+        )
+
+    monkeypatch.setattr(
+        ResourceReviewService,
+        "review_tool_execution",
+        approved_review,
+    )
 
 
 def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
@@ -373,7 +392,7 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
             "recipient_agent_profile_id": str(recipient.id),
             "subject": "Handoff",
             "body": "Please continue.",
-            "payload": {"token": "hidden", "scope": "backend"},
+            "payload": {"scope": "backend"},
         },
     )
     assert sent.status == "completed"
@@ -386,6 +405,15 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
         tool_name="list_agent_thread_messages",
         arguments={"thread_id": sent.output["thread"]["id"]},
     )
+    sensitive = executor.execute_tool(
+        context=context,
+        tool_name="send_agent_message",
+        arguments={
+            "recipient_agent_profile_id": str(recipient.id),
+            "body": "Please review sensitive context.",
+            "payload": {"token": "hidden", "scope": "backend"},
+        },
+    )
     blocked = executor.execute_tool(
         context=context,
         tool_name="send_agent_message",
@@ -396,11 +424,13 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
     )
 
     stored = session.query(AgentMessage).one()
-    assert sent.output["message"]["payload"] == {"token": "[redacted]", "scope": "backend"}
+    assert sent.output["message"]["payload"] == {"scope": "backend"}
     assert listed.status == "completed"
     assert listed.output is not None
     assert listed.output["total"] == 1
-    assert stored.payload == {"token": "hidden", "scope": "backend"}
+    assert stored.payload == {"scope": "backend"}
+    assert sensitive.status == "waiting_approval"
+    assert sensitive.metadata["review_risk_level"] == "high"
     assert blocked.status == "failed"
     assert blocked.error is not None
     assert blocked.error["code"] == "product_tool_failed"

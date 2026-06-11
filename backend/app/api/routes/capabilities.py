@@ -65,11 +65,16 @@ async def list_capabilities(
 @router.post("", response_model=CapabilityResponse, status_code=status.HTTP_201_CREATED)
 async def create_capability(
     request: CapabilityCreateRequest,
-    _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
 ) -> CapabilityResponse:
     try:
-        capability = CapabilityService(session).create_capability(request)
+        capability = CapabilityService(session, settings=settings).create_capability(
+            request,
+            context.workspace.id,
+            actor_user_id=context.user.user_id,
+        )
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     return CapabilityResponse.model_validate(capability)
@@ -90,9 +95,14 @@ async def create_skill(
     request: SkillCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
 ) -> SkillResponse:
     try:
-        skill = CapabilityService(session).create_skill(request, context.workspace.id)
+        skill = CapabilityService(session, settings=settings).create_skill(
+            request,
+            context.workspace.id,
+            actor_user_id=context.user.user_id,
+        )
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     return SkillResponse.model_validate(skill)
@@ -388,9 +398,10 @@ async def create_mcp_server(
     request: McpServerCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
 ) -> McpServerResponse:
     try:
-        server = CapabilityService(session).create_mcp_server(
+        server = CapabilityService(session, settings=settings).create_mcp_server(
             context.workspace.id,
             request,
             context.user.user_id,
@@ -433,9 +444,10 @@ async def allow_mcp_tool(
     request: McpToolAllowRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
 ) -> McpToolAllowResponse:
     try:
-        allow = CapabilityService(session).allow_mcp_tool(
+        allow = CapabilityService(session, settings=settings).allow_mcp_tool(
             context.workspace.id,
             mcp_server_id,
             request,
@@ -582,6 +594,7 @@ async def create_mcp_credential_reference(
                 key_id=settings.credential_encryption_key_id,
                 previous_secrets=settings.credential_encryption_previous_secrets,
             ),
+            settings,
         ).create_credential_reference(
             context.workspace.id,
             request,

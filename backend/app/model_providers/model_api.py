@@ -11,15 +11,6 @@ KNOWN_MODEL_APIS = frozenset(
     }
 )
 
-_MODEL_API_ALIASES = {
-    "chat": OPENAI_CHAT_COMPLETIONS_API,
-    "chat-completions": OPENAI_CHAT_COMPLETIONS_API,
-    "chat_completions": OPENAI_CHAT_COMPLETIONS_API,
-    "response": OPENAI_RESPONSES_API,
-    "responses": OPENAI_RESPONSES_API,
-}
-
-
 def configured_model_api(metadata: dict[str, object]) -> str | None:
     value = metadata.get("model_api")
     return canonical_model_api(value)
@@ -28,10 +19,10 @@ def configured_model_api(metadata: dict[str, object]) -> str | None:
 def canonical_model_api(value: object) -> str | None:
     if not isinstance(value, str):
         return None
-    key = value.strip().lower().replace("_", "-")
+    key = value.strip().lower()
     if not key:
         return None
-    return _MODEL_API_ALIASES.get(key, value.strip())
+    return key
 
 
 def require_known_model_api(value: object) -> str | None:
@@ -84,7 +75,7 @@ def model_api_for_agent_provider(
         return provider_model_api
     if agent_model_api in model_api_options_for_provider(provider):
         return agent_model_api
-    return provider_model_api
+    raise ValueError(f"model_api {agent_model_api} is not supported by provider {provider}")
 
 
 def unsupported_agent_model_api(

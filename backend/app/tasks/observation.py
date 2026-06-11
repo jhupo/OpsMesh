@@ -69,20 +69,7 @@ class TaskObservationService:
                 raise ValueError("Unsupported observation view type")
             return normalized
         domain_type = (task.domain_type or "generic").strip().lower()
-        aliases = {
-            "image": "aigc",
-            "video": "aigc",
-            "content": "aigc",
-            "novel_writing": "novel",
-            "writing": "novel",
-            "market_research": "research",
-            "software_development": "software",
-            "code": "software",
-        }
-        return aliases.get(
-            domain_type,
-            domain_type if domain_type in SUPPORTED_VIEW_TYPES else "generic",
-        )
+        return domain_type if domain_type in SUPPORTED_VIEW_TYPES else "generic"
 
     def _sections(
         self,
@@ -427,11 +414,11 @@ class TaskObservationService:
         state = task.domain_state or {}
         return [
             self._aigc_status_card(task, artifacts),
-            self._domain_card("prompt", "Prompt", state, task.input),
-            self._domain_card("variants", "Variants", state, task.generic_state),
-            self._domain_card("selected_asset", "Selected asset", state, {}),
-            self._domain_card("model_settings", "Model settings", state, task.input),
-            self._domain_card("review_notes", "Review notes", state, task.generic_state),
+            self._domain_card("prompt", "Prompt", state),
+            self._domain_card("variants", "Variants", state),
+            self._domain_card("selected_asset", "Selected asset", state),
+            self._domain_card("model_settings", "Model settings", state),
+            self._domain_card("review_notes", "Review notes", state),
             self._domain_artifact_card(artifacts),
         ]
 
@@ -439,13 +426,13 @@ class TaskObservationService:
         state = task.domain_state or {}
         return [
             self._novel_status_card(task, artifacts),
-            self._domain_card("outline", "Outline", state, task.input),
-            self._domain_card("chapters", "Chapters", state, task.generic_state),
-            self._domain_card("scenes", "Scenes", state, task.generic_state),
-            self._domain_card("characters", "Characters", state, task.generic_state),
-            self._domain_card("continuity_notes", "Continuity notes", state, task.generic_state),
-            self._domain_card("word_count", "Word count", state, task.generic_state),
-            self._domain_card("editorial_review", "Editorial review", state, task.generic_state),
+            self._domain_card("outline", "Outline", state),
+            self._domain_card("chapters", "Chapters", state),
+            self._domain_card("scenes", "Scenes", state),
+            self._domain_card("characters", "Characters", state),
+            self._domain_card("continuity_notes", "Continuity notes", state),
+            self._domain_card("word_count", "Word count", state),
+            self._domain_card("editorial_review", "Editorial review", state),
             self._domain_artifact_card(artifacts),
         ]
 
@@ -453,11 +440,11 @@ class TaskObservationService:
         state = task.domain_state or {}
         return [
             self._research_status_card(task, artifacts),
-            self._domain_card("sources", "Sources", state, task.input),
-            self._domain_card("claims", "Claims", state, task.generic_state),
-            self._domain_card("confidence", "Confidence", state, task.generic_state),
-            self._domain_card("citations", "Citations", state, task.generic_state),
-            self._domain_card("report_sections", "Report sections", state, task.generic_state),
+            self._domain_card("sources", "Sources", state),
+            self._domain_card("claims", "Claims", state),
+            self._domain_card("confidence", "Confidence", state),
+            self._domain_card("citations", "Citations", state),
+            self._domain_card("report_sections", "Report sections", state),
             self._domain_artifact_card(artifacts),
         ]
 
@@ -465,13 +452,13 @@ class TaskObservationService:
         state = task.domain_state or {}
         return [
             self._software_status_card(task, artifacts),
-            self._domain_card("requirements", "Requirements", state, task.input),
-            self._domain_card("design_tasks", "Design tasks", state, task.generic_state),
-            self._domain_card("branches", "Branches", state, task.generic_state),
-            self._domain_card("patches", "Patches", state, task.generic_state),
-            self._domain_card("tests", "Tests", state, task.generic_state),
-            self._domain_card("build_status", "Build status", state, task.generic_state),
-            self._domain_card("review_comments", "Review comments", state, task.generic_state),
+            self._domain_card("requirements", "Requirements", state),
+            self._domain_card("design_tasks", "Design tasks", state),
+            self._domain_card("branches", "Branches", state),
+            self._domain_card("patches", "Patches", state),
+            self._domain_card("tests", "Tests", state),
+            self._domain_card("build_status", "Build status", state),
+            self._domain_card("review_comments", "Review comments", state),
             self._domain_artifact_card(artifacts),
         ]
 
@@ -575,10 +562,9 @@ class TaskObservationService:
         self,
         key: str,
         title: str,
-        primary: dict[str, object],
-        fallback: dict[str, object],
+        domain_state: dict[str, object],
     ) -> dict[str, object]:
-        value = primary.get(key, fallback.get(key))
+        value = domain_state.get(key)
         return {
             "card_type": key,
             "title": title,
@@ -587,9 +573,8 @@ class TaskObservationService:
         }
 
     def _domain_value(self, task: Task, key: str) -> object:
-        for source in (task.domain_state, task.generic_state, task.input):
-            if isinstance(source, dict) and key in source:
-                return source[key]
+        if isinstance(task.domain_state, dict) and key in task.domain_state:
+            return task.domain_state[key]
         return None
 
     def _domain_status(

@@ -5,7 +5,7 @@ from backend.app.model_providers.capabilities import (
 
 
 def test_model_capability_registry_filters_by_provider_and_capability() -> None:
-    anthropic_tools = list_model_capabilities(provider="Claude API", capability="tools")
+    anthropic_tools = list_model_capabilities(provider="anthropic", capability="tools")
 
     assert anthropic_tools
     assert {item.provider for item in anthropic_tools} == {"anthropic"}
@@ -14,7 +14,7 @@ def test_model_capability_registry_filters_by_provider_and_capability() -> None:
 
 def test_model_capability_registry_resolves_wildcard_provider_model() -> None:
     capability = resolve_model_capability(
-        "OpenAI Compatible Gateway",
+        "openai-compatible",
         "provider/custom-model",
     )
 
@@ -24,9 +24,9 @@ def test_model_capability_registry_resolves_wildcard_provider_model() -> None:
     assert capability.notes is not None
 
 
-def test_model_capability_registry_resolves_anthropic_wildcard_aliases() -> None:
+def test_model_capability_registry_resolves_anthropic_wildcard_model() -> None:
     capability = resolve_model_capability(
-        "Claude API",
+        "anthropic",
         "claude-custom-company-model",
     )
 

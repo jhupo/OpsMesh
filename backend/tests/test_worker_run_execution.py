@@ -28,10 +28,18 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.model_providers.service import ModelProviderCredentialService
-from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.model_providers.service import (
+    ModelProviderCredentialService,
+    ModelProviderUnavailableError,
+)
+from backend.app.orchestration.runs import (
+    RunOrchestrationService,
+    _model_request_review_fingerprint,
+    _model_request_review_input,
+)
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.reviews.service import ResourceReview
 from backend.app.runs.activity import activity_phase
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
@@ -55,6 +63,22 @@ from backend.app.workspaces.models import (
     WorkspaceQuota,
     WorkspaceReservation,
 )
+
+
+@pytest.fixture(autouse=True)
+def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return ResourceReview(
+            required=False,
+            risk_level="low",
+            reasons=["llm_review.approved"],
+            signals={"reviewer": "llm", "verdict": "approve"},
+        )
+
+    monkeypatch.setattr(
+        "backend.app.reviews.service.ResourceReviewService.review_tool_execution",
+        fake_review,
+    )
 
 
 class DeterministicAgentRunner:
@@ -500,15 +524,15 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
     assert task.final_output["final_output"] == "deterministic_run_completed"
     assert task.final_output["team_orchestration"] == {
         "steps": [
-                {
-                    "task_step_id": str(step.id),
-                    "title": step.title,
-                    "status": "completed",
-                    "work_package_id": step.work_package_id,
-                    "required_role": step.required_role,
-                    "agent_profile_id": str(step.assigned_agent_profile_id),
-                    "result_summary": "deterministic_run_completed",
-                }
+            {
+                "task_step_id": str(step.id),
+                "title": step.title,
+                "status": "completed",
+                "work_package_id": step.work_package_id,
+                "required_role": step.required_role,
+                "agent_profile_id": str(step.assigned_agent_profile_id),
+                "result_summary": "deterministic_run_completed",
+            }
             for step in steps
         ]
     }
@@ -642,9 +666,7 @@ def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> N
     assert task.final_output["final_output"] == "deterministic_run_completed"
     message_types = [message.message_type for message in messages]
     assert "planning.completed" in message_types
-    step_messages = [
-        message for message in messages if message.message_type.startswith("step.")
-    ]
+    step_messages = [message for message in messages if message.message_type.startswith("step.")]
     assert [message.message_type for message in step_messages] == [
         "step.started",
         "step.completed",
@@ -819,9 +841,7 @@ def test_runtime_space_reserves_multi_resource_capacity_for_team_steps() -> None
     quota_by_key = {
         quota.quota_key: quota
         for quota in session.scalars(
-            select(RuntimeSpaceQuota).where(
-                RuntimeSpaceQuota.runtime_space_id == runtime_space.id
-            )
+            select(RuntimeSpaceQuota).where(RuntimeSpaceQuota.runtime_space_id == runtime_space.id)
         ).all()
     }
     assert quota_by_key["active_runs"].reserved_value == 1
@@ -1190,7 +1210,7 @@ def test_team_scheduler_blocks_step_when_model_provider_unavailable() -> None:
         default_model="gpt-4.1-mini",
         base_url="https://provider.example.test/v1",
         is_default=False,
-        budget_metadata={"model_api": "chat-completions"},
+        budget_metadata={"model_api": "chat_completions"},
     )
     credential.health_status = "unhealthy"
     credential.failure_count = 3
@@ -1200,7 +1220,7 @@ def test_team_scheduler_blocks_step_when_model_provider_unavailable() -> None:
         role="developer",
         model="workspace-default",
         model_provider_credential_id=credential.id,
-        model_settings={"model_api": "response"},
+        model_settings={"model_api": "responses"},
     )
     session.add(developer)
     session.flush()
@@ -1315,7 +1335,7 @@ def test_team_scheduler_releases_reservations_when_model_provider_unavailable() 
         default_model="gpt-4.1-mini",
         base_url="https://provider.example.test/v1",
         is_default=False,
-        budget_metadata={"model_api": "chat-completions"},
+        budget_metadata={"model_api": "chat_completions"},
     )
     credential.health_status = "unhealthy"
     credential.failure_count = 3
@@ -1864,9 +1884,7 @@ def test_team_task_persists_auditable_task_messages() -> None:
         {"work_package_id": "Research-1", "instruction": "Add TAM/SAM/SOM sources."}
     ]
     assert messages[3].payload["revision_cycle"] == 1
-    assert messages[3].payload["follow_up_work_package_ids"] == [
-        "revision-Research-1-1-1"
-    ]
+    assert messages[3].payload["follow_up_work_package_ids"] == ["revision-Research-1-1-1"]
 
 
 def test_create_queued_run_for_task_reuses_active_team_run() -> None:
@@ -2284,7 +2302,7 @@ def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> Non
             **run.input["authorization_snapshot"],
             "model_provider": {
                 **snapshot,
-                "model_api": "chat-completions",
+                "model_api": "chat_completions",
             },
         },
     }
@@ -2364,7 +2382,7 @@ def test_queued_team_run_uses_frozen_agent_model_provider_protocol() -> None:
                         "role": "writer",
                         "model": "snapshot-model",
                         "model_provider_credential_id": str(credential.id),
-                        "model_api": "chat-completions",
+                        "model_api": "chat_completions",
                     },
                 }
             ],
@@ -2570,6 +2588,193 @@ def test_agent_request_restores_provider_native_continuation_from_persistent_ses
     assert request.context.metadata["conversation_id"] == "conv_existing"
 
 
+def test_model_request_review_allows_low_risk_request_after_semantic_approval() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        model="gpt-4.1",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft product note",
+        description="Write a short product update.",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    class CapturingRunner:
+        def __init__(self) -> None:
+            self.requests: list[AgentRunRequest] = []
+
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            self.requests.append(request)
+            return AgentRunResult(final_output="draft complete")
+
+    runner = CapturingRunner()
+    RunOrchestrationService(session, agent_runner=runner).run_agent_sync(
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="model-request-low-risk",
+        )
+    )
+
+    assert len(runner.requests) == 1
+    assert run.status == RunStatus.COMPLETED.value
+    assert session.scalar(select(Approval).where(Approval.approval_type == "model.request")) is None
+
+
+def test_model_request_review_routes_sensitive_input_to_admin_approval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def blocking_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return ResourceReview(
+            required=True,
+            risk_level="high",
+            reasons=["llm_review.detected_sensitive_model_request"],
+            signals={"reviewer": "llm", "verdict": "needs_admin_review"},
+        )
+
+    monkeypatch.setattr(
+        "backend.app.reviews.service.ResourceReviewService.review_tool_execution",
+        blocking_review,
+    )
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Security Reviewer",
+        role="security_reviewer",
+        model="gpt-4.1",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Review incident",
+        description="Analyze this production token: sk-sensitive-test-token",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.commit()
+
+    class FailingRunner:
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            raise AssertionError("sensitive model request must wait for admin approval")
+
+    RunOrchestrationService(session, agent_runner=FailingRunner()).run_agent_sync(
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="model-request-sensitive",
+        )
+    )
+
+    approval = session.scalar(select(Approval).where(Approval.approval_type == "model.request"))
+    assert approval is not None
+    assert approval.status == "pending"
+    assert approval.risk_level == "high"
+    assert approval.payload["review"]["signals"]["input_preview"]["input"] == "[redacted]"
+    assert run.status == RunStatus.WAITING_APPROVAL.value
+    assert task.status == TaskStatus.WAITING_APPROVAL.value
+
+
+def test_model_request_review_does_not_repeat_after_admin_approval() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Security Reviewer",
+        role="security_reviewer",
+        model="gpt-4.1",
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Review incident",
+        description="Analyze this production token: sk-sensitive-test-token",
+        status=TaskStatus.RUNNING.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={},
+    )
+    session.add(run)
+    session.flush()
+
+    class CapturingRunner:
+        def __init__(self) -> None:
+            self.requests: list[AgentRunRequest] = []
+
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            self.requests.append(request)
+            return AgentRunResult(final_output="approved review complete")
+
+    runner = CapturingRunner()
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        requested_by_user_id=user.id,
+        idempotency_key="model-request-approved",
+    )
+    orchestration = RunOrchestrationService(session, agent_runner=runner)
+    request = orchestration._build_agent_request(run, job)
+    input_text = _model_request_review_input(run, task, request)
+    approval = Approval(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        requested_by_agent_profile_id=agent.id,
+        approval_type="model.request",
+        risk_level="high",
+        status="approved",
+        payload={
+            "reason": "model_request_review_requires_approval",
+            "request_fingerprint": _model_request_review_fingerprint(request, input_text),
+        },
+        created_at=datetime.now(UTC),
+    )
+    session.add(approval)
+    session.commit()
+
+    orchestration.run_agent_sync(job)
+
+    assert len(runner.requests) == 1
+    assert run.status == RunStatus.COMPLETED.value
+
+
 def test_completed_run_updates_persistent_session_conversation_id() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
@@ -2771,7 +2976,7 @@ def test_invalid_project_plan_records_attempt_and_blocks_task_for_review() -> No
                     "package_id": "build-ui",
                     "title": "Build UI again",
                     "required_role": "frontend_engineer",
-                }
+                },
             ]
         },
     )
@@ -3112,7 +3317,7 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
                         },
                     ),
                     AgentRuntimeEvent(
-                        event_type="tool.call.blocked",
+                        event_type="tool.blocked",
                         message="Tool blocked by policy",
                         payload={
                             "tool_name": "deploy",
@@ -3121,12 +3326,12 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
                         },
                     ),
                     AgentRuntimeEvent(
-                        event_type="run.waiting_runtime",
+                        event_type="run.waiting.runtime",
                         message="Waiting for self-hosted MCP result",
                         payload={"worker_id": "local-1", "external_ref": "secret-ref"},
                     ),
                     AgentRuntimeEvent(
-                        event_type="model.fallback.selected",
+                        event_type="model_provider.fallback_selected",
                         message="Using backup model",
                         payload={"model": "backup", "base_url": "https://secret.example"},
                     ),
@@ -3149,9 +3354,7 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
     WorkerJobHandler(session, agent_runner=EventfulRunner()).handle(job)
 
     messages = session.scalars(
-        select(TaskMessage)
-        .where(TaskMessage.task_id == task.id)
-        .order_by(TaskMessage.sequence)
+        select(TaskMessage).where(TaskMessage.task_id == task.id).order_by(TaskMessage.sequence)
     ).all()
     events = session.scalars(
         select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
@@ -3167,7 +3370,7 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
             "agent.handoff",
             "tool.blocked",
             "runtime.waiting",
-            "model.fallback",
+            "model_provider.fallback_selected",
         }
     ]
     assert [message.message_type for message in runtime_messages] == [
@@ -3175,7 +3378,7 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
         "agent.handoff",
         "tool.blocked",
         "runtime.waiting",
-        "model.fallback",
+        "model_provider.fallback_selected",
     ]
     assert runtime_messages[0].payload["tool_name"] == "search"
     assert runtime_messages[0].payload["api_key"] == "[redacted]"
@@ -3302,7 +3505,7 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         name="Designer",
         role="designer",
         instructions="Design assets.",
-        model_settings={"model_api": "chat-completions"},
+        model_settings={"model_api": "chat_completions"},
         tool_policy={"mcp_tools": ["generate_image", 42, "write_artifact"]},
     )
     session.add_all([task, agent])
@@ -3335,11 +3538,11 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         "persistent_session_mode": None,
     } == {
         "agent_profile_id": str(agent.id),
-            "agent_role": "designer",
-            "run_model": agent.model,
-            "model_provider_provider": "openai",
-            "model_provider_credential_id": provider_credential_id,
-            "model_provider_model_api": "chat_completions",
+        "agent_role": "designer",
+        "run_model": agent.model,
+        "model_provider_provider": "openai",
+        "model_provider_credential_id": provider_credential_id,
+        "model_provider_model_api": "chat_completions",
         "authorization_scope": "workspace",
         "authorized_workspace_id": str(workspace.id),
         "authorized_task_id": str(task.id),
@@ -3438,8 +3641,7 @@ def test_agent_request_includes_unread_mailbox_context() -> None:
     assert "sk-mailbox-secret" not in str(mailbox)
     assert "Runtime capabilities and evidence:" in request.input_text
     assert (
-        "Available tools: get_agent_inbox, list_agent_thread_messages, "
-        "mark_agent_message_read"
+        "Available tools: get_agent_inbox, list_agent_thread_messages, mark_agent_message_read"
     ) in request.input_text
     assert "Latest unread mailbox messages:" in request.input_text
     assert "handoff" in request.input_text
@@ -3798,7 +4000,7 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
         instructions="Write.",
         model="workspace-default",
         model_provider_credential_id=credential.id,
-        model_settings={"model_api": "response"},
+        model_settings={"model_api": "responses"},
     )
     session.add_all([task, agent])
     session.flush()
@@ -3866,7 +4068,7 @@ def test_agent_request_model_api_overrides_credential_default_protocol() -> None
         default_model="router/default",
         base_url="https://router.example.test/v1",
         is_default=True,
-        budget_metadata={"model_api": "chat-completions"},
+        budget_metadata={"model_api": "chat_completions"},
     )
     task = Task(
         workspace_id=workspace.id,
@@ -3881,7 +4083,7 @@ def test_agent_request_model_api_overrides_credential_default_protocol() -> None
         instructions="Write.",
         model="workspace-default",
         model_provider_credential_id=credential.id,
-        model_settings={"model_api": "response"},
+        model_settings={"model_api": "responses"},
     )
     session.add_all([task, agent])
     session.flush()
@@ -3913,7 +4115,7 @@ def test_agent_request_model_api_overrides_credential_default_protocol() -> None
     assert request.tracing.metadata["model_provider_model_api"] == "responses"
 
 
-def test_agent_request_re_resolves_workspace_default_snapshot_when_provider_unhealthy() -> None:
+def test_agent_request_fails_closed_when_workspace_default_snapshot_becomes_unhealthy() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     settings = Settings(
@@ -3980,23 +4182,21 @@ def test_agent_request_re_resolves_workspace_default_snapshot_when_provider_unhe
     primary.health_status = "unhealthy"
     session.commit()
 
-    request = RunOrchestrationService(session, settings=settings)._build_agent_request(
-        run,
-        JobPayload(
-            workspace_id=workspace.id,
-            job_type=JobType.AGENT_RUN,
-            resource_id=run.id,
-            requested_by_user_id=user.id,
-            idempotency_key="provider-snapshot-reresolve",
-        ),
-    )
+    with pytest.raises(ModelProviderUnavailableError):
+        RunOrchestrationService(session, settings=settings)._build_agent_request(
+            run,
+            JobPayload(
+                workspace_id=workspace.id,
+                job_type=JobType.AGENT_RUN,
+                resource_id=run.id,
+                requested_by_user_id=user.id,
+                idempotency_key="provider-snapshot-fail-closed",
+            ),
+        )
 
     assert snapshot["source"] == "workspace_default"
     assert snapshot["credential_id"] == str(primary.id)
-    assert request.model == "backup-default"
-    assert request.api_key == "sk-backup"
-    assert request.base_url == "https://backup.example.test/v1"
-    assert request.model_provider_credential_id == backup.id
+    assert backup.status == "active"
 
 
 def test_agent_request_does_not_fallback_explicit_inactive_provider_override() -> None:
@@ -4680,10 +4880,17 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
         )
     )
     assert "model_provider.fallback_selected" not in event_types
-    assert "model_provider.fallback_unavailable" not in event_types
-    assert fallback_unavailable_event is None
-    assert team_message is None
-    assert audit is None
+    assert "model_provider.fallback_unavailable" in event_types
+    assert fallback_unavailable_event is not None
+    assert fallback_unavailable_event.event_metadata["failed_provider"] == {
+        "provider": "openai",
+        "model": "primary-model",
+        "model_api": None,
+        "credential_id": str(primary.id),
+    }
+    assert team_message is not None
+    assert audit is not None
+    assert audit.audit_metadata["failed_provider"]["credential_id"] == str(primary.id)
     assert foreign.status == "active"
     assert run.status == RunStatus.FAILED.value
     assert run.error["message"] == "[redacted]"
@@ -5286,8 +5493,9 @@ def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
     )
     assert send_result.status == "completed"
     assert send_result.output is not None
-    assert send_result.output["thread"]["id"] == (
-        planner_request.context.metadata["agent_mailbox"]["scope"]["thread_id"]
+    assert (
+        send_result.output["thread"]["id"]
+        == (planner_request.context.metadata["agent_mailbox"]["scope"]["thread_id"])
     )
     assert send_result.output["thread"]["task_id"] is None
     assert send_result.output["thread"]["agent_team_id"] == str(team.id)
@@ -5307,9 +5515,12 @@ def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
     assert builder_request.session is not None
     assert builder_request.session.session_id == f"{workspace.id}:team_agent:{team.id}:{builder.id}"
     assert builder_request.context.metadata["agent_mailbox"]["unread_count"] == 1
-    assert builder_request.context.metadata["agent_mailbox"]["latest_unread_messages"][0][
-        "body_preview"
-    ] == "Start with the runtime ensure path."
+    assert (
+        builder_request.context.metadata["agent_mailbox"]["latest_unread_messages"][0][
+            "body_preview"
+        ]
+        == "Start with the runtime ensure path."
+    )
     assert builder_request.context.metadata["team_context"]["team_name"] == "Product Team"
     assert "Team context:" in builder_request.input_text
     assert "Use mailbox tools to read handoffs and coordinate with teammates" in (

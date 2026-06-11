@@ -1,21 +1,12 @@
 import re
 
 OPENAI_COMPATIBLE_PROVIDERS = {"openai", "openai-compatible"}
-ANTHROPIC_PROVIDERS = {"anthropic", "claude"}
+ANTHROPIC_PROVIDERS = {"anthropic"}
 
 _PROVIDER_ALIASES = {
-    "api-openai-com": "openai",
-    "open-ai": "openai",
     "openai": "openai",
-    "openai-api": "openai",
     "openai-compatible": "openai-compatible",
-    "openai-compatible-api": "openai-compatible",
-    "openai-compatible-gateway": "openai-compatible",
-    "openai-gateway": "openai-compatible",
     "anthropic": "anthropic",
-    "anthropic-api": "anthropic",
-    "claude": "anthropic",
-    "claude-api": "anthropic",
 }
 
 

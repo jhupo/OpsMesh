@@ -184,13 +184,21 @@ async def update_workspace(
     workspace = WorkspaceService(session).get_scoped(context.workspace.id)
     if workspace is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
-    return WorkspaceResponse.model_validate(
-        WorkspaceService(session).update(
+    try:
+        updated = WorkspaceService(session).update(
             workspace,
             request,
             actor_user_id=context.user.user_id,
         )
-    )
+    except ValueError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
+    return WorkspaceResponse.model_validate(updated)
 
 
 @router.get("/{workspace_id}/members", response_model=PageResponse[WorkspaceMemberResponse])

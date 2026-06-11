@@ -26,7 +26,7 @@ def activity_phase(run_status: str, event_type: str | None) -> str:
         return "waiting_runtime"
     if run_status == "waiting_approval":
         return "waiting_approval"
-    if event_type in {"tool.waiting", "runtime.waiting", "run.waiting_runtime"}:
+    if event_type in {"tool.waiting", "runtime.waiting", "run.waiting.runtime"}:
         return "waiting_runtime"
     if event_type == "approval.requested":
         return "waiting_approval"
@@ -46,7 +46,7 @@ def activity_phase(run_status: str, event_type: str | None) -> str:
         return "model_processing"
     if event_type == "model.request_failed":
         return "model_failed"
-    if event_type in {"model_provider.fallback_selected", "model.fallback"}:
+    if event_type == "model_provider.fallback_selected":
         return "model_routing"
     if event_type in {"model.usage", "agent.raw_item"}:
         return "model_running"

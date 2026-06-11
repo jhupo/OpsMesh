@@ -39,6 +39,16 @@ from backend.app.capabilities.models import (
 )
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.reviews.constants import (
+    RESOURCE_STATUS_ACTIVE,
+    RESOURCE_STATUS_PENDING_APPROVAL,
+    REVIEW_TYPE_CAPABILITY,
+    REVIEW_TYPE_MCP_CREDENTIAL_REFERENCE,
+    REVIEW_TYPE_MCP_SERVER,
+    REVIEW_TYPE_MCP_TOOL_ALLOWLIST,
+    REVIEW_TYPE_SKILL,
+)
+from backend.app.reviews.service import ResourceReviewService
 from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.redaction import redact_sensitive_text
@@ -147,9 +157,43 @@ class CapabilityService:
             statement = statement.where(Capability.category == category)
         return self._page(statement.order_by(Capability.category.asc(), Capability.key.asc()), page)
 
-    def create_capability(self, data: CapabilityCreateRequest) -> Capability:
-        capability = Capability(**data.model_dump())
+    def create_capability(
+        self,
+        data: CapabilityCreateRequest,
+        workspace_id: UUID,
+        actor_user_id: UUID | None = None,
+    ) -> Capability:
+        review = ResourceReviewService(self._session, self._settings).review_capability(
+            workspace_id=workspace_id,
+            key=data.key,
+            name=data.name,
+            category=data.category,
+            description=data.description,
+            default_policy=data.default_policy,
+        )
+        status = RESOURCE_STATUS_PENDING_APPROVAL if review.required else RESOURCE_STATUS_ACTIVE
+        capability = Capability(status=status, **data.model_dump())
         self._session.add(capability)
+        flush_or_raise_conflict(self._session, "Capability key already exists")
+        if review.required:
+            ResourceReviewService(self._session, self._settings).request_resource_review(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                approval_type=REVIEW_TYPE_CAPABILITY,
+                target_type="capability",
+                target_id=capability.id,
+                target_name=capability.name,
+                review=review,
+                snapshot={
+                    "id": str(capability.id),
+                    "key": capability.key,
+                    "name": capability.name,
+                    "category": capability.category,
+                    "description": capability.description,
+                    "default_policy": dict(capability.default_policy),
+                    "status": capability.status,
+                },
+            )
         commit_or_raise_conflict(self._session, "Capability key already exists")
         self._session.refresh(capability)
         return capability
@@ -172,10 +216,47 @@ class CapabilityService:
         statement = statement.order_by(Skill.key.asc())
         return self._page(statement, page)
 
-    def create_skill(self, data: SkillCreateRequest, workspace_id: UUID | None = None) -> Skill:
-        owner_workspace_id = workspace_id if data.visibility == "private" else None
-        skill = Skill(owner_workspace_id=owner_workspace_id, **data.model_dump())
+    def create_skill(
+        self,
+        data: SkillCreateRequest,
+        workspace_id: UUID | None = None,
+        actor_user_id: UUID | None = None,
+    ) -> Skill:
+        review = ResourceReviewService(self._session, self._settings).review_skill(
+            workspace_id=workspace_id,
+            visibility=data.visibility,
+            manifest=data.manifest,
+            capability_keys=data.capability_keys,
+        )
+        owner_workspace_id = (
+            workspace_id
+            if data.visibility == "private" or (review.required and workspace_id is not None)
+            else None
+        )
+        status = RESOURCE_STATUS_PENDING_APPROVAL if review.required else RESOURCE_STATUS_ACTIVE
+        skill = Skill(owner_workspace_id=owner_workspace_id, status=status, **data.model_dump())
         self._session.add(skill)
+        flush_or_raise_conflict(self._session, "Skill version already exists")
+        if review.required and workspace_id is not None:
+            ResourceReviewService(self._session, self._settings).request_resource_review(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                approval_type=REVIEW_TYPE_SKILL,
+                target_type="skill",
+                target_id=skill.id,
+                target_name=skill.name,
+                review=review,
+                snapshot={
+                    "id": str(skill.id),
+                    "key": skill.key,
+                    "name": skill.name,
+                    "version": skill.version,
+                    "visibility": skill.visibility,
+                    "status": skill.status,
+                    "capability_keys": list(skill.capability_keys),
+                    "manifest": dict(skill.manifest),
+                },
+            )
         commit_or_raise_conflict(self._session, "Skill version already exists")
         self._session.refresh(skill)
         return skill
@@ -1410,17 +1491,53 @@ class CapabilityService:
         data: McpServerCreateRequest,
         actor_user_id: UUID | None = None,
     ) -> McpServer:
-        server = McpServer(workspace_id=workspace_id, **data.model_dump())
+        review = ResourceReviewService(self._session, self._settings).review_mcp_server(
+            workspace_id=workspace_id,
+            server_type=data.server_type,
+            connection=data.connection,
+            visibility=data.visibility,
+        )
+        server = McpServer(
+            workspace_id=workspace_id,
+            status=RESOURCE_STATUS_PENDING_APPROVAL if review.required else RESOURCE_STATUS_ACTIVE,
+            **data.model_dump(),
+        )
         self._session.add(server)
         flush_or_raise_conflict(self._session, "MCP server name already exists")
+        if review.required:
+            ResourceReviewService(self._session, self._settings).request_resource_review(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                approval_type=REVIEW_TYPE_MCP_SERVER,
+                target_type="mcp_server",
+                target_id=server.id,
+                target_name=server.name,
+                review=review,
+                snapshot={
+                    "id": str(server.id),
+                    "name": server.name,
+                    "server_type": server.server_type,
+                    "visibility": server.visibility,
+                    "status": server.status,
+                    "connection": dict(server.connection),
+                },
+            )
         if actor_user_id is not None:
             AuditService(self._session).record_user_action(
                 workspace_id=workspace_id,
                 user_id=actor_user_id,
-                action="mcp_server.created",
+                action="mcp_server.created"
+                if not review.required
+                else "mcp_server.review_requested",
                 target_type="mcp_server",
                 target_id=server.id,
-                metadata={"name": server.name, "server_type": server.server_type},
+                metadata={
+                    "name": server.name,
+                    "server_type": server.server_type,
+                    "review_required": review.required,
+                    "review_risk_level": review.risk_level,
+                    "review_reasons": review.reasons,
+                },
             )
         commit_or_raise_conflict(self._session, "MCP server name already exists")
         self._session.refresh(server)
@@ -1442,24 +1559,55 @@ class CapabilityService:
         actor_user_id: UUID | None = None,
     ) -> McpToolAllowlist:
         self._require_server(workspace_id, mcp_server_id)
+        review = ResourceReviewService(self._session, self._settings).review_mcp_tool_allowlist(
+            workspace_id=workspace_id,
+            tool_name=data.tool_name,
+            requires_approval=data.requires_approval,
+            risk_level=data.risk_level,
+            policy=data.policy,
+        )
         allow = McpToolAllowlist(
             workspace_id=workspace_id,
             mcp_server_id=mcp_server_id,
+            status=RESOURCE_STATUS_PENDING_APPROVAL if review.required else RESOURCE_STATUS_ACTIVE,
             **data.model_dump(),
         )
         self._session.add(allow)
         flush_or_raise_conflict(self._session, "MCP tool is already allowed for this server")
+        if review.required:
+            ResourceReviewService(self._session, self._settings).request_resource_review(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                approval_type=REVIEW_TYPE_MCP_TOOL_ALLOWLIST,
+                target_type="mcp_tool_allowlist",
+                target_id=allow.id,
+                target_name=allow.tool_name,
+                review=review,
+                snapshot={
+                    "id": str(allow.id),
+                    "mcp_server_id": str(allow.mcp_server_id),
+                    "tool_name": allow.tool_name,
+                    "capability_key": allow.capability_key,
+                    "requires_approval": allow.requires_approval,
+                    "risk_level": allow.risk_level,
+                    "policy": dict(allow.policy),
+                    "status": allow.status,
+                },
+            )
         if actor_user_id is not None:
             AuditService(self._session).record_user_action(
                 workspace_id=workspace_id,
                 user_id=actor_user_id,
-                action="mcp_tool.allowed",
+                action="mcp_tool.allowed" if not review.required else "mcp_tool.review_requested",
                 target_type="mcp_tool_allowlist",
                 target_id=allow.id,
                 metadata={
                     "mcp_server_id": str(mcp_server_id),
                     "tool_name": allow.tool_name,
                     "risk_level": allow.risk_level,
+                    "review_required": review.required,
+                    "review_risk_level": review.risk_level,
+                    "review_reasons": review.reasons,
                 },
             )
         commit_or_raise_conflict(self._session, "MCP tool is already allowed for this server")
@@ -1817,8 +1965,21 @@ class CapabilityService:
     ) -> McpCredentialReference:
         if data.mcp_server_id is not None:
             self._require_server(workspace_id, data.mcp_server_id)
+        review = ResourceReviewService(
+            self._session,
+            self._settings,
+        ).review_mcp_credential_reference(
+            workspace_id=workspace_id,
+            mcp_server_id=data.mcp_server_id,
+            name=data.name,
+            provider=data.provider,
+            external_ref=data.external_ref,
+            scopes=data.scopes,
+            has_secret_payload=data.secret_payload is not None,
+        )
         credential = McpCredentialReference(
             workspace_id=workspace_id,
+            status=RESOURCE_STATUS_PENDING_APPROVAL if review.required else RESOURCE_STATUS_ACTIVE,
             **data.model_dump(exclude={"secret_payload"}),
         )
         if data.secret_payload is not None:
@@ -1832,11 +1993,38 @@ class CapabilityService:
             credential.encryption_key_id = encrypted.key_id
         self._session.add(credential)
         flush_or_raise_conflict(self._session, "MCP credential name already exists")
+        if review.required:
+            ResourceReviewService(self._session, self._settings).request_resource_review(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                approval_type=REVIEW_TYPE_MCP_CREDENTIAL_REFERENCE,
+                target_type="mcp_credential_reference",
+                target_id=credential.id,
+                target_name=credential.name,
+                review=review,
+                snapshot={
+                    "id": str(credential.id),
+                    "mcp_server_id": str(credential.mcp_server_id)
+                    if credential.mcp_server_id is not None
+                    else None,
+                    "name": credential.name,
+                    "provider": credential.provider,
+                    "external_ref_configured": bool(credential.external_ref),
+                    "has_hosted_secret": credential.encrypted_secret_payload is not None,
+                    "secret_fingerprint": credential.secret_fingerprint,
+                    "scopes": list(credential.scopes),
+                    "status": credential.status,
+                },
+            )
         if actor_user_id is not None:
             AuditService(self._session).record_user_action(
                 workspace_id=workspace_id,
                 user_id=actor_user_id,
-                action="mcp_credential.created",
+                action=(
+                    "mcp_credential.review_requested"
+                    if review.required
+                    else "mcp_credential.created"
+                ),
                 target_type="mcp_credential_reference",
                 target_id=credential.id,
                 metadata={
@@ -1846,6 +2034,9 @@ class CapabilityService:
                     else None,
                     "provider": credential.provider,
                     "has_hosted_secret": credential.encrypted_secret_payload is not None,
+                    "review_required": review.required,
+                    "review_risk_level": review.risk_level,
+                    "review_reasons": review.reasons,
                 },
             )
         commit_or_raise_conflict(self._session, "MCP credential name already exists")

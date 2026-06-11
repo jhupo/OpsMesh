@@ -22,17 +22,12 @@ from backend.app.tasks.models import Task, TaskMessage, TaskStep
 _SOURCE_LIMIT = 80
 
 
-WorkspaceMemoryRanker = MemorySearchBackend
-LexicalMemoryRanker = LexicalMemorySearchBackend
-
-
 class WorkspaceMemorySearchService:
     """Workspace-scoped search across operational memory with pluggable backends."""
 
-    def __init__(self, session: Session, ranker: WorkspaceMemoryRanker | None = None) -> None:
+    def __init__(self, session: Session, ranker: MemorySearchBackend | None = None) -> None:
         self._session = session
-        self._backend = ranker or LexicalMemoryRanker()
-        self._fallback_backend = LexicalMemoryRanker()
+        self._backend = ranker or LexicalMemorySearchBackend()
 
     def search(
         self,
@@ -64,8 +59,6 @@ class WorkspaceMemorySearchService:
             documents=candidates,
         )
         hits = self._backend.search(request)
-        if not hits and self._backend.backend_name != self._fallback_backend.backend_name:
-            hits = self._fallback_backend.search(request)
         return [_result_payload(hit) for hit in hits[:limit]]
 
     def _candidates(self, workspace_id: UUID) -> list[MemorySearchDocument]:

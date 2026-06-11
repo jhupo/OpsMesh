@@ -13,6 +13,12 @@ from pydantic import (
 
 from backend.app.api.schemas.common import TimestampedModel
 from backend.app.api.schemas.redaction import redact_sensitive_payload
+from backend.app.reviews.constants import (
+    DEFAULT_RESOURCE_REVIEW_MODEL,
+    MODEL_REQUEST_REVIEW_SETTINGS_KEY,
+    RESOURCE_REVIEW_SETTINGS_KEY,
+    SEMANTIC_REVIEW_SETTINGS_KEY,
+)
 
 
 class WorkspaceCreateRequest(BaseModel):
@@ -28,24 +34,89 @@ class WorkspaceUpdateRequest(BaseModel):
 
     @field_validator("settings")
     @classmethod
-    def _validate_scheduler_settings(
+    def _validate_settings(
         cls,
         value: dict[str, object] | None,
     ) -> dict[str, object] | None:
         if value is None:
             return value
-        raw_scheduler = value.get("scheduler")
-        if raw_scheduler is None:
-            return value
-        if not isinstance(raw_scheduler, dict):
-            raise ValueError("scheduler settings must be an object")
-        paused = raw_scheduler.get("paused")
-        if paused is not None and not isinstance(paused, bool):
-            raise ValueError("scheduler.paused must be a boolean")
-        pause_reason = raw_scheduler.get("pause_reason")
-        if pause_reason is not None and not isinstance(pause_reason, str):
-            raise ValueError("scheduler.pause_reason must be a string")
+        _validate_scheduler_settings(value)
+        _validate_resource_review_settings(value)
         return value
+
+
+def _validate_scheduler_settings(settings: dict[str, object]) -> None:
+    raw_scheduler = settings.get("scheduler")
+    if raw_scheduler is None:
+        return
+    if not isinstance(raw_scheduler, dict):
+        raise ValueError("scheduler settings must be an object")
+    paused = raw_scheduler.get("paused")
+    if paused is not None and not isinstance(paused, bool):
+        raise ValueError("scheduler.paused must be a boolean")
+    pause_reason = raw_scheduler.get("pause_reason")
+    if pause_reason is not None and not isinstance(pause_reason, str):
+        raise ValueError("scheduler.pause_reason must be a string")
+
+
+def _validate_resource_review_settings(settings: dict[str, object]) -> None:
+    raw_resource_review = settings.get(RESOURCE_REVIEW_SETTINGS_KEY)
+    if raw_resource_review is None:
+        return
+    if not isinstance(raw_resource_review, dict):
+        raise ValueError("resource_review settings must be an object")
+    _validate_model_request_review_settings(raw_resource_review)
+    raw_semantic = raw_resource_review.get(SEMANTIC_REVIEW_SETTINGS_KEY)
+    if raw_semantic is None:
+        return
+    if not isinstance(raw_semantic, dict):
+        raise ValueError("resource_review.semantic_review must be an object")
+    enabled = raw_semantic.get("enabled")
+    if enabled is not None and not isinstance(enabled, bool):
+        raise ValueError("resource_review.semantic_review.enabled must be a boolean")
+    credential_id = raw_semantic.get("model_provider_credential_id")
+    if credential_id not in (None, ""):
+        try:
+            UUID(str(credential_id))
+        except ValueError as exc:
+            raise ValueError(
+                "resource_review.semantic_review.model_provider_credential_id must be a UUID"
+            ) from exc
+    model = raw_semantic.get("model")
+    if model is None:
+        raw_semantic["model"] = DEFAULT_RESOURCE_REVIEW_MODEL
+    elif not isinstance(model, str) or not model.strip():
+        raise ValueError("resource_review.semantic_review.model must be a non-empty string")
+    timeout_seconds = raw_semantic.get("timeout_seconds")
+    if timeout_seconds is not None and (
+        isinstance(timeout_seconds, bool)
+        or not isinstance(timeout_seconds, int | float)
+        or not 1 <= timeout_seconds <= 120
+    ):
+        raise ValueError(
+            "resource_review.semantic_review.timeout_seconds must be between 1 and 120"
+        )
+    fail_closed = raw_semantic.get("fail_closed")
+    if fail_closed is not None and not isinstance(fail_closed, bool):
+        raise ValueError("resource_review.semantic_review.fail_closed must be a boolean")
+    if fail_closed is False:
+        raise ValueError("resource_review.semantic_review.fail_closed must remain true")
+
+
+def _validate_model_request_review_settings(resource_review: dict[str, object]) -> None:
+    raw_model_request = resource_review.get(MODEL_REQUEST_REVIEW_SETTINGS_KEY)
+    if raw_model_request is None:
+        return
+    if not isinstance(raw_model_request, dict):
+        raise ValueError("resource_review.model_request_review must be an object")
+    semantic_mode = raw_model_request.get("semantic_mode")
+    if semantic_mode is None:
+        raw_model_request["semantic_mode"] = "always"
+        return
+    if semantic_mode != "always":
+        raise ValueError(
+            "resource_review.model_request_review.semantic_mode must be always"
+        )
 
 
 class WorkspaceResponse(TimestampedModel):

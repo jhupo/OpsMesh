@@ -2,6 +2,7 @@ import json
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from types import TracebackType
 from typing import Any
 from uuid import UUID
@@ -30,6 +31,7 @@ from backend.app.agent_runtime.sessions import (
 )
 from backend.app.agent_runtime.tools import PRODUCT_TOOL_NAMES, BackendToolExecutor
 from backend.app.agents.models import AgentProfile
+from backend.app.approvals.service import ApprovalService
 from backend.app.audit.service import AuditService
 from backend.app.capabilities.adapters import McpAdapterResolver
 from backend.app.capabilities.models import (
@@ -58,6 +60,7 @@ from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.planning.project_plans import ProjectPlanningService
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.reviews.model_request import ModelRequestReview, ModelRequestReviewService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus, require_run_transition
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceReservation
@@ -74,6 +77,7 @@ from backend.app.teams.snapshots import build_team_snapshot
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.lease_lifecycle import mark_agent_run_worker_cancel_requested
 from backend.app.workers.queue import RedisQueue
+from backend.app.workspaces.models import Workspace
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 STEP_STATUS_QUEUED = "queued"
@@ -538,30 +542,17 @@ class RunOrchestrationService:
                 self._session.refresh(run)
                 return run
             self._append_context_built_event(run, request)
-            try:
-                self._append_model_request_started_event(run, request, fallback_selected=False)
-                result = await self._agent_runner.run(request)
-                self._append_model_response_received_event(run, request, result)
-            except Exception as exc:
-                self._append_model_request_failed_event(run, request, exc)
-                self._audit_model_provider_request_failed(run, request, job, exc)
-                self._record_model_provider_failure(
-                    run,
-                    request.model_provider_credential_id,
-                    exc,
-                )
-                self._mark_run_failed(run, exc)
+            result = await self._run_model_request_with_provider_fallback(run, request, job)
+            if result is None:
                 self._session.commit()
-                raise
+                self._session.refresh(run)
+                return run
 
             if self._run_cancelled_after_model_result(run):
                 self._session.commit()
                 self._session.refresh(run)
                 return run
 
-            self._record_model_provider_success(run, request.model_provider_credential_id)
-            self._append_model_provider_used_event(run, request)
-            self._audit_model_provider_used(run, request, job, fallback_selected=False)
             self._map_runtime_events_to_task_messages(run, result)
             if self._agent_result_waiting_runtime(result) or self._run_has_waiting_runtime_event(
                 run
@@ -620,6 +611,119 @@ class RunOrchestrationService:
         task = self._session.get(Task, run.task_id)
         return task is not None and TaskStatus(task.status) == TaskStatus.CANCELLED
 
+    async def _run_model_request_with_provider_fallback(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        job: JobPayload,
+    ) -> AgentRunResult | None:
+        if self._model_request_requires_approval(run, request):
+            return None
+        try:
+            return await self._execute_model_request(
+                run,
+                request,
+                job,
+                fallback_selected=False,
+            )
+        except Exception as exc:
+            fallback_request = self._model_provider_fallback_request(
+                run=run,
+                job=job,
+                failed_request=request,
+                exc=exc,
+            )
+            if fallback_request is None:
+                self._mark_run_failed(run, exc)
+                self._session.commit()
+                raise
+        if self._model_request_requires_approval(run, fallback_request):
+            return None
+        try:
+            result = await self._execute_model_request(
+                run,
+                fallback_request,
+                job,
+                fallback_selected=True,
+            )
+        except Exception as fallback_exc:
+            self._append_model_request_failed_event(run, fallback_request, fallback_exc)
+            self._audit_model_provider_request_failed(run, fallback_request, job, fallback_exc)
+            self._record_model_provider_failure(
+                run,
+                fallback_request.model_provider_credential_id,
+                fallback_exc,
+            )
+            self._mark_run_failed(run, fallback_exc)
+            self._session.commit()
+            raise
+        self._append_model_provider_fallback_selected_event(
+            run,
+            failed_request=request,
+            selected_request=fallback_request,
+        )
+        self._append_model_provider_used_event(run, fallback_request)
+        self._audit_model_provider_used(run, fallback_request, job, fallback_selected=True)
+        return result
+
+    async def _execute_model_request(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        job: JobPayload,
+        *,
+        fallback_selected: bool,
+    ) -> AgentRunResult:
+        try:
+            self._append_model_request_started_event(
+                run,
+                request,
+                fallback_selected=fallback_selected,
+            )
+            result = await self._agent_runner.run(request)
+            self._append_model_response_received_event(run, request, result)
+        except Exception as exc:
+            self._append_model_request_failed_event(run, request, exc)
+            self._audit_model_provider_request_failed(run, request, job, exc)
+            self._record_model_provider_failure(
+                run,
+                request.model_provider_credential_id,
+                exc,
+            )
+            raise
+        self._record_model_provider_success(run, request.model_provider_credential_id)
+        if not fallback_selected:
+            self._append_model_provider_used_event(run, request)
+            self._audit_model_provider_used(run, request, job, fallback_selected=False)
+        return result
+
+    def _model_request_requires_approval(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+    ) -> bool:
+        input_text = _model_request_review_input(
+            run,
+            self._session.get(Task, run.task_id) if run.task_id is not None else None,
+            request,
+        )
+        request_fingerprint = _model_request_review_fingerprint(request, input_text)
+        review = ModelRequestReviewService(
+            self._session,
+            self._settings,
+        ).review_request(
+            workspace_id=run.workspace_id,
+            input_text=input_text,
+            context=_model_request_review_context(request),
+        )
+        if review.approved or self._model_request_review_already_approved(
+            run,
+            request_fingerprint,
+        ):
+            return False
+        self._request_model_request_approval(run, request, review, request_fingerprint)
+        return True
+
     def run_agent_sync(self, job: JobPayload) -> AgentRun:
         import asyncio
 
@@ -655,7 +759,7 @@ class RunOrchestrationService:
     def _mark_run_waiting_runtime(self, run: AgentRun) -> None:
         require_run_transition(RunStatus(run.status), RunStatus.WAITING_RUNTIME)
         run.status = RunStatus.WAITING_RUNTIME.value
-        self._append_event(run, "run.waiting_runtime", "Run is waiting for runtime tool result")
+        self._append_event(run, "run.waiting.runtime", "Run is waiting for runtime tool result")
 
     def _mark_run_completed(
         self,
@@ -1012,6 +1116,65 @@ class RunOrchestrationService:
             },
         )
 
+    def _request_model_request_approval(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        review: ModelRequestReview,
+        request_fingerprint: str,
+    ) -> None:
+        ApprovalService(self._session).create_approval(
+            workspace_id=run.workspace_id,
+            task_id=run.task_id,
+            agent_run_id=run.id,
+            requested_by_agent_profile_id=run.agent_profile_id,
+            approval_type="model.request",
+            risk_level=review.risk_level,
+            payload={
+                "reason": "model_request_review_requires_approval",
+                "model": request.model,
+                "provider": request.provider,
+                "model_provider_credential_id": str(request.model_provider_credential_id)
+                if request.model_provider_credential_id is not None
+                else None,
+                "request_fingerprint": request_fingerprint,
+                "review": review.approval_payload(),
+            },
+        )
+        run.status = RunStatus.WAITING_APPROVAL.value
+        if run.task_id is not None:
+            task = self._session.get(Task, run.task_id)
+            if task is not None and task.status == TaskStatus.RUNNING.value:
+                TaskStateService().transition(task, TaskStatus.WAITING_APPROVAL)
+        self._append_event(
+            run,
+            "approval.requested",
+            "Model request requires approval",
+            {
+                "approval_type": "model.request",
+                "risk_level": review.risk_level,
+                "reasons": review.reasons,
+            },
+        )
+
+    def _model_request_review_already_approved(
+        self,
+        run: AgentRun,
+        request_fingerprint: str,
+    ) -> bool:
+        from backend.app.approvals.models import Approval
+
+        approved = self._session.scalar(
+            select(Approval.id).where(
+                Approval.workspace_id == run.workspace_id,
+                Approval.agent_run_id == run.id,
+                Approval.approval_type == "model.request",
+                Approval.status == "approved",
+                Approval.payload["request_fingerprint"].as_string() == request_fingerprint,
+            )
+        )
+        return approved is not None
+
     def _append_model_response_received_event(
         self,
         run: AgentRun,
@@ -1130,6 +1293,74 @@ class RunOrchestrationService:
             {"reason": error.as_dict()},
         )
         self._append_team_runtime_model_provider_event(run, event)
+
+    def _append_model_provider_fallback_selected_event(
+        self,
+        run: AgentRun,
+        *,
+        failed_request: AgentRunRequest,
+        selected_request: AgentRunRequest,
+    ) -> None:
+        event = self._append_event(
+            run,
+            "model_provider.fallback_selected",
+            "Model provider fallback selected",
+            {
+                "failed_provider": _model_provider_request_snapshot(failed_request),
+                "model_provider": _model_provider_request_snapshot(selected_request)
+                | {
+                    "source": "workspace_model_provider_fallback",
+                    "selected_model": selected_request.model,
+                },
+            },
+        )
+        self._append_team_runtime_model_provider_event(run, event)
+
+    def _append_model_provider_fallback_unavailable_event(
+        self,
+        run: AgentRun,
+        *,
+        failed_request: AgentRunRequest,
+        exc: Exception,
+    ) -> None:
+        error = normalize_agent_error(exc)
+        event = self._append_event(
+            run,
+            "model_provider.fallback_unavailable",
+            "Model provider fallback was unavailable",
+            {
+                "reason": error.as_dict(),
+                "failed_provider": _model_provider_request_snapshot(failed_request),
+            },
+        )
+        self._append_team_runtime_model_provider_event(run, event)
+
+    def _audit_model_provider_fallback_unavailable(
+        self,
+        run: AgentRun,
+        *,
+        failed_request: AgentRunRequest,
+        exc: Exception,
+    ) -> None:
+        if failed_request.context.user_id is None:
+            return
+        error = normalize_agent_error(exc)
+        AuditService(self._session).record_user_action(
+            workspace_id=run.workspace_id,
+            user_id=failed_request.context.user_id,
+            action="model_provider.fallback_unavailable",
+            target_type="agent_run",
+            target_id=run.id,
+            metadata={
+                "task_id": str(run.task_id) if run.task_id is not None else None,
+                "task_step_id": str(run.task_step_id) if run.task_step_id is not None else None,
+                "agent_profile_id": str(run.agent_profile_id)
+                if run.agent_profile_id is not None
+                else None,
+                "reason": error.as_dict(),
+                "failed_provider": _model_provider_request_snapshot(failed_request),
+            },
+        )
 
     def _append_event(
         self,
@@ -1670,6 +1901,98 @@ class RunOrchestrationService:
             model_api=model_api,
             prefer_model_api=prefer_model_api,
         )
+
+    def _model_provider_fallback_request(
+        self,
+        *,
+        run: AgentRun,
+        job: JobPayload,
+        failed_request: AgentRunRequest,
+        exc: Exception,
+    ) -> AgentRunRequest | None:
+        fallback = self._model_provider_fallback_override(
+            run=run,
+            failed_request=failed_request,
+            exc=exc,
+        )
+        if fallback is None:
+            return None
+        request = self._build_agent_request(run, job, model_provider_override=fallback)
+        self._append_context_built_event(run, request)
+        return request
+
+    def _model_provider_fallback_override(
+        self,
+        *,
+        run: AgentRun,
+        failed_request: AgentRunRequest,
+        exc: Exception,
+    ) -> dict[str, Any] | None:
+        policy = _model_provider_fallback_policy(self._workspace_settings(run.workspace_id))
+        if policy is None:
+            return None
+        error_code = normalize_agent_error(exc).code
+        retry_error_codes = policy.get("retry_error_codes")
+        if isinstance(retry_error_codes, list) and retry_error_codes:
+            allowed_codes = {item for item in retry_error_codes if isinstance(item, str)}
+            if error_code not in allowed_codes:
+                return None
+        candidates = policy.get("candidates")
+        if not isinstance(candidates, list):
+            return None
+        for candidate in candidates:
+            override = self._model_provider_fallback_candidate_override(
+                workspace_id=run.workspace_id,
+                failed_request=failed_request,
+                candidate=candidate,
+            )
+            if override is not None:
+                return override
+        self._append_model_provider_fallback_unavailable_event(
+            run,
+            failed_request=failed_request,
+            exc=exc,
+        )
+        self._audit_model_provider_fallback_unavailable(
+            run,
+            failed_request=failed_request,
+            exc=exc,
+        )
+        return None
+
+    def _model_provider_fallback_candidate_override(
+        self,
+        *,
+        workspace_id: UUID,
+        failed_request: AgentRunRequest,
+        candidate: object,
+    ) -> dict[str, Any] | None:
+        if not isinstance(candidate, dict):
+            return None
+        credential_id = _uuid_or_none(candidate.get("credential_id"))
+        if credential_id is None or credential_id == failed_request.model_provider_credential_id:
+            return None
+        model = _optional_string(candidate.get("model"))
+        if model is None:
+            return None
+        try:
+            override = self._resolve_model_provider(
+                workspace_id=workspace_id,
+                credential_id=credential_id,
+                agent_model=model,
+                model_api=canonical_model_api(candidate.get("model_api")),
+                prefer_model_api="model_api" in candidate,
+            )
+        except (ModelProviderUnavailableError, ValueError):
+            return None
+        if override["provider"] == failed_request.provider:
+            return None
+        return override
+
+    def _workspace_settings(self, workspace_id: UUID) -> dict[str, object]:
+        workspace = self._session.get(Workspace, workspace_id)
+        settings = workspace.settings if workspace is not None else {}
+        return settings if isinstance(settings, dict) else {}
 
     def _resolve_model_provider(
         self,
@@ -3206,31 +3529,32 @@ class RunOrchestrationService:
         raw_output = _json_object_from_text(final_output)
         if raw_output is None:
             return {
-                "decision": "approved",
+                "decision": "request_revision",
                 "summary": final_output,
-                "reasons": [],
+                "reasons": ["pm_acceptance.invalid_json_requires_review"],
                 "revision_requests": [],
                 "missing_work_packages": [],
                 "raw_output": final_output,
             }
 
         decision = _normalize_pm_decision(raw_output.get("decision"))
-        if decision is None:
-            decision = _normalize_pm_decision(raw_output.get("acceptance_decision"))
-        if decision is None:
-            decision = _normalize_pm_decision(raw_output.get("status"))
         summary = raw_output.get("summary")
         if not isinstance(summary, str) or not summary:
             summary = raw_output.get("final_output")
         if not isinstance(summary, str) or not summary:
             summary = final_output
+        reasons = _string_list_or_single(raw_output.get("reasons") or raw_output.get("reason"))
+        if decision is None:
+            decision = "request_revision"
+            reasons = [
+                "pm_acceptance.invalid_decision_requires_review",
+                *reasons,
+            ]
 
         return {
-            "decision": decision or "approved",
+            "decision": decision,
             "summary": summary,
-            "reasons": _string_list_or_single(
-                raw_output.get("reasons") or raw_output.get("reason")
-            ),
+            "reasons": reasons,
             "revision_requests": _dict_list(raw_output.get("revision_requests")),
             "missing_work_packages": _dict_list(raw_output.get("missing_work_packages")),
             "review_policy": step.review_policy,
@@ -4237,6 +4561,82 @@ def _run_model_from_snapshot(
     return profile.model if profile is not None else None
 
 
+def _model_request_review_context(request: AgentRunRequest) -> dict[str, object]:
+    return {
+        "agent_profile_id": str(request.agent_profile.id)
+        if request.agent_profile.id is not None
+        else None,
+        "agent_role": request.agent_profile.role,
+        "task_id": str(request.context.task_id) if request.context.task_id is not None else None,
+        "run_id": str(request.context.run_id),
+        "model": request.model,
+        "provider": request.provider,
+        "model_api": request.model_api,
+        "model_provider_credential_id": str(request.model_provider_credential_id)
+        if request.model_provider_credential_id is not None
+        else None,
+        "allowed_tools": list(request.context.allowed_tools),
+    }
+
+
+def _model_request_review_input(
+    run: AgentRun,
+    task: Task | None,
+    request: AgentRunRequest,
+) -> str:
+    parts: list[str] = []
+    if task is not None:
+        parts.append(f"Task title: {task.title}")
+        if task.description:
+            parts.append(f"Task description: {task.description}")
+        if task.input:
+            parts.append(f"Task input: {task.input}")
+    if run.input:
+        parts.append(f"Run input: {run.input}")
+    if parts:
+        return "\n\n".join(parts)
+    return request.input_text
+
+
+def _model_request_review_fingerprint(request: AgentRunRequest, input_text: str) -> str:
+    payload = {
+        "agent_profile_id": str(request.agent_profile.id)
+        if request.agent_profile.id is not None
+        else None,
+        "input_sha256": sha256(input_text.encode("utf-8")).hexdigest(),
+        "model": request.model,
+        "model_api": request.model_api,
+        "provider": request.provider,
+        "model_provider_credential_id": str(request.model_provider_credential_id)
+        if request.model_provider_credential_id is not None
+        else None,
+        "allowed_tools": sorted(request.context.allowed_tools),
+        "continuation_count": len(request.continuations),
+    }
+    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _model_provider_request_snapshot(request: AgentRunRequest) -> dict[str, object]:
+    return {
+        "provider": request.provider,
+        "model": request.model,
+        "model_api": request.model_api,
+        "credential_id": str(request.model_provider_credential_id)
+        if request.model_provider_credential_id is not None
+        else None,
+    }
+
+
+def _model_provider_fallback_policy(settings: dict[str, object]) -> dict[str, object] | None:
+    raw = settings.get("model_provider_fallback")
+    if not isinstance(raw, dict):
+        return None
+    if raw.get("enabled") is not True:
+        return None
+    return raw
+
+
 def _stale_recovery_anchor(run: AgentRun) -> datetime | None:
     if run.status == RunStatus.RUNNING.value:
         anchor = run.started_at or run.updated_at or run.created_at
@@ -4377,22 +4777,10 @@ def _json_safe_object(value: object) -> object:
 def _normalize_pm_decision(value: object) -> str | None:
     if not isinstance(value, str):
         return None
-    normalized = value.strip().lower().replace("-", "_")
-    aliases = {
-        "approve": "approved",
-        "approved": "approved",
-        "complete": "approved",
-        "completed": "approved",
-        "pass": "approved",
-        "request_revision": "request_revision",
-        "needs_revision": "request_revision",
-        "revision": "request_revision",
-        "revise": "request_revision",
-        "add_missing_work": "add_missing_work",
-        "missing_work": "add_missing_work",
-        "add_work": "add_missing_work",
-    }
-    return aliases.get(normalized)
+    normalized = value.strip().lower()
+    if normalized in {"approved", "request_revision", "add_missing_work"}:
+        return normalized
+    return None
 
 
 def _string_list_or_single(value: object) -> list[str]:

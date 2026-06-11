@@ -198,7 +198,7 @@ async def create_agent(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> AgentProfileResponse:
-    agent_service = AgentManagementService(session)
+    agent_service = AgentManagementService(session, settings)
     idempotency = IdempotencyService(redis, RedisKeyBuilder(settings.redis_key_prefix))
     try:
         agent = run_idempotent_create(
@@ -319,7 +319,7 @@ async def clone_agent(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> AgentProfileResponse:
-    agent_service = AgentManagementService(session)
+    agent_service = AgentManagementService(session, settings)
     idempotency = IdempotencyService(redis, RedisKeyBuilder(settings.redis_key_prefix))
     try:
         agent = run_idempotent_create(

@@ -141,7 +141,20 @@ class TeamProviderReadinessService:
             else None
         )
         if unsupported_model_api is not None:
-            warnings.append("model_api_override_unsupported")
+            reasons.append("model_api_override_unsupported")
+        effective_model_api = agent_model_api
+        if credential is not None:
+            try:
+                effective_model_api = model_api_for_agent_provider(
+                    credential.provider,
+                    agent.model_settings if agent is not None else None,
+                    credential.budget_metadata,
+                )
+            except ValueError:
+                effective_model_api = None
+        readiness_status = (
+            "blocked" if reasons else "degraded" if warnings else "ready"
+        )
         runtime_participant = member.status == "active" and member.accepts_tasks is True
         return {
             "team_member_id": member.id,
@@ -158,15 +171,7 @@ class TeamProviderReadinessService:
             "warnings": warnings,
             "provider": credential.provider if credential is not None else None,
             "model": selected_model,
-            "model_api": (
-                model_api_for_agent_provider(
-                    credential.provider,
-                    agent.model_settings if agent is not None else None,
-                    credential.budget_metadata,
-                )
-                if credential is not None
-                else agent_model_api
-            ),
+            "model_api": effective_model_api,
             "requested_model_api": unsupported_model_api,
             "model_apis": _model_api_options_payload(credential.provider)
             if credential is not None

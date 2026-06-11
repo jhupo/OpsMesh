@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -12,6 +13,7 @@ from backend.app.admin.policies import RISKY_EXECUTION_POLICY_KEY
 from backend.app.approvals.models import Approval
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
+from backend.app.reviews.service import ResourceReview, ResourceReviewService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import (
@@ -27,6 +29,23 @@ from backend.app.tasks.status import TaskStatus
 from backend.app.tools.context import ToolContext
 from backend.app.tools.runtime_tools import RuntimeToolService
 from backend.app.workspaces.models import Workspace
+
+
+@pytest.fixture(autouse=True)
+def _approve_semantic_runtime_tool_review(monkeypatch: pytest.MonkeyPatch) -> None:
+    def approved_review(self: ResourceReviewService, **_: object) -> ResourceReview:
+        return ResourceReview(
+            required=False,
+            risk_level="low",
+            reasons=["llm_review.approved"],
+            signals={"reviewer": "codex-auto-review"},
+        )
+
+    monkeypatch.setattr(
+        ResourceReviewService,
+        "review_tool_execution",
+        approved_review,
+    )
 
 
 class FakeDockerClient(DockerRuntimeClient):
@@ -138,10 +157,10 @@ def test_runtime_tool_blocks_risky_command_for_approval() -> None:
     approval = session.scalars(select(Approval)).one()
     assert approval.task_id == task.id
     assert approval.agent_run_id == run.id
-    assert approval.payload == {
-        "command": ["rm", "-rf", "/workspace"],
-        "runtime_id": str(runtime.id),
-    }
+    assert approval.payload["command_preview"] == ["rm", "-rf", "/workspace"]
+    assert approval.payload["runtime_id"] == str(runtime.id)
+    assert approval.payload["execution_review"]["risk_level"] == "high"
+    assert "tool.policy.risk_level.high" in approval.payload["execution_review"]["reasons"]
     assert run.status == RunStatus.WAITING_APPROVAL.value
     assert task.status == TaskStatus.WAITING_APPROVAL.value
     events = session.scalars(
@@ -209,7 +228,7 @@ def test_runtime_tool_blocks_when_platform_policy_disables_commands() -> None:
     assert docker.executed == []
 
 
-def test_runtime_tool_executes_high_risk_when_approval_gate_is_disabled() -> None:
+def test_runtime_tool_review_requires_approval_even_when_platform_gate_allows() -> None:
     session = _session()
     workspace, template = _seed_runtime_template(session)
     _seed_risky_policy(session, high_risk_tool_mode="allow")
@@ -234,9 +253,12 @@ def test_runtime_tool_executes_high_risk_when_approval_gate_is_disabled() -> Non
         command=["rm", "-rf", "/workspace"],
     )
 
-    assert result.status == "completed"
-    assert docker.executed == [["rm", "-rf", "/workspace"]]
-    assert session.scalars(select(Approval)).all() == []
+    approval = session.scalar(select(Approval))
+
+    assert result.status == "waiting_approval"
+    assert docker.executed == []
+    assert approval is not None
+    assert approval.payload["execution_review"]["risk_level"] == "high"
 
 
 def test_runtime_tool_blocks_high_risk_when_platform_policy_blocks_it() -> None:

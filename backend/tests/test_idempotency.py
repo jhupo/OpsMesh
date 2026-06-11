@@ -114,29 +114,6 @@ def test_failed_reservation_retry_records_success_for_later_deduplication() -> N
     assert len(resources) == 1
 
 
-def test_idempotency_service_supports_legacy_values() -> None:
-    redis = fakeredis.FakeRedis(decode_responses=True)
-    keys = RedisKeyBuilder("chaincloud")
-    service = IdempotencyService(redis, keys)
-    scope_id = uuid4()
-    resource_id = uuid4()
-    storage_key = keys.idempotency_key(
-        str(scope_id),
-        "http:tasks.create:legacy",
-    )
-    redis.set(storage_key, str(resource_id))
-
-    repeated = service.reserve(
-        scope_id=scope_id,
-        operation="tasks.create",
-        idempotency_key="legacy",
-    )
-
-    assert repeated is not None
-    assert repeated.created is False
-    assert repeated.existing_resource_id == resource_id
-
-
 @dataclass(frozen=True)
 class _Resource:
     id: UUID

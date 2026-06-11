@@ -30,6 +30,7 @@ from backend.app.model_providers.health import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
+from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
 from backend.app.planning.models import TaskPlanningAttempt
@@ -182,7 +183,7 @@ def test_workspace_and_resource_api_enforces_scope_and_roles() -> None:
     created_task = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=_headers(owner.id),
-        json={"title": "Q2 Market Analysis", "domain_type": "market_research"},
+        json={"title": "Q2 Market Analysis", "domain_type": "research"},
     )
     assert created_task.status_code == 201
     assert created_task.json()["created_by_user_id"] == str(owner.id)
@@ -353,7 +354,7 @@ def test_team_member_api_stores_persistent_org_metadata_and_reporting_line() -> 
             "team_role": "project_manager",
             "department": "Management",
             "position_title": "Project Manager",
-            "responsibilities": ["拆解需求", "验收交付"],
+            "responsibilities": ["Break down requirements", "Review delivery"],
             "skill_weights": {"planning": 1.0, "review": 0.9},
             "max_concurrent_tasks": 3,
             "order_index": 0,
@@ -368,7 +369,7 @@ def test_team_member_api_stores_persistent_org_metadata_and_reporting_line() -> 
             "team_role": "frontend_engineer",
             "department": "Engineering",
             "position_title": "Senior Frontend Engineer",
-            "responsibilities": ["实现 UI", "修复前端缺陷"],
+            "responsibilities": ["Implement UI", "Fix frontend defects"],
             "skill_weights": {"react": 0.95, "typescript": 0.9},
             "availability": {"timezone": "Asia/Shanghai"},
             "max_concurrent_tasks": 2,
@@ -387,7 +388,7 @@ def test_team_member_api_stores_persistent_org_metadata_and_reporting_line() -> 
     assert developer_body["reports_to_member_id"] == manager_member.json()["id"]
     assert developer_body["department"] == "Engineering"
     assert developer_body["position_title"] == "Senior Frontend Engineer"
-    assert developer_body["responsibilities"] == ["实现 UI", "修复前端缺陷"]
+    assert developer_body["responsibilities"] == ["Implement UI", "Fix frontend defects"]
     assert developer_body["skill_weights"] == {"react": 0.95, "typescript": 0.9}
     assert developer_body["availability"] == {"timezone": "Asia/Shanghai"}
     assert developer_body["max_concurrent_tasks"] == 2
@@ -766,9 +767,7 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert actions["add_or_hire_team_member"]["task_ids"] == [str(running_task.id)]
     assert actions["monitor_specialist_execution"]["task_ids"] == [str(running_task.id)]
     assert actions["request_manager_review"]["task_ids"] == [str(running_task.id)]
-    intervention_plan = {
-        item["action"]: item for item in body["summary"]["intervention_plan"]
-    }
+    intervention_plan = {item["action"]: item for item in body["summary"]["intervention_plan"]}
     assert intervention_plan["add_or_hire_team_member"] == {
         "action": "add_or_hire_team_member",
         "category": "staffing",
@@ -780,8 +779,7 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
         "automation": "talent_market",
         "operator_action": None,
         "api_route": (
-            "POST /api/v1/workspaces/{workspace_id}/tasks/{task_id}/"
-            "talent-market/recommendations"
+            "POST /api/v1/workspaces/{workspace_id}/tasks/{task_id}/talent-market/recommendations"
         ),
         "payload_template": {"max_candidates_per_role": 3},
         "reason_codes": [
@@ -897,7 +895,7 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
         default_model="gpt-4.1-mini",
         base_url="https://provider.example.test/v1",
         is_default=False,
-        budget_metadata={"model_api": "chat-completions"},
+        budget_metadata={"model_api": "chat_completions"},
     )
     unhealthy_credential.health_status = "unhealthy"
     unhealthy_credential.failure_count = 3
@@ -1077,9 +1075,7 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
             payload={
                 "decision": "request_revision",
                 "summary": "Needs follow up",
-                "revision_requests": [
-                    {"work_package_id": "build", "instruction": "Add API tests"}
-                ],
+                "revision_requests": [{"work_package_id": "build", "instruction": "Add API tests"}],
                 "token": "hidden-command-token",
             },
         )
@@ -1215,16 +1211,14 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
         item for item in body["action_plan"] if item["source"] == "execution_overview"
     ]
     assert any(item["automation"] == "team_operator_action" for item in overview_actions)
-    reassign_actions = [
-        item for item in overview_actions if item["action"] == "reassign_step"
-    ]
+    reassign_actions = [item for item in overview_actions if item["action"] == "reassign_step"]
     assert len(reassign_actions) == 1
     assert reassign_actions[0]["task_step_ids"] == [str(blocked_step.id)]
     assert reassign_actions[0]["agent_profile_id"] == str(replacement_developer.id)
     assert reassign_actions[0]["current_agent_profile_id"] == str(developer.id)
-    assert reassign_actions[0]["agent_profile_id"] != reassign_actions[0][
-        "current_agent_profile_id"
-    ]
+    assert (
+        reassign_actions[0]["agent_profile_id"] != reassign_actions[0]["current_agent_profile_id"]
+    )
     assert any(item["action"] == "schedule_downstream_steps" for item in body["action_plan"])
     assert any(item["action"] == "request_manager_review" for item in body["action_plan"])
     assert any(item["action"] == "start_team_runtime" for item in body["action_plan"])
@@ -1455,9 +1449,7 @@ def test_team_command_center_apply_reports_scheduler_blocked_reasons() -> None:
     assert body["status"] == "noop"
     assert body["scheduled_run_count"] == 0
     assert body["scheduled_run_skip_reason"] is None
-    assert body["scheduled_run_blocked_reasons"] == {
-        "workspace_quota_exceeded:active_runs": 1
-    }
+    assert body["scheduled_run_blocked_reasons"] == {"workspace_quota_exceeded:active_runs": 1}
     assert body["scheduled_run_blocked_steps"] == [
         {
             "task_id": str(task.id),
@@ -1472,9 +1464,7 @@ def test_team_command_center_apply_reports_scheduler_blocked_reasons() -> None:
     blocked_step = session.get(TaskStep, step.id)
     assert blocked_step is not None
     assert blocked_step.dependencies["scheduling_status"] == "blocked"
-    assert blocked_step.dependencies["blocked_reason"] == (
-        "workspace_quota_exceeded:active_runs"
-    )
+    assert blocked_step.dependencies["blocked_reason"] == ("workspace_quota_exceeded:active_runs")
     audit = session.scalar(
         select(AuditEvent).where(
             AuditEvent.workspace_id == workspace.id,
@@ -1587,9 +1577,7 @@ def test_team_command_center_apply_reports_blocked_reasons_with_partial_schedule
     assert body["scheduled_run_count"] == 1
     assert body["scheduled_run_skip_reason"] is None
     assert body["scheduled_runs"][0]["task_step_id"] == str(first_step.id)
-    assert body["scheduled_run_blocked_reasons"] == {
-        "workspace_quota_exceeded:active_runs": 1
-    }
+    assert body["scheduled_run_blocked_reasons"] == {"workspace_quota_exceeded:active_runs": 1}
     assert body["scheduled_run_blocked_steps"][0]["task_step_id"] == str(second_step.id)
     assert body["scheduled_run_blocked_steps"][0]["blocked_reason"] == (
         "workspace_quota_exceeded:active_runs"
@@ -2048,9 +2036,10 @@ def test_team_runtime_controls_create_sessions_mailbox_and_workspace_runtime() -
         )
     ).all()
     assert {item.scope_type for item in sessions} == {"team_runtime", "team_agent"}
-    assert {
-        item.agent_profile_id for item in sessions if item.scope_type == "team_agent"
-    } == {manager.id, developer.id}
+    assert {item.agent_profile_id for item in sessions if item.scope_type == "team_agent"} == {
+        manager.id,
+        developer.id,
+    }
 
 
 def test_team_session_controls_manage_runtime_and_member_sessions() -> None:
@@ -2601,13 +2590,15 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
     command_body = command_center.json()
     assert command_body["operating_policy"] == runtime_body["operating_policy"]
     assert command_body["memory_summary"]["active_entry_count"] == 5
-    assert command_body["memory_summary"]["scope_counts"] == (
-        runtime_body["memory_summary"]["scope_counts"]
+    assert (
+        command_body["memory_summary"]["scope_counts"]
+        == (runtime_body["memory_summary"]["scope_counts"])
     )
     assert command_body["runtime"]["operating_policy"] == runtime_body["operating_policy"]
     assert command_body["runtime"]["memory_summary"]["team_entry_count"] == 2
-    assert command_body["runtime"]["memory_summary"]["scope_counts"] == (
-        runtime_body["memory_summary"]["scope_counts"]
+    assert (
+        command_body["runtime"]["memory_summary"]["scope_counts"]
+        == (runtime_body["memory_summary"]["scope_counts"])
     )
     assert command_body["summary"]["memory_entry_count"] == 5
     assert command_body["summary"]["team_memory_entry_count"] == 2
@@ -2665,13 +2656,9 @@ def test_team_runtime_timeline_includes_scheduler_scan_metadata() -> None:
     assert timeline is not None
     assert timeline.summary.total_events == 1
     assert timeline.summary.source_counts == {"scheduler_scan": 1}
-    assert timeline.summary.event_type_counts == {
-        "team.runtime.scheduler.skipped": 1
-    }
+    assert timeline.summary.event_type_counts == {"team.runtime.scheduler.skipped": 1}
     item = timeline.items[0]
-    assert item.message == (
-        "Team runtime scheduler scan skipped: provider_readiness_blocked"
-    )
+    assert item.message == ("Team runtime scheduler scan skipped: provider_readiness_blocked")
     assert item.metadata["scan"]["reason"] == "provider_readiness_blocked"
     assert item.metadata["scan"]["runtime_health"] == "provider_blocked"
     assert item.metadata["scan"]["provider_readiness"] == {
@@ -2771,13 +2758,9 @@ def test_team_runtime_timeline_includes_blocked_step_provider_metadata() -> None
     assert timeline is not None
     assert timeline.summary.total_events == 1
     assert timeline.summary.source_counts == {"task_step": 1}
-    assert timeline.summary.event_type_counts == {
-        "team.runtime.step.scheduling_blocked": 1
-    }
+    assert timeline.summary.event_type_counts == {"team.runtime.step.scheduling_blocked": 1}
     item = timeline.items[0]
-    assert item.message == (
-        "Team runtime step scheduling blocked: model_provider_unavailable"
-    )
+    assert item.message == ("Team runtime step scheduling blocked: model_provider_unavailable")
     assert item.resource_id == str(step.id)
     assert item.metadata["task_id"] == str(task.id)
     assert item.metadata["task_step_id"] == str(step.id)
@@ -3170,16 +3153,10 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     )
     assert body["runtime"]["scheduling"]["last_scheduler_scan"]["token"] == "[redacted]"
     assert body["runtime"]["blocked_steps"]["count"] == 1
-    assert body["runtime"]["blocked_steps"]["blocked_reasons"] == {
-        "model_provider_unavailable": 1
-    }
+    assert body["runtime"]["blocked_steps"]["blocked_reasons"] == {"model_provider_unavailable": 1}
     assert body["runtime"]["blocked_steps"]["latest"][0]["task_id"] == str(blocked_task.id)
-    assert body["runtime"]["blocked_steps"]["latest"][0]["task_step_id"] == (
-        str(blocked_step.id)
-    )
-    assert body["runtime"]["blocked_steps"]["latest"][0]["blocked_details"][
-        "model_provider"
-    ] == {
+    assert body["runtime"]["blocked_steps"]["latest"][0]["task_step_id"] == (str(blocked_step.id))
+    assert body["runtime"]["blocked_steps"]["latest"][0]["blocked_details"]["model_provider"] == {
         "credential_reference": f"model_provider_credentials:{credential.id}",
         "credential_health_status": "unhealthy",
         "api_key": "[redacted]",
@@ -3219,9 +3196,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     assert developer_member["agent"]["model_provider_credential_id"] == str(credential.id)
     assert model_provider["source"] == "agent_override"
     assert model_provider["credential_id"] == str(credential.id)
-    assert model_provider["credential_reference"] == (
-        f"model_provider_credentials:{credential.id}"
-    )
+    assert model_provider["credential_reference"] == (f"model_provider_credentials:{credential.id}")
     assert model_provider["credential_name"] == "Claude Gateway"
     assert model_provider["provider"] == "openai-compatible"
     assert model_provider["selected_model"] == "claude-opus-4-6"
@@ -3279,9 +3254,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     )
     assert "sk-run-provider-secret" not in str(run_diagnostics)
     assert "run-provider.example.test/private" not in str(run_diagnostics)
-    provider_options = {
-        item["id"]: item for item in provider_management["credentials"]
-    }
+    provider_options = {item["id"]: item for item in provider_management["credentials"]}
     assert set(provider_options) == {str(default_credential.id), str(credential.id)}
     assert provider_options[str(default_credential.id)]["provider"] == "openai"
     assert provider_options[str(default_credential.id)]["is_default"] is True
@@ -3349,9 +3322,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     assert provider_management_actions[0]["action"] == "review_model_provider"
     assert provider_management_actions[0]["reason"] == "agent_model_provider_degraded"
     developer_provider_management_action = next(
-        item
-        for item in provider_management_actions
-        if item["credential_id"] == str(credential.id)
+        item for item in provider_management_actions if item["credential_id"] == str(credential.id)
     )
     assert developer_provider_management_action["model_api"] == "chat_completions"
     assert developer_member["mailbox"]["unread_count"] == 1
@@ -3431,9 +3402,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     assert blocked_step_suggestion["action"] == "review_scheduling_blocks"
     assert blocked_step_suggestion["priority"] == 90
     assert blocked_step_suggestion["count"] == 1
-    assert blocked_step_suggestion["blocked_reasons"] == {
-        "model_provider_unavailable": 1
-    }
+    assert blocked_step_suggestion["blocked_reasons"] == {"model_provider_unavailable": 1}
     assert blocked_step_suggestion["task_ids"] == [str(blocked_task.id)]
     assert blocked_step_suggestion["task_step_ids"] == [str(blocked_step.id)]
     assert body["command_center"]["summary"]["runtime_ready"] is True
@@ -3447,14 +3416,10 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     assert body["command_center"]["overview"]["team"]["name"] == "Operations Console Team"
     assert body["command_center"]["queues"]["handoff"]["total"] == 0
     assert body["command_center"]["queues"]["manager"]["total"] == 1
-    assert body["command_center"]["operating_policy"]["default_task_policy"] == {
-        "priority": 6
-    }
+    assert body["command_center"]["operating_policy"]["default_task_policy"] == {"priority": 6}
     assert body["command_center"]["memory_summary"]["team_id"] == str(team.id)
     assert body["command_center"]["memory_summary"]["scope_counts"] == {"company": 1}
-    assert body["command_center"]["runtime"]["memory_summary"]["scope_counts"] == {
-        "company": 1
-    }
+    assert body["command_center"]["runtime"]["memory_summary"]["scope_counts"] == {"company": 1}
     for policy in (
         body["team"]["default_task_policy"],
         body["runtime"]["operating_policy"]["default_task_policy"],
@@ -3641,7 +3606,7 @@ def test_team_operations_console_provider_readiness_blocks_unhealthy_default() -
         name="PM",
         role="project_manager",
         model="workspace-default",
-        model_settings={"model_api": "response"},
+        model_settings={"model_api": "responses"},
     )
     session.add(manager)
     session.flush()
@@ -3686,9 +3651,7 @@ def test_team_operations_console_provider_readiness_blocks_unhealthy_default() -
     assert readiness["runtime_blocked_member_count"] == 1
     assert readiness["runtime_degraded_member_count"] == 0
     assert readiness_member["credential_id"] == str(primary.id)
-    assert readiness_member["credential_reference"] == (
-        f"model_provider_credentials:{primary.id}"
-    )
+    assert readiness_member["credential_reference"] == (f"model_provider_credentials:{primary.id}")
     assert readiness_member["provider"] == "openai"
     assert readiness_member["model"] == "primary-model"
     assert readiness_member["model_api"] == "responses"
@@ -3730,7 +3693,7 @@ def test_team_operations_console_exposes_anthropic_default_model_api() -> None:
         name="Claude PM",
         role="project_manager",
         model="workspace-default",
-        model_settings={"model_api": "response"},
+        model_settings={"model_api": "responses"},
     )
     session.add(agent)
     session.flush()
@@ -3772,20 +3735,20 @@ def test_team_operations_console_exposes_anthropic_default_model_api() -> None:
     assert binding["credential_id"] == str(credential.id)
     assert binding["provider"] == "anthropic"
     assert binding["selected_model"] == "claude-sonnet-4-6"
-    assert binding["model_api"] == "anthropic_messages"
+    assert binding["model_api"] is None
     assert binding["requested_model_api"] == "responses"
-    assert "model_api_override_unsupported" in binding["warnings"]
+    assert "model_api_override_unsupported" in binding["reasons"]
     assert member_provider["source"] == "workspace_default"
     assert member_provider["provider"] == "anthropic"
-    assert member_provider["model_api"] == "anthropic_messages"
+    assert member_provider["model_api"] is None
     assert member_provider["requested_model_api"] == "responses"
-    assert "model_api_override_unsupported" in member_provider["warnings"]
+    assert "model_api_override_unsupported" in member_provider["reasons"]
     assert member_provider["model_capability"]["supports_tools"] is True
     assert readiness_member["provider"] == "anthropic"
     assert readiness_member["model"] == "claude-sonnet-4-6"
-    assert readiness_member["model_api"] == "anthropic_messages"
+    assert readiness_member["model_api"] is None
     assert readiness_member["requested_model_api"] == "responses"
-    assert "model_api_override_unsupported" in readiness_member["warnings"]
+    assert "model_api_override_unsupported" in readiness_member["reasons"]
     assert "sk-console-anthropic" not in str(body)
     assert "api.anthropic.com/private" not in str(body)
 
@@ -3848,12 +3811,8 @@ def test_team_operations_console_blocks_missing_explicit_provider() -> None:
     assert binding["available_credential_ids"] == [str(default_credential.id)]
     readiness = body["command_center"]["provider_readiness"]
     assert readiness["status"] == "blocked"
-    assert readiness["runtime_blocking_reasons"] == {
-        "model_provider_unavailable": 1
-    }
-    assert readiness["members"][0]["credential_id"] == str(
-        manager.model_provider_credential_id
-    )
+    assert readiness["runtime_blocking_reasons"] == {"model_provider_unavailable": 1}
+    assert readiness["members"][0]["credential_id"] == str(manager.model_provider_credential_id)
     assert readiness["members"][0]["credential_reference"] == (
         f"model_provider_credentials:{manager.model_provider_credential_id}"
     )
@@ -4538,8 +4497,7 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     queued_jobs = queue.peek()
     assert queued_jobs
     assert all(
-        job.routing.get("workspace_runtime_id") == str(created_runtime.id)
-        for job in queued_jobs
+        job.routing.get("workspace_runtime_id") == str(created_runtime.id) for job in queued_jobs
     )
     iteration_audit = session.scalar(
         select(AuditEvent).where(
@@ -4667,8 +4625,7 @@ def test_team_execution_loop_skips_enqueue_when_provider_readiness_blocked() -> 
     assert body["summary"]["scheduled_run_count"] == 0
     assert body["summary"]["scheduled_run_skip_reason"] == "provider_readiness_blocked"
     assert (
-        body["command_center_actions"]["scheduled_run_skip_reason"]
-        == "provider_readiness_blocked"
+        body["command_center_actions"]["scheduled_run_skip_reason"] == "provider_readiness_blocked"
     )
     assert body["command_center_actions"]["scheduled_run_count"] == 0
     assert queue_redis.llen(RedisKeyBuilder("chaincloud").queue("agent_runs")) == 0
@@ -5050,9 +5007,7 @@ def test_team_operator_action_requeues_and_schedules_step_actions() -> None:
     requeue_body = requeue.json()
     assert requeue_body["action"] == "requeue_blocked_steps"
     assert requeue_body["applied_count"] == 1
-    assert requeue_body["warnings"] == [
-        f"task_step_not_found_or_not_in_team:{missing_step_id}"
-    ]
+    assert requeue_body["warnings"] == [f"task_step_not_found_or_not_in_team:{missing_step_id}"]
     assert "team-action-hidden" not in str(requeue_body)
     session.refresh(blocked_step)
     assert blocked_step.status == "queued"
@@ -5355,7 +5310,7 @@ def test_create_task_with_team_captures_workspace_team_snapshot() -> None:
         json={
             "name": "Frontend Dev",
             "role": "frontend_engineer",
-            "model_api": "response",
+            "model_api": "responses",
         },
     )
     team = client.post(
@@ -5575,7 +5530,7 @@ def test_api_team_task_e2e_runs_workers_and_accepts_delivery() -> None:
         headers=_headers(owner.id),
         json={
             "agent_team_id": team_id,
-            "domain_type": "market_research",
+            "domain_type": "research",
             "title": "Q2 market analysis",
             "description": "Produce a concise market analysis.",
             "priority": 7,
@@ -5745,8 +5700,7 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
         },
     )
     listed_attempts = client.get(
-        f"/api/v1/workspaces/{workspace.id}/tasks/{created_task.json()['id']}"
-        "/planning-attempts",
+        f"/api/v1/workspaces/{workspace.id}/tasks/{created_task.json()['id']}/planning-attempts",
         headers=_headers(owner.id),
     )
     failed_attempts = client.get(
@@ -5946,9 +5900,10 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
     assert messages[0].payload["preserved_completed_work_package_ids"] == ["frontend-build"]
     assert attempts_response.status_code == 200
     assert attempts_response.json()["total"] == 2
-    assert attempts_response.json()["items"][0]["output_snapshot"]["regeneration"][
-        "mode"
-    ] == "future_only"
+    assert (
+        attempts_response.json()["items"][0]["output_snapshot"]["regeneration"]["mode"]
+        == "future_only"
+    )
     assert initial_queue_depth == 1
     assert queue.count_queued(workspace_id=workspace.id) == initial_queue_depth
 
@@ -5990,7 +5945,7 @@ def test_model_provider_credentials_are_created_without_returning_secret() -> No
             "api_key": "sk-secret",
             "base_url": "https://api.openai.com/v1",
             "default_model": "gpt-4.1-mini",
-            "model_api": "chat-completions",
+            "model_api": "chat_completions",
             "is_default": True,
             "budget_metadata": {
                 "limits": {"calls": 10},
@@ -6113,7 +6068,7 @@ def test_model_provider_health_check_updates_status_without_returning_secret(
             "api_key": "sk-health-api-secret",
             "base_url": "https://dash.ovload.com/v1",
             "default_model": "claude-opus-4-6",
-            "model_api": "chat-completions",
+            "model_api": "chat_completions",
         },
     )
     response = client.post(
@@ -6163,9 +6118,7 @@ def test_model_provider_capabilities_are_listed_without_secrets() -> None:
 
     assert listed.status_code == 200
     assert anthropic_tools.status_code == 200
-    compatible = next(
-        item for item in listed.json() if item["provider"] == "openai-compatible"
-    )
+    compatible = next(item for item in listed.json() if item["provider"] == "openai-compatible")
     assert compatible["model_apis"] == ["responses", "chat_completions"]
     assert compatible["default_model_api"] is None
     assert anthropic_tools.json()
@@ -6354,7 +6307,7 @@ def test_team_member_model_provider_can_be_bound_from_operations_context() -> No
         f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members/"
         f"{member.json()['id']}/model-provider",
         headers=_headers(owner.id),
-        json={"model_api": "response"},
+        json={"model_api": "responses"},
     )
     clear_credential = client.post(
         f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members/"
@@ -6400,23 +6353,29 @@ def test_team_member_model_provider_can_be_bound_from_operations_context() -> No
     assert persistent_session.session_metadata["last_reset"]["reason"] == (
         "team_member_model_provider_updated"
     )
-    assert persistent_session.session_metadata["last_reset"]["metadata"]["before"][
-        "model"
-    ] == "anthropic/claude-opus"
-    assert persistent_session.session_metadata["last_reset"]["metadata"]["after"][
-        "model"
-    ] == "anthropic/claude-opus"
-    assert persistent_session.session_metadata["last_reset"]["metadata"]["before"][
-        "model_api"
-    ] is None
-    assert persistent_session.session_metadata["last_reset"]["metadata"]["after"][
-        "model_api"
-    ] == "responses"
-    assert session.scalar(
-        select(func.count(PersistentAgentSessionItem.id)).where(
-            PersistentAgentSessionItem.persistent_session_id == persistent_session.id
+    assert (
+        persistent_session.session_metadata["last_reset"]["metadata"]["before"]["model"]
+        == "anthropic/claude-opus"
+    )
+    assert (
+        persistent_session.session_metadata["last_reset"]["metadata"]["after"]["model"]
+        == "anthropic/claude-opus"
+    )
+    assert (
+        persistent_session.session_metadata["last_reset"]["metadata"]["before"]["model_api"] is None
+    )
+    assert (
+        persistent_session.session_metadata["last_reset"]["metadata"]["after"]["model_api"]
+        == "responses"
+    )
+    assert (
+        session.scalar(
+            select(func.count(PersistentAgentSessionItem.id)).where(
+                PersistentAgentSessionItem.persistent_session_id == persistent_session.id
+            )
         )
-    ) == 0
+        == 0
+    )
     provider_message = session.scalar(
         select(AgentMessage).where(
             AgentMessage.workspace_id == workspace.id,
@@ -6437,9 +6396,7 @@ def test_team_member_model_provider_can_be_bound_from_operations_context() -> No
         )
     ).all()
     model_api_message = next(
-        item
-        for item in provider_messages
-        if item.payload["after"]["model_api"] == "responses"
+        item for item in provider_messages if item.payload["after"]["model_api"] == "responses"
     )
     assert model_api_message.payload["before"]["model_api"] is None
     assert model_api_message.payload["after"]["model_api"] == "responses"
@@ -6466,9 +6423,7 @@ def test_team_member_model_provider_can_be_bound_from_operations_context() -> No
         ),
     )
     assert audit_timeline is not None
-    assert audit_timeline.summary.event_type_counts[
-        "team.member_model_provider.updated"
-    ] == 4
+    assert audit_timeline.summary.event_type_counts["team.member_model_provider.updated"] == 4
     reset_audit_timeline_item = next(
         item
         for item in audit_timeline.items
@@ -6545,7 +6500,7 @@ def test_team_member_model_provider_update_does_not_initialize_runtime_sessions(
         f"/api/v1/workspaces/{workspace.id}/model-provider-credentials",
         headers=_headers(owner.id),
         json={
-            "name": "Claude API",
+            "name": "Anthropic Reviewer",
             "provider": "anthropic",
             "api_key": "sk-claude",
             "default_model": "claude-sonnet-4-6",
@@ -6575,12 +6530,15 @@ def test_team_member_model_provider_update_does_not_initialize_runtime_sessions(
     assert team.status_code == 201
     assert member.status_code == 201
     team_id = UUID(team.json()["id"])
-    assert session.scalar(
-        select(func.count(PersistentAgentSession.id)).where(
-            PersistentAgentSession.workspace_id == workspace.id,
-            PersistentAgentSession.agent_team_id == team_id,
+    assert (
+        session.scalar(
+            select(func.count(PersistentAgentSession.id)).where(
+                PersistentAgentSession.workspace_id == workspace.id,
+                PersistentAgentSession.agent_team_id == team_id,
+            )
         )
-    ) == 0
+        == 0
+    )
 
     updated = client.post(
         f"/api/v1/workspaces/{workspace.id}/teams/{team_id}/members/"
@@ -6594,12 +6552,15 @@ def test_team_member_model_provider_update_does_not_initialize_runtime_sessions(
 
     assert updated.status_code == 200
     assert updated.json()["model_provider_credential_id"] == credential.json()["id"]
-    assert session.scalar(
-        select(func.count(PersistentAgentSession.id)).where(
-            PersistentAgentSession.workspace_id == workspace.id,
-            PersistentAgentSession.agent_team_id == team_id,
+    assert (
+        session.scalar(
+            select(func.count(PersistentAgentSession.id)).where(
+                PersistentAgentSession.workspace_id == workspace.id,
+                PersistentAgentSession.agent_team_id == team_id,
+            )
         )
-    ) == 0
+        == 0
+    )
     provider_message = session.scalar(
         select(AgentMessage).where(
             AgentMessage.workspace_id == workspace.id,
@@ -6646,7 +6607,7 @@ def test_model_provider_credentials_can_be_updated_rotated_defaulted_and_disable
         json={
             "name": "Second Updated",
             "default_model": "provider/new-default",
-            "model_api": "response",
+            "model_api": "responses",
         },
     )
     rotated = client.post(
@@ -6703,9 +6664,7 @@ def test_model_provider_credentials_can_be_updated_rotated_defaulted_and_disable
     assert by_id[second.json()["id"]]["is_default"] is True
     assert by_id[second.json()["id"]]["base_url_host"] == "llm.example.test"
     assert by_id[second.json()["id"]]["model_api"] == "responses"
-    assert by_id[second.json()["id"]]["model_capability"] == updated.json()[
-        "model_capability"
-    ]
+    assert by_id[second.json()["id"]]["model_capability"] == updated.json()["model_capability"]
 
 
 def test_model_provider_usage_audit_api_is_scoped_and_redacted() -> None:
@@ -6734,7 +6693,7 @@ def test_model_provider_usage_audit_api_is_scoped_and_redacted() -> None:
                     "agent_profile_id": "agent-1",
                     "provider": "openai-compatible",
                     "model": "backup-model",
-                    "model_api": "response",
+                    "model_api": "responses",
                     "credential_id": "credential-1",
                     "fallback_selected": True,
                     "api_key": "sk-secret",
@@ -6755,7 +6714,7 @@ def test_model_provider_usage_audit_api_is_scoped_and_redacted() -> None:
                     "failed_provider": {
                         "provider": "openai",
                         "model": "primary-model",
-                        "model_api": "chat-completions",
+                        "model_api": "chat_completions",
                         "credential_id": "credential-2",
                         "api_key": "sk-primary",
                         "base_url": "https://primary.example.test/v1",
@@ -7016,8 +6975,7 @@ def test_task_messages_api_lists_filters_and_enforces_workspace_scope() -> None:
         headers=_headers(owner.id),
     )
     filtered = client.get(
-        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/messages"
-        "?message_type=step.completed",
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/messages?message_type=step.completed",
         headers=_headers(owner.id),
     )
     foreign = client.get(
@@ -7196,9 +7154,7 @@ def test_task_event_stream_reads_message_created_events_from_bus() -> None:
     )
     session.commit()
     publish_summary = TaskEventOutboxPublisher(session, event_bus).publish_pending()
-    outbox_event = session.scalar(
-        select(TaskEventOutbox).where(TaskEventOutbox.task_id == task.id)
-    )
+    outbox_event = session.scalar(select(TaskEventOutbox).where(TaskEventOutbox.task_id == task.id))
 
     response = client.get(
         f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/events/stream"
@@ -7527,17 +7483,13 @@ def test_task_execution_diagnostics_explains_assignments_dependencies_and_blocke
     assert by_package["design"]["handoff"]["runnable_downstream_step_ids"] == [
         str(runnable_step.id)
     ]
-    assert by_package["design"]["handoff"]["recommended_actions"] == [
-        "schedule_downstream_steps"
-    ]
+    assert by_package["design"]["handoff"]["recommended_actions"] == ["schedule_downstream_steps"]
     assert by_package["build"]["runnable"] is True
     assert by_package["build"]["dependency_state"]["satisfied"] is True
     assert by_package["build"]["handoff"]["status"] == "source_incomplete"
     assert by_package["build"]["handoff"]["upstream_step_ids"] == [str(completed_step.id)]
     assert by_package["build"]["handoff"]["downstream_step_ids"] == [str(blocked_step.id)]
-    assert by_package["build"]["handoff"]["blocked_downstream_step_ids"] == [
-        str(blocked_step.id)
-    ]
+    assert by_package["build"]["handoff"]["blocked_downstream_step_ids"] == [str(blocked_step.id)]
     assert by_package["review"]["assignment_status"] == "inactive_agent"
     assert by_package["review"]["dependency_state"]["satisfied"] is False
     assert by_package["review"]["handoff"]["status"] == "no_downstream"
@@ -7727,10 +7679,7 @@ def test_task_handoff_queue_lists_attention_items_and_preserves_scope() -> None:
         "team_id": str(team.id),
         "action": "schedule_downstream_steps",
         "automation": "team_operator_action",
-        "api_route": (
-            "POST /api/v1/workspaces/{workspace_id}/"
-            "teams/{team_id}/operator-actions"
-        ),
+        "api_route": ("POST /api/v1/workspaces/{workspace_id}/teams/{team_id}/operator-actions"),
         "task_ids": [str(task.id)],
         "task_step_ids": [str(design_step.id)],
         "count": 1,
@@ -8293,9 +8242,7 @@ def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope(
                 payload={
                     "decision": "request_revision",
                     "summary": "Needs tests",
-                    "revision_requests": [
-                        {"work_package_id": "build", "instruction": "Add tests"}
-                    ],
+                    "revision_requests": [{"work_package_id": "build", "instruction": "Add tests"}],
                     "token": "hidden-token",
                 },
             ),
@@ -8369,8 +8316,7 @@ def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope(
             "action": "request_manager_review",
             "automation": "team_operator_action",
             "api_route": (
-                "POST /api/v1/workspaces/{workspace_id}/"
-                "teams/{team_id}/operator-actions"
+                "POST /api/v1/workspaces/{workspace_id}/teams/{team_id}/operator-actions"
             ),
             "task_ids": [str(needs_follow_up.id)],
             "task_step_ids": [],
@@ -8447,8 +8393,10 @@ def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> N
         input={"outline": ["Act 1", "Act 2"], "api_key": "sk-observation-input"},
         generic_state={"word_count": 3200, "headers": {"authorization": "Bearer generic"}},
         domain_state={
+            "outline": ["Act 1", "Act 2"],
             "chapters": [{"title": "Chapter 1", "status": "drafting"}],
             "characters": [{"name": "Lin", "role": "detective"}],
+            "word_count": 3200,
             "token": "domain-hidden-token",
         },
     )
@@ -8587,9 +8535,7 @@ def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> N
         "request_editorial_review",
     ]
     assert domain_cards[1]["card_type"] == "outline"
-    assert domain_cards[2]["data"]["value"] == [
-        {"title": "Chapter 1", "status": "drafting"}
-    ]
+    assert domain_cards[2]["data"]["value"] == [{"title": "Chapter 1", "status": "drafting"}]
     message_payload = sections["timeline"]["cards"][0]["data"]["payload"]
     review_payload = sections["review"]["cards"][0]["data"]["payload"]
     assert message_payload == {"note": "draft", "api_key": "[redacted]"}
@@ -8623,9 +8569,7 @@ def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> N
     assert forced.status_code == 200
     forced_body = forced.json()
     assert forced_body["view_type"] == "software"
-    forced_domain = {
-        section["key"]: section for section in forced_body["sections"]
-    }["domain"]
+    forced_domain = {section["key"]: section for section in forced_body["sections"]}["domain"]
     assert forced_domain["cards"][0]["card_type"] == "delivery_status"
     assert "capture_requirements" in forced_domain["cards"][0]["data"]["recommended_actions"]
     assert unsupported.status_code == 400
@@ -8650,6 +8594,8 @@ def test_task_observation_status_cards_for_specialized_domains() -> None:
         input={"prompt": "clean product render"},
         generic_state={"model_settings": {"size": "1024x1024"}},
         domain_state={
+            "prompt": "clean product render",
+            "model_settings": {"size": "1024x1024"},
             "variants": [{"id": "v1"}, {"id": "v2"}],
             "selected_asset": {"id": "v2", "status": "approved"},
             "review_notes": ["Approved for launch"],
@@ -8734,17 +8680,13 @@ def test_task_observation_status_cards_for_specialized_domains() -> None:
     assert aigc_domain["cards"][0]["data"]["recommended_actions"] == []
 
     assert research.status_code == 200
-    research_domain = {
-        section["key"]: section for section in research.json()["sections"]
-    }["domain"]
+    research_domain = {section["key"]: section for section in research.json()["sections"]}["domain"]
     assert research_domain["cards"][0]["card_type"] == "research_status"
     assert research_domain["cards"][0]["data"]["source_count"] == 1
     assert research_domain["cards"][0]["data"]["recommended_actions"] == []
 
     assert software.status_code == 200
-    software_domain = {
-        section["key"]: section for section in software.json()["sections"]
-    }["domain"]
+    software_domain = {section["key"]: section for section in software.json()["sections"]}["domain"]
     assert software_domain["cards"][0]["card_type"] == "delivery_status"
     assert software_domain["cards"][0]["status"] == "healthy"
     assert software_domain["cards"][0]["data"]["build_status"] == "passed"
@@ -9470,9 +9412,7 @@ def test_task_correction_diagnostics_tracks_follow_up_status_and_redacts_metadat
     by_mode = {item["mode"]: item for item in body["corrections"]}
     assert by_mode["replace_artifact"]["status"] == "completed"
     assert by_mode["replace_artifact"]["metadata"]["token"] == "[redacted]"
-    assert by_mode["replace_artifact"]["created_step"]["result_summary"] == (
-        "Replacement complete"
-    )
+    assert by_mode["replace_artifact"]["created_step"]["result_summary"] == ("Replacement complete")
     assert by_mode["replace_artifact"]["artifacts"][0]["filename"] == "replacement.pdf"
     assert by_mode["replace_artifact"]["blocked_reasons"] == []
     assert by_mode["revise"]["status"] == "pending"
@@ -9995,13 +9935,11 @@ def test_final_output_artifact_history_lists_final_acceptance_outputs_only() -> 
     session.commit()
 
     response = client.get(
-        f"/api/v1/workspaces/{workspace.id}/artifacts/final-output/history"
-        f"?task_id={task.id}",
+        f"/api/v1/workspaces/{workspace.id}/artifacts/final-output/history?task_id={task.id}",
         headers=_headers(owner.id),
     )
     foreign_task_response = client.get(
-        f"/api/v1/workspaces/{other_workspace.id}/artifacts/final-output/history"
-        f"?task_id={task.id}",
+        f"/api/v1/workspaces/{other_workspace.id}/artifacts/final-output/history?task_id={task.id}",
         headers=_headers(other_owner.id),
     )
     foreign_owned_response = client.get(
@@ -10597,6 +10535,119 @@ def test_workspace_update_can_pause_scheduler_and_records_audit() -> None:
     assert events[0].audit_metadata["before"] == "active"
     assert events[0].audit_metadata["after"] == "paused"
     assert events[1].audit_metadata["after"]["pause_reason"] == "maintenance"
+
+
+def test_workspace_update_configures_resource_review_model_and_records_audit() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    encrypted = SecretEncryptionService(secret="unit-test-secret", key_id="test").encrypt_payload(
+        {"api_key": "sk-reviewer"}
+    )
+    credential = ModelProviderCredential(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        name="Reviewer",
+        provider="openai",
+        default_model="gpt-5.5",
+        encrypted_api_key=encrypted.ciphertext,
+        api_key_fingerprint=encrypted.fingerprint,
+        encryption_key_id=encrypted.key_id,
+        is_default=False,
+        status="active",
+    )
+    session.add(credential)
+    session.commit()
+
+    response = client.patch(
+        f"/api/v1/workspaces/{workspace.id}",
+        headers=_headers(owner.id),
+        json={
+            "settings": {
+                "resource_review": {
+                    "semantic_review": {
+                        "enabled": True,
+                        "model_provider_credential_id": str(credential.id),
+                        "model": "codex-auto-review",
+                        "timeout_seconds": 12,
+                        "fail_closed": True,
+                    }
+                }
+            },
+        },
+    )
+
+    events = session.scalars(
+        select(AuditEvent)
+        .where(AuditEvent.workspace_id == workspace.id)
+        .order_by(AuditEvent.created_at.asc())
+    ).all()
+
+    assert response.status_code == 200
+    semantic = response.json()["settings"]["resource_review"]["semantic_review"]
+    assert semantic["model_provider_credential_id"] == str(credential.id)
+    assert semantic["model"] == "codex-auto-review"
+    assert semantic["timeout_seconds"] == 12
+    assert [event.action for event in events] == ["workspace.resource_review_policy_updated"]
+    assert events[0].audit_metadata["after"]["model"] == "codex-auto-review"
+    assert events[0].audit_metadata["after"]["model_provider_credential_id"] == str(credential.id)
+
+
+def test_workspace_update_rejects_invalid_resource_review_model_provider() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-review-owner@example.com",
+        slug="other-review-owner",
+    )
+    encrypted = SecretEncryptionService(secret="unit-test-secret", key_id="test").encrypt_payload(
+        {"api_key": "sk-reviewer"}
+    )
+    foreign_credential = ModelProviderCredential(
+        workspace_id=other_workspace.id,
+        created_by_user_id=other_owner.id,
+        name="Foreign Reviewer",
+        provider="openai",
+        default_model="gpt-5.5",
+        encrypted_api_key=encrypted.ciphertext,
+        api_key_fingerprint=encrypted.fingerprint,
+        encryption_key_id=encrypted.key_id,
+        is_default=False,
+        status="active",
+    )
+    session.add(foreign_credential)
+    session.commit()
+
+    response = client.patch(
+        f"/api/v1/workspaces/{workspace.id}",
+        headers=_headers(owner.id),
+        json={
+            "settings": {
+                "resource_review": {
+                    "semantic_review": {
+                        "model_provider_credential_id": str(foreign_credential.id),
+                    }
+                }
+            },
+        },
+    )
+    fail_open = client.patch(
+        f"/api/v1/workspaces/{workspace.id}",
+        headers=_headers(owner.id),
+        json={
+            "settings": {
+                "resource_review": {
+                    "semantic_review": {
+                        "fail_closed": False,
+                    }
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 404
+    assert fail_open.status_code == 422
 
 
 def test_workspace_update_rejects_invalid_scheduler_pause_config() -> None:

@@ -1069,7 +1069,7 @@ def test_runtime_control_service_applies_team_runtime_space_policy() -> None:
         team_type="creative",
         default_task_policy={
             "runtime": {
-                "network_disabled": True,
+                "network": {"disabled": True},
                 "limits": {
                     "cpu_count": 1,
                     "memory_mb": 1024,

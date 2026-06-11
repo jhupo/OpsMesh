@@ -50,7 +50,11 @@ class WorkspaceResourceService:
         page: PageParams,
         status: str | None = None,
     ) -> tuple[list[AgentProfile], int]:
-        return AgentManagementService(self._session).list_agents(workspace_id, page, status)
+        return AgentManagementService(self._session, self._settings).list_agents(
+            workspace_id,
+            page,
+            status,
+        )
 
     def create_agent(
         self,
@@ -58,14 +62,17 @@ class WorkspaceResourceService:
         data: AgentProfileCreateRequest,
         actor_user_id: UUID | None = None,
     ) -> AgentProfile:
-        return AgentManagementService(self._session).create_agent(
+        return AgentManagementService(self._session, self._settings).create_agent(
             workspace_id,
             data,
             actor_user_id,
         )
 
     def get_agent(self, workspace_id: UUID, agent_id: UUID) -> AgentProfile | None:
-        return AgentManagementService(self._session).get_agent(workspace_id, agent_id)
+        return AgentManagementService(self._session, self._settings).get_agent(
+            workspace_id,
+            agent_id,
+        )
 
     def list_teams(self, workspace_id: UUID, page: PageParams) -> tuple[list[AgentTeam], int]:
         statement = (
@@ -630,8 +637,11 @@ class WorkspaceResourceService:
         return team
 
     def _require_agent(self, workspace_id: UUID, agent_id: UUID) -> None:
-        if self.get_agent(workspace_id, agent_id) is None:
+        agent = self.get_agent(workspace_id, agent_id)
+        if agent is None:
             raise ValueError("Agent not found")
+        if agent.status != "active":
+            raise ValueError("Agent is not active")
 
     def _require_task(self, workspace_id: UUID, task_id: UUID) -> None:
         if self.get_task(workspace_id, task_id) is None:
