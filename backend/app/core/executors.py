@@ -40,7 +40,7 @@ def get_blocking_executor(settings: Settings | None = None) -> ThreadPoolExecuto
         shutdown_blocking_executor(wait=False)
         _blocking_executor = ThreadPoolExecutor(
             max_workers=workers,
-            thread_name_prefix="chaincloud-blocking",
+            thread_name_prefix="opsmesh-blocking",
         )
         _blocking_executor_workers = workers
     return _blocking_executor

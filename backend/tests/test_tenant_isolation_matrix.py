@@ -408,7 +408,7 @@ def _client(tmp_path: Path) -> tuple[TestClient, Session]:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(
         redis=redis,
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
     )

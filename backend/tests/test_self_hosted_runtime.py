@@ -1752,7 +1752,7 @@ def test_self_hosted_connector_manifest_exposes_bootstrap_contract_without_secre
     assert payload["workspace_id"] == str(workspace.id)
     assert payload["api_prefix"] == "/api/v1"
     assert payload["connector"] == {
-        "name": "chaincloud-self-hosted-worker",
+        "name": "opsmesh-self-hosted-worker",
         "protocol_version": 1,
         "recommended_version": "0.4.0",
         "min_version": "0.3.0",

@@ -73,6 +73,26 @@ class RuntimeManager:
         )
         self._session.add(runtime)
         self._session.flush()
+        return self.provision_runtime(
+            runtime,
+            template=template,
+            limits=limits,
+            network_disabled=network_disabled,
+            policy_metadata=policy_metadata,
+        )
+
+    def provision_runtime(
+        self,
+        runtime: WorkspaceRuntime,
+        *,
+        template: RuntimeTemplate,
+        limits: RuntimeLimits,
+        network_disabled: bool,
+        policy_metadata: dict[str, object] | None = None,
+    ) -> WorkspaceRuntime:
+        workspace_id = runtime.workspace_id
+        runtime_space_id = runtime.runtime_space_id
+        RuntimeQuotaPolicy(self._session).assert_can_create_runtime(workspace_id, limits)
         isolation_metadata = _runtime_isolation_metadata(
             workspace_id=workspace_id,
             runtime_id=runtime.id,
@@ -85,6 +105,7 @@ class RuntimeManager:
             isolation_metadata=isolation_metadata,
         )
         runtime.capabilities = {
+            **dict(runtime.capabilities or {}),
             "isolation": isolation_metadata,
             "hardening": hardening_metadata,
             "policy_resolution": dict(policy_metadata or {}),
@@ -115,7 +136,7 @@ class RuntimeManager:
             container_id = self._docker.create_container(
                 RuntimeCreateRequest(
                     image=template.image,
-                    name=f"chaincloud-{workspace_id}-{runtime.id}",
+                    name=f"opsmesh-{workspace_id}-{runtime.id}",
                     workspace_id=str(workspace_id),
                     runtime_id=str(runtime.id),
                     runtime_space_id=str(runtime_space_id) if runtime_space_id else None,
@@ -306,8 +327,6 @@ class RuntimeManager:
         if runtime.workspace_id != workspace_id:
             raise PermissionError("Runtime does not belong to workspace")
         self._require_container(runtime)
-        timeout_value = runtime.limits.get("timeout_seconds", 60)
-        timeout_seconds = timeout_value if isinstance(timeout_value, int) else 60
         record = RuntimeCommand(
             workspace_id=workspace_id,
             workspace_runtime_id=runtime.id,
@@ -317,6 +336,30 @@ class RuntimeManager:
             started_at=datetime.now(UTC),
         )
         self._session.add(record)
+        self._session.flush()
+        return self.execute_existing_command(
+            workspace_id=workspace_id,
+            runtime=runtime,
+            record=record,
+            command=command,
+        )
+
+    def execute_existing_command(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime: WorkspaceRuntime,
+        record: RuntimeCommand,
+        command: list[str],
+    ) -> RuntimeCommand:
+        if runtime.workspace_id != workspace_id:
+            raise PermissionError("Runtime does not belong to workspace")
+        self._require_container(runtime)
+        timeout_value = runtime.limits.get("timeout_seconds", 60)
+        timeout_seconds = timeout_value if isinstance(timeout_value, int) else 60
+        record.command = command
+        record.status = "running"
+        record.started_at = datetime.now(UTC)
         self._session.flush()
 
         try:
@@ -816,25 +859,25 @@ def _runtime_hardening_metadata(
 
 
 def _runtime_volume_name(workspace_id: UUID, runtime_id: UUID) -> str:
-    return f"chaincloud-ws-{workspace_id.hex}-runtime-{runtime_id.hex}"
+    return f"opsmesh-ws-{workspace_id.hex}-runtime-{runtime_id.hex}"
 
 
 def _runtime_labels(runtime: WorkspaceRuntime) -> dict[str, str]:
     labels = {
-        "chaincloud.managed": "true",
-        "chaincloud.runtime_type": runtime.runtime_type,
-        "chaincloud.runtime_provider": runtime.runtime_provider,
+        "opsmesh.managed": "true",
+        "opsmesh.runtime_type": runtime.runtime_type,
+        "opsmesh.runtime_provider": runtime.runtime_provider,
     }
     if runtime.runtime_space_id is not None:
-        labels["chaincloud.runtime_space_id"] = str(runtime.runtime_space_id)
+        labels["opsmesh.runtime_space_id"] = str(runtime.runtime_space_id)
     policy_resolution = runtime.capabilities.get("policy_resolution")
     if isinstance(policy_resolution, dict):
         team = policy_resolution.get("team")
         if isinstance(team, dict) and isinstance(team.get("id"), str):
-            labels["chaincloud.team_id"] = team["id"]
+            labels["opsmesh.team_id"] = team["id"]
         runtime_space = policy_resolution.get("runtime_space")
         if isinstance(runtime_space, dict) and isinstance(runtime_space.get("scope"), str):
-            labels["chaincloud.runtime_space_scope"] = runtime_space["scope"]
+            labels["opsmesh.runtime_space_scope"] = runtime_space["scope"]
     return labels
 
 

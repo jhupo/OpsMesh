@@ -16,6 +16,7 @@ class JobType(StrEnum):
     MCP_TOOL_EXECUTION = "mcp.tool_execution"
     TASK_PLAN = "task.plan"
     TEAM_EXECUTION_LOOP = "team.execution_loop"
+    RUNTIME_CONTROL = "runtime.control"
     RUNTIME_CLEANUP = "runtime.cleanup"
     WORKSPACE_ARCHIVE_EXPORT = "workspace.archive_export"
     MEMORY_INDEX = "memory.index"

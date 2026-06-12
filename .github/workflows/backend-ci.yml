@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*.*.*"
 
 jobs:
   backend:
@@ -13,13 +15,13 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: chaincloud
-          POSTGRES_USER: chaincloud
-          POSTGRES_PASSWORD: chaincloud
+          POSTGRES_DB: opsmesh
+          POSTGRES_USER: opsmesh
+          POSTGRES_PASSWORD: opsmesh
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U chaincloud -d chaincloud"
+          --health-cmd "pg_isready -U opsmesh -d opsmesh"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -33,11 +35,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      CHAINCLOUD_DATABASE_URL: postgresql+psycopg://chaincloud:chaincloud@localhost:5432/chaincloud
-      CHAINCLOUD_REDIS_URL: redis://localhost:6379/0
-      CHAINCLOUD_ENVIRONMENT: test
-      CHAINCLOUD_LOG_FORMAT: text
-      CHAINCLOUD_WORKER_HEARTBEAT_TOKEN: worker-heartbeat-secret
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:opsmesh@localhost:5432/opsmesh
+      OPSMESH_REDIS_URL: redis://localhost:6379/0
+      OPSMESH_ENVIRONMENT: test
+      OPSMESH_LOG_FORMAT: text
+      OPSMESH_WORKER_HEARTBEAT_TOKEN: worker-heartbeat-secret
     steps:
       - uses: actions/checkout@v4
 
@@ -64,31 +66,15 @@ jobs:
       - name: Check Alembic drift
         run: uv run alembic check
 
-      - name: Build backend image
-        run: docker build -t chaincloud-backend:${{ github.sha }} .
-
-      - name: Smoke backend image
-        run: >-
-          docker run --rm --entrypoint python
-          chaincloud-backend:${{ github.sha }}
-          -c "import backend.app.main; print('image-ok')"
-
-      - name: Validate compose files
+      - name: Validate release bundle manifest
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          docker compose -f docker-compose.yml config --quiet
-          docker compose -f deploy/server/docker-compose.backend.yml config --quiet
-
-      - name: Generate image SBOM
-        uses: anchore/sbom-action@v0
-        with:
-          image: chaincloud-backend:${{ github.sha }}
-          format: spdx-json
-          output-file: chaincloud-backend.spdx.json
-
-      - name: Scan backend image
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: chaincloud-backend:${{ github.sha }}
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
+          mkdir -p release-bundle
+          cp pyproject.toml uv.lock README.md release-bundle/
+          cp -R backend release-bundle/backend
+          cp -R deploy/server/systemd release-bundle/systemd
+          cp scripts/server-update.sh release-bundle/server-update.sh
+          cp scripts/server-smoke-test.sh release-bundle/server-smoke-test.sh
+          test -f release-bundle/backend/app/main.py
+          test -f release-bundle/systemd/opsmesh-api.service
+          test -f release-bundle/systemd/opsmesh-worker.service

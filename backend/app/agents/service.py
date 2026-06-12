@@ -143,6 +143,7 @@ class AgentManagementService:
         now = datetime.now(UTC)
         review = ResourceReviewService(self._session, self._settings).review_agent_profile(
             workspace_id=workspace_id,
+            visibility="private",
             name=str(values["name"]),
             role=str(values["role"]),
             instructions=str(values["instructions"]),
@@ -271,6 +272,7 @@ class AgentManagementService:
             return None
         return ResourceReviewService(self._session, self._settings).review_agent_profile(
             workspace_id=profile.workspace_id,
+            visibility="private",
             name=profile.name,
             role=profile.role,
             instructions=profile.instructions,

@@ -63,12 +63,12 @@ def test_metrics_endpoint_exposes_http_request_metrics() -> None:
     assert metrics.status_code == 200
     body = metrics.text
     assert (
-        'chaincloud_http_requests_total{method="GET",path="/api/v1/health",status="200"} 1'
+        'opsmesh_http_requests_total{method="GET",path="/api/v1/health",status="200"} 1'
         in body
     )
-    assert 'chaincloud_http_request_duration_ms_bucket{' in body
-    assert 'chaincloud_http_request_duration_ms_count{' in body
-    assert 'chaincloud_http_request_duration_ms_sum{' in body
+    assert 'opsmesh_http_request_duration_ms_bucket{' in body
+    assert 'opsmesh_http_request_duration_ms_count{' in body
+    assert 'opsmesh_http_request_duration_ms_sum{' in body
     assert 'path="/api/v1/health"' in body
 
 
@@ -85,46 +85,46 @@ def test_metrics_endpoint_exposes_operations_gauges_without_high_cardinality_lab
     assert metrics.status_code == 200
     body = metrics.text
     assert (
-        'chaincloud_http_requests_total{method="GET",path="/api/v1/health",status="200"} 1'
+        'opsmesh_http_requests_total{method="GET",path="/api/v1/health",status="200"} 1'
         in body
     )
-    assert 'chaincloud_queue_jobs{queue_name="agent_runs",state="queued"} 1' in body
-    assert 'chaincloud_queue_jobs{queue_name="agent_runs",state="dead_letter"} 1' in body
-    assert 'chaincloud_queue_idempotency_keys{queue_name="agent_runs"} 1' in body
-    assert 'chaincloud_queue_oldest_queued_age_seconds{queue_name="agent_runs"}' in body
-    assert 'chaincloud_workers{state="online"} 1' in body
-    assert 'chaincloud_workers{state="offline"} 1' in body
-    assert 'chaincloud_workers{state="stale"} 1' in body
-    assert 'chaincloud_worker_leases{status="running"} 1' in body
-    assert 'chaincloud_worker_leases{status="failed"} 1' in body
+    assert 'opsmesh_queue_jobs{queue_name="agent_runs",state="queued"} 1' in body
+    assert 'opsmesh_queue_jobs{queue_name="agent_runs",state="dead_letter"} 1' in body
+    assert 'opsmesh_queue_idempotency_keys{queue_name="agent_runs"} 1' in body
+    assert 'opsmesh_queue_oldest_queued_age_seconds{queue_name="agent_runs"}' in body
+    assert 'opsmesh_workers{state="online"} 1' in body
+    assert 'opsmesh_workers{state="offline"} 1' in body
+    assert 'opsmesh_workers{state="stale"} 1' in body
+    assert 'opsmesh_worker_leases{status="running"} 1' in body
+    assert 'opsmesh_worker_leases{status="failed"} 1' in body
     assert (
-        'chaincloud_runtime_capacity_slots{provider="cloud_docker",runtime_type="docker"} 2'
-        in body
-    )
-    assert (
-        'chaincloud_runtime_active_runs{provider="cloud_docker",runtime_type="docker"} 1'
+        'opsmesh_runtime_capacity_slots{provider="cloud_docker",runtime_type="docker"} 2'
         in body
     )
     assert (
-        'chaincloud_runtime_saturation_ratio{provider="cloud_docker",runtime_type="docker"} 0.5'
+        'opsmesh_runtime_active_runs{provider="cloud_docker",runtime_type="docker"} 1'
         in body
     )
     assert (
-        'chaincloud_runtime_space_quota_reserved{quota_key="storage_mb",unit="mb"} 80'
+        'opsmesh_runtime_saturation_ratio{provider="cloud_docker",runtime_type="docker"} 0.5'
         in body
     )
     assert (
-        'chaincloud_runtime_space_quota_limit{quota_key="storage_mb",unit="mb"} 100'
+        'opsmesh_runtime_space_quota_reserved{quota_key="storage_mb",unit="mb"} 80'
         in body
     )
     assert (
-        'chaincloud_runtime_space_quota_usage_ratio{quota_key="storage_mb",unit="mb"} 0.8'
+        'opsmesh_runtime_space_quota_limit{quota_key="storage_mb",unit="mb"} 100'
         in body
     )
-    assert 'chaincloud_team_runtimes{health="healthy"} 1' in body
-    assert 'chaincloud_team_runtimes{health="stale"} 1' in body
-    assert "chaincloud_team_runtime_iterations_total 7" in body
-    assert 'chaincloud_team_runtime_scheduled_loops{state="enabled"} 2' in body
+    assert (
+        'opsmesh_runtime_space_quota_usage_ratio{quota_key="storage_mb",unit="mb"} 0.8'
+        in body
+    )
+    assert 'opsmesh_team_runtimes{health="healthy"} 1' in body
+    assert 'opsmesh_team_runtimes{health="stale"} 1' in body
+    assert "opsmesh_team_runtime_iterations_total 7" in body
+    assert 'opsmesh_team_runtime_scheduled_loops{state="enabled"} 2' in body
     assert str(workspace.id) not in body
 
 
@@ -181,7 +181,7 @@ def _seed_metrics_fixture(session: Session, redis: fakeredis.FakeRedis) -> Works
     workspace = Workspace(owner=user, name="Metrics", slug="metrics", settings={})
     session.add_all([user, workspace])
     session.flush()
-    keys = RedisKeyBuilder("chaincloud")
+    keys = RedisKeyBuilder("opsmesh")
     queued_job = JobPayload(
         workspace_id=workspace.id,
         job_type=JobType.AGENT_RUN,

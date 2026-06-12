@@ -41,7 +41,7 @@ class HttpTeamE2EConfig:
     suffix: str
 
 
-class ChainCloudHTTPClient:
+class OpsMeshHTTPClient:
     def __init__(self, config: HttpTeamE2EConfig) -> None:
         self.config = config
         self.client = httpx.Client(
@@ -96,7 +96,7 @@ class ChainCloudHTTPClient:
 
 def main() -> int:
     config = _config_from_env_and_args()
-    client = ChainCloudHTTPClient(config)
+    client = OpsMeshHTTPClient(config)
     resources: dict[str, Any] = {}
     exit_code = 1
     try:
@@ -130,7 +130,7 @@ def main() -> int:
 
 
 def _create_http_team(
-    client: ChainCloudHTTPClient,
+    client: OpsMeshHTTPClient,
     config: HttpTeamE2EConfig,
 ) -> dict[str, Any]:
     email = f"http-e2e-{config.suffix}@example.com"
@@ -318,7 +318,7 @@ def _create_http_team(
 
 
 def _create_agent(
-    client: ChainCloudHTTPClient,
+    client: OpsMeshHTTPClient,
     workspace_id: str,
     credential_id: str,
     *,
@@ -351,7 +351,7 @@ def _create_agent(
 
 
 def _create_member(
-    client: ChainCloudHTTPClient,
+    client: OpsMeshHTTPClient,
     workspace_id: str,
     team_id: str,
     agent_id: str,
@@ -381,7 +381,7 @@ def _create_member(
 
 
 def _poll_and_summarize(
-    client: ChainCloudHTTPClient,
+    client: OpsMeshHTTPClient,
     config: HttpTeamE2EConfig,
     resources: dict[str, Any],
 ) -> dict[str, object]:
@@ -410,7 +410,7 @@ def _poll_and_summarize(
 
 
 def _build_summary(
-    client: ChainCloudHTTPClient,
+    client: OpsMeshHTTPClient,
     resources: dict[str, Any],
     live_status: dict[str, Any],
     *,
@@ -524,7 +524,7 @@ def _build_summary(
 
 
 def _partial_summary(
-    client: ChainCloudHTTPClient,
+    client: OpsMeshHTTPClient,
     resources: dict[str, Any],
 ) -> dict[str, object] | None:
     if not resources or "workspace_id" not in resources or "task_id" not in resources:
@@ -541,40 +541,40 @@ def _partial_summary(
 
 def _config_from_env_and_args() -> HttpTeamE2EConfig:
     parser = argparse.ArgumentParser(
-        description="Run a real-provider team E2E through ChainCloud's public HTTP API."
+        description="Run a real-provider team E2E through OpsMesh public HTTP API."
     )
-    parser.add_argument("--api-url", default=os.environ.get("CHAINCLOUD_HTTP_E2E_API_URL"))
-    parser.add_argument("--api-key", default=os.environ.get("CHAINCLOUD_HTTP_E2E_API_KEY"))
-    parser.add_argument("--base-url", default=os.environ.get("CHAINCLOUD_HTTP_E2E_BASE_URL"))
+    parser.add_argument("--api-url", default=os.environ.get("OPSMESH_HTTP_E2E_API_URL"))
+    parser.add_argument("--api-key", default=os.environ.get("OPSMESH_HTTP_E2E_API_KEY"))
+    parser.add_argument("--base-url", default=os.environ.get("OPSMESH_HTTP_E2E_BASE_URL"))
     parser.add_argument(
         "--model",
-        default=os.environ.get("CHAINCLOUD_HTTP_E2E_MODEL", "gpt-5.5"),
+        default=os.environ.get("OPSMESH_HTTP_E2E_MODEL", "gpt-5.5"),
     )
     parser.add_argument(
         "--provider",
-        default=os.environ.get("CHAINCLOUD_HTTP_E2E_PROVIDER", "openai-compatible"),
+        default=os.environ.get("OPSMESH_HTTP_E2E_PROVIDER", "openai-compatible"),
     )
     parser.add_argument(
         "--model-api",
-        default=os.environ.get("CHAINCLOUD_HTTP_E2E_MODEL_API", "chat_completions"),
+        default=os.environ.get("OPSMESH_HTTP_E2E_MODEL_API", "chat_completions"),
     )
     parser.add_argument(
         "--timeout-seconds",
         type=int,
-        default=int(os.environ.get("CHAINCLOUD_HTTP_E2E_TIMEOUT_SECONDS", "240")),
+        default=int(os.environ.get("OPSMESH_HTTP_E2E_TIMEOUT_SECONDS", "240")),
     )
     parser.add_argument(
         "--poll-seconds",
         type=float,
-        default=float(os.environ.get("CHAINCLOUD_HTTP_E2E_POLL_SECONDS", "5")),
+        default=float(os.environ.get("OPSMESH_HTTP_E2E_POLL_SECONDS", "5")),
     )
     args = parser.parse_args()
     missing = [
         name
         for name, value in {
-            "CHAINCLOUD_HTTP_E2E_API_URL or --api-url": args.api_url,
-            "CHAINCLOUD_HTTP_E2E_API_KEY or --api-key": args.api_key,
-            "CHAINCLOUD_HTTP_E2E_BASE_URL or --base-url": args.base_url,
+            "OPSMESH_HTTP_E2E_API_URL or --api-url": args.api_url,
+            "OPSMESH_HTTP_E2E_API_KEY or --api-key": args.api_key,
+            "OPSMESH_HTTP_E2E_BASE_URL or --base-url": args.base_url,
         }.items()
         if not value
     ]
@@ -595,14 +595,14 @@ def _config_from_env_and_args() -> HttpTeamE2EConfig:
     )
 
 
-def _try_request(client: ChainCloudHTTPClient, path: str) -> dict[str, Any]:
+def _try_request(client: OpsMeshHTTPClient, path: str) -> dict[str, Any]:
     try:
         return client.request("GET", path)
     except Exception as exc:
         return {"status": "unavailable", "error": str(exc)}
 
 
-def _required_get(client: ChainCloudHTTPClient, path: str) -> dict[str, Any]:
+def _required_get(client: OpsMeshHTTPClient, path: str) -> dict[str, Any]:
     payload = client.request("GET", path)
     if payload.get("status") == "unavailable":
         raise RuntimeError(f"Required evidence endpoint unavailable: {path}")

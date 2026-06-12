@@ -16,19 +16,19 @@ _RESOURCE_RECOMMENDATION = recommend_runtime_resources()
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
-        env_prefix="CHAINCLOUD_",
+        env_prefix="OPSMESH_",
         extra="ignore",
     )
 
     environment: str = Field(default="local")
-    service_name: str = Field(default="chaincloud-backend")
+    service_name: str = Field(default="opsmesh-backend")
     api_prefix: str = Field(default="/api/v1")
     log_level: str = Field(default="INFO")
     log_format: LogFormat = Field(default="json")
     enable_api_docs: bool = Field(default=True)
     cors_origins: list[str] = Field(default_factory=list)
     database_url: str = Field(
-        default="postgresql+psycopg://chaincloud:chaincloud@localhost:5432/chaincloud"
+        default="postgresql+psycopg://opsmesh:opsmesh@localhost:5432/opsmesh"
     )
     database_pool_size: int = Field(default=_RESOURCE_RECOMMENDATION.database_pool_size, ge=1)
     database_max_overflow: int = Field(default=_RESOURCE_RECOMMENDATION.database_max_overflow, ge=0)
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     redis_socket_timeout_seconds: float = Field(default=5.0, gt=0)
     redis_socket_connect_timeout_seconds: float = Field(default=5.0, gt=0)
     redis_health_check_interval_seconds: int = Field(default=30, ge=0)
-    redis_key_prefix: str = Field(default="chaincloud")
+    redis_key_prefix: str = Field(default="opsmesh")
     worker_queue_name: str = Field(default="agent_runs")
     readiness_worker_check_enabled: bool = Field(default=False)
     readiness_worker_stale_after_seconds: int = Field(default=300, ge=60)
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     audit_event_retention_days: int | None = Field(default=None, ge=1)
     audit_event_worm_enabled: bool = Field(default=True)
     storage_backend: StorageBackend = Field(default="local")
-    storage_root: str = Field(default=".chaincloud-storage")
+    storage_root: str = Field(default=".opsmesh-storage")
     s3_bucket: str = Field(default="")
     s3_endpoint_url: str | None = Field(default=None)
     s3_region: str | None = Field(default=None)
@@ -83,6 +83,20 @@ class Settings(BaseSettings):
     credential_encryption_previous_secrets: dict[str, str] = Field(default_factory=dict)
     secret_vault_providers: dict[str, dict[str, object]] = Field(default_factory=dict)
     runtime_allowed_images: list[str] = Field(default_factory=lambda: ["python:3.12-slim"])
+    release_dir: str | None = Field(default=None)
+    release_update_enabled: bool = Field(default=False)
+    release_update_script: str = Field(default="/opt/opsmesh/current/scripts/server-update.sh")
+    release_update_timeout_seconds: int = Field(default=900, ge=30, le=7_200)
+    release_update_manifest_url: str | None = Field(default=None)
+    release_update_manifest_file: str | None = Field(default=None)
+    release_update_bundle_url: str | None = Field(default=None)
+    release_update_bundle_file: str | None = Field(default=None)
+    release_update_checksum_url: str | None = Field(default=None)
+    release_update_checksum_file: str | None = Field(default=None)
+    release_update_repository: str = Field(default="jhupo/OpsMesh")
+    release_update_check_cache_seconds: int = Field(default=1_200, ge=0, le=86_400)
+    release_update_github_api_url: str = Field(default="https://api.github.com")
+    release_update_http_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
     feature_flags: dict[str, bool] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -95,40 +109,47 @@ class Settings(BaseSettings):
             "s3_access_key_id",
             "s3_secret_access_key",
             "s3_session_token",
+            "release_dir",
+            "release_update_manifest_url",
+            "release_update_manifest_file",
+            "release_update_bundle_url",
+            "release_update_bundle_file",
+            "release_update_checksum_url",
+            "release_update_checksum_file",
         ):
             value = getattr(self, field_name)
             if value is not None:
                 stripped = value.strip()
                 setattr(self, field_name, stripped or None)
         if self.storage_backend == "s3" and not self.s3_bucket.strip():
-            raise ValueError("CHAINCLOUD_S3_BUCKET must be set when CHAINCLOUD_STORAGE_BACKEND=s3")
+            raise ValueError("OPSMESH_S3_BUCKET must be set when OPSMESH_STORAGE_BACKEND=s3")
         if self.environment.lower() in {"production", "prod"}:
             if self.internal_api_token == "change-me-in-production":
-                raise ValueError("CHAINCLOUD_INTERNAL_API_TOKEN must be set in production")
+                raise ValueError("OPSMESH_INTERNAL_API_TOKEN must be set in production")
             if not self.platform_admin_token:
-                raise ValueError("CHAINCLOUD_PLATFORM_ADMIN_TOKEN must be set in production")
+                raise ValueError("OPSMESH_PLATFORM_ADMIN_TOKEN must be set in production")
             if self.token_hash_pepper == "change-me-token-pepper":
-                raise ValueError("CHAINCLOUD_TOKEN_HASH_PEPPER must be set in production")
+                raise ValueError("OPSMESH_TOKEN_HASH_PEPPER must be set in production")
             if self.enable_api_docs:
-                raise ValueError("CHAINCLOUD_ENABLE_API_DOCS must be false in production")
+                raise ValueError("OPSMESH_ENABLE_API_DOCS must be false in production")
             if self.credential_encryption_secret == "change-me-credential-encryption-secret":
                 raise ValueError(
-                    "CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET must be set in production"
+                    "OPSMESH_CREDENTIAL_ENCRYPTION_SECRET must be set in production"
                 )
             if not self.worker_heartbeat_token or not self.worker_heartbeat_token.strip():
-                raise ValueError("CHAINCLOUD_WORKER_HEARTBEAT_TOKEN must be set in production")
+                raise ValueError("OPSMESH_WORKER_HEARTBEAT_TOKEN must be set in production")
             if not self.readiness_worker_check_enabled:
                 raise ValueError(
-                    "CHAINCLOUD_READINESS_WORKER_CHECK_ENABLED must be true in production"
+                    "OPSMESH_READINESS_WORKER_CHECK_ENABLED must be true in production"
                 )
-            if "localhost" in self.database_url or "chaincloud:chaincloud" in self.database_url:
-                raise ValueError("CHAINCLOUD_DATABASE_URL must not use local default credentials")
+            if "localhost" in self.database_url or "opsmesh:opsmesh" in self.database_url:
+                raise ValueError("OPSMESH_DATABASE_URL must not use local default credentials")
             if self.redis_url == "redis://localhost:6379/0":
-                raise ValueError("CHAINCLOUD_REDIS_URL must not use the local default")
+                raise ValueError("OPSMESH_REDIS_URL must not use the local default")
             if not self.cors_origins:
-                raise ValueError("CHAINCLOUD_CORS_ORIGINS must be set in production")
-            if self.storage_root == ".chaincloud-storage":
-                raise ValueError("CHAINCLOUD_STORAGE_ROOT must be explicit in production")
+                raise ValueError("OPSMESH_CORS_ORIGINS must be set in production")
+            if self.storage_root == ".opsmesh-storage":
+                raise ValueError("OPSMESH_STORAGE_ROOT must be explicit in production")
         return self
 
     @property
@@ -184,6 +205,19 @@ class Settings(BaseSettings):
             "secret_vault_providers": redact_secret_provider_configs(
                 self.secret_vault_providers
             ),
+            "release_dir": self.release_dir,
+            "release_update_enabled": self.release_update_enabled,
+            "release_update_script": self.release_update_script,
+            "release_update_timeout_seconds": self.release_update_timeout_seconds,
+            "release_update_manifest_url": self.release_update_manifest_url,
+            "release_update_manifest_file": self.release_update_manifest_file,
+            "release_update_bundle_url": self.release_update_bundle_url,
+            "release_update_bundle_file": self.release_update_bundle_file,
+            "release_update_checksum_url": self.release_update_checksum_url,
+            "release_update_checksum_file": self.release_update_checksum_file,
+            "release_update_repository": self.release_update_repository,
+            "release_update_check_cache_seconds": self.release_update_check_cache_seconds,
+            "release_update_github_api_url": self.release_update_github_api_url,
             "credential_encryption_key_id": self.credential_encryption_key_id,
             "credential_encryption_previous_key_ids": sorted(
                 self.credential_encryption_previous_secrets

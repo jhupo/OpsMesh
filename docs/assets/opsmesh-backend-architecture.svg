@@ -1,6 +1,6 @@
 <svg width="1600" height="1000" viewBox="0 0 1600 1000" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">ChainCloud Agent Team backend architecture</title>
-  <desc id="desc">Architecture diagram showing boss users, workspaces, AI teams, talent marketplace, OpenAI Agents runtime, Docker runtimes, self-hosted machines, Postgres, Redis, storage, approvals, and observability.</desc>
+  <title id="title">OpsMesh backend architecture</title>
+  <desc id="desc">Architecture diagram showing users, isolated workspaces, agent teams, markets, OpenAI Agents runtime, Docker runtimes, self-hosted machines, Postgres, Redis, storage, approvals, and observability.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#f7fafc"/>
@@ -32,18 +32,18 @@
   </defs>
 
   <rect width="1600" height="1000" fill="url(#bg)"/>
-  <text x="64" y="70" class="title">ChainCloud Agent Team</text>
-  <text x="64" y="102" class="subtitle">Backend control plane for bosses hiring AI employees, building teams, and running isolated agent work.</text>
+  <text x="64" y="70" class="title">OpsMesh</text>
+  <text x="64" y="102" class="subtitle">Run AI agent teams with control, isolation, and auditability.</text>
 
   <rect x="60" y="150" width="250" height="180" class="card"/>
-  <text x="88" y="190" class="section">Boss User</text>
+  <text x="88" y="190" class="section">Workspace User</text>
   <rect x="90" y="218" width="178" height="36" class="soft blue"/>
-  <text x="110" y="241" class="label">Company Owner</text>
+  <text x="110" y="241" class="label">Workspace Owner</text>
   <text x="90" y="282" class="small">Creates workspaces, teams, tasks,</text>
-  <text x="90" y="304" class="small">hires agents, approves risky work.</text>
+  <text x="90" y="304" class="small">installs agents, approves risky work.</text>
 
   <rect x="390" y="135" width="470" height="260" class="card"/>
-  <text x="420" y="178" class="section">Workspace = AI Company</text>
+  <text x="420" y="178" class="section">Isolated Workspace</text>
   <text x="420" y="205" class="small">Hard tenant boundary for users, files, agents, teams, runtimes, tools, and audit data.</text>
   <rect x="420" y="235" width="122" height="62" class="soft blue"/>
   <text x="442" y="261" class="label">HR Agent</text>
@@ -58,12 +58,12 @@
   <text x="442" y="348" class="label">Departments and team roles define responsibilities</text>
 
   <rect x="940" y="135" width="285" height="260" class="card"/>
-  <text x="972" y="178" class="section">Talent Market</text>
-  <text x="972" y="207" class="small">Public agent listings from other users.</text>
+  <text x="972" y="178" class="section">Markets</text>
+  <text x="972" y="207" class="small">Reviewed public agents, skills, MCP servers, and plugins.</text>
   <rect x="972" y="235" width="220" height="44" class="soft purple"/>
   <text x="992" y="263" class="label">Search by role and skill</text>
   <rect x="972" y="294" width="220" height="44" class="soft purple"/>
-  <text x="992" y="322" class="label">Hire isolated copy</text>
+  <text x="992" y="322" class="label">Install isolated copy</text>
   <text x="972" y="364" class="small">No source workspace data or credentials are copied.</text>
 
   <rect x="1285" y="135" width="255" height="260" class="card"/>

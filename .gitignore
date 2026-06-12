@@ -150,7 +150,7 @@ activemq-data/
 # Environments
 .env
 .envrc
-.chaincloud-storage/
+.opsmesh-storage/
 .venv
 env/
 venv/

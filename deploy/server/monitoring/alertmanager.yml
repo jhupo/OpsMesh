@@ -2,7 +2,7 @@ global:
   resolve_timeout: 5m
 
 route:
-  receiver: chaincloud-operators
+  receiver: opsmesh-operators
   group_by:
     - alertname
     - service
@@ -13,4 +13,4 @@ route:
 
 receivers:
   # Keeps alerts visible in the Alertmanager UI until an operator adds a real route.
-  - name: chaincloud-operators
+  - name: opsmesh-operators

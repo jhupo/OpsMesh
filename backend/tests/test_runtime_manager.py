@@ -144,8 +144,8 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     assert docker.created_requests[0].runtime_space_id == str(runtime_space.id)
     assert docker.created_requests[0].working_dir == "/workspace"
     assert docker.created_requests[0].mounts[0].target == "/workspace"
-    assert docker.created_requests[0].mounts[0].source.startswith("chaincloud-ws-")
-    assert docker.created_requests[0].labels["chaincloud.managed"] == "true"
+    assert docker.created_requests[0].mounts[0].source.startswith("opsmesh-ws-")
+    assert docker.created_requests[0].labels["opsmesh.managed"] == "true"
     assert docker.created_requests[0].limits.max_processes == 64
     assert docker.started == ["container-123"]
     assert docker.executed == [("container-123", ["python", "--version"], 30)]
@@ -725,7 +725,7 @@ def test_cleanup_stale_runtime_removes_managed_host_resources(tmp_path: Path) ->
         "managed_resources": {
             "temp_dirs": [str(temp_dir)],
             "staged_files": [str(staged_file)],
-            "docker_volumes": ["chaincloud-runtime-1"],
+            "docker_volumes": ["opsmesh-runtime-1"],
         }
     }
     session.commit()
@@ -745,7 +745,7 @@ def test_cleanup_stale_runtime_removes_managed_host_resources(tmp_path: Path) ->
     assert runtime.status == "deleted"
     assert not temp_dir.exists()
     assert not staged_file.exists()
-    assert docker.removed_volumes == ["chaincloud-runtime-1"]
+    assert docker.removed_volumes == ["opsmesh-runtime-1"]
     assert cleanup_event is not None
     cleanup = cleanup_event.event_metadata["cleanup"]
     assert cleanup["success"] is True
@@ -1003,7 +1003,7 @@ def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch
     container_id = DockerCliRuntimeClient().create_container(
         RuntimeCreateRequest(
             image="python:3.12-slim",
-            name="chaincloud-test",
+            name="opsmesh-test",
             workspace_id="workspace-1",
             runtime_id="runtime-1",
             limits=RuntimeLimits(
@@ -1015,7 +1015,7 @@ def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch
             ),
             mounts=(
                 RuntimeMount(
-                    source="chaincloud-ws-workspace-runtime",
+                    source="opsmesh-ws-workspace-runtime",
                     target="/workspace",
                 ),
             ),
@@ -1041,7 +1041,7 @@ def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch
     ]
     assert "--mount" in command
     assert command[command.index("--workdir") + 1] == "/workspace"
-    assert "chaincloud.runtime_id=runtime-1" in command
+    assert "opsmesh.runtime_id=runtime-1" in command
 
 
 def test_runtime_control_service_applies_team_runtime_space_policy() -> None:
@@ -1107,11 +1107,11 @@ def test_runtime_control_service_applies_team_runtime_space_policy() -> None:
     docker = FakeDockerClient()
     service = RuntimeControlService(
         session,
-        docker,
-        Settings(
-            storage_root=".chaincloud-test-storage",
+        settings=Settings(
+            storage_root=".opsmesh-test-storage",
             runtime_allowed_images=["python:3.12-slim"],
         ),
+        docker_client=docker,
     )
 
     runtime = service.create_runtime(
@@ -1132,8 +1132,8 @@ def test_runtime_control_service_applies_team_runtime_space_policy() -> None:
     assert request.limits.timeout_seconds == 45
     assert request.limits.max_output_bytes == 120_000
     assert request.limits.max_processes == 128
-    assert request.labels["chaincloud.team_id"] == str(team.id)
-    assert request.labels["chaincloud.runtime_space_scope"] == "team"
+    assert request.labels["opsmesh.team_id"] == str(team.id)
+    assert request.labels["opsmesh.runtime_space_scope"] == "team"
 
     policy_resolution = runtime.capabilities["policy_resolution"]
     assert policy_resolution["runtime_space"]["scope"] == "team"

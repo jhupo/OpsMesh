@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
+from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agent_runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
 from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
@@ -36,6 +37,7 @@ from backend.app.operations.timeline import TeamRuntimeTimelineService, Timeline
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.reviews.model_request import ModelRequestReview
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import (
@@ -110,6 +112,22 @@ class FakeDockerClient(DockerRuntimeClient):
     ) -> RuntimeCommandResult:
         self.executed.append((container_id, command, timeout_seconds))
         return RuntimeCommandResult(exit_code=0, stdout="ok\n", stderr="")
+
+
+class DeterministicAgentRunner:
+    async def run(self, request: AgentRunRequest) -> AgentRunResult:
+        review_policy = request.context.metadata.get("review_policy")
+        if isinstance(review_policy, dict) and review_policy.get("mode") == "final_acceptance":
+            return AgentRunResult(
+                final_output=json.dumps(
+                    {
+                        "decision": "approved",
+                        "summary": "deterministic_run_completed",
+                        "reasons": [],
+                    }
+                )
+            )
+        return AgentRunResult(final_output="deterministic_run_completed")
 
 
 @pytest.mark.parametrize(
@@ -850,7 +868,7 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
 
 def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> None:
     queue_redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(queue_redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    queue = RedisQueue(queue_redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     client, session = _client(queue=queue)
     owner, workspace = _seed_workspace(session, role="owner")
     other_owner, other_workspace = _seed_workspace(
@@ -1315,7 +1333,7 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
     assert applied["reassign_step"]["agent_profile_id"] == str(replacement_developer.id)
     assert applied["schedule_downstream_steps"]["candidate_count"] >= 1
     assert apply_body["scheduled_runs"] == []
-    assert queue_redis.llen(RedisKeyBuilder("chaincloud").queue("agent_runs")) == 0
+    assert queue_redis.llen(RedisKeyBuilder("opsmesh").queue("agent_runs")) == 0
     session.expire_all()
     reassigned_step = session.get(TaskStep, blocked_step.id)
     assert reassigned_step is not None
@@ -1788,7 +1806,7 @@ def test_team_execution_loop_finalize_closes_approved_tasks_only() -> None:
 
 def test_team_execution_loop_enqueue_queues_job_idempotently() -> None:
     queue_redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(queue_redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    queue = RedisQueue(queue_redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     client, session = _client(queue=queue)
     owner, workspace = _seed_workspace(session, role="owner")
     viewer = User(email="loop-viewer@example.com", display_name="Loop Viewer")
@@ -1849,7 +1867,13 @@ def test_team_execution_loop_enqueue_queues_job_idempotently() -> None:
 
 
 def test_team_runtime_controls_create_sessions_mailbox_and_workspace_runtime() -> None:
-    client, session, docker = _client(include_docker=True)
+    queue = RedisQueue(
+        fakeredis.FakeRedis(decode_responses=True),
+        RedisKeyBuilder("opsmesh"),
+        "agent_runs",
+        0,
+    )
+    client, session, docker = _client(queue=queue, include_docker=True)
     owner, workspace = _seed_workspace(session, role="owner")
     other_owner, _ = _seed_workspace(
         session,
@@ -1984,16 +2008,17 @@ def test_team_runtime_controls_create_sessions_mailbox_and_workspace_runtime() -
     assert continued.json()["runtime_health"] == "starting"
     assert ensured.status_code == 200
     assert ensured.json()["status"] == "running"
-    assert ensured.json()["runtime_status"] == "running"
+    assert ensured.json()["runtime_status"] == "starting"
     ensured_runtime_id = ensured.json()["workspace_runtime_id"]
     assert ensured_runtime_id != str(runtime.id)
     assert "sk-ensure-runtime" not in str(ensured.json())
     assert ensured_again.status_code == 200
     assert ensured_again.json()["workspace_runtime_id"] == ensured_runtime_id
+    _consume_runtime_control_jobs(queue, session, docker)
     assert len(docker.created_requests) == 1
     assert docker.created_requests[0].image == "python:3.12-slim"
-    assert docker.created_requests[0].name.startswith("chaincloud-")
-    assert docker.started == ["container-1"]
+    assert docker.created_requests[0].name.startswith("opsmesh-")
+    assert docker.started == ["container-1", "container-1"]
     assert bound.status_code == 200
     assert bound.json()["workspace_runtime_id"] == str(runtime.id)
     assert bound.json()["runtime_status"] == "running"
@@ -2243,11 +2268,17 @@ def test_team_runtime_actions_require_manage_runtime_for_write_only_user(
     assert apply_response.status_code == 403
     assert dry_run_response.status_code == 200
     assert owner_ensure.status_code == 200
-    assert owner_ensure.json()["runtime_status"] == "running"
+    assert owner_ensure.json()["runtime_status"] == "starting"
 
 
 def test_bound_team_runtime_stop_and_resume_control_workspace_runtime() -> None:
-    client, session, docker = _client(include_docker=True)
+    queue = RedisQueue(
+        fakeredis.FakeRedis(decode_responses=True),
+        RedisKeyBuilder("opsmesh"),
+        "agent_runs",
+        0,
+    )
+    client, session, docker = _client(queue=queue, include_docker=True)
     owner, workspace = _seed_workspace(session, role="owner")
     team = AgentTeam(
         workspace_id=workspace.id,
@@ -2287,14 +2318,15 @@ def test_bound_team_runtime_stop_and_resume_control_workspace_runtime() -> None:
     assert bound.status_code == 200
     assert stopped.status_code == 200
     assert stopped.json()["status"] == "stopped"
-    assert stopped.json()["runtime_status"] == "stopped"
+    assert stopped.json()["runtime_status"] == "stopping"
     assert stopped.json()["metadata"]["workspace_runtime_control"]["mode"] == "lifecycle"
     assert stopped.json()["metadata"]["workspace_runtime_control"]["action"] == "stop"
     assert resumed.status_code == 200
     assert resumed.json()["status"] == "running"
-    assert resumed.json()["runtime_status"] == "running"
+    assert resumed.json()["runtime_status"] == "starting"
     assert resumed.json()["metadata"]["workspace_runtime_control"]["mode"] == "lifecycle"
     assert resumed.json()["metadata"]["workspace_runtime_control"]["action"] == "start"
+    _consume_runtime_control_jobs(queue, session, docker)
     assert docker.stopped == ["bound-container"]
     assert docker.started == ["bound-container"]
     session.expire_all()
@@ -2778,7 +2810,7 @@ def test_team_runtime_timeline_includes_blocked_step_provider_metadata() -> None
 def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox() -> None:
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
     )
@@ -3167,7 +3199,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     assert body["runtime"]["queue"]["available"] is True
     assert body["runtime"]["queue"]["queue_name"] == "agent_runs"
     assert body["runtime"]["queue"]["job_type"] == JobType.TEAM_EXECUTION_LOOP.value
-    assert body["runtime"]["queue"]["queued"] == 1
+    assert body["runtime"]["queue"]["queued"] == 2
     assert body["runtime"]["queue"]["scheduled_retry"] == 1
     assert body["runtime"]["queue"]["dead_letter"] == 1
     queue_states = {item["state"] for item in body["runtime"]["queue"]["latest_jobs"]}
@@ -3387,6 +3419,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
         if item["source"] == "team_runtime_queue"
     ]
     assert {item["reason"] for item in queue_suggestions} == {
+        "team_execution_loop_queue_backlog",
         "team_execution_loop_dead_letter",
         "team_execution_loop_retry_scheduled",
     }
@@ -3922,7 +3955,13 @@ def test_team_runtime_ignores_foreign_team_thread_reference() -> None:
 
 
 def test_team_runtime_state_recovers_last_iteration_and_continue_context() -> None:
-    client, session, docker = _client(include_docker=True)
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("opsmesh"),
+        queue_name="agent_runs",
+        blocking_timeout_seconds=0,
+    )
+    client, session, docker = _client(queue=queue, include_docker=True)
     owner, workspace = _seed_workspace(session, role="owner")
     manager = AgentProfile(workspace_id=workspace.id, name="PM", role="project_manager")
     template = RuntimeTemplate(
@@ -3996,13 +4035,13 @@ def test_team_runtime_state_recovers_last_iteration_and_continue_context() -> No
     assert continued.status_code == 200
     assert continued.json()["status"] == "running"
     assert continued.json()["last_iteration"]["iteration"] == 1
-    assert continued.json()["runtime_health"] == "healthy"
+    assert continued.json()["runtime_health"] == "degraded"
     assert recovered.status_code == 200
     recovered_body = recovered.json()
     assert recovered_body["last_iteration"]["status"] == "noop"
     assert recovered_body["last_iteration"]["summary"]["finalize_ready_tasks"] is False
     assert recovered_body["last_message_at"] is not None
-    assert recovered_body["runtime_health"] == "healthy"
+    assert recovered_body["runtime_health"] == "degraded"
 
     session.expire_all()
     stored_team = session.get(AgentTeam, team.id)
@@ -4011,7 +4050,8 @@ def test_team_runtime_state_recovers_last_iteration_and_continue_context() -> No
     assert runtime_metadata["iteration_count"] == 1
     assert runtime_metadata["last_heartbeat_at"]
     assert runtime_metadata["continued_from_iteration"]["iteration"] == 1
-    assert len(docker.created_requests) == 1
+    assert len(docker.created_requests) == 0
+    assert queue.count_queued(workspace_id=workspace.id) >= 2
 
 
 def test_team_runtime_continue_clears_previous_worker_failure() -> None:
@@ -4229,7 +4269,7 @@ def test_team_execution_loop_marks_runtime_stalled_after_repeated_noop() -> None
 
 def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> None:
     queue_redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(queue_redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    queue = RedisQueue(queue_redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     client, session, docker = _client(queue=queue, include_docker=True)
     owner, workspace = _seed_workspace(session, role="owner")
     other_owner, _ = _seed_workspace(
@@ -4425,7 +4465,7 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     assert dry_body["summary"]["eligible_action_count"] >= 1
     assert dry_body["summary"]["finalized_task_count"] == 0
     assert dry_body["finalization"]["finalized_task_count"] == 0
-    assert queue_redis.llen(RedisKeyBuilder("chaincloud").queue("agent_runs")) == 0
+    assert queue_redis.llen(RedisKeyBuilder("opsmesh").queue("agent_runs")) == 0
     assert "hidden-loop-dry-run" not in str(dry_body)
 
     forbidden = client.post(
@@ -4459,7 +4499,7 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     assert body["summary"]["finalized_task_count"] == 1
     assert body["command_center_actions"]["scheduled_run_count"] >= 1
     assert body["finalization"]["finalized_task_count"] == 1
-    assert queue_redis.llen(RedisKeyBuilder("chaincloud").queue("agent_runs")) >= 1
+    assert queue_redis.llen(RedisKeyBuilder("opsmesh").queue("agent_runs")) >= 1
     serialized = str(body)
     assert "sk-loop-run" not in serialized
     assert "sk-loop-manager" not in serialized
@@ -4488,11 +4528,17 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
         )
     )
     assert created_runtime is not None
+    assert created_runtime.status == "starting"
+    assert created_runtime.connection_status == "offline"
+    assert created_runtime.capabilities["team_runtime"]["team_id"] == str(team.id)
+    _consume_runtime_control_jobs(queue, session, docker)
+    session.expire_all()
+    created_runtime = session.get(WorkspaceRuntime, created_runtime.id)
+    assert created_runtime is not None
     assert created_runtime.status == "running"
     assert created_runtime.connection_status == "online"
-    assert created_runtime.capabilities["team_runtime"]["team_id"] == str(team.id)
     assert len(docker.created_requests) == 1
-    assert docker.started == ["container-1"]
+    assert docker.started == ["container-1", "container-1"]
     assert {run.runtime_id for run in scheduled_runs} == {created_runtime.id}
     queued_jobs = queue.peek()
     assert queued_jobs
@@ -4526,7 +4572,7 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
 
 def test_team_execution_loop_skips_enqueue_when_provider_readiness_blocked() -> None:
     queue_redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(queue_redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    queue = RedisQueue(queue_redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     client, session = _client(queue=queue)
     owner, workspace = _seed_workspace(session, role="owner")
     credential = ModelProviderCredentialService(
@@ -4628,7 +4674,7 @@ def test_team_execution_loop_skips_enqueue_when_provider_readiness_blocked() -> 
         body["command_center_actions"]["scheduled_run_skip_reason"] == "provider_readiness_blocked"
     )
     assert body["command_center_actions"]["scheduled_run_count"] == 0
-    assert queue_redis.llen(RedisKeyBuilder("chaincloud").queue("agent_runs")) == 0
+    assert queue_redis.llen(RedisKeyBuilder("opsmesh").queue("agent_runs")) == 0
     session.expire_all()
     assert session.scalars(select(AgentRun)).all() == []
     stored_team = session.get(AgentTeam, team.id)
@@ -4653,7 +4699,7 @@ def test_team_execution_loop_skips_enqueue_when_provider_readiness_blocked() -> 
 
 def test_team_execution_loop_ignores_non_runtime_provider_blockers() -> None:
     queue_redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(queue_redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    queue = RedisQueue(queue_redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     client, session = _client(queue=queue)
     owner, workspace = _seed_workspace(session, role="owner")
     service = ModelProviderCredentialService(
@@ -4785,7 +4831,7 @@ def test_team_execution_loop_ignores_non_runtime_provider_blockers() -> None:
     assert body["summary"]["scheduled_run_count"] == 1
     assert body["command_center_actions"]["scheduled_run_skip_reason"] is None
     assert body["command_center_actions"]["scheduled_run_count"] == 1
-    assert queue_redis.llen(RedisKeyBuilder("chaincloud").queue("agent_runs")) == 1
+    assert queue_redis.llen(RedisKeyBuilder("opsmesh").queue("agent_runs")) == 1
     session.expire_all()
     run = session.scalar(select(AgentRun).where(AgentRun.task_step_id == step.id))
     assert run is not None
@@ -5438,15 +5484,46 @@ def test_create_task_matches_requested_work_packages_to_team_members() -> None:
     assert by_id["frontend-build"]["assigned_agent_profile_id"] == developer.json()["id"]
 
 
-def test_api_team_task_e2e_runs_workers_and_accepts_delivery() -> None:
+def test_api_team_task_e2e_runs_workers_and_accepts_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def approve_model_request(self, **kwargs):  # noqa: ANN001, ANN202
+        return ModelRequestReview(
+            required=False,
+            risk_level="low",
+            reasons=["model_request.approved"],
+            signals={"reviewer": "llm", "verdict": "approve"},
+        )
+
+    monkeypatch.setattr(
+        "backend.app.reviews.model_request.ModelRequestReviewService.review_request",
+        approve_model_request,
+    )
+
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
     )
     client, session = _client(queue=queue)
     owner, workspace = _seed_workspace(session, role="owner")
+    ModelProviderCredentialService(
+        session,
+        SecretEncryptionService(
+            secret="change-me-credential-encryption-secret",
+            key_id="local",
+        ),
+    ).create(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        name="Workspace OpenAI",
+        provider="openai",
+        api_key="sk-e2e-provider-secret",
+        default_model="gpt-4.1",
+        base_url=None,
+        is_default=True,
+    )
     manager = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
         headers=_headers(owner.id),
@@ -5558,7 +5635,7 @@ def test_api_team_task_e2e_runs_workers_and_accepts_delivery() -> None:
     assert created_task.json()["status"] == TaskStatus.QUEUED.value
     assert queue.count_queued(workspace_id=workspace.id) == 1
 
-    handler = WorkerJobHandler(session, queue)
+    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
     handled_jobs = 0
     while consume_once(queue, handler.handle):
         handled_jobs += 1
@@ -5626,7 +5703,7 @@ def test_api_team_task_e2e_runs_workers_and_accepts_delivery() -> None:
 def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
     client, session = _client(queue=queue)
@@ -5800,7 +5877,7 @@ def test_planning_routes_reject_foreign_task_ids() -> None:
 def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
     client, session = _client(queue=queue)
@@ -7130,7 +7207,7 @@ def test_task_event_stream_reads_message_created_events_from_bus() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(
         redis=redis,
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
     )
@@ -7145,7 +7222,7 @@ def test_task_event_stream_reads_message_created_events_from_bus() -> None:
     session.add(task)
     session.commit()
 
-    event_bus = RedisTaskEventBus(redis=redis, key_prefix="chaincloud")
+    event_bus = RedisTaskEventBus(redis=redis, key_prefix="opsmesh")
     message = TaskMessageAppendService(session).append_for_task(
         task,
         message_type="agent.progress",
@@ -7185,7 +7262,7 @@ def test_task_event_stream_replays_previously_published_redis_event() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(
         redis=redis,
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
     )
@@ -7199,7 +7276,7 @@ def test_task_event_stream_replays_previously_published_redis_event() -> None:
     )
     session.add(task)
     session.commit()
-    event_id = RedisTaskEventBus(redis=redis, key_prefix="chaincloud").publish(
+    event_id = RedisTaskEventBus(redis=redis, key_prefix="opsmesh").publish(
         workspace_id=workspace.id,
         task_id=task.id,
         event_type=TASK_MESSAGE_CREATED_EVENT_TYPE,
@@ -8694,7 +8771,7 @@ def test_task_observation_status_cards_for_specialized_domains() -> None:
 
 def test_retry_failed_run_creates_new_queued_run_and_enqueues_job() -> None:
     queue_redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(queue_redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    queue = RedisQueue(queue_redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     client, session = _client(queue=queue)
     owner, workspace = _seed_workspace(session, role="owner")
     task_response = client.post(
@@ -10650,6 +10727,33 @@ def test_workspace_update_rejects_invalid_resource_review_model_provider() -> No
     assert fail_open.status_code == 422
 
 
+def test_workspace_update_rejects_disabling_public_resource_review() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+
+    response = client.patch(
+        f"/api/v1/workspaces/{workspace.id}",
+        headers=_headers(owner.id),
+        json={
+            "settings": {
+                "resource_review": {
+                    "public_resources": {
+                        "agent_profile": False,
+                        "skill": True,
+                        "mcp_server": True,
+                        "plugin": True,
+                    }
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert "resource_review.public_resources.agent_profile cannot be disabled" in str(
+        response.json()
+    )
+
+
 def test_workspace_update_rejects_invalid_scheduler_pause_config() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
@@ -10931,6 +11035,27 @@ def _client(
     if include_docker:
         return client, session, docker
     return client, session
+
+
+def _consume_runtime_control_jobs(
+    queue: RedisQueue,
+    session: Session,
+    docker: FakeDockerClient,
+) -> None:
+    handler = WorkerJobHandler(
+        session,
+        queue,
+        settings=get_settings(),
+        runtime_docker_client=docker,
+    )
+    while True:
+        job = queue.dequeue_matching(
+            lambda candidate: candidate.job_type == JobType.RUNTIME_CONTROL
+        )
+        if job is None:
+            return
+        handler.handle(job)
+        queue.ack(job)
 
 
 def _seed_workspace(

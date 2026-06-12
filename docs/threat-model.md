@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document lists major threats for ChainCloud Agent Team and the default mitigations. It should be reviewed before implementing runtime, tools, MCP, file access, and self-hosted workers.
+This document lists major threats for OpsMesh and the default mitigations. It should be reviewed before implementing runtime, tools, MCP, file access, and self-hosted workers.
 
 ## Security Goals
 

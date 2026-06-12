@@ -54,7 +54,7 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)
     owner, workspace = _seed_workspace(session)
-    keys = RedisKeyBuilder("chaincloud")
+    keys = RedisKeyBuilder("opsmesh")
     failed_run_id = uuid4()
     queued_job = JobPayload(
         workspace_id=workspace.id,
@@ -461,7 +461,7 @@ def test_operations_stale_runs_diagnostics_and_recovery_are_workspace_scoped() -
     assert recovered_payload["requeued_runs"] == 1
     assert recovered_payload["failed_closed_runs"] == 2
     assert recovered_payload["expired_worker_leases"] == 1
-    keys = RedisKeyBuilder("chaincloud")
+    keys = RedisKeyBuilder("opsmesh")
     assert redis.llen(keys.queue("agent_runs")) == 1
     session.expire_all()
     stored_running = session.get(AgentRun, running_run.id)
@@ -729,7 +729,7 @@ def test_team_runtime_timeline_aggregates_redacts_and_scopes_events() -> None:
     )
     session.add_all([run, other_team_run, runtime, other_runtime, foreign_runtime])
     session.flush()
-    keys = RedisKeyBuilder("chaincloud")
+    keys = RedisKeyBuilder("opsmesh")
     redis.rpush(keys.queue("agent_runs"), queued_loop_job.model_dump_json())
     redis.zadd(
         keys.queue("agent_runs") + ":retry",
@@ -1316,7 +1316,7 @@ def test_operations_overview_uses_workspace_scoped_short_cache() -> None:
     assert other_response.status_code == 200
     assert other_response.json()["failed_runs"] == 0
 
-    redis.delete(f"chaincloud:cache:api:overview:{workspace.id}:agent_runs")
+    redis.delete(f"opsmesh:cache:api:overview:{workspace.id}:agent_runs")
     refreshed_response = client.get(
         f"/api/v1/workspaces/{workspace.id}/operations/overview",
         headers=_headers(owner.id),
@@ -1485,7 +1485,7 @@ def test_operations_capacity_uses_workspace_scoped_short_cache() -> None:
     assert cached_response.status_code == 200
     assert cached_response.json()["runtime_spaces"] == []
 
-    redis.delete(f"chaincloud:cache:api:capacity:{workspace.id}:agent_runs")
+    redis.delete(f"opsmesh:cache:api:capacity:{workspace.id}:agent_runs")
     refreshed_response = client.get(
         f"/api/v1/workspaces/{workspace.id}/operations/capacity",
         headers=_headers(owner.id),
@@ -1627,7 +1627,7 @@ def test_operations_queue_insights_reports_priority_and_type_buckets() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)
     owner, workspace = _seed_workspace(session)
-    keys = RedisKeyBuilder("chaincloud")
+    keys = RedisKeyBuilder("opsmesh")
     now = datetime.now(UTC)
     old_high = JobPayload(
         workspace_id=workspace.id,
@@ -1743,7 +1743,7 @@ def test_operations_queue_insights_marks_truncated_scan() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)
     owner, workspace = _seed_workspace(session)
-    keys = RedisKeyBuilder("chaincloud")
+    keys = RedisKeyBuilder("opsmesh")
     for index in range(3):
         redis.rpush(
             keys.queue("agent_runs"),
@@ -1772,7 +1772,7 @@ def test_operations_queue_governance_diagnoses_queue_run_drift() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)
     owner, workspace = _seed_workspace(session)
-    keys = RedisKeyBuilder("chaincloud")
+    keys = RedisKeyBuilder("opsmesh")
     now = datetime.now(UTC)
     queued_run = AgentRun(
         workspace_id=workspace.id,
@@ -1876,7 +1876,7 @@ def test_operations_queue_governance_reconciles_missing_and_stale_jobs() -> None
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)
     owner, workspace = _seed_workspace(session)
-    keys = RedisKeyBuilder("chaincloud")
+    keys = RedisKeyBuilder("opsmesh")
     queued_run = AgentRun(workspace_id=workspace.id, status="queued")
     completed_run = AgentRun(workspace_id=workspace.id, status="completed")
     session.add_all([queued_run, completed_run])
@@ -1943,7 +1943,7 @@ def test_operations_capacity_reports_queue_workers_and_runtime_space_saturation(
         email="other-capacity@example.com",
         slug="other-capacity",
     )
-    keys = RedisKeyBuilder("chaincloud")
+    keys = RedisKeyBuilder("opsmesh")
     old_job = JobPayload(
         workspace_id=workspace.id,
         job_type=JobType.AGENT_RUN,
@@ -2226,7 +2226,7 @@ def test_operations_worker_lifecycle_reports_backlog_failure_and_latency() -> No
         email="other-worker-lifecycle@example.com",
         slug="other-worker-lifecycle",
     )
-    keys = RedisKeyBuilder("chaincloud")
+    keys = RedisKeyBuilder("opsmesh")
     redis.rpush(
         keys.queue("agent_runs"),
         JobPayload(
@@ -2370,7 +2370,7 @@ def test_operations_control_plane_summarizes_capacity_and_health_issues() -> Non
     client, session = _client(redis)
     owner, workspace = _seed_workspace(session)
     workspace.settings = {"scheduler": {"paused": True, "pause_reason": "maintenance"}}
-    keys = RedisKeyBuilder("chaincloud")
+    keys = RedisKeyBuilder("opsmesh")
     queued_job = JobPayload(
         workspace_id=workspace.id,
         job_type=JobType.AGENT_RUN,

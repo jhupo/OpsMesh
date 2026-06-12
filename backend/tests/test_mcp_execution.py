@@ -699,7 +699,7 @@ def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> 
     server.server_type = "sse"
     server.connection = {
         "url": "https://mcp.example.test/sse",
-        "headers": {"x-client": "chaincloud"},
+        "headers": {"x-client": "opsmesh"},
     }
     credential = McpCredentialReference(
         workspace_id=workspace.id,
@@ -742,7 +742,7 @@ def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> 
     assert captured["headers"] == {
         "content-type": "application/json",
         "accept": "text/event-stream",
-        "x-client": "chaincloud",
+        "x-client": "opsmesh",
         "x-api-key": "test-secret",
     }
     assert captured["payload"]["method"] == "tools/call"

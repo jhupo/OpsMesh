@@ -338,7 +338,7 @@ Project:
 ```text
 domain_projects
 - domain_type: software
-- name: chaincloud-agent-team
+- name: opsmesh
 ```
 
 Items:

@@ -2,17 +2,17 @@ services:
   api:
     build:
       context: .
-    image: chaincloud-agent-team-backend:local
+    image: opsmesh-backend:local
     env_file:
       - .env
     environment:
-      CHAINCLOUD_DATABASE_URL: postgresql+psycopg://chaincloud:${CHAINCLOUD_POSTGRES_PASSWORD:-chaincloud}@postgres:5432/chaincloud
-      CHAINCLOUD_REDIS_URL: redis://redis:6379/0
-      CHAINCLOUD_STORAGE_ROOT: /app/.chaincloud-storage
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
+      OPSMESH_REDIS_URL: redis://redis:6379/0
+      OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
     ports:
-      - "${CHAINCLOUD_API_PORT:-8000}:8000"
+      - "${OPSMESH_API_PORT:-8000}:8000"
     volumes:
-      - chaincloud_storage:/app/.chaincloud-storage
+      - opsmesh_storage:/app/.opsmesh-storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -28,19 +28,19 @@ services:
       start_period: 20s
 
   worker:
-    image: chaincloud-agent-team-backend:local
+    image: opsmesh-backend:local
     build:
       context: .
     env_file:
       - .env
     environment:
-      CHAINCLOUD_DATABASE_URL: postgresql+psycopg://chaincloud:${CHAINCLOUD_POSTGRES_PASSWORD:-chaincloud}@postgres:5432/chaincloud
-      CHAINCLOUD_REDIS_URL: redis://redis:6379/0
-      CHAINCLOUD_STORAGE_ROOT: /app/.chaincloud-storage
-      CHAINCLOUD_RUN_MIGRATIONS: "false"
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
+      OPSMESH_REDIS_URL: redis://redis:6379/0
+      OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
+      OPSMESH_RUN_MIGRATIONS: "false"
     command: ["python", "-m", "backend.app.workers.cli"]
     volumes:
-      - chaincloud_storage:/app/.chaincloud-storage
+      - opsmesh_storage:/app/.opsmesh-storage
     depends_on:
       api:
         condition: service_healthy
@@ -48,11 +48,11 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: chaincloud
-      POSTGRES_USER: chaincloud
-      POSTGRES_PASSWORD: ${CHAINCLOUD_POSTGRES_PASSWORD:-chaincloud}
+      POSTGRES_DB: opsmesh
+      POSTGRES_USER: opsmesh
+      POSTGRES_PASSWORD: ${OPSMESH_POSTGRES_PASSWORD:-opsmesh}
     volumes:
-      - chaincloud_postgres:/var/lib/postgresql/data
+      - opsmesh_postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -63,7 +63,7 @@ services:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - chaincloud_redis:/data
+      - opsmesh_redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -71,6 +71,6 @@ services:
       retries: 5
 
 volumes:
-  chaincloud_postgres:
-  chaincloud_redis:
-  chaincloud_storage:
+  opsmesh_postgres:
+  opsmesh_redis:
+  opsmesh_storage:

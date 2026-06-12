@@ -16,6 +16,7 @@ from backend.app.capabilities.models import (
     McpToolAllowlist,
     Skill,
 )
+from backend.app.marketplace.models import MarketplaceListing, TalentListing
 from backend.app.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_REJECTED,
@@ -30,7 +31,14 @@ from backend.app.workers.queue import RedisQueue
 
 T = TypeVar("T")
 ResourceReviewTarget = (
-    AgentProfile | Capability | Skill | McpServer | McpToolAllowlist | McpCredentialReference
+    AgentProfile
+    | Capability
+    | Skill
+    | McpServer
+    | McpToolAllowlist
+    | McpCredentialReference
+    | MarketplaceListing
+    | TalentListing
 )
 
 
@@ -144,7 +152,7 @@ class ApprovalService:
         target = self._resource_review_target(approval.workspace_id, target_type, target_id)
         if target is None:
             return
-        next_status = RESOURCE_STATUS_ACTIVE if status == "approved" else RESOURCE_STATUS_REJECTED
+        next_status = _review_target_next_status(target, status)
         target.status = next_status
         AuditService(self._session).record_user_action(
             workspace_id=approval.workspace_id,
@@ -168,6 +176,8 @@ class ApprovalService:
             "mcp_server": McpServer,
             "mcp_tool_allowlist": McpToolAllowlist,
             "mcp_credential_reference": McpCredentialReference,
+            "marketplace_listing": MarketplaceListing,
+            "talent_listing": TalentListing,
         }
         model = model_by_type.get(target_type)
         if model is None:
@@ -180,6 +190,8 @@ class ApprovalService:
         target_workspace_id = getattr(target, "workspace_id", None)
         if target_workspace_id is None:
             target_workspace_id = getattr(target, "owner_workspace_id", None)
+        if target_workspace_id is None:
+            target_workspace_id = getattr(target, "source_workspace_id", None)
         if target_workspace_id != workspace_id:
             return None
         return target
@@ -215,6 +227,14 @@ class ApprovalService:
         )
         rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
         return list(rows), int(total or 0)
+
+
+def _review_target_next_status(target: ResourceReviewTarget, approval_status: str) -> str:
+    if approval_status != "approved":
+        return RESOURCE_STATUS_REJECTED
+    if isinstance(target, MarketplaceListing | TalentListing):
+        return "public"
+    return RESOURCE_STATUS_ACTIVE
 
 
 def _uuid_or_none(value: object) -> UUID | None:

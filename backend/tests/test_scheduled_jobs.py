@@ -458,7 +458,7 @@ def _client() -> tuple[TestClient, Session, RedisQueue]:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(
         redis=redis,
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
     )
@@ -495,7 +495,7 @@ def _session_factory() -> sessionmaker[Session]:
 def _queue() -> RedisQueue:
     return RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
     )

@@ -18,11 +18,13 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
-from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeLimits
-from backend.app.runtime_manager.dependencies import get_docker_runtime_client
+from backend.app.runtime_manager.contracts import RuntimeLimits
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError
 from backend.app.runtime_manager.safety import RuntimeSafetyError
 from backend.app.runtime_manager.service import RuntimeControlService
+from backend.app.workers.dependencies import get_worker_queue
+from backend.app.workers.jobs import JobPayload, JobType
+from backend.app.workers.queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["runtimes"])
 
@@ -31,10 +33,9 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["runtimes"])
 async def list_runtime_templates(
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
     settings: Settings = Depends(get_settings),
 ) -> list[RuntimeTemplateResponse]:
-    templates = RuntimeControlService(session, docker, settings).list_templates()
+    templates = RuntimeControlService(session, settings=settings).list_templates()
     return [RuntimeTemplateResponse.model_validate(template) for template in templates]
 
 
@@ -47,17 +48,19 @@ async def create_runtime(
     request: RuntimeCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
     settings: Settings = Depends(get_settings),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> WorkspaceRuntimeResponse:
+    limits = _to_runtime_limits(request.limits)
     try:
-        runtime = RuntimeControlService(session, docker, settings).create_runtime(
+        runtime = RuntimeControlService(session, settings=settings).queue_runtime_create(
             workspace_id=context.workspace.id,
             template_id=request.template_id,
             name=request.name,
-            limits=_to_runtime_limits(request.limits),
+            limits=limits,
             runtime_space_id=request.runtime_space_id,
             network_disabled=request.network_disabled,
+            requested_by_user_id=context.user.user_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -76,6 +79,26 @@ async def create_runtime(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Runtime template not found",
         )
+    _enqueue_runtime_control(
+        queue,
+        JobPayload(
+            workspace_id=context.workspace.id,
+            job_type=JobType.RUNTIME_CONTROL,
+            resource_id=runtime.id,
+            requested_by_user_id=context.user.user_id,
+            idempotency_key=f"runtime.create:{context.workspace.id}:{runtime.id}",
+            routing={
+                "action": "create",
+                "template_id": str(request.template_id),
+                "name": request.name,
+                "runtime_space_id": str(request.runtime_space_id)
+                if request.runtime_space_id is not None
+                else None,
+                "limits": _limits_routing(limits),
+                "network_disabled": request.network_disabled,
+            },
+        ),
+    )
     return WorkspaceRuntimeResponse.model_validate(runtime)
 
 
@@ -86,10 +109,9 @@ async def list_runtimes(
     runtime_status: str | None = Query(default=None, alias="status"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
     settings: Settings = Depends(get_settings),
 ) -> PageResponse[WorkspaceRuntimeResponse]:
-    items, total = RuntimeControlService(session, docker, settings).list_runtimes(
+    items, total = RuntimeControlService(session, settings=settings).list_runtimes(
         context.workspace.id,
         limit=limit,
         offset=offset,
@@ -108,13 +130,23 @@ async def start_runtime(
     runtime_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
     settings: Settings = Depends(get_settings),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> WorkspaceRuntimeResponse:
-    service = RuntimeControlService(session, docker, settings)
-    return _runtime_or_404(
-        service.start_runtime(context.workspace.id, runtime_id)
+    service = RuntimeControlService(session, settings=settings)
+    runtime = _runtime_or_404(service.get_runtime(context.workspace.id, runtime_id))
+    _enqueue_runtime_control(
+        queue,
+        JobPayload(
+            workspace_id=context.workspace.id,
+            job_type=JobType.RUNTIME_CONTROL,
+            resource_id=runtime_id,
+            requested_by_user_id=context.user.user_id,
+            idempotency_key=f"runtime.start:{context.workspace.id}:{runtime_id}",
+            routing={"action": "start"},
+        ),
     )
+    return runtime
 
 
 @router.post("/runtimes/{runtime_id}/stop", response_model=WorkspaceRuntimeResponse)
@@ -122,13 +154,23 @@ async def stop_runtime(
     runtime_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
     settings: Settings = Depends(get_settings),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> WorkspaceRuntimeResponse:
-    service = RuntimeControlService(session, docker, settings)
-    return _runtime_or_404(
-        service.stop_runtime(context.workspace.id, runtime_id)
+    service = RuntimeControlService(session, settings=settings)
+    runtime = _runtime_or_404(service.get_runtime(context.workspace.id, runtime_id))
+    _enqueue_runtime_control(
+        queue,
+        JobPayload(
+            workspace_id=context.workspace.id,
+            job_type=JobType.RUNTIME_CONTROL,
+            resource_id=runtime_id,
+            requested_by_user_id=context.user.user_id,
+            idempotency_key=f"runtime.stop:{context.workspace.id}:{runtime_id}",
+            routing={"action": "stop"},
+        ),
     )
+    return runtime
 
 
 @router.delete("/runtimes/{runtime_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -136,15 +178,27 @@ async def delete_runtime(
     runtime_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
     settings: Settings = Depends(get_settings),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> None:
-    deleted = RuntimeControlService(session, docker, settings).delete_runtime(
+    runtime = RuntimeControlService(session, settings=settings).get_runtime(
         context.workspace.id,
         runtime_id,
     )
-    if not deleted:
+    if runtime is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime not found")
+    _enqueue_runtime_control(
+        queue,
+        JobPayload(
+            workspace_id=context.workspace.id,
+            job_type=JobType.RUNTIME_CONTROL,
+            resource_id=runtime_id,
+            requested_by_user_id=context.user.user_id,
+            idempotency_key=f"runtime.delete:{context.workspace.id}:{runtime_id}",
+            routing={"action": "delete"},
+        ),
+        force=True,
+    )
 
 
 @router.post(
@@ -157,11 +211,11 @@ async def execute_runtime_command(
     request: RuntimeCommandRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
     settings: Settings = Depends(get_settings),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> RuntimeCommandResponse:
     try:
-        command = RuntimeControlService(session, docker, settings).execute_command(
+        command = RuntimeControlService(session, settings=settings).queue_command(
             workspace_id=context.workspace.id,
             runtime_id=runtime_id,
             command=request.command,
@@ -170,6 +224,22 @@ async def execute_runtime_command(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if command is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime not found")
+    _enqueue_runtime_control(
+        queue,
+        JobPayload(
+            workspace_id=context.workspace.id,
+            job_type=JobType.RUNTIME_CONTROL,
+            resource_id=runtime_id,
+            requested_by_user_id=context.user.user_id,
+            idempotency_key=f"runtime.command:{context.workspace.id}:{command.id}",
+            routing={
+                "action": "command",
+                "runtime_command_id": str(command.id),
+                "command": request.command,
+            },
+        ),
+        force=True,
+    )
     return RuntimeCommandResponse.model_validate(command)
 
 
@@ -183,10 +253,9 @@ async def list_runtime_commands(
     offset: int = Query(default=0, ge=0),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
     settings: Settings = Depends(get_settings),
 ) -> PageResponse[RuntimeCommandResponse]:
-    result = RuntimeControlService(session, docker, settings).list_commands(
+    result = RuntimeControlService(session, settings=settings).list_commands(
         context.workspace.id,
         runtime_id,
         limit=limit,
@@ -210,10 +279,9 @@ async def list_runtime_events(
     offset: int = Query(default=0, ge=0),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
     settings: Settings = Depends(get_settings),
 ) -> PageResponse[RuntimeEventResponse]:
-    result = RuntimeControlService(session, docker, settings).list_events(
+    result = RuntimeControlService(session, settings=settings).list_events(
         context.workspace.id,
         runtime_id,
         limit=limit,
@@ -247,3 +315,29 @@ def _runtime_or_404(runtime: object | None) -> WorkspaceRuntimeResponse:
     if runtime is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime not found")
     return WorkspaceRuntimeResponse.model_validate(runtime)
+
+
+def _limits_routing(limits: RuntimeLimits | None) -> dict[str, object] | None:
+    if limits is None:
+        return None
+    return {
+        "cpu_count": limits.cpu_count,
+        "memory_mb": limits.memory_mb,
+        "disk_mb": limits.disk_mb,
+        "timeout_seconds": limits.timeout_seconds,
+        "max_output_bytes": limits.max_output_bytes,
+        "max_processes": limits.max_processes,
+    }
+
+
+def _enqueue_runtime_control(
+    queue: RedisQueue,
+    job: JobPayload,
+    *,
+    force: bool = False,
+) -> None:
+    if not queue.enqueue(job, force=force):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Runtime control request is already queued",
+        )

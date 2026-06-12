@@ -26,6 +26,9 @@ from backend.app.runtime_manager.contracts import (
 from backend.app.runtime_manager.dependencies import get_docker_runtime_client
 from backend.app.runtime_spaces.models import RuntimeSpace
 from backend.app.runtimes.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
+from backend.app.workers.handlers import WorkerJobHandler
+from backend.app.workers.jobs import JobType
+from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -66,7 +69,7 @@ class FakeDockerClient(DockerRuntimeClient):
 
 
 def test_runtime_api_lifecycle_and_workspace_scope() -> None:
-    client, session, docker = _client()
+    client, session, docker, queue = _client()
     owner, workspace = _seed_workspace(session, role="owner")
     other, other_workspace = _seed_workspace(
         session,
@@ -115,18 +118,27 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
     runtime_id = created.json()["id"]
     assert created.json()["network_policy"] == {"disabled": True}
     assert created.json()["runtime_space_id"] == str(runtime_space.id)
-    assert created.json()["has_docker_container"] is True
+    assert created.json()["status"] == "queued"
+    assert created.json()["has_docker_container"] is False
     assert "docker_container_id" not in created.json()
     assert created.json()["limits"]["max_output_bytes"] == 1024
     assert created.json()["limits"]["max_processes"] == 64
+    assert docker.created_requests == []
+    create_job = queue.dequeue()
+    assert create_job is not None
+    assert create_job.job_type == JobType.RUNTIME_CONTROL
+    assert create_job.routing["action"] == "create"
+    WorkerJobHandler(
+        session,
+        settings=client.app.state.settings,
+        runtime_docker_client=docker,
+    ).handle(create_job)
+    queue.ack(create_job)
     assert docker.created_requests[0].image == "python:3.12-slim"
     assert docker.created_requests[0].network_disabled is True
     assert docker.created_requests[0].hardening.cap_drop == ("ALL",)
     assert docker.created_requests[0].hardening.security_opt == ("no-new-privileges:true",)
     assert docker.created_requests[0].hardening.read_only_rootfs is True
-    assert created.json()["capabilities"]["hardening"]["cap_drop"] == ["ALL"]
-    assert created.json()["capabilities"]["hardening"]["read_only_rootfs"] is True
-    assert created.json()["capabilities"]["hardening"]["user"]["enforced"] is False
 
     forbidden = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/runtimes/{runtime_id}/start",
@@ -138,11 +150,36 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
         f"/api/v1/workspaces/{workspace.id}/runtimes/{runtime_id}/start",
         headers=_headers(owner.id),
     )
+    assert started.status_code == 200
+    assert started.json()["status"] == "created"
+    assert started.json()["has_docker_container"] is True
+    start_job = queue.dequeue()
+    assert start_job is not None
+    assert start_job.routing["action"] == "start"
+    WorkerJobHandler(
+        session,
+        settings=client.app.state.settings,
+        runtime_docker_client=docker,
+    ).handle(start_job)
+    queue.ack(start_job)
+
     command = client.post(
         f"/api/v1/workspaces/{workspace.id}/runtimes/{runtime_id}/commands",
         headers=_headers(owner.id),
         json={"command": ["python", "--version"]},
     )
+    assert command.status_code == 201
+    assert command.json()["status"] == "queued"
+    command_job = queue.dequeue()
+    assert command_job is not None
+    assert command_job.routing["action"] == "command"
+    WorkerJobHandler(
+        session,
+        settings=client.app.state.settings,
+        runtime_docker_client=docker,
+    ).handle(command_job)
+    queue.ack(command_job)
+
     commands = client.get(
         f"/api/v1/workspaces/{workspace.id}/runtimes/{runtime_id}/commands",
         headers=_headers(owner.id),
@@ -155,24 +192,37 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
         f"/api/v1/workspaces/{workspace.id}/runtimes/{runtime_id}/stop",
         headers=_headers(owner.id),
     )
+    assert stopped.status_code == 200
+    stop_job = queue.dequeue()
+    assert stop_job is not None
+    assert stop_job.routing["action"] == "stop"
+    WorkerJobHandler(
+        session,
+        settings=client.app.state.settings,
+        runtime_docker_client=docker,
+    ).handle(stop_job)
+    queue.ack(stop_job)
+
     deleted = client.delete(
         f"/api/v1/workspaces/{workspace.id}/runtimes/{runtime_id}",
         headers=_headers(owner.id),
     )
+    assert deleted.status_code == 204
+    delete_job = queue.dequeue()
+    assert delete_job is not None
+    assert delete_job.routing["action"] == "delete"
+    WorkerJobHandler(
+        session,
+        settings=client.app.state.settings,
+        runtime_docker_client=docker,
+    ).handle(delete_job)
+    queue.ack(delete_job)
 
-    assert started.status_code == 200
-    assert started.json()["status"] == "running"
-    assert started.json()["has_docker_container"] is True
-    assert "docker_container_id" not in started.json()
-    assert command.status_code == 201
-    assert command.json()["stdout"] == "ok\n"
     assert commands.status_code == 200
     assert commands.json()["total"] == 1
+    assert commands.json()["items"][0]["stdout"] == "ok\n"
     assert events.status_code == 200
     assert events.json()["total"] >= 2
-    assert stopped.status_code == 200
-    assert stopped.json()["status"] == "stopped"
-    assert deleted.status_code == 204
     assert docker.started == ["container-123"]
     assert docker.executed == [("container-123", ["python", "--version"], 20)]
     assert docker.stopped == ["container-123"]
@@ -180,7 +230,7 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
 
 
 def test_runtime_api_rejects_disallowed_image_and_network() -> None:
-    client, session, docker = _client(allowed_images=["python:3.12-slim"])
+    client, session, docker, _ = _client(allowed_images=["python:3.12-slim"])
     owner, workspace = _seed_workspace(session, role="owner")
     allowed_template = _seed_template(session)
     blocked_template = _seed_template(
@@ -215,7 +265,7 @@ def test_runtime_api_rejects_disallowed_image_and_network() -> None:
 
 
 def test_runtime_api_rejects_cross_workspace_runtime_space() -> None:
-    client, session, docker = _client(allowed_images=["python:3.12-slim"])
+    client, session, docker, _ = _client(allowed_images=["python:3.12-slim"])
     owner, workspace = _seed_workspace(session, role="owner")
     _, other_workspace = _seed_workspace(
         session,
@@ -252,7 +302,7 @@ def test_runtime_api_rejects_cross_workspace_runtime_space() -> None:
 
 
 def test_runtime_events_redact_sensitive_metadata() -> None:
-    client, session, _ = _client()
+    client, session, _, _ = _client()
     owner, workspace = _seed_workspace(session, role="owner")
     runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
@@ -295,7 +345,7 @@ def test_runtime_events_redact_sensitive_metadata() -> None:
 
 
 def test_runtime_responses_redact_sensitive_policy_fields() -> None:
-    client, session, _ = _client()
+    client, session, _, _ = _client()
     owner, workspace = _seed_workspace(session, role="owner")
     template = _seed_template(session)
     template.default_limits = {
@@ -345,7 +395,7 @@ def test_runtime_responses_redact_sensitive_policy_fields() -> None:
 
 
 def test_runtime_api_allows_network_when_template_allows_it() -> None:
-    client, session, docker = _client(allowed_images=["python:3.12-slim"])
+    client, session, docker, queue = _client(allowed_images=["python:3.12-slim"])
     owner, workspace = _seed_workspace(session, role="owner")
     template = _seed_template(session, network_policy={"allow_network": True})
     session.add(
@@ -374,11 +424,19 @@ def test_runtime_api_allows_network_when_template_allows_it() -> None:
 
     assert response.status_code == 201
     assert response.json()["network_policy"] == {"disabled": False}
+    job = queue.dequeue()
+    assert job is not None
+    WorkerJobHandler(
+        session,
+        settings=client.app.state.settings,
+        runtime_docker_client=docker,
+    ).handle(job)
+    queue.ack(job)
     assert docker.created_requests[0].network_disabled is False
 
 
 def test_runtime_api_rejects_network_when_platform_policy_disables_egress() -> None:
-    client, session, docker = _client(allowed_images=["python:3.12-slim"])
+    client, session, docker, _ = _client(allowed_images=["python:3.12-slim"])
     owner, workspace = _seed_workspace(session, role="owner")
     template = _seed_template(session, network_policy={"allow_network": True})
     session.add(
@@ -413,7 +471,7 @@ def test_runtime_api_rejects_network_when_platform_policy_disables_egress() -> N
 def _client(
     *,
     allowed_images: list[str] | None = None,
-) -> tuple[TestClient, Session, FakeDockerClient]:
+) -> tuple[TestClient, Session, FakeDockerClient, RedisQueue]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -433,6 +491,10 @@ def _client(
         runtime_allowed_images=allowed_images or ["python:3.12-slim"],
     )
     app = create_app(settings)
+    from fakeredis import FakeRedis
+
+    from backend.app.redis.keys import RedisKeyBuilder
+    from backend.app.workers.dependencies import get_worker_queue
 
     def override_db_session() -> Generator[Session, None, None]:
         request_session = session_factory()
@@ -444,7 +506,14 @@ def _client(
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.dependency_overrides[get_docker_runtime_client] = lambda: docker
-    return TestClient(app), seed_session, docker
+    queue = RedisQueue(
+        FakeRedis(decode_responses=True),
+        RedisKeyBuilder("opsmesh"),
+        "agent_runs",
+        0,
+    )
+    app.dependency_overrides[get_worker_queue] = lambda: queue
+    return TestClient(app), seed_session, docker, queue
 
 
 def _seed_workspace(

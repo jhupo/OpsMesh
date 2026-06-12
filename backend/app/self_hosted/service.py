@@ -934,7 +934,7 @@ class SelfHostedRuntimeService:
             "workspace_id": str(workspace_id),
             "api_prefix": self._settings.api_prefix,
             "connector": {
-                "name": "chaincloud-self-hosted-worker",
+                "name": "opsmesh-self-hosted-worker",
                 "protocol_version": 1,
                 "recommended_version": _version_string(
                     version_policy.get("recommended_version")
@@ -1720,10 +1720,8 @@ def _worker_policy_summary(capabilities: dict[str, object]) -> dict[str, object]
     return {
         "allowed_tools": _string_list(capabilities.get("allowed_tools")),
         "supported_models": _string_list(capabilities.get("supported_models")),
-        "supported_runtimes": _string_list(capabilities.get("supported_runtimes"))
-        or _string_list(capabilities.get("runtime_types")),
-        "supported_network_modes": _string_list(capabilities.get("supported_network_modes"))
-        or _string_list(capabilities.get("network_modes")),
+        "supported_runtimes": _string_list(capabilities.get("supported_runtimes")),
+        "supported_network_modes": _string_list(capabilities.get("supported_network_modes")),
         "allowed_runtime_space_ids": _string_list(capabilities.get("allowed_runtime_space_ids")),
         "max_concurrent_jobs": _positive_int(capabilities.get("max_concurrent_jobs")),
         "max_concurrent_mcp_jobs": _positive_int(capabilities.get("max_concurrent_mcp_jobs")),

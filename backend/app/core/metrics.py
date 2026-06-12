@@ -145,12 +145,12 @@ def record_http_request(method: str, path: str, status_code: int, duration_ms: i
         "status": str(status_code),
     }
     metrics_registry.increment(
-        "chaincloud_http_requests_total",
+        "opsmesh_http_requests_total",
         labels=labels,
         help_text="Total HTTP requests served by the API.",
     )
     metrics_registry.observe(
-        "chaincloud_http_request_duration_ms",
+        "opsmesh_http_request_duration_ms",
         float(duration_ms),
         buckets=DEFAULT_HTTP_DURATION_BUCKETS,
         labels=labels,

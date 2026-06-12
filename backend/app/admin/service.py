@@ -29,7 +29,7 @@ from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, R
 from backend.app.runtimes.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task
-from backend.app.workers.jobs import JobPayload
+from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace
 
@@ -45,7 +45,7 @@ class AdminControlPlaneService:
     ) -> None:
         self._session = session
         self._redis = redis
-        self._keys = key_builder or RedisKeyBuilder("chaincloud")
+        self._keys = key_builder or RedisKeyBuilder("opsmesh")
 
     def overview(self) -> dict[str, int]:
         return {
@@ -347,6 +347,7 @@ class AdminControlPlaneService:
         runtime_id: UUID,
         *,
         reason: str,
+        queue: RedisQueue | None = None,
     ) -> WorkspaceRuntime | None:
         runtime = self._session.scalar(
             select(WorkspaceRuntime).where(
@@ -357,30 +358,47 @@ class AdminControlPlaneService:
         if runtime is None:
             return None
         now = datetime.now(UTC)
-        runtime.status = "stopped"
-        runtime.connection_status = "offline"
+        runtime.status = "stopping"
+        runtime.connection_status = "degraded"
         lease = self._session.scalar(
             select(RuntimeLease).where(RuntimeLease.workspace_runtime_id == runtime.id)
         )
         if lease is not None and lease.status in {"running", "acquired"}:
-            lease.status = "released"
-            lease.released_at = now
             lease.lease_metadata = {
                 **lease.lease_metadata,
-                "released_by": "platform_admin",
-                "release_reason": reason,
+                "stop_requested_by": "platform_admin",
+                "stop_request_reason": reason,
+                "stop_requested_at": now.isoformat(),
             }
+        if queue is not None:
+            queue.enqueue(
+                JobPayload(
+                    workspace_id=runtime.workspace_id,
+                    job_type=JobType.RUNTIME_CONTROL,
+                    resource_id=runtime.id,
+                    idempotency_key=f"admin.runtime.stop:{runtime.workspace_id}:{runtime.id}",
+                    routing={
+                        "action": "stop",
+                        "reason": reason,
+                        "source": "platform_admin",
+                        "force": True,
+                    },
+                    priority=100,
+                    max_attempts=3,
+                )
+            )
         self._session.add(
             RuntimeEvent(
                 workspace_id=runtime.workspace_id,
                 workspace_runtime_id=runtime.id,
                 runtime_space_id=runtime.runtime_space_id,
-                event_type="runtime.force_stopped",
+                event_type="runtime.force_stop_requested",
                 message=reason,
                 event_metadata={
                     "source": "platform_admin",
                     "runtime_lease_id": str(lease.id) if lease is not None else None,
-                    "runtime_lease_released": lease is not None,
+                    "runtime_lease_release_pending": lease is not None,
+                    "worker_control_enqueued": queue is not None,
                 },
                 created_at=now,
             )

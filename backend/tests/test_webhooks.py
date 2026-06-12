@@ -416,8 +416,8 @@ def test_webhook_delivery_success_sends_signed_payload_and_redacts_response_head
     assert subscription.last_success_at is not None
     assert http_client.calls[0]["url"] == "https://hooks.example.test/signed"
     headers = http_client.calls[0]["headers"]
-    assert headers["X-ChainCloud-Event-Id"] == "evt-signed"
-    assert headers["X-ChainCloud-Signature"].startswith("sha256=")
+    assert headers["X-OpsMesh-Event-Id"] == "evt-signed"
+    assert headers["X-OpsMesh-Signature"].startswith("sha256=")
     assert b"whsec-delivery-secret" not in http_client.calls[0]["body"]
     assert b"payload-secret" not in http_client.calls[0]["body"]
     assert b"payload-ciphertext" not in http_client.calls[0]["body"]
@@ -631,7 +631,7 @@ def _seed_workspace(
 def _queue() -> RedisQueue:
     return RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
     )

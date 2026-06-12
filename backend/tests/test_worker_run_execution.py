@@ -39,6 +39,7 @@ from backend.app.orchestration.runs import (
 )
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.reviews.model_request import ModelRequestReview
 from backend.app.reviews.service import ResourceReview
 from backend.app.runs.activity import activity_phase
 from backend.app.runs.models import AgentRun, RunEvent
@@ -67,7 +68,7 @@ from backend.app.workspaces.models import (
 
 @pytest.fixture(autouse=True)
 def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
+    def fake_resource_review(self, **kwargs):  # noqa: ANN001, ANN202
         return ResourceReview(
             required=False,
             risk_level="low",
@@ -75,14 +76,37 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
             signals={"reviewer": "llm", "verdict": "approve"},
         )
 
+    def fake_model_request_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return ModelRequestReview(
+            required=False,
+            risk_level="low",
+            reasons=["model_request.approved"],
+            signals={"reviewer": "llm", "verdict": "approve"},
+        )
+
     monkeypatch.setattr(
         "backend.app.reviews.service.ResourceReviewService.review_tool_execution",
-        fake_review,
+        fake_resource_review,
+    )
+    monkeypatch.setattr(
+        "backend.app.reviews.model_request.ModelRequestReviewService.review_request",
+        fake_model_request_review,
     )
 
 
 class DeterministicAgentRunner:
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
+        review_policy = request.context.metadata.get("review_policy")
+        if isinstance(review_policy, dict) and review_policy.get("mode") == "final_acceptance":
+            return AgentRunResult(
+                final_output=json.dumps(
+                    {
+                        "decision": "approved",
+                        "summary": "deterministic_run_completed",
+                        "reasons": [],
+                    }
+                )
+            )
         return AgentRunResult(final_output="deterministic_run_completed")
 
 
@@ -105,7 +129,7 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
 
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
     orchestration = RunOrchestrationService(session, queue)
@@ -162,7 +186,7 @@ def test_worker_fails_closed_without_model_provider_credential() -> None:
     session.flush()
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
     orchestration = RunOrchestrationService(session, queue)
@@ -471,7 +495,7 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
 
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
     orchestration = RunOrchestrationService(session, queue)
@@ -623,7 +647,7 @@ def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> N
     session.flush()
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
     orchestration = RunOrchestrationService(session, queue)
@@ -982,7 +1006,7 @@ def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
 
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
     orchestration = RunOrchestrationService(session, queue)
@@ -1080,7 +1104,7 @@ def test_workspace_run_quota_limits_parallel_specialist_scheduling() -> None:
 
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
     orchestration = RunOrchestrationService(session, queue)
@@ -1180,7 +1204,7 @@ def test_team_scheduler_policy_limits_team_steps_without_relaxing_workspace_poli
     session.flush()
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
 
@@ -1262,7 +1286,7 @@ def test_team_scheduler_blocks_step_when_model_provider_unavailable() -> None:
     session.flush()
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
 
@@ -1389,7 +1413,7 @@ def test_team_scheduler_releases_reservations_when_model_provider_unavailable() 
     session.flush()
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
 
@@ -1479,7 +1503,7 @@ def test_workspace_scheduler_starts_higher_priority_task_first() -> None:
     session.flush()
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
 
@@ -1542,7 +1566,7 @@ def test_workspace_scheduler_boosts_starved_lower_priority_task() -> None:
     session.flush()
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
 
@@ -1617,7 +1641,7 @@ def test_workspace_scheduler_blocks_steps_over_resource_limits() -> None:
     session.flush()
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
 
@@ -2182,7 +2206,7 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
         }
     ]
     assert request.tracing is not None
-    assert request.tracing.workflow_name == "chaincloud.agent_run"
+    assert request.tracing.workflow_name == "opsmesh.agent_run"
     assert request.tracing.group_id == f"task:{task.id}"
     assert request.tracing.metadata["tool_continuations"] == [
         {
@@ -2644,15 +2668,19 @@ def test_model_request_review_routes_sensitive_input_to_admin_approval(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def blocking_review(self, **kwargs):  # noqa: ANN001, ANN202
-        return ResourceReview(
+        return ModelRequestReview(
             required=True,
             risk_level="high",
             reasons=["llm_review.detected_sensitive_model_request"],
-            signals={"reviewer": "llm", "verdict": "needs_admin_review"},
+            signals={
+                "reviewer": "llm",
+                "verdict": "needs_admin_review",
+                "input_preview": {"input": "[redacted]"},
+            },
         )
 
     monkeypatch.setattr(
-        "backend.app.reviews.service.ResourceReviewService.review_tool_execution",
+        "backend.app.reviews.model_request.ModelRequestReviewService.review_request",
         blocking_review,
     )
     session = _session()
@@ -2907,7 +2935,7 @@ def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
 
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
     orchestration = RunOrchestrationService(session, queue)
@@ -3036,7 +3064,7 @@ def test_worker_rejects_workspace_mismatch() -> None:
 def test_failed_worker_job_is_retried_by_queue() -> None:
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
     job = JobPayload(
@@ -5360,7 +5388,7 @@ def test_team_agent_runs_share_persistent_sdk_session_across_tasks() -> None:
         str(runtime_space.id)
     )
     assert first_request.tracing is not None
-    assert first_request.tracing.workflow_name == "chaincloud.team_agent_run"
+    assert first_request.tracing.workflow_name == "opsmesh.team_agent_run"
     assert first_request.tracing.group_id == first_request.session.session_id
     assert first_request.tracing.metadata["team"]["team_id"] == str(team.id)
     assert first_request.tracing.metadata["team"]["current_member"]["team_role"] == "Research"

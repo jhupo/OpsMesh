@@ -177,7 +177,7 @@ def _client(
 def _queue() -> RedisQueue:
     return RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
     )

@@ -708,11 +708,11 @@ def _signed_headers(
     digest = hmac.new(secret.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
     return {
         "Content-Type": "application/json",
-        "X-ChainCloud-Event-Id": event_id,
-        "X-ChainCloud-Event-Type": event_type,
-        "X-ChainCloud-Timestamp": timestamp,
-        "X-ChainCloud-Delivery-Attempt-Id": delivery_attempt_id,
-        "X-ChainCloud-Signature": f"sha256={digest}",
+        "X-OpsMesh-Event-Id": event_id,
+        "X-OpsMesh-Event-Type": event_type,
+        "X-OpsMesh-Timestamp": timestamp,
+        "X-OpsMesh-Delivery-Attempt-Id": delivery_attempt_id,
+        "X-OpsMesh-Signature": f"sha256={digest}",
     }
 
 

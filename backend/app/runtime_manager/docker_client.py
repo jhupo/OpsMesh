@@ -10,13 +10,13 @@ from backend.app.runtime_manager.contracts import (
 class DockerCliRuntimeClient(DockerRuntimeClient):
     def create_container(self, request: RuntimeCreateRequest) -> str:
         labels = {
-            "chaincloud.workspace_id": request.workspace_id,
+            "opsmesh.workspace_id": request.workspace_id,
             **request.labels,
         }
         if request.runtime_id is not None:
-            labels["chaincloud.runtime_id"] = request.runtime_id
+            labels["opsmesh.runtime_id"] = request.runtime_id
         if request.runtime_space_id is not None:
-            labels["chaincloud.runtime_space_id"] = request.runtime_space_id
+            labels["opsmesh.runtime_space_id"] = request.runtime_space_id
         command = [
             "docker",
             "create",

@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from backend.app.admin.release_updates import ReleaseUpdateService
 from backend.app.admin.service import AdminControlPlaneService
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
 from backend.app.api.schemas.admin import (
@@ -18,6 +19,12 @@ from backend.app.api.schemas.admin import (
     AdminQuarantineRuntimeSpaceRequest,
     AdminQuarantineRuntimeSpaceResponse,
     AdminQueueMetricsResponse,
+    AdminReleaseCommandResponse,
+    AdminReleaseRestartRequest,
+    AdminReleaseRollbackRequest,
+    AdminReleaseUpdateCheckResponse,
+    AdminReleaseUpdateRequest,
+    AdminReleaseVersionResponse,
     AdminRequeueDeadLetterResponse,
     AdminRiskyExecutionPolicyUpdateRequest,
     AdminRuntimeLeaseResponse,
@@ -39,6 +46,8 @@ from backend.app.db.session import database_pool_snapshot, get_db_session
 from backend.app.redis.client import redis_pool_snapshot
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.workers.dependencies import get_worker_queue
+from backend.app.workers.queue import RedisQueue
 
 if TYPE_CHECKING:
     from redis import Redis
@@ -280,6 +289,138 @@ async def admin_system_configuration(
     )
 
 
+@router.get("/system/version", response_model=AdminReleaseVersionResponse)
+async def admin_system_version(
+    settings: Settings = Depends(get_settings),
+) -> AdminReleaseVersionResponse:
+    return AdminReleaseVersionResponse(
+        **ReleaseUpdateService(settings).current_version().__dict__
+    )
+
+
+@router.get("/system/check-updates", response_model=AdminReleaseUpdateCheckResponse)
+async def admin_check_updates(
+    force: bool = Query(default=False),
+    settings: Settings = Depends(get_settings),
+) -> AdminReleaseUpdateCheckResponse:
+    try:
+        result = ReleaseUpdateService(settings).check_updates(force=force)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Update check failed: {exc}") from exc
+    return AdminReleaseUpdateCheckResponse(
+        current=AdminReleaseVersionResponse(**result.current.__dict__),
+        latest=AdminReleaseVersionResponse(**result.latest.__dict__) if result.latest else None,
+        update_available=result.update_available,
+        release_url=result.release_url,
+        assets=[item.__dict__ for item in result.assets],
+        cached=result.cached,
+    )
+
+
+@router.post("/system/update", response_model=AdminReleaseCommandResponse)
+async def admin_release_update(
+    request: AdminReleaseUpdateRequest,
+    settings: Settings = Depends(get_settings),
+) -> AdminReleaseCommandResponse:
+    try:
+        result = ReleaseUpdateService(settings).update(
+            request.tag,
+            dry_run=request.dry_run,
+            manifest_url=request.manifest_url,
+            manifest_file=request.manifest_file,
+            bundle_url=request.bundle_url,
+            bundle_file=request.bundle_file,
+            checksum_url=request.checksum_url,
+            checksum_file=request.checksum_file,
+            release_dir=request.release_dir,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=f"Update script not found: {exc}") from exc
+    return AdminReleaseCommandResponse(
+        action=result.action,
+        tag=result.tag,
+        manifest_url=result.manifest_url,
+        manifest_file=result.manifest_file,
+        bundle_url=result.bundle_url,
+        bundle_file=result.bundle_file,
+        checksum_url=result.checksum_url,
+        checksum_file=result.checksum_file,
+        release_dir=result.release_dir,
+        command=result.command,
+        dry_run=result.dry_run,
+        started=result.started,
+        pid=result.pid,
+    )
+
+
+@router.post("/system/rollback", response_model=AdminReleaseCommandResponse)
+async def admin_release_rollback(
+    request: AdminReleaseRollbackRequest,
+    settings: Settings = Depends(get_settings),
+) -> AdminReleaseCommandResponse:
+    try:
+        result = ReleaseUpdateService(settings).rollback(
+            dry_run=request.dry_run,
+            release_dir=request.release_dir,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=f"Update script not found: {exc}") from exc
+    return AdminReleaseCommandResponse(
+        action=result.action,
+        tag=result.tag,
+        manifest_url=result.manifest_url,
+        manifest_file=result.manifest_file,
+        bundle_url=result.bundle_url,
+        bundle_file=result.bundle_file,
+        checksum_url=result.checksum_url,
+        checksum_file=result.checksum_file,
+        release_dir=result.release_dir,
+        command=result.command,
+        dry_run=result.dry_run,
+        started=result.started,
+        pid=result.pid,
+    )
+
+
+@router.post("/system/restart", response_model=AdminReleaseCommandResponse)
+async def admin_release_restart(
+    request: AdminReleaseRestartRequest,
+    settings: Settings = Depends(get_settings),
+) -> AdminReleaseCommandResponse:
+    try:
+        result = ReleaseUpdateService(settings).restart(
+            dry_run=request.dry_run,
+            release_dir=request.release_dir,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=f"Update script not found: {exc}") from exc
+    return AdminReleaseCommandResponse(
+        action=result.action,
+        tag=result.tag,
+        manifest_url=result.manifest_url,
+        manifest_file=result.manifest_file,
+        bundle_url=result.bundle_url,
+        bundle_file=result.bundle_file,
+        checksum_url=result.checksum_url,
+        checksum_file=result.checksum_file,
+        release_dir=result.release_dir,
+        command=result.command,
+        dry_run=result.dry_run,
+        started=result.started,
+        pid=result.pid,
+    )
+
+
 @router.get("/queues/{queue_name}/dead-letter-jobs", response_model=AdminDeadLetterJobsResponse)
 async def list_admin_dead_letter_jobs(
     queue_name: str,
@@ -346,10 +487,12 @@ async def force_stop_admin_runtime(
     runtime_id: UUID,
     request: AdminForceStopRuntimeRequest,
     session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> AdminWorkspaceRuntimeResponse:
     runtime = AdminControlPlaneService(session).force_stop_runtime(
         runtime_id,
         reason=request.reason,
+        queue=queue,
     )
     if runtime is None:
         raise HTTPException(status_code=404, detail="Runtime not found")

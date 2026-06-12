@@ -85,7 +85,7 @@ def _default_worker_id() -> str:
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run a ChainCloud background worker.")
+    parser = argparse.ArgumentParser(description="Run an OpsMesh background worker.")
     parser.add_argument("--worker-id", default=None)
     parser.add_argument("--worker-type", default="cloud")
     parser.add_argument("--queue-name", default=None)

@@ -1,96 +1,96 @@
 groups:
-  - name: chaincloud-control-plane
+  - name: opsmesh-control-plane
     rules:
-      - alert: ChainCloudApiDown
-        expr: up{job="chaincloud-api"} == 0
+      - alert: OpsMeshApiDown
+        expr: up{job="opsmesh-api"} == 0
         for: 2m
         labels:
           severity: critical
-          service: chaincloud-api
+          service: opsmesh-api
         annotations:
-          summary: ChainCloud API metrics target is down
+          summary: OpsMesh API metrics target is down
           description: Prometheus has not scraped the API metrics endpoint for 2 minutes.
 
-      - alert: ChainCloudHighHttp5xxRate
+      - alert: OpsMeshHighHttp5xxRate
         expr: |
-          sum(rate(chaincloud_http_requests_total{status=~"5.."}[5m]))
+          sum(rate(opsmesh_http_requests_total{status=~"5.."}[5m]))
           /
-          clamp_min(sum(rate(chaincloud_http_requests_total[5m])), 1)
+          clamp_min(sum(rate(opsmesh_http_requests_total[5m])), 1)
           > 0.05
         for: 10m
         labels:
           severity: warning
-          service: chaincloud-api
+          service: opsmesh-api
         annotations:
-          summary: ChainCloud API 5xx rate is elevated
+          summary: OpsMesh API 5xx rate is elevated
           description: More than 5 percent of API requests returned 5xx responses for 10 minutes.
 
-      - alert: ChainCloudQueueBacklogHigh
-        expr: chaincloud_queue_jobs{state="queued"} > 100
+      - alert: OpsMeshQueueBacklogHigh
+        expr: opsmesh_queue_jobs{state="queued"} > 100
         for: 10m
         labels:
           severity: warning
-          service: chaincloud-worker
+          service: opsmesh-worker
         annotations:
-          summary: ChainCloud queue backlog is high
+          summary: OpsMesh queue backlog is high
           description: Queue {{ $labels.queue_name }} has more than 100 queued jobs for 10 minutes.
 
-      - alert: ChainCloudOldestQueuedJobStale
-        expr: chaincloud_queue_oldest_queued_age_seconds > 900
+      - alert: OpsMeshOldestQueuedJobStale
+        expr: opsmesh_queue_oldest_queued_age_seconds > 900
         for: 5m
         labels:
           severity: warning
-          service: chaincloud-worker
+          service: opsmesh-worker
         annotations:
-          summary: ChainCloud queued work is stale
+          summary: OpsMesh queued work is stale
           description: Queue {{ $labels.queue_name }} has work older than 15 minutes.
 
-      - alert: ChainCloudDeadLettersPresent
-        expr: chaincloud_queue_jobs{state="dead_letter"} > 0
+      - alert: OpsMeshDeadLettersPresent
+        expr: opsmesh_queue_jobs{state="dead_letter"} > 0
         for: 10m
         labels:
           severity: warning
-          service: chaincloud-worker
+          service: opsmesh-worker
         annotations:
-          summary: ChainCloud dead-letter queue has jobs
+          summary: OpsMesh dead-letter queue has jobs
           description: Queue {{ $labels.queue_name }} has dead-lettered jobs waiting for operator review.
 
-      - alert: ChainCloudNoOnlineWorkersWithBacklog
-        expr: sum(chaincloud_queue_jobs{state="queued"}) > 0 and sum(chaincloud_workers{state="online"}) < 1
+      - alert: OpsMeshNoOnlineWorkersWithBacklog
+        expr: sum(opsmesh_queue_jobs{state="queued"}) > 0 and sum(opsmesh_workers{state="online"}) < 1
         for: 5m
         labels:
           severity: critical
-          service: chaincloud-worker
+          service: opsmesh-worker
         annotations:
-          summary: ChainCloud has queued work and no online workers
+          summary: OpsMesh has queued work and no online workers
           description: Queued work exists, but no online worker nodes are reporting.
 
-      - alert: ChainCloudWorkerStale
-        expr: chaincloud_workers{state="stale"} > 0
+      - alert: OpsMeshWorkerStale
+        expr: opsmesh_workers{state="stale"} > 0
         for: 5m
         labels:
           severity: warning
-          service: chaincloud-worker
+          service: opsmesh-worker
         annotations:
-          summary: ChainCloud worker heartbeat is stale
+          summary: OpsMesh worker heartbeat is stale
           description: At least one worker has not reported a fresh heartbeat.
 
-      - alert: ChainCloudRuntimeSaturationHigh
-        expr: chaincloud_runtime_saturation_ratio > 0.9
+      - alert: OpsMeshRuntimeSaturationHigh
+        expr: opsmesh_runtime_saturation_ratio > 0.9
         for: 10m
         labels:
           severity: warning
-          service: chaincloud-runtime
+          service: opsmesh-runtime
         annotations:
-          summary: ChainCloud runtime capacity is close to full
+          summary: OpsMesh runtime capacity is close to full
           description: Runtime {{ $labels.provider }}/{{ $labels.runtime_type }} is above 90 percent saturation.
 
-      - alert: ChainCloudRuntimeQuotaHigh
-        expr: chaincloud_runtime_space_quota_usage_ratio > 0.85
+      - alert: OpsMeshRuntimeQuotaHigh
+        expr: opsmesh_runtime_space_quota_usage_ratio > 0.85
         for: 15m
         labels:
           severity: warning
-          service: chaincloud-runtime
+          service: opsmesh-runtime
         annotations:
-          summary: ChainCloud runtime-space quota usage is high
+          summary: OpsMesh runtime-space quota usage is high
           description: Quota {{ $labels.quota_key }} is above 85 percent reserved usage.

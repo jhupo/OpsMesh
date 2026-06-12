@@ -14,7 +14,7 @@ from backend.app.redis.keys import RedisKeyBuilder
 
 def test_idempotency_service_uses_structured_states() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    service = IdempotencyService(redis, RedisKeyBuilder("chaincloud"))
+    service = IdempotencyService(redis, RedisKeyBuilder("opsmesh"))
     scope_id = uuid4()
     resource_id = uuid4()
 
@@ -50,7 +50,7 @@ def test_idempotency_service_uses_structured_states() -> None:
 
 def test_idempotency_service_marks_failed_reservations_with_short_ttl() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    service = IdempotencyService(redis, RedisKeyBuilder("chaincloud"), ttl_seconds=86_400)
+    service = IdempotencyService(redis, RedisKeyBuilder("opsmesh"), ttl_seconds=86_400)
     reservation = service.reserve(
         scope_id=uuid4(),
         operation="tasks.create",
@@ -66,7 +66,7 @@ def test_idempotency_service_marks_failed_reservations_with_short_ttl() -> None:
 
 def test_failed_reservation_retry_records_success_for_later_deduplication() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    service = IdempotencyService(redis, RedisKeyBuilder("chaincloud"))
+    service = IdempotencyService(redis, RedisKeyBuilder("opsmesh"))
     scope_id = uuid4()
     resources: dict[UUID, _Resource] = {}
     failed_once = False

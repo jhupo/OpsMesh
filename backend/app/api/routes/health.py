@@ -27,7 +27,7 @@ router = APIRouter()
 
 class HealthResponse(BaseModel):
     status: str = Field(examples=["ok"])
-    service: str = Field(examples=["chaincloud-backend"])
+    service: str = Field(examples=["opsmesh-backend"])
     environment: str = Field(examples=["local"])
     request_id: str | None = Field(default=None, examples=["01J8G7Y4R7D6C6K4A1RSPJ7J7P"])
 

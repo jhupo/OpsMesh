@@ -25,9 +25,11 @@ from backend.app.exports.models import WorkspaceExportJob
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.identity.models import User, UserAPIToken
 from backend.app.marketplace.models import (
+    MarketplaceListing,
     TalentListing,
     TalentListingReview,
     WorkspaceAgentInstall,
+    WorkspaceMarketplaceInstall,
 )
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.model_providers.models import ModelProviderCredential
@@ -94,6 +96,7 @@ __all__ = [
     "McpServer",
     "McpToolAllowlist",
     "McpToolCallLog",
+    "MarketplaceListing",
     "ModelProviderCredential",
     "PersistentAgentSession",
     "PersistentAgentSessionItem",
@@ -136,6 +139,7 @@ __all__ = [
     "WorkspaceFile",
     "WorkspaceMember",
     "WorkspaceMemoryEntry",
+    "WorkspaceMarketplaceInstall",
     "WorkspaceNotification",
     "WorkspaceQuota",
     "WorkspaceReservation",

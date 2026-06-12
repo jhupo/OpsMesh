@@ -2,7 +2,7 @@
 
 ## Product Shape
 
-ChainCloud Agent Team is a multi-user workspace product for operating AI agents as digital employees inside isolated user workspaces. OpenAI Agents SDK provides the execution primitives, while this application owns the business layer: users, workspaces, agent definitions, task orchestration, permissions, persistence, audit logs, and product APIs.
+OpsMesh is a multi-user workspace product for operating AI agent teams inside isolated user workspaces. OpenAI Agents SDK provides the execution primitives, while this application owns the business layer: users, workspaces, agent definitions, task orchestration, permissions, persistence, audit logs, markets, and product APIs.
 
 The core unit is a workspace. A workspace is the boundary for data, agents, tasks, tools, files, memory, and access control.
 
@@ -32,7 +32,7 @@ User and workspace isolation is mandatory. The product must enforce isolation ac
 
 6. Runtime Control Plane
 
-   Backend services manage Docker-backed isolated runtimes for executable agent work. The backend creates containers, applies resource limits, controls mounts and network policy, executes approved commands inside containers, collects artifacts, and cleans up runtime resources. See [Backend Runtime Control Plane](backend-runtime-control-plane.md).
+   API services persist runtime intent and enqueue runtime-control work. Workers execute Docker-backed isolated runtimes for executable agent work: they create containers, apply resource limits, control mounts and network policy, execute approved commands inside containers, collect artifacts, and clean up runtime resources. See [Backend Runtime Control Plane](backend-runtime-control-plane.md).
 
 7. Cloud Control Plane
 

@@ -45,7 +45,7 @@ def test_health_endpoint_returns_service_status() -> None:
     assert response.headers["Referrer-Policy"] == "no-referrer"
     assert response.json() == {
         "status": "ok",
-        "service": "chaincloud-backend",
+        "service": "opsmesh-backend",
         "environment": "test",
         "request_id": "test-request-id",
     }
@@ -67,7 +67,7 @@ def test_liveness_and_startup_endpoints_return_split_health_status() -> None:
         Settings(
             environment="test",
             log_format="text",
-            storage_root=".chaincloud-test-storage",
+            storage_root=".opsmesh-test-storage",
         )
     )
     client = TestClient(app)
@@ -99,7 +99,7 @@ def test_cors_middleware_uses_configured_origins() -> None:
         Settings(
             environment="test",
             log_format="text",
-            cors_origins=["https://console.chaincloud.example"],
+            cors_origins=["https://console.opsmesh.example"],
         )
     )
     client = TestClient(app)
@@ -107,13 +107,13 @@ def test_cors_middleware_uses_configured_origins() -> None:
     response = client.options(
         "/api/v1/health",
         headers={
-            "Origin": "https://console.chaincloud.example",
+            "Origin": "https://console.opsmesh.example",
             "Access-Control-Request-Method": "GET",
         },
     )
 
     assert response.status_code == 200
-    assert response.headers["Access-Control-Allow-Origin"] == "https://console.chaincloud.example"
+    assert response.headers["Access-Control-Allow-Origin"] == "https://console.opsmesh.example"
 
 
 def test_readiness_endpoint_checks_dependencies() -> None:
@@ -121,7 +121,7 @@ def test_readiness_endpoint_checks_dependencies() -> None:
         Settings(
             environment="test",
             log_format="text",
-            storage_root=".chaincloud-test-storage",
+            storage_root=".opsmesh-test-storage",
         )
     )
     client = TestClient(app)
@@ -144,7 +144,7 @@ def test_readiness_endpoint_can_require_recent_online_worker() -> None:
         Settings(
             environment="test",
             log_format="text",
-            storage_root=".chaincloud-test-storage",
+            storage_root=".opsmesh-test-storage",
             readiness_worker_check_enabled=True,
             readiness_worker_stale_after_seconds=120,
         )
@@ -175,7 +175,7 @@ def test_readiness_endpoint_returns_503_when_required_workers_are_stale() -> Non
         Settings(
             environment="test",
             log_format="text",
-            storage_root=".chaincloud-test-storage",
+            storage_root=".opsmesh-test-storage",
             readiness_worker_check_enabled=True,
             readiness_worker_stale_after_seconds=120,
         )

@@ -2,7 +2,7 @@
 
 ## What This Project Is
 
-ChainCloud Agent Team is a backend-first, multi-user platform where each user operates an isolated AI agent workspace. The backend owns workspace isolation, agent orchestration, task execution, worker queues, Docker runtime control, file/artifact management, approvals, and auditability.
+OpsMesh is a backend-first, multi-user platform for running AI agent teams with control, isolation, and auditability. The backend owns workspace isolation, agent orchestration, task execution, worker queues, Docker runtime control, file/artifact management, approvals, markets, and audit evidence.
 
 Frontend work is intentionally out of scope for now. The current priority is a reliable backend control plane.
 
@@ -93,7 +93,7 @@ The backend must provide:
 
 18. [Backend Deployment](backend-deployment.md)
 
-   Production-oriented backend process, Docker, Compose, and environment guidance.
+   Production VPS/systemd deployment, release bundle updates, local Compose guidance, and environment setup.
 
 19. [Backend Completion Plan](backend-completion-plan.md)
 

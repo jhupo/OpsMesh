@@ -69,6 +69,67 @@ class AdminSystemConfigurationResponse(BaseModel):
     redis_pool: dict[str, int | None]
 
 
+class AdminReleaseUpdateRequest(BaseModel):
+    tag: str
+    dry_run: bool = True
+    manifest_url: str | None = None
+    manifest_file: str | None = None
+    bundle_url: str | None = None
+    bundle_file: str | None = None
+    checksum_url: str | None = None
+    checksum_file: str | None = None
+    release_dir: str | None = None
+
+
+class AdminReleaseCommandResponse(BaseModel):
+    action: str
+    tag: str | None = None
+    manifest_url: str | None = None
+    manifest_file: str | None = None
+    bundle_url: str | None = None
+    bundle_file: str | None = None
+    checksum_url: str | None = None
+    checksum_file: str | None = None
+    release_dir: str | None = None
+    command: list[str]
+    dry_run: bool
+    started: bool
+    pid: int | None = None
+
+
+class AdminReleaseRestartRequest(BaseModel):
+    dry_run: bool = True
+    release_dir: str | None = None
+
+
+class AdminReleaseRollbackRequest(BaseModel):
+    dry_run: bool = True
+    release_dir: str | None = None
+
+
+class AdminReleaseAssetResponse(BaseModel):
+    name: str
+    browser_download_url: str
+    size: int
+    content_type: str | None = None
+    digest: str | None = None
+
+
+class AdminReleaseVersionResponse(BaseModel):
+    version: str
+    tag: str
+    commit: str | None = None
+
+
+class AdminReleaseUpdateCheckResponse(BaseModel):
+    current: AdminReleaseVersionResponse
+    latest: AdminReleaseVersionResponse | None
+    update_available: bool
+    release_url: str | None
+    assets: list[AdminReleaseAssetResponse]
+    cached: bool
+
+
 class AdminDeadLetterJobsResponse(BaseModel):
     items: list[JobPayload]
     total: int

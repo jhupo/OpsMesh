@@ -102,7 +102,7 @@ def test_worker_maintenance_publishes_task_event_outbox() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(
         redis=redis,
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
     )
@@ -135,7 +135,7 @@ def test_worker_maintenance_publishes_task_event_outbox() -> None:
         assert stored.stream_id is not None
         event_id = str(stored.event_id)
         outbox_id = str(stored.id)
-    events = RedisTaskEventBus(redis=redis, key_prefix="chaincloud").read(
+    events = RedisTaskEventBus(redis=redis, key_prefix="opsmesh").read(
         workspace_id=workspace_id,
         task_id=task_id,
         after_id="0-0",

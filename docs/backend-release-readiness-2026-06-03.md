@@ -2,7 +2,7 @@
 
 ## Current Goal
 
-Prepare the backend for updated deployment on `192.168.2.17` and rerun the real-provider
+Prepare the backend for updated deployment on the staging VPS and rerun the real-provider
 team execution E2E after removing runtime fake runner behavior.
 
 ## Local State
@@ -10,13 +10,13 @@ team execution E2E after removing runtime fake runner behavior.
 - Branch: `master`
 - Local branch is ahead of `origin/master` by 24 commits.
 - Current working tree also contains uncommitted backend fixes and docs updates.
-- Remote server `/opt/chaincloud-app/current` is not a git worktree.
-- Remote server `/tmp/chaincloud-agent-team-codex-full` is an old source copy and still contains
+- Remote server `/opt/opsmesh/current` is not a git worktree.
+- Remote server `/tmp/opsmesh-codex-full` is an old source copy and still contains
   runtime fake runner code.
 
 ## Changes Prepared Locally
 
-- Removed runtime runner backend selection and `CHAINCLOUD_AGENT_RUNNER_BACKEND`.
+- Removed runtime runner backend selection and `OPSMESH_AGENT_RUNNER_BACKEND`.
 - Deleted production `backend/app/agent_runtime/fake.py`.
 - API/worker execution now defaults to `OpenAIAgentsRunner`.
 - Tests use explicit deterministic test runners instead of runtime fake configuration.
@@ -46,9 +46,9 @@ Result:
 
 ## Remote Real E2E Status
 
-Current server-test deployment on `192.168.2.17` is release `61945a0`. The API
+Current server-test deployment on the staging VPS is release `61945a0`. The API
 container is healthy and the worker starts under
-`deploy/server/docker-compose.backend.yml`.
+the VPS systemd units under `deploy/server/systemd/`.
 
 The real HTTP E2E creates a workspace, model provider credential, three agents, a team,
 and a task, then decomposes the task into manager planning, researcher, analyst, and
@@ -77,12 +77,12 @@ real-provider completion is a provider key/account with available upstream capac
 Rerun the HTTP E2E inside the API container:
 
 ```bash
-docker exec -e CHAINCLOUD_HTTP_E2E_API_URL=http://127.0.0.1:8000/api/v1 \
-  -e CHAINCLOUD_HTTP_E2E_API_KEY=... \
-  -e CHAINCLOUD_HTTP_E2E_BASE_URL=https://dash.ovload.com/ \
-  -e CHAINCLOUD_HTTP_E2E_MODEL=gpt-5.5 \
-  -e CHAINCLOUD_HTTP_E2E_TIMEOUT_SECONDS=240 \
-  chaincloud-api python /app/scripts/real-team-http-e2e.py
+docker exec -e OPSMESH_HTTP_E2E_API_URL=http://127.0.0.1:8000/api/v1 \
+  -e OPSMESH_HTTP_E2E_API_KEY=... \
+  -e OPSMESH_HTTP_E2E_BASE_URL=https://your-openai-compatible-gateway.example/ \
+  -e OPSMESH_HTTP_E2E_MODEL=gpt-5.5 \
+  -e OPSMESH_HTTP_E2E_TIMEOUT_SECONDS=240 \
+  opsmesh-api python /app/scripts/real-team-http-e2e.py
 ```
 
 Do not print or store the real API key in logs or docs.

@@ -16,8 +16,22 @@ from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.reviews.constants import (
     DEFAULT_RESOURCE_REVIEW_MODEL,
     MODEL_REQUEST_REVIEW_SETTINGS_KEY,
+    PRIVATE_RESOURCE_REVIEW_SETTINGS_KEY,
+    PUBLIC_RESOURCE_REVIEW_SETTINGS_KEY,
     RESOURCE_REVIEW_SETTINGS_KEY,
     SEMANTIC_REVIEW_SETTINGS_KEY,
+)
+
+_RESOURCE_REVIEW_SCOPE_KEYS = frozenset(
+    {
+        "agent_profile",
+        "skill",
+        "mcp_server",
+        "mcp_tool_allowlist",
+        "mcp_credential_reference",
+        "plugin",
+        "capability",
+    }
 )
 
 
@@ -66,6 +80,7 @@ def _validate_resource_review_settings(settings: dict[str, object]) -> None:
     if not isinstance(raw_resource_review, dict):
         raise ValueError("resource_review settings must be an object")
     _validate_model_request_review_settings(raw_resource_review)
+    _validate_resource_review_scope_settings(raw_resource_review)
     raw_semantic = raw_resource_review.get(SEMANTIC_REVIEW_SETTINGS_KEY)
     if raw_semantic is None:
         return
@@ -101,6 +116,33 @@ def _validate_resource_review_settings(settings: dict[str, object]) -> None:
         raise ValueError("resource_review.semantic_review.fail_closed must be a boolean")
     if fail_closed is False:
         raise ValueError("resource_review.semantic_review.fail_closed must remain true")
+
+
+def _validate_resource_review_scope_settings(resource_review: dict[str, object]) -> None:
+    for scope_key in (
+        PRIVATE_RESOURCE_REVIEW_SETTINGS_KEY,
+        PUBLIC_RESOURCE_REVIEW_SETTINGS_KEY,
+    ):
+        raw_scope = resource_review.get(scope_key)
+        if raw_scope is None:
+            continue
+        if not isinstance(raw_scope, dict):
+            raise ValueError(f"resource_review.{scope_key} must be an object")
+        unknown = sorted(set(raw_scope) - _RESOURCE_REVIEW_SCOPE_KEYS)
+        if unknown:
+            raise ValueError(
+                f"resource_review.{scope_key} has unsupported resource types: "
+                f"{', '.join(unknown)}"
+            )
+        for resource_type, enabled in raw_scope.items():
+            if not isinstance(enabled, bool):
+                raise ValueError(
+                    f"resource_review.{scope_key}.{resource_type} must be a boolean"
+                )
+            if scope_key == PUBLIC_RESOURCE_REVIEW_SETTINGS_KEY and not enabled:
+                raise ValueError(
+                    f"resource_review.{scope_key}.{resource_type} cannot be disabled"
+                )
 
 
 def _validate_model_request_review_settings(resource_review: dict[str, object]) -> None:

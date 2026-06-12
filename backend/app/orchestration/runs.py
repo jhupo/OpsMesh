@@ -4297,8 +4297,8 @@ def _trace_metadata_for_agent_run(
 
 def _agent_run_workflow_name(task: Task | None) -> str:
     if task is not None and task.agent_team_id is not None:
-        return "chaincloud.team_agent_run"
-    return "chaincloud.agent_run"
+        return "opsmesh.team_agent_run"
+    return "opsmesh.agent_run"
 
 
 def _agent_run_trace_group_id(

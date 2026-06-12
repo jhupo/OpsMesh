@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the backend control plane that must exist before ChainCloud Agent Team can feel like a mature hosted product.
+This document defines the backend control plane that must exist before OpsMesh can feel like a mature hosted product.
 
 The product is still personal-workspace first. There is no billing or company account layer in scope. The cloud platform still needs strong operator controls because it creates queues, runs workers, provisions Docker containers, stores user files, connects to model providers, and may hand work to user-owned machines.
 
@@ -10,7 +10,7 @@ The product is still personal-workspace first. There is no billing or company ac
 
 | Term | Meaning | Durable owner |
 | --- | --- | --- |
-| Workspace | The tenant boundary for one user's AI company, data, agents, teams, tools, files, and audit records. | Postgres |
+| Workspace | The tenant boundary for one user's agent teams, data, tools, files, and audit records. | Postgres |
 | Team | A reusable organization inside a workspace. Tasks flow through the existing team. | Postgres |
 | Worker | A backend process that consumes Redis jobs and runs orchestration, agent execution, runtime cleanup, imports, indexing, or other async work. | Process plus heartbeat state |
 | Runtime space | A controlled execution area for a workspace or team. It owns policy, storage scope, quota reservations, runtime leases, and network rules. | Postgres plus storage |
@@ -423,8 +423,8 @@ PATCH /api/v1/admin/platform-policies/risky-execution
 GET  /api/v1/admin/platform-policies/worker-control
 PATCH /api/v1/admin/platform-policies/worker-control
 GET  /api/v1/admin/platform-policies/{policy_key}/events
-GET  /api/v1/admin/docker/leases
-POST /api/v1/admin/docker/leases/{lease_id}/kill
+GET  /api/v1/admin/runtime-leases
+POST /api/v1/admin/runtimes/{runtime_id}/force-stop
 GET  /api/v1/admin/queues
 GET  /api/v1/admin/security-events
 ```

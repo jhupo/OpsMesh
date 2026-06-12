@@ -35,7 +35,7 @@ from backend.app.tasks.status import TaskStatus
 from backend.app.workers.jobs import JobPayload
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
-POSTGRES_TEST_URL_ENV = "CHAINCLOUD_TEST_POSTGRES_URL"
+POSTGRES_TEST_URL_ENV = "OPSMESH_TEST_POSTGRES_URL"
 
 pytestmark = pytest.mark.skipif(
     not os.getenv(POSTGRES_TEST_URL_ENV),

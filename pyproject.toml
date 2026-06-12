@@ -1,7 +1,7 @@
 [project]
-name = "chaincloud-agent-team"
+name = "opsmesh"
 version = "0.1.0"
-description = "Backend control plane for isolated multi-agent workspaces."
+description = "Run AI agent teams with control, isolation, and auditability."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-repo_root="${CHAINCLOUD_REMOTE_REPO_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-run_id="${CHAINCLOUD_REMOTE_VALIDATION_RUN_ID:-$(date +%Y%m%d%H%M%S)-$$}"
-network="chaincloud-remote-validation-${run_id}"
+repo_root="${OPSMESH_REMOTE_REPO_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+run_id="${OPSMESH_REMOTE_VALIDATION_RUN_ID:-$(date +%Y%m%d%H%M%S)-$$}"
+network="opsmesh-remote-validation-${run_id}"
 postgres_container="${network}-postgres"
 redis_container="${network}-redis"
 test_container="${network}-tests"
 
-postgres_user="${CHAINCLOUD_REMOTE_POSTGRES_USER:-chaincloud_test}"
-postgres_password="${CHAINCLOUD_REMOTE_POSTGRES_PASSWORD:-chaincloud_test}"
-postgres_db="${CHAINCLOUD_REMOTE_POSTGRES_DB:-chaincloud_test}"
-postgres_image="${CHAINCLOUD_REMOTE_POSTGRES_IMAGE:-postgres:16-alpine}"
-redis_image="${CHAINCLOUD_REMOTE_REDIS_IMAGE:-redis:7-alpine}"
-test_image="${CHAINCLOUD_REMOTE_TEST_IMAGE:-python:3.13-slim}"
+postgres_user="${OPSMESH_REMOTE_POSTGRES_USER:-opsmesh_test}"
+postgres_password="${OPSMESH_REMOTE_POSTGRES_PASSWORD:-opsmesh_test}"
+postgres_db="${OPSMESH_REMOTE_POSTGRES_DB:-opsmesh_test}"
+postgres_image="${OPSMESH_REMOTE_POSTGRES_IMAGE:-postgres:16-alpine}"
+redis_image="${OPSMESH_REMOTE_REDIS_IMAGE:-redis:7-alpine}"
+test_image="${OPSMESH_REMOTE_TEST_IMAGE:-python:3.13-slim}"
 
-pytest_args="${CHAINCLOUD_REMOTE_PYTEST_ARGS:-backend/tests/test_capabilities_api.py backend/tests/test_operations_api.py -k 'governance_reenables_disabled_mcp_tools or governance_repairs_unallowed_agent_mcp_tools or workspace_capability_governance_can_refresh_stale_mcp_health_checks or team_runtime_timeline_aggregates_redacts_and_scopes_events or operations_overview_includes_workspace_data_lifecycle_rollup'}"
-ruff_args="${CHAINCLOUD_REMOTE_RUFF_ARGS:-backend/app/capabilities/service.py backend/app/operations/timeline.py backend/app/operations/service.py backend/app/api/schemas/operations.py backend/tests/test_capabilities_api.py backend/tests/test_operations_api.py}"
+pytest_args="${OPSMESH_REMOTE_PYTEST_ARGS:-backend/tests/test_capabilities_api.py backend/tests/test_operations_api.py -k 'governance_reenables_disabled_mcp_tools or governance_repairs_unallowed_agent_mcp_tools or workspace_capability_governance_can_refresh_stale_mcp_health_checks or team_runtime_timeline_aggregates_redacts_and_scopes_events or operations_overview_includes_workspace_data_lifecycle_rollup'}"
+ruff_args="${OPSMESH_REMOTE_RUFF_ARGS:-backend/app/capabilities/service.py backend/app/operations/timeline.py backend/app/operations/service.py backend/app/api/schemas/operations.py backend/tests/test_capabilities_api.py backend/tests/test_operations_api.py}"
 
 cleanup() {
     docker rm -f "${postgres_container}" "${redis_container}" "${test_container}" >/dev/null 2>&1 || true
@@ -60,10 +60,10 @@ docker run --rm \
     --network "${network}" \
     -v "${repo_root}:/workspace" \
     -w /workspace \
-    -e "CHAINCLOUD_ENVIRONMENT=test" \
-    -e "CHAINCLOUD_DATABASE_URL=postgresql+psycopg://${postgres_user}:${postgres_password}@${postgres_container}:5432/${postgres_db}" \
-    -e "CHAINCLOUD_TEST_POSTGRES_URL=postgresql+psycopg://${postgres_user}:${postgres_password}@${postgres_container}:5432/${postgres_db}" \
-    -e "CHAINCLOUD_REDIS_URL=redis://${redis_container}:6379/0" \
+    -e "OPSMESH_ENVIRONMENT=test" \
+    -e "OPSMESH_DATABASE_URL=postgresql+psycopg://${postgres_user}:${postgres_password}@${postgres_container}:5432/${postgres_db}" \
+    -e "OPSMESH_TEST_POSTGRES_URL=postgresql+psycopg://${postgres_user}:${postgres_password}@${postgres_container}:5432/${postgres_db}" \
+    -e "OPSMESH_REDIS_URL=redis://${redis_container}:6379/0" \
     "${test_image}" \
     sh -lc "
         python -m pip install --upgrade pip &&

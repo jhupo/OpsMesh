@@ -5,7 +5,9 @@ This project ships as a backend control plane with two long-running process type
 - API process: serves workspace, task, runtime, approval, file, and operations APIs.
 - Worker process: pulls queued agent runs from Redis and records durable run state in Postgres.
 
-Postgres remains the source of truth. Redis is used for queues, locks, pub/sub, and short-lived cache. User-controlled execution must still happen in Docker runtimes or self-hosted isolated machines, not in the API container.
+Production server deployments run the API and worker directly on the VPS through systemd and a release-local Python virtual environment. Docker is still required on the host for dangerous task runtimes; it is not used to run the backend API or worker.
+
+Postgres remains the source of truth. Redis is used for queues, locks, pub/sub, and short-lived cache. User-controlled execution must still happen in Docker runtimes or self-hosted isolated machines, never inside the API or worker process.
 
 ## Local Container Stack
 
@@ -15,7 +17,7 @@ Create an environment file from the template:
 cp .env.example .env
 ```
 
-For local development, the defaults are enough to boot the stack:
+For local development, the defaults are enough to boot the local compose stack:
 
 ```bash
 docker compose up --build
@@ -26,147 +28,323 @@ The API is exposed at `http://localhost:8000`. Health checks are available at:
 - `GET /api/v1/health`
 - `GET /api/v1/health/ready`
 
-## Server Test Stack
+The local compose stack is only for development and CI checks. Production backend processes are managed by systemd.
 
-The server test stack reuses a shared Postgres/Redis runtime network instead of creating a
-second database pair. Use it after provisioning the database services and creating a release
-symlink such as `/opt/chaincloud-app/current`:
+## VPS Layout
 
-```bash
-cp deploy/server/env.example /opt/chaincloud-app/.env
-docker compose -f deploy/server/docker-compose.backend.yml --env-file /opt/chaincloud-app/.env build
-docker compose -f deploy/server/docker-compose.backend.yml --env-file /opt/chaincloud-app/.env up -d
-CHAINCLOUD_COMPOSE_FILE=deploy/server/docker-compose.backend.yml scripts/server-smoke-test.sh
+Provision a VPS with Python 3.11+, `uv`, Postgres, Redis, Docker, and systemd. Keep release assets under `/opt/opsmesh`:
+
+```text
+/opt/opsmesh/.env
+/opt/opsmesh/current -> /opt/opsmesh/releases/v1.2.3
+/opt/opsmesh/downloads
+/opt/opsmesh/releases
+/opt/opsmesh/release-state.env
+/var/lib/opsmesh/storage
 ```
 
-By default the API binds to `127.0.0.1:8000`. Put Nginx or another controlled ingress in front
-of it before exposing it outside the server.
-
-The same compose file also includes a minimal monitoring stack:
-
-- Prometheus scrapes `api:8000/api/v1/metrics` and loads `deploy/server/monitoring/alert-rules.yml`.
-- Alertmanager loads `deploy/server/monitoring/alertmanager.yml`; the checked-in receiver keeps alerts visible in the UI until an operator adds email, Slack, or webhook routing.
-- Grafana provisions the Prometheus datasource and the `ChainCloud Control Plane` dashboard from `deploy/server/monitoring/grafana`.
-
-Prometheus, Alertmanager, and Grafana bind to `127.0.0.1` by default:
+Create the deploy environment from the server template:
 
 ```bash
-CHAINCLOUD_MONITORING_DIR=/opt/chaincloud-app/current/deploy/server/monitoring
-CHAINCLOUD_PROMETHEUS_PORT=9090
-CHAINCLOUD_ALERTMANAGER_PORT=9093
-CHAINCLOUD_GRAFANA_PORT=3000
-CHAINCLOUD_GRAFANA_ADMIN_PASSWORD=replace-with-random-password
+sudo mkdir -p /opt/opsmesh/releases /opt/opsmesh/downloads /var/lib/opsmesh/storage
+sudo cp deploy/server/env.example /opt/opsmesh/.env
+sudo chmod 600 /opt/opsmesh/.env
 ```
 
-Run the smoke test with monitoring checks after the stack starts:
+Set production values in `/opt/opsmesh/.env`, especially:
+
+- `OPSMESH_INTERNAL_API_TOKEN`
+- `OPSMESH_PLATFORM_ADMIN_TOKEN`
+- `OPSMESH_WORKER_HEARTBEAT_TOKEN`
+- `OPSMESH_TOKEN_HASH_PEPPER`
+- `OPSMESH_POSTGRES_PASSWORD` or the full `OPSMESH_DATABASE_URL`
+- `OPSMESH_REDIS_URL`
+- `OPSMESH_ENABLE_API_DOCS=false`
+- `OPSMESH_READINESS_WORKER_CHECK_ENABLED=true`
+- `OPSMESH_CREDENTIAL_ENCRYPTION_SECRET`
+- `OPSMESH_STORAGE_ROOT=/var/lib/opsmesh/storage`
+
+Install Docker on the VPS and leave the daemon available only to the worker service user if hosted runtime execution is enabled. The backend starts no compose stack; Docker is only the runtime substrate for isolated task containers, and the API process must not be able to control the Docker daemon.
+
+## systemd Services
+
+Create separate unprivileged service users and install systemd units for the API and worker:
 
 ```bash
-CHAINCLOUD_SMOKE_MONITORING=true CHAINCLOUD_COMPOSE_FILE=deploy/server/docker-compose.backend.yml scripts/server-smoke-test.sh
+sudo groupadd --system opsmesh
+sudo useradd --system --home /opt/opsmesh --shell /usr/sbin/nologin --gid opsmesh opsmesh-api
+sudo useradd --system --home /opt/opsmesh --shell /usr/sbin/nologin --gid opsmesh opsmesh-worker
+sudo chown -R opsmesh-api:opsmesh /opt/opsmesh
+sudo chown -R opsmesh-worker:opsmesh /var/lib/opsmesh
+sudo usermod -aG docker opsmesh-worker
+```
+
+`/etc/systemd/system/opsmesh-api.service`:
+
+```ini
+[Unit]
+Description=OpsMesh API
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+
+[Service]
+User=opsmesh-api
+Group=opsmesh
+WorkingDirectory=/opt/opsmesh/current
+EnvironmentFile=/opt/opsmesh/.env
+ExecStart=/bin/sh -c 'exec /opt/opsmesh/current/.venv/bin/uvicorn backend.app.main:create_app --factory --host "${OPSMESH_API_BIND:-127.0.0.1}" --port "${OPSMESH_API_PORT:-8000}"'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`/etc/systemd/system/opsmesh-worker.service`:
+
+```ini
+[Unit]
+Description=OpsMesh Worker
+After=network-online.target postgresql.service redis-server.service docker.service
+Wants=network-online.target docker.service
+
+[Service]
+User=opsmesh-worker
+Group=opsmesh
+WorkingDirectory=/opt/opsmesh/current
+EnvironmentFile=/opt/opsmesh/.env
+ExecStart=/opt/opsmesh/current/.venv/bin/python -m backend.app.workers.cli
+Restart=always
+RestartSec=5
+SupplementaryGroups=docker
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable the units after the first release is installed:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable opsmesh-api opsmesh-worker
+```
+
+Put Nginx or another controlled ingress in front of `127.0.0.1:8000` before exposing the API outside the server.
+
+## Release Bundles and Server Updates
+
+Pushing a tag such as `v1.2.3` runs the backend quality gate and creates a GitHub Release with VPS/systemd deployment assets:
+
+- `opsmesh-server-v1.2.3-manifest.json`
+- `opsmesh-server-v1.2.3.tar.gz`
+- `opsmesh-server-v1.2.3.tar.gz.sha256`
+
+The manifest records the bundle URL and bundle sha256. It does not reference a backend container image. The server updater downloads or reads the manifest, verifies the bundle sha256, unpacks it into `/opt/opsmesh/releases/<tag>`, switches `/opt/opsmesh/current`, runs `uv sync`, applies `alembic upgrade head`, restarts `opsmesh-api` and `opsmesh-worker`, then runs the health smoke.
+
+On the server, update by tag:
+
+```bash
+OPSMESH_ENV_FILE=/opt/opsmesh/.env \
+/opt/opsmesh/current/scripts/server-update.sh --tag v1.2.3
+```
+
+Use a manifest URL or local manifest file when mirroring release assets:
+
+```bash
+/opt/opsmesh/current/scripts/server-update.sh \
+  --manifest-url https://github.com/jhupo/OpsMesh/releases/download/v1.2.3/opsmesh-server-v1.2.3-manifest.json
+
+/opt/opsmesh/current/scripts/server-update.sh \
+  --manifest-file /opt/opsmesh/downloads/opsmesh-server-v1.2.3-manifest.json
+```
+
+Use a bundle URL or local bundle file with an explicit sha256 for direct deployment:
+
+```bash
+/opt/opsmesh/current/scripts/server-update.sh \
+  --bundle-url https://github.com/jhupo/OpsMesh/releases/download/v1.2.3/opsmesh-server-v1.2.3.tar.gz \
+  --bundle-sha256 "$(cut -d ' ' -f 1 /opt/opsmesh/downloads/opsmesh-server-v1.2.3.tar.gz.sha256)"
+
+/opt/opsmesh/current/scripts/server-update.sh \
+  --manifest-file /opt/opsmesh/downloads/opsmesh-server-v1.2.3-manifest.json \
+  --bundle-file /opt/opsmesh/downloads/opsmesh-server-v1.2.3.tar.gz \
+  --bundle-sha256 "$(cut -d ' ' -f 1 /opt/opsmesh/downloads/opsmesh-server-v1.2.3.tar.gz.sha256)"
+```
+
+Use dry-run before changing the symlink or services:
+
+```bash
+/opt/opsmesh/current/scripts/server-update.sh --tag v1.2.3 --dry-run
+```
+
+Rollback switches `/opt/opsmesh/current` back to the previously recorded release directory, runs `uv sync`, restarts the API and worker, and runs smoke checks. Restart keeps the current release and only restarts services:
+
+```bash
+/opt/opsmesh/current/scripts/server-update.sh rollback
+/opt/opsmesh/current/scripts/server-update.sh restart
+```
+
+The admin API exposes a sub2api-style system updater. It requires the platform admin bearer token and defaults command endpoints to dry-run. Real online updates are disabled unless `OPSMESH_RELEASE_UPDATE_ENABLED=true` is set for the API service:
+
+```bash
+curl -fsS http://127.0.0.1:8000/api/v1/admin/system/version \
+  -H "Authorization: Bearer ${OPSMESH_PLATFORM_ADMIN_TOKEN}"
+
+curl -fsS "http://127.0.0.1:8000/api/v1/admin/system/check-updates?force=true" \
+  -H "Authorization: Bearer ${OPSMESH_PLATFORM_ADMIN_TOKEN}"
+
+curl -fsS -X POST http://127.0.0.1:8000/api/v1/admin/system/update \
+  -H "Authorization: Bearer ${OPSMESH_PLATFORM_ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"tag":"v1.2.3","dry_run":true}'
+
+curl -fsS -X POST http://127.0.0.1:8000/api/v1/admin/system/rollback \
+  -H "Authorization: Bearer ${OPSMESH_PLATFORM_ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run":true}'
+
+curl -fsS -X POST http://127.0.0.1:8000/api/v1/admin/system/restart \
+  -H "Authorization: Bearer ${OPSMESH_PLATFORM_ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run":true}'
+```
+
+## Smoke Checks
+
+Run the smoke test after a deploy:
+
+```bash
+OPSMESH_ENV_FILE=/opt/opsmesh/.env /opt/opsmesh/current/scripts/server-smoke-test.sh
+```
+
+The smoke test verifies:
+
+- `GET /api/v1/health/ready`
+- `systemctl is-active opsmesh-api`
+- `systemctl is-active opsmesh-worker`
+- `.venv/bin/alembic current`
+
+Docker access is checked only when hosted dangerous-task runtimes are enabled for the VPS:
+
+```bash
+OPSMESH_SMOKE_DOCKER_RUNTIME=true \
+OPSMESH_DOCKER_CHECK_USER=opsmesh-worker \
+OPSMESH_ENV_FILE=/opt/opsmesh/.env \
+/opt/opsmesh/current/scripts/server-smoke-test.sh
+```
+
+That check verifies `docker.service` and runs `docker info` as the worker user when `sudo` is available. The API service user should not have Docker daemon access.
+
+Run the smoke test with monitoring checks after Prometheus, Alertmanager, and Grafana are started:
+
+```bash
+OPSMESH_SMOKE_MONITORING=true /opt/opsmesh/current/scripts/server-smoke-test.sh
 ```
 
 Keep Grafana and Alertmanager behind SSH tunneling, VPN, or authenticated ingress unless a production SSO/auth layer is configured.
 
+The release bundle also carries the minimal monitoring stack assets under `deploy/server/monitoring`:
+
+- Prometheus scrapes `127.0.0.1:8000/api/v1/metrics` and loads `alert-rules.yml`.
+- Alertmanager loads `alertmanager.yml`; the checked-in receiver keeps alerts visible until an operator adds email, Slack, or webhook routing.
+- Grafana provisions the Prometheus datasource and the `OpsMesh Control Plane` dashboard from `deploy/server/monitoring/grafana`.
+
 ## Isolated Remote Backend Validation
 
-For backend closure checks on a remote host, use the isolated validation script instead of
-connecting to an existing server database:
+For backend closure checks on a remote host, use the isolated validation script instead of connecting to an existing server database:
 
 ```bash
 scripts/remote-backend-validation.sh
 ```
 
-The script creates a disposable Docker network, one temporary Postgres container, one temporary
-Redis container, and one temporary Python test container. It installs the backend package plus
-`pytest`, `fakeredis`, and `ruff`, runs targeted pytest/ruff checks, and then removes the
-containers/network with a shell trap. It does not connect to `chaincloud-postgres`.
+The script creates a disposable Docker network, one temporary Postgres container, one temporary Redis container, and one temporary Python test container. It installs the backend package plus `pytest`, `fakeredis`, and `ruff`, runs targeted pytest/ruff checks, and then removes the containers/network with a shell trap. It does not connect to production Postgres or Redis.
 
 Override the targeted checks when needed:
 
 ```bash
-CHAINCLOUD_REMOTE_PYTEST_ARGS="backend/tests/test_operations_api.py -k operations_overview" \
-CHAINCLOUD_REMOTE_RUFF_ARGS="backend/app/operations/service.py backend/tests/test_operations_api.py" \
+OPSMESH_REMOTE_PYTEST_ARGS="backend/tests/test_operations_api.py -k operations_overview" \
+OPSMESH_REMOTE_RUFF_ARGS="backend/app/operations/service.py backend/tests/test_operations_api.py" \
 scripts/remote-backend-validation.sh
 ```
 
 ## Production Settings
 
-Before running with `CHAINCLOUD_ENVIRONMENT=production`, set strong values for:
+Before running with `OPSMESH_ENVIRONMENT=production`, set strong values for:
 
-- `CHAINCLOUD_INTERNAL_API_TOKEN`
-- `CHAINCLOUD_TOKEN_HASH_PEPPER`
-- `CHAINCLOUD_POSTGRES_PASSWORD`
-- `CHAINCLOUD_ENABLE_API_DOCS=false`
-- `CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET`
-- `CHAINCLOUD_GRAFANA_ADMIN_PASSWORD`
+- `OPSMESH_INTERNAL_API_TOKEN`
+- `OPSMESH_PLATFORM_ADMIN_TOKEN`
+- `OPSMESH_WORKER_HEARTBEAT_TOKEN`
+- `OPSMESH_TOKEN_HASH_PEPPER`
+- `OPSMESH_POSTGRES_PASSWORD` or the full `OPSMESH_DATABASE_URL`
+- `OPSMESH_ENABLE_API_DOCS=false`
+- `OPSMESH_READINESS_WORKER_CHECK_ENABLED=true`
+- `OPSMESH_CREDENTIAL_ENCRYPTION_SECRET`
+- `OPSMESH_GRAFANA_ADMIN_PASSWORD`
 
-The application refuses to boot in production when default internal secrets are used or API docs are still enabled.
-The credential encryption secret protects hosted MCP credentials, model provider keys, and webhook signing secrets stored by the platform. Rotate it by setting a new `CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET` and `CHAINCLOUD_CREDENTIAL_ENCRYPTION_KEY_ID`, while keeping old key material in `CHAINCLOUD_CREDENTIAL_ENCRYPTION_PREVIOUS_SECRETS` as a JSON object keyed by old key ID. Once old encrypted rows have been re-encrypted under the current key, remove the retired key from the previous-secret keyring.
-External vault references can be configured through `CHAINCLOUD_SECRET_VAULT_PROVIDERS` as JSON provider metadata. Admin/configuration responses redact provider URLs to host-only summaries and redact tokens/headers.
+The application refuses to boot in production when default internal secrets are used, API docs are still enabled, worker readiness is disabled, or local default database credentials are configured.
+
+The credential encryption secret protects hosted MCP credentials, model provider keys, and webhook signing secrets stored by the platform. Rotate it by setting a new `OPSMESH_CREDENTIAL_ENCRYPTION_SECRET` and `OPSMESH_CREDENTIAL_ENCRYPTION_KEY_ID`, while keeping old key material in `OPSMESH_CREDENTIAL_ENCRYPTION_PREVIOUS_SECRETS` as a JSON object keyed by old key ID. Once old encrypted rows have been re-encrypted under the current key, remove the retired key from the previous-secret keyring.
+
+External vault references can be configured through `OPSMESH_SECRET_VAULT_PROVIDERS` as JSON provider metadata. Admin/configuration responses redact provider URLs to host-only summaries and redact tokens/headers.
 
 API rate limiting is disabled by default for local development. Enable it in shared or production environments:
 
 ```bash
-CHAINCLOUD_API_RATE_LIMIT_ENABLED=true
-CHAINCLOUD_API_RATE_LIMIT_REQUESTS=600
-CHAINCLOUD_API_RATE_LIMIT_WINDOW_SECONDS=60
+OPSMESH_API_RATE_LIMIT_ENABLED=true
+OPSMESH_API_RATE_LIMIT_REQUESTS=600
+OPSMESH_API_RATE_LIMIT_WINDOW_SECONDS=60
 ```
 
 Rate limits use Redis fixed windows and fail open if Redis is temporarily unavailable, so cache instability does not take down the API.
 
-Hosted MCP health checks are treated as stale after `CHAINCLOUD_MCP_HEALTH_CHECK_STALE_AFTER_SECONDS` seconds, defaulting to `86400`. Stale or missing MCP health results fail closed, so the platform will avoid using hosted MCP credentials until a fresh healthy check is recorded.
+Hosted MCP health checks are treated as stale after `OPSMESH_MCP_HEALTH_CHECK_STALE_AFTER_SECONDS` seconds, defaulting to `86400`. Stale or missing MCP health results fail closed, so the platform will avoid using hosted MCP credentials until a fresh healthy check is recorded.
 
 ## Process Commands
 
 API:
 
 ```bash
-uvicorn backend.app.main:create_app --factory --host 0.0.0.0 --port 8000
+/opt/opsmesh/current/.venv/bin/uvicorn backend.app.main:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
 Worker:
 
 ```bash
-python -m backend.app.workers.cli
+/opt/opsmesh/current/.venv/bin/python -m backend.app.workers.cli
 ```
 
 Run one-shot migrations:
 
 ```bash
-alembic upgrade head
+cd /opt/opsmesh/current
+.venv/bin/alembic upgrade head
 ```
 
-The Docker entrypoint runs migrations by default. Set `CHAINCLOUD_RUN_MIGRATIONS=false` for worker-only containers or when migrations are managed by an external release job.
+The updater runs migrations before restarting services.
 
 ## Model Provider Dispatch Runner
 
-The worker routes each run through the real provider-dispatching runner. OpenAI-compatible
-providers route through the OpenAI Agents SDK; Anthropic/Claude providers route through the
-native messages runner.
+The worker routes each run through the real provider-dispatching runner. OpenAI-compatible providers route through the OpenAI Agents SDK; Anthropic/Claude providers route through the native messages runner.
 
-Model provider keys should be stored through the workspace API, not raw environment
-variables:
+Model provider keys should be stored through the workspace API, not raw environment variables:
 
 - `POST /api/v1/workspaces/{workspace_id}/model-provider-credentials`
 - stores encrypted `api_key`, optional `base_url`, and a `default_model`
 - returns only a fingerprint and never returns the secret
 - agents can reference a credential through `model_provider_credential_id`
 - agents can set `model` to a concrete model or `workspace-default` to use the credential default
-If an agent has no credential reference, the worker resolves the workspace default model provider
-credential when one exists.
 
-Run a real OpenAI-compatible gateway smoke only after explicitly authorizing the external
-provider call and exporting a temporary API key in the shell:
+If an agent has no credential reference, the worker resolves the workspace default model provider credential when one exists.
+
+Run a real OpenAI-compatible gateway smoke only after explicitly authorizing the external provider call and exporting a temporary API key in the shell:
 
 ```bash
 export OPENAI_API_KEY
-export OPENAI_SMOKE_BASE_URL=https://dash.ovload.com/
+export OPENAI_SMOKE_BASE_URL=https://your-openai-compatible-gateway.example/
 python scripts/openai-gateway-smoke.py --dry-run
 python scripts/openai-gateway-smoke.py --allow-external-provider-call
 ```
 
-The smoke script reads the key from the process environment, never stores it in the repo, and
-normalizes root OpenAI-compatible URLs to `/v1` before running the `openai_smoke` pytest marker.
-The dry run prints only redacted configuration and does not make an external provider call. Use
-`OPENAI_SMOKE_MODEL` to override the default smoke model.
+The smoke script reads the key from the process environment, never stores it in the repo, and normalizes root OpenAI-compatible URLs to `/v1` before running the `openai_smoke` pytest marker. The dry run prints only redacted configuration and does not make an external provider call. Use `OPENAI_SMOKE_MODEL` to override the default smoke model.
 
 The product orchestration layer should continue to talk through the internal agent runtime contract rather than importing provider-specific SDK behavior into API routes.

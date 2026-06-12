@@ -8,7 +8,7 @@ from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
 
 def test_redis_fixed_window_limiter_blocks_after_limit() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    limiter = RedisFixedWindowRateLimiter(redis, key_prefix="chaincloud", clock=lambda: 120.0)
+    limiter = RedisFixedWindowRateLimiter(redis, key_prefix="opsmesh", clock=lambda: 120.0)
 
     first = limiter.check(identifier="client-1", limit=2, window_seconds=60)
     second = limiter.check(identifier="client-1", limit=2, window_seconds=60)
@@ -32,7 +32,7 @@ def test_rate_limit_middleware_returns_429_with_headers() -> None:
             api_rate_limit_requests=1,
             api_rate_limit_window_seconds=60,
         ),
-        rate_limiter=RedisFixedWindowRateLimiter(redis, key_prefix="chaincloud"),
+        rate_limiter=RedisFixedWindowRateLimiter(redis, key_prefix="opsmesh"),
     )
     client = TestClient(app)
 
@@ -48,7 +48,7 @@ def test_rate_limit_middleware_returns_429_with_headers() -> None:
 
 
 def test_rate_limiter_fails_open_when_redis_is_unavailable() -> None:
-    limiter = RedisFixedWindowRateLimiter(BrokenRedis(), key_prefix="chaincloud")
+    limiter = RedisFixedWindowRateLimiter(BrokenRedis(), key_prefix="opsmesh")
 
     decision = limiter.check(identifier="client-1", limit=1, window_seconds=60)
 

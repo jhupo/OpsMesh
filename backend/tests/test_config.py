@@ -18,7 +18,7 @@ def test_settings_defaults_are_local_development_friendly() -> None:
     settings = Settings()
 
     assert settings.environment == "local"
-    assert settings.service_name == "chaincloud-backend"
+    assert settings.service_name == "opsmesh-backend"
     assert settings.api_prefix == "/api/v1"
     assert settings.enable_api_docs is True
     recommendation = recommend_runtime_resources()
@@ -40,6 +40,16 @@ def test_settings_defaults_are_local_development_friendly() -> None:
     assert settings.external_call_circuit_failure_threshold == 5
     assert settings.external_call_circuit_reset_seconds == 60
     assert settings.secret_vault_providers == {}
+    assert settings.release_dir is None
+    assert settings.release_update_enabled is False
+    assert settings.release_update_manifest_url is None
+    assert settings.release_update_manifest_file is None
+    assert settings.release_update_bundle_url is None
+    assert settings.release_update_bundle_file is None
+    assert settings.release_update_checksum_url is None
+    assert settings.release_update_checksum_file is None
+    assert settings.release_update_repository == "jhupo/OpsMesh"
+    assert settings.release_update_check_cache_seconds == 1_200
     assert settings.feature_flags == {}
 
 
@@ -61,17 +71,17 @@ def test_runtime_resource_recommendations_scale_with_cpu_count() -> None:
 
 
 def test_production_requires_real_token_and_disabled_docs() -> None:
-    with pytest.raises(ValueError, match="CHAINCLOUD_INTERNAL_API_TOKEN"):
+    with pytest.raises(ValueError, match="OPSMESH_INTERNAL_API_TOKEN"):
         Settings(environment="production")
 
-    with pytest.raises(ValueError, match="CHAINCLOUD_TOKEN_HASH_PEPPER"):
+    with pytest.raises(ValueError, match="OPSMESH_TOKEN_HASH_PEPPER"):
         Settings(
             environment="production",
             internal_api_token="secret",
             platform_admin_token="admin-secret",
         )
 
-    with pytest.raises(ValueError, match="CHAINCLOUD_ENABLE_API_DOCS"):
+    with pytest.raises(ValueError, match="OPSMESH_ENABLE_API_DOCS"):
         Settings(
             environment="production",
             internal_api_token="secret",
@@ -79,7 +89,7 @@ def test_production_requires_real_token_and_disabled_docs() -> None:
             token_hash_pepper="pepper",
         )
 
-    with pytest.raises(ValueError, match="CHAINCLOUD_CREDENTIAL_ENCRYPTION_SECRET"):
+    with pytest.raises(ValueError, match="OPSMESH_CREDENTIAL_ENCRYPTION_SECRET"):
         Settings(
             environment="production",
             internal_api_token="secret",
@@ -99,7 +109,7 @@ def test_internal_api_token_supports_rotation_list() -> None:
 
 
 def test_production_requires_platform_admin_token() -> None:
-    with pytest.raises(ValueError, match="CHAINCLOUD_PLATFORM_ADMIN_TOKEN"):
+    with pytest.raises(ValueError, match="OPSMESH_PLATFORM_ADMIN_TOKEN"):
         Settings(
             environment="production",
             internal_api_token="secret",
@@ -110,19 +120,19 @@ def test_production_requires_platform_admin_token() -> None:
 
 
 def test_production_requires_worker_heartbeat_token() -> None:
-    with pytest.raises(ValueError, match="CHAINCLOUD_WORKER_HEARTBEAT_TOKEN"):
+    with pytest.raises(ValueError, match="OPSMESH_WORKER_HEARTBEAT_TOKEN"):
         _production_settings(worker_heartbeat_token=None)
 
 
 def test_production_requires_worker_readiness_check() -> None:
-    with pytest.raises(ValueError, match="CHAINCLOUD_READINESS_WORKER_CHECK_ENABLED"):
+    with pytest.raises(ValueError, match="OPSMESH_READINESS_WORKER_CHECK_ENABLED"):
         _production_settings(readiness_worker_check_enabled=False)
 
 
 def test_production_rejects_unsafe_runtime_and_infrastructure_defaults() -> None:
     with pytest.raises(ValueError, match="DATABASE_URL"):
         _production_settings(
-            database_url="postgresql+psycopg://chaincloud:chaincloud@localhost:5432/chaincloud"
+            database_url="postgresql+psycopg://opsmesh:opsmesh@localhost:5432/opsmesh"
         )
 
     with pytest.raises(ValueError, match="REDIS_URL"):
@@ -132,7 +142,7 @@ def test_production_rejects_unsafe_runtime_and_infrastructure_defaults() -> None
         _production_settings(cors_origins=[])
 
     with pytest.raises(ValueError, match="STORAGE_ROOT"):
-        _production_settings(storage_root=".chaincloud-storage")
+        _production_settings(storage_root=".opsmesh-storage")
 
 
 def test_settings_redacted_summary_hides_secrets() -> None:
@@ -191,7 +201,7 @@ def test_settings_redacted_summary_hides_secrets() -> None:
 
 
 def test_s3_storage_requires_bucket() -> None:
-    with pytest.raises(ValueError, match="CHAINCLOUD_S3_BUCKET"):
+    with pytest.raises(ValueError, match="OPSMESH_S3_BUCKET"):
         Settings(environment="test", storage_backend="s3")
 
 
@@ -199,7 +209,7 @@ def test_s3_storage_blank_optional_settings_are_unset() -> None:
     settings = Settings(
         environment="test",
         storage_backend="s3",
-        s3_bucket=" chaincloud ",
+        s3_bucket=" opsmesh ",
         s3_endpoint_url=" ",
         s3_region=" ",
         s3_access_key_id=" ",
@@ -208,7 +218,7 @@ def test_s3_storage_blank_optional_settings_are_unset() -> None:
         s3_prefix=" dev ",
     )
 
-    assert settings.s3_bucket == "chaincloud"
+    assert settings.s3_bucket == "opsmesh"
     assert settings.s3_endpoint_url is None
     assert settings.s3_region is None
     assert settings.s3_access_key_id is None
@@ -217,11 +227,32 @@ def test_s3_storage_blank_optional_settings_are_unset() -> None:
     assert settings.s3_prefix == "dev"
 
 
+def test_release_update_blank_optional_settings_are_unset() -> None:
+    settings = Settings(
+        environment="test",
+        release_dir=" ",
+        release_update_manifest_url=" ",
+        release_update_manifest_file=" ",
+        release_update_bundle_url=" ",
+        release_update_bundle_file=" ",
+        release_update_checksum_url=" ",
+        release_update_checksum_file=" ",
+    )
+
+    assert settings.release_dir is None
+    assert settings.release_update_manifest_url is None
+    assert settings.release_update_manifest_file is None
+    assert settings.release_update_bundle_url is None
+    assert settings.release_update_bundle_file is None
+    assert settings.release_update_checksum_url is None
+    assert settings.release_update_checksum_file is None
+
+
 def test_s3_storage_redacted_summary_hides_credentials() -> None:
     settings = Settings(
         environment="test",
         storage_backend="s3",
-        s3_bucket="chaincloud",
+        s3_bucket="opsmesh",
         s3_endpoint_url="https://access:secret@minio.example.com:9000",
         s3_region="us-east-1",
         s3_prefix="tenant-a",
@@ -234,7 +265,7 @@ def test_s3_storage_redacted_summary_hides_credentials() -> None:
     summary = settings.redacted_summary()
 
     assert summary["storage_backend"] == "s3"
-    assert summary["s3_bucket"] == "chaincloud"
+    assert summary["s3_bucket"] == "opsmesh"
     assert summary["s3_endpoint_url"] == "https://***:***@minio.example.com:9000"
     assert summary["s3_region"] == "us-east-1"
     assert summary["s3_prefix"] == "tenant-a"
@@ -341,7 +372,7 @@ def _production_settings(**overrides: object) -> Settings:
         "database_url": "postgresql+psycopg://app:strong@db.example.com:5432/app",
         "redis_url": "redis://redis.example.com:6379/0",
         "cors_origins": ["https://console.example.com"],
-        "storage_root": "/srv/chaincloud/storage",
+        "storage_root": "/srv/opsmesh/storage",
     }
     values.update(overrides)
     return Settings(**values)

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the boundary between the ChainCloud product layer and the OpenAI Agents SDK runtime layer.
+This document defines the boundary between the OpsMesh product layer and the OpenAI Agents SDK runtime layer.
 
 The product layer owns users, workspaces, tasks, permissions, runtimes, approvals, files, artifacts, and audit logs. The OpenAI Agents SDK layer owns agent execution primitives such as `Agent`, `Runner`, tools, handoffs, guardrails, sessions, and traces.
 

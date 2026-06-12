@@ -25,11 +25,11 @@ def test_local_storage_supports_object_storage_semantics(tmp_path: Path) -> None
 
 def test_s3_storage_supports_object_storage_semantics() -> None:
     client = FakeS3Client()
-    storage = S3Storage(bucket="chaincloud", prefix="tenant-a", client=client)
+    storage = S3Storage(bucket="opsmesh", prefix="tenant-a", client=client)
 
     storage.put("workspaces/demo/file.txt", b"hello")
 
-    assert client.objects[("chaincloud", "tenant-a/workspaces/demo/file.txt")] == b"hello"
+    assert client.objects[("opsmesh", "tenant-a/workspaces/demo/file.txt")] == b"hello"
     assert storage.exists("workspaces/demo/file.txt") is True
     assert storage.get("workspaces/demo/file.txt") == b"hello"
     with storage.open("workspaces/demo/file.txt") as stream:
@@ -41,13 +41,13 @@ def test_s3_storage_supports_object_storage_semantics() -> None:
 
 
 def test_s3_storage_rejects_unsafe_keys_and_prefixes() -> None:
-    storage = S3Storage(bucket="chaincloud", client=FakeS3Client())
+    storage = S3Storage(bucket="opsmesh", client=FakeS3Client())
 
     with pytest.raises(ValueError, match="Storage key"):
         storage.put("../escape.txt", b"bad")
 
     with pytest.raises(ValueError, match="Storage key"):
-        S3Storage(bucket="chaincloud", prefix="../tenant", client=FakeS3Client())
+        S3Storage(bucket="opsmesh", prefix="../tenant", client=FakeS3Client())
 
 
 def test_create_storage_selects_local_backend(tmp_path: Path) -> None:
@@ -69,7 +69,7 @@ def test_create_storage_selects_s3_backend(monkeypatch: pytest.MonkeyPatch) -> N
     settings = Settings(
         environment="test",
         storage_backend="s3",
-        s3_bucket="chaincloud",
+        s3_bucket="opsmesh",
         s3_endpoint_url="http://minio:9000",
         s3_region="us-east-1",
         s3_prefix="dev",
@@ -84,7 +84,7 @@ def test_create_storage_selects_s3_backend(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert isinstance(storage, StubS3Storage)
     assert created == {
-        "bucket": "chaincloud",
+        "bucket": "opsmesh",
         "prefix": "dev",
         "endpoint_url": "http://minio:9000",
         "region_name": "us-east-1",

@@ -13,6 +13,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agent_messages.models import AgentMessage
+from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agent_runtime.sessions import PersistentAgentSession
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
@@ -29,6 +30,8 @@ from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNo
 from backend.app.operations.service import OperationsService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.reviews.model_request import ModelRequestReview
+from backend.app.reviews.service import ResourceReview
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import (
@@ -51,6 +54,39 @@ from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
 from backend.app.workers.runner import WorkerMaintenanceSummary, WorkerRunner, WorkerRunnerConfig
 from backend.app.workspaces.models import Workspace, WorkspaceMember
+
+
+@pytest.fixture(autouse=True)
+def approve_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_resource_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return ResourceReview(
+            required=False,
+            risk_level="low",
+            reasons=["llm_review.approved"],
+            signals={"reviewer": "llm", "verdict": "approve"},
+        )
+
+    def fake_model_request_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return ModelRequestReview(
+            required=False,
+            risk_level="low",
+            reasons=["model_request.approved"],
+            signals={"reviewer": "llm", "verdict": "approve"},
+        )
+
+    monkeypatch.setattr(
+        "backend.app.reviews.service.ResourceReviewService.review_tool_execution",
+        fake_resource_review,
+    )
+    monkeypatch.setattr(
+        "backend.app.reviews.model_request.ModelRequestReviewService.review_request",
+        fake_model_request_review,
+    )
+
+
+class DeterministicAgentRunner:
+    async def run(self, request: AgentRunRequest) -> AgentRunResult:
+        return AgentRunResult(final_output="deterministic_run_completed")
 
 
 class FakeDockerClient(DockerRuntimeClient):
@@ -106,6 +142,7 @@ def test_worker_runner_run_once_processes_agent_job() -> None:
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-1", queue_name="agent_runs"),
+        agent_runner=DeterministicAgentRunner(),
     )
 
     assert runner.run_once() is True
@@ -151,6 +188,7 @@ def test_worker_runner_loop_records_heartbeat_and_summary() -> None:
             heartbeat_interval_seconds=0,
             idle_sleep_seconds=0,
         ),
+        agent_runner=DeterministicAgentRunner(),
         sleep=lambda _: None,
     )
 
@@ -1385,6 +1423,7 @@ def test_worker_runner_continues_after_job_failure() -> None:
             heartbeat_interval_seconds=0,
             idle_sleep_seconds=0,
         ),
+        agent_runner=DeterministicAgentRunner(),
         sleep=lambda _: None,
     )
 
@@ -1752,6 +1791,7 @@ def test_worker_runner_capacity_allows_claim_when_slot_available() -> None:
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-slot", queue_name="agent_runs"),
+        agent_runner=DeterministicAgentRunner(),
     )
 
     assert runner.run_once() is True
@@ -1770,9 +1810,9 @@ def test_worker_runner_skips_jobs_that_do_not_match_worker_capacity() -> None:
         session_factory,
         slug="docker-job",
     )
-    self_hosted_workspace_id, self_hosted_run_id, self_hosted_user_id = _seed_run(
+    systemd_workspace_id, systemd_run_id, systemd_user_id = _seed_run(
         session_factory,
-        slug="self-hosted-job",
+        slug="systemd-job",
     )
     queue.enqueue(
         JobPayload(
@@ -1790,25 +1830,25 @@ def test_worker_runner_skips_jobs_that_do_not_match_worker_capacity() -> None:
     )
     queue.enqueue(
         JobPayload(
-            workspace_id=self_hosted_workspace_id,
+            workspace_id=systemd_workspace_id,
             job_type=JobType.AGENT_RUN,
-            resource_id=self_hosted_run_id,
-            requested_by_user_id=self_hosted_user_id,
-            idempotency_key=f"agent.run:{self_hosted_workspace_id}:{self_hosted_run_id}",
-            routing={"runtime_modes": ["self_hosted"]},
+            resource_id=systemd_run_id,
+            requested_by_user_id=systemd_user_id,
+            idempotency_key=f"agent.run:{systemd_workspace_id}:{systemd_run_id}",
+            routing={"runtime_modes": ["systemd"]},
         )
     )
     with session_factory() as session:
         session.add(
             WorkerNode(
-                worker_id="worker-self-hosted",
-                worker_type="self_hosted",
+                worker_id="worker-systemd",
+                worker_type="cloud",
                 status="online",
                 queue_name="agent_runs",
                 capacity={
                     "max_jobs": 1,
-                    "worker_type": "self_hosted",
-                    "runtime_modes": ["self_hosted"],
+                    "worker_type": "cloud",
+                    "runtime_modes": ["systemd"],
                     "capabilities": ["code.execute"],
                     "memory_mb": 2048,
                 },
@@ -1820,25 +1860,26 @@ def test_worker_runner_skips_jobs_that_do_not_match_worker_capacity() -> None:
     runner = WorkerRunner(
         queue=queue,
         session_factory=session_factory,
-        config=WorkerRunnerConfig(worker_id="worker-self-hosted", queue_name="agent_runs"),
+        config=WorkerRunnerConfig(worker_id="worker-systemd", queue_name="agent_runs"),
+        agent_runner=DeterministicAgentRunner(),
     )
 
     assert runner.run_once() is True
     assert queue.count_queued(workspace_id=docker_workspace_id) == 1
-    assert queue.count_queued(workspace_id=self_hosted_workspace_id) == 0
+    assert queue.count_queued(workspace_id=systemd_workspace_id) == 0
     with session_factory() as session:
         docker_run = session.get(AgentRun, docker_run_id)
-        self_hosted_run = session.get(AgentRun, self_hosted_run_id)
+        systemd_run = session.get(AgentRun, systemd_run_id)
         lease = session.scalar(
-            select(WorkerLease).where(WorkerLease.worker_id == "worker-self-hosted")
+            select(WorkerLease).where(WorkerLease.worker_id == "worker-systemd")
         )
         assert docker_run is not None
         assert docker_run.status == RunStatus.QUEUED.value
-        assert self_hosted_run is not None
-        assert self_hosted_run.status == RunStatus.COMPLETED.value
+        assert systemd_run is not None
+        assert systemd_run.status == RunStatus.COMPLETED.value
         assert lease is not None
-        assert lease.resource_id == self_hosted_run_id
-        assert lease.lease_metadata["routing"] == {"runtime_modes": ["self_hosted"]}
+        assert lease.resource_id == systemd_run_id
+        assert lease.lease_metadata["routing"] == {"runtime_modes": ["systemd"]}
 
 
 def test_worker_runner_processes_mcp_tool_execution_job() -> None:
@@ -2540,7 +2581,7 @@ def test_worker_maintenance_publishes_task_event_outbox_and_counts_result() -> N
     )
 
     summary = runner.run_maintenance()
-    events = RedisTaskEventBus(redis=queue.redis, key_prefix="chaincloud").read(
+    events = RedisTaskEventBus(redis=queue.redis, key_prefix="opsmesh").read(
         workspace_id=workspace_id,
         task_id=task_id,
         after_id="0-0",
@@ -2624,6 +2665,7 @@ def test_worker_job_log_context_is_scoped_to_single_job() -> None:
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-context", queue_name="agent_runs"),
+        agent_runner=DeterministicAgentRunner(),
     )
 
     assert current_log_context()["worker_id"] is None
@@ -2639,7 +2681,7 @@ def test_worker_job_log_context_is_scoped_to_single_job() -> None:
 def _queue(*, visibility_timeout_seconds: int = 900) -> RedisQueue:
     return RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
         visibility_timeout_seconds=visibility_timeout_seconds,
@@ -2751,6 +2793,23 @@ def _seed_run(
         )
         session.add_all([member, task, agent])
         session.flush()
+        credential = ModelProviderCredentialService(
+            session,
+            SecretEncryptionService(
+                secret="change-me-credential-encryption-secret",
+                key_id="local",
+            ),
+        ).create(
+            workspace_id=workspace.id,
+            created_by_user_id=user.id,
+            name="Default test provider",
+            provider="openai",
+            api_key="sk-test-worker-runner",
+            default_model="gpt-4.1",
+            base_url=None,
+            is_default=True,
+        )
+        agent.model_provider_credential_id = credential.id
         run = AgentRun(
             workspace_id=workspace.id,
             task_id=task.id,

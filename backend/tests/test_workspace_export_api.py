@@ -4171,7 +4171,7 @@ def _client_with_worker_queue(
     session_factory = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
     session = session_factory()
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    queue = RedisQueue(redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     app = create_app(
         Settings(
             environment="test",

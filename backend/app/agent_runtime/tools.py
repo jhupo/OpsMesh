@@ -28,7 +28,6 @@ from backend.app.reviews.tool_execution import ToolExecutionReview, ToolExecutio
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
-from backend.app.runtime_manager.dependencies import get_docker_runtime_client
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.security.redaction import redact_sensitive_text
@@ -366,9 +365,10 @@ class ContextualMcpAdapterResolver:
                 agent_run_id=run.id,
             )
         if runtime is not None and _is_docker_runtime(runtime):
-            docker_client = self._docker_client or get_docker_runtime_client()
+            if self._docker_client is None:
+                raise RuntimeError("Docker runtime MCP execution requires a worker-injected client")
             return DockerRuntimeStdioMcpToolAdapter(
-                runtime_manager=RuntimeManager(self._session, docker_client),
+                runtime_manager=RuntimeManager(self._session, self._docker_client),
                 runtime=runtime,
             )
         return self._default_adapter_for(server)

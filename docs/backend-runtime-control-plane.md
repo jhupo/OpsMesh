@@ -163,12 +163,12 @@ Containers should be created with strict defaults:
 Required labels:
 
 ```text
-chaincloud.workspace_id
-chaincloud.runtime_id
-chaincloud.task_id
-chaincloud.run_id
-chaincloud.owner
-chaincloud.created_at
+opsmesh.workspace_id
+opsmesh.runtime_id
+opsmesh.task_id
+opsmesh.run_id
+opsmesh.owner
+opsmesh.created_at
 ```
 
 ## Workspace Filesystem Layout
@@ -178,7 +178,7 @@ Host-managed runtime data should live under a controlled root.
 Example:
 
 ```text
-/var/lib/chaincloud/
+/var/lib/opsmesh/
   workspaces/
     {workspace_id}/
       runtimes/
@@ -393,7 +393,7 @@ Backend should run cleanup tasks:
 
 - stop idle ephemeral runtimes
 - delete expired runtime directories
-- collect orphaned Docker containers with ChainCloud labels
+- collect orphaned Docker containers with OpsMesh labels
 - truncate oversized logs
 - mark unhealthy runtimes
 - expire abandoned provisioning records

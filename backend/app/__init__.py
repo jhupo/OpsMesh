@@ -1,2 +1,1 @@
-"""ChainCloud backend application package."""
-
+"""OpsMesh backend application package."""

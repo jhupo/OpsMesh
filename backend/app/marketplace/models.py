@@ -136,4 +136,90 @@ class TalentListingReview(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
 
 
+class MarketplaceListing(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "marketplace_listings"
+    __table_args__ = (
+        Index(
+            "ix_marketplace_listings_type_visibility_status",
+            "listing_type",
+            "visibility",
+            "status",
+        ),
+        Index("ix_marketplace_listings_workspace_type", "workspace_id", "listing_type"),
+        Index("ix_marketplace_listings_owner_status", "owner_user_id", "status"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    owner_user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_resource_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    listing_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="private")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    summary: Mapped[str] = mapped_column(String(2_000), nullable=False, default="")
+    version: Mapped[str] = mapped_column(String(64), nullable=False, default="1.0.0")
+    tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    manifest: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    listing_metadata: Mapped[dict[str, object]] = mapped_column(
+        "metadata",
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+    install_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class WorkspaceMarketplaceInstall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "workspace_marketplace_installs"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "marketplace_listing_id",
+            name="uq_workspace_marketplace_installs_listing",
+        ),
+        Index(
+            "ix_workspace_marketplace_installs_workspace_type",
+            "workspace_id",
+            "listing_type",
+        ),
+        Index(
+            "ix_workspace_marketplace_installs_workspace_status",
+            "workspace_id",
+            "status",
+        ),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    marketplace_listing_id: Mapped[UUID] = mapped_column(
+        ForeignKey("marketplace_listings.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    installed_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    installed_resource_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    listing_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    installed_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    installed_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    installed_manifest: Mapped[dict[str, object]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+    config: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+
+    listing: Mapped[MarketplaceListing] = relationship()
+
+
 from backend.app.agents.models import AgentProfile  # noqa: E402

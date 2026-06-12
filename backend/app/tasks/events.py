@@ -71,7 +71,7 @@ class TaskEventBus(Protocol):
 @dataclass(frozen=True)
 class RedisTaskEventBus:
     redis: Redis
-    key_prefix: str = "chaincloud"
+    key_prefix: str = "opsmesh"
     stream_maxlen: int = TASK_EVENT_STREAM_MAXLEN
 
     def publish(

@@ -2,7 +2,7 @@
 
 ## Goal
 
-ChainCloud Agent Team is a multi-user, multi-workspace system. User and workspace isolation is a core product requirement, not an implementation detail. The system must prevent data, tasks, files, memory, tools, and agent runs from crossing workspace boundaries unless an explicit sharing feature is designed later.
+OpsMesh is a multi-user, multi-workspace system. User and workspace isolation is a core product requirement, not an implementation detail. The system must prevent data, tasks, files, memory, tools, and agent runs from crossing workspace boundaries unless an explicit sharing feature is designed later.
 
 ## Isolation Boundaries
 

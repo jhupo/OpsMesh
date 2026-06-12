@@ -4,7 +4,7 @@
 
 Some users will not want sensitive data stored or processed in the cloud. Others may want to use their own GPUs, larger machines, local files, private networks, or existing development environments.
 
-ChainCloud Agent Team should support self-hosted runtimes: user-owned machines that run a controlled worker/runtime process and execute approved workspace tasks locally.
+OpsMesh should support self-hosted runtimes: user-owned machines that run a controlled worker/runtime process and execute approved workspace tasks locally.
 
 The platform remains the control plane. The user's machine becomes an execution plane.
 

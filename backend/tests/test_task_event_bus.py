@@ -18,7 +18,7 @@ from backend.app.tasks.events import RedisTaskEventBus, TaskEvent
 
 def test_redis_task_event_bus_publishes_and_reads_stream_events() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    bus = RedisTaskEventBus(redis=redis, key_prefix="chaincloud")
+    bus = RedisTaskEventBus(redis=redis, key_prefix="opsmesh")
     workspace_id = uuid4()
     task_id = uuid4()
     event_identity = str(uuid4())

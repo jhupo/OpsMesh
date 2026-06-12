@@ -90,8 +90,6 @@ def _evaluate_supported_runtimes(
 ) -> WorkerJobPolicyDecision:
     supported_runtimes = _string_list(worker_capabilities.get("supported_runtimes"))
     if not supported_runtimes:
-        supported_runtimes = _string_list(worker_capabilities.get("runtime_types"))
-    if not supported_runtimes:
         return WorkerJobPolicyDecision(allowed=True)
     required_runtimes = _runtime_requirements(snapshot)
     if not required_runtimes or any(
@@ -189,7 +187,7 @@ def _network_requirements(
 
 def _worker_network_modes(worker_capabilities: dict[str, object]) -> set[str]:
     modes: set[str] = set()
-    for key in ("network_modes", "supported_network_modes", "network_expectations"):
+    for key in ("supported_network_modes", "network_expectations"):
         modes |= {
             _normalize_network_mode(mode)
             for mode in _string_list(worker_capabilities.get(key))

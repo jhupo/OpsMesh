@@ -2,7 +2,7 @@
 
 This document tracks what is still incomplete or only implemented as a basic backend foundation. It is intentionally implementation-focused: each item describes the current gap, the production behavior to build, the main API/data changes, the tests required, and the acceptance criteria.
 
-Frontend remains out of scope. The goal is to make the backend feel like a mature commercial control plane for a personal AI company workspace.
+Frontend remains out of scope. The goal is to make the backend feel like a mature commercial control plane for personal agent-team workspaces.
 
 ## Current Completion Snapshot
 
@@ -18,7 +18,7 @@ Completed foundation:
 - core domain error hierarchy with API error-envelope mapping
 - production configuration guardrails and redacted settings summary
 - Redis token-safe distributed lock helper used by worker run locks
-- structured idempotency states for in-progress, succeeded, and failed reservations with legacy value compatibility
+- structured idempotency states for in-progress, succeeded, and failed reservations
 - core feature flag service with defaults, global settings, workspace overrides, safe disabled unknowns, and redacted enabled-flag summary
 - reusable Redis JSON cache abstraction with namespaced keys, TTLs, get-or-set loading, corrupt-value healing, and namespace invalidation
 - platform-admin system configuration endpoint exposing redacted settings plus recommended/configured core resource sizing deltas
@@ -29,7 +29,7 @@ Completed foundation:
 - worker queue, retries, dead letters, idempotency, heartbeats, and rate limits
 - OpenAI Agents runtime contract and fake/runtime adapters
 - Docker runtime manager foundation and self-hosted runtime enrollment/job flow
-- talent marketplace for public agent listing and hiring
+- talent marketplace for public agent listing and installation
 - persistent organization orchestration with PM planning, work packages, parallel dependency execution, PM review, and task messages
 - workspace metadata/archive export and import, including task messages
 - account-scoped private/public MCP catalog and hosted credential storage
@@ -204,7 +204,7 @@ Acceptance:
 Current state:
 
 - Skills have private/public visibility.
-- Public agents can be hired into a workspace as isolated copies.
+- Public agents can be installed into a workspace as isolated copies.
 - Public skill installs now persist a workspace-local install snapshot with installed key, name,
   version, capability keys, manifest, source visibility, source checksum, and disabled timestamp.
 - Run authorization snapshots include installed skill provenance for active workspace-local skill installs referenced by the agent profile.
@@ -339,7 +339,7 @@ Tests:
 
 Acceptance:
 
-- the frontend can render very different AI company workflows from one backend observation API
+- the frontend can render very different agent-team workflows from one backend observation API
 - users can see what is happening and what needs correction without reading raw run logs
 
 ## P0: Generic User-Facing Correction Endpoint

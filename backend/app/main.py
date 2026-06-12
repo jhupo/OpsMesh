@@ -42,7 +42,7 @@ def create_app_with_dependencies(
     configure_logging(app_settings)
 
     app = FastAPI(
-        title="ChainCloud Agent Team API",
+        title="OpsMesh API",
         version="0.1.0",
         docs_url="/docs" if app_settings.enable_api_docs else None,
         redoc_url="/redoc" if app_settings.enable_api_docs else None,

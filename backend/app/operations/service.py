@@ -140,7 +140,7 @@ class OperationsService:
     ) -> None:
         self._session = session
         self._redis = redis
-        self._keys = key_builder or RedisKeyBuilder("chaincloud")
+        self._keys = key_builder or RedisKeyBuilder("opsmesh")
 
     def record_worker_heartbeat(
         self,
@@ -900,25 +900,25 @@ class OperationsService:
             gauges.extend(
                 [
                     GaugeMetric(
-                        "chaincloud_queue_jobs",
+                        "opsmesh_queue_jobs",
                         queue.queued,
                         labels={"queue_name": queue_name, "state": "queued"},
                         help_text="Jobs currently waiting in Redis queues.",
                     ),
                     GaugeMetric(
-                        "chaincloud_queue_jobs",
+                        "opsmesh_queue_jobs",
                         queue.dead_letter,
                         labels={"queue_name": queue_name, "state": "dead_letter"},
                         help_text="Jobs currently waiting in Redis queues.",
                     ),
                     GaugeMetric(
-                        "chaincloud_queue_idempotency_keys",
+                        "opsmesh_queue_idempotency_keys",
                         queue.idempotency_keys,
                         labels={"queue_name": queue_name},
                         help_text="Active Redis idempotency keys for queued work.",
                     ),
                     GaugeMetric(
-                        "chaincloud_queue_oldest_queued_age_seconds",
+                        "opsmesh_queue_oldest_queued_age_seconds",
                         self._oldest_queued_age_seconds(queue_name, now, queue_scan_limit) or 0,
                         labels={"queue_name": queue_name},
                         help_text="Age of the oldest queued job seen in the queue scan.",
@@ -2937,7 +2937,7 @@ class OperationsService:
 
         gauges = [
             GaugeMetric(
-                "chaincloud_workers",
+                "opsmesh_workers",
                 count,
                 labels={"state": state},
                 help_text="Worker nodes by operational state.",
@@ -2955,7 +2955,7 @@ class OperationsService:
         }
         gauges.extend(
             GaugeMetric(
-                "chaincloud_worker_leases",
+                "opsmesh_worker_leases",
                 lease_counts.get(status, 0),
                 labels={"status": status},
                 help_text="Worker leases by lifecycle status.",
@@ -2991,19 +2991,19 @@ class OperationsService:
             gauges.extend(
                 [
                     GaugeMetric(
-                        "chaincloud_runtime_capacity_slots",
+                        "opsmesh_runtime_capacity_slots",
                         capacity_slots,
                         labels=labels,
                         help_text="Runtime capacity slots by provider and runtime type.",
                     ),
                     GaugeMetric(
-                        "chaincloud_runtime_active_runs",
+                        "opsmesh_runtime_active_runs",
                         active_runs,
                         labels=labels,
                         help_text="Active runs assigned to runtimes by provider and type.",
                     ),
                     GaugeMetric(
-                        "chaincloud_runtime_saturation_ratio",
+                        "opsmesh_runtime_saturation_ratio",
                         round(saturation, 4),
                         labels=labels,
                         help_text="Runtime active-run saturation by provider and type.",
@@ -3029,19 +3029,19 @@ class OperationsService:
             gauges.extend(
                 [
                     GaugeMetric(
-                        "chaincloud_runtime_space_quota_reserved",
+                        "opsmesh_runtime_space_quota_reserved",
                         reserved_value,
                         labels=labels,
                         help_text="Reserved runtime space quota by quota key.",
                     ),
                     GaugeMetric(
-                        "chaincloud_runtime_space_quota_limit",
+                        "opsmesh_runtime_space_quota_limit",
                         limit_value,
                         labels=labels,
                         help_text="Configured runtime space quota limit by quota key.",
                     ),
                     GaugeMetric(
-                        "chaincloud_runtime_space_quota_usage_ratio",
+                        "opsmesh_runtime_space_quota_usage_ratio",
                         round(usage, 4),
                         labels=labels,
                         help_text="Runtime space quota usage ratio by quota key.",
@@ -3093,7 +3093,7 @@ class OperationsService:
                 scheduled_loop_enabled += 1
         gauges = [
             GaugeMetric(
-                "chaincloud_team_runtimes",
+                "opsmesh_team_runtimes",
                 count,
                 labels={"health": health},
                 help_text="Team runtimes by low-cardinality runtime health.",
@@ -3102,7 +3102,7 @@ class OperationsService:
         ]
         gauges.append(
             GaugeMetric(
-                "chaincloud_team_runtime_iterations_total",
+                "opsmesh_team_runtime_iterations_total",
                 iteration_count,
                 labels={},
                 help_text="Total persisted team runtime iterations across active teams.",
@@ -3110,7 +3110,7 @@ class OperationsService:
         )
         gauges.append(
             GaugeMetric(
-                "chaincloud_team_runtime_scheduled_loops",
+                "opsmesh_team_runtime_scheduled_loops",
                 scheduled_loop_enabled,
                 labels={"state": "enabled"},
                 help_text="Active team runtimes with scheduled loop cadence enabled.",
@@ -3484,10 +3484,8 @@ def _self_hosted_policy_summary(capabilities: dict[str, object]) -> dict[str, ob
     return {
         "allowed_tools": _string_list(capabilities.get("allowed_tools")),
         "supported_models": _string_list(capabilities.get("supported_models")),
-        "supported_runtimes": _string_list(capabilities.get("supported_runtimes"))
-        or _string_list(capabilities.get("runtime_types")),
-        "supported_network_modes": _string_list(capabilities.get("supported_network_modes"))
-        or _string_list(capabilities.get("network_modes")),
+        "supported_runtimes": _string_list(capabilities.get("supported_runtimes")),
+        "supported_network_modes": _string_list(capabilities.get("supported_network_modes")),
         "allowed_runtime_space_ids": _string_list(capabilities.get("allowed_runtime_space_ids")),
         "max_concurrent_jobs": _positive_int_or_none(capabilities.get("max_concurrent_jobs")),
         "max_concurrent_mcp_jobs": _positive_int_or_none(

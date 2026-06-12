@@ -1,9 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: ChainCloud
+  - name: OpsMesh
     orgId: 1
-    folder: ChainCloud
+    folder: OpsMesh
     type: file
     disableDeletion: false
     editable: true

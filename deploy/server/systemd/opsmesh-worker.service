@@ -1,0 +1,23 @@
+[Unit]
+Description=OpsMesh Worker
+After=network-online.target postgresql.service redis-server.service opsmesh-api.service docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=opsmesh-worker
+Group=opsmesh
+WorkingDirectory=/opt/opsmesh/current
+EnvironmentFile=/opt/opsmesh/.env
+Environment=OPSMESH_RUN_MIGRATIONS=false
+ExecStart=/opt/opsmesh/current/.venv/bin/python -m backend.app.workers.cli
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/opsmesh
+SupplementaryGroups=docker
+
+[Install]
+WantedBy=multi-user.target

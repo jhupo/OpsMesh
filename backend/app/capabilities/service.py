@@ -1558,9 +1558,10 @@ class CapabilityService:
         data: McpToolAllowRequest,
         actor_user_id: UUID | None = None,
     ) -> McpToolAllowlist:
-        self._require_server(workspace_id, mcp_server_id)
+        server = self._require_server(workspace_id, mcp_server_id)
         review = ResourceReviewService(self._session, self._settings).review_mcp_tool_allowlist(
             workspace_id=workspace_id,
+            visibility=server.visibility,
             tool_name=data.tool_name,
             requires_approval=data.requires_approval,
             risk_level=data.risk_level,
@@ -1963,13 +1964,15 @@ class CapabilityService:
         data: McpCredentialReferenceCreateRequest,
         actor_user_id: UUID | None = None,
     ) -> McpCredentialReference:
+        server = None
         if data.mcp_server_id is not None:
-            self._require_server(workspace_id, data.mcp_server_id)
+            server = self._require_server(workspace_id, data.mcp_server_id)
         review = ResourceReviewService(
             self._session,
             self._settings,
         ).review_mcp_credential_reference(
             workspace_id=workspace_id,
+            visibility=server.visibility if server is not None else "private",
             mcp_server_id=data.mcp_server_id,
             name=data.name,
             provider=data.provider,

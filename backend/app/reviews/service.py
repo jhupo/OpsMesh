@@ -15,6 +15,7 @@ from backend.app.model_providers.service import (
 )
 from backend.app.reviews.constants import (
     DEFAULT_RESOURCE_REVIEW_MODEL,
+    PRIVATE_RESOURCE_REVIEW_SETTINGS_KEY,
     RESOURCE_REVIEW_SETTINGS_KEY,
     SEMANTIC_REVIEW_SETTINGS_KEY,
 )
@@ -57,7 +58,16 @@ _DANGEROUS_WORDS = {
     "token",
     "write",
 }
+_PUBLIC_SCOPES = {"public", "marketplace"}
 
+_PRIVATE_REVIEW_DEFAULTS = {
+    "agent_profile": False,
+    "skill": False,
+    "mcp_server": False,
+    "mcp_tool_allowlist": False,
+    "mcp_credential_reference": False,
+    "plugin": False,
+}
 
 @dataclass(frozen=True)
 class ResourceReview:
@@ -76,6 +86,7 @@ class ResourceReviewService:
         self,
         *,
         workspace_id: UUID | None,
+        visibility: str = "private",
         name: str,
         role: str,
         instructions: str,
@@ -99,6 +110,7 @@ class ResourceReviewService:
         if runtime_policy:
             scanner.add("medium", "runtime_policy.configured")
         resource = {
+            "visibility": visibility,
             "name": name,
             "role": role,
             "instructions": instructions,
@@ -111,6 +123,7 @@ class ResourceReviewService:
         return self._semantic_review_with_policy_signals(
             workspace_id=workspace_id,
             resource_type="agent_profile",
+            visibility=visibility,
             resource=resource,
             scanner=scanner,
         )
@@ -138,6 +151,7 @@ class ResourceReviewService:
         return self._semantic_review_with_policy_signals(
             workspace_id=workspace_id,
             resource_type="skill",
+            visibility=visibility,
             resource={
                 "visibility": visibility,
                 "manifest": manifest,
@@ -167,6 +181,7 @@ class ResourceReviewService:
         return self._semantic_review_with_policy_signals(
             workspace_id=workspace_id,
             resource_type="capability",
+            visibility="public",
             resource={
                 "key": key,
                 "name": name,
@@ -200,6 +215,7 @@ class ResourceReviewService:
         return self._semantic_review_with_policy_signals(
             workspace_id=workspace_id,
             resource_type="mcp_server",
+            visibility=visibility,
             resource={
                 "server_type": server_type,
                 "connection": connection,
@@ -212,6 +228,7 @@ class ResourceReviewService:
         self,
         *,
         workspace_id: UUID | None,
+        visibility: str = "private",
         tool_name: str,
         requires_approval: bool,
         risk_level: str,
@@ -228,7 +245,9 @@ class ResourceReviewService:
         return self._semantic_review_with_policy_signals(
             workspace_id=workspace_id,
             resource_type="mcp_tool_allowlist",
+            visibility=visibility,
             resource={
+                "visibility": visibility,
                 "tool_name": tool_name,
                 "requires_approval": requires_approval,
                 "risk_level": risk_level,
@@ -241,6 +260,7 @@ class ResourceReviewService:
         self,
         *,
         workspace_id: UUID | None,
+        visibility: str = "private",
         mcp_server_id: UUID | None,
         name: str,
         provider: str,
@@ -263,13 +283,44 @@ class ResourceReviewService:
         return self._semantic_review_with_policy_signals(
             workspace_id=workspace_id,
             resource_type="mcp_credential_reference",
+            visibility=visibility,
             resource={
+                "visibility": visibility,
                 "mcp_server_id": str(mcp_server_id) if mcp_server_id is not None else None,
                 "name": name,
                 "provider": provider,
                 "external_ref": external_ref,
                 "scopes": scopes,
                 "has_secret_payload": has_secret_payload,
+            },
+            scanner=scanner,
+        )
+
+    def review_plugin(
+        self,
+        *,
+        workspace_id: UUID | None,
+        visibility: str,
+        name: str,
+        manifest: dict[str, object],
+    ) -> ResourceReview:
+        scanner = _ReviewScanner()
+        scanner.scan_text("visibility", visibility)
+        scanner.scan_text("name", name)
+        scanner.scan_mapping("manifest", manifest)
+        if visibility == "public":
+            scanner.add("medium", "plugin.public_visibility")
+        permissions = _list_from_manifest(manifest, "permissions")
+        for permission in permissions:
+            scanner.scan_text("permission", permission)
+        return self._semantic_review_with_policy_signals(
+            workspace_id=workspace_id,
+            resource_type="plugin",
+            visibility=visibility,
+            resource={
+                "visibility": visibility,
+                "name": name,
+                "manifest": manifest,
             },
             scanner=scanner,
         )
@@ -293,6 +344,7 @@ class ResourceReviewService:
         return self._semantic_review_with_policy_signals(
             workspace_id=workspace_id,
             resource_type="tool_execution",
+            visibility="public",
             resource={
                 "tool_kind": tool_kind,
                 "tool_name": tool_name,
@@ -358,10 +410,21 @@ class ResourceReviewService:
         *,
         workspace_id: UUID | None,
         resource_type: str,
+        visibility: str,
         resource: dict[str, object],
         scanner: _ReviewScanner,
     ) -> ResourceReview:
         policy_review = scanner.result(reviewer="policy_guardrail")
+        if workspace_id is not None and not self._resource_review_enabled(
+            workspace_id,
+            resource_type,
+            visibility,
+        ):
+            return _review_skipped(
+                policy_review,
+                resource_type=resource_type,
+                visibility=visibility,
+            )
         if workspace_id is None:
             return _llm_unavailable_review(
                 policy_review,
@@ -393,6 +456,26 @@ class ResourceReviewService:
         merged = _merge_policy_and_llm_reviews(policy_review, llm_review)
         return merged
 
+    def _resource_review_enabled(
+        self,
+        workspace_id: UUID,
+        resource_type: str,
+        visibility: str,
+    ) -> bool:
+        if _is_public_visibility(visibility):
+            return True
+        config = self._resource_review_settings(workspace_id)
+        scope_key = PRIVATE_RESOURCE_REVIEW_SETTINGS_KEY
+        defaults = _PRIVATE_REVIEW_DEFAULTS
+        raw_scope = config.get(scope_key)
+        scope_config = raw_scope if isinstance(raw_scope, dict) else {}
+        raw_value = scope_config.get(resource_type)
+        if raw_value is None:
+            return defaults.get(resource_type, True)
+        if not isinstance(raw_value, bool):
+            return defaults.get(resource_type, True)
+        return raw_value
+
     def _model_provider_service(self) -> ModelProviderCredentialService:
         if self._settings is None:
             raise ModelProviderUnavailableError("Review settings are unavailable")
@@ -406,10 +489,7 @@ class ResourceReviewService:
         )
 
     def _review_config(self, workspace_id: UUID) -> _ResourceReviewConfig:
-        workspace = self._session.get(Workspace, workspace_id)
-        settings = workspace.settings if workspace is not None else {}
-        raw = settings.get(RESOURCE_REVIEW_SETTINGS_KEY) if isinstance(settings, dict) else None
-        resource_review = raw if isinstance(raw, dict) else {}
+        resource_review = self._resource_review_settings(workspace_id)
         raw_semantic = resource_review.get(SEMANTIC_REVIEW_SETTINGS_KEY)
         config = raw_semantic if isinstance(raw_semantic, dict) else {}
         if config.get("enabled") is False:
@@ -419,6 +499,12 @@ class ResourceReviewService:
             model=_review_model(config.get("model")),
             timeout_seconds=_review_timeout_seconds(config.get("timeout_seconds")),
         )
+
+    def _resource_review_settings(self, workspace_id: UUID) -> dict[str, object]:
+        workspace = self._session.get(Workspace, workspace_id)
+        settings = workspace.settings if workspace is not None else {}
+        raw = settings.get(RESOURCE_REVIEW_SETTINGS_KEY) if isinstance(settings, dict) else None
+        return raw if isinstance(raw, dict) else {}
 
 
 class _ReviewScanner:
@@ -532,6 +618,31 @@ def _llm_unavailable_review(
     )
 
 
+def _review_skipped(
+    policy_review: ResourceReview,
+    *,
+    resource_type: str,
+    visibility: str,
+) -> ResourceReview:
+    signals = dict(policy_review.signals)
+    signals["reviewer"] = "resource_review_policy"
+    signals["policy_guardrail"] = {
+        "risk_level": policy_review.risk_level,
+        "required": policy_review.required,
+        "reasons": policy_review.reasons,
+        "signals": policy_review.signals,
+    }
+    signals["skipped_reason"] = "resource_review.disabled_for_scope"
+    signals["resource_type"] = resource_type
+    signals["visibility"] = visibility
+    return ResourceReview(
+        required=False,
+        risk_level="low",
+        reasons=["resource_review.disabled_for_scope"],
+        signals=signals,
+    )
+
+
 def _max_risk(left: str, right: str) -> str:
     left_risk = _normalize_risk(left)
     right_risk = _normalize_risk(right)
@@ -614,6 +725,10 @@ def _connection_has_external_url(connection: dict[str, object]) -> bool:
         ):
             return True
     return False
+
+
+def _is_public_visibility(value: object) -> bool:
+    return str(value or "private").lower().strip() in _PUBLIC_SCOPES
 
 
 def _has_sensitive_keys(value: dict[str, object]) -> bool:

@@ -101,8 +101,7 @@ from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.diagnostics import ProjectPlanDiagnosticsService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeLimits
-from backend.app.runtime_manager.dependencies import get_docker_runtime_client
+from backend.app.runtime_manager.contracts import RuntimeLimits
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError
 from backend.app.runtime_manager.safety import RuntimeSafetyError
 from backend.app.runtime_manager.service import RuntimeControlService
@@ -125,7 +124,7 @@ from backend.app.teams.operations_console import TeamOperationsConsoleService
 from backend.app.teams.operator_actions import TeamOperatorActionService
 from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.jobs import JobType
+from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
 
 if TYPE_CHECKING:
@@ -154,6 +153,159 @@ def _team_runtime_limits(request: AgentTeamRuntimeEnsureRequest) -> RuntimeLimit
         timeout_seconds=request.limits.timeout_seconds,
         max_output_bytes=request.limits.max_output_bytes,
         max_processes=request.limits.max_processes,
+    )
+
+
+def _enqueue_team_runtime_control(
+    queue: RedisQueue,
+    context: WorkspaceContext,
+    team_id: UUID,
+    request: AgentTeamRuntimeControlRequest | AgentTeamRuntimeEnsureRequest,
+    action: str,
+) -> None:
+    enqueue_team_execution_loop_job(
+        queue=queue,
+        workspace_id=context.workspace.id,
+        team_id=team_id,
+        requested_by_user_id=context.user.user_id,
+        idempotency_suffix=f"runtime-{action}-{team_id}",
+        priority=10,
+        routing={
+            "source": "workspace_api",
+            "trigger": f"team_runtime_{action}",
+            "reason": request.reason,
+            "metadata": redact_sensitive_payload(request.metadata),
+            "runtime_action": action,
+        },
+    )
+
+
+class _QueuedRuntimeControl:
+    def __init__(
+        self,
+        *,
+        session: Session,
+        queue: RedisQueue,
+        settings: Settings,
+        requested_by_user_id: UUID,
+    ) -> None:
+        self._session = session
+        self._service = RuntimeControlService(session, settings=settings)
+        self._queue = queue
+        self._requested_by_user_id = requested_by_user_id
+
+    def create_runtime(
+        self,
+        *,
+        workspace_id: UUID,
+        template_id: UUID,
+        name: str,
+        limits: RuntimeLimits | None,
+        runtime_space_id: UUID | None = None,
+        network_disabled: bool = True,
+    ) -> object | None:
+        runtime = self._service.queue_runtime_create(
+            workspace_id=workspace_id,
+            template_id=template_id,
+            name=name,
+            limits=limits,
+            runtime_space_id=runtime_space_id,
+            network_disabled=network_disabled,
+            requested_by_user_id=self._requested_by_user_id,
+        )
+        if runtime is None:
+            return None
+        self._enqueue(
+            workspace_id=workspace_id,
+            runtime_id=runtime.id,
+            action="create",
+            routing={
+                "template_id": str(template_id),
+                "name": name,
+                "runtime_space_id": str(runtime_space_id) if runtime_space_id is not None else None,
+                "limits": _runtime_limits_routing(limits),
+                "network_disabled": network_disabled,
+            },
+        )
+        return runtime
+
+    def start_runtime(self, workspace_id: UUID, runtime_id: UUID) -> object | None:
+        runtime = self._service.get_runtime(workspace_id, runtime_id)
+        if runtime is None:
+            return None
+        if runtime.status != "running":
+            runtime.status = "starting"
+            runtime.connection_status = "offline"
+            self._session.commit()
+        self._enqueue(
+            workspace_id=workspace_id,
+            runtime_id=runtime_id,
+            action="start",
+            routing={},
+        )
+        return runtime
+
+    def stop_runtime(self, workspace_id: UUID, runtime_id: UUID) -> object | None:
+        runtime = self._service.get_runtime(workspace_id, runtime_id)
+        if runtime is None:
+            return None
+        if runtime.status == "running":
+            runtime.status = "stopping"
+            runtime.connection_status = "offline"
+            self._session.commit()
+        self._enqueue(
+            workspace_id=workspace_id,
+            runtime_id=runtime_id,
+            action="stop",
+            routing={},
+        )
+        return runtime
+
+    def _enqueue(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime_id: UUID,
+        action: str,
+        routing: dict[str, object],
+    ) -> None:
+        self._queue.enqueue(
+            JobPayload(
+                workspace_id=workspace_id,
+                job_type=JobType.RUNTIME_CONTROL,
+                resource_id=runtime_id,
+                requested_by_user_id=self._requested_by_user_id,
+                idempotency_key=f"runtime.{action}:{workspace_id}:{runtime_id}",
+                routing={"action": action, **routing},
+            ),
+            force=action != "create",
+        )
+
+
+def _runtime_limits_routing(limits: RuntimeLimits | None) -> dict[str, object] | None:
+    if limits is None:
+        return None
+    return {
+        "cpu_count": limits.cpu_count,
+        "memory_mb": limits.memory_mb,
+        "disk_mb": limits.disk_mb,
+        "timeout_seconds": limits.timeout_seconds,
+        "max_output_bytes": limits.max_output_bytes,
+        "max_processes": limits.max_processes,
+    }
+
+
+def _queued_runtime_control(
+    session: Session,
+    queue: RedisQueue,
+    settings: Settings,
+    context: WorkspaceContext,
+) -> _QueuedRuntimeControl:
+    return _QueuedRuntimeControl(
+        session=session,
+        queue=queue,
+        settings=settings,
+        requested_by_user_id=context.user.user_id,
     )
 
 
@@ -1040,7 +1192,7 @@ async def start_team_runtime(
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
+    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamRuntimeResponse:
     try:
@@ -1048,7 +1200,7 @@ async def start_team_runtime(
             workspace_id=context.workspace.id,
             team_id=team_id,
             actor_user_id=context.user.user_id,
-            runtime_control=RuntimeControlService(session, docker, settings),
+            runtime_control=_queued_runtime_control(session, queue, settings, context),
             reason=request.reason,
             metadata=request.metadata,
         )
@@ -1056,6 +1208,7 @@ async def start_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    _enqueue_team_runtime_control(queue, context, team_id, request, "start")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -1065,7 +1218,7 @@ async def pause_team_runtime(
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
+    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamRuntimeResponse:
     try:
@@ -1073,7 +1226,7 @@ async def pause_team_runtime(
             workspace_id=context.workspace.id,
             team_id=team_id,
             actor_user_id=context.user.user_id,
-            runtime_control=RuntimeControlService(session, docker, settings),
+            runtime_control=_queued_runtime_control(session, queue, settings, context),
             reason=request.reason,
             metadata=request.metadata,
         )
@@ -1081,6 +1234,7 @@ async def pause_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    _enqueue_team_runtime_control(queue, context, team_id, request, "pause")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -1090,7 +1244,7 @@ async def resume_team_runtime(
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
+    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamRuntimeResponse:
     try:
@@ -1098,7 +1252,7 @@ async def resume_team_runtime(
             workspace_id=context.workspace.id,
             team_id=team_id,
             actor_user_id=context.user.user_id,
-            runtime_control=RuntimeControlService(session, docker, settings),
+            runtime_control=_queued_runtime_control(session, queue, settings, context),
             reason=request.reason,
             metadata=request.metadata,
         )
@@ -1106,6 +1260,7 @@ async def resume_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    _enqueue_team_runtime_control(queue, context, team_id, request, "resume")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -1115,7 +1270,7 @@ async def stop_team_runtime(
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
+    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamRuntimeResponse:
     try:
@@ -1123,7 +1278,7 @@ async def stop_team_runtime(
             workspace_id=context.workspace.id,
             team_id=team_id,
             actor_user_id=context.user.user_id,
-            runtime_control=RuntimeControlService(session, docker, settings),
+            runtime_control=_queued_runtime_control(session, queue, settings, context),
             reason=request.reason,
             metadata=request.metadata,
         )
@@ -1131,6 +1286,7 @@ async def stop_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    _enqueue_team_runtime_control(queue, context, team_id, request, "stop")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -1169,7 +1325,7 @@ async def ensure_team_runtime(
     request: AgentTeamRuntimeEnsureRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
+    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamRuntimeResponse:
     try:
@@ -1177,7 +1333,7 @@ async def ensure_team_runtime(
             workspace_id=context.workspace.id,
             team_id=team_id,
             actor_user_id=context.user.user_id,
-            runtime_control=RuntimeControlService(session, docker, settings),
+            runtime_control=_queued_runtime_control(session, queue, settings, context),
             template_id=request.template_id,
             name=request.name,
             limits=_team_runtime_limits(request),
@@ -1200,6 +1356,7 @@ async def ensure_team_runtime(
         raise HTTPException(status_code=code, detail=message) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    _enqueue_team_runtime_control(queue, context, team_id, request, "ensure")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -1209,7 +1366,7 @@ async def continue_team_runtime(
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
+    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamRuntimeResponse:
     try:
@@ -1217,7 +1374,7 @@ async def continue_team_runtime(
             workspace_id=context.workspace.id,
             team_id=team_id,
             actor_user_id=context.user.user_id,
-            runtime_control=RuntimeControlService(session, docker, settings),
+            runtime_control=_queued_runtime_control(session, queue, settings, context),
             instruction=request.instruction or request.reason,
             metadata=request.metadata,
         )
@@ -1225,6 +1382,7 @@ async def continue_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    _enqueue_team_runtime_control(queue, context, team_id, request, "continue")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -1238,7 +1396,6 @@ async def apply_team_command_center_actions(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
     queue: RedisQueue = Depends(get_worker_queue),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamCommandCenterApplyResponse:
     _require_command_center_runtime_permission(
@@ -1261,7 +1418,7 @@ async def apply_team_command_center_actions(
         queue=queue,
         runtime_control=None
         if request.dry_run
-        else RuntimeControlService(session, docker, settings),
+        else _queued_runtime_control(session, queue, settings, context),
         reason=request.reason,
         metadata=request.metadata,
     )
@@ -1348,7 +1505,6 @@ async def run_team_execution_loop_iteration(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
     queue: RedisQueue = Depends(get_worker_queue),
-    docker: DockerRuntimeClient = Depends(get_docker_runtime_client),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamExecutionLoopRunResponse:
     _require_execution_loop_runtime_permission(
@@ -1374,7 +1530,7 @@ async def run_team_execution_loop_iteration(
         queue=queue,
         runtime_control=None
         if request.dry_run
-        else RuntimeControlService(session, docker, settings),
+        else _queued_runtime_control(session, queue, settings, context),
         reason=request.reason,
         metadata=request.metadata,
     )

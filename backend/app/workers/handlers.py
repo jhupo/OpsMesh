@@ -22,6 +22,7 @@ from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.operations.service import OperationsService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.attempts import TaskPlanningAttemptService
+from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.runtime_manager.dependencies import get_docker_runtime_client
 from backend.app.runtime_manager.service import RuntimeControlService
 from backend.app.secrets.rotation import HostedSecretReencryptService
@@ -42,12 +43,14 @@ class WorkerJobHandler:
         agent_runner: AgentRunner | None = None,
         settings: Settings | None = None,
         mcp_adapter: McpToolAdapter | McpToolAdapterResolver | None = None,
+        runtime_docker_client: DockerRuntimeClient | None = None,
     ) -> None:
         self._session = session
         self._queue = queue
         self._agent_runner = agent_runner
         self._settings = settings
         self._mcp_adapter = mcp_adapter
+        self._runtime_docker_client = runtime_docker_client
 
     def handle(self, job: JobPayload) -> None:
         match job.job_type:
@@ -64,6 +67,8 @@ class WorkerJobHandler:
                 self._handle_task_plan(job)
             case JobType.TEAM_EXECUTION_LOOP:
                 self._handle_team_execution_loop(job)
+            case JobType.RUNTIME_CONTROL:
+                self._handle_runtime_control(job)
             case JobType.RUNTIME_CLEANUP:
                 self._handle_runtime_cleanup(job)
             case JobType.WORKSPACE_ARCHIVE_EXPORT:
@@ -181,8 +186,8 @@ class WorkerJobHandler:
             runtime_control=(
                 RuntimeControlService(
                     self._session,
-                    get_docker_runtime_client(),
-                    self._settings,
+                    settings=self._settings,
+                    docker_client=self._runtime_docker_client or get_docker_runtime_client(),
                 )
                 if self._settings is not None
                 else None
@@ -216,6 +221,56 @@ class WorkerJobHandler:
             workspace_id=job.workspace_id,
             stale_after_seconds=stale_lease_after_seconds,
         )
+
+    def _handle_runtime_control(self, job: JobPayload) -> None:
+        if self._settings is None:
+            raise ValueError("Worker settings are required for runtime control")
+        action = _required_string(job.routing, "action")
+        service = RuntimeControlService(
+            self._session,
+            settings=self._settings,
+            docker_client=self._runtime_docker_client or get_docker_runtime_client(),
+        )
+        match action:
+            case "create":
+                template_id = _required_uuid(job.routing, "template_id")
+                name = _required_string(job.routing, "name")
+                runtime_space_id = _optional_uuid(job.routing.get("runtime_space_id"))
+                network_disabled = _bool_value(job.routing.get("network_disabled"), True)
+                limits = _runtime_limits(job.routing.get("limits"))
+                runtime = service.complete_queued_runtime_create(
+                    workspace_id=job.workspace_id,
+                    runtime_id=job.resource_id,
+                    template_id=template_id,
+                    name=name,
+                    limits=limits,
+                    runtime_space_id=runtime_space_id,
+                    network_disabled=network_disabled,
+                )
+                if runtime is None:
+                    raise ValueError("Queued runtime not found")
+            case "start":
+                if service.start_runtime(job.workspace_id, job.resource_id) is None:
+                    raise ValueError("Runtime not found")
+            case "stop":
+                if service.stop_runtime(job.workspace_id, job.resource_id) is None:
+                    raise ValueError("Runtime not found")
+            case "delete":
+                if not service.delete_runtime(job.workspace_id, job.resource_id):
+                    raise ValueError("Runtime not found")
+            case "command":
+                command = _string_list(job.routing.get("command"), key="command")
+                command_id = _required_uuid(job.routing, "runtime_command_id")
+                record = service.execute_queued_command(
+                    workspace_id=job.workspace_id,
+                    runtime_id=job.resource_id,
+                    command_id=command_id,
+                    command=command,
+                )
+                if record is None:
+                    raise ValueError("Runtime command not found")
+            case _:
+                raise ValueError(f"Unsupported runtime control action: {action}")
 
     def _handle_memory_index(self, job: JobPayload) -> None:
         source_type = _required_string(job.routing, "source_type")
@@ -426,6 +481,56 @@ def _optional_uuid(value: object) -> UUID | None:
     if not isinstance(value, str):
         raise ValueError("MCP tool execution UUID fields must be strings")
     return UUID(value)
+
+
+def _required_uuid(payload: dict[str, object], key: str) -> UUID:
+    value = payload.get(key)
+    parsed = _optional_uuid(value)
+    if parsed is None:
+        raise ValueError(f"Runtime control job is missing {key}")
+    return parsed
+
+
+def _bool_value(value: object, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    raise ValueError("Runtime control boolean fields must be booleans")
+
+
+def _string_list(value: object, *, key: str) -> list[str]:
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"Runtime control job {key} must be a non-empty list")
+    items = [item for item in value if isinstance(item, str) and item]
+    if len(items) != len(value):
+        raise ValueError(f"Runtime control job {key} must contain only strings")
+    return items
+
+
+def _runtime_limits(value: object) -> object | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("Runtime control job limits must be an object")
+    from backend.app.runtime_manager.contracts import RuntimeLimits
+
+    return RuntimeLimits(
+        cpu_count=_positive_float(value.get("cpu_count"), default=1, key="cpu_count"),
+        memory_mb=_positive_int(value.get("memory_mb"), default=512, key="memory_mb"),
+        disk_mb=_positive_int(value.get("disk_mb"), default=1024, key="disk_mb"),
+        timeout_seconds=_positive_int(
+            value.get("timeout_seconds"),
+            default=60,
+            key="timeout_seconds",
+        ),
+        max_output_bytes=_positive_int(
+            value.get("max_output_bytes"),
+            default=256_000,
+            key="max_output_bytes",
+        ),
+        max_processes=_positive_int(value.get("max_processes"), default=256, key="max_processes"),
+    )
 
 
 def _revision_work_package_id(revision: RevisionRequest) -> str:

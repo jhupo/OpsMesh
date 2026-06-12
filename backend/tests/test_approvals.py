@@ -34,7 +34,7 @@ def test_approval_approve_enqueues_resume_job() -> None:
     user, workspace, task, run = _seed_run(session)
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
     approval = ApprovalService(session).create_approval(

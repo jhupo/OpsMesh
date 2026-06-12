@@ -1,6 +1,8 @@
 from collections.abc import Generator
+from uuid import UUID
 
 import fakeredis
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
@@ -10,20 +12,452 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.models import AgentProfile
+from backend.app.capabilities.models import (
+    McpServer,
+    McpToolAllowlist,
+    Skill,
+    WorkspaceSkillInstall,
+)
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.marketplace.models import TalentListing, WorkspaceAgentInstall
+from backend.app.marketplace.models import (
+    MarketplaceListing,
+    TalentListing,
+    WorkspaceAgentInstall,
+    WorkspaceMarketplaceInstall,
+)
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.redis.dependencies import get_redis_client
+from backend.app.reviews.llm import LlmReviewResult
 from backend.app.tasks.models import Task, TaskMessage
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
+
+
+@pytest.fixture(autouse=True)
+def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return LlmReviewResult(
+            required=False,
+            risk_level="low",
+            reasons=["llm_review.approved"],
+            signals={"reviewer": "llm", "verdict": "approve"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", fake_review)
+
+
+def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
+    client, session = _client()
+    publisher, publisher_workspace = _seed_workspace(
+        session,
+        email="publisher@example.com",
+        slug="publisher",
+    )
+    buyer, buyer_workspace = _seed_workspace(session, email="buyer@example.com", slug="buyer")
+
+    created = client.post(
+        f"/api/v1/workspaces/{publisher_workspace.id}/marketplace-listings",
+        headers=_headers(publisher.id),
+        json={
+            "listing_type": "plugin",
+            "name": "Linear Sync",
+            "summary": "Syncs issue state into tasks.",
+            "version": "1.2.0",
+            "visibility": "public",
+            "tags": ["productivity", "linear"],
+            "manifest": {
+                "entrypoint": "plugin.py",
+                "permissions": ["tasks.write"],
+                "api_key": "plugin-secret",
+            },
+            "metadata": {"homepage": "https://plugins.example.test/linear"},
+        },
+    )
+
+    assert created.status_code == 201
+    listing_id = created.json()["id"]
+    assert created.json()["listing_type"] == "plugin"
+    assert created.json()["status"] == "pending_approval"
+    assert created.json()["manifest"]["api_key"] == "[redacted]"
+
+    approvals = client.get(
+        f"/api/v1/workspaces/{publisher_workspace.id}/approvals",
+        headers=_headers(publisher.id),
+    )
+    approval_id = approvals.json()["items"][0]["id"]
+    approved = client.post(
+        f"/api/v1/workspaces/{publisher_workspace.id}/approvals/{approval_id}/approve",
+        headers=_headers(publisher.id),
+        json={"reason": "publish public plugin"},
+    )
+
+    market = client.get("/api/v1/marketplace?listing_type=plugin&query=Linear")
+    assert approvals.status_code == 200
+    assert approvals.json()["total"] == 1
+    assert approved.status_code == 200
+    assert market.status_code == 200
+    assert market.json()["total"] == 1
+    assert market.json()["items"][0]["id"] == listing_id
+    assert "plugin-secret" not in str(market.json())
+
+    installed = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/marketplace-listings/{listing_id}/install",
+        headers=_headers(buyer.id),
+        json={"config": {"enabled": True, "token": "buyer-secret"}},
+    )
+
+    assert installed.status_code == 201
+    installed_body = installed.json()
+    assert installed_body["workspace_id"] == str(buyer_workspace.id)
+    assert installed_body["listing_type"] == "plugin"
+    assert installed_body["installed_name"] == "Linear Sync"
+    assert installed_body["installed_manifest"]["api_key"] == "[redacted]"
+    assert installed_body["config"]["token"] == "[redacted]"
+    assert "buyer-secret" not in str(installed_body)
+
+    installs = client.get(
+        f"/api/v1/workspaces/{buyer_workspace.id}/marketplace-installs?listing_type=plugin",
+        headers=_headers(buyer.id),
+    )
+    assert installs.status_code == 200
+    assert installs.json()["total"] == 1
+    assert installs.json()["items"][0]["id"] == installed_body["id"]
+    assert session.query(MarketplaceListing).count() == 1
+    assert session.query(WorkspaceMarketplaceInstall).count() == 1
+
+
+def test_private_plugin_listing_is_workspace_scoped() -> None:
+    client, session = _client()
+    owner, owner_workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    created = client.post(
+        f"/api/v1/workspaces/{owner_workspace.id}/marketplace-listings",
+        headers=_headers(owner.id),
+        json={
+            "listing_type": "plugin",
+            "name": "Internal Deploy Guard",
+            "visibility": "private",
+            "manifest": {"entrypoint": "guard.py"},
+        },
+    )
+
+    assert created.status_code == 201
+    listing_id = created.json()["id"]
+    assert created.json()["visibility"] == "private"
+    assert created.json()["status"] == "active"
+
+    public_market = client.get("/api/v1/marketplace?listing_type=plugin")
+    foreign_install = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/marketplace-listings/{listing_id}/install",
+        headers=_headers(other.id),
+        json={},
+    )
+    owner_install = client.post(
+        f"/api/v1/workspaces/{owner_workspace.id}/marketplace-listings/{listing_id}/install",
+        headers=_headers(owner.id),
+        json={},
+    )
+
+    assert public_market.status_code == 200
+    assert public_market.json()["total"] == 0
+    assert foreign_install.status_code == 404
+    assert owner_install.status_code == 201
+    assert session.query(WorkspaceMarketplaceInstall).count() == 1
+
+
+def test_private_plugin_listing_skips_resource_review_by_default(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, email="plugin-owner@example.com", slug="plugin")
+    called = False
+
+    def require_review(self, **kwargs):  # noqa: ANN001, ANN202
+        nonlocal called
+        called = True
+        return LlmReviewResult(
+            required=True,
+            risk_level="high",
+            reasons=["llm_review.requires_admin"],
+            signals={"reviewer": "llm", "verdict": "review"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/marketplace-listings",
+        headers=_headers(owner.id),
+        json={
+            "listing_type": "plugin",
+            "name": "Private Shell Plugin",
+            "visibility": "private",
+            "manifest": {"permissions": ["shell", "production"]},
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["status"] == "active"
+    assert called is False
+
+
+def test_private_plugin_review_can_be_enabled_per_workspace(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(
+        session,
+        email="plugin-reviewer@example.com",
+        slug="plugin-reviewer",
+    )
+    workspace.settings = {"resource_review": {"private_resources": {"plugin": True}}}
+    session.commit()
+
+    def require_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return LlmReviewResult(
+            required=True,
+            risk_level="high",
+            reasons=["llm_review.requires_admin"],
+            signals={"reviewer": "llm", "verdict": "review"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/marketplace-listings",
+        headers=_headers(owner.id),
+        json={
+            "listing_type": "plugin",
+            "name": "Reviewed Private Plugin",
+            "visibility": "private",
+            "manifest": {"permissions": ["shell", "production"]},
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["status"] == "pending_approval"
+
+
+def test_marketplace_install_agent_listing_creates_agent_profile() -> None:
+    client, session = _client()
+    publisher, publisher_workspace = _seed_workspace(
+        session,
+        email="agent-publisher@example.com",
+        slug="agent-publisher",
+    )
+    buyer, buyer_workspace = _seed_workspace(
+        session,
+        email="agent-buyer@example.com",
+        slug="agent-buyer",
+    )
+    created = client.post(
+        f"/api/v1/workspaces/{publisher_workspace.id}/marketplace-listings",
+        headers=_headers(publisher.id),
+        json={
+            "listing_type": "agent",
+            "name": "Research Operator",
+            "visibility": "public",
+            "source_resource_id": str(
+                _seed_agent(session, publisher_workspace, name="Research Operator").id
+            ),
+            "manifest": {
+                "agent": {
+                    "role": "researcher",
+                    "instructions": "Research public sources.",
+                    "skills": {"skills": ["research"]},
+                }
+            },
+        },
+    )
+    _approve_resource_review(client, publisher_workspace.id, publisher.id)
+
+    installed = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/marketplace-listings/{created.json()['id']}/install",
+        headers=_headers(buyer.id),
+        json={"config": {"agent_name": "Research Operator Copy"}},
+    )
+
+    assert installed.status_code == 201
+    installed_agent = session.get(AgentProfile, UUID(installed.json()["installed_resource_id"]))
+    assert installed_agent is not None
+    assert installed_agent.workspace_id == buyer_workspace.id
+    assert installed_agent.name == "Research Operator Copy"
+    assert installed_agent.role == "researcher"
+    assert installed_agent.status == "active"
+
+
+def test_marketplace_install_skill_listing_creates_workspace_skill_install() -> None:
+    client, session = _client()
+    publisher, publisher_workspace = _seed_workspace(
+        session,
+        email="skill-publisher@example.com",
+        slug="skill-publisher",
+    )
+    buyer, buyer_workspace = _seed_workspace(
+        session,
+        email="skill-buyer@example.com",
+        slug="skill-buyer",
+    )
+    source_skill = Skill(
+        key="public.research",
+        name="Research Skill",
+        version="1.0.0",
+        description="Research workflow",
+        capability_keys=["web.search"],
+        manifest={"required_tools": ["search"]},
+        owner_workspace_id=publisher_workspace.id,
+        visibility="private",
+    )
+    session.add(source_skill)
+    session.commit()
+    created = client.post(
+        f"/api/v1/workspaces/{publisher_workspace.id}/marketplace-listings",
+        headers=_headers(publisher.id),
+        json={
+            "listing_type": "skill",
+            "name": "Research Skill",
+            "visibility": "public",
+            "source_resource_id": str(source_skill.id),
+            "manifest": {
+                "key": "public.research",
+                "capability_keys": ["web.search"],
+                "manifest": {"required_tools": ["search"]},
+            },
+        },
+    )
+    _approve_resource_review(client, publisher_workspace.id, publisher.id)
+
+    installed = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/marketplace-listings/{created.json()['id']}/install",
+        headers=_headers(buyer.id),
+        json={"config": {"level": "strict"}},
+    )
+
+    assert installed.status_code == 201
+    skill_install = session.get(
+        WorkspaceSkillInstall,
+        UUID(installed.json()["installed_resource_id"]),
+    )
+    assert skill_install is not None
+    assert skill_install.workspace_id == buyer_workspace.id
+    assert skill_install.installed_key == "public.research"
+    assert skill_install.config == {"level": "strict"}
+
+
+def test_marketplace_install_mcp_server_listing_creates_server_and_tools() -> None:
+    client, session = _client()
+    publisher, publisher_workspace = _seed_workspace(
+        session,
+        email="mcp-publisher@example.com",
+        slug="mcp-publisher",
+    )
+    buyer, buyer_workspace = _seed_workspace(
+        session,
+        email="mcp-buyer@example.com",
+        slug="mcp-buyer",
+    )
+    source_server = McpServer(
+        workspace_id=publisher_workspace.id,
+        name="Public Search MCP",
+        server_type="http_jsonrpc",
+        connection={"url": "https://mcp.example.test/rpc"},
+        visibility="private",
+    )
+    session.add(source_server)
+    session.commit()
+    created = client.post(
+        f"/api/v1/workspaces/{publisher_workspace.id}/marketplace-listings",
+        headers=_headers(publisher.id),
+        json={
+            "listing_type": "mcp_server",
+            "name": "Public Search MCP",
+            "visibility": "public",
+            "source_resource_id": str(source_server.id),
+            "manifest": {
+                "server_type": "http_jsonrpc",
+                "connection": {"url": "https://mcp.example.test/rpc"},
+                "tools": [
+                    {
+                        "tool_name": "search",
+                        "capability_key": "web.search",
+                        "risk_level": "low",
+                    }
+                ],
+            },
+        },
+    )
+    _approve_resource_review(client, publisher_workspace.id, publisher.id)
+
+    installed = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/marketplace-listings/{created.json()['id']}/install",
+        headers=_headers(buyer.id),
+        json={},
+    )
+
+    assert installed.status_code == 201
+    server = session.get(McpServer, UUID(installed.json()["installed_resource_id"]))
+    assert server is not None
+    assert server.workspace_id == buyer_workspace.id
+    assert server.name == "Public Search MCP"
+    assert server.visibility == "private"
+    allow = session.query(McpToolAllowlist).filter_by(mcp_server_id=server.id).one()
+    assert allow.tool_name == "search"
+    assert allow.capability_key == "web.search"
+
+
+def test_public_plugin_listing_requires_resource_review_before_market_visibility(
+    monkeypatch,
+) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, email="reviewer@example.com", slug="reviewer")
+
+    def require_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return LlmReviewResult(
+            required=True,
+            risk_level="high",
+            reasons=["llm_review.requires_admin"],
+            signals={"reviewer": "codex-auto-review", "verdict": "review"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/marketplace-listings",
+        headers=_headers(owner.id),
+        json={
+            "listing_type": "plugin",
+            "name": "Production Shell Plugin",
+            "visibility": "public",
+            "manifest": {"permissions": ["shell", "production"]},
+        },
+    )
+    market_before = client.get("/api/v1/marketplace?listing_type=plugin")
+    approvals = client.get(
+        f"/api/v1/workspaces/{workspace.id}/approvals",
+        headers=_headers(owner.id),
+    )
+    approval_id = approvals.json()["items"][0]["id"]
+    approved = client.post(
+        f"/api/v1/workspaces/{workspace.id}/approvals/{approval_id}/approve",
+        headers=_headers(owner.id),
+        json={"reason": "reviewed"},
+    )
+    market_after = client.get("/api/v1/marketplace?listing_type=plugin")
+
+    assert created.status_code == 201
+    assert created.json()["status"] == "pending_approval"
+    assert market_before.status_code == 200
+    assert market_before.json()["total"] == 0
+    assert approvals.status_code == 200
+    assert approvals.json()["total"] == 1
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    assert market_after.status_code == 200
+    assert market_after.json()["total"] == 1
+    assert market_after.json()["items"][0]["id"] == created.json()["id"]
 
 
 def test_owner_can_publish_and_another_workspace_can_hire_agent_into_team() -> None:
@@ -71,6 +505,8 @@ def test_owner_can_publish_and_another_workspace_can_hire_agent_into_team() -> N
         },
     )
     assert published.status_code == 201
+    if published.json()["status"] == "pending_approval":
+        _approve_resource_review(client, publisher_workspace.id, publisher.id)
     listing_id = published.json()["id"]
     assert published.json()["listing_metadata"]["token"] == "[redacted]"
     assert published.json()["listing_metadata"]["nested"]["base_url"] == "[redacted]"
@@ -129,6 +565,8 @@ def test_hiring_same_listing_twice_returns_conflict() -> None:
         json={"agent_profile_id": str(source_agent.id), "title": "Designer"},
     )
     listing_id = published.json()["id"]
+    if published.json()["status"] == "pending_approval":
+        _approve_resource_review(client, publisher_workspace.id, publisher.id)
 
     first = client.post(
         f"/api/v1/workspaces/{buyer_workspace.id}/talent-market/{listing_id}/hire",
@@ -852,6 +1290,19 @@ def _seed_workspace(session: Session, *, email: str, slug: str) -> tuple[User, W
     return user, workspace
 
 
+def _seed_agent(
+    session: Session,
+    workspace: Workspace,
+    *,
+    name: str,
+    role: str = "researcher",
+) -> AgentProfile:
+    agent = AgentProfile(workspace_id=workspace.id, name=name, role=role)
+    session.add(agent)
+    session.commit()
+    return agent
+
+
 def _publish_listing(
     client: TestClient,
     publisher: User,
@@ -873,7 +1324,31 @@ def _publish_listing(
         },
     )
     assert response.status_code == 201
-    return response.json()
+    listing = response.json()
+    if listing["status"] == "pending_approval":
+        _approve_resource_review(client, workspace.id, publisher.id)
+        listing = {**listing, "status": "public"}
+    return listing
+
+
+def _approve_resource_review(
+    client: TestClient,
+    workspace_id: object,
+    user_id: object,
+) -> None:
+    approvals = client.get(
+        f"/api/v1/workspaces/{workspace_id}/approvals",
+        headers=_headers(user_id),
+    )
+    assert approvals.status_code == 200
+    assert approvals.json()["total"] >= 1
+    approval_id = approvals.json()["items"][0]["id"]
+    approved = client.post(
+        f"/api/v1/workspaces/{workspace_id}/approvals/{approval_id}/approve",
+        headers=_headers(user_id),
+        json={"reason": "test approval"},
+    )
+    assert approved.status_code == 200
 
 
 def _headers(user_id: object) -> dict[str, str]:

@@ -729,7 +729,7 @@ def test_anthropic_messages_runner_records_trace_and_tool_provenance() -> None:
         model_provider_credential_id=credential_id,
         tool_executor=RecordingToolExecutor(),
         tracing=AgentRunTracing(
-            workflow_name="chaincloud.team_agent_run",
+            workflow_name="opsmesh.team_agent_run",
             trace_id="trace_anthropic",
             group_id="workspace:team_agent:team-1:agent-1",
             metadata={
@@ -747,7 +747,7 @@ def test_anthropic_messages_runner_records_trace_and_tool_provenance() -> None:
 
     assert result.final_output == "trace-ok"
     assert result.raw_output["trace"] == {
-        "workflow_name": "chaincloud.team_agent_run",
+        "workflow_name": "opsmesh.team_agent_run",
         "trace_id": "trace_anthropic",
         "group_id": "workspace:team_agent:team-1:agent-1",
         "metadata": {
@@ -771,7 +771,7 @@ def test_anthropic_messages_runner_records_trace_and_tool_provenance() -> None:
             "credential_id": str(credential_id),
         },
         "trace": {
-            "workflow_name": "chaincloud.team_agent_run",
+            "workflow_name": "opsmesh.team_agent_run",
             "trace_id": "trace_anthropic",
             "group_id": "workspace:team_agent:team-1:agent-1",
             "metadata": {
@@ -1030,7 +1030,7 @@ def test_openai_agents_runner_passes_tracing_run_config_to_sdk(
             run_id=uuid4(),
         ),
         tracing=AgentRunTracing(
-            workflow_name="chaincloud.team_agent_run",
+            workflow_name="opsmesh.team_agent_run",
             trace_id="trace_123",
             group_id="workspace:team_agent:team-1:agent-1",
             metadata={
@@ -1045,7 +1045,7 @@ def test_openai_agents_runner_passes_tracing_run_config_to_sdk(
     run_config = captured["kwargs"]["run_config"]
 
     assert result.final_output == "done"
-    assert run_config.workflow_name == "chaincloud.team_agent_run"
+    assert run_config.workflow_name == "opsmesh.team_agent_run"
     assert run_config.trace_id == "trace_123"
     assert run_config.group_id == "workspace:team_agent:team-1:agent-1"
     assert run_config.trace_metadata == {
@@ -1073,7 +1073,7 @@ def test_openai_agents_runner_trace_metadata_includes_provider_provenance() -> N
             run_id=uuid4(),
         ),
         tracing=AgentRunTracing(
-            workflow_name="chaincloud.agent_run",
+            workflow_name="opsmesh.agent_run",
             trace_id="trace_provider",
             group_id="workspace:provider",
             metadata={
@@ -1190,7 +1190,7 @@ def test_openai_agents_runner_real_sdk_smoke_preserves_boundary_configuration() 
             workspace_id=profile.workspace_id,
             task_id=None,
             run_id=uuid4(),
-            allowed_tools=("chaincloud_echo",),
+            allowed_tools=("opsmesh_echo",),
             metadata={"smoke": "openai_agents_runner"},
         ),
         api_key=os.environ["OPENAI_API_KEY"],
@@ -1198,7 +1198,7 @@ def test_openai_agents_runner_real_sdk_smoke_preserves_boundary_configuration() 
         model_api=_openai_smoke_model_api(),
         tool_executor=RecordingToolExecutor(),
         tracing=AgentRunTracing(
-            workflow_name="chaincloud.openai_sdk_smoke",
+            workflow_name="opsmesh.openai_sdk_smoke",
             trace_id=None,
             group_id="openai-sdk-smoke",
             metadata={
@@ -1215,12 +1215,12 @@ def test_openai_agents_runner_real_sdk_smoke_preserves_boundary_configuration() 
 
     assert result.final_output
     assert run_config is not None
-    assert run_config.workflow_name == "chaincloud.openai_sdk_smoke"
+    assert run_config.workflow_name == "opsmesh.openai_sdk_smoke"
     assert run_config.group_id == "openai-sdk-smoke"
     assert run_config.trace_metadata["persistent_session_key"] == "smoke-session-key"
     assert run_config.tracing_disabled is True
     assert run_config.trace_include_sensitive_data is False
-    assert [tool.name for tool in agent.tools] == ["chaincloud_echo"]
+    assert [tool.name for tool in agent.tools] == ["opsmesh_echo"]
     assert request.context.metadata["smoke"] == "openai_agents_runner"
 
 
@@ -1239,7 +1239,7 @@ def test_openai_agents_runner_real_sdk_smoke_uses_tool_and_persistent_session() 
         name="Tool Smoke Runner",
         role="tester",
         instructions=(
-            "You must call the chaincloud_echo tool exactly once. "
+            "You must call the opsmesh_echo tool exactly once. "
             "Then reply with the value from the tool result."
         ),
         model=os.getenv("OPENAI_SMOKE_MODEL", "gpt-4.1-nano"),
@@ -1248,7 +1248,7 @@ def test_openai_agents_runner_real_sdk_smoke_uses_tool_and_persistent_session() 
             "store": False,
             "include_usage": True,
             "parallel_tool_calls": False,
-            "tool_choice": "chaincloud_echo",
+            "tool_choice": "opsmesh_echo",
         },
     )
     run_id = uuid4()
@@ -1267,14 +1267,14 @@ def test_openai_agents_runner_real_sdk_smoke_uses_tool_and_persistent_session() 
     request = AgentRunRequest(
         agent_profile=profile,
         input_text=(
-            "Call chaincloud_echo with any JSON object. "
+            "Call opsmesh_echo with any JSON object. "
             "After the tool call, answer exactly persistent-tool-ok."
         ),
         context=AgentRuntimeContext(
             workspace_id=workspace.id,
             task_id=None,
             run_id=run_id,
-            allowed_tools=("chaincloud_echo",),
+            allowed_tools=("opsmesh_echo",),
             metadata={"persistent_session_key": persistent_session.session_id},
         ),
         max_turns=4,
@@ -1284,7 +1284,7 @@ def test_openai_agents_runner_real_sdk_smoke_uses_tool_and_persistent_session() 
         tool_executor=executor,
         session=persistent_session,
         tracing=AgentRunTracing(
-            workflow_name="chaincloud.openai_sdk_tool_session_smoke",
+            workflow_name="opsmesh.openai_sdk_tool_session_smoke",
             group_id=persistent_session.session_id,
             metadata={
                 "smoke": "openai_agents_tool_session",
@@ -1297,7 +1297,7 @@ def test_openai_agents_runner_real_sdk_smoke_uses_tool_and_persistent_session() 
     result = asyncio.run(OpenAIAgentsRunner().run(request))
     stored_items = asyncio.run(persistent_session.get_items())
 
-    assert executor.calls == ["chaincloud_echo"]
+    assert executor.calls == ["opsmesh_echo"]
     assert "persistent-tool-ok" in result.final_output
     assert stored_items
     assert request.base_url == _openai_smoke_base_url()

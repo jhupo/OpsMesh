@@ -6,8 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN addgroup --system chaincloud \
-    && adduser --system --ingroup chaincloud chaincloud
+RUN addgroup --system opsmesh \
+    && adduser --system --ingroup opsmesh opsmesh
 
 COPY pyproject.toml README.md alembic.ini ./
 COPY backend ./backend
@@ -17,10 +17,10 @@ RUN sed -i 's/\r$//' /app/scripts/docker-entrypoint.sh \
     && pip install --upgrade pip \
     && pip install . \
     && chmod +x /app/scripts/docker-entrypoint.sh \
-    && mkdir -p /app/.chaincloud-storage \
-    && chown -R chaincloud:chaincloud /app
+    && mkdir -p /app/.opsmesh-storage \
+    && chown -R opsmesh:opsmesh /app
 
-USER chaincloud
+USER opsmesh
 
 EXPOSE 8000
 

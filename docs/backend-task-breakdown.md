@@ -441,9 +441,9 @@ Deliverables:
 - core backend safety has automated tests
 - regressions are caught early
 
-## Phase 19: Talent Marketplace And Hiring
+## Phase 19: Talent Marketplace And Installs
 
-Goal: let each user act as a boss who hires public agents into their own AI company.
+Goal: let each workspace install reviewed public agents into an isolated agent team.
 
 Tasks:
 
@@ -451,20 +451,20 @@ Tasks:
 - [x] Add workspace agent install model.
 - [x] Publish a workspace agent profile to the talent market.
 - [x] Search public agents by role, skill, and query.
-- [x] Hire a public agent into another workspace as an isolated copy.
-- [x] Optionally place the hired agent into a team role.
-- [x] Record hiring and publishing audit events.
-- [x] Prevent duplicate hires of the same listing into a workspace.
+- [x] Install a public agent into another workspace as an isolated copy.
+- [x] Optionally place the installed agent into a team role.
+- [x] Record install and publishing audit events.
+- [x] Prevent duplicate installs of the same listing into a workspace.
 - [x] Add HR agent recommendation workflow.
 - [x] Add listing version upgrades and pinned versions.
 - [x] Add public rating, usage, and review metrics.
 
 Deliverables:
 
-- boss can publish an agent as public talent
-- another boss can hire that agent into their own workspace
-- hired agents do not inherit source workspace data or credentials
-- hired agents can be assigned to a department/team role
+- workspace owners can publish an agent as public talent after review
+- another workspace can install that agent into its own workspace
+- installed agents do not inherit source workspace data or credentials
+- installed agents can be assigned to a department/team role
 
 ## Phase 20: Durable Multi-Agent Orchestration
 
@@ -511,7 +511,7 @@ Tasks:
   - [x] Enforce global risky-execution policy records inside Docker runtime, self-hosted runtime, and MCP execution paths.
   - [x] Model high-risk tool handling as `require_workspace_approval`, `allow`, or `block`; platform admins set guardrails, workspace owners approve task-level risk.
   - [x] Add PostgreSQL-level concurrent scheduler tests that prove runtime-space quotas cannot be over-reserved under parallel schedulers.
-    - [x] Added an opt-in `CHAINCLOUD_TEST_POSTGRES_URL` test that creates a temporary schema, runs two schedulers concurrently, and proves runtime-space `active_runs` reservations stay capped under row-lock contention.
+    - [x] Added an opt-in `OPSMESH_TEST_POSTGRES_URL` test that creates a temporary schema, runs two schedulers concurrently, and proves runtime-space `active_runs` reservations stay capped under row-lock contention.
 - [x] Connect MCP skills to the real runtime execution path.
   - [x] Add internal MCP execution service with run snapshot authorization, adapter boundary, payload limits, logs, events, task messages, and blocked-call security evidence.
   - [x] Add workspace MCP catalog API that aggregates servers, allowed tools, credential status, execution mode, and agent-scoped availability.
@@ -642,7 +642,7 @@ Tasks:
 
 Deliverables:
 
-- users can build a persistent AI company/team
+- users can build a persistent agent team
 - tasks are planned and executed through the existing organization
 - team changes affect future tasks without corrupting running or historical work
 

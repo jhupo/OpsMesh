@@ -27,6 +27,7 @@ from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent, R
 from backend.app.runtimes.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task
+from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -502,7 +503,7 @@ def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> N
     )
     session.add(runtime_lease)
     session.commit()
-    queue = RedisQueue(redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    queue = RedisQueue(redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     queued = JobPayload(
         workspace_id=workspace.id,
         job_type=JobType.AGENT_RUN,
@@ -564,21 +565,28 @@ def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> N
     assert dead_letters.json()["total"] == 1
     assert requeued.status_code == 200
     assert requeued.json()["requeued"] is True
-    admin_queue = RedisQueue(redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    admin_queue = RedisQueue(redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     assert admin_queue.count_dead_letters() == 0
     assert runtimes.status_code == 200
     assert runtimes.json()["items"][0]["id"] == str(runtime.id)
     assert stopped.status_code == 200
-    assert stopped.json()["status"] == "stopped"
-    assert runtime.status == "stopped"
-    assert runtime.connection_status == "offline"
-    assert runtime_lease.status == "released"
-    assert runtime_lease.released_at is not None
-    assert runtime_lease.lease_metadata["released_by"] == "platform_admin"
-    assert runtime_lease.lease_metadata["release_reason"] == "Operator safety stop"
-    assert runtime_event.event_type == "runtime.force_stopped"
+    assert stopped.json()["status"] == "stopping"
+    assert runtime.status == "stopping"
+    assert runtime.connection_status == "degraded"
+    assert runtime_lease.status == "running"
+    assert runtime_lease.released_at is None
+    assert runtime_lease.lease_metadata["stop_requested_by"] == "platform_admin"
+    assert runtime_lease.lease_metadata["stop_request_reason"] == "Operator safety stop"
+    assert runtime_event.event_type == "runtime.force_stop_requested"
     assert runtime_event.event_metadata["runtime_lease_id"] == str(runtime_lease.id)
-    assert runtime_event.event_metadata["runtime_lease_released"] is True
+    assert runtime_event.event_metadata["runtime_lease_release_pending"] is True
+    assert runtime_event.event_metadata["worker_control_enqueued"] is True
+    stop_job = admin_queue.dequeue()
+    assert stop_job is not None
+    assert stop_job.job_type == JobType.RUNTIME_CONTROL
+    assert stop_job.resource_id == runtime.id
+    assert stop_job.routing["action"] == "stop"
+    assert stop_job.routing["source"] == "platform_admin"
     assert policy.status_code == 200
     assert policy.json()["policy_key"] == "global_risky_execution"
     assert updated_policy.status_code == 200
@@ -675,7 +683,7 @@ def test_admin_operations_summary_aggregates_queue_capacity_and_blockers() -> No
     approval.agent_run_id = waiting_run.id
     session.add_all([quota, lease, approval, security_event])
     session.commit()
-    queue = RedisQueue(redis, RedisKeyBuilder("chaincloud"), "agent_runs", 0)
+    queue = RedisQueue(redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     high_priority_job = JobPayload(
         workspace_id=workspace.id,
         job_type=JobType.AGENT_RUN,
@@ -745,6 +753,184 @@ def test_admin_system_configuration_exposes_redacted_resource_summary() -> None:
         "blocking_thread_pool_workers",
         "redis_max_connections",
     }
+    assert body["settings"]["release_update_enabled"] is False
+    assert body["settings"]["release_update_repository"] == "jhupo/OpsMesh"
+
+
+def test_admin_system_version_reports_current_package_version() -> None:
+    client, _, _ = _client()
+
+    response = client.get("/api/v1/admin/system/version", headers=_admin_headers())
+
+    assert response.status_code == 200
+    assert response.json()["tag"].startswith("v")
+
+
+def test_admin_check_updates_returns_latest_release(monkeypatch) -> None:
+    from backend.app.admin.release_updates import (
+        ReleaseAsset,
+        ReleaseUpdateCheck,
+        ReleaseUpdateService,
+        ReleaseVersion,
+        clear_release_update_cache,
+    )
+
+    clear_release_update_cache()
+
+    def fake_fetch(self: ReleaseUpdateService) -> ReleaseUpdateCheck:
+        current = self.current_version()
+        return ReleaseUpdateCheck(
+            current=current,
+            latest=ReleaseVersion(version="9.9.9", tag="v9.9.9", commit="abc123"),
+            update_available=True,
+            release_url="https://github.com/jhupo/OpsMesh/releases/tag/v9.9.9",
+            assets=[
+                ReleaseAsset(
+                    name="opsmesh-server-v9.9.9.tar.gz",
+                    browser_download_url=(
+                        "https://github.com/jhupo/OpsMesh/releases/download/v9.9.9/"
+                        "opsmesh-server-v9.9.9.tar.gz"
+                    ),
+                    size=123,
+                    content_type="application/gzip",
+                    digest="sha256:asset-digest",
+                )
+            ],
+            cached=False,
+        )
+
+    monkeypatch.setattr(ReleaseUpdateService, "_fetch_latest_release", fake_fetch)
+    client, _, _ = _client()
+
+    first = client.get("/api/v1/admin/system/check-updates", headers=_admin_headers())
+    second = client.get("/api/v1/admin/system/check-updates", headers=_admin_headers())
+
+    assert first.status_code == 200
+    assert first.json()["latest"]["tag"] == "v9.9.9"
+    assert first.json()["update_available"] is True
+    assert first.json()["assets"] == [
+        {
+            "name": "opsmesh-server-v9.9.9.tar.gz",
+            "browser_download_url": (
+                "https://github.com/jhupo/OpsMesh/releases/download/v9.9.9/"
+                "opsmesh-server-v9.9.9.tar.gz"
+            ),
+            "size": 123,
+            "content_type": "application/gzip",
+            "digest": "sha256:asset-digest",
+        }
+    ]
+    assert first.json()["cached"] is False
+    assert second.status_code == 200
+    assert second.json()["cached"] is True
+
+
+def test_admin_release_update_defaults_to_dry_run_plan_with_release_assets() -> None:
+    client, _, _ = _client()
+
+    response = client.post(
+        "/api/v1/admin/system/update",
+        headers=_admin_headers(),
+        json={
+            "tag": "v1.2.3",
+            "manifest_url": "https://releases.example.test/v1.2.3/manifest.json",
+            "manifest_file": "/srv/releases/v1.2.3/manifest.json",
+            "bundle_url": "https://releases.example.test/v1.2.3/bundle.tar.gz",
+            "bundle_file": "/srv/releases/v1.2.3/bundle.tar.gz",
+            "checksum_url": "https://releases.example.test/v1.2.3/bundle.tar.gz.sha256",
+            "checksum_file": "/srv/releases/v1.2.3/bundle.tar.gz.sha256",
+            "release_dir": "/opt/opsmesh/releases/v1.2.3",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["action"] == "update"
+    assert payload["tag"] == "v1.2.3"
+    assert payload["manifest_url"] == "https://releases.example.test/v1.2.3/manifest.json"
+    assert payload["manifest_file"] == "/srv/releases/v1.2.3/manifest.json"
+    assert payload["bundle_url"] == "https://releases.example.test/v1.2.3/bundle.tar.gz"
+    assert payload["bundle_file"] == "/srv/releases/v1.2.3/bundle.tar.gz"
+    assert payload["checksum_url"] == "https://releases.example.test/v1.2.3/bundle.tar.gz.sha256"
+    assert payload["checksum_file"] == "/srv/releases/v1.2.3/bundle.tar.gz.sha256"
+    assert payload["release_dir"] == "/opt/opsmesh/releases/v1.2.3"
+    assert payload["dry_run"] is True
+    assert payload["started"] is False
+    assert payload["pid"] is None
+    assert payload["command"] == [
+        "/opt/opsmesh/current/scripts/server-update.sh",
+        "update",
+        "--timeout-seconds",
+        "900",
+        "--tag",
+        "v1.2.3",
+        "--manifest-url",
+        "https://releases.example.test/v1.2.3/manifest.json",
+        "--manifest-file",
+        "/srv/releases/v1.2.3/manifest.json",
+        "--bundle-url",
+        "https://releases.example.test/v1.2.3/bundle.tar.gz",
+        "--bundle-file",
+        "/srv/releases/v1.2.3/bundle.tar.gz",
+        "--checksum-url",
+        "https://releases.example.test/v1.2.3/bundle.tar.gz.sha256",
+        "--checksum-file",
+        "/srv/releases/v1.2.3/bundle.tar.gz.sha256",
+        "--release-dir",
+        "/opt/opsmesh/releases/v1.2.3",
+        "--dry-run",
+    ]
+
+
+def test_admin_release_update_rejects_real_update_when_disabled() -> None:
+    client, _, _ = _client()
+
+    response = client.post(
+        "/api/v1/admin/system/update",
+        headers=_admin_headers(),
+        json={"tag": "v1.2.3", "dry_run": False},
+    )
+
+    assert response.status_code == 409
+    assert "OPSMESH_RELEASE_UPDATE_ENABLED" in response.json()["error"]["message"]
+
+
+def test_admin_release_update_rejects_invalid_tag() -> None:
+    client, _, _ = _client()
+
+    response = client.post(
+        "/api/v1/admin/system/update",
+        headers=_admin_headers(),
+        json={"tag": "latest"},
+    )
+
+    assert response.status_code == 400
+    assert "semantic version" in response.json()["error"]["message"]
+
+
+def test_admin_release_rollback_and_restart_dry_run() -> None:
+    client, _, _ = _client()
+
+    rollback = client.post(
+        "/api/v1/admin/system/rollback",
+        headers=_admin_headers(),
+        json={"release_dir": "/opt/opsmesh/releases/v1.2.2"},
+    )
+    restart = client.post(
+        "/api/v1/admin/system/restart",
+        headers=_admin_headers(),
+        json={},
+    )
+
+    assert rollback.status_code == 200
+    assert rollback.json()["action"] == "rollback"
+    assert rollback.json()["tag"] is None
+    assert rollback.json()["release_dir"] == "/opt/opsmesh/releases/v1.2.2"
+    assert rollback.json()["dry_run"] is True
+    assert "--release-dir" in rollback.json()["command"]
+    assert restart.status_code == 200
+    assert restart.json()["action"] == "restart"
+    assert restart.json()["dry_run"] is True
 
 
 def _client() -> tuple[TestClient, Session, fakeredis.FakeRedis]:
@@ -778,6 +964,12 @@ def _client() -> tuple[TestClient, Session, fakeredis.FakeRedis]:
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.dependency_overrides[get_redis_client] = lambda: redis
+    app.dependency_overrides[get_worker_queue] = lambda: RedisQueue(
+        redis,
+        RedisKeyBuilder(app.state.settings.redis_key_prefix),
+        app.state.settings.worker_queue_name,
+        0,
+    )
     return TestClient(app), session, redis
 
 

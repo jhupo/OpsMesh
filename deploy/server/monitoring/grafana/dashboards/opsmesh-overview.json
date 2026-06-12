@@ -2,73 +2,73 @@
   "editable": true,
   "panels": [
     {
-      "datasource": {"type": "prometheus", "uid": "chaincloud-prometheus"},
+      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
       "fieldConfig": {"defaults": {"mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}},
       "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
       "id": 1,
       "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
-      "targets": [{"expr": "min(up{job=\"chaincloud-api\"})", "legendFormat": "API up", "refId": "A"}],
+      "targets": [{"expr": "min(up{job=\"opsmesh-api\"})", "legendFormat": "API up", "refId": "A"}],
       "title": "API Target",
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "chaincloud-prometheus"},
+      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
       "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never"}, "mappings": [], "unit": "reqps"}},
       "gridPos": {"h": 8, "w": 8, "x": 4, "y": 0},
       "id": 2,
       "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
-      "targets": [{"expr": "sum by (status) (rate(chaincloud_http_requests_total[5m]))", "legendFormat": "{{status}}", "refId": "A"}],
+      "targets": [{"expr": "sum by (status) (rate(opsmesh_http_requests_total[5m]))", "legendFormat": "{{status}}", "refId": "A"}],
       "title": "HTTP Requests",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "chaincloud-prometheus"},
+      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
       "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never"}, "mappings": [], "unit": "short"}},
       "gridPos": {"h": 8, "w": 8, "x": 12, "y": 0},
       "id": 3,
       "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
-      "targets": [{"expr": "chaincloud_queue_jobs", "legendFormat": "{{queue_name}} {{state}}", "refId": "A"}],
+      "targets": [{"expr": "opsmesh_queue_jobs", "legendFormat": "{{queue_name}} {{state}}", "refId": "A"}],
       "title": "Queue Jobs",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "chaincloud-prometheus"},
+      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
       "fieldConfig": {"defaults": {"mappings": [], "unit": "short"}},
       "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
       "id": 4,
       "options": {"displayMode": "lcd", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
-      "targets": [{"expr": "chaincloud_workers", "legendFormat": "{{state}}", "refId": "A"}],
+      "targets": [{"expr": "opsmesh_workers", "legendFormat": "{{state}}", "refId": "A"}],
       "title": "Workers",
       "type": "bargauge"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "chaincloud-prometheus"},
+      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
       "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never"}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 0.75}, {"color": "red", "value": 0.9}]}, "unit": "percentunit"}},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
       "id": 5,
       "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
-      "targets": [{"expr": "chaincloud_runtime_saturation_ratio", "legendFormat": "{{provider}} {{runtime_type}}", "refId": "A"}],
+      "targets": [{"expr": "opsmesh_runtime_saturation_ratio", "legendFormat": "{{provider}} {{runtime_type}}", "refId": "A"}],
       "title": "Runtime Saturation",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "chaincloud-prometheus"},
+      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
       "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never"}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 0.75}, {"color": "red", "value": 0.9}]}, "unit": "percentunit"}},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
       "id": 6,
       "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
-      "targets": [{"expr": "chaincloud_runtime_space_quota_usage_ratio", "legendFormat": "{{quota_key}} {{unit}}", "refId": "A"}],
+      "targets": [{"expr": "opsmesh_runtime_space_quota_usage_ratio", "legendFormat": "{{quota_key}} {{unit}}", "refId": "A"}],
       "title": "Runtime Quota Usage",
       "type": "timeseries"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["chaincloud", "control-plane"],
+  "tags": ["opsmesh", "control-plane"],
   "templating": {"list": []},
   "time": {"from": "now-6h", "to": "now"},
   "timezone": "browser",
-  "title": "ChainCloud Control Plane",
-  "uid": "chaincloud-control-plane",
+  "title": "OpsMesh Control Plane",
+  "uid": "opsmesh-control-plane",
   "version": 1
 }

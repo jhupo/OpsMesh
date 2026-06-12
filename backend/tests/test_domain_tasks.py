@@ -1,4 +1,4 @@
-from collections.abc import Generator
+﻿from collections.abc import Generator
 
 import fakeredis
 from fastapi.testclient import TestClient
@@ -36,10 +36,10 @@ def test_task_view_returns_domain_state_comments_and_revisions() -> None:
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=_headers(owner.id),
         json={
-            "title": "写第一章",
+            "title": "Write chapter one",
             "domain_type": "novel",
             "generic_state": {"progress": 30},
-            "domain_state": {"chapter": 1, "tone": "悬疑"},
+            "domain_state": {"chapter": 1, "tone": "suspense"},
         },
     )
     assert task.status_code == 201
@@ -48,7 +48,7 @@ def test_task_view_returns_domain_state_comments_and_revisions() -> None:
     project = client.post(
         f"/api/v1/workspaces/{workspace.id}/domain-projects",
         headers=_headers(owner.id),
-        json={"domain_type": "novel", "name": "长篇小说", "state": {"genre": "科幻"}},
+        json={"domain_type": "novel", "name": "Longform Novel", "state": {"genre": "sci-fi"}},
     )
     assert project.status_code == 201
 
@@ -59,8 +59,8 @@ def test_task_view_returns_domain_state_comments_and_revisions() -> None:
             "domain_project_id": project.json()["id"],
             "task_id": task_id,
             "item_type": "chapter",
-            "title": "第一章",
-            "content": {"outline": "主角醒来"},
+            "title": "Chapter One",
+            "content": {"outline": "The protagonist wakes up."},
         },
     )
     assert item.status_code == 201
@@ -68,7 +68,7 @@ def test_task_view_returns_domain_state_comments_and_revisions() -> None:
     comment = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/review-comments",
         headers=_headers(owner.id),
-        json={"domain_item_id": item.json()["id"], "body": "节奏太慢，开头要更抓人"},
+        json={"domain_item_id": item.json()["id"], "body": "The opening needs a stronger hook."},
     )
     assert comment.status_code == 201
 
@@ -77,7 +77,7 @@ def test_task_view_returns_domain_state_comments_and_revisions() -> None:
         headers=_headers(owner.id),
         json={
             "domain_item_id": item.json()["id"],
-            "instruction": "重写开头三段，加强冲突",
+            "instruction": "Rewrite the first three paragraphs with stronger conflict.",
             "payload": {"priority": "high"},
         },
     )
@@ -91,10 +91,13 @@ def test_task_view_returns_domain_state_comments_and_revisions() -> None:
     assert view.status_code == 200
     body = view.json()
     assert body["task"]["domain_type"] == "novel"
-    assert body["domain_project"]["name"] == "长篇小说"
-    assert body["domain_items"][0]["content"] == {"outline": "主角醒来"}
-    assert body["review_comments"][0]["body"] == "节奏太慢，开头要更抓人"
-    assert body["revision_requests"][0]["instruction"] == "重写开头三段，加强冲突"
+    assert body["domain_project"]["name"] == "Longform Novel"
+    assert body["domain_items"][0]["content"] == {"outline": "The protagonist wakes up."}
+    assert body["review_comments"][0]["body"] == "The opening needs a stronger hook."
+    assert (
+        body["revision_requests"][0]["instruction"]
+        == "Rewrite the first three paragraphs with stronger conflict."
+    )
     assert session.query(RevisionRequest).count() == 1
     job = _dequeue_job_type(queue, JobType.TASK_PLAN)
     assert job is not None
@@ -222,7 +225,7 @@ def test_domain_item_cannot_be_used_across_workspaces() -> None:
     denied = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks/{task.json()['id']}/review-comments",
         headers=_headers(owner.id),
-        json={"domain_item_id": other_item.json()["id"], "body": "越权评论"},
+        json={"domain_item_id": other_item.json()["id"], "body": "Cross-workspace comment"},
     )
 
     assert denied.status_code == 400
@@ -276,7 +279,7 @@ def _headers(user_id: object) -> dict[str, str]:
 def _queue() -> RedisQueue:
     return RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("chaincloud"),
+        keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
 

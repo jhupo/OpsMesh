@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
@@ -5,6 +6,16 @@ from pydantic import BaseModel, Field, field_serializer
 from backend.app.api.schemas.agents import AgentProfileResponse
 from backend.app.api.schemas.common import TimestampedModel
 from backend.app.api.schemas.redaction import redact_sensitive_payload
+
+MarketplaceListingType = Literal["agent", "skill", "mcp_server", "plugin"]
+MarketplaceVisibility = Literal["private", "workspace", "public"]
+MarketplaceListingStatus = Literal[
+    "draft",
+    "pending_approval",
+    "public",
+    "rejected",
+    "archived",
+]
 
 
 class TalentListingCreateRequest(BaseModel):
@@ -151,3 +162,66 @@ class TalentListingMetricsResponse(BaseModel):
     upgrade_count: int
     review_count: int
     average_rating: float
+
+
+class MarketplaceListingCreateRequest(BaseModel):
+    listing_type: MarketplaceListingType
+    name: str = Field(min_length=1, max_length=160)
+    summary: str = Field(default="", max_length=2_000)
+    version: str = Field(default="1.0.0", min_length=1, max_length=64)
+    visibility: MarketplaceVisibility = "private"
+    status: MarketplaceListingStatus | None = None
+    source_resource_id: UUID | None = None
+    tags: list[str] = Field(default_factory=list, max_length=24)
+    manifest: dict[str, object] = Field(default_factory=dict)
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class MarketplaceListingResponse(TimestampedModel):
+    workspace_id: UUID
+    owner_user_id: UUID
+    source_resource_id: UUID | None
+    listing_type: str
+    visibility: str
+    status: str
+    name: str
+    summary: str
+    version: str
+    tags: list[str]
+    manifest: dict[str, object]
+    listing_metadata: dict[str, object]
+    install_count: int
+
+    @field_serializer("manifest")
+    def _serialize_manifest(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("listing_metadata")
+    def _serialize_marketplace_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
+class MarketplaceInstallRequest(BaseModel):
+    config: dict[str, object] = Field(default_factory=dict)
+
+
+class WorkspaceMarketplaceInstallResponse(TimestampedModel):
+    workspace_id: UUID
+    marketplace_listing_id: UUID
+    installed_by_user_id: UUID | None
+    installed_resource_id: UUID | None
+    listing_type: str
+    installed_name: str
+    installed_version: str
+    installed_manifest: dict[str, object]
+    config: dict[str, object]
+    status: str
+    listing: MarketplaceListingResponse
+
+    @field_serializer("installed_manifest")
+    def _serialize_installed_manifest(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("config")
+    def _serialize_config(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)

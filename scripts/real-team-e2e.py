@@ -127,14 +127,14 @@ def _configure_process_output() -> None:
 
 
 def _config_from_env() -> RealTeamE2EConfig:
-    api_key = os.environ.get("CHAINCLOUD_REAL_E2E_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    base_url = os.environ.get("CHAINCLOUD_REAL_E2E_BASE_URL")
-    model = os.environ.get("CHAINCLOUD_REAL_E2E_MODEL", "gpt-5.5")
+    api_key = os.environ.get("OPSMESH_REAL_E2E_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    base_url = os.environ.get("OPSMESH_REAL_E2E_BASE_URL")
+    model = os.environ.get("OPSMESH_REAL_E2E_MODEL", "gpt-5.5")
     missing = [
         name
         for name, value in {
-            "CHAINCLOUD_REAL_E2E_API_KEY or OPENAI_API_KEY": api_key,
-            "CHAINCLOUD_REAL_E2E_BASE_URL": base_url,
+            "OPSMESH_REAL_E2E_API_KEY or OPENAI_API_KEY": api_key,
+            "OPSMESH_REAL_E2E_BASE_URL": base_url,
         }.items()
         if not value
     ]
@@ -144,10 +144,10 @@ def _config_from_env() -> RealTeamE2EConfig:
         api_key=str(api_key),
         base_url=str(base_url),
         model=model,
-        cleanup=_bool_env("CHAINCLOUD_REAL_E2E_CLEANUP", default=True),
-        max_jobs=_int_env("CHAINCLOUD_REAL_E2E_MAX_JOBS", default=12),
-        queue_prefix=os.environ.get("CHAINCLOUD_REAL_E2E_QUEUE_PREFIX", "real_e2e"),
-        disable_tracing=_bool_env("CHAINCLOUD_REAL_E2E_DISABLE_TRACING", default=True),
+        cleanup=_bool_env("OPSMESH_REAL_E2E_CLEANUP", default=True),
+        max_jobs=_int_env("OPSMESH_REAL_E2E_MAX_JOBS", default=12),
+        queue_prefix=os.environ.get("OPSMESH_REAL_E2E_QUEUE_PREFIX", "real_e2e"),
+        disable_tracing=_bool_env("OPSMESH_REAL_E2E_DISABLE_TRACING", default=True),
     )
 
 

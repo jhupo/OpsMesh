@@ -229,6 +229,7 @@ def test_llm_resource_review_can_require_admin_approval(monkeypatch) -> None:
         health_status="healthy",
     )
     session.add(credential)
+    workspace.settings = {"resource_review": {"private_resources": {"mcp_server": True}}}
     session.commit()
 
     def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
@@ -292,6 +293,7 @@ def test_llm_resource_review_unknown_verdict_fails_closed() -> None:
 def test_operator_cannot_approve_resource_review(monkeypatch) -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
+    workspace.settings = {"resource_review": {"private_resources": {"mcp_server": True}}}
     operator = User(email="operator@example.com", display_name="Operator")
     session.add_all(
         [
@@ -384,6 +386,7 @@ def test_resource_review_uses_admin_configured_review_model(monkeypatch) -> None
     session.flush()
     workspace.settings = {
         "resource_review": {
+            "private_resources": {"mcp_server": True},
             "semantic_review": {
                 "enabled": True,
                 "model_provider_credential_id": str(review_credential.id),
@@ -452,6 +455,8 @@ def test_resource_review_defaults_to_codex_auto_review_model(monkeypatch) -> Non
         health_status="healthy",
     )
     session.add(credential)
+    session.flush()
+    workspace.settings = {"resource_review": {"private_resources": {"mcp_server": True}}}
     session.commit()
     captured: dict[str, object] = {}
 
@@ -480,6 +485,226 @@ def test_resource_review_defaults_to_codex_auto_review_model(monkeypatch) -> Non
 
     assert server.status_code == 201
     assert captured == {"model": "codex-auto-review", "timeout_seconds": 20.0}
+
+
+def test_private_skill_creation_skips_resource_review_by_default(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    called = False
+
+    def require_review(self, **kwargs):  # noqa: ANN001, ANN202
+        nonlocal called
+        called = True
+        return LlmReviewResult(
+            required=True,
+            risk_level="high",
+            reasons=["llm_review.requires_admin"],
+            signals={"reviewer": "llm", "verdict": "review"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+        json={
+            "key": "internal.deploy",
+            "name": "Internal Deploy",
+            "visibility": "private",
+            "manifest": {"required_tools": ["shell.deploy"]},
+        },
+    )
+    approvals = client.get(
+        f"/api/v1/workspaces/{workspace.id}/approvals",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "active"
+    assert approvals.status_code == 200
+    assert approvals.json()["total"] == 0
+    assert called is False
+
+
+def test_private_resource_review_can_be_enabled_per_workspace(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    workspace.settings = {"resource_review": {"private_resources": {"skill": True}}}
+    session.commit()
+
+    def require_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return LlmReviewResult(
+            required=True,
+            risk_level="high",
+            reasons=["llm_review.requires_admin"],
+            signals={"reviewer": "llm", "verdict": "review"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
+        headers=_headers(owner.id),
+        json={
+            "key": "internal.shell",
+            "name": "Internal Shell",
+            "visibility": "private",
+            "manifest": {"required_tools": ["shell.exec"]},
+        },
+    )
+    approvals = client.get(
+        f"/api/v1/workspaces/{workspace.id}/approvals",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "pending_approval"
+    assert approvals.status_code == 200
+    assert approvals.json()["total"] == 1
+
+
+def test_private_agent_creation_skips_resource_review_by_default(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    called = False
+
+    def require_review(self, **kwargs):  # noqa: ANN001, ANN202
+        nonlocal called
+        called = True
+        return LlmReviewResult(
+            required=True,
+            risk_level="high",
+            reasons=["llm_review.requires_admin"],
+            signals={"reviewer": "llm", "verdict": "review"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Private Operator",
+            "role": "operator",
+            "instructions": "Use shell and production context.",
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["status"] == "active"
+    assert called is False
+
+
+def test_private_agent_review_can_be_enabled_per_workspace(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    workspace.settings = {"resource_review": {"private_resources": {"agent_profile": True}}}
+    session.commit()
+
+    def require_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return LlmReviewResult(
+            required=True,
+            risk_level="high",
+            reasons=["llm_review.requires_admin"],
+            signals={"reviewer": "llm", "verdict": "review"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "Reviewed Operator",
+            "role": "operator",
+            "instructions": "Use shell and production context.",
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["status"] == "pending_approval"
+
+
+def test_private_mcp_resources_skip_resource_review_by_default(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    calls: list[str] = []
+
+    def require_review(self, **kwargs):  # noqa: ANN001, ANN202
+        calls.append(str(kwargs.get("resource_type") or "llm"))
+        return LlmReviewResult(
+            required=True,
+            risk_level="high",
+            reasons=["llm_review.requires_admin"],
+            signals={"reviewer": "llm", "verdict": "review"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "Private Shell MCP",
+            "server_type": "stdio",
+            "connection": {"command": "shell"},
+            "visibility": "private",
+        },
+    )
+    tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={"tool_name": "shell.exec", "risk_level": "high"},
+    )
+    credential = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "name": "shell-key",
+            "provider": "hosted",
+            "secret_payload": {"api_key": "sk-secret"},
+        },
+    )
+
+    assert server.status_code == 201
+    assert server.json()["status"] == "active"
+    assert tool.status_code == 201
+    assert tool.json()["status"] == "active"
+    assert credential.status_code == 201
+    assert credential.json()["status"] == "active"
+    assert calls == []
+
+
+def test_private_mcp_server_review_can_be_enabled_per_workspace(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    workspace.settings = {"resource_review": {"private_resources": {"mcp_server": True}}}
+    session.commit()
+
+    def require_review(self, **kwargs):  # noqa: ANN001, ANN202
+        return LlmReviewResult(
+            required=True,
+            risk_level="high",
+            reasons=["llm_review.requires_admin"],
+            signals={"reviewer": "llm", "verdict": "review"},
+        )
+
+    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "Reviewed Shell MCP",
+            "server_type": "stdio",
+            "connection": {"command": "shell"},
+            "visibility": "private",
+        },
+    )
+
+    assert server.status_code == 201
+    assert server.json()["status"] == "pending_approval"
 
 
 def test_hosted_mcp_credentials_are_encrypted_and_not_returned() -> None:
