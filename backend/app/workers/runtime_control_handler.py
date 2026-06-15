@@ -1,7 +1,8 @@
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
-from backend.app.operations.service import OperationsService
+from backend.app.operations.runtime_cleanup import RuntimeCleanupService
+from backend.app.operations.workers import WorkerOperationsService
 from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeLimits
 from backend.app.runtime_manager.dependencies import get_docker_runtime_client
 from backend.app.runtime_manager.service import RuntimeControlService
@@ -38,12 +39,11 @@ class RuntimeCleanupJobHandler:
             key="stale_lease_after_seconds",
             context=RUNTIME_CLEANUP_JOB,
         )
-        operations = OperationsService(self._session)
-        operations.cleanup_stale_runtimes(
+        RuntimeCleanupService(self._session).cleanup_stale_runtimes(
             job.workspace_id,
             stale_after_seconds=stale_after_seconds,
         )
-        operations.expire_stale_worker_leases(
+        WorkerOperationsService(self._session).expire_stale_worker_leases(
             workspace_id=job.workspace_id,
             stale_after_seconds=stale_lease_after_seconds,
         )

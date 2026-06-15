@@ -19,7 +19,7 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.session import get_db_session
-from backend.app.operations.service import OperationsService
+from backend.app.operations.scheduler import OperationsSchedulerService
 from backend.app.redis.cache import RedisJsonCache
 from backend.app.redis.dependencies import get_cache_service
 
@@ -41,9 +41,11 @@ async def operations_scheduler(
     cache_key = f"scheduler:{context.workspace.id}"
     cached = cache.get_or_set(
         cache_key,
-        lambda: OperationsService(session)
-        .scheduler_payload(context.workspace.id)
-        .model_dump(mode="json"),
+        lambda: (
+            OperationsSchedulerService(session)
+            .scheduler_payload(context.workspace.id)
+            .model_dump(mode="json")
+        ),
         ttl_seconds=10,
     )
     return OperationsSchedulerResponse(**cached.value)
@@ -56,7 +58,7 @@ async def operations_blocked_steps(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[BlockedStepExplanationResponse]:
-    items, total = OperationsService(session).list_blocked_steps(
+    items, total = OperationsSchedulerService(session).list_blocked_steps(
         context.workspace.id,
         page,
         code=code,
@@ -76,7 +78,7 @@ async def unblock_blocked_steps(
     session: Session = Depends(get_db_session),
 ) -> BlockedStepUnblockResponse:
     try:
-        return OperationsService(session).unblock_steps(
+        return OperationsSchedulerService(session).unblock_steps(
             workspace_id=context.workspace.id,
             actor_user_id=context.user.user_id,
             code=request.code,
@@ -94,7 +96,7 @@ async def pause_scheduler(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> SchedulerControlResponse:
-    response = OperationsService(session).pause_scheduler(
+    response = OperationsSchedulerService(session).pause_scheduler(
         workspace_id=context.workspace.id,
         actor_user_id=context.user.user_id,
         reason=request.reason,
@@ -109,7 +111,7 @@ async def resume_scheduler(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> SchedulerControlResponse:
-    response = OperationsService(session).resume_scheduler(
+    response = OperationsSchedulerService(session).resume_scheduler(
         workspace_id=context.workspace.id,
         actor_user_id=context.user.user_id,
     )

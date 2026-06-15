@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
 from backend.app.files.storage import create_storage
-from backend.app.operations.service import OperationsService
+from backend.app.operations.runtime_cleanup import RuntimeCleanupService
+from backend.app.operations.workers import WorkerOperationsService
 from backend.app.orchestration.run_control import RunControlService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.scheduled_jobs.service import WorkspaceScheduledJobService
@@ -94,11 +95,11 @@ class WorkerMaintenanceService:
             limit=self._config.recovery_batch_size,
             reason="worker_maintenance",
         )
-        expired_leases = OperationsService(session).expire_stale_worker_leases(
+        expired_leases = WorkerOperationsService(session).expire_stale_worker_leases(
             stale_after_seconds=self._config.run_lease_seconds,
         )
-        stale_runtimes, deleted_runtime_records = OperationsService(
-            session
+        stale_runtimes, deleted_runtime_records = RuntimeCleanupService(
+            session,
         ).cleanup_stale_runtimes_across_workspaces(
             stale_after_seconds=self._config.run_lease_seconds,
         )
@@ -107,9 +108,7 @@ class WorkerMaintenanceService:
             storage=create_storage(self._settings) if self._settings is not None else None,
             limit=self._config.recovery_batch_size,
         )
-        team_loop_summary = TeamExecutionLoopQueueService(
-            session
-        ).enqueue_active_team_iterations(
+        team_loop_summary = TeamExecutionLoopQueueService(session).enqueue_active_team_iterations(
             queue=self._queue,
             limit=self._config.recovery_batch_size,
         )

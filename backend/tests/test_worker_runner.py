@@ -27,7 +27,7 @@ from backend.app.identity.models import User
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
-from backend.app.operations.service import OperationsService
+from backend.app.operations.workers import WorkerOperationsService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.model_request import ModelRequestReview
@@ -253,7 +253,7 @@ def test_worker_runner_maintenance_reclaims_job_after_crash_before_lease() -> No
     def crash_before_lease(_: JobPayload) -> None:
         raise SystemExit("crash before lease")
 
-    runner._start_lease = crash_before_lease  # type: ignore[method-assign]
+    runner._lease_reporter.start_lease = crash_before_lease  # type: ignore[method-assign]
 
     with pytest.raises(SystemExit, match="crash before lease"):
         runner.run_once()
@@ -335,9 +335,7 @@ def test_worker_maintenance_enqueues_team_execution_loop_jobs() -> None:
 
     assert summary.team_execution_loop_jobs_enqueued == 1
     assert duplicate_summary.team_execution_loop_jobs_skipped == 1
-    assert duplicate_summary.team_execution_loop_skip_reasons == {
-        "queue_idempotency_duplicate": 1
-    }
+    assert duplicate_summary.team_execution_loop_skip_reasons == {"queue_idempotency_duplicate": 1}
     assert job is not None
     assert job.workspace_id == workspace_id
     assert job.resource_id == team_id
@@ -545,9 +543,7 @@ def test_worker_maintenance_enqueues_healthy_team_runtime_on_scheduled_cadence()
     early = runner.run_maintenance()
     assert early.team_execution_loop_jobs_enqueued == 0
     assert early.team_execution_loop_jobs_skipped == 1
-    assert early.team_execution_loop_skip_reasons == {
-        "scheduled_team_runtime_not_due": 1
-    }
+    assert early.team_execution_loop_skip_reasons == {"scheduled_team_runtime_not_due": 1}
     assert queue.dequeue() is None
     with session_factory() as session:
         team = session.get(AgentTeam, team_id)
@@ -922,9 +918,7 @@ def test_worker_runner_processes_team_execution_loop_job() -> None:
             "summary": "Approved by PM",
             "source": "pm_acceptance_decision",
             "acceptance_message_id": str(
-                session.scalar(
-                    select(TaskMessage.id).where(TaskMessage.task_id == task_id)
-                )
+                session.scalar(select(TaskMessage.id).where(TaskMessage.task_id == task_id))
             ),
             "decision": "approved",
         }
@@ -1050,9 +1044,7 @@ def test_worker_runner_records_team_execution_loop_missing_actor_failure() -> No
     with session_factory() as session:
         team = session.get(AgentTeam, team_id)
         lease = session.scalar(
-            select(WorkerLease).where(
-                WorkerLease.worker_id == "worker-team-loop-missing-actor"
-            )
+            select(WorkerLease).where(WorkerLease.worker_id == "worker-team-loop-missing-actor")
         )
         message = session.scalar(
             select(AgentMessage).where(
@@ -1222,9 +1214,7 @@ def test_worker_runner_team_runtime_soak_keeps_persistent_context_between_iterat
                 job_type=JobType.TEAM_EXECUTION_LOOP,
                 resource_id=team_id,
                 requested_by_user_id=user_id,
-                idempotency_key=(
-                    f"team.execution_loop:{workspace_id}:{team_id}:soak:{iteration}"
-                ),
+                idempotency_key=(f"team.execution_loop:{workspace_id}:{team_id}:soak:{iteration}"),
                 routing={"trigger": "scheduled_team_runtime"},
             )
         )
@@ -1518,9 +1508,7 @@ def test_worker_runner_marks_archive_export_failed_when_settings_missing() -> No
     with session_factory() as session:
         export_job = session.get(WorkspaceExportJob, export_job_id)
         lease = session.scalar(
-            select(WorkerLease).where(
-                WorkerLease.worker_id == "worker-export-missing-settings"
-            )
+            select(WorkerLease).where(WorkerLease.worker_id == "worker-export-missing-settings")
         )
         assert export_job is not None
         assert export_job.status == WorkspaceExportJobStatus.FAILED.value
@@ -1673,7 +1661,7 @@ def test_worker_heartbeat_does_not_clear_quarantine() -> None:
         session.commit()
 
     with session_factory() as session:
-        OperationsService(session).record_worker_heartbeat(
+        WorkerOperationsService(session).record_worker_heartbeat(
             workspace_id=workspace_id,
             worker_id="worker-quarantine-heartbeat",
             worker_type="cloud",
@@ -1870,9 +1858,7 @@ def test_worker_runner_skips_jobs_that_do_not_match_worker_capacity() -> None:
     with session_factory() as session:
         docker_run = session.get(AgentRun, docker_run_id)
         systemd_run = session.get(AgentRun, systemd_run_id)
-        lease = session.scalar(
-            select(WorkerLease).where(WorkerLease.worker_id == "worker-systemd")
-        )
+        lease = session.scalar(select(WorkerLease).where(WorkerLease.worker_id == "worker-systemd"))
         assert docker_run is not None
         assert docker_run.status == RunStatus.QUEUED.value
         assert systemd_run is not None
@@ -2005,9 +1991,7 @@ def test_worker_runner_processes_memory_index_job() -> None:
                 WorkspaceMemoryEntry.status == "active",
             )
         )
-        lease = session.scalar(
-            select(WorkerLease).where(WorkerLease.worker_id == "worker-memory")
-        )
+        lease = session.scalar(select(WorkerLease).where(WorkerLease.worker_id == "worker-memory"))
         assert entry is not None
         assert "renewal memory index" in entry.content
         assert entry.memory_metadata["indexed"] is True
@@ -2115,9 +2099,7 @@ def test_worker_runner_maintenance_requeues_stale_queued_and_fails_waiting_runti
     with session_factory() as session:
         queued_run = session.get(AgentRun, queued_run_id)
         waiting_run = session.get(AgentRun, waiting_run_id)
-        waiting_task = session.scalar(
-            select(Task).where(Task.workspace_id == waiting_workspace_id)
-        )
+        waiting_task = session.scalar(select(Task).where(Task.workspace_id == waiting_workspace_id))
         assert queued_run is not None
         assert waiting_run is not None
         assert waiting_task is not None
@@ -2238,7 +2220,7 @@ def test_worker_heartbeat_appends_running_lease_lifecycle_event() -> None:
         session.commit()
 
     with session_factory() as session:
-        OperationsService(session).record_worker_heartbeat(
+        WorkerOperationsService(session).record_worker_heartbeat(
             workspace_id=workspace_id,
             worker_id="worker-heartbeat",
             worker_type="cloud",
@@ -2426,9 +2408,7 @@ def test_worker_runner_summary_includes_maintenance_recovery() -> None:
     with session_factory() as session:
         run = session.get(AgentRun, run_id)
         heartbeat = session.scalar(
-            select(WorkerHeartbeat).where(
-                WorkerHeartbeat.worker_id == "worker-maintenance-summary"
-            )
+            select(WorkerHeartbeat).where(WorkerHeartbeat.worker_id == "worker-maintenance-summary")
         )
         assert run is not None
         assert run.status == RunStatus.FAILED.value
@@ -2506,18 +2486,12 @@ def test_worker_runner_summary_rolls_up_all_maintenance_counts() -> None:
     assert summary.scheduled_job_actions_enqueued == 15
     assert summary.scheduled_job_actions_recorded == 16
     assert summary.scheduled_job_actions_skipped == 17
-    assert summary.scheduled_job_actions_enqueued_by_job_type == {
-        "model_provider.health_check": 15
-    }
-    assert summary.scheduled_job_actions_recorded_by_job_type == {
-        "record_due_action": 16
-    }
+    assert summary.scheduled_job_actions_enqueued_by_job_type == {"model_provider.health_check": 15}
+    assert summary.scheduled_job_actions_recorded_by_job_type == {"record_due_action": 16}
     assert summary.scheduled_job_actions_skipped_by_job_type == {"task.plan": 17}
     with session_factory() as session:
         heartbeat = session.scalar(
-            select(WorkerHeartbeat).where(
-                WorkerHeartbeat.worker_id == "worker-maintenance-counts"
-            )
+            select(WorkerHeartbeat).where(WorkerHeartbeat.worker_id == "worker-maintenance-counts")
         )
         assert heartbeat is not None
         assert heartbeat.details["recovered_runs"] == 1
@@ -2547,9 +2521,7 @@ def test_worker_runner_summary_rolls_up_all_maintenance_counts() -> None:
         assert heartbeat.details["scheduled_job_actions_recorded_by_job_type"] == {
             "record_due_action": 16
         }
-        assert heartbeat.details["scheduled_job_actions_skipped_by_job_type"] == {
-            "task.plan": 17
-        }
+        assert heartbeat.details["scheduled_job_actions_skipped_by_job_type"] == {"task.plan": 17}
 
 
 def test_worker_maintenance_publishes_task_event_outbox_and_counts_result() -> None:

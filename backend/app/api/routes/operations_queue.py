@@ -21,7 +21,8 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
-from backend.app.operations.service import OperationsService
+from backend.app.operations.observability import OperationsObservabilityService
+from backend.app.operations.queue_governance import QueueGovernanceService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 
@@ -42,7 +43,7 @@ async def queue_metrics(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> QueueMetricsResponse:
-    return OperationsService(
+    return OperationsObservabilityService(
         session,
         redis,
         RedisKeyBuilder(settings.redis_key_prefix),
@@ -58,7 +59,7 @@ async def queue_insights(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> OperationsQueueInsightsResponse:
-    return OperationsService(
+    return QueueGovernanceService(
         session,
         redis,
         RedisKeyBuilder(settings.redis_key_prefix),
@@ -79,7 +80,7 @@ async def queue_governance(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> QueueGovernanceDiagnosticsResponse:
-    return OperationsService(
+    return QueueGovernanceService(
         session,
         redis,
         RedisKeyBuilder(settings.redis_key_prefix),
@@ -102,7 +103,7 @@ async def reconcile_queue_governance(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> QueueGovernanceReconcileResponse:
-    return OperationsService(
+    return QueueGovernanceService(
         session,
         redis,
         RedisKeyBuilder(settings.redis_key_prefix),
@@ -127,7 +128,7 @@ async def list_dead_letter_jobs(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> DeadLetterJobsResponse:
-    return OperationsService(
+    return QueueGovernanceService(
         session,
         redis,
         RedisKeyBuilder(settings.redis_key_prefix),
@@ -143,7 +144,7 @@ async def requeue_dead_letter_job(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> RequeueDeadLetterResponse:
-    job = OperationsService(
+    job = QueueGovernanceService(
         session,
         redis,
         RedisKeyBuilder(settings.redis_key_prefix),

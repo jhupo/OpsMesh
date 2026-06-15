@@ -27,7 +27,8 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
-from backend.app.operations.service import OperationsService
+from backend.app.operations.events import OperationsEventQueryService
+from backend.app.operations.stale_runs import StaleRunOperationsService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 
@@ -47,7 +48,7 @@ async def list_run_events(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> RunEventFilterResponse:
-    items, total = OperationsService(session).list_run_events(
+    items, total = OperationsEventQueryService(session).list_run_events(
         context.workspace.id,
         page,
         event_type,
@@ -68,7 +69,7 @@ async def list_runtime_events(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[RuntimeEventResponse]:
-    items, total = OperationsService(session).list_runtime_events(
+    items, total = OperationsEventQueryService(session).list_runtime_events(
         context.workspace.id,
         page,
         runtime_id,
@@ -86,7 +87,7 @@ async def stale_runs_diagnostics(
     session: Session = Depends(get_db_session),
 ) -> StaleRunsDiagnosticsResponse:
     try:
-        return OperationsService(session).stale_runs_diagnostics(
+        return StaleRunOperationsService(session).diagnostics(
             context.workspace.id,
             stale_after_seconds=stale_after_seconds,
             statuses=list(statuses) if statuses else None,
@@ -105,11 +106,11 @@ async def recover_stale_runs(
     settings: Settings = Depends(get_settings),
 ) -> StaleRunRecoveryResponse:
     try:
-        return OperationsService(
+        return StaleRunOperationsService(
             session,
             redis,
             RedisKeyBuilder(settings.redis_key_prefix),
-        ).recover_stale_runs(
+        ).recover(
             context.workspace.id,
             actor_user_id=context.user.user_id,
             stale_after_seconds=request.stale_after_seconds,
@@ -128,7 +129,10 @@ async def inspect_failed_runs(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> FailedJobInspectionResponse:
-    runs, total = OperationsService(session).inspect_failed_runs(context.workspace.id, page)
+    runs, total = OperationsEventQueryService(session).inspect_failed_runs(
+        context.workspace.id,
+        page,
+    )
     return FailedJobInspectionResponse(
         runs=[AgentRunResponse.model_validate(run) for run in runs],
         total=total,
@@ -143,7 +147,7 @@ async def filter_audit_events(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> AuditEventFilterResponse:
-    items, total = OperationsService(session).filter_audit_events(
+    items, total = OperationsEventQueryService(session).filter_audit_events(
         context.workspace.id,
         page,
         action,
@@ -166,7 +170,7 @@ async def filter_security_events(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> SecurityEventFilterResponse:
-    items, total = OperationsService(session).filter_security_events(
+    items, total = OperationsEventQueryService(session).filter_security_events(
         context.workspace.id,
         page,
         action,

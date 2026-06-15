@@ -7,7 +7,7 @@ from starlette.responses import PlainTextResponse
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.metrics import metrics_registry
 from backend.app.db.session import get_db_session
-from backend.app.operations.service import OperationsService
+from backend.app.operations.observability import OperationsObservabilityService
 from backend.app.redis.dependencies import RedisClient, get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 
@@ -22,7 +22,7 @@ async def metrics(
 ) -> PlainTextResponse:
     gauges = []
     try:
-        gauges = OperationsService(
+        gauges = OperationsObservabilityService(
             session,
             redis,
             RedisKeyBuilder(settings.redis_key_prefix),
