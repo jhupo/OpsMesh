@@ -460,7 +460,7 @@ def test_backend_tool_executor_redacts_product_tool_failure_messages(
         raise ValueError("provider rejected api_key=sk-product-tool-secret")
 
     monkeypatch.setattr(
-        "backend.app.agent_runtime.tools.ProductToolService.send_agent_message",
+        "backend.app.agent_runtime.product_tool_executor.ProductToolService.send_agent_message",
         fail_send_agent_message,
     )
 
