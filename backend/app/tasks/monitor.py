@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.typing import dict_or_empty, int_or_zero, string_list
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.live_status import TaskLiveStatusService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
@@ -54,9 +55,9 @@ class TaskExecutionStatusService:
         if live is None or execution is None or manager is None or timeline is None:
             return None
 
-        live_summary = _dict(live.get("summary"))
-        execution_summary = _dict(execution.get("summary"))
-        manager_summary = _dict(manager.get("summary"))
+        live_summary = dict_or_empty(live.get("summary"))
+        execution_summary = dict_or_empty(execution.get("summary"))
+        manager_summary = dict_or_empty(manager.get("summary"))
         control = _control_state(task)
         blocked_reasons = _blocked_reasons(
             control=control,
@@ -86,7 +87,7 @@ class TaskExecutionStatusService:
             "status": _overall_status(
                 task_status=task.status,
                 control=control,
-                active_run_count=_int(live_summary.get("active_run_count")),
+                active_run_count=int_or_zero(live_summary.get("active_run_count")),
                 blocked_reasons=blocked_reasons,
             ),
             "task": live.get("task"),
@@ -95,12 +96,14 @@ class TaskExecutionStatusService:
                 "task_status": task.status,
                 "step_status_counts": live_summary.get("step_status_counts", {}),
                 "run_status_counts": live_summary.get("run_status_counts", {}),
-                "active_run_count": _int(live_summary.get("active_run_count")),
-                "runnable_step_count": _int(execution_summary.get("runnable_steps")),
-                "blocked_step_count": _int(execution_summary.get("blocked_steps")),
+                "active_run_count": int_or_zero(live_summary.get("active_run_count")),
+                "runnable_step_count": int_or_zero(execution_summary.get("runnable_steps")),
+                "blocked_step_count": int_or_zero(execution_summary.get("blocked_steps")),
                 "manager_status": manager_summary.get("status"),
-                "latest_message_sequence": _int(live_summary.get("latest_message_sequence")),
-                "poll_after_seconds": _int(live_summary.get("poll_after_seconds")),
+                "latest_message_sequence": int_or_zero(
+                    live_summary.get("latest_message_sequence")
+                ),
+                "poll_after_seconds": int_or_zero(live_summary.get("poll_after_seconds")),
                 "blocked_reason_count": len(blocked_reasons),
                 "recommended_action_count": len(recommended_actions),
             },
@@ -114,7 +117,7 @@ class TaskExecutionStatusService:
                 "live_summary": live_summary,
                 "execution_summary": execution_summary,
                 "manager_summary": manager_summary,
-                "timeline_summary": _dict(timeline.get("summary")),
+                "timeline_summary": dict_or_empty(timeline.get("summary")),
             },
         }
 
@@ -145,23 +148,23 @@ def _current_focus(
 ) -> dict[str, object]:
     active_runs = _list(live.get("active_runs"))
     if active_runs:
-        run = _dict(active_runs[0])
-        latest_event = _dict(run.get("latest_event"))
+        run = dict_or_empty(active_runs[0])
+        latest_event = dict_or_empty(run.get("latest_event"))
         return {
             "kind": "run",
             "status": run.get("status"),
             "run_id": run.get("id"),
             "task_step_id": run.get("task_step_id"),
             "agent": run.get("agent"),
-            "activity": _dict(run.get("activity")) or None,
+            "activity": dict_or_empty(run.get("activity")) or None,
             "latest_event": latest_event or None,
         }
 
     steps = _list(execution.get("steps"))
-    runnable = next((step for step in steps if _dict(step).get("runnable") is True), None)
+    runnable = next((step for step in steps if dict_or_empty(step).get("runnable") is True), None)
     if isinstance(runnable, dict):
         return _step_focus("step", runnable)
-    blocked = next((step for step in steps if _dict(step).get("blocked_reasons")), None)
+    blocked = next((step for step in steps if dict_or_empty(step).get("blocked_reasons")), None)
     if isinstance(blocked, dict):
         return _step_focus("blocked_step", blocked)
     return {
@@ -179,7 +182,7 @@ def _step_focus(kind: str, step: dict[str, object]) -> dict[str, object]:
         "work_package_id": step.get("work_package_id"),
         "title": step.get("title"),
         "assigned_agent": step.get("assigned_agent"),
-        "blocked_reasons": _string_list(step.get("blocked_reasons")),
+        "blocked_reasons": string_list(step.get("blocked_reasons")),
     }
 
 
@@ -192,10 +195,10 @@ def _blocked_reasons(
     reasons: list[str] = []
     if control.get("paused") is True:
         reasons.append("task_paused")
-    reasons.extend(_string_list(manager.get("blocked_reasons")))
+    reasons.extend(string_list(manager.get("blocked_reasons")))
     for step in _list(execution.get("steps")):
-        step_payload = _dict(step)
-        reasons.extend(_string_list(step_payload.get("blocked_reasons")))
+        step_payload = dict_or_empty(step)
+        reasons.extend(string_list(step_payload.get("blocked_reasons")))
     return _dedupe(reasons)
 
 
@@ -219,12 +222,12 @@ def _recommended_actions(
         )
     active_runs = _list(live.get("active_runs"))
     if active_runs:
-        statuses = {str(_dict(run).get("status")) for run in active_runs}
+        statuses = {str(dict_or_empty(run).get("status")) for run in active_runs}
         if "waiting_approval" in statuses:
             actions.append({"action": "review_approval", "reason": "run_waiting_approval"})
         if "waiting_runtime" in statuses:
             actions.append({"action": "inspect_runtime", "reason": "run_waiting_runtime"})
-    if _int(execution_summary.get("runnable_steps")) > 0 and not active_runs:
+    if int_or_zero(execution_summary.get("runnable_steps")) > 0 and not active_runs:
         actions.append(
             {
                 "action": "resume_or_schedule_work",
@@ -243,7 +246,7 @@ def _recommended_actions(
 
 
 def _manager_recommended_actions(manager: dict[str, object]) -> list[str]:
-    reasons = set(_string_list(manager.get("blocked_reasons")))
+    reasons = set(string_list(manager.get("blocked_reasons")))
     actions: list[str] = []
     if "missing_manager" in reasons:
         actions.append("assign_manager")
@@ -267,22 +270,8 @@ def _control_state(task: Task) -> dict[str, object]:
     return dict(control) if isinstance(control, dict) else {}
 
 
-def _dict(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
-
-
 def _list(value: object) -> list[object]:
     return value if isinstance(value, list) else []
-
-
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
-
-
-def _int(value: object) -> int:
-    return value if isinstance(value, int) else 0
 
 
 def _dedupe(values: list[str]) -> list[str]:

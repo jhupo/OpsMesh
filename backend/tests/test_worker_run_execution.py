@@ -32,10 +32,24 @@ from backend.app.model_providers.service import (
     ModelProviderCredentialService,
     ModelProviderUnavailableError,
 )
+from backend.app.orchestration.model_request_reviewing import (
+    model_request_review_fingerprint,
+    model_request_review_input,
+)
+from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.run_control import RunControlService
+from backend.app.orchestration.run_eligibility import RunEligibilityService
+from backend.app.orchestration.run_events import RunEventRecorder
+from backend.app.orchestration.run_execution import (
+    RunExecutionDependencies,
+    RunExecutionService,
+)
+from backend.app.orchestration.run_lifecycle import RunLifecycleCallbacks, RunLifecycleService
+from backend.app.orchestration.run_request_builder import RunRequestBuilder
+from backend.app.orchestration.run_resource_reservations import RunResourceReservationService
+from backend.app.orchestration.run_step_launcher import RunStepLauncher
 from backend.app.orchestration.runs import (
     RunOrchestrationService,
-    _model_request_review_fingerprint,
-    _model_request_review_input,
 )
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.keys import RedisKeyBuilder
@@ -252,7 +266,7 @@ def test_completed_run_auto_capture_writes_workspace_memory_when_enabled() -> No
     session.add(run)
     session.flush()
 
-    RunOrchestrationService(session)._mark_run_completed(
+    _run_lifecycle(session).mark_run_completed(
         run,
         AgentRunResult(final_output="Launch note complete with token=memory-secret."),
         requested_by_user_id=user.id,
@@ -306,7 +320,7 @@ def test_completed_run_auto_capture_disabled_by_default() -> None:
     session.add(run)
     session.flush()
 
-    RunOrchestrationService(session)._mark_run_completed(
+    _run_lifecycle(session).mark_run_completed(
         run,
         AgentRunResult(final_output="Launch note complete."),
         requested_by_user_id=user.id,
@@ -342,16 +356,16 @@ def test_completed_run_auto_capture_is_idempotent_for_same_run() -> None:
     )
     session.add(run)
     session.flush()
-    service = RunOrchestrationService(session)
+    lifecycle = _run_lifecycle(session)
 
-    service._mark_run_completed(
+    lifecycle.mark_run_completed(
         run,
         AgentRunResult(final_output="Launch note complete."),
         requested_by_user_id=user.id,
     )
     run.status = RunStatus.RUNNING.value
     session.flush()
-    service._mark_run_completed(
+    lifecycle.mark_run_completed(
         run,
         AgentRunResult(final_output="Launch note complete again."),
         requested_by_user_id=user.id,
@@ -414,7 +428,7 @@ def test_completed_run_auto_compacts_existing_persistent_session() -> None:
         )
     session.flush()
 
-    RunOrchestrationService(session)._mark_run_completed(
+    _run_lifecycle(session).mark_run_completed(
         run,
         AgentRunResult(final_output="Launch note complete."),
         requested_by_user_id=user.id,
@@ -842,8 +856,8 @@ def test_runtime_space_reserves_multi_resource_capacity_for_team_steps() -> None
     session.add(build_step)
     session.flush()
 
-    orchestration = RunOrchestrationService(session)
-    run = orchestration._create_reserved_run_for_step(task, build_step)
+    launcher = _run_step_launcher(session)
+    run = launcher.create_reserved_run_for_step(task, build_step)
 
     assert run is not None
     assert run.runtime_space_id == runtime_space.id
@@ -876,10 +890,7 @@ def test_runtime_space_reserves_multi_resource_capacity_for_team_steps() -> None
     assert quota_by_key["artifact_mb"].reserved_value == 50
     assert "self_hosted_jobs" not in quota_by_key
 
-    orchestration._release_runtime_space_reservations(
-        run,
-        released_at=datetime.now(UTC),
-    )
+    _run_reservations(session).release_for_run(run, released_at=datetime.now(UTC))
 
     for quota in quota_by_key.values():
         assert quota.reserved_value == 0
@@ -933,7 +944,7 @@ def test_runtime_space_blocks_step_when_multi_resource_quota_exceeded() -> None:
     session.add(step)
     session.flush()
 
-    run = RunOrchestrationService(session)._create_reserved_run_for_step(task, step)
+    run = _run_step_launcher(session).create_reserved_run_for_step(task, step)
 
     assert run is None
     assert step.dependencies["scheduling_status"] == "blocked"
@@ -1683,9 +1694,9 @@ def test_pm_summary_acceptance_completes_task_with_structured_decision() -> None
             "reasons": ["All criteria passed."],
         }
     )
-    orchestration = RunOrchestrationService(session)
-    orchestration._mark_run_started(run)
-    orchestration._mark_run_completed(run, output, requested_by_user_id=user.id)
+    lifecycle = _run_lifecycle(session)
+    lifecycle.mark_run_started(run)
+    lifecycle.mark_run_completed(run, output, requested_by_user_id=user.id)
     session.flush()
 
     session.refresh(task)
@@ -1735,9 +1746,9 @@ def test_pm_summary_revision_decision_materializes_follow_up_steps() -> None:
             ],
         }
     )
-    orchestration = RunOrchestrationService(session)
-    orchestration._mark_run_started(run)
-    orchestration._mark_run_completed(run, output, requested_by_user_id=user.id)
+    lifecycle = _run_lifecycle(session)
+    lifecycle.mark_run_started(run)
+    lifecycle.mark_run_completed(run, output, requested_by_user_id=user.id)
     session.flush()
 
     session.refresh(task)
@@ -1820,9 +1831,9 @@ def test_pm_summary_missing_work_matches_team_member_and_queues_follow_up() -> N
             ],
         }
     )
-    orchestration = RunOrchestrationService(session)
-    orchestration._mark_run_started(run)
-    orchestration._mark_run_completed(run, output, requested_by_user_id=user.id)
+    lifecycle = _run_lifecycle(session)
+    lifecycle.mark_run_started(run)
+    lifecycle.mark_run_completed(run, output, requested_by_user_id=user.id)
     session.flush()
 
     session.refresh(task)
@@ -1883,9 +1894,9 @@ def test_team_task_persists_auditable_task_messages() -> None:
             ],
         }
     )
-    orchestration = RunOrchestrationService(session)
-    orchestration._mark_run_started(run)
-    orchestration._mark_run_completed(run, output, requested_by_user_id=user.id)
+    lifecycle = _run_lifecycle(session)
+    lifecycle.mark_run_started(run)
+    lifecycle.mark_run_completed(run, output, requested_by_user_id=user.id)
     session.flush()
 
     messages = session.scalars(
@@ -2073,7 +2084,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     agent.tool_policy = {"allowed_tools": ["delete_workspace_file"]}
     session.commit()
 
-    request = RunOrchestrationService(session)._build_agent_request(
+    request = _build_agent_request(session, 
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -2184,7 +2195,8 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
     session.add(run)
     session.commit()
 
-    request = RunOrchestrationService(session)._build_agent_request(
+    request = _build_agent_request(
+        session,
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -2193,6 +2205,7 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
             requested_by_user_id=user.id,
             idempotency_key="resumed-tool-result",
         ),
+        settings=Settings(environment="test"),
     )
 
     assert request.continuations[0].tool_name == "generate_image"
@@ -2332,7 +2345,7 @@ def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> Non
     }
     credential.budget_metadata = {"model_api": "responses"}
     session.flush([credential])
-    request = RunOrchestrationService(session, settings=settings)._build_agent_request(
+    request = _build_agent_request(session,
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -2341,6 +2354,7 @@ def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> Non
             requested_by_user_id=user.id,
             idempotency_key="frozen-model-api",
         ),
+        settings=settings,
     )
 
     assert request.model_api == "chat_completions"
@@ -2430,7 +2444,7 @@ def test_queued_team_run_uses_frozen_agent_model_provider_protocol() -> None:
 
     run = RunOrchestrationService(session).create_queued_run_for_task(task)
     snapshot = run.input["authorization_snapshot"]["model_provider"]
-    request = RunOrchestrationService(session, settings=settings)._build_agent_request(
+    request = _build_agent_request(session,
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -2439,6 +2453,7 @@ def test_queued_team_run_uses_frozen_agent_model_provider_protocol() -> None:
             requested_by_user_id=user.id,
             idempotency_key="frozen-agent-provider-protocol",
         ),
+        settings=settings,
     )
 
     assert run.model == "snapshot-model"
@@ -2524,7 +2539,7 @@ def test_disabled_skill_install_is_not_in_future_run_snapshot() -> None:
     session.flush()
     step = session.get(TaskStep, first_run.task_step_id)
     assert step is not None
-    second_run = service._create_run_for_step(task, step)
+    second_run = _run_step_launcher(session).create_run_for_step(task, step)
     second_snapshot = second_run.input["authorization_snapshot"]
 
     assert first_snapshot["installed_skills"][0]["source_checksum"] == "sha256:v1"
@@ -2602,7 +2617,7 @@ def test_agent_request_restores_provider_native_continuation_from_persistent_ses
         idempotency_key="provider-native-continuation",
     )
 
-    RunOrchestrationService(session, agent_runner=runner).run_agent_sync(job)
+    _run_agent_sync(session, job, agent_runner=runner)
 
     assert len(runner.requests) == 1
     request = runner.requests[0]
@@ -2649,14 +2664,16 @@ def test_model_request_review_allows_low_risk_request_after_semantic_approval() 
             return AgentRunResult(final_output="draft complete")
 
     runner = CapturingRunner()
-    RunOrchestrationService(session, agent_runner=runner).run_agent_sync(
+    _run_agent_sync(
+        session,
         JobPayload(
             workspace_id=workspace.id,
             job_type=JobType.AGENT_RUN,
             resource_id=run.id,
             requested_by_user_id=user.id,
             idempotency_key="model-request-low-risk",
-        )
+        ),
+        agent_runner=runner,
     )
 
     assert len(runner.requests) == 1
@@ -2714,14 +2731,16 @@ def test_model_request_review_routes_sensitive_input_to_admin_approval(
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
             raise AssertionError("sensitive model request must wait for admin approval")
 
-    RunOrchestrationService(session, agent_runner=FailingRunner()).run_agent_sync(
+    _run_agent_sync(
+        session,
         JobPayload(
             workspace_id=workspace.id,
             job_type=JobType.AGENT_RUN,
             resource_id=run.id,
             requested_by_user_id=user.id,
             idempotency_key="model-request-sensitive",
-        )
+        ),
+        agent_runner=FailingRunner(),
     )
 
     approval = session.scalar(select(Approval).where(Approval.approval_type == "model.request"))
@@ -2777,9 +2796,9 @@ def test_model_request_review_does_not_repeat_after_admin_approval() -> None:
         requested_by_user_id=user.id,
         idempotency_key="model-request-approved",
     )
-    orchestration = RunOrchestrationService(session, agent_runner=runner)
-    request = orchestration._build_agent_request(run, job)
-    input_text = _model_request_review_input(run, task, request)
+    settings = Settings(environment="test")
+    request = _build_agent_request(session, run, job, settings=settings)
+    input_text = model_request_review_input(run, task, request)
     approval = Approval(
         workspace_id=workspace.id,
         task_id=task.id,
@@ -2790,14 +2809,14 @@ def test_model_request_review_does_not_repeat_after_admin_approval() -> None:
         status="approved",
         payload={
             "reason": "model_request_review_requires_approval",
-            "request_fingerprint": _model_request_review_fingerprint(request, input_text),
+            "request_fingerprint": model_request_review_fingerprint(request, input_text),
         },
         created_at=datetime.now(UTC),
     )
     session.add(approval)
     session.commit()
 
-    orchestration.run_agent_sync(job)
+    _run_agent_sync(session, job, agent_runner=runner, settings=settings)
 
     assert len(runner.requests) == 1
     assert run.status == RunStatus.COMPLETED.value
@@ -2839,7 +2858,7 @@ def test_completed_run_updates_persistent_session_conversation_id() -> None:
     session.add_all([persistent_session, run])
     session.flush()
 
-    RunOrchestrationService(session)._mark_run_completed(
+    _run_lifecycle(session).mark_run_completed(
         run,
         AgentRunResult(
             final_output="continued",
@@ -3204,7 +3223,10 @@ def test_worker_skips_cancelled_run_without_starting_model() -> None:
     session.commit()
     assert run is not None
 
-    RunOrchestrationService(session).cancel_task(
+    RunControlService(
+        session=session,
+        enqueue_run=RunOrchestrationService(session).enqueue_run,
+    ).cancel_task(
         workspace_id=workspace.id,
         task_id=task.id,
         actor_user_id=user.id,
@@ -3252,7 +3274,10 @@ def test_worker_discards_model_result_when_run_cancelled_during_execution() -> N
 
     class CancellingRunner:
         async def run(self, request):
-            RunOrchestrationService(session).cancel_run(
+            RunControlService(
+                session=session,
+                enqueue_run=RunOrchestrationService(session).enqueue_run,
+            ).cancel_run(
                 workspace_id=workspace.id,
                 run_id=request.context.run_id,
                 actor_user_id=user.id,
@@ -3555,7 +3580,7 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         requested_by_user_id=user.id,
         idempotency_key="tool-policy-context",
     )
-    request = RunOrchestrationService(session)._build_agent_request(run, job)
+    request = _build_agent_request(session, run, job)
 
     assert request.context.allowed_tools == ("generate_image", "write_artifact")
     assert request.model_api == "chat_completions"
@@ -3645,7 +3670,7 @@ def test_agent_request_includes_unread_mailbox_context() -> None:
         idempotency_key="mailbox-context",
     )
 
-    request = RunOrchestrationService(session)._build_agent_request(run, job)
+    request = _build_agent_request(session, run, job)
 
     mailbox = request.context.metadata["agent_mailbox"]
     assert mailbox["thread_count"] == 1
@@ -3737,7 +3762,7 @@ def test_agent_request_mailbox_context_is_scoped_to_current_task() -> None:
     session.add_all([current_message, other_message, run])
     session.commit()
 
-    request = RunOrchestrationService(session)._build_agent_request(
+    request = _build_agent_request(session, 
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -3838,7 +3863,7 @@ def test_team_agent_mailbox_context_is_scoped_to_runtime_thread() -> None:
     session.add_all([runtime_message, other_message, run])
     session.commit()
 
-    request = RunOrchestrationService(session)._build_agent_request(
+    request = _build_agent_request(session, 
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -3909,7 +3934,7 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
         requested_by_user_id=user.id,
         idempotency_key="step-context",
     )
-    request = RunOrchestrationService(session)._build_agent_request(run, job)
+    request = _build_agent_request(session, run, job)
 
     assert request.context.allowed_tools == ("generate_image", "write_artifact")
     expected_metadata = {
@@ -3976,7 +4001,7 @@ def test_agent_request_allows_snapshot_to_narrow_agent_tools() -> None:
     session.add(run)
     session.commit()
 
-    request = RunOrchestrationService(session)._build_agent_request(
+    request = _build_agent_request(session, 
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -4042,7 +4067,7 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
     session.add(run)
     session.commit()
 
-    request = RunOrchestrationService(session, settings=settings)._build_agent_request(
+    request = _build_agent_request(session, 
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -4051,6 +4076,7 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
             requested_by_user_id=user.id,
             idempotency_key="provider-context",
         ),
+        settings=settings,
     )
 
     assert request.model == "claude-sonnet-4-5"
@@ -4125,7 +4151,7 @@ def test_agent_request_model_api_overrides_credential_default_protocol() -> None
     session.add(run)
     session.commit()
 
-    request = RunOrchestrationService(session, settings=settings)._build_agent_request(
+    request = _build_agent_request(session, 
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -4134,6 +4160,7 @@ def test_agent_request_model_api_overrides_credential_default_protocol() -> None
             requested_by_user_id=user.id,
             idempotency_key="agent-model-api-override",
         ),
+        settings=settings,
     )
 
     assert request.model == "router/default"
@@ -4193,10 +4220,10 @@ def test_agent_request_fails_closed_when_workspace_default_snapshot_becomes_unhe
     )
     session.add_all([task, agent])
     session.flush()
-    snapshot = RunOrchestrationService(
+    snapshot = RunAuthorizationSnapshotService(
         session,
-        settings=settings,
-    )._model_provider_snapshot(workspace.id, agent)
+        RunRequestBuilder(session, settings),
+    ).model_provider_snapshot(workspace.id, agent)
     run = AgentRun(
         workspace_id=workspace.id,
         task_id=task.id,
@@ -4211,7 +4238,7 @@ def test_agent_request_fails_closed_when_workspace_default_snapshot_becomes_unhe
     session.commit()
 
     with pytest.raises(ModelProviderUnavailableError):
-        RunOrchestrationService(session, settings=settings)._build_agent_request(
+        _build_agent_request(session, 
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -4220,6 +4247,7 @@ def test_agent_request_fails_closed_when_workspace_default_snapshot_becomes_unhe
                 requested_by_user_id=user.id,
                 idempotency_key="provider-snapshot-fail-closed",
             ),
+            settings=settings,
         )
 
     assert snapshot["source"] == "workspace_default"
@@ -4305,7 +4333,7 @@ def test_agent_request_does_not_fallback_explicit_inactive_provider_override() -
     session.commit()
 
     with pytest.raises(ValueError, match="not found or unavailable"):
-        RunOrchestrationService(session, settings=settings)._build_agent_request(
+        _build_agent_request(session, 
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -4314,6 +4342,7 @@ def test_agent_request_does_not_fallback_explicit_inactive_provider_override() -
                 requested_by_user_id=user.id,
                 idempotency_key="explicit-inactive-provider",
             ),
+            settings=settings,
         )
 
     assert snapshot["source"] == "agent_override"
@@ -4433,7 +4462,7 @@ def test_worker_fails_closed_without_model_provider_fallback() -> None:
     )
 
     with pytest.raises(RuntimeError):
-        RunOrchestrationService(session, agent_runner=runner, settings=settings).run_agent_sync(job)
+        _run_agent_sync(session, job, agent_runner=runner, settings=settings)
 
     events = session.scalars(
         select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
@@ -4581,7 +4610,7 @@ def test_worker_falls_back_across_model_provider_vendors() -> None:
         idempotency_key="cross-provider-fallback",
     )
 
-    RunOrchestrationService(session, agent_runner=runner, settings=settings).run_agent_sync(job)
+    _run_agent_sync(session, job, agent_runner=runner, settings=settings)
 
     fallback_event = session.scalar(
         select(RunEvent).where(
@@ -4744,7 +4773,7 @@ def test_worker_ignores_budget_exhausted_model_provider_fallback_policy() -> Non
     )
 
     with pytest.raises(RuntimeError):
-        RunOrchestrationService(session, agent_runner=runner, settings=settings).run_agent_sync(job)
+        _run_agent_sync(session, job, agent_runner=runner, settings=settings)
 
     fallback_event = session.scalar(
         select(RunEvent).where(
@@ -4871,11 +4900,7 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
     )
 
     try:
-        RunOrchestrationService(
-            session,
-            agent_runner=FailingRunner(),
-            settings=settings,
-        ).run_agent_sync(job)
+        _run_agent_sync(session, job, agent_runner=FailingRunner(), settings=settings)
     except RuntimeError:
         pass
     else:
@@ -4955,7 +4980,7 @@ def test_agent_request_rejects_foreign_workspace_agent_profile() -> None:
     session.commit()
 
     try:
-        RunOrchestrationService(session)._build_agent_request(
+        _build_agent_request(session, 
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5006,7 +5031,7 @@ def test_agent_request_rejects_task_step_from_another_task() -> None:
     session.commit()
 
     try:
-        RunOrchestrationService(session)._build_agent_request(
+        _build_agent_request(session, 
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5040,7 +5065,7 @@ def test_agent_request_rejects_worker_job_scope_mismatch() -> None:
     session.commit()
 
     try:
-        RunOrchestrationService(session)._build_agent_request(
+        _build_agent_request(session, 
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5080,7 +5105,7 @@ def test_agent_request_rejects_authorization_snapshot_scope_mismatch() -> None:
     session.commit()
 
     try:
-        RunOrchestrationService(session)._build_agent_request(
+        _build_agent_request(session, 
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5126,7 +5151,7 @@ def test_agent_request_rejects_authorization_snapshot_tool_escalation() -> None:
     session.commit()
 
     try:
-        RunOrchestrationService(session)._build_agent_request(
+        _build_agent_request(session, 
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5172,7 +5197,7 @@ def test_agent_request_rejects_authorization_snapshot_unavailable_skill() -> Non
     session.commit()
 
     try:
-        RunOrchestrationService(session)._build_agent_request(
+        _build_agent_request(session, 
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5253,7 +5278,7 @@ def test_agent_request_rejects_authorization_snapshot_skill_provenance_mismatch(
     session.commit()
 
     try:
-        RunOrchestrationService(session)._build_agent_request(
+        _build_agent_request(session, 
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5346,11 +5371,11 @@ def test_team_agent_runs_share_persistent_sdk_session_across_tasks() -> None:
     )
     session.add_all([first_step, second_step])
     session.flush()
-    orchestration = RunOrchestrationService(session)
-    first_run = orchestration._create_run_for_step(first_task, first_step)
-    second_run = orchestration._create_run_for_step(second_task, second_step)
+    launcher = _run_step_launcher(session)
+    first_run = launcher.create_run_for_step(first_task, first_step)
+    second_run = launcher.create_run_for_step(second_task, second_step)
 
-    first_request = RunOrchestrationService(session)._build_agent_request(
+    first_request = _build_agent_request(session, 
         first_run,
         JobPayload(
             workspace_id=workspace.id,
@@ -5360,7 +5385,7 @@ def test_team_agent_runs_share_persistent_sdk_session_across_tasks() -> None:
             idempotency_key="first-persistent-session",
         ),
     )
-    second_request = RunOrchestrationService(session)._build_agent_request(
+    second_request = _build_agent_request(session, 
         second_run,
         JobPayload(
             workspace_id=workspace.id,
@@ -5489,12 +5514,12 @@ def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
     )
     session.add_all([planner_step, builder_step])
     session.flush()
-    orchestration = RunOrchestrationService(session)
-    planner_run = orchestration._create_run_for_step(task, planner_step)
-    builder_run = orchestration._create_run_for_step(task, builder_step)
+    launcher = _run_step_launcher(session)
+    planner_run = launcher.create_run_for_step(task, planner_step)
+    builder_run = launcher.create_run_for_step(task, builder_step)
     session.commit()
 
-    planner_request = RunOrchestrationService(session)._build_agent_request(
+    planner_request = _build_agent_request(session, 
         planner_run,
         JobPayload(
             workspace_id=workspace.id,
@@ -5530,7 +5555,7 @@ def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
     assert send_result.output["message"]["task_id"] is None
     assert send_result.output["message"]["agent_team_id"] == str(team.id)
 
-    builder_request = RunOrchestrationService(session)._build_agent_request(
+    builder_request = _build_agent_request(session, 
         builder_run,
         JobPayload(
             workspace_id=workspace.id,
@@ -5582,7 +5607,10 @@ def test_stale_running_runs_are_recovered_as_failed() -> None:
     session.add(run)
     session.commit()
 
-    summary = RunOrchestrationService(session).recover_stale_running_runs(
+    summary = RunControlService(
+        session=session,
+        enqueue_run=RunOrchestrationService(session).enqueue_run,
+    ).recover_stale_running_runs(
         stale_after_seconds=900,
     )
 
@@ -5608,6 +5636,104 @@ def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
+
+
+def _run_step_launcher(session: Session) -> RunStepLauncher:
+    orchestration = RunOrchestrationService(session)
+    eligibility = RunEligibilityService(session)
+    authorization_snapshots = RunAuthorizationSnapshotService(
+        session,
+        RunRequestBuilder(session, None),
+    )
+    return RunStepLauncher(
+        session=session,
+        events=RunEventRecorder(session),
+        build_authorization_snapshot=lambda task, step, profile, agent_snapshot: (
+            authorization_snapshots.build_authorization_snapshot(
+                task,
+                step,
+                profile,
+                agent_snapshot=agent_snapshot,
+            )
+        ),
+        model_provider_blocked_details=authorization_snapshots.model_provider_blocked_details,
+        mark_step_scheduling_blocked=lambda step, reason, details=None: (
+            orchestration._mark_step_scheduling_blocked(step, reason, details=details)
+        ),
+        mark_step_scheduling_runnable=orchestration._mark_step_scheduling_runnable,
+        step_has_active_run=eligibility.step_has_active_run,
+        team_scheduler_policy=orchestration._team_scheduler_policy,
+    )
+
+
+def _build_agent_request(
+    session: Session,
+    run: AgentRun,
+    job: JobPayload,
+    *,
+    settings: Settings | None = None,
+) -> AgentRunRequest:
+    return RunRequestBuilder(session, settings).build_agent_request(run, job)
+
+
+def _run_agent_sync(
+    session: Session,
+    job: JobPayload,
+    *,
+    agent_runner: object | None = None,
+    settings: Settings | None = None,
+    queue: RedisQueue | None = None,
+) -> AgentRun:
+    return RunExecutionService(
+        session=session,
+        queue=queue,
+        agent_runner=agent_runner,
+        settings=settings,
+        dependencies=RunExecutionDependencies(
+            lifecycle=_run_lifecycle(session),
+        ),
+    ).run_agent_sync(job)
+
+
+def _run_lifecycle(session: Session) -> RunLifecycleService:
+    orchestration = RunOrchestrationService(session)
+    builder = RunRequestBuilder(session, None)
+    eligibility = RunEligibilityService(session)
+    return RunLifecycleService(
+        session,
+        RunLifecycleCallbacks(
+            append_event=RunEventRecorder(session).append_event,
+            release_reservations=lambda run, released_at: (
+                _run_reservations(session).release_for_run(run, released_at=released_at)
+            ),
+            sync_provider_conversation_id=builder.sync_provider_conversation_id,
+            create_next_runs=lambda task, user_id: (
+                orchestration._create_and_enqueue_next_step_runs(
+                    task,
+                    requested_by_user_id=user_id,
+                )
+            ),
+            schedule_workspace_steps=lambda workspace_id, user_id: (
+                orchestration.schedule_workspace_steps(
+                    workspace_id=workspace_id,
+                    requested_by_user_id=user_id,
+                )
+            ),
+            task_has_open_team_work=eligibility.task_has_open_team_work,
+            persistent_session_ref_for_run=builder.persistent_session_ref_for_run,
+        ),
+    )
+
+
+def _run_reservations(session: Session) -> RunResourceReservationService:
+    orchestration = RunOrchestrationService(session)
+    return RunResourceReservationService(
+        session=session,
+        mark_step_scheduling_blocked=lambda step, reason, details=None: (
+            orchestration._mark_step_scheduling_blocked(step, reason, details=details)
+        ),
+        mark_step_scheduling_runnable=orchestration._mark_step_scheduling_runnable,
+    )
 
 
 def _seed_workspace(
@@ -5724,3 +5850,5 @@ def _patch_portable_types_for_sqlite() -> None:
                 column.type = column.type.as_generic()
             if isinstance(column.type, JSONB):
                 column.type = SqliteJSON()
+
+

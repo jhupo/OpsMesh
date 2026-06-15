@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.typing import json_safe_payload
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task, TaskStep
 
@@ -39,7 +40,7 @@ def scheduled_run_blocking_summary(
             reason = "scheduler_blocked"
         blocked_reasons[reason] = blocked_reasons.get(reason, 0) + 1
         blocked_steps.append(
-            _json_safe_payload(
+            json_safe_payload(
                 {
                     "task_id": step.task_id,
                     "task_step_id": step.id,
@@ -56,15 +57,3 @@ def scheduled_run_blocking_summary(
         "blocked_reasons": dict(sorted(blocked_reasons.items())),
         "blocked_steps": blocked_steps,
     }
-
-
-def _json_safe_payload(value: object) -> object:
-    if value is None or isinstance(value, str | int | float | bool):
-        return value
-    if isinstance(value, UUID):
-        return str(value)
-    if isinstance(value, dict):
-        return {str(key): _json_safe_payload(item) for key, item in value.items()}
-    if isinstance(value, list | tuple):
-        return [_json_safe_payload(item) for item in value]
-    return str(value)

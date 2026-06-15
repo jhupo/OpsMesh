@@ -10,15 +10,15 @@ from backend.app.agent_runtime.contracts import (
 )
 from backend.app.approvals.service import ApprovalService
 from backend.app.artifacts.models import Artifact
-from backend.app.capabilities.adapters import (
-    DockerRuntimeStdioMcpToolAdapter,
-    SelfHostedStdioMcpToolAdapter,
-)
-from backend.app.capabilities.execution import (
-    McpExecutionRequest,
+from backend.app.capabilities.execution import McpToolExecutionService
+from backend.app.capabilities.mcp_execution_adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
-    McpToolExecutionService,
+)
+from backend.app.capabilities.mcp_execution_types import McpExecutionRequest
+from backend.app.capabilities.mcp_stdio_adapters import (
+    DockerRuntimeStdioMcpToolAdapter,
+    SelfHostedStdioMcpToolAdapter,
 )
 from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings, get_settings

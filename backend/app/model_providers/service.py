@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from backend.app.api.pagination import PageParams
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
+from backend.app.db.pagination import page_scalars
+from backend.app.model_providers.availability import credential_is_selectable
 from backend.app.model_providers.base_url import normalize_openai_compatible_base_url
 from backend.app.model_providers.health import (
     ModelProviderHealthCheckResult,
@@ -19,7 +21,7 @@ from backend.app.model_providers.health import (
     ProviderProbeName,
     probe_model_provider,
 )
-from backend.app.model_providers.metadata import budget_is_exhausted, sanitize_budget_metadata
+from backend.app.model_providers.metadata import sanitize_budget_metadata
 from backend.app.model_providers.model_api import (
     default_model_api,
     model_api_for_provider,
@@ -141,18 +143,12 @@ class ModelProviderCredentialService:
         workspace_id: UUID,
         page: PageParams,
     ) -> tuple[list[ModelProviderCredential], int]:
-        from sqlalchemy import func
-
         statement = (
             select(ModelProviderCredential)
             .where(ModelProviderCredential.workspace_id == workspace_id)
             .order_by(ModelProviderCredential.created_at.desc())
         )
-        total = self._session.scalar(
-            select(func.count()).select_from(statement.order_by(None).subquery())
-        )
-        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
-        return list(rows), int(total or 0)
+        return page_scalars(self._session, statement, page)
 
     def list_usage_audit(
         self,
@@ -161,8 +157,6 @@ class ModelProviderCredentialService:
         *,
         action: str | None = None,
     ) -> tuple[list[AuditEvent], int]:
-        from sqlalchemy import func
-
         allowed_actions = {
             "model_provider.used",
             "model_provider.request_failed",
@@ -177,11 +171,7 @@ class ModelProviderCredentialService:
                 return [], 0
             statement = statement.where(AuditEvent.action == action)
         statement = statement.order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
-        total = self._session.scalar(
-            select(func.count()).select_from(statement.order_by(None).subquery())
-        )
-        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
-        return list(rows), int(total or 0)
+        return page_scalars(self._session, statement, page)
 
     def health_check_schedule_summary(
         self,
@@ -515,13 +505,7 @@ class ModelProviderCredentialService:
         return credential if self._is_selectable(credential) else None
 
     def _is_selectable(self, credential: ModelProviderCredential | None) -> bool:
-        if credential is None:
-            return False
-        if credential.status != "active":
-            return False
-        if credential.health_status == "unhealthy":
-            return False
-        return not budget_is_exhausted(credential.budget_metadata)
+        return credential_is_selectable(credential)
 
     def _require(self, *, workspace_id: UUID, credential_id: UUID) -> ModelProviderCredential:
         credential = self.get(workspace_id=workspace_id, credential_id=credential_id)

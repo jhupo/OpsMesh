@@ -59,6 +59,8 @@ class WorkspaceMemorySearchService:
             documents=candidates,
         )
         hits = self._backend.search(request)
+        if not hits and self._backend.backend_name != LexicalMemorySearchBackend.backend_name:
+            hits = LexicalMemorySearchBackend().search(request)
         return [_result_payload(hit) for hit in hits[:limit]]
 
     def _candidates(self, workspace_id: UUID) -> list[MemorySearchDocument]:
@@ -315,6 +317,7 @@ class WorkspaceMemorySearchService:
             )
             for item in items
         ]
+
 
 def _result_payload(hit: MemorySearchHit) -> dict[str, object]:
     document = hit.document

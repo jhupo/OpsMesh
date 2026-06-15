@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict, deque
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -9,29 +7,21 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
-from backend.app.tasks.models import Task, TaskStep
-from backend.app.workspaces.models import Workspace
-
-ACTIVE_RUN_STATUSES = (
-    RunStatus.QUEUED.value,
-    RunStatus.RUNNING.value,
-    RunStatus.WAITING_RUNTIME.value,
-    RunStatus.WAITING_APPROVAL.value,
+from backend.app.orchestration.scheduler_execution_limits import SchedulerExecutionLimiter
+from backend.app.orchestration.scheduler_ordering import SchedulerStepOrdering
+from backend.app.orchestration.scheduler_policy import (
+    SchedulerPolicyResolver,
+    WorkspaceSchedulerPolicy,
 )
+from backend.app.orchestration.statuses import ORCHESTRATION_ACTIVE_RUN_STATUSES
+from backend.app.orchestration.step_scheduling_state import (
+    mark_step_scheduling_blocked,
+    mark_step_scheduling_runnable,
+)
+from backend.app.runs.models import AgentRun
+from backend.app.tasks.models import TaskStep
 
-
-@dataclass(frozen=True)
-class WorkspaceSchedulerPolicy:
-    paused: bool = False
-    pause_reason: str | None = None
-    max_active_runs: int | None = None
-    max_running_tasks: int | None = None
-    max_runs_to_start_per_tick: int | None = None
-    max_steps_per_task_per_tick: int = 1
-    starvation_boost_after_seconds: int | None = None
-    resource_limits: dict[str, float] | None = None
+ACTIVE_RUN_STATUSES = tuple(ORCHESTRATION_ACTIVE_RUN_STATUSES)
 
 
 @dataclass(frozen=True)
@@ -55,7 +45,10 @@ class WorkspaceScheduler:
     ) -> SchedulingDecision:
         if not candidate_steps:
             return SchedulingDecision((), (), None, None)
-        policy = self._policy_for(workspace_id, override=policy_override)
+        policy = SchedulerPolicyResolver(self._session).policy_for(
+            workspace_id,
+            override=policy_override,
+        )
         if policy.paused:
             reason = policy.pause_reason or "workspace_scheduler_paused"
             self._mark_blocked(candidate_steps, reason, policy=policy)
@@ -84,24 +77,65 @@ class WorkspaceScheduler:
             )
 
         available_slots = self._available_run_slots(workspace_id, policy)
-        ordered_steps = self._order_steps(task_quota_allowed_steps, policy=policy)
-        ordered_steps, resource_blocked_steps = self._apply_resource_limits(
+        ordered_steps = self._ordering().order_steps(task_quota_allowed_steps, policy=policy)
+        limit_result = SchedulerExecutionLimiter(self._session).apply(
             ordered_steps,
             policy,
         )
+        ordered_steps = limit_result.allowed_steps
+        resource_blocked_steps = limit_result.resource_blocked_steps
+        member_blocked_steps_by_reason = limit_result.member_blocked_steps_by_reason
+        member_blocked_steps = [
+            step for steps in member_blocked_steps_by_reason.values() for step in steps
+        ]
+        member_blocked_ids = {step.id for step in member_blocked_steps}
+        resource_blocked_ids = {step.id for step in resource_blocked_steps}
+        if not ordered_steps and (resource_blocked_steps or member_blocked_steps):
+            self._mark_blocked(
+                resource_blocked_steps,
+                "workspace_resource_quota_exceeded",
+                policy=policy,
+            )
+            self._mark_member_blocked(member_blocked_steps_by_reason, policy=policy)
+            if task_quota_blocked_steps:
+                self._mark_blocked(
+                    task_quota_blocked_steps,
+                    "workspace_task_quota_exceeded",
+                    policy=policy,
+                )
+            return SchedulingDecision(
+                (),
+                tuple([*resource_blocked_steps, *member_blocked_steps, *task_quota_blocked_steps]),
+                _blocked_reason(
+                    run_blocked=False,
+                    resource_blocked=bool(resource_blocked_steps),
+                    member_blocked=bool(member_blocked_steps),
+                    task_blocked=bool(task_quota_blocked_steps),
+                    member_blocked_reason=_first_blocked_reason(
+                        member_blocked_steps_by_reason,
+                    ),
+                ),
+                available_slots,
+            )
         if available_slots is not None:
             available_slots = min(
                 available_slots,
                 policy.max_runs_to_start_per_tick or available_slots,
             )
             if available_slots <= 0:
-                blocked = [*ordered_steps, *resource_blocked_steps, *task_quota_blocked_steps]
+                blocked = [
+                    *ordered_steps,
+                    *resource_blocked_steps,
+                    *member_blocked_steps,
+                    *task_quota_blocked_steps,
+                ]
                 self._mark_blocked(ordered_steps, "workspace_run_quota_exceeded", policy=policy)
                 self._mark_blocked(
                     resource_blocked_steps,
                     "workspace_resource_quota_exceeded",
                     policy=policy,
                 )
+                self._mark_member_blocked(member_blocked_steps_by_reason, policy=policy)
                 self._mark_blocked(
                     task_quota_blocked_steps,
                     "workspace_task_quota_exceeded",
@@ -122,10 +156,15 @@ class WorkspaceScheduler:
                 else ordered_steps
             )
             blocked = [*ordered_steps[len(runnable) :], *resource_blocked_steps]
+        blocked = [*blocked, *member_blocked_steps]
 
         self._mark_runnable(runnable, policy=policy)
         if blocked:
-            run_blocked_steps = [step for step in blocked if step not in resource_blocked_steps]
+            run_blocked_steps = [
+                step
+                for step in blocked
+                if step.id not in resource_blocked_ids and step.id not in member_blocked_ids
+            ]
             if run_blocked_steps:
                 self._mark_blocked(
                     run_blocked_steps,
@@ -138,6 +177,7 @@ class WorkspaceScheduler:
                     "workspace_resource_quota_exceeded",
                     policy=policy,
                 )
+            self._mark_member_blocked(member_blocked_steps_by_reason, policy=policy)
         if task_quota_blocked_steps:
             self._mark_blocked(
                 task_quota_blocked_steps,
@@ -149,40 +189,19 @@ class WorkspaceScheduler:
             runnable_steps=tuple(runnable),
             blocked_steps=tuple(all_blocked),
             blocked_reason=_blocked_reason(
-                run_blocked=bool([step for step in blocked if step not in resource_blocked_steps]),
+                run_blocked=bool(
+                    [
+                        step
+                        for step in blocked
+                        if step.id not in resource_blocked_ids and step.id not in member_blocked_ids
+                    ]
+                ),
                 resource_blocked=bool(resource_blocked_steps),
+                member_blocked=bool(member_blocked_steps),
                 task_blocked=bool(task_quota_blocked_steps),
+                member_blocked_reason=_first_blocked_reason(member_blocked_steps_by_reason),
             ),
             available_run_slots=available_slots,
-        )
-
-    def _policy_for(
-        self,
-        workspace_id: UUID,
-        *,
-        override: dict[str, object] | None = None,
-    ) -> WorkspaceSchedulerPolicy:
-        workspace = self._session.get(Workspace, workspace_id)
-        raw_settings = workspace.settings if workspace is not None else {}
-        raw_scheduler = raw_settings.get("scheduler") if isinstance(raw_settings, dict) else None
-        scheduler = raw_scheduler if isinstance(raw_scheduler, dict) else {}
-        effective_scheduler = _merged_scheduler_policy(scheduler, override)
-        return WorkspaceSchedulerPolicy(
-            paused=scheduler.get("paused") is True,
-            pause_reason=_non_empty_string_or_none(scheduler.get("pause_reason")),
-            max_active_runs=_positive_int_or_none(effective_scheduler.get("max_active_runs")),
-            max_running_tasks=_positive_int_or_none(effective_scheduler.get("max_running_tasks")),
-            max_runs_to_start_per_tick=_positive_int_or_none(
-                effective_scheduler.get("max_runs_to_start_per_tick")
-            ),
-            max_steps_per_task_per_tick=_positive_int_or_default(
-                effective_scheduler.get("max_steps_per_task_per_tick"),
-                1,
-            ),
-            starvation_boost_after_seconds=_positive_int_or_none(
-                effective_scheduler.get("starvation_boost_after_seconds")
-            ),
-            resource_limits=_positive_number_dict(effective_scheduler.get("resource_limits")),
         )
 
     def _available_run_slots(
@@ -215,9 +234,7 @@ class WorkspaceScheduler:
                 return set()
             statement = statement.where(AgentRun.task_id.in_(task_ids))
         return {
-            task_id
-            for task_id in self._session.scalars(statement).all()
-            if task_id is not None
+            task_id for task_id in self._session.scalars(statement).all() if task_id is not None
         }
 
     def _apply_task_quota(
@@ -236,7 +253,7 @@ class WorkspaceScheduler:
         selected_new_task_ids: set[UUID] = set()
         allowed_steps: list[TaskStep] = []
         blocked_steps: list[TaskStep] = []
-        for step in self._order_steps(candidate_steps, policy=policy):
+        for step in self._ordering().order_steps(candidate_steps, policy=policy):
             if step.task_id in already_running_task_ids:
                 allowed_steps.append(step)
                 continue
@@ -251,99 +268,6 @@ class WorkspaceScheduler:
             blocked_steps.append(step)
         return allowed_steps, blocked_steps
 
-    def _apply_resource_limits(
-        self,
-        ordered_steps: list[TaskStep],
-        policy: WorkspaceSchedulerPolicy,
-    ) -> tuple[list[TaskStep], list[TaskStep]]:
-        if not policy.resource_limits:
-            return ordered_steps, []
-        used = {key: 0.0 for key in policy.resource_limits}
-        allowed_steps: list[TaskStep] = []
-        blocked_steps: list[TaskStep] = []
-        for step in ordered_steps:
-            requirements = _step_resource_requirements(step)
-            exceeded_keys = [
-                key
-                for key, limit in policy.resource_limits.items()
-                if used[key] + requirements.get(key, 0.0) > limit
-            ]
-            if exceeded_keys:
-                self._set_blocked_resource_keys(step, exceeded_keys)
-                blocked_steps.append(step)
-                continue
-            for key in policy.resource_limits:
-                used[key] += requirements.get(key, 0.0)
-            allowed_steps.append(step)
-        return allowed_steps, blocked_steps
-
-    def _order_steps(
-        self,
-        steps: list[TaskStep],
-        *,
-        policy: WorkspaceSchedulerPolicy,
-    ) -> list[TaskStep]:
-        task_ids = {step.task_id for step in steps}
-        task_rank = {
-            task_id: _TaskRank(priority=int(priority or 0), created_at=created_at)
-            for task_id, priority, created_at in self._session.execute(
-                select(Task.id, Task.priority, Task.created_at).where(Task.id.in_(task_ids))
-            ).all()
-        }
-        scored_steps = [
-            _ScoredStep(
-                step=step,
-                rank=task_rank.get(step.task_id, _TaskRank()),
-                priority_score=_priority_score(
-                    task_rank.get(step.task_id, _TaskRank()).priority,
-                    step.created_at,
-                    policy.starvation_boost_after_seconds,
-                ),
-            )
-            for step in steps
-        ]
-        ordered_by_task = sorted(
-            scored_steps,
-            key=lambda scored: (
-                -scored.priority_score,
-                scored.rank.created_at,
-                scored.step.order_index,
-                scored.step.created_at,
-                scored.step.id,
-            ),
-        )
-        return self._round_robin_by_task(
-            [scored.step for scored in ordered_by_task],
-            max_steps_per_task_per_round=policy.max_steps_per_task_per_tick,
-        )
-
-    def _round_robin_by_task(
-        self,
-        steps: Iterable[TaskStep],
-        *,
-        max_steps_per_task_per_round: int,
-    ) -> list[TaskStep]:
-        max_per_round = max(1, max_steps_per_task_per_round)
-        task_queues: dict[UUID, deque[TaskStep]] = defaultdict(deque)
-        task_order: list[UUID] = []
-        for step in steps:
-            if step.task_id not in task_queues:
-                task_order.append(step.task_id)
-            task_queues[step.task_id].append(step)
-
-        ordered: list[TaskStep] = []
-        active_task_ids = deque(task_order)
-        while active_task_ids:
-            task_id = active_task_ids.popleft()
-            task_steps = task_queues[task_id]
-            for _ in range(max_per_round):
-                if not task_steps:
-                    break
-                ordered.append(task_steps.popleft())
-            if task_steps:
-                active_task_ids.append(task_id)
-        return ordered
-
     def _mark_runnable(
         self,
         steps: list[TaskStep],
@@ -352,13 +276,11 @@ class WorkspaceScheduler:
     ) -> None:
         scheduled_at = datetime.now(UTC).isoformat()
         for step in steps:
-            dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
-            dependencies.pop("scheduling_status", None)
-            dependencies.pop("blocked_reason", None)
-            dependencies.pop("blocked_resource_keys", None)
-            dependencies["scheduled_at"] = scheduled_at
-            dependencies["priority_score"] = self._step_priority_score(step, policy=policy)
-            step.dependencies = dependencies
+            mark_step_scheduling_runnable(
+                step,
+                scheduled_at=scheduled_at,
+                priority_score=self._ordering().step_priority_score(step, policy=policy),
+            )
 
     def _mark_blocked(
         self,
@@ -368,133 +290,43 @@ class WorkspaceScheduler:
         policy: WorkspaceSchedulerPolicy,
     ) -> None:
         for step in steps:
-            dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
-            dependencies["scheduling_status"] = "blocked"
-            dependencies["blocked_reason"] = reason
-            dependencies.pop("scheduled_at", None)
-            dependencies["priority_score"] = self._step_priority_score(step, policy=policy)
-            step.dependencies = dependencies
+            mark_step_scheduling_blocked(
+                step,
+                reason,
+                priority_score=self._ordering().step_priority_score(step, policy=policy),
+            )
 
-    def _set_blocked_resource_keys(self, step: TaskStep, keys: list[str]) -> None:
-        dependencies = dict(step.dependencies) if isinstance(step.dependencies, dict) else {}
-        dependencies["blocked_resource_keys"] = keys
-        step.dependencies = dependencies
-
-    def _step_priority_score(
+    def _mark_member_blocked(
         self,
-        step: TaskStep,
+        steps_by_reason: dict[str, list[TaskStep]],
         *,
         policy: WorkspaceSchedulerPolicy,
-    ) -> int:
-        task = self._session.get(Task, step.task_id)
-        return _priority_score(
-            int(task.priority if task is not None else 0),
-            step.created_at,
-            policy.starvation_boost_after_seconds,
-        )
+    ) -> None:
+        for reason, steps in steps_by_reason.items():
+            self._mark_blocked(steps, reason, policy=policy)
 
-
-def _positive_int_or_none(value: object) -> int | None:
-    if isinstance(value, int) and value > 0:
-        return value
-    return None
-
-
-def _merged_scheduler_policy(
-    workspace_scheduler: dict[str, object],
-    override: dict[str, object] | None,
-) -> dict[str, object]:
-    if not override:
-        return workspace_scheduler
-    effective = dict(workspace_scheduler)
-    for key in (
-        "max_active_runs",
-        "max_running_tasks",
-        "max_runs_to_start_per_tick",
-        "max_steps_per_task_per_tick",
-        "starvation_boost_after_seconds",
-        "resource_limits",
-    ):
-        if key in override:
-            effective[key] = override[key]
-    return effective
-
-
-def _positive_int_or_default(value: object, default: int) -> int:
-    parsed = _positive_int_or_none(value)
-    return parsed if parsed is not None else default
-
-
-def _non_empty_string_or_none(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    return normalized or None
+    def _ordering(self) -> SchedulerStepOrdering:
+        return SchedulerStepOrdering(self._session)
 
 
 def _blocked_reason(
     *,
     run_blocked: bool,
     resource_blocked: bool,
+    member_blocked: bool,
     task_blocked: bool,
+    member_blocked_reason: str | None,
 ) -> str | None:
     if run_blocked:
         return "workspace_run_quota_exceeded"
     if resource_blocked:
         return "workspace_resource_quota_exceeded"
+    if member_blocked:
+        return member_blocked_reason or "team_member_capacity_exceeded"
     if task_blocked:
         return "workspace_task_quota_exceeded"
     return None
 
 
-@dataclass(frozen=True)
-class _TaskRank:
-    priority: int = 0
-    created_at: datetime = datetime.min.replace(tzinfo=UTC)
-
-
-@dataclass(frozen=True)
-class _ScoredStep:
-    step: TaskStep
-    rank: _TaskRank
-    priority_score: int
-
-
-def _priority_score(
-    priority: int,
-    created_at: datetime | None,
-    starvation_boost_after_seconds: int | None,
-) -> int:
-    if starvation_boost_after_seconds is None or created_at is None:
-        return priority
-    elapsed_seconds = max(0, int((datetime.now(UTC) - _aware_datetime(created_at)).total_seconds()))
-    return priority + elapsed_seconds // starvation_boost_after_seconds
-
-
-def _aware_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value
-
-
-def _positive_number_dict(value: object) -> dict[str, float] | None:
-    if not isinstance(value, dict):
-        return None
-    result = {
-        str(key): float(raw_value)
-        for key, raw_value in value.items()
-        if isinstance(raw_value, int | float) and raw_value >= 0
-    }
-    return result or None
-
-
-def _step_resource_requirements(step: TaskStep) -> dict[str, float]:
-    dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
-    raw_requirements = dependencies.get("resource_requirements")
-    if not isinstance(raw_requirements, dict):
-        return {}
-    return {
-        str(key): float(raw_value)
-        for key, raw_value in raw_requirements.items()
-        if isinstance(raw_value, int | float) and raw_value > 0
-    }
+def _first_blocked_reason(steps_by_reason: dict[str, list[TaskStep]]) -> str | None:
+    return next(iter(steps_by_reason), None)

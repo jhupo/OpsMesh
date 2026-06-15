@@ -3,11 +3,12 @@ from hashlib import sha256
 from typing import TypeVar
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
 from backend.app.artifacts.models import Artifact
+from backend.app.db.pagination import page_scalars
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.files.security import safe_filename
 from backend.app.files.storage import ObjectStorage
@@ -176,11 +177,7 @@ class WorkspaceFileService:
         )
 
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
-        total = self._session.scalar(
-            select(func.count()).select_from(statement.order_by(None).subquery())
-        )
-        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
-        return list(rows), int(total or 0)
+        return page_scalars(self._session, statement, page)
 
     def _final_output_work_package_ids(self, workspace_id: UUID, task_id: UUID) -> list[str]:
         steps = self._session.scalars(

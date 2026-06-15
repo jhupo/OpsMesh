@@ -37,7 +37,8 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.self_hosted.dependencies import get_authenticated_worker
-from backend.app.self_hosted.service import AuthenticatedWorker, SelfHostedRuntimeService
+from backend.app.self_hosted.service import SelfHostedRuntimeService
+from backend.app.self_hosted.types import AuthenticatedWorker
 
 router = APIRouter(tags=["self-hosted-runtime"])
 

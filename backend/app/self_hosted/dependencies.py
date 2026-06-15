@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
-from backend.app.self_hosted.service import AuthenticatedWorker, SelfHostedRuntimeService
+from backend.app.self_hosted.service import SelfHostedRuntimeService
+from backend.app.self_hosted.types import AuthenticatedWorker
 
 DB_SESSION_DEPENDENCY = Depends(get_db_session)
 SETTINGS_DEPENDENCY = Depends(get_settings)

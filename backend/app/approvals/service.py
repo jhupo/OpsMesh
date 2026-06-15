@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import TypeVar
 from uuid import UUID
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
@@ -16,6 +16,7 @@ from backend.app.capabilities.models import (
     McpToolAllowlist,
     Skill,
 )
+from backend.app.db.pagination import page_scalars
 from backend.app.marketplace.models import MarketplaceListing, TalentListing
 from backend.app.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
@@ -222,11 +223,7 @@ class ApprovalService:
         )
 
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
-        total = self._session.scalar(
-            select(func.count()).select_from(statement.order_by(None).subquery())
-        )
-        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
-        return list(rows), int(total or 0)
+        return page_scalars(self._session, statement, page)
 
 
 def _review_target_next_status(target: ResourceReviewTarget, approval_status: str) -> str:

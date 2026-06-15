@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections import Counter
 from datetime import UTC, datetime
@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.audit.service import AuditService
+from backend.app.core.typing import dict_list, dict_or_empty, string_list
 from backend.app.tasks.collaboration_state import TaskCollaborationStateService
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.operator_actions import TASK_OPERATOR_ACTIONS, TaskOperatorActionService
@@ -93,14 +94,14 @@ class TaskCollaborationRecoveryService:
             return None
 
         action_plan = _filter_plan(
-            _dict_list(plan_payload.get("action_plan")),
+            dict_list(plan_payload.get("action_plan")),
             actions=actions,
             sources=sources,
         )
         skipped = [
-            *_dict_list(plan_payload.get("skipped")),
+            *dict_list(plan_payload.get("skipped")),
             *_filter_skips(
-                _dict_list(plan_payload.get("action_plan")),
+                dict_list(plan_payload.get("action_plan")),
                 selected=action_plan,
                 actions=actions,
                 sources=sources,
@@ -128,7 +129,7 @@ class TaskCollaborationRecoveryService:
                 target_type="task",
                 target_id=task_id,
                 metadata={
-                    "requested_action_count": len(_dict_list(plan_payload.get("action_plan"))),
+                    "requested_action_count": len(dict_list(plan_payload.get("action_plan"))),
                     "eligible_action_count": len(action_plan),
                     "applied_action_count": applied_count,
                     "failed_action_count": failed_count,
@@ -152,7 +153,7 @@ class TaskCollaborationRecoveryService:
             "generated_at": datetime.now(UTC),
             "dry_run": dry_run,
             "status": _apply_status(dry_run, applied_count, failed_count, action_plan),
-            "requested_action_count": len(_dict_list(plan_payload.get("action_plan"))),
+            "requested_action_count": len(dict_list(plan_payload.get("action_plan"))),
             "eligible_action_count": len(action_plan),
             "applied_action_count": applied_count,
             "failed_action_count": failed_count,
@@ -227,7 +228,7 @@ def _build_plan(
     items: list[dict[str, object]] = []
     handoff_source_step_ids: list[UUID] = []
     handoff_reasons: list[str] = []
-    for handoff in _dict_list(collaboration.get("handoffs")):
+    for handoff in dict_list(collaboration.get("handoffs")):
         status = handoff.get("status")
         if status != "ready_for_downstream":
             continue
@@ -249,12 +250,12 @@ def _build_plan(
 
     blocked_step_ids: list[UUID] = []
     blocked_reasons: list[str] = []
-    for step in _dict_list(execution.get("steps")):
+    for step in dict_list(execution.get("steps")):
         step_id = step.get("task_step_id")
         if step.get("status") != "blocked" or not isinstance(step_id, UUID):
             continue
         blocked_step_ids.append(step_id)
-        blocked_reasons.extend(_string_list(step.get("blocked_reasons")))
+        blocked_reasons.extend(string_list(step.get("blocked_reasons")))
     if blocked_step_ids:
         items.append(
             _plan_item(
@@ -267,8 +268,8 @@ def _build_plan(
             )
         )
 
-    manager = _dict(collaboration.get("manager"))
-    manager_reasons = _string_list(manager.get("blocked_reasons"))
+    manager = dict_or_empty(collaboration.get("manager"))
+    manager_reasons = string_list(manager.get("blocked_reasons"))
     if _needs_manager_review(manager_reasons):
         items.append(
             _plan_item(
@@ -281,11 +282,13 @@ def _build_plan(
             )
         )
 
-    summary_reasons = _string_list(_dict(collaboration.get("summary")).get("blocked_reasons"))
+    summary_reasons = string_list(
+        dict_or_empty(collaboration.get("summary")).get("blocked_reasons")
+    )
     if "downstream_blocked" in summary_reasons and not blocked_step_ids:
         blocked_downstream_ids = [
             step_id
-            for handoff in _dict_list(collaboration.get("handoffs"))
+            for handoff in dict_list(collaboration.get("handoffs"))
             for step_id in _uuid_list(handoff.get("blocked_downstream_step_ids"))
         ]
         if blocked_downstream_ids:
@@ -354,12 +357,12 @@ def _dedupe_plan(items: list[dict[str, object]]) -> list[dict[str, object]]:
         existing["blocked_reasons"] = list(
             dict.fromkeys(
                 [
-                    *_string_list(existing.get("blocked_reasons")),
-                    *_string_list(item.get("blocked_reasons")),
+                    *string_list(existing.get("blocked_reasons")),
+                    *string_list(item.get("blocked_reasons")),
                 ]
             )
         )
-        payload = _dict(existing.get("payload_template"))
+        payload = dict_or_empty(existing.get("payload_template"))
         payload["task_step_ids"] = existing["task_step_ids"]
         existing["payload_template"] = payload
     return list(grouped.values())
@@ -412,11 +415,13 @@ def _summary(
     action_counts = Counter(str(item["action"]) for item in plan)
     source_counts = Counter(str(item["source"]) for item in plan)
     return {
-        "collaboration_status": _dict(collaboration.get("summary")).get("status"),
-        "task_status": _dict(execution.get("task")).get("status"),
-        "blocked_reasons": _string_list(_dict(collaboration.get("summary")).get("blocked_reasons")),
-        "recommended_actions": _string_list(
-            _dict(collaboration.get("summary")).get("recommended_actions")
+        "collaboration_status": dict_or_empty(collaboration.get("summary")).get("status"),
+        "task_status": dict_or_empty(execution.get("task")).get("status"),
+        "blocked_reasons": string_list(
+            dict_or_empty(collaboration.get("summary")).get("blocked_reasons")
+        ),
+        "recommended_actions": string_list(
+            dict_or_empty(collaboration.get("summary")).get("recommended_actions")
         ),
         "action_count": len(plan),
         "skipped_count": len(skipped),
@@ -428,7 +433,7 @@ def _summary(
 def _plan_status(collaboration: dict[str, object], plan: list[dict[str, object]]) -> str:
     if plan:
         return "actionable"
-    summary = _dict(collaboration.get("summary"))
+    summary = dict_or_empty(collaboration.get("summary"))
     if summary.get("status") in {"blocked", "needs_attention"}:
         return "needs_manual_attention"
     return "healthy"
@@ -478,22 +483,6 @@ def _instruction(item: dict[str, object]) -> str | None:
     if action == "request_manager_review":
         return "Review the current collaboration state and decide the next delivery action."
     return None
-
-
-def _dict(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
-
-
-def _dict_list(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, dict)]
-
-
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
 
 
 def _uuid_list(value: object) -> list[UUID]:

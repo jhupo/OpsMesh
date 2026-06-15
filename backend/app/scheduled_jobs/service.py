@@ -4,10 +4,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from backend.app.audit.service import AuditService
+from backend.app.db.pagination import page_scalars_by_offset
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.scheduled_jobs.models import (
     WorkspaceScheduledJob,
@@ -121,11 +122,7 @@ class WorkspaceScheduledJobService:
             WorkspaceScheduledJob.created_at.desc(),
             WorkspaceScheduledJob.id.desc(),
         )
-        total = self._session.scalar(
-            select(func.count()).select_from(statement.order_by(None).subquery())
-        )
-        rows = self._session.scalars(statement.limit(limit).offset(offset)).all()
-        return list(rows), int(total or 0)
+        return page_scalars_by_offset(self._session, statement, limit=limit, offset=offset)
 
     def pause(
         self,

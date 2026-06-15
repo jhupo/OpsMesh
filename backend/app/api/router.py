@@ -22,7 +22,9 @@ from backend.app.api.routes.runtimes import router as runtimes_router
 from backend.app.api.routes.scheduled_jobs import router as scheduled_jobs_router
 from backend.app.api.routes.self_hosted import router as self_hosted_router
 from backend.app.api.routes.webhooks import router as webhooks_router
+from backend.app.api.routes.workspace_agents import router as workspace_agents_router
 from backend.app.api.routes.workspace_resources import router as workspace_resources_router
+from backend.app.api.routes.workspace_runs import router as workspace_runs_router
 from backend.app.api.routes.workspaces import router as workspaces_router
 
 api_router = APIRouter()
@@ -34,6 +36,8 @@ api_router.include_router(workspaces_router)
 api_router.include_router(marketplace_router)
 api_router.include_router(model_providers_router)
 api_router.include_router(model_provider_capabilities_router)
+api_router.include_router(workspace_agents_router)
+api_router.include_router(workspace_runs_router)
 api_router.include_router(workspace_resources_router)
 api_router.include_router(agent_messages_router)
 api_router.include_router(notifications_router)

@@ -12,6 +12,7 @@ from backend.app.api.schemas.agent_messages import (
     AgentMessageCreateRequest,
     AgentMessageThreadCreateRequest,
 )
+from backend.app.db.pagination import page_scalars
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
 
@@ -305,11 +306,7 @@ class AgentMailboxService:
         }
 
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
-        total = self._session.scalar(
-            select(func.count()).select_from(statement.order_by(None).subquery())
-        )
-        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
-        return list(rows), int(total or 0)
+        return page_scalars(self._session, statement, page)
 
     def _count_threads(self, workspace_id: UUID) -> int:
         total = self._session.scalar(

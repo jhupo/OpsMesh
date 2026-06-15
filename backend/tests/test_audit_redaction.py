@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.requests import Request
 
 from backend.app.api.pagination import PageParams
-from backend.app.api.services.resources import WorkspaceResourceService
+from backend.app.api.services.workspace_reads import WorkspaceReadService
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
 from backend.app.core.config import Settings
@@ -219,7 +219,7 @@ def test_audit_retention_filters_queries_but_worm_cleanup_retains_rows() -> None
     session.commit()
 
     settings = Settings(audit_event_retention_days=30)
-    items, total = WorkspaceResourceService(session, settings).list_audit_events(
+    items, total = WorkspaceReadService(session, settings).list_audit_events(
         workspace.id,
         PageParams(limit=10, offset=0),
     )

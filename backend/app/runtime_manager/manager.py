@@ -1,22 +1,40 @@
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from shutil import rmtree
 from subprocess import TimeoutExpired
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.runtime_manager.cleanup import (
+    RuntimeResourceCleaner,
+    cleanup_succeeded,
+)
+from backend.app.runtime_manager.command_output import (
+    bounded_error,
+    bounded_text,
+    command_failure_metadata,
+    lease_metadata,
+    positive_int_limit,
+)
 from backend.app.runtime_manager.contracts import (
     DockerRuntimeClient,
     RuntimeCommandResult,
     RuntimeCreateRequest,
-    RuntimeHardeningPolicy,
     RuntimeLimits,
     RuntimeMount,
 )
+from backend.app.runtime_manager.metadata import (
+    default_runtime_hardening_policy,
+    runtime_hardening_metadata,
+    runtime_isolation_metadata,
+    runtime_labels,
+    runtime_space_reservation_key,
+    runtime_space_usage_for_runtime,
+)
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
+from backend.app.runtime_manager.security_events import RuntimeSecurityEventRecorder
 from backend.app.runtime_spaces.models import RuntimeSpaceEvent
 from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.runtimes.models import (
@@ -26,7 +44,6 @@ from backend.app.runtimes.models import (
     RuntimeTemplate,
     WorkspaceRuntime,
 )
-from backend.app.security.models import SecurityEvent
 
 
 class RuntimeManager:
@@ -39,9 +56,8 @@ class RuntimeManager:
     ) -> None:
         self._session = session
         self._docker = docker_client
-        self._managed_host_roots = tuple(
-            path.resolve() for path in (Path(root) for root in managed_host_roots or ())
-        )
+        self._cleaner = RuntimeResourceCleaner(docker_client, managed_host_roots)
+        self._security_events = RuntimeSecurityEventRecorder(session)
 
     def create_runtime(
         self,
@@ -93,14 +109,14 @@ class RuntimeManager:
         workspace_id = runtime.workspace_id
         runtime_space_id = runtime.runtime_space_id
         RuntimeQuotaPolicy(self._session).assert_can_create_runtime(workspace_id, limits)
-        isolation_metadata = _runtime_isolation_metadata(
+        isolation_metadata = runtime_isolation_metadata(
             workspace_id=workspace_id,
             runtime_id=runtime.id,
             runtime_space_id=runtime_space_id,
             network_disabled=network_disabled,
         )
-        hardening_policy = _default_runtime_hardening_policy()
-        hardening_metadata = _runtime_hardening_metadata(
+        hardening_policy = default_runtime_hardening_policy()
+        hardening_metadata = runtime_hardening_metadata(
             hardening_policy,
             isolation_metadata=isolation_metadata,
         )
@@ -113,7 +129,7 @@ class RuntimeManager:
                 "docker_volumes": [isolation_metadata["workspace_mount"]["docker_volume"]],
             },
         }
-        reservation_key = _runtime_space_reservation_key(runtime)
+        reservation_key = runtime_space_reservation_key(runtime)
         if runtime_space_id is not None:
             reservation_result = RuntimeSpaceService(self._session).reserve_run_capacity(
                 workspace_id=workspace_id,
@@ -121,7 +137,7 @@ class RuntimeManager:
                 task_id=None,
                 task_step_id=None,
                 reservation_key=reservation_key,
-                resource_usage=_runtime_space_usage_for_runtime(limits),
+                resource_usage=runtime_space_usage_for_runtime(limits),
             )
             if reservation_result.reservation is None:
                 self._session.delete(runtime)
@@ -142,7 +158,7 @@ class RuntimeManager:
                     runtime_space_id=str(runtime_space_id) if runtime_space_id else None,
                     limits=limits,
                     network_disabled=network_disabled,
-                    labels=_runtime_labels(runtime),
+                    labels=runtime_labels(runtime),
                     mounts=(
                         RuntimeMount(
                             source=isolation_metadata["workspace_mount"]["docker_volume"],
@@ -204,7 +220,7 @@ class RuntimeManager:
         runtime.connection_status = "online"
         runtime.last_heartbeat_at = datetime.now(UTC)
         lease = self._set_runtime_lease_status(runtime, "running")
-        self._append_event(runtime, "runtime.started", "", metadata=_lease_metadata(lease))
+        self._append_event(runtime, "runtime.started", "", metadata=lease_metadata(lease))
         self._session.commit()
         self._session.refresh(runtime)
         return runtime
@@ -215,7 +231,7 @@ class RuntimeManager:
         runtime.status = "stopped"
         runtime.connection_status = "offline"
         lease = self._set_runtime_lease_status(runtime, "stopped")
-        self._append_event(runtime, "runtime.stopped", "", metadata=_lease_metadata(lease))
+        self._append_event(runtime, "runtime.stopped", "", metadata=lease_metadata(lease))
         self._session.commit()
         self._session.refresh(runtime)
         return runtime
@@ -226,7 +242,7 @@ class RuntimeManager:
         try:
             self._docker.remove_container(container_id)
         except Exception as exc:
-            cleanup = self._cleanup_runtime_resources(
+            cleanup = self._cleaner.cleanup_runtime_resources(
                 runtime,
                 action="delete",
                 container_id=container_id,
@@ -241,18 +257,18 @@ class RuntimeManager:
                 str(exc),
                 metadata=cleanup,
             )
-            self._record_cleanup_security_event(runtime, cleanup, reason=str(exc))
+            self._security_events.record_cleanup_failure(runtime, cleanup, reason=str(exc))
             self._set_runtime_lease_status(runtime, "cleanup_failed", released_at=datetime.now(UTC))
             self._release_runtime_space_reservation(runtime)
             self._session.commit()
             raise
-        cleanup = self._cleanup_runtime_resources(
+        cleanup = self._cleaner.cleanup_runtime_resources(
             runtime,
             action="delete",
             container_id=container_id,
             container_removed=True,
         )
-        runtime.status = "deleted" if _cleanup_succeeded(cleanup) else "cleanup_failed"
+        runtime.status = "deleted" if cleanup_succeeded(cleanup) else "cleanup_failed"
         runtime.connection_status = "offline"
         self._append_event(
             runtime,
@@ -261,7 +277,7 @@ class RuntimeManager:
             metadata=cleanup,
         )
         if runtime.status == "cleanup_failed":
-            self._record_cleanup_security_event(
+            self._security_events.record_cleanup_failure(
                 runtime,
                 cleanup,
                 reason="Managed runtime resource cleanup failed",
@@ -286,14 +302,14 @@ class RuntimeManager:
             except Exception as exc:
                 container_removed = False
                 error = str(exc)
-        cleanup = self._cleanup_runtime_resources(
+        cleanup = self._cleaner.cleanup_runtime_resources(
             runtime,
             action="stale_cleanup",
             container_id=container_id,
             container_removed=container_removed,
             error=error,
         )
-        runtime.status = "deleted" if _cleanup_succeeded(cleanup) else "cleanup_failed"
+        runtime.status = "deleted" if cleanup_succeeded(cleanup) else "cleanup_failed"
         runtime.connection_status = "offline"
         self._append_event(
             runtime,
@@ -304,7 +320,7 @@ class RuntimeManager:
             metadata=cleanup,
         )
         if runtime.status == "cleanup_failed":
-            self._record_cleanup_security_event(
+            self._security_events.record_cleanup_failure(
                 runtime,
                 cleanup,
                 reason=error or "Managed runtime resource cleanup failed",
@@ -379,20 +395,20 @@ class RuntimeManager:
                 runtime,
                 "runtime.command.timeout",
                 " ".join(command),
-                metadata=_command_failure_metadata(record, "timeout", str(exc)),
+                metadata=command_failure_metadata(record, "timeout", str(exc)),
             )
         except Exception as exc:
             self._fail_command(
                 record,
                 status="failed",
                 exit_code=None,
-                stderr=_bounded_error(exc),
+                stderr=bounded_error(exc),
             )
             self._append_event(
                 runtime,
                 "runtime.command.failed",
                 " ".join(command),
-                metadata=_command_failure_metadata(record, "docker_exec_failed", str(exc)),
+                metadata=command_failure_metadata(record, "docker_exec_failed", str(exc)),
             )
         else:
             self._complete_command(runtime, record, result)
@@ -408,9 +424,9 @@ class RuntimeManager:
         result: RuntimeCommandResult,
     ) -> None:
         record.exit_code = result.exit_code
-        max_output_bytes = _positive_int_limit(runtime.limits.get("max_output_bytes"), 256_000)
-        stdout, stdout_truncated, stdout_bytes = _bounded_text(result.stdout, max_output_bytes)
-        stderr, stderr_truncated, stderr_bytes = _bounded_text(result.stderr, max_output_bytes)
+        max_output_bytes = positive_int_limit(runtime.limits.get("max_output_bytes"), 256_000)
+        stdout, stdout_truncated, stdout_bytes = bounded_text(result.stdout, max_output_bytes)
+        stderr, stderr_truncated, stderr_bytes = bounded_text(result.stderr, max_output_bytes)
         record.stdout = stdout
         record.stderr = stderr
         record.status = "completed" if result.exit_code == 0 else "failed"
@@ -430,7 +446,7 @@ class RuntimeManager:
                 "Command output exceeded runtime policy.",
                 metadata=metadata,
             )
-            self._record_policy_security_event(
+            self._security_events.record_policy_limit(
                 runtime,
                 action="runtime.command.output_limited",
                 reason="Runtime command output exceeded policy.",
@@ -552,369 +568,6 @@ class RuntimeManager:
         return RuntimeSpaceService(self._session).release_reservation_by_key(
             workspace_id=runtime.workspace_id,
             runtime_space_id=runtime.runtime_space_id,
-            reservation_key=_runtime_space_reservation_key(runtime),
+            reservation_key=runtime_space_reservation_key(runtime),
             released_at=datetime.now(UTC),
         )
-
-    def _cleanup_runtime_resources(
-        self,
-        runtime: WorkspaceRuntime,
-        *,
-        action: str,
-        container_id: str | None,
-        container_removed: bool,
-        error: str | None = None,
-    ) -> dict[str, object]:
-        host_resource_results = self._cleanup_host_resources(runtime)
-        success = container_removed and all(
-            result.get("success") is not False for result in host_resource_results
-        )
-        evidence = _cleanup_evidence(
-            action=action,
-            container_id=container_id,
-            success=success,
-            error=error,
-        )
-        evidence["cleanup"]["container_removed"] = container_removed
-        evidence["cleanup"]["host_resources"] = host_resource_results
-        return evidence
-
-    def _cleanup_host_resources(self, runtime: WorkspaceRuntime) -> list[dict[str, object]]:
-        managed_resources = runtime.capabilities.get("managed_resources")
-        if not isinstance(managed_resources, dict):
-            return []
-        results: list[dict[str, object]] = []
-        for path_value in _string_items(managed_resources.get("temp_dirs")):
-            results.append(self._cleanup_host_path(path_value, resource_type="temp_dir"))
-        for path_value in _string_items(managed_resources.get("staged_files")):
-            results.append(self._cleanup_host_path(path_value, resource_type="staged_file"))
-        for volume in _string_items(managed_resources.get("docker_volumes")):
-            results.append(self._cleanup_docker_volume(volume))
-        return results
-
-    def _cleanup_docker_volume(self, volume_name: str) -> dict[str, object]:
-        try:
-            self._docker.remove_volume(volume_name)
-        except Exception as exc:
-            return _resource_result(
-                resource_type="docker_volume",
-                target=volume_name,
-                status="delete_failed",
-                success=False,
-                message=str(exc),
-            )
-        return _resource_result(
-            resource_type="docker_volume",
-            target=volume_name,
-            status="deleted",
-            success=True,
-        )
-
-    def _cleanup_host_path(self, raw_path: str, *, resource_type: str) -> dict[str, object]:
-        try:
-            path = Path(raw_path).resolve()
-        except OSError as exc:
-            return _resource_result(
-                resource_type=resource_type,
-                target=raw_path,
-                status="invalid_path",
-                success=False,
-                message=str(exc),
-            )
-        if not self._is_managed_host_path(path):
-            return _resource_result(
-                resource_type=resource_type,
-                target=str(path),
-                status="unsafe_path",
-                success=False,
-                message="Path is outside configured managed runtime roots.",
-            )
-        if not path.exists():
-            return _resource_result(
-                resource_type=resource_type,
-                target=str(path),
-                status="already_absent",
-                success=True,
-            )
-        try:
-            if path.is_dir():
-                rmtree(path)
-            else:
-                path.unlink()
-        except OSError as exc:
-            return _resource_result(
-                resource_type=resource_type,
-                target=str(path),
-                status="delete_failed",
-                success=False,
-                message=str(exc),
-            )
-        return _resource_result(
-            resource_type=resource_type,
-            target=str(path),
-            status="deleted",
-            success=not path.exists(),
-        )
-
-    def _is_managed_host_path(self, path: Path) -> bool:
-        return any(path == root or root in path.parents for root in self._managed_host_roots)
-
-    def _record_cleanup_security_event(
-        self,
-        runtime: WorkspaceRuntime,
-        cleanup: dict[str, object],
-        *,
-        reason: str,
-    ) -> None:
-        self._session.add(
-            SecurityEvent(
-                workspace_id=runtime.workspace_id,
-                user_id=None,
-                action="runtime.cleanup.failed",
-                outcome="failed",
-                severity="critical",
-                source_ip=None,
-                user_agent=None,
-                request_id=None,
-                path="runtime_manager",
-                method="SYSTEM",
-                reason=reason[:512],
-                event_metadata={
-                    "runtime_id": str(runtime.id),
-                    "runtime_space_id": str(runtime.runtime_space_id)
-                    if runtime.runtime_space_id
-                    else None,
-                    "docker_container_id": runtime.docker_container_id,
-                    **cleanup,
-                },
-                created_at=datetime.now(UTC),
-            )
-        )
-
-    def _record_policy_security_event(
-        self,
-        runtime: WorkspaceRuntime,
-        *,
-        action: str,
-        reason: str,
-        metadata: dict[str, object],
-    ) -> None:
-        self._session.add(
-            SecurityEvent(
-                workspace_id=runtime.workspace_id,
-                user_id=None,
-                action=action,
-                outcome="limited",
-                severity="warning",
-                source_ip=None,
-                user_agent=None,
-                request_id=None,
-                path="runtime_manager",
-                method="SYSTEM",
-                reason=reason[:512],
-                event_metadata={
-                    "runtime_id": str(runtime.id),
-                    "runtime_space_id": str(runtime.runtime_space_id)
-                    if runtime.runtime_space_id
-                    else None,
-                    "docker_container_id": runtime.docker_container_id,
-                    **metadata,
-                },
-                created_at=datetime.now(UTC),
-            )
-        )
-
-
-def _cleanup_evidence(
-    *,
-    action: str,
-    container_id: str | None,
-    success: bool,
-    error: str | None = None,
-) -> dict[str, object]:
-    evidence: dict[str, object] = {
-        "cleanup": {
-            "action": action,
-            "container_id": container_id,
-            "success": success,
-            "checked_at": datetime.now(UTC).isoformat(),
-        }
-    }
-    if error is not None:
-        evidence["cleanup"]["error"] = error
-    return evidence
-
-
-def _cleanup_succeeded(evidence: dict[str, object]) -> bool:
-    cleanup = evidence.get("cleanup")
-    return isinstance(cleanup, dict) and cleanup.get("success") is True
-
-
-def _command_failure_metadata(
-    record: RuntimeCommand,
-    reason: str,
-    error: str,
-) -> dict[str, object]:
-    return {
-        "command_id": str(record.id),
-        "command_status": record.status,
-        "reason": reason,
-        "error": error[:512],
-    }
-
-
-def _bounded_error(exc: Exception) -> str:
-    message = str(exc).strip() or exc.__class__.__name__
-    return message[:2_000]
-
-
-def _lease_metadata(lease: RuntimeLease | None) -> dict[str, object]:
-    return {"runtime_lease_id": str(lease.id)} if lease is not None else {}
-
-
-def _runtime_space_reservation_key(runtime: WorkspaceRuntime) -> str:
-    return f"workspace_runtime:{runtime.id}:docker"
-
-
-def _runtime_space_usage_for_runtime(limits: RuntimeLimits) -> dict[str, int]:
-    return {
-        "docker_runtimes": 1,
-        "cpu": _ceil_positive_int(limits.cpu_count),
-        "memory_mb": limits.memory_mb,
-        "storage_mb": limits.disk_mb,
-    }
-
-
-def _ceil_positive_int(value: float) -> int:
-    integer_value = int(value)
-    if value > integer_value:
-        integer_value += 1
-    return max(1, integer_value)
-
-
-def _runtime_isolation_metadata(
-    *,
-    workspace_id: UUID,
-    runtime_id: UUID,
-    runtime_space_id: UUID | None,
-    network_disabled: bool,
-) -> dict[str, object]:
-    volume_name = _runtime_volume_name(workspace_id, runtime_id)
-    return {
-        "workspace_id": str(workspace_id),
-        "runtime_id": str(runtime_id),
-        "runtime_space_id": str(runtime_space_id) if runtime_space_id else None,
-        "workspace_mount": {
-            "type": "volume",
-            "docker_volume": volume_name,
-            "target": "/workspace",
-            "mode": "rw",
-        },
-        "network": {
-            "disabled": network_disabled,
-            "mode": "none" if network_disabled else "bridge",
-        },
-    }
-
-
-def _default_runtime_hardening_policy() -> RuntimeHardeningPolicy:
-    return RuntimeHardeningPolicy()
-
-
-def _runtime_hardening_metadata(
-    policy: RuntimeHardeningPolicy,
-    *,
-    isolation_metadata: dict[str, object],
-) -> dict[str, object]:
-    writable_paths: list[dict[str, object]] = []
-    workspace_mount = isolation_metadata.get("workspace_mount")
-    if isinstance(workspace_mount, dict):
-        writable_paths.append(
-            {
-                "type": workspace_mount.get("type", "volume"),
-                "target": workspace_mount.get("target"),
-                "mode": workspace_mount.get("mode", "rw"),
-            }
-        )
-    writable_paths.extend(
-        {
-            "type": "tmpfs",
-            "target": tmpfs.target,
-            "mode": tmpfs.mode,
-            "size_mb": tmpfs.size_mb,
-        }
-        for tmpfs in policy.tmpfs
-    )
-    return {
-        "cap_drop": list(policy.cap_drop),
-        "security_opt": list(policy.security_opt),
-        "read_only_rootfs": policy.read_only_rootfs,
-        "writable_paths": writable_paths,
-        "user": {
-            "value": policy.user,
-            "policy": policy.user_policy,
-            "enforced": policy.user_enforced,
-        },
-    }
-
-
-def _runtime_volume_name(workspace_id: UUID, runtime_id: UUID) -> str:
-    return f"opsmesh-ws-{workspace_id.hex}-runtime-{runtime_id.hex}"
-
-
-def _runtime_labels(runtime: WorkspaceRuntime) -> dict[str, str]:
-    labels = {
-        "opsmesh.managed": "true",
-        "opsmesh.runtime_type": runtime.runtime_type,
-        "opsmesh.runtime_provider": runtime.runtime_provider,
-    }
-    if runtime.runtime_space_id is not None:
-        labels["opsmesh.runtime_space_id"] = str(runtime.runtime_space_id)
-    policy_resolution = runtime.capabilities.get("policy_resolution")
-    if isinstance(policy_resolution, dict):
-        team = policy_resolution.get("team")
-        if isinstance(team, dict) and isinstance(team.get("id"), str):
-            labels["opsmesh.team_id"] = team["id"]
-        runtime_space = policy_resolution.get("runtime_space")
-        if isinstance(runtime_space, dict) and isinstance(runtime_space.get("scope"), str):
-            labels["opsmesh.runtime_space_scope"] = runtime_space["scope"]
-    return labels
-
-
-def _positive_int_limit(value: object, fallback: int) -> int:
-    if isinstance(value, int) and value > 0:
-        return value
-    return fallback
-
-
-def _bounded_text(value: str, max_bytes: int) -> tuple[str, bool, int]:
-    encoded = value.encode("utf-8")
-    if len(encoded) <= max_bytes:
-        return value, False, len(encoded)
-    truncated = encoded[:max_bytes].decode("utf-8", errors="ignore")
-    return truncated, True, len(encoded)
-
-
-def _string_items(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str) and item]
-
-
-def _resource_result(
-    *,
-    resource_type: str,
-    target: str,
-    status: str,
-    success: bool,
-    message: str | None = None,
-) -> dict[str, object]:
-    result: dict[str, object] = {
-        "type": resource_type,
-        "target": target,
-        "status": status,
-        "success": success,
-    }
-    if message is not None:
-        result["message"] = message
-    return result

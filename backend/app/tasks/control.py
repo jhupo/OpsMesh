@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.tasks import TaskControlActionRequest, TaskCorrectionRequest
 from backend.app.audit.service import AuditService
+from backend.app.orchestration.run_control import RunControlService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus, require_run_transition
@@ -274,7 +275,10 @@ class TaskControlService:
         actor_user_id: UUID,
         request: TaskControlActionRequest,
     ) -> dict[str, object]:
-        cancelled = RunOrchestrationService(self._session).cancel_task(
+        cancelled = RunControlService(
+            session=self._session,
+            enqueue_run=RunOrchestrationService(self._session, queue=self._queue).enqueue_run,
+        ).cancel_task(
             workspace_id=task.workspace_id,
             task_id=task.id,
             actor_user_id=actor_user_id,

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.core.typing import dict_list
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.security.redaction import redact_sensitive_payload
@@ -115,7 +116,7 @@ class TaskExecutionDiagnosticsService:
             diagnostics = self.get_diagnostics(workspace_id=workspace_id, task_id=task.id)
             if diagnostics is None:
                 continue
-            for step_payload in _dict_list(diagnostics.get("steps")):
+            for step_payload in dict_list(diagnostics.get("steps")):
                 item = _handoff_queue_item(task, step_payload)
                 if item is None:
                     continue
@@ -548,12 +549,6 @@ def _append_uuid(item: dict[str, object], key: str, value: UUID) -> None:
     if value not in existing:
         existing.append(value)
     item[key] = sorted(existing, key=str)
-
-
-def _dict_list(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, dict)]
 
 
 def _uuid_values(value: object) -> list[UUID]:

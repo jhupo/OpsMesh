@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.model_providers.model_api import configured_model_api
+from backend.app.planning.org_structure import build_org_structure
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 
@@ -50,7 +51,7 @@ def build_team_snapshot(
         ).all()
     }
 
-    return {
+    snapshot = {
         "snapshot_version": 1,
         "captured_at": datetime.now(UTC).isoformat(),
         "team": {
@@ -73,6 +74,8 @@ def build_team_snapshot(
             for agent in sorted(agents.values(), key=lambda item: item.name.lower())
         ],
     }
+    snapshot["organization"] = _organization_snapshot(snapshot)
+    return snapshot
 
 
 def _member_snapshot(
@@ -118,6 +121,32 @@ def _agent_snapshot(agent: AgentProfile | None) -> dict[str, object] | None:
         "approval_policy": agent.approval_policy,
         "version": agent.version,
         "status": agent.status,
+    }
+
+
+def _organization_snapshot(snapshot: dict[str, object]) -> dict[str, object]:
+    org = build_org_structure(snapshot)
+    return {
+        "executive_member_ids": [member.id for member in org.executives],
+        "manager_member_ids": [member.id for member in org.managers],
+        "lead_member_ids": [member.id for member in org.leads],
+        "contributor_member_ids": [member.id for member in org.contributors],
+        "departments": {
+            department: [member.id for member in members]
+            for department, members in org.departments.items()
+        },
+        "reporting_tree": {
+            member_id: [child.id for child in children]
+            for member_id, children in org.children_by_member_id.items()
+        },
+        "orphan_member_ids": list(org.orphan_member_ids),
+        "cycle_member_ids": list(org.cycle_member_ids),
+        "role_counts": {
+            "executives": len(org.executives),
+            "managers": len(org.managers),
+            "leads": len(org.leads),
+            "contributors": len(org.contributors),
+        },
     }
 
 

@@ -12,10 +12,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
+from backend.app.db.pagination import page_scalars
 from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import EgressUrlPolicy, validate_egress_url
@@ -173,11 +174,7 @@ class WebhookSubscriptionService:
             WebhookSubscription.created_at.desc(),
             WebhookSubscription.id.desc(),
         )
-        total = self._session.scalar(
-            select(func.count()).select_from(statement.order_by(None).subquery())
-        )
-        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
-        return list(rows), int(total or 0)
+        return page_scalars(self._session, statement, page)
 
     def update(
         self,

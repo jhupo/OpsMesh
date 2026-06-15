@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.core.typing import dict_list, string_list
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 
@@ -35,9 +36,9 @@ class TaskCollaborationStateService:
         if manager is None:
             return None
 
-        steps = _dict_list(execution.get("steps"))
+        steps = dict_list(execution.get("steps"))
         handoffs = _handoff_items(steps)
-        manager_chain = _dict_list(manager.get("handoff_chain"))
+        manager_chain = dict_list(manager.get("handoff_chain"))
         phases = _collaboration_phases(manager_chain, handoffs)
         blocked_reasons = _blocked_reasons(manager, handoffs, steps)
         recommended_actions = _recommended_actions(manager, handoffs, blocked_reasons)
@@ -65,7 +66,7 @@ class TaskCollaborationStateService:
             "handoffs": handoffs,
             "manager": {
                 "summary": manager.get("summary", {}),
-                "blocked_reasons": _string_list(manager.get("blocked_reasons")),
+                "blocked_reasons": string_list(manager.get("blocked_reasons")),
                 "acceptance_decisions": manager.get("acceptance_decisions", []),
                 "follow_up_cycles": manager.get("follow_up_cycles", []),
             },
@@ -112,7 +113,7 @@ def _manager_phase_payload(phase: dict[str, object]) -> dict[str, object]:
         "phase": phase.get("phase"),
         "status": phase.get("status"),
         "step_ids": _uuid_list(phase.get("step_ids")),
-        "blocked_reasons": _string_list(phase.get("blocked_reasons")),
+        "blocked_reasons": string_list(phase.get("blocked_reasons")),
         "recommended_actions": _manager_phase_actions(phase),
         "metadata": {},
     }
@@ -149,7 +150,7 @@ def _handoff_phase_actions(handoff_counts: Counter[str]) -> list[str]:
 
 
 def _manager_phase_actions(phase: dict[str, object]) -> list[str]:
-    blocked_reasons = _string_list(phase.get("blocked_reasons"))
+    blocked_reasons = string_list(phase.get("blocked_reasons"))
     phase_name = phase.get("phase")
     actions: list[str] = []
     if any(reason.startswith("missing_manager") for reason in blocked_reasons):
@@ -188,7 +189,7 @@ def _handoff_items(steps: list[dict[str, object]]) -> list[dict[str, object]]:
                 "blocked_downstream_step_ids": _uuid_list(
                     handoff.get("blocked_downstream_step_ids")
                 ),
-                "recommended_actions": _string_list(handoff.get("recommended_actions")),
+                "recommended_actions": string_list(handoff.get("recommended_actions")),
             }
         )
     return items
@@ -249,7 +250,7 @@ def _blocked_reasons(
     handoffs: list[dict[str, object]],
     steps: list[dict[str, object]],
 ) -> list[str]:
-    reasons = _string_list(manager.get("blocked_reasons"))
+    reasons = string_list(manager.get("blocked_reasons"))
     for handoff in handoffs:
         status = handoff.get("status")
         if status == "downstream_blocked":
@@ -257,7 +258,7 @@ def _blocked_reasons(
         elif status == "ready_for_downstream":
             reasons.append("handoff_ready_for_downstream")
     for step in steps:
-        for reason in _string_list(step.get("blocked_reasons")):
+        for reason in string_list(step.get("blocked_reasons")):
             reasons.append(f"step:{reason}")
     return list(dict.fromkeys(reasons))
 
@@ -277,7 +278,7 @@ def _recommended_actions(
     if "downstream_blocked" in blocked_reasons:
         actions.append("inspect_blocked_downstream")
     for handoff in handoffs:
-        actions.extend(_string_list(handoff.get("recommended_actions")))
+        actions.extend(string_list(handoff.get("recommended_actions")))
     summary = manager.get("summary") if isinstance(manager.get("summary"), dict) else {}
     if summary.get("status") == "healthy" and not actions:
         actions.append("monitor_delivery")
@@ -296,18 +297,6 @@ def _protocol_status(phases: list[dict[str, object]], blocked_reasons: list[str]
     if phases and all(phase.get("status") in {"completed", "not_required"} for phase in phases):
         return "complete"
     return "running"
-
-
-def _dict_list(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, dict)]
-
-
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
 
 
 def _uuid_list(value: object) -> list[UUID]:

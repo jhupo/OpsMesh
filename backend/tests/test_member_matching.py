@@ -113,6 +113,43 @@ def test_member_matching_skips_members_at_concurrency_limit() -> None:
     assert match.agent_profile_id == free_agent.id
 
 
+def test_member_matching_penalizes_leadership_for_execution_work() -> None:
+    ceo_id = uuid4()
+    engineer_id = uuid4()
+    snapshot = {
+        "members": [
+            {
+                "id": str(uuid4()),
+                "agent_profile_id": str(ceo_id),
+                "team_role": "ceo",
+                "responsibilities": ["Own strategy and executive escalation"],
+                "skill_weights": {"python": 1.0},
+                "max_concurrent_tasks": 5,
+                "accepts_tasks": True,
+            },
+            {
+                "id": str(uuid4()),
+                "agent_profile_id": str(engineer_id),
+                "team_role": "backend_engineer",
+                "responsibilities": ["Build backend services in Python"],
+                "skill_weights": {"python": 0.6},
+                "max_concurrent_tasks": 1,
+                "accepts_tasks": True,
+            },
+        ]
+    }
+
+    match = MemberMatchingService().match(
+        team_snapshot=snapshot,
+        required_role="backend_engineer",
+        required_skills=["python"],
+    )
+
+    assert match is not None
+    assert match.agent_profile_id == engineer_id
+    assert "leadership_execution_penalty" not in match.reasons
+
+
 def _session() -> Session:
     _patch_portable_types_for_sqlite()
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)

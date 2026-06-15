@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.model_providers.availability import credential_is_selectable
 from backend.app.model_providers.capabilities import resolve_model_capability
 from backend.app.model_providers.metadata import budget_is_exhausted
 from backend.app.model_providers.model_api import (
@@ -195,13 +196,7 @@ def _base_url_host(base_url: str | None) -> str | None:
 
 
 def _is_selectable(credential: ModelProviderCredential | None) -> bool:
-    if credential is None:
-        return False
-    if credential.status != "active":
-        return False
-    if credential.health_status == "unhealthy":
-        return False
-    return not budget_is_exhausted(credential.budget_metadata)
+    return credential_is_selectable(credential)
 
 
 def _capability_provider(

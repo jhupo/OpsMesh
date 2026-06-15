@@ -4,14 +4,17 @@ import logging
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from threading import Event
 from typing import Protocol
 
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunner
-from backend.app.capabilities.execution import McpToolAdapter, McpToolAdapterResolver
+from backend.app.capabilities.mcp_execution_adapters import (
+    McpToolAdapter,
+    McpToolAdapterResolver,
+)
 from backend.app.core.config import Settings
 from backend.app.core.request_context import log_context
 from backend.app.core.trace_context import (
@@ -19,19 +22,17 @@ from backend.app.core.trace_context import (
     current_trace_metadata,
     new_trace_context,
 )
-from backend.app.files.storage import create_storage
+from backend.app.core.typing import dict_or_empty
 from backend.app.operations.service import OperationsService
-from backend.app.orchestration.runs import RunOrchestrationService
-from backend.app.scheduled_jobs.service import WorkspaceScheduledJobService
-from backend.app.tasks.event_outbox import TaskEventOutboxPublisher
-from backend.app.tasks.events import RedisTaskEventBus
-from backend.app.teams.execution_loop import TeamExecutionLoopQueueService
 from backend.app.teams.runtime import TeamRuntimeService
-from backend.app.webhooks.service import WebhookDeliveryScheduler
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload, JobType
+from backend.app.workers.maintenance import (
+    WorkerMaintenanceConfig,
+    WorkerMaintenanceService,
+    WorkerMaintenanceSummary,
+)
 from backend.app.workers.queue import RedisQueue
-from backend.app.workspaces.data_lifecycle import WorkspaceDataLifecycleService
 
 logger = logging.getLogger(__name__)
 
@@ -85,33 +86,6 @@ class WorkerRunSummary:
     scheduled_job_actions_recorded_by_job_type: dict[str, int]
     scheduled_job_actions_skipped_by_job_type: dict[str, int]
     stopped: bool
-
-
-@dataclass(frozen=True)
-class WorkerMaintenanceSummary:
-    recovered_runs: int
-    expired_leases: int
-    stale_runtimes: int = 0
-    deleted_runtime_records: int = 0
-    lifecycle_backup_jobs_enqueued: int = 0
-    lifecycle_backup_jobs_skipped: int = 0
-    lifecycle_retention_runs_applied: int = 0
-    lifecycle_retention_runs_skipped: int = 0
-    lifecycle_restore_drills_completed: int = 0
-    lifecycle_restore_drills_skipped: int = 0
-    team_execution_loop_jobs_enqueued: int = 0
-    team_execution_loop_jobs_skipped: int = 0
-    team_execution_loop_skip_reasons: dict[str, int] = field(default_factory=dict)
-    task_events_published: int = 0
-    task_event_publish_failures: int = 0
-    webhook_delivery_jobs_enqueued: int = 0
-    webhook_delivery_jobs_skipped: int = 0
-    scheduled_job_actions_enqueued: int = 0
-    scheduled_job_actions_recorded: int = 0
-    scheduled_job_actions_skipped: int = 0
-    scheduled_job_actions_enqueued_by_job_type: dict[str, int] = field(default_factory=dict)
-    scheduled_job_actions_recorded_by_job_type: dict[str, int] = field(default_factory=dict)
-    scheduled_job_actions_skipped_by_job_type: dict[str, int] = field(default_factory=dict)
 
 
 class WorkerRunner:
@@ -521,108 +495,15 @@ class WorkerRunner:
         return stop_event is not None and stop_event.is_set()
 
     def run_maintenance(self) -> WorkerMaintenanceSummary:
-        try:
-            self._queue.reclaim_due_retries(limit=self._config.recovery_batch_size)
-            self._queue.reclaim_expired(limit=self._config.recovery_batch_size)
-            with self._session_scope() as session:
-                summary = RunOrchestrationService(
-                    session,
-                    queue=self._queue,
-                ).recover_stale_worker_runs(
-                    stale_after_seconds=self._config.run_lease_seconds,
-                    limit=self._config.recovery_batch_size,
-                    reason="worker_maintenance",
-                )
-                expired_leases = OperationsService(session).expire_stale_worker_leases(
-                    stale_after_seconds=self._config.run_lease_seconds,
-                )
-                stale_runtimes, deleted_runtime_records = OperationsService(
-                    session
-                ).cleanup_stale_runtimes_across_workspaces(
-                    stale_after_seconds=self._config.run_lease_seconds,
-                )
-                lifecycle_summary = WorkspaceDataLifecycleService(
-                    session
-                ).run_scheduled_lifecycle(
-                    queue=self._queue,
-                    storage=(
-                        create_storage(self._settings)
-                        if self._settings is not None
-                        else None
-                    ),
-                    limit=self._config.recovery_batch_size,
-                )
-                team_loop_summary = TeamExecutionLoopQueueService(
-                    session
-                ).enqueue_active_team_iterations(
-                    queue=self._queue,
-                    limit=self._config.recovery_batch_size,
-                )
-                task_event_summary = TaskEventOutboxPublisher(
-                    session,
-                    RedisTaskEventBus(
-                        redis=self._queue.redis,
-                        key_prefix=self._queue.keys.prefix,
-                    ),
-                ).publish_pending(limit=self._config.recovery_batch_size)
-                webhook_delivery_summary = WebhookDeliveryScheduler(session).enqueue_due(
-                    queue=self._queue,
-                    limit=self._config.recovery_batch_size,
-                )
-                scheduled_job_summary = WorkspaceScheduledJobService(session).enqueue_due(
-                    queue=self._queue,
-                    limit=self._config.recovery_batch_size,
-                )
-                return WorkerMaintenanceSummary(
-                    recovered_runs=summary.recovered_runs,
-                    expired_leases=expired_leases,
-                    stale_runtimes=stale_runtimes,
-                    deleted_runtime_records=deleted_runtime_records,
-                    lifecycle_backup_jobs_enqueued=(
-                        lifecycle_summary.backup_jobs_enqueued
-                    ),
-                    lifecycle_backup_jobs_skipped=(
-                        lifecycle_summary.backup_jobs_skipped
-                    ),
-                    lifecycle_retention_runs_applied=(
-                        lifecycle_summary.retention_runs_applied
-                    ),
-                    lifecycle_retention_runs_skipped=(
-                        lifecycle_summary.retention_runs_skipped
-                    ),
-                    lifecycle_restore_drills_completed=(
-                        lifecycle_summary.restore_drills_completed
-                    ),
-                    lifecycle_restore_drills_skipped=(
-                        lifecycle_summary.restore_drills_skipped
-                    ),
-                    team_execution_loop_jobs_enqueued=team_loop_summary.enqueued,
-                    team_execution_loop_jobs_skipped=team_loop_summary.skipped,
-                    team_execution_loop_skip_reasons=(
-                        team_loop_summary.skipped_reasons
-                    ),
-                    task_events_published=task_event_summary.published,
-                    task_event_publish_failures=task_event_summary.failed,
-                    webhook_delivery_jobs_enqueued=(
-                        webhook_delivery_summary.enqueued
-                    ),
-                    webhook_delivery_jobs_skipped=webhook_delivery_summary.skipped,
-                    scheduled_job_actions_enqueued=scheduled_job_summary.enqueued,
-                    scheduled_job_actions_recorded=scheduled_job_summary.recorded,
-                    scheduled_job_actions_skipped=scheduled_job_summary.skipped,
-                    scheduled_job_actions_enqueued_by_job_type=(
-                        scheduled_job_summary.enqueued_by_job_type or {}
-                    ),
-                    scheduled_job_actions_recorded_by_job_type=(
-                        scheduled_job_summary.recorded_by_job_type or {}
-                    ),
-                    scheduled_job_actions_skipped_by_job_type=(
-                        scheduled_job_summary.skipped_by_job_type or {}
-                    ),
-                )
-        except Exception:
-            logger.exception("Failed to run worker maintenance")
-            return WorkerMaintenanceSummary(recovered_runs=0, expired_leases=0)
+        return WorkerMaintenanceService(
+            queue=self._queue,
+            session_factory=self._session_factory,
+            config=WorkerMaintenanceConfig(
+                run_lease_seconds=self._config.run_lease_seconds,
+                recovery_batch_size=self._config.recovery_batch_size,
+            ),
+            settings=self._settings,
+        ).run()
 
     def _status_for(self, failed: int) -> str:
         return "degraded" if failed > 0 else "online"
@@ -799,7 +680,7 @@ def _worker_can_run_job(job: JobPayload, capacity: dict[str, object]) -> bool:
     worker_runtime_modes = _string_set(capacity.get("runtime_modes"))
     if required_runtime_modes and not required_runtime_modes <= worker_runtime_modes:
         return False
-    resource_requirements = _dict(routing.get("resource_requirements"))
+    resource_requirements = dict_or_empty(routing.get("resource_requirements"))
     for key, required_value in resource_requirements.items():
         if _positive_number(capacity.get(key)) < _positive_number(required_value):
             return False
@@ -816,10 +697,6 @@ def _merge_counts(target: dict[str, int], source: dict[str, int]) -> None:
 def _capacity_string(capacity: dict[str, object], key: str) -> str:
     value = capacity.get(key)
     return value if isinstance(value, str) else ""
-
-
-def _dict(value: object) -> dict[str, object]:
-    return dict(value) if isinstance(value, dict) else {}
 
 
 def _positive_number(value: object) -> float:

@@ -23,6 +23,7 @@ from backend.app.auth.permissions import ROLE_PERMISSIONS, WorkspaceAction, Work
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
+from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.memory.models import WorkspaceMemoryEntry
@@ -46,7 +47,11 @@ from backend.app.runtime_manager.contracts import (
     RuntimeCreateRequest,
 )
 from backend.app.runtime_manager.dependencies import get_docker_runtime_client
-from backend.app.runtime_spaces.models import RuntimeSpace
+from backend.app.runtime_spaces.models import (
+    RuntimeSpace,
+    RuntimeSpaceQuota,
+    RuntimeSpaceReservation,
+)
 from backend.app.runtimes.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.scheduled_jobs.models import WorkspaceScheduledJob
 from backend.app.secrets.service import SecretEncryptionService
@@ -543,6 +548,77 @@ def test_team_org_chart_returns_reporting_tree_and_capacity_summary() -> None:
         manager_member.json()["id"],
         developer_member.json()["id"],
     } <= set(cycle_response.json()["cycle_member_ids"])
+
+
+def test_team_member_update_rejects_indirect_reporting_cycle() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+
+    ceo_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "CEO", "role": "ceo"},
+    )
+    cto_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "CTO", "role": "cto"},
+    )
+    lead_agent = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Engineering Lead", "role": "team_lead"},
+    )
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={"name": "Mature Org", "team_type": "company"},
+    )
+    ceo_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": ceo_agent.json()["id"],
+            "team_role": "ceo",
+            "department": "Executive",
+            "max_concurrent_tasks": 1,
+        },
+    )
+    cto_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": cto_agent.json()["id"],
+            "reports_to_member_id": ceo_member.json()["id"],
+            "team_role": "cto",
+            "department": "Engineering",
+            "max_concurrent_tasks": 1,
+        },
+    )
+    lead_member = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": lead_agent.json()["id"],
+            "reports_to_member_id": cto_member.json()["id"],
+            "team_role": "team_lead",
+            "department": "Engineering",
+            "max_concurrent_tasks": 2,
+        },
+    )
+
+    cycle = client.patch(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members/"
+        f"{ceo_member.json()['id']}",
+        headers=_headers(owner.id),
+        json={"reports_to_member_id": lead_member.json()["id"]},
+    )
+
+    assert ceo_member.status_code == 201
+    assert cto_member.status_code == 201
+    assert lead_member.status_code == 201
+    assert cycle.status_code == 400
+    assert cycle.json()["error"]["code"] == "bad_request"
 
 
 def test_team_execution_overview_reports_workload_and_attention_items() -> None:
@@ -1379,6 +1455,287 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
     assert len(manager_review_steps) == 1
 
 
+def test_workspace_team_command_center_aggregates_active_teams_and_agent_load() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    other_owner, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-workspace-command@example.com",
+        slug="other-workspace-command",
+    )
+    shared_agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Shared Developer",
+        role="developer",
+    )
+    designer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Designer",
+        role="designer",
+    )
+    foreign_agent = AgentProfile(
+        workspace_id=other_workspace.id,
+        name="Foreign Agent",
+        role="developer",
+    )
+    session.add_all([shared_agent, designer, foreign_agent])
+    session.flush()
+    platform_team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Platform",
+        team_type="engineering",
+    )
+    product_team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Product",
+        team_type="product",
+    )
+    inactive_team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Inactive Team",
+        team_type="engineering",
+        status="inactive",
+    )
+    foreign_team = AgentTeam(
+        workspace_id=other_workspace.id,
+        name="Foreign Team",
+        team_type="engineering",
+    )
+    session.add_all([platform_team, product_team, inactive_team, foreign_team])
+    session.flush()
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=platform_team.id,
+                agent_profile_id=shared_agent.id,
+                team_role="developer",
+                max_concurrent_tasks=1,
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=product_team.id,
+                agent_profile_id=shared_agent.id,
+                team_role="developer",
+                max_concurrent_tasks=1,
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=product_team.id,
+                agent_profile_id=designer.id,
+                team_role="designer",
+                max_concurrent_tasks=2,
+            ),
+            AgentTeamMember(
+                workspace_id=other_workspace.id,
+                agent_team_id=foreign_team.id,
+                agent_profile_id=foreign_agent.id,
+                team_role="developer",
+                max_concurrent_tasks=1,
+            ),
+        ]
+    )
+    platform_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=platform_team.id,
+        title="Scale control plane",
+        status="running",
+        priority=8,
+        domain_type="platform",
+    )
+    product_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=product_team.id,
+        title="Ship project board",
+        status="running",
+        priority=7,
+        domain_type="product",
+    )
+    support_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=platform_team.id,
+        title="Triage incident",
+        status="running",
+        priority=9,
+        domain_type="platform",
+    )
+    inactive_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=inactive_team.id,
+        title="Inactive team task",
+        status="running",
+        priority=10,
+    )
+    foreign_task = Task(
+        workspace_id=other_workspace.id,
+        created_by_user_id=other_owner.id,
+        agent_team_id=foreign_team.id,
+        title="Foreign project",
+        status="running",
+        priority=10,
+    )
+    session.add_all([platform_task, product_task, support_task, inactive_task, foreign_task])
+    session.flush()
+    platform_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=platform_task.id,
+        assigned_agent_profile_id=shared_agent.id,
+        work_package_id="build",
+        required_role="developer",
+        title="Build scale path",
+        status="running",
+        order_index=10,
+    )
+    product_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=product_task.id,
+        assigned_agent_profile_id=shared_agent.id,
+        work_package_id="build",
+        required_role="developer",
+        title="Build board",
+        status="running",
+        order_index=10,
+    )
+    blocked_design_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=product_task.id,
+        work_package_id="design",
+        required_role="researcher",
+        required_skills=["research"],
+        title="Research board",
+        status="queued",
+        order_index=20,
+    )
+    support_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=support_task.id,
+        assigned_agent_profile_id=shared_agent.id,
+        work_package_id="triage",
+        required_role="developer",
+        title="Triage incident",
+        status="running",
+        order_index=10,
+    )
+    session.add_all(
+        [
+            platform_step,
+            product_step,
+            blocked_design_step,
+            support_step,
+            TaskStep(
+                workspace_id=workspace.id,
+                task_id=inactive_task.id,
+                assigned_agent_profile_id=shared_agent.id,
+                title="Should not aggregate",
+                status="running",
+            ),
+            TaskStep(
+                workspace_id=other_workspace.id,
+                task_id=foreign_task.id,
+                assigned_agent_profile_id=foreign_agent.id,
+                title="Foreign step",
+                status="running",
+            ),
+        ]
+    )
+    session.flush()
+    session.add_all(
+        [
+            AgentRun(
+                workspace_id=workspace.id,
+                task_id=platform_task.id,
+                task_step_id=platform_step.id,
+                agent_profile_id=shared_agent.id,
+                status=RunStatus.RUNNING.value,
+                input={"token": "hidden-workspace-command-token"},
+            ),
+            AgentRun(
+                workspace_id=workspace.id,
+                task_id=product_task.id,
+                task_step_id=product_step.id,
+                agent_profile_id=shared_agent.id,
+                status=RunStatus.QUEUED.value,
+                input={},
+            ),
+            AgentRun(
+                workspace_id=workspace.id,
+                task_id=support_task.id,
+                task_step_id=support_step.id,
+                agent_profile_id=shared_agent.id,
+                status=RunStatus.RUNNING.value,
+                input={},
+            ),
+            AgentRun(
+                workspace_id=other_workspace.id,
+                task_id=foreign_task.id,
+                agent_profile_id=foreign_agent.id,
+                status=RunStatus.RUNNING.value,
+                input={},
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/command-center",
+        headers=_headers(owner.id),
+    )
+    forbidden = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/command-center",
+        headers=_headers(other_owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] == str(workspace.id)
+    assert body["summary"]["active_team_count"] == 2
+    assert body["summary"]["total_tasks"] == 3
+    assert body["summary"]["employee_count"] == 2
+    assert {item["team_name"] for item in body["team_summaries"]} == {"Platform", "Product"}
+    assert {item["title"] for item in body["project_task_items"]} == {
+        "Scale control plane",
+        "Ship project board",
+        "Triage incident",
+    }
+    shared_load = next(
+        item for item in body["employee_load"] if item["agent_profile_id"] == str(shared_agent.id)
+    )
+    assert shared_load["team_count"] == 2
+    assert shared_load["active_team_count"] == 2
+    assert shared_load["total_capacity"] == 2
+    assert shared_load["active_task_count"] == 3
+    assert shared_load["at_capacity"] is True
+    assert shared_load["overloaded"] is True
+    assert shared_load["utilization"] == 1.5
+    assert set(shared_load["active_task_ids"]) == {
+        str(platform_task.id),
+        str(product_task.id),
+        str(support_task.id),
+    }
+    assert "agent_cross_team_capacity_pressure" in shared_load["blocked_reasons"]
+    reasons = {item["code"]: item for item in body["blocked_reasons"]}
+    assert "agent_over_capacity" in reasons
+    assert "agent_cross_team_capacity_pressure" in reasons
+    assert reasons["agent_cross_team_capacity_pressure"]["agent_profile_ids"] == [
+        str(shared_agent.id)
+    ]
+    actions = {item["action"]: item for item in body["cross_project_action_plan"]}
+    assert actions["redistribute_agent_work"]["agent_profile_id"] == str(shared_agent.id)
+    assert set(actions["redistribute_agent_work"]["team_ids"]) == {
+        str(platform_team.id),
+        str(product_team.id),
+    }
+    assert "Foreign project" not in str(body)
+    assert "Inactive team task" not in str(body)
+    assert "hidden-workspace-command-token" not in str(body)
+    assert forbidden.status_code == 403
+
+
 def test_team_command_center_apply_reports_scheduler_blocked_reasons() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
@@ -1425,6 +1782,7 @@ def test_team_command_center_apply_reports_scheduler_blocked_reasons() -> None:
                 agent_team_id=team.id,
                 agent_profile_id=developer.id,
                 team_role="developer",
+                max_concurrent_tasks=2,
                 order_index=2,
             ),
         ]
@@ -1536,6 +1894,7 @@ def test_team_command_center_apply_reports_blocked_reasons_with_partial_schedule
                 agent_team_id=team.id,
                 agent_profile_id=developer.id,
                 team_role="developer",
+                max_concurrent_tasks=2,
                 order_index=2,
             ),
         ]
@@ -2636,6 +2995,353 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
     assert command_body["summary"]["team_memory_entry_count"] == 2
     assert "Other team private memory" not in str(command_body)
     assert "sk-memory-secret" not in str(command_body)
+
+
+def test_team_project_space_exposes_runtime_capacity_and_outputs() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    _, other_workspace = _seed_workspace(
+        session,
+        role="owner",
+        email="other-project-space@example.com",
+        slug="other-project-space",
+    )
+    now = datetime.now(UTC)
+    manager = AgentProfile(
+        workspace_id=workspace.id,
+        name="Delivery Manager",
+        role="project_manager",
+        model="gpt-4.1",
+    )
+    developer = AgentProfile(
+        workspace_id=workspace.id,
+        name="Builder",
+        role="developer",
+        model="gpt-4.1-mini",
+    )
+    runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Project Space",
+        scope="team",
+        policy={"space_tier": "standard", "api_key": "sk-project-space-secret"},
+        network_policy={"egress": "restricted"},
+        storage_policy={"max_storage_mb": 25_600, "token": "storage-secret-token"},
+        cleanup_policy={"completed_task_retention_days": 90},
+    )
+    task_runtime_space = RuntimeSpace(
+        workspace_id=workspace.id,
+        name="Task Space",
+        scope="task",
+        policy={"space_tier": "small"},
+        storage_policy={"max_storage_mb": 5_120},
+        cleanup_policy={"completed_task_retention_days": 30},
+    )
+    session.add_all([manager, developer, runtime_space, task_runtime_space])
+    session.flush()
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Project Space Team",
+        team_type="software",
+        manager_agent_profile_id=manager.id,
+        runtime_space_id=runtime_space.id,
+        coordination_rules={"cadence": "async"},
+        default_task_policy={"priority": 5},
+    )
+    other_team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Other Team",
+        team_type="support",
+    )
+    session.add_all([team, other_team])
+    session.flush()
+    manager_member = AgentTeamMember(
+        workspace_id=workspace.id,
+        agent_team_id=team.id,
+        agent_profile_id=manager.id,
+        team_role="project_manager",
+        department="Product",
+        position_title="Project Manager",
+        max_concurrent_tasks=2,
+        order_index=1,
+    )
+    developer_member = AgentTeamMember(
+        workspace_id=workspace.id,
+        agent_team_id=team.id,
+        agent_profile_id=developer.id,
+        team_role="developer",
+        department="Engineering",
+        position_title="Senior Engineer",
+        max_concurrent_tasks=3,
+        order_index=2,
+    )
+    session.add_all([manager_member, developer_member])
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        runtime_space_id=task_runtime_space.id,
+        title="Ship project-space dashboard",
+        description="Expose mature project-space governance.",
+        status="running",
+        priority=9,
+    )
+    completed_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=team.id,
+        runtime_space_id=runtime_space.id,
+        title="Completed old task",
+        description="Hidden by default.",
+        status="completed",
+        priority=1,
+        completed_at=now,
+    )
+    foreign_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        agent_team_id=other_team.id,
+        title="Foreign team task",
+        description="Must not leak.",
+        status="running",
+        priority=10,
+    )
+    session.add_all([task, completed_task, foreign_task])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=developer.id,
+        runtime_space_id=runtime_space.id,
+        work_package_id="engineering-build",
+        required_role="developer",
+        expected_artifacts=["build_report"],
+        title="Build project-space service",
+        description="Aggregate task outputs into project space.",
+        status="running",
+        order_index=1,
+    )
+    manager_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=manager.id,
+        runtime_space_id=runtime_space.id,
+        work_package_id="manager-review",
+        required_role="project_manager",
+        expected_artifacts=[],
+        title="Review delivery",
+        description="Check output.",
+        status="queued",
+        order_index=2,
+    )
+    foreign_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=foreign_task.id,
+        assigned_agent_profile_id=developer.id,
+        title="Foreign work",
+        description="Must not leak.",
+        status="running",
+        order_index=1,
+    )
+    session.add_all([step, manager_step, foreign_step])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=developer.id,
+        runtime_space_id=runtime_space.id,
+        status=RunStatus.RUNNING.value,
+        input={"prompt": "build"},
+        started_at=now,
+    )
+    foreign_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=foreign_task.id,
+        task_step_id=foreign_step.id,
+        agent_profile_id=developer.id,
+        status=RunStatus.RUNNING.value,
+    )
+    session.add_all([run, foreign_run])
+    session.flush()
+    artifact = Artifact(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_run_id=run.id,
+        agent_profile_id=developer.id,
+        work_package_id="engineering-build",
+        artifact_type="build_report",
+        filename="build-report.md",
+        content_type="text/markdown",
+        size_bytes=2_048,
+        checksum_sha256="a" * 64,
+        storage_key="artifacts/build-report.md",
+        review_status="pending",
+        created_at=now,
+    )
+    foreign_artifact = Artifact(
+        workspace_id=workspace.id,
+        task_id=foreign_task.id,
+        task_step_id=foreign_step.id,
+        agent_run_id=foreign_run.id,
+        agent_profile_id=developer.id,
+        artifact_type="foreign",
+        filename="foreign.md",
+        content_type="text/markdown",
+        size_bytes=9_999,
+        checksum_sha256="b" * 64,
+        storage_key="artifacts/foreign.md",
+        created_at=now,
+    )
+    session.add_all([artifact, foreign_artifact])
+    session.flush()
+    session.add_all(
+        [
+            RuntimeSpaceQuota(
+                workspace_id=workspace.id,
+                runtime_space_id=runtime_space.id,
+                quota_key="active_runs",
+                limit_value=8,
+                reserved_value=1,
+                unit="count",
+            ),
+            RuntimeSpaceQuota(
+                workspace_id=workspace.id,
+                runtime_space_id=task_runtime_space.id,
+                quota_key="active_runs",
+                limit_value=2,
+                reserved_value=0,
+                unit="count",
+            ),
+            RuntimeSpaceReservation(
+                workspace_id=workspace.id,
+                runtime_space_id=runtime_space.id,
+                task_id=task.id,
+                task_step_id=step.id,
+                agent_run_id=run.id,
+                reservation_key="run-reservation",
+                resource_usage={"active_runs": 1, "storage_bytes": 512},
+                status="active",
+            ),
+            WorkspaceFile(
+                workspace_id=workspace.id,
+                uploaded_by_user_id=owner.id,
+                filename="brief.md",
+                content_type="text/markdown",
+                size_bytes=1_024,
+                checksum_sha256="c" * 64,
+                storage_key="files/brief.md",
+                file_metadata={
+                    "team_id": str(team.id),
+                    "task_id": str(task.id),
+                    "runtime_space_id": str(runtime_space.id),
+                    "token": "file-hidden-token",
+                },
+            ),
+            WorkspaceFile(
+                workspace_id=workspace.id,
+                uploaded_by_user_id=owner.id,
+                filename="foreign.md",
+                content_type="text/markdown",
+                size_bytes=8_192,
+                checksum_sha256="d" * 64,
+                storage_key="files/foreign.md",
+                file_metadata={"team_id": str(other_team.id), "task_id": str(foreign_task.id)},
+            ),
+            WorkspaceMemoryEntry(
+                workspace_id=workspace.id,
+                created_by_user_id=owner.id,
+                source_type="agent_team",
+                source_id=str(team.id),
+                entry_type="team_memory",
+                title="Team project-space ritual",
+                content="Outputs land in the project space.",
+                visibility_scope="team",
+                importance=9,
+                memory_metadata={"agentTeamId": str(team.id)},
+            ),
+            WorkspaceMemoryEntry(
+                workspace_id=workspace.id,
+                created_by_agent_profile_id=developer.id,
+                created_by_agent_run_id=run.id,
+                source_type="agent_run",
+                source_id=str(run.id),
+                entry_type="run_summary",
+                title="Build summary",
+                content="Implemented aggregation.",
+                visibility_scope="team",
+                importance=7,
+                memory_metadata={"task_id": str(task.id)},
+            ),
+            WorkspaceMemoryEntry(
+                workspace_id=workspace.id,
+                source_type="agent_team",
+                source_id=str(other_team.id),
+                entry_type="team_memory",
+                title="Foreign team memory",
+                content="Must not leak.",
+                visibility_scope="team",
+                importance=100,
+                memory_metadata={"team_id": str(other_team.id)},
+            ),
+            WorkspaceMemoryEntry(
+                workspace_id=other_workspace.id,
+                source_type="agent_team",
+                source_id=str(team.id),
+                entry_type="team_memory",
+                title="Foreign workspace memory",
+                content="Must not leak.",
+                visibility_scope="team",
+                importance=100,
+            ),
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/project-space",
+        headers=_headers(owner.id),
+    )
+    missing_response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{uuid4()}/project-space",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] == str(workspace.id)
+    assert body["team"]["id"] == str(team.id)
+    assert body["team"]["primary_runtime_space_id"] == str(runtime_space.id)
+    assert body["summary"]["task_count"] == 1
+    assert body["summary"]["active_run_count"] == 1
+    assert body["summary"]["artifact_count"] == 1
+    assert body["summary"]["workspace_file_count"] == 1
+    assert body["summary"]["memory_entry_count"] == 2
+    assert {space["id"] for space in body["runtime_spaces"]} == {
+        str(runtime_space.id),
+        str(task_runtime_space.id),
+    }
+    assert body["capacity"]["storage"]["total_bytes"] == 3_072
+    assert body["capacity"]["reservations"]["resource_usage"]["active_runs"] == 1
+    assert body["max_project_space"]["effective_limits"]["active_runs"] == 10
+    assert body["landing_rules"]["workspace_file_source"] == "workspace_file.metadata"
+    developer_output = next(
+        item for item in body["employee_outputs"] if item["agent_profile_id"] == str(developer.id)
+    )
+    assert developer_output["artifact_count"] == 1
+    assert developer_output["artifact_bytes"] == 2_048
+    assert developer_output["memory_entry_count"] == 1
+    assert body["project_tasks"][0]["task_id"] == str(task.id)
+    assert body["project_tasks"][0]["artifact_bytes"] == 2_048
+    assert body["space_tiers"][1]["tier"] == "standard"
+    body_text = json.dumps(body)
+    assert str(foreign_task.id) not in body_text
+    assert "Foreign team memory" not in body_text
+    assert "Foreign workspace memory" not in body_text
+    assert "sk-project-space-secret" not in body_text
+    assert "file-hidden-token" not in body_text
+    assert missing_response.status_code == 404
 
 
 def test_team_runtime_timeline_includes_scheduler_scan_metadata() -> None:
@@ -7814,19 +8520,45 @@ def test_task_plan_diagnostics_explains_assignment_and_dependency_quality() -> N
     )
     session.add_all([manager, developer])
     session.flush()
+    manager_member_id = uuid4()
+    lead_member_id = uuid4()
     member_id = uuid4()
     team_snapshot = {
         "team": {"manager_agent_profile_id": str(manager.id)},
         "members": [
             {
+                "id": str(manager_member_id),
+                "agent_profile_id": str(manager.id),
+                "team_role": "project_manager",
+                "department": "Delivery",
+                "accepts_tasks": True,
+                "is_required": True,
+                "max_concurrent_tasks": 3,
+                "order_index": 0,
+            },
+            {
+                "id": str(lead_member_id),
+                "agent_profile_id": str(developer.id),
+                "reports_to_member_id": str(manager_member_id),
+                "team_role": "team_lead",
+                "department": "Engineering",
+                "accepts_tasks": True,
+                "is_required": True,
+                "max_concurrent_tasks": 2,
+                "order_index": 1,
+            },
+            {
                 "id": str(member_id),
                 "agent_profile_id": str(developer.id),
+                "reports_to_member_id": str(lead_member_id),
                 "team_role": "developer",
+                "department": "Engineering",
                 "skill_weights": {"python": 0.9},
                 "accepts_tasks": True,
                 "is_required": True,
                 "max_concurrent_tasks": 3,
-            }
+                "order_index": 2,
+            },
         ],
     }
     task = Task(
@@ -7938,6 +8670,9 @@ def test_task_plan_diagnostics_explains_assignment_and_dependency_quality() -> N
         "has_manager_planning": True,
         "has_manager_summary": True,
     }
+    assert body["org_health"]["manager_count"] == 1
+    assert body["org_health"]["lead_count"] == 1
+    assert body["org_health"]["blocked_reasons"] == ["missing_lead_review"]
     assert body["summary"] == {
         "total_packages": 6,
         "assigned_packages": 5,
@@ -7949,6 +8684,7 @@ def test_task_plan_diagnostics_explains_assignment_and_dependency_quality() -> N
         "unassigned_work_packages",
         "unknown_dependencies",
         "dependency_cycle",
+        "missing_lead_review",
     }
     assert body["dependency_graph"]["unknown_dependencies"] == ["missing-package"]
     assert body["dependency_graph"]["cycle_package_ids"] == ["cycle-a", "cycle-b"]

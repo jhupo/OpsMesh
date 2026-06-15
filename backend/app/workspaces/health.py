@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.artifacts.models import Artifact
+from backend.app.core.typing import dict_list, dict_or_empty, int_or_zero, string_list
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
@@ -89,11 +90,11 @@ class WorkspaceHealthService:
             workspace_id=workspace_id,
             status=str(health["status"]),
             score=int(health["score"]),
-            summary=_dict(health.get("summary")),
-            risk_items=_dict_list(health.get("risk_items")),
-            recommended_actions=_string_list(health.get("recommended_actions")),
+            summary=dict_or_empty(health.get("summary")),
+            risk_items=dict_list(health.get("risk_items")),
+            recommended_actions=string_list(health.get("recommended_actions")),
             trend_basis={
-                **_dict(health.get("trend_basis")),
+                **dict_or_empty(health.get("trend_basis")),
                 "mode": "persisted_snapshot",
             },
         )
@@ -316,49 +317,49 @@ def _risk_items(
     _append_risk(
         risks,
         code="blocked_tasks",
-        count=_int(task_summary.get("blocked_task_count")),
+        count=int_or_zero(task_summary.get("blocked_task_count")),
         severity="high",
         recommended_action="inspect_project_dashboard",
     )
     _append_risk(
         risks,
         code="failed_tasks",
-        count=_int(task_summary.get("failed_task_count")),
+        count=int_or_zero(task_summary.get("failed_task_count")),
         severity="critical",
         recommended_action="create_corrections",
     )
     _append_risk(
         risks,
         code="waiting_runtime_runs",
-        count=_int(execution.get("waiting_runtime_run_count")),
+        count=int_or_zero(execution.get("waiting_runtime_run_count")),
         severity="high",
         recommended_action="inspect_runtime_capacity",
     )
     _append_risk(
         risks,
         code="failed_runs",
-        count=_int(execution.get("failed_run_count")),
+        count=int_or_zero(execution.get("failed_run_count")),
         severity="high",
         recommended_action="retry_or_debug_runs",
     )
     _append_risk(
         risks,
         code="missing_expected_artifacts",
-        count=_int(delivery.get("missing_expected_artifact_count")),
+        count=int_or_zero(delivery.get("missing_expected_artifact_count")),
         severity="high",
         recommended_action="create_corrections",
     )
     _append_risk(
         risks,
         code="pending_artifact_review",
-        count=_int(delivery.get("pending_review_artifact_count")),
+        count=int_or_zero(delivery.get("pending_review_artifact_count")),
         severity="medium",
         recommended_action="review_artifacts",
     )
     _append_risk(
         risks,
         code="recent_control_activity",
-        count=_int(control.get("control_message_count")),
+        count=int_or_zero(control.get("control_message_count")),
         severity="low",
         recommended_action="inspect_control_diagnostics",
     )
@@ -395,7 +396,7 @@ def _health_score(risks: list[dict[str, object]]) -> int:
     score = 100
     for risk in risks:
         severity = str(risk.get("severity") or "low")
-        count = _int(risk.get("count"))
+        count = int_or_zero(risk.get("count"))
         score -= penalties.get(severity, 2) * count
     return max(0, min(score, 100))
 
@@ -424,32 +425,12 @@ def _counts(values: object) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
-def _int(value: object) -> int:
-    return value if isinstance(value, int) else 0
-
-
-def _dict(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
-
-
-def _dict_list(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, dict)]
-
-
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
-
-
 def _health_snapshot_policy(settings: object) -> dict[str, timedelta] | None:
-    root = _dict(settings)
-    operations = _dict(root.get("operations"))
-    policy = _dict(operations.get("health_snapshots"))
+    root = dict_or_empty(settings)
+    operations = dict_or_empty(root.get("operations"))
+    policy = dict_or_empty(operations.get("health_snapshots"))
     if not policy:
-        policy = _dict(root.get("health_snapshots"))
+        policy = dict_or_empty(root.get("health_snapshots"))
     if policy.get("enabled") is not True:
         return None
     interval = _positive_timedelta(policy.get("interval_minutes"), unit="minutes")
@@ -575,7 +556,7 @@ def _risk_counts(snapshot: WorkspaceHealthSnapshot | None) -> dict[str, int]:
         code = item.get("code")
         if not isinstance(code, str):
             continue
-        counts[code] = _int(item.get("count"))
+        counts[code] = int_or_zero(item.get("count"))
     return counts
 
 

@@ -10,6 +10,9 @@ _SENSITIVE_EXACT_KEYS = {
     "external_ref",
     "remote_url",
 }
+_SAFE_EXACT_KEYS = {
+    "authorization_snapshot_version",
+}
 _SENSITIVE_KEY_PARTS = {
     "api_key",
     "authorization",
@@ -55,6 +58,8 @@ def redact_sensitive_payload_item(value: object) -> object:
 
 def is_sensitive_payload_key(key: str) -> bool:
     normalized = key.lower().replace("-", "_")
+    if normalized in _SAFE_EXACT_KEYS:
+        return False
     if normalized in _SENSITIVE_EXACT_KEYS:
         return True
     if normalized in _SENSITIVE_KEY_PARTS:

@@ -6,7 +6,10 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
-from backend.app.api.schemas.redaction import redact_sensitive_payload
+from backend.app.api.schemas.redaction import (
+    redact_sensitive_payload,
+    redact_sensitive_payload_item,
+)
 from backend.app.api.schemas.tasks import TaskHandoffQueueResponse, TaskManagerQueueResponse
 
 
@@ -129,19 +132,25 @@ class AgentTeamOrgChartResponse(BaseModel):
 class AgentTeamExecutionMemberResponse(BaseModel):
     team_member_id: UUID
     agent_profile_id: UUID
+    reports_to_member_id: UUID | None = None
     agent_name: str | None
     agent_role: str | None
     team_role: str
     department: str | None
+    position_title: str | None = None
+    responsibilities: list[str] = Field(default_factory=list)
     status: str
     accepts_tasks: bool
     max_concurrent_tasks: int
     active_task_count: int
+    workspace_active_task_count: int = 0
+    workspace_active_task_ids: list[UUID] = Field(default_factory=list)
     active_step_count: int
     active_run_count: int
     active_run_phase_counts: dict[str, int] = Field(default_factory=dict)
     utilization: float
     overloaded: bool
+    at_capacity: bool = False
     blocked_reasons: list[str] = Field(default_factory=list)
 
 
@@ -208,6 +217,41 @@ class AgentTeamProjectDashboardResponse(BaseModel):
         return [redact_sensitive_payload(item) for item in value]
 
 
+class AgentTeamProjectSpaceResponse(BaseModel):
+    workspace_id: UUID
+    team_id: UUID
+    generated_at: datetime
+    team: dict[str, object]
+    summary: dict[str, object]
+    runtime_spaces: list[dict[str, object]] = Field(default_factory=list)
+    capacity: dict[str, object]
+    storage: dict[str, object]
+    memory: dict[str, object]
+    employee_outputs: list[dict[str, object]] = Field(default_factory=list)
+    project_tasks: list[dict[str, object]] = Field(default_factory=list)
+    landing_rules: dict[str, object]
+    space_tiers: list[dict[str, object]] = Field(default_factory=list)
+    max_project_space: dict[str, object]
+    archive_policy: dict[str, object]
+
+    @field_serializer(
+        "team",
+        "summary",
+        "runtime_spaces",
+        "capacity",
+        "storage",
+        "memory",
+        "employee_outputs",
+        "project_tasks",
+        "landing_rules",
+        "space_tiers",
+        "max_project_space",
+        "archive_policy",
+    )
+    def _serialize_project_space(self, value: object) -> object:
+        return redact_sensitive_payload_item(value)
+
+
 class AgentTeamCommandCenterResponse(BaseModel):
     workspace_id: UUID
     team_id: UUID
@@ -239,6 +283,28 @@ class AgentTeamCommandCenterResponse(BaseModel):
         value: list[dict[str, object]],
     ) -> list[dict[str, object]]:
         return [redact_sensitive_payload(item) for item in value]
+
+
+class WorkspaceTeamCommandCenterResponse(BaseModel):
+    workspace_id: UUID
+    generated_at: datetime
+    summary: dict[str, object]
+    team_summaries: list[dict[str, object]] = Field(default_factory=list)
+    project_task_items: list[dict[str, object]] = Field(default_factory=list)
+    employee_load: list[dict[str, object]] = Field(default_factory=list)
+    blocked_reasons: list[dict[str, object]] = Field(default_factory=list)
+    cross_project_action_plan: list[dict[str, object]] = Field(default_factory=list)
+
+    @field_serializer(
+        "summary",
+        "team_summaries",
+        "project_task_items",
+        "employee_load",
+        "blocked_reasons",
+        "cross_project_action_plan",
+    )
+    def _serialize_metadata(self, value: object) -> object:
+        return redact_sensitive_payload_item(value)
 
 
 class AgentTeamOperationsConsoleTeamResponse(BaseModel):
@@ -355,10 +421,7 @@ class AgentTeamOperationsConsoleCommandCenterResponse(BaseModel):
         self,
         value: list[AgentTeamOperationsConsoleActionPlanItem],
     ) -> list[dict[str, object]]:
-        return [
-            redact_sensitive_payload(item.model_dump(mode="python"))
-            for item in value
-        ]
+        return [redact_sensitive_payload(item.model_dump(mode="python")) for item in value]
 
 
 class AgentTeamOperationsConsoleAgentSummary(BaseModel):
@@ -424,9 +487,7 @@ class AgentTeamOperationsConsoleProviderManagementResponse(BaseModel):
     credentials: list[dict[str, object]] = Field(default_factory=list)
     agent_bindings: list[dict[str, object]] = Field(default_factory=list)
     run_diagnostics: dict[str, object] = Field(default_factory=dict)
-    suggested_actions: list[AgentTeamOperationsConsoleActionPlanItem] = Field(
-        default_factory=list
-    )
+    suggested_actions: list[AgentTeamOperationsConsoleActionPlanItem] = Field(default_factory=list)
 
     @field_serializer("credentials", "agent_bindings")
     def _serialize_provider_management_items(
@@ -444,10 +505,7 @@ class AgentTeamOperationsConsoleProviderManagementResponse(BaseModel):
         self,
         value: list[AgentTeamOperationsConsoleActionPlanItem],
     ) -> list[dict[str, object]]:
-        return [
-            redact_sensitive_payload(item.model_dump(mode="python"))
-            for item in value
-        ]
+        return [redact_sensitive_payload(item.model_dump(mode="python")) for item in value]
 
 
 class AgentTeamMemberModelProviderUpdateRequest(BaseModel):
@@ -494,19 +552,14 @@ class AgentTeamOperationsConsoleControlsResponse(BaseModel):
     can_resume: bool
     can_stop: bool
     can_ensure_workspace_runtime: bool
-    suggested_actions: list[AgentTeamOperationsConsoleActionPlanItem] = Field(
-        default_factory=list
-    )
+    suggested_actions: list[AgentTeamOperationsConsoleActionPlanItem] = Field(default_factory=list)
 
     @field_serializer("suggested_actions")
     def _serialize_suggested_actions(
         self,
         value: list[AgentTeamOperationsConsoleActionPlanItem],
     ) -> list[dict[str, object]]:
-        return [
-            redact_sensitive_payload(item.model_dump(mode="python"))
-            for item in value
-        ]
+        return [redact_sensitive_payload(item.model_dump(mode="python")) for item in value]
 
 
 class AgentTeamOperationsConsoleReadinessResponse(BaseModel):

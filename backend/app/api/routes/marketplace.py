@@ -31,13 +31,18 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
-from backend.app.marketplace.service import (
-    MarketplaceService,
-    TalentMarketplaceService,
-    _install_response,
+from backend.app.marketplace.resource_service import MarketplaceService
+from backend.app.marketplace.responses import (
+    install_response,
     marketplace_install_response,
     review_response,
 )
+from backend.app.marketplace.talent_catalog import TalentCatalogService
+from backend.app.marketplace.talent_hiring import TalentHiringService
+from backend.app.marketplace.talent_publish import TalentPublishService
+from backend.app.marketplace.talent_recommendations import TalentRecommendationService
+from backend.app.marketplace.talent_reviews import TalentReviewService
+from backend.app.marketplace.talent_upgrades import TalentInstallUpgradeService
 
 router = APIRouter(tags=["talent-marketplace"])
 
@@ -137,7 +142,7 @@ async def list_talent_market(
     skill: str | None = Query(default=None),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[TalentListingResponse]:
-    items, total = TalentMarketplaceService(session).list_public_listings(
+    items, total = TalentCatalogService(session).list_public_listings(
         page,
         query=query,
         role=role,
@@ -154,7 +159,7 @@ async def get_talent_listing_metrics(
     listing_id: UUID,
     session: Session = Depends(get_db_session),
 ) -> TalentListingMetricsResponse:
-    response = TalentMarketplaceService(session).listing_metrics(listing_id)
+    response = TalentReviewService(session).listing_metrics(listing_id)
     if response is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -172,7 +177,7 @@ async def list_talent_listing_reviews(
     page: PageParams = Depends(pagination_params),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[TalentListingReviewResponse]:
-    result = TalentMarketplaceService(session).list_reviews(listing_id, page)
+    result = TalentReviewService(session).list_reviews(listing_id, page)
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -199,7 +204,7 @@ async def publish_agent_to_talent_market(
     settings: Settings = Depends(get_settings),
 ) -> TalentListingResponse:
     try:
-        listing = TalentMarketplaceService(session, settings=settings).publish_agent(
+        listing = TalentPublishService(session, settings=settings).publish_agent(
             workspace_id=context.workspace.id,
             owner_user_id=context.user.user_id,
             data=request,
@@ -223,7 +228,7 @@ async def hire_agent_from_talent_market(
     session: Session = Depends(get_db_session),
 ) -> WorkspaceAgentInstallResponse:
     try:
-        install = TalentMarketplaceService(session).hire_agent(
+        install = TalentHiringService(session).hire_agent(
             workspace_id=context.workspace.id,
             user_id=context.user.user_id,
             listing_id=listing_id,
@@ -233,7 +238,7 @@ async def hire_agent_from_talent_market(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return _install_response(install)
+    return install_response(install)
 
 
 @router.post(
@@ -246,7 +251,7 @@ async def recommend_talent_for_team(
     session: Session = Depends(get_db_session),
 ) -> TalentRecommendationResponse:
     try:
-        return TalentMarketplaceService(session).recommend_team(
+        return TalentRecommendationService(session).recommend_team(
             workspace_id=context.workspace.id,
             data=request,
         )
@@ -264,7 +269,7 @@ async def recommend_talent_for_task_staffing(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> TaskTalentRecommendationResponse:
-    response = TalentMarketplaceService(session).recommend_for_task_staffing(
+    response = TalentRecommendationService(session).recommend_for_task_staffing(
         workspace_id=context.workspace.id,
         task_id=task_id,
         max_candidates_per_role=max_candidates_per_role,
@@ -286,7 +291,7 @@ async def hire_talent_for_task_staffing_gap(
     session: Session = Depends(get_db_session),
 ) -> WorkspaceAgentInstallResponse:
     try:
-        install = TalentMarketplaceService(session).hire_for_task_staffing_gap(
+        install = TalentHiringService(session).hire_for_task_staffing_gap(
             workspace_id=context.workspace.id,
             user_id=context.user.user_id,
             task_id=task_id,
@@ -298,7 +303,7 @@ async def hire_talent_for_task_staffing_gap(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if install is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    return _install_response(install)
+    return install_response(install)
 
 
 @router.get(
@@ -310,9 +315,9 @@ async def list_workspace_talent_installs(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[WorkspaceAgentInstallResponse]:
-    items, total = TalentMarketplaceService(session).list_installs(context.workspace.id, page)
+    items, total = TalentCatalogService(session).list_installs(context.workspace.id, page)
     return PageResponse(
-        items=[_install_response(item) for item in items],
+        items=[install_response(item) for item in items],
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -328,7 +333,7 @@ async def get_talent_install_upgrade_status(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> TalentUpgradeStatusResponse:
-    response = TalentMarketplaceService(session).get_upgrade_status(
+    response = TalentInstallUpgradeService(session).get_upgrade_status(
         workspace_id=context.workspace.id,
         install_id=install_id,
     )
@@ -350,7 +355,7 @@ async def update_talent_install_pin(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceAgentInstallResponse:
-    install = TalentMarketplaceService(session).set_install_pin(
+    install = TalentInstallUpgradeService(session).set_install_pin(
         workspace_id=context.workspace.id,
         install_id=install_id,
         data=request,
@@ -361,7 +366,7 @@ async def update_talent_install_pin(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Talent install not found",
         )
-    return _install_response(install)
+    return install_response(install)
 
 
 @router.post(
@@ -375,7 +380,7 @@ async def upgrade_talent_install(
     session: Session = Depends(get_db_session),
 ) -> WorkspaceAgentInstallResponse:
     try:
-        install = TalentMarketplaceService(session).upgrade_install(
+        install = TalentInstallUpgradeService(session).upgrade_install(
             workspace_id=context.workspace.id,
             install_id=install_id,
             data=request,
@@ -388,7 +393,7 @@ async def upgrade_talent_install(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Talent install not found",
         )
-    return _install_response(install)
+    return install_response(install)
 
 
 @router.post(
@@ -403,7 +408,7 @@ async def review_talent_listing(
     session: Session = Depends(get_db_session),
 ) -> TalentListingReviewResponse:
     try:
-        review = TalentMarketplaceService(session).upsert_review(
+        review = TalentReviewService(session).upsert_review(
             workspace_id=context.workspace.id,
             user_id=context.user.user_id,
             listing_id=listing_id,

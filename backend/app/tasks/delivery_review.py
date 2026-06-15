@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
+from backend.app.core.typing import int_or_zero, string_list
 from backend.app.tasks.models import Task, TaskStep
 
 
@@ -151,9 +152,9 @@ def _summary(
     artifacts: list[Artifact],
     artifact_type_counts: dict[str, int],
 ) -> dict[str, object]:
-    expected_total = sum(len(_string_list(step.get("expected_artifacts"))) for step in step_reviews)
+    expected_total = sum(len(string_list(step.get("expected_artifacts"))) for step in step_reviews)
     missing_total = sum(
-        len(_string_list(step.get("missing_expected_artifacts"))) for step in step_reviews
+        len(string_list(step.get("missing_expected_artifacts"))) for step in step_reviews
     )
     pending_review = sum(1 for artifact in artifacts if artifact.review_status == "pending")
     rejected = sum(1 for artifact in artifacts if artifact.review_status == "rejected")
@@ -177,22 +178,22 @@ def _summary(
 
 
 def _delivery_status(task: Task, summary: dict[str, object]) -> str:
-    if _int(summary.get("missing_expected_artifact_count")) > 0:
+    if int_or_zero(summary.get("missing_expected_artifact_count")) > 0:
         return "incomplete"
-    if _int(summary.get("rejected_artifact_count")) > 0:
+    if int_or_zero(summary.get("rejected_artifact_count")) > 0:
         return "needs_revision"
-    if _int(summary.get("pending_review_artifact_count")) > 0:
+    if int_or_zero(summary.get("pending_review_artifact_count")) > 0:
         return "needs_review"
     if task.final_output is not None:
         return "accepted" if task.status == "completed" else "ready_to_finalize"
-    if _int(summary.get("artifact_count")) > 0:
+    if int_or_zero(summary.get("artifact_count")) > 0:
         return "ready_to_review"
     return "empty"
 
 
 def _recommended_actions(task: Task, summary: dict[str, object]) -> list[dict[str, object]]:
     actions: list[dict[str, object]] = []
-    if _int(summary.get("missing_expected_artifact_count")) > 0:
+    if int_or_zero(summary.get("missing_expected_artifact_count")) > 0:
         actions.append(
             {
                 "action": "create_correction",
@@ -205,11 +206,14 @@ def _recommended_actions(task: Task, summary: dict[str, object]) -> list[dict[st
                 },
             }
         )
-    if _int(summary.get("rejected_artifact_count")) > 0:
+    if int_or_zero(summary.get("rejected_artifact_count")) > 0:
         actions.append({"action": "request_revision", "reason": "rejected_artifacts"})
-    if _int(summary.get("pending_review_artifact_count")) > 0:
+    if int_or_zero(summary.get("pending_review_artifact_count")) > 0:
         actions.append({"action": "review_artifacts", "reason": "pending_artifact_review"})
-    if task.final_output is None and _int(summary.get("missing_expected_artifact_count")) == 0:
+    if (
+        task.final_output is None
+        and int_or_zero(summary.get("missing_expected_artifact_count")) == 0
+    ):
         actions.append({"action": "request_manager_review", "reason": "final_output_missing"})
     return actions
 
@@ -259,13 +263,3 @@ def _agent_summary(agent: AgentProfile | None) -> dict[str, object] | None:
         "role": agent.role,
         "status": agent.status,
     }
-
-
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
-
-
-def _int(value: object) -> int:
-    return value if isinstance(value, int) else 0

@@ -27,13 +27,21 @@ from backend.app.api.schemas.workspaces import (
     WorkspaceResponse,
     WorkspaceUpdateRequest,
 )
-from backend.app.api.services.workspaces import (
+from backend.app.api.services.workspace_errors import (
     WorkspaceInviteConflictError,
     WorkspaceInviteNotFoundError,
     WorkspaceInvitePermissionError,
     WorkspaceMemberConflictError,
     WorkspaceMemberNotFoundError,
     WorkspaceMemberPermissionError,
+)
+from backend.app.api.services.workspace_invites import (
+    WorkspaceInviteService,
+    fingerprint_invite_token,
+)
+from backend.app.api.services.workspace_members import WorkspaceMemberService
+from backend.app.api.services.workspace_quotas import WorkspaceQuotaService
+from backend.app.api.services.workspaces import (
     WorkspaceService,
 )
 from backend.app.auth.context import AuthenticatedUser, WorkspaceContext
@@ -106,8 +114,8 @@ async def accept_workspace_invite(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> WorkspaceInviteAcceptResponse:
-    service = WorkspaceService(session, settings)
-    fingerprint = WorkspaceService.fingerprint_invite_token(request.token)
+    service = WorkspaceInviteService(session, settings)
+    fingerprint = fingerprint_invite_token(request.token)
     try:
         accepted = service.accept_invite(request, actor_user_id=current_user.user_id)
     except WorkspaceInvitePermissionError as exc:
@@ -233,7 +241,7 @@ async def create_workspace_invite(
     settings: Settings = Depends(get_settings),
 ) -> WorkspaceInviteCreateResponse:
     try:
-        created = WorkspaceService(session, settings).create_invite(
+        created = WorkspaceInviteService(session, settings).create_invite(
             context.workspace.id,
             request,
             actor_user_id=context.user.user_id,
@@ -257,7 +265,7 @@ async def revoke_workspace_invite(
     session: Session = Depends(get_db_session),
 ) -> WorkspaceInviteResponse:
     try:
-        invite = WorkspaceService(session).revoke_invite(
+        invite = WorkspaceInviteService(session).revoke_invite(
             context.workspace.id,
             invite_id,
             actor_user_id=context.user.user_id,
@@ -280,7 +288,7 @@ async def create_workspace_member(
     session: Session = Depends(get_db_session),
 ) -> WorkspaceMemberResponse:
     try:
-        member = WorkspaceService(session).create_member(
+        member = WorkspaceMemberService(session).create_member(
             context.workspace.id,
             request,
             actor_user_id=context.user.user_id,
@@ -306,7 +314,7 @@ async def update_workspace_member(
     session: Session = Depends(get_db_session),
 ) -> WorkspaceMemberResponse:
     try:
-        member = WorkspaceService(session).update_member(
+        member = WorkspaceMemberService(session).update_member(
             context.workspace.id,
             member_id,
             request,
@@ -332,7 +340,7 @@ async def disable_workspace_member(
     session: Session = Depends(get_db_session),
 ) -> WorkspaceMemberResponse:
     try:
-        member = WorkspaceService(session).disable_member(
+        member = WorkspaceMemberService(session).disable_member(
             context.workspace.id,
             member_id,
             actor_user_id=context.user.user_id,
@@ -370,7 +378,7 @@ async def get_workspace_execution_slot_summary(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceExecutionSlotSummaryResponse:
-    summary = WorkspaceService(session).execution_slot_summary(context.workspace.id)
+    summary = WorkspaceQuotaService(session).execution_slot_summary(context.workspace.id)
     return WorkspaceExecutionSlotSummaryResponse.model_validate(summary)
 
 
@@ -380,7 +388,7 @@ async def upsert_workspace_quotas(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
 ) -> list[WorkspaceQuotaResponse]:
-    quotas = WorkspaceService(session).upsert_quotas(
+    quotas = WorkspaceQuotaService(session).upsert_quotas(
         context.workspace.id,
         request,
         actor_user_id=context.user.user_id,
@@ -394,7 +402,7 @@ async def disable_workspace_quota(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceQuotaResponse:
-    quota = WorkspaceService(session).disable_quota(
+    quota = WorkspaceQuotaService(session).disable_quota(
         context.workspace.id,
         quota_key,
         actor_user_id=context.user.user_id,

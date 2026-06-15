@@ -1,0 +1,8 @@
+from __future__ import annotations
+
+from backend.app.orchestration.statuses import ORCHESTRATION_ACTIVE_RUN_STATUSES
+
+COMPLETED_STEP_STATUSES = {"completed", "cancelled", "canceled"}
+ACTIVE_RUN_STATUSES = ORCHESTRATION_ACTIVE_RUN_STATUSES
+TEAM_EXECUTION_LOOP_WINDOW_SECONDS = 60
+TEAM_RUNTIME_DEFAULT_LOOP_INTERVAL_SECONDS = 300

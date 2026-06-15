@@ -12,6 +12,7 @@ from backend.app.api.schemas.domains import (
     RevisionRequestCreateRequest,
 )
 from backend.app.db.base import Base
+from backend.app.db.pagination import page_scalars
 from backend.app.domains.models import (
     DomainItem,
     DomainProject,
@@ -202,8 +203,4 @@ class DomainTaskService:
         return None
 
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
-        total = self._session.scalar(
-            select(func.count()).select_from(statement.order_by(None).subquery())
-        )
-        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
-        return list(rows), int(total or 0)
+        return page_scalars(self._session, statement, page)

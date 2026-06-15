@@ -22,6 +22,7 @@ from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.operations import QueueMetricsResponse
 from backend.app.approvals.models import Approval
 from backend.app.core.errors import PolicyDeniedError
+from backend.app.db.pagination import page_scalars
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
@@ -758,11 +759,7 @@ class AdminControlPlaneService:
         return _top_counts(counts, limit)
 
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
-        total = self._session.scalar(
-            select(func.count()).select_from(statement.order_by(None).subquery())
-        )
-        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
-        return list(rows), int(total or 0)
+        return page_scalars(self._session, statement, page)
 
 
 def _normalized_worker_capacity(

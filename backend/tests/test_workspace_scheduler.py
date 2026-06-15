@@ -13,6 +13,13 @@ from backend.app.agents.models import AgentProfile
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.run_eligibility import RunEligibilityService
+from backend.app.orchestration.run_events import RunEventRecorder
+from backend.app.orchestration.run_lifecycle import RunLifecycleCallbacks, RunLifecycleService
+from backend.app.orchestration.run_request_builder import RunRequestBuilder
+from backend.app.orchestration.run_resource_reservations import RunResourceReservationService
+from backend.app.orchestration.run_step_launcher import RunStepLauncher
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.orchestration.scheduler import WorkspaceScheduler
 from backend.app.runs.models import AgentRun
@@ -25,6 +32,7 @@ from backend.app.runtime_spaces.models import (
 from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.status import TaskStatus
+from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import (
     Workspace,
     WorkspaceMember,
@@ -304,6 +312,138 @@ def test_workspace_scheduler_blocks_when_active_run_quota_is_full() -> None:
     assert step.dependencies["scheduling_status"] == "blocked"
 
 
+def test_workspace_scheduler_blocks_team_member_over_cross_project_capacity() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    team = _seed_team(session, workspace)
+    agent = AgentProfile(workspace_id=workspace.id, name="Fixed Engineer", role="engineer")
+    session.add(agent)
+    session.flush()
+    _seed_team_member(
+        session,
+        workspace,
+        team,
+        agent,
+        team_role="engineer",
+        max_concurrent_tasks=1,
+    )
+    active_task, active_step = _seed_task_step(
+        session,
+        workspace,
+        title="Active project",
+        priority=1,
+        assigned_agent_profile_id=agent.id,
+        agent_team_id=team.id,
+    )
+    candidate_task, candidate_step = _seed_task_step(
+        session,
+        workspace,
+        title="Next project",
+        priority=10,
+        assigned_agent_profile_id=agent.id,
+        agent_team_id=team.id,
+    )
+    session.add(
+        AgentRun(
+            workspace_id=workspace.id,
+            task_id=active_task.id,
+            task_step_id=active_step.id,
+            agent_profile_id=agent.id,
+            status=RunStatus.RUNNING.value,
+        )
+    )
+    session.flush()
+
+    decision = WorkspaceScheduler(session).select_runnable_steps(
+        workspace_id=workspace.id,
+        candidate_steps=[candidate_step],
+    )
+
+    assert decision.runnable_steps == ()
+    assert decision.blocked_steps == (candidate_step,)
+    assert decision.blocked_reason == "team_member_capacity_exceeded"
+    assert candidate_task.id != active_task.id
+    assert candidate_step.dependencies["blocked_reason"] == "team_member_capacity_exceeded"
+
+
+def test_workspace_scheduler_allows_more_steps_for_already_active_member_task() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    team = _seed_team(session, workspace)
+    agent = AgentProfile(workspace_id=workspace.id, name="Focused Engineer", role="engineer")
+    session.add(agent)
+    session.flush()
+    _seed_team_member(
+        session,
+        workspace,
+        team,
+        agent,
+        team_role="engineer",
+        max_concurrent_tasks=1,
+    )
+    task, active_step = _seed_task_step(
+        session,
+        workspace,
+        title="Same project",
+        priority=10,
+        assigned_agent_profile_id=agent.id,
+        agent_team_id=team.id,
+    )
+    _, next_step = _seed_extra_step(
+        session,
+        task,
+        title="Same project follow-up",
+        order_index=1,
+        assigned_agent_profile_id=agent.id,
+    )
+    session.add(
+        AgentRun(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            task_step_id=active_step.id,
+            agent_profile_id=agent.id,
+            status=RunStatus.RUNNING.value,
+        )
+    )
+    session.flush()
+
+    decision = WorkspaceScheduler(session).select_runnable_steps(
+        workspace_id=workspace.id,
+        candidate_steps=[next_step],
+    )
+
+    assert decision.runnable_steps == (next_step,)
+    assert decision.blocked_steps == ()
+    assert next_step.dependencies["scheduled_at"]
+
+
+def test_workspace_scheduler_blocks_team_step_without_active_member() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    team = _seed_team(session, workspace)
+    agent = AgentProfile(workspace_id=workspace.id, name="Removed Engineer", role="engineer")
+    session.add(agent)
+    session.flush()
+    _, step = _seed_task_step(
+        session,
+        workspace,
+        title="Unassigned team work",
+        priority=10,
+        assigned_agent_profile_id=agent.id,
+        agent_team_id=team.id,
+    )
+
+    decision = WorkspaceScheduler(session).select_runnable_steps(
+        workspace_id=workspace.id,
+        candidate_steps=[step],
+    )
+
+    assert decision.runnable_steps == ()
+    assert decision.blocked_steps == (step,)
+    assert decision.blocked_reason == "team_member_unavailable"
+    assert step.dependencies["blocked_reason"] == "team_member_unavailable"
+
+
 def test_workspace_scheduler_pause_blocks_new_steps() -> None:
     session = _session()
     _, workspace = _seed_workspace(
@@ -365,7 +505,7 @@ def test_run_orchestration_reserves_runtime_space_capacity_before_enqueue() -> N
     assert second_step.dependencies["scheduling_status"] == "blocked"
     assert second_step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded:active_runs"
 
-    RunOrchestrationService(session)._mark_run_cancelled(
+    _run_lifecycle(session).mark_run_cancelled(
         runs[0],
         completed_at=datetime.now(UTC),
     )
@@ -468,7 +608,7 @@ def test_run_orchestration_reserves_runtime_space_resource_requirements() -> Non
     assert first_step.dependencies["scheduled_at"]
     assert second_step.dependencies["blocked_reason"] == "runtime_space_quota_exceeded:memory_mb"
 
-    RunOrchestrationService(session)._mark_run_cancelled(
+    _run_lifecycle(session).mark_run_cancelled(
         runs[0],
         completed_at=datetime.now(UTC),
     )
@@ -653,7 +793,7 @@ def test_run_orchestration_reserves_and_releases_workspace_quota() -> None:
     assert reservations[0].resource_usage == {"active_runs": 1, "memory_mb": 3072}
     assert second_step.dependencies["blocked_reason"] == "workspace_quota_exceeded:active_runs"
 
-    RunOrchestrationService(session)._mark_run_cancelled(
+    _run_lifecycle(session).mark_run_cancelled(
         runs[0],
         completed_at=datetime.now(UTC),
     )
@@ -843,7 +983,7 @@ def test_run_orchestration_enforces_workspace_runtime_slot_quotas() -> None:
         "workspace_quota_exceeded:docker_runtimes"
     )
 
-    RunOrchestrationService(session)._mark_run_cancelled(
+    _run_lifecycle(session).mark_run_cancelled(
         runs[0],
         completed_at=datetime.now(UTC),
     )
@@ -898,7 +1038,7 @@ def test_run_orchestration_reorders_released_quota_with_new_high_priority_task()
         priority=20,
         runtime_space_id=runtime_space.id,
     )
-    RunOrchestrationService(session)._mark_run_cancelled(
+    _run_lifecycle(session).mark_run_cancelled(
         first_runs[0],
         completed_at=datetime.now(UTC),
     )
@@ -950,6 +1090,7 @@ def _seed_task_step(
     priority: int,
     runtime_space_id: UUID | None = None,
     assigned_agent_profile_id: UUID | None = None,
+    agent_team_id: UUID | None = None,
     dependencies: dict[str, object] | None = None,
 ) -> tuple[Task, TaskStep]:
     task = Task(
@@ -958,6 +1099,7 @@ def _seed_task_step(
         priority=priority,
         status=TaskStatus.QUEUED.value,
         runtime_space_id=runtime_space_id,
+        agent_team_id=agent_team_id,
     )
     session.add(task)
     session.flush()
@@ -982,6 +1124,7 @@ def _seed_extra_step(
     *,
     title: str,
     order_index: int,
+    assigned_agent_profile_id: UUID | None = None,
     dependencies: dict[str, object] | None = None,
 ) -> tuple[Task, TaskStep]:
     step = TaskStep(
@@ -991,6 +1134,7 @@ def _seed_extra_step(
         status="queued",
         order_index=order_index,
         runtime_space_id=task.runtime_space_id,
+        assigned_agent_profile_id=assigned_agent_profile_id,
         dependencies=dependencies or {},
     )
     session.add(step)
@@ -1017,15 +1161,52 @@ def _seed_runtime_space(
     quotas = {"active_runs": active_runs} | (quota_limits or {})
     for quota_key, limit_value in quotas.items():
         session.add(
-        RuntimeSpaceQuota(
-            workspace_id=workspace.id,
-            runtime_space_id=runtime_space.id,
+            RuntimeSpaceQuota(
+                workspace_id=workspace.id,
+                runtime_space_id=runtime_space.id,
                 quota_key=quota_key,
                 limit_value=limit_value,
             )
         )
     session.flush()
     return runtime_space
+
+
+def _seed_team(
+    session: Session,
+    workspace: Workspace,
+) -> AgentTeam:
+    team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Delivery Org",
+        team_type="delivery",
+    )
+    session.add(team)
+    session.flush()
+    return team
+
+
+def _seed_team_member(
+    session: Session,
+    workspace: Workspace,
+    team: AgentTeam,
+    agent: AgentProfile,
+    *,
+    team_role: str,
+    max_concurrent_tasks: int,
+    accepts_tasks: bool = True,
+) -> AgentTeamMember:
+    member = AgentTeamMember(
+        workspace_id=workspace.id,
+        agent_team_id=team.id,
+        agent_profile_id=agent.id,
+        team_role=team_role,
+        max_concurrent_tasks=max_concurrent_tasks,
+        accepts_tasks=accepts_tasks,
+    )
+    session.add(member)
+    session.flush()
+    return member
 
 
 def _runtime_space_quota(
@@ -1091,6 +1272,75 @@ def _session() -> Session:
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
 
+def _run_step_launcher(session: Session) -> RunStepLauncher:
+    orchestration = RunOrchestrationService(session)
+    eligibility = RunEligibilityService(session)
+    authorization_snapshots = RunAuthorizationSnapshotService(
+        session,
+        RunRequestBuilder(session, None),
+    )
+    return RunStepLauncher(
+        session=session,
+        events=RunEventRecorder(session),
+        build_authorization_snapshot=lambda task, step, profile, agent_snapshot: (
+            authorization_snapshots.build_authorization_snapshot(
+                task,
+                step,
+                profile,
+                agent_snapshot=agent_snapshot,
+            )
+        ),
+        model_provider_blocked_details=authorization_snapshots.model_provider_blocked_details,
+        mark_step_scheduling_blocked=lambda step, reason, details=None: (
+            orchestration._mark_step_scheduling_blocked(step, reason, details=details)
+        ),
+        mark_step_scheduling_runnable=orchestration._mark_step_scheduling_runnable,
+        step_has_active_run=eligibility.step_has_active_run,
+        team_scheduler_policy=orchestration._team_scheduler_policy,
+    )
+
+
+def _run_lifecycle(session: Session) -> RunLifecycleService:
+    orchestration = RunOrchestrationService(session)
+    builder = RunRequestBuilder(session, None)
+    eligibility = RunEligibilityService(session)
+    return RunLifecycleService(
+        session,
+        RunLifecycleCallbacks(
+            append_event=RunEventRecorder(session).append_event,
+            release_reservations=lambda run, released_at: (
+                _run_reservations(session).release_for_run(run, released_at=released_at)
+            ),
+            sync_provider_conversation_id=builder.sync_provider_conversation_id,
+            create_next_runs=lambda task, user_id: (
+                orchestration._create_and_enqueue_next_step_runs(
+                    task,
+                    requested_by_user_id=user_id,
+                )
+            ),
+            schedule_workspace_steps=lambda workspace_id, user_id: (
+                orchestration.schedule_workspace_steps(
+                    workspace_id=workspace_id,
+                    requested_by_user_id=user_id,
+                )
+            ),
+            task_has_open_team_work=eligibility.task_has_open_team_work,
+            persistent_session_ref_for_run=builder.persistent_session_ref_for_run,
+        ),
+    )
+
+
+def _run_reservations(session: Session) -> RunResourceReservationService:
+    orchestration = RunOrchestrationService(session)
+    return RunResourceReservationService(
+        session=session,
+        mark_step_scheduling_blocked=lambda step, reason, details=None: (
+            orchestration._mark_step_scheduling_blocked(step, reason, details=details)
+        ),
+        mark_step_scheduling_runnable=orchestration._mark_step_scheduling_runnable,
+    )
+
+
 def _file_session_factory(tmp_path: Path) -> sessionmaker[Session]:
     _patch_portable_types_for_sqlite()
     db_path = tmp_path / f"{uuid4()}.db"
@@ -1128,3 +1378,4 @@ def _patch_portable_types_for_sqlite() -> None:
                 column.type = column.type.as_generic()
             if isinstance(column.type, JSONB):
                 column.type = SqliteJSON()
+

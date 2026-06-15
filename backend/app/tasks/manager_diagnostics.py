@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections import Counter
 from datetime import UTC, datetime
@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.core.typing import dict_list, string_list
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam
 
@@ -187,7 +188,7 @@ class TaskManagerDiagnosticsService:
 def _manager_queue_item(task: Task, diagnostics: dict[str, object]) -> dict[str, object]:
     manager = diagnostics.get("manager") if isinstance(diagnostics.get("manager"), dict) else {}
     summary = diagnostics.get("summary") if isinstance(diagnostics.get("summary"), dict) else {}
-    blocked_reasons = _string_list(diagnostics.get("blocked_reasons"))
+    blocked_reasons = string_list(diagnostics.get("blocked_reasons"))
     manager_agent = manager.get("agent") if isinstance(manager.get("agent"), dict) else None
     manager_status = _manager_status(manager)
     summary_status = str(summary.get("status") or "unknown")
@@ -239,7 +240,7 @@ def _manager_queue_team_action_plan(items: list[dict[str, object]]) -> list[dict
         task_id = item.get("task_id")
         if not isinstance(team_id, UUID) or not isinstance(task_id, UUID):
             continue
-        if "request_manager_review" not in _string_list(item.get("recommended_actions")):
+        if "request_manager_review" not in string_list(item.get("recommended_actions")):
             continue
         plan = grouped.setdefault(
             team_id,
@@ -292,7 +293,7 @@ def _manager_status(manager: dict[str, object]) -> str:
 
 
 def _pending_manager_phase(diagnostics: dict[str, object]) -> str:
-    blocked_reasons = set(_string_list(diagnostics.get("blocked_reasons")))
+    blocked_reasons = set(string_list(diagnostics.get("blocked_reasons")))
     if any(reason.startswith("missing_manager") for reason in blocked_reasons):
         return "manager_setup"
     if "specialist_steps_incomplete" in blocked_reasons:
@@ -433,8 +434,8 @@ def _acceptance_payload(
 ) -> dict[str, object]:
     payload = message.payload if isinstance(message.payload, dict) else {}
     decision = _decision_from_message(message)
-    revision_requests = _dict_list(payload.get("revision_requests"))
-    missing_work_packages = _dict_list(payload.get("missing_work_packages"))
+    revision_requests = dict_list(payload.get("revision_requests"))
+    missing_work_packages = dict_list(payload.get("missing_work_packages"))
     follow_up = _matching_follow_up_message(message, follow_up_messages)
     return {
         "message_id": message.id,
@@ -445,7 +446,7 @@ def _acceptance_payload(
         "decision": decision,
         "status": _acceptance_status(decision, follow_up),
         "summary": _message_summary(message, decision),
-        "reasons": _string_list(payload.get("reasons")),
+        "reasons": string_list(payload.get("reasons")),
         "revision_requests": revision_requests,
         "missing_work_packages": missing_work_packages,
         "follow_up_message_id": follow_up.id if follow_up is not None else None,
@@ -667,18 +668,6 @@ def _review_mode(step: TaskStep) -> str | None:
     policy = step.review_policy if isinstance(step.review_policy, dict) else {}
     mode = policy.get("mode")
     return mode if isinstance(mode, str) else None
-
-
-def _dict_list(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, dict)]
-
-
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
 
 
 def _uuid_or_none(value: object | None) -> UUID | None:

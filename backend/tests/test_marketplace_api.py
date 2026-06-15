@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.models import AgentProfile
+from backend.app.api.schemas.marketplace import MarketplaceInstallRequest
 from backend.app.capabilities.models import (
     McpServer,
     McpToolAllowlist,
@@ -21,6 +22,7 @@ from backend.app.capabilities.models import (
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
+from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
@@ -30,6 +32,7 @@ from backend.app.marketplace.models import (
     WorkspaceAgentInstall,
     WorkspaceMarketplaceInstall,
 )
+from backend.app.marketplace.resource_service import MarketplaceService
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.reviews.llm import LlmReviewResult
@@ -287,6 +290,70 @@ def test_marketplace_install_agent_listing_creates_agent_profile() -> None:
     assert installed_agent.name == "Research Operator Copy"
     assert installed_agent.role == "researcher"
     assert installed_agent.status == "active"
+
+
+def test_marketplace_install_rolls_back_provisioned_agent_on_install_conflict() -> None:
+    _, session = _client()
+    publisher, publisher_workspace = _seed_workspace(
+        session,
+        email="agent-rollback-publisher@example.com",
+        slug="agent-rollback-publisher",
+    )
+    buyer, buyer_workspace = _seed_workspace(
+        session,
+        email="agent-rollback-buyer@example.com",
+        slug="agent-rollback-buyer",
+    )
+    source_agent = _seed_agent(session, publisher_workspace, name="Rollback Research")
+    listing = MarketplaceListing(
+        workspace_id=publisher_workspace.id,
+        owner_user_id=publisher.id,
+        source_resource_id=source_agent.id,
+        listing_type="agent",
+        visibility="public",
+        status="public",
+        name="Rollback Research",
+        manifest={"agent": {"role": "researcher"}},
+    )
+    session.add(listing)
+    session.flush()
+    existing_install = WorkspaceMarketplaceInstall(
+        workspace_id=buyer_workspace.id,
+        marketplace_listing_id=listing.id,
+        listing_type="agent",
+        installed_name="Rollback Research",
+        installed_version="1.0.0",
+        installed_manifest=dict(listing.manifest),
+        config={},
+    )
+    session.add(existing_install)
+    session.commit()
+    existing_install.status = "disabled"
+    session.commit()
+    agent_count_before = (
+        session.query(AgentProfile).filter_by(workspace_id=buyer_workspace.id).count()
+    )
+
+    with pytest.raises(DatabaseConflictError):
+        MarketplaceService(session).install_listing(
+            workspace_id=buyer_workspace.id,
+            user_id=buyer.id,
+            listing_id=listing.id,
+            data=MarketplaceInstallRequest(config={"agent_name": "Should Roll Back"}),
+        )
+
+    assert session.query(AgentProfile).filter_by(workspace_id=buyer_workspace.id).count() == (
+        agent_count_before
+    )
+    assert (
+        session.query(WorkspaceMarketplaceInstall)
+        .filter_by(
+            workspace_id=buyer_workspace.id,
+            marketplace_listing_id=listing.id,
+        )
+        .count()
+        == 1
+    )
 
 
 def test_marketplace_install_skill_listing_creates_workspace_skill_install() -> None:
@@ -1179,9 +1246,7 @@ def test_owner_can_hire_recommended_talent_for_task_gap_without_rewriting_snapsh
     )
     assert [message.message_type for message in messages] == ["hr.hire_confirmed"]
     assert messages[0].payload["work_package_id"] == "frontend-ui"
-    assert messages[0].payload["installed_agent_profile_id"] == body[
-        "installed_agent_profile_id"
-    ]
+    assert messages[0].payload["installed_agent_profile_id"] == body["installed_agent_profile_id"]
 
 
 def test_task_gap_hire_rejects_already_assigned_work_package() -> None:
@@ -1247,9 +1312,7 @@ def test_task_gap_hire_rejects_already_assigned_work_package() -> None:
     )
 
     assert response.status_code == 400
-    assert response.json()["error"]["message"] == (
-        "Task work package does not have a staffing gap"
-    )
+    assert response.json()["error"]["message"] == ("Task work package does not have a staffing gap")
     assert session.query(AgentTeamMember).count() == 0
 
 
@@ -1275,9 +1338,7 @@ def _client() -> tuple[TestClient, Session]:
 
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
-    app.dependency_overrides[get_redis_client] = lambda: fakeredis.FakeRedis(
-        decode_responses=True
-    )
+    app.dependency_overrides[get_redis_client] = lambda: fakeredis.FakeRedis(decode_responses=True)
     return TestClient(app), session
 
 

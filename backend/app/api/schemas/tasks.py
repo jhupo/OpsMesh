@@ -531,8 +531,7 @@ class TaskManagerDiagnosticsResponse(BaseModel):
             return redact_sensitive_payload(value)
         if isinstance(value, list):
             return [
-                redact_sensitive_payload(item) if isinstance(item, dict) else item
-                for item in value
+                redact_sensitive_payload(item) if isinstance(item, dict) else item for item in value
             ]
         return value
 
@@ -797,10 +796,11 @@ class TaskPlanDiagnosticsResponse(BaseModel):
     strategy: str | None
     summary: dict[str, object]
     manager: dict[str, object]
+    org_health: dict[str, object] = Field(default_factory=dict)
     packages: list[TaskPlanPackageDiagnosticResponse]
     dependency_graph: dict[str, object]
     blocked_reasons: list[str]
 
-    @field_serializer("summary", "manager", "dependency_graph")
+    @field_serializer("summary", "manager", "org_health", "dependency_graph")
     def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)

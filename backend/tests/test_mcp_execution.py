@@ -13,12 +13,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.admin.models import PlatformPolicy
 from backend.app.admin.policies import RISKY_EXECUTION_POLICY_KEY
 from backend.app.approvals.models import Approval
-from backend.app.capabilities.adapters import McpAdapterResolver, SseMcpToolAdapter
-from backend.app.capabilities.execution import (
+from backend.app.capabilities.execution import McpToolExecutionService
+from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
+from backend.app.capabilities.mcp_execution_types import (
     McpExecutionError,
     McpExecutionRequest,
-    McpToolExecutionService,
 )
+from backend.app.capabilities.mcp_remote_adapters import SseMcpToolAdapter
 from backend.app.capabilities.models import (
     McpCredentialReference,
     McpServer,
@@ -723,7 +724,7 @@ def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> 
             b'data: {"jsonrpc":"2.0","id":"1","result":{"status":"created"}}\n\n'
         )
 
-    monkeypatch.setattr("backend.app.capabilities.adapters.urlopen", fake_urlopen)
+    monkeypatch.setattr("backend.app.capabilities.mcp_remote_adapters.urlopen", fake_urlopen)
 
     result = McpToolExecutionService(session, McpAdapterResolver()).execute(
         McpExecutionRequest(
@@ -765,7 +766,7 @@ def test_mcp_sse_adapter_normalizes_remote_errors(monkeypatch) -> None:
             b'"error":{"code":-32000,"message":"sk-secret remote failure"}}\n\n'
         )
 
-    monkeypatch.setattr("backend.app.capabilities.adapters.urlopen", fake_urlopen)
+    monkeypatch.setattr("backend.app.capabilities.mcp_remote_adapters.urlopen", fake_urlopen)
 
     try:
         SseMcpToolAdapter().call(

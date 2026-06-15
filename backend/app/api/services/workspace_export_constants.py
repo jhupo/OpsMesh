@@ -1,0 +1,1 @@
+SUPPORTED_WORKSPACE_EXPORT_FORMAT = "workspace-export.v1"

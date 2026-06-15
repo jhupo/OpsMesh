@@ -23,6 +23,8 @@ from backend.app.api.schemas.exports import (
     WorkspaceRetentionResponse,
 )
 from backend.app.api.services.exports import WorkspaceExportService
+from backend.app.api.services.workspace_archive_import import WorkspaceArchiveImportService
+from backend.app.api.services.workspace_metadata_import import WorkspaceMetadataImportService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
@@ -157,7 +159,7 @@ async def import_workspace_metadata(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceImportResponse:
-    return WorkspaceExportService(session).import_metadata(
+    return WorkspaceMetadataImportService(session).import_metadata(
         workspace=context.workspace,
         user_id=context.user.user_id,
         request=request,
@@ -171,7 +173,7 @@ async def preview_workspace_metadata_import(
     session: Session = Depends(get_db_session),
 ) -> WorkspaceImportResponse:
     preview_request = request.model_copy(update={"dry_run": True, "preview_token": None})
-    return WorkspaceExportService(session).import_metadata(
+    return WorkspaceMetadataImportService(session).import_metadata(
         workspace=context.workspace,
         user_id=context.user.user_id,
         request=preview_request,
@@ -346,7 +348,7 @@ async def import_workspace_archive(
         resolutions=_parse_archive_resolutions(resolutions),
     )
     try:
-        return WorkspaceExportService(session).import_archive(
+        return WorkspaceArchiveImportService(session).import_archive(
             workspace=context.workspace,
             user_id=context.user.user_id,
             archive_bytes=content,
@@ -389,7 +391,7 @@ async def preview_workspace_archive_import(
         resolutions=_parse_archive_resolutions(resolutions),
     )
     try:
-        return WorkspaceExportService(session).import_archive(
+        return WorkspaceArchiveImportService(session).import_archive(
             workspace=context.workspace,
             user_id=context.user.user_id,
             archive_bytes=content,
