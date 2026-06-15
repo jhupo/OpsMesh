@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.typing import dict_or_empty, int_or_zero, string_list
 from backend.app.operations.models import WorkerHeartbeat
-from backend.app.operations.observability import OperationsObservabilityService
+from backend.app.operations.queue_metrics import QueueMetricsService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runtimes.models import WorkspaceRuntime
@@ -30,32 +30,39 @@ class OperationsOverviewService:
 
     def overview_payload(self, workspace_id: UUID, queue_name: str) -> dict[str, object]:
         failed_runs = self._session.scalar(
-            select(func.count()).select_from(AgentRun).where(
+            select(func.count())
+            .select_from(AgentRun)
+            .where(
                 AgentRun.workspace_id == workspace_id,
                 AgentRun.status == "failed",
             )
         )
         offline_runtimes = self._session.scalar(
-            select(func.count()).select_from(WorkspaceRuntime).where(
+            select(func.count())
+            .select_from(WorkspaceRuntime)
+            .where(
                 WorkspaceRuntime.workspace_id == workspace_id,
                 WorkspaceRuntime.connection_status == "offline",
             )
         )
         workers_online = self._session.scalar(
-            select(func.count()).select_from(WorkerHeartbeat).where(
+            select(func.count())
+            .select_from(WorkerHeartbeat)
+            .where(
                 WorkerHeartbeat.workspace_id == workspace_id,
                 WorkerHeartbeat.status == "online",
             )
         )
         recent_security_events = self._session.scalar(
-            select(func.count()).select_from(SecurityEvent).where(
+            select(func.count())
+            .select_from(SecurityEvent)
+            .where(
                 SecurityEvent.workspace_id == workspace_id,
                 SecurityEvent.severity.in_(["warning", "critical"]),
             )
         )
         return {
-            "queue": OperationsObservabilityService(
-                self._session,
+            "queue": QueueMetricsService(
                 self._redis,
                 self._keys,
             )
@@ -84,9 +91,7 @@ class OperationsOverviewService:
         retention_safety = dict_or_empty(readiness.get("retention_safety"))
         latest_backup = dict_or_empty(readiness.get("latest_successful_archive_export"))
         latest_restore_drill = dict_or_empty(readiness.get("latest_restore_drill"))
-        import_conflict_history = dict_or_empty(
-            restore_readiness.get("import_conflict_history")
-        )
+        import_conflict_history = dict_or_empty(restore_readiness.get("import_conflict_history"))
         blocked_reasons = string_list(restore_readiness.get("blocked_reasons"))
         warnings = string_list(restore_readiness.get("warnings"))
         recommended_actions = string_list(restore_readiness.get("recommended_actions"))

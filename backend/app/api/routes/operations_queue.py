@@ -22,12 +22,12 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.operations.dead_letters import DeadLetterQueueService
-from backend.app.operations.observability import OperationsObservabilityService
 from backend.app.operations.queue_governance_diagnostics import QueueGovernanceDiagnosticsService
 from backend.app.operations.queue_governance_reconciliation import (
     QueueGovernanceReconciliationService,
 )
 from backend.app.operations.queue_insights import QueueInsightsService
+from backend.app.operations.queue_metrics import QueueMetricsService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 
@@ -48,8 +48,7 @@ async def queue_metrics(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> QueueMetricsResponse:
-    return OperationsObservabilityService(
-        session,
+    return QueueMetricsService(
         redis,
         RedisKeyBuilder(settings.redis_key_prefix),
     ).queue_metrics(queue_name, context.workspace.id)
