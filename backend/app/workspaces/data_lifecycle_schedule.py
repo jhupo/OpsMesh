@@ -114,10 +114,7 @@ def _restore_drill_due(
 
 def _schedule_configured(policy: dict[str, object]) -> bool:
     schedule_status = policy.get("schedule_status")
-    return bool(
-        isinstance(schedule_status, dict)
-        and schedule_status.get("configured") is True
-    )
+    return bool(isinstance(schedule_status, dict) and schedule_status.get("configured") is True)
 
 
 def _automation_backup_warnings(
@@ -126,9 +123,7 @@ def _automation_backup_warnings(
     active_archive_export_count: int,
 ) -> list[str]:
     warnings = (
-        list(backup_policy["warnings"])
-        if isinstance(backup_policy["warnings"], list)
-        else []
+        list(backup_policy["warnings"]) if isinstance(backup_policy["warnings"], list) else []
     )
     if _scheduled_backup_due(backup_policy) and active_archive_export_count > 0:
         warnings.append("scheduled_backup_waiting_for_active_export")
@@ -142,9 +137,7 @@ def _automation_retention_warnings(
     interval_hours: int | None,
 ) -> list[str]:
     warnings = (
-        list(retention_policy["warnings"])
-        if isinstance(retention_policy["warnings"], list)
-        else []
+        list(retention_policy["warnings"]) if isinstance(retention_policy["warnings"], list) else []
     )
     if raw_retention.get("auto_apply") is True and interval_hours is None:
         warnings.append("retention_schedule_unrecognized")
@@ -220,9 +213,7 @@ def _backup_schedule_status(
 
 
 def _backup_interval_hours(raw_policy: dict[str, object]) -> int | None:
-    explicit_interval = _positive_int(
-        raw_policy.get("interval_hours") or raw_policy.get("schedule_interval_hours")
-    )
+    explicit_interval = _positive_int(raw_policy.get("interval_hours"))
     if explicit_interval is not None:
         return explicit_interval
     schedule = raw_policy.get("schedule")

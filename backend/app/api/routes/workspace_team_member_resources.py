@@ -33,7 +33,7 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
-from backend.app.model_providers.model_api import configured_model_api
+from backend.app.model_providers.model_api import configured_model_api, require_known_model_api
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.teams.runtime import TeamRuntimeService
@@ -49,6 +49,7 @@ else:
     RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
+
 
 @router.get("/teams/{team_id}/members", response_model=PageResponse[AgentTeamMemberResponse])
 async def list_team_members(
@@ -181,7 +182,13 @@ async def update_team_member_model_provider(
     if request.model is not None:
         changes["model"] = request.model
     if "model_api" in request_fields:
-        changes["model_api"] = request.model_api
+        model_settings = dict(before_agent.model_settings or {})
+        model_api = require_known_model_api(request.model_api)
+        if model_api is None:
+            model_settings.pop("model_api", None)
+        else:
+            model_settings["model_api"] = model_api
+        changes["model_settings"] = model_settings
     if not changes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -333,5 +340,3 @@ def _team_member_create_command(
         is_required=request.is_required,
         order_index=request.order_index,
     )
-
-

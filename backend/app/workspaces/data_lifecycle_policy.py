@@ -57,9 +57,7 @@ def _backup_policy(
         "schedule": raw_policy.get("schedule"),
         "target_type": raw_policy.get("target_type") or "manual_export",
         "target": raw_policy.get("target"),
-        "max_archive_age_days": _positive_int(
-            raw_policy.get("max_archive_age_days") or raw_policy.get("max_age_days")
-        ),
+        "max_archive_age_days": _positive_int(raw_policy.get("max_archive_age_days")),
         "last_export_job_status": latest_job.status if latest_job is not None else None,
         "last_successful_archive_export_at": (
             latest_success.completed_at if latest_success is not None else None

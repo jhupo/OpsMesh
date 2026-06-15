@@ -150,7 +150,6 @@ class AgentManagementService:
         values = normalize_update_payload(
             changes,
             {},
-            current_model_settings=profile.model_settings,
         )
         if not values:
             return profile
@@ -309,14 +308,12 @@ class AgentManagementService:
     ) -> AgentProfile:
         source = self._require_profile(workspace_id, agent_profile_id)
         values = {
-            field: copy_json_value(field, getattr(source, field))
-            for field in AGENT_PROFILE_FIELDS
+            field: copy_json_value(field, getattr(source, field)) for field in AGENT_PROFILE_FIELDS
         }
         values.update(
             normalize_update_payload(
                 overrides,
                 {},
-                current_model_settings=source.model_settings,
             )
         )
         self._model_validator.validate_model_provider_credential(

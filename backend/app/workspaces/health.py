@@ -429,8 +429,6 @@ def _health_snapshot_policy(settings: object) -> dict[str, timedelta] | None:
     root = dict_or_empty(settings)
     operations = dict_or_empty(root.get("operations"))
     policy = dict_or_empty(operations.get("health_snapshots"))
-    if not policy:
-        policy = dict_or_empty(root.get("health_snapshots"))
     if policy.get("enabled") is not True:
         return None
     interval = _positive_timedelta(policy.get("interval_minutes"), unit="minutes")
@@ -533,14 +531,10 @@ def _risk_changes(
     ]
     return {
         "resolved": [
-            item
-            for item in changes
-            if item["previous_count"] > 0 and item["latest_count"] == 0
+            item for item in changes if item["previous_count"] > 0 and item["latest_count"] == 0
         ],
         "new": [
-            item
-            for item in changes
-            if item["previous_count"] == 0 and item["latest_count"] > 0
+            item for item in changes if item["previous_count"] == 0 and item["latest_count"] > 0
         ],
         "improved": [item for item in changes if item["delta"] < 0 and item["latest_count"] > 0],
         "worsened": [item for item in changes if item["delta"] > 0 and item["previous_count"] > 0],

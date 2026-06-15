@@ -6,7 +6,6 @@ from typing import Any
 from uuid import UUID
 
 from backend.app.agents.models import AgentProfile
-from backend.app.model_providers.model_api import require_known_model_api
 
 AGENT_PROFILE_FIELDS = (
     "name",
@@ -76,7 +75,6 @@ def normalize_create_payload(data: object, fields: Mapping[str, Any]) -> dict[st
     payload = payload_dict(data)
     payload.update(fields)
     payload.pop("status", None)
-    merge_top_level_model_api(payload)
     unknown = set(payload) - set(AGENT_PROFILE_FIELDS)
     if unknown:
         raise ValueError(f"Unsupported agent profile fields: {', '.join(sorted(unknown))}")
@@ -91,12 +89,9 @@ def normalize_create_payload(data: object, fields: Mapping[str, Any]) -> dict[st
 def normalize_update_payload(
     data: object,
     fields: Mapping[str, Any],
-    *,
-    current_model_settings: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     payload = payload_dict(data)
     payload.update(fields)
-    merge_top_level_model_api(payload, current_model_settings=current_model_settings)
     unknown = set(payload) - (set(AGENT_PROFILE_FIELDS) | {"status"})
     if unknown:
         raise ValueError(f"Unsupported agent profile fields: {', '.join(sorted(unknown))}")
@@ -162,28 +157,6 @@ def profile_audit_state(snapshot: Mapping[str, object]) -> dict[str, object]:
         "model": snapshot.get("model"),
         "model_provider_credential_id": snapshot.get("model_provider_credential_id"),
     }
-
-
-def merge_top_level_model_api(
-    payload: dict[str, Any],
-    *,
-    current_model_settings: Mapping[str, object] | None = None,
-) -> None:
-    if "model_api" not in payload:
-        return
-    raw_model_api = payload.pop("model_api")
-    raw_settings = payload.get("model_settings")
-    if raw_settings is None:
-        raw_settings = current_model_settings
-    if raw_settings is not None and not isinstance(raw_settings, Mapping):
-        raise ValueError("Agent profile model_settings must be an object")
-    settings = dict(raw_settings or {})
-    model_api = require_known_model_api(raw_model_api)
-    if model_api is None:
-        settings.pop("model_api", None)
-    else:
-        settings["model_api"] = model_api
-    payload["model_settings"] = settings
 
 
 def copy_json_value(field: str, value: Any) -> Any:

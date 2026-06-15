@@ -16,7 +16,6 @@ class AgentProfileMutableFields(BaseModel):
     instructions: str = ""
     model: str = Field(default="gpt-4.1", max_length=120)
     model_provider_credential_id: UUID | None = None
-    model_api: str | None = Field(default=None, min_length=1, max_length=80)
     model_settings: dict[str, object] = Field(default_factory=dict)
     capabilities: dict[str, object] = Field(default_factory=dict)
     skills: dict[str, object] = Field(default_factory=dict)
@@ -39,7 +38,6 @@ class AgentProfileUpdateRequest(BaseModel):
     instructions: str | None = None
     model: str | None = Field(default=None, max_length=120)
     model_provider_credential_id: UUID | None = None
-    model_api: str | None = Field(default=None, min_length=1, max_length=80)
     model_settings: dict[str, object] | None = None
     capabilities: dict[str, object] | None = None
     skills: dict[str, object] | None = None
@@ -58,7 +56,6 @@ class AgentProfileCloneRequest(BaseModel):
     instructions: str | None = None
     model: str | None = Field(default=None, max_length=120)
     model_provider_credential_id: UUID | None = None
-    model_api: str | None = Field(default=None, min_length=1, max_length=80)
     model_settings: dict[str, object] | None = None
     capabilities: dict[str, object] | None = None
     skills: dict[str, object] | None = None
