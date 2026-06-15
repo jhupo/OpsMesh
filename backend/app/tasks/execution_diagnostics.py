@@ -11,7 +11,12 @@ from backend.app.agents.models import AgentProfile
 from backend.app.core.typing import dict_list
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.tasks.execution_handoff import (
+    handoff_needs_attention,
+    handoff_queue_item,
+    handoff_queue_summary,
+)
+from backend.app.tasks.execution_payloads import build_step_payload, downstream_map, handoff_state
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 
@@ -45,13 +50,14 @@ class TaskExecutionDiagnosticsService:
         runs_by_step_id = self._runs_by_step_id(workspace_id, task.id)
         agents = self._agent_map(workspace_id, steps)
         step_by_id = {step.id: step for step in steps}
-        downstream_by_step_id = _downstream_map(steps)
+        downstream_by_step_id = downstream_map(steps)
         step_payloads = [
-            self._step_payload(
+            build_step_payload(
                 step,
                 agents=agents,
                 step_by_id=step_by_id,
                 runs=runs_by_step_id.get(step.id, []),
+                active_run_statuses=ACTIVE_RUN_STATUSES,
             )
             for step in steps
         ]
@@ -59,7 +65,7 @@ class TaskExecutionDiagnosticsService:
             step_payload["task_step_id"]: step_payload for step_payload in step_payloads
         }
         for step_payload in step_payloads:
-            step_payload["handoff"] = _handoff_state(
+            step_payload["handoff"] = handoff_state(
                 step_payload,
                 step_payload_by_id=step_payload_by_id,
                 downstream_by_step_id=downstream_by_step_id,
@@ -117,12 +123,12 @@ class TaskExecutionDiagnosticsService:
             if diagnostics is None:
                 continue
             for step_payload in dict_list(diagnostics.get("steps")):
-                item = _handoff_queue_item(task, step_payload)
+                item = handoff_queue_item(task, step_payload)
                 if item is None:
                     continue
                 if handoff_status is not None and item["handoff_status"] != handoff_status:
                     continue
-                if not include_terminal and not _handoff_needs_attention(item):
+                if not include_terminal and not handoff_needs_attention(item):
                     continue
                 items.append(item)
 
@@ -135,61 +141,8 @@ class TaskExecutionDiagnosticsService:
             "total": total,
             "limit": limit,
             "offset": offset,
-            "summary": _handoff_queue_summary(items),
+            "summary": handoff_queue_summary(items),
             "items": paged_items,
-        }
-
-    def _step_payload(
-        self,
-        step: TaskStep,
-        *,
-        agents: dict[UUID, AgentProfile],
-        step_by_id: dict[UUID, TaskStep],
-        runs: list[AgentRun],
-    ) -> dict[str, object]:
-        dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
-        visible_dependencies = redact_sensitive_payload(dependencies)
-        dependency_state = _dependency_state(step, step_by_id)
-        assigned_agent = (
-            agents.get(step.assigned_agent_profile_id)
-            if step.assigned_agent_profile_id is not None
-            else None
-        )
-        active_runs = [run for run in runs if run.status in ACTIVE_RUN_STATUSES]
-        blocked_reasons = _step_blocked_reasons(
-            step=step,
-            assigned_agent=assigned_agent,
-            dependency_state=dependency_state,
-            active_runs=active_runs,
-        )
-        return {
-            "task_step_id": step.id,
-            "work_package_id": step.work_package_id,
-            "title": step.title,
-            "description": step.description,
-            "status": step.status,
-            "order_index": step.order_index,
-            "required_role": step.required_role,
-            "required_skills": step.required_skills,
-            "expected_artifacts": step.expected_artifacts,
-            "acceptance_criteria": step.acceptance_criteria,
-            "review_policy": redact_sensitive_payload(step.review_policy),
-            "dependencies": visible_dependencies,
-            "dependency_state": dependency_state,
-            "assigned_agent": _agent_payload(assigned_agent),
-            "assignment_status": _assignment_status(step, assigned_agent),
-            "runnable": step.status == "queued" and not blocked_reasons,
-            "blocked_reasons": blocked_reasons,
-            "scheduling": {
-                "status": visible_dependencies.get("scheduling_status"),
-                "blocked_reason": visible_dependencies.get("blocked_reason"),
-                "blocked_resource_keys": visible_dependencies.get("blocked_resource_keys"),
-                "priority_score": visible_dependencies.get("priority_score"),
-                "scheduled_at": visible_dependencies.get("scheduled_at"),
-            },
-            "runs": [_run_payload(run) for run in runs],
-            "active_run_ids": [run.id for run in active_runs],
-            "result_summary": step.result_summary,
         }
 
     def _steps(self, workspace_id: UUID, task_id: UUID) -> list[TaskStep]:
@@ -277,375 +230,3 @@ class TaskExecutionDiagnosticsService:
             "next_runnable_step_ids": [step["task_step_id"] for step in runnable],
             "blocked_step_ids": [step["task_step_id"] for step in blocked],
         }
-
-
-def _dependency_state(
-    step: TaskStep,
-    step_by_id: dict[UUID, TaskStep],
-) -> dict[str, object]:
-    after_step_ids = _uuid_list_from_dependencies(step.dependencies, "after_step_ids")
-    missing_step_ids = [step_id for step_id in after_step_ids if step_id not in step_by_id]
-    incomplete_step_ids = [
-        step_id
-        for step_id in after_step_ids
-        if step_id in step_by_id and step_by_id[step_id].status != "completed"
-    ]
-    return {
-        "after_step_ids": after_step_ids,
-        "satisfied": not missing_step_ids and not incomplete_step_ids,
-        "missing_step_ids": missing_step_ids,
-        "incomplete_step_ids": incomplete_step_ids,
-    }
-
-
-def _downstream_map(steps: list[TaskStep]) -> dict[UUID, list[UUID]]:
-    step_ids = {step.id for step in steps}
-    downstream_by_step_id: dict[UUID, list[UUID]] = {step.id: [] for step in steps}
-    for step in steps:
-        for upstream_step_id in _uuid_list_from_dependencies(
-            step.dependencies,
-            "after_step_ids",
-        ):
-            if upstream_step_id in step_ids:
-                downstream_by_step_id[upstream_step_id].append(step.id)
-    return downstream_by_step_id
-
-
-def _handoff_state(
-    step_payload: dict[str, object],
-    *,
-    step_payload_by_id: dict[UUID, dict[str, object]],
-    downstream_by_step_id: dict[UUID, list[UUID]],
-) -> dict[str, object]:
-    step_id = step_payload["task_step_id"]
-    if not isinstance(step_id, UUID):
-        return {}
-    dependency_state = step_payload.get("dependency_state")
-    upstream_step_ids = (
-        dependency_state.get("after_step_ids", [])
-        if isinstance(dependency_state, dict)
-        else []
-    )
-    downstream_step_ids = downstream_by_step_id.get(step_id, [])
-    downstream_steps = [
-        step_payload_by_id[downstream_step_id]
-        for downstream_step_id in downstream_step_ids
-        if downstream_step_id in step_payload_by_id
-    ]
-    blocked_downstream_step_ids = [
-        downstream_step["task_step_id"]
-        for downstream_step in downstream_steps
-        if downstream_step.get("blocked_reasons")
-    ]
-    completed_downstream_step_ids = [
-        downstream_step["task_step_id"]
-        for downstream_step in downstream_steps
-        if downstream_step.get("status") == "completed"
-    ]
-    waiting_downstream_step_ids = [
-        downstream_step["task_step_id"]
-        for downstream_step in downstream_steps
-        if downstream_step.get("status") != "completed"
-        and not downstream_step.get("blocked_reasons")
-    ]
-    runnable_downstream_step_ids = [
-        downstream_step["task_step_id"]
-        for downstream_step in downstream_steps
-        if downstream_step.get("runnable") is True
-    ]
-    status = _handoff_status(
-        step_status=str(step_payload.get("status")),
-        has_downstream=bool(downstream_steps),
-        downstream_steps=downstream_steps,
-        blocked_downstream_step_ids=blocked_downstream_step_ids,
-        runnable_downstream_step_ids=runnable_downstream_step_ids,
-    )
-    return {
-        "status": status,
-        "requires_handoff": bool(downstream_steps),
-        "upstream_step_ids": upstream_step_ids,
-        "downstream_step_ids": downstream_step_ids,
-        "completed_downstream_step_ids": completed_downstream_step_ids,
-        "waiting_downstream_step_ids": waiting_downstream_step_ids,
-        "blocked_downstream_step_ids": blocked_downstream_step_ids,
-        "runnable_downstream_step_ids": runnable_downstream_step_ids,
-        "deliverables_expected": step_payload.get("expected_artifacts", []),
-        "has_result_summary": step_payload.get("result_summary") is not None,
-        "recommended_actions": _handoff_recommended_actions(
-            status=status,
-            has_result_summary=step_payload.get("result_summary") is not None,
-        ),
-    }
-
-
-def _handoff_status(
-    *,
-    step_status: str,
-    has_downstream: bool,
-    downstream_steps: list[dict[str, object]],
-    blocked_downstream_step_ids: list[object],
-    runnable_downstream_step_ids: list[object],
-) -> str:
-    if step_status != "completed":
-        return "source_incomplete" if has_downstream else "no_downstream"
-    if not has_downstream:
-        return "final_delivery_ready"
-    if len(downstream_steps) == sum(
-        1 for downstream_step in downstream_steps if downstream_step.get("status") == "completed"
-    ):
-        return "consumed"
-    if blocked_downstream_step_ids:
-        return "downstream_blocked"
-    if runnable_downstream_step_ids:
-        return "ready_for_downstream"
-    return "handoff_in_progress"
-
-
-def _handoff_recommended_actions(
-    *,
-    status: str,
-    has_result_summary: bool,
-) -> list[str]:
-    if status == "source_incomplete":
-        return ["wait_for_source_completion"]
-    if status == "ready_for_downstream":
-        return ["schedule_downstream_steps"]
-    if status == "downstream_blocked":
-        return ["inspect_blocked_downstream"]
-    if status == "final_delivery_ready":
-        actions = ["request_manager_review"]
-        if not has_result_summary:
-            actions.append("create_correction")
-        return actions
-    if status == "no_downstream" and not has_result_summary:
-        return ["create_correction"]
-    return []
-
-
-def _handoff_queue_item(
-    task: Task,
-    step_payload: dict[str, object],
-) -> dict[str, object] | None:
-    handoff = step_payload.get("handoff")
-    if not isinstance(handoff, dict):
-        return None
-    status = handoff.get("status")
-    if not isinstance(status, str) or not status:
-        return None
-    return {
-        "task_id": task.id,
-        "task_title": task.title,
-        "task_status": task.status,
-        "task_priority": task.priority,
-        "team_id": task.agent_team_id,
-        "domain_type": task.domain_type,
-        "task_step_id": step_payload.get("task_step_id"),
-        "work_package_id": step_payload.get("work_package_id"),
-        "step_title": step_payload.get("title"),
-        "step_status": step_payload.get("status"),
-        "assigned_agent": step_payload.get("assigned_agent"),
-        "assignment_status": step_payload.get("assignment_status"),
-        "handoff_status": status,
-        "requires_handoff": handoff.get("requires_handoff") is True,
-        "upstream_step_ids": _uuid_values(handoff.get("upstream_step_ids")),
-        "downstream_step_ids": _uuid_values(handoff.get("downstream_step_ids")),
-        "runnable_downstream_step_ids": _uuid_values(
-            handoff.get("runnable_downstream_step_ids")
-        ),
-        "blocked_downstream_step_ids": _uuid_values(
-            handoff.get("blocked_downstream_step_ids")
-        ),
-        "blocked_reasons": _string_values(step_payload.get("blocked_reasons")),
-        "recommended_actions": _string_values(handoff.get("recommended_actions")),
-        "last_activity_at": task.updated_at,
-    }
-
-
-def _handoff_needs_attention(item: dict[str, object]) -> bool:
-    return item["handoff_status"] in {
-        "ready_for_downstream",
-        "downstream_blocked",
-        "handoff_in_progress",
-        "final_delivery_ready",
-    }
-
-
-def _handoff_queue_summary(items: list[dict[str, object]]) -> dict[str, object]:
-    status_counts = Counter(str(item["handoff_status"]) for item in items)
-    action_counts = Counter(
-        action
-        for item in items
-        for action in item["recommended_actions"]
-        if isinstance(action, str)
-    )
-    task_ids = {
-        task_id
-        for item in items
-        if isinstance((task_id := item.get("task_id")), UUID)
-    }
-    return {
-        "attention_handoffs": len(items),
-        "tasks": len(task_ids),
-        "handoff_status_counts": dict(sorted(status_counts.items())),
-        "recommended_actions": dict(sorted(action_counts.items())),
-        "team_operator_action_plan": _handoff_queue_team_action_plan(items),
-        "ready_handoffs": status_counts.get("ready_for_downstream", 0),
-        "blocked_handoffs": status_counts.get("downstream_blocked", 0),
-        "final_delivery_ready": status_counts.get("final_delivery_ready", 0),
-    }
-
-
-def _handoff_queue_team_action_plan(items: list[dict[str, object]]) -> list[dict[str, object]]:
-    grouped: dict[tuple[UUID, str], dict[str, object]] = {}
-    for item in items:
-        team_id = item.get("team_id")
-        task_id = item.get("task_id")
-        task_step_id = item.get("task_step_id")
-        if not isinstance(team_id, UUID) or not isinstance(task_id, UUID):
-            continue
-        for action in _string_values(item.get("recommended_actions")):
-            if action not in {"request_manager_review", "schedule_downstream_steps"}:
-                continue
-            plan = grouped.setdefault(
-                (team_id, action),
-                {
-                    "team_id": team_id,
-                    "action": action,
-                    "automation": "team_operator_action",
-                    "api_route": (
-                        "POST /api/v1/workspaces/{workspace_id}/"
-                        "teams/{team_id}/operator-actions"
-                    ),
-                    "task_ids": [],
-                    "task_step_ids": [],
-                    "count": 0,
-                    "reason": "handoff_queue",
-                },
-            )
-            plan["count"] = int(plan["count"]) + 1
-            _append_uuid(plan, "task_ids", task_id)
-            if action == "schedule_downstream_steps" and isinstance(task_step_id, UUID):
-                _append_uuid(plan, "task_step_ids", task_step_id)
-
-    plan_items = []
-    for item in grouped.values():
-        payload = {
-            "action": item["action"],
-            "task_ids": item["task_ids"],
-            "task_step_ids": item["task_step_ids"],
-            "reason": item["reason"],
-            "metadata": {"source": "handoff_queue"},
-        }
-        plan_items.append({**item, "payload_template": payload})
-    return sorted(
-        plan_items,
-        key=lambda item: (str(item["team_id"]), str(item["action"])),
-    )
-
-
-def _append_uuid(item: dict[str, object], key: str, value: UUID) -> None:
-    values = item[key] if isinstance(item.get(key), list) else []
-    existing = [entry for entry in values if isinstance(entry, UUID)]
-    if value not in existing:
-        existing.append(value)
-    item[key] = sorted(existing, key=str)
-
-
-def _uuid_values(value: object) -> list[UUID]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, UUID)]
-
-
-def _string_values(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
-
-
-def _step_blocked_reasons(
-    *,
-    step: TaskStep,
-    assigned_agent: AgentProfile | None,
-    dependency_state: dict[str, object],
-    active_runs: list[AgentRun],
-) -> list[str]:
-    reasons: list[str] = []
-    if step.status != "queued":
-        if active_runs:
-            reasons.append("active_run_exists")
-        return reasons
-    if step.assigned_agent_profile_id is None:
-        reasons.append("agent_unassigned")
-    elif assigned_agent is None:
-        reasons.append("assigned_agent_missing")
-    elif assigned_agent.status != "active":
-        reasons.append("assigned_agent_inactive")
-    if dependency_state["missing_step_ids"]:
-        reasons.append("dependency_missing")
-    if dependency_state["incomplete_step_ids"]:
-        reasons.append("dependency_incomplete")
-    if active_runs:
-        reasons.append("active_run_exists")
-    dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
-    blocked_reason = dependencies.get("blocked_reason")
-    if isinstance(blocked_reason, str) and blocked_reason:
-        reasons.append(f"scheduler:{blocked_reason}")
-    return reasons
-
-
-def _assignment_status(step: TaskStep, agent: AgentProfile | None) -> str:
-    if step.assigned_agent_profile_id is None:
-        return "unassigned"
-    if agent is None:
-        return "missing_agent"
-    if agent.status != "active":
-        return "inactive_agent"
-    return "assigned"
-
-
-def _agent_payload(agent: AgentProfile | None) -> dict[str, object] | None:
-    if agent is None:
-        return None
-    return {
-        "id": agent.id,
-        "name": agent.name,
-        "role": agent.role,
-        "status": agent.status,
-    }
-
-
-def _run_payload(run: AgentRun) -> dict[str, object]:
-    return {
-        "id": run.id,
-        "status": run.status,
-        "agent_profile_id": run.agent_profile_id,
-        "runtime_id": run.runtime_id,
-        "runtime_space_id": run.runtime_space_id,
-        "started_at": run.started_at,
-        "completed_at": run.completed_at,
-        "error": redact_sensitive_payload(run.error) if isinstance(run.error, dict) else None,
-    }
-
-
-def _uuid_list_from_dependencies(
-    dependencies: dict[str, object],
-    key: str,
-) -> list[UUID]:
-    if not isinstance(dependencies, dict):
-        return []
-    raw_values = dependencies.get(key)
-    if not isinstance(raw_values, list):
-        return []
-    values: list[UUID] = []
-    seen: set[UUID] = set()
-    for raw_value in raw_values:
-        try:
-            value = UUID(str(raw_value))
-        except (TypeError, ValueError):
-            continue
-        if value in seen:
-            continue
-        values.append(value)
-        seen.add(value)
-    return values
