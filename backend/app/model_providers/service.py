@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
-from urllib.parse import urlparse
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -13,53 +10,50 @@ from backend.app.api.pagination import PageParams
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
 from backend.app.db.pagination import page_scalars
-from backend.app.model_providers.availability import credential_is_selectable
-from backend.app.model_providers.base_url import normalize_openai_compatible_base_url
+from backend.app.model_providers.audit_payloads import (
+    base_url_host,
+    budget_metadata_with_model_api,
+    model_api_audit_payload,
+)
 from backend.app.model_providers.health import (
     ModelProviderHealthCheckResult,
     ModelProviderHealthTarget,
     ProviderProbeName,
     probe_model_provider,
 )
-from backend.app.model_providers.metadata import sanitize_budget_metadata
+from backend.app.model_providers.health_summary import (
+    model_provider_health_check_schedule_summary,
+    model_provider_last_health_check_at,
+)
 from backend.app.model_providers.model_api import (
-    default_model_api,
     model_api_for_provider,
-    model_api_options_for_provider,
-    require_provider_model_api,
 )
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.model_providers.provider_keys import (
     canonical_model_provider,
-    is_openai_compatible_provider,
 )
+from backend.app.model_providers.resolver import ModelProviderResolver
+from backend.app.model_providers.service_models import (
+    ModelProviderUnavailableError,
+    ResolvedModelProvider,
+)
+from backend.app.model_providers.validation import validated_base_url
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import (
     MODEL_PROVIDER_BASE_URL_POLICY,
     EgressUrlPolicy,
-    validate_egress_url,
 )
 from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 PROVIDER_UNHEALTHY_FAILURE_THRESHOLD = 3
-_HEALTH_CHECK_SCHEDULE_JOB_LIMIT = 10
 
-if TYPE_CHECKING:
-    from backend.app.scheduled_jobs.models import WorkspaceScheduledJob
-
-
-@dataclass(frozen=True)
-class ResolvedModelProvider:
-    provider: str | None
-    model: str
-    base_url: str | None
-    api_key: str | None
-    model_api: str | None
-    credential_id: UUID | None
-
-
-class ModelProviderUnavailableError(ValueError):
-    pass
+__all__ = [
+    "ModelProviderCredentialService",
+    "ModelProviderUnavailableError",
+    "ResolvedModelProvider",
+    "model_provider_health_check_schedule_summary",
+    "model_provider_last_health_check_at",
+]
 
 
 class ModelProviderCredentialService:
@@ -88,7 +82,7 @@ class ModelProviderCredentialService:
         budget_metadata: dict[str, object] | None = None,
     ) -> ModelProviderCredential:
         provider = canonical_model_provider(provider)
-        base_url = _validated_base_url(
+        base_url = validated_base_url(
             base_url,
             provider=provider,
             egress_policy=self._egress_policy,
@@ -108,7 +102,7 @@ class ModelProviderCredentialService:
             encryption_key_id=encrypted.key_id,
             is_default=is_default,
             status="active",
-            budget_metadata=_budget_metadata_with_model_api(
+            budget_metadata=budget_metadata_with_model_api(
                 budget_metadata,
                 model_api=model_api,
                 model_api_provided=model_api is not None,
@@ -127,9 +121,9 @@ class ModelProviderCredentialService:
                 "name": credential.name,
                 "provider": credential.provider,
                 "base_url_configured": bool(credential.base_url),
-                "base_url_host": _base_url_host(credential.base_url),
+                "base_url_host": base_url_host(credential.base_url),
                 "default_model": credential.default_model,
-                **_model_api_audit_payload(credential),
+                **model_api_audit_payload(credential),
                 "is_default": credential.is_default,
                 "budget_configured": bool(credential.budget_metadata),
             },
@@ -191,12 +185,9 @@ class ModelProviderCredentialService:
         workspace_id: UUID,
         credential_id: UUID,
     ) -> ModelProviderCredential | None:
-        return self._session.scalar(
-            select(ModelProviderCredential).where(
-                ModelProviderCredential.workspace_id == workspace_id,
-                ModelProviderCredential.id == credential_id,
-                ModelProviderCredential.status == "active",
-            )
+        return self._resolver().get_active(
+            workspace_id=workspace_id,
+            credential_id=credential_id,
         )
 
     def update(
@@ -223,7 +214,7 @@ class ModelProviderCredentialService:
         if default_model is not None:
             credential.default_model = default_model
         if provider is not None or base_url is not None:
-            credential.base_url = _validated_base_url(
+            credential.base_url = validated_base_url(
                 base_url if base_url is not None else credential.base_url,
                 provider=next_provider,
                 egress_policy=self._egress_policy,
@@ -234,7 +225,7 @@ class ModelProviderCredentialService:
                 self._unset_other_defaults(workspace_id, credential.id)
             credential.is_default = is_default
         if budget_metadata is not None or model_api_provided:
-            credential.budget_metadata = _budget_metadata_with_model_api(
+            credential.budget_metadata = budget_metadata_with_model_api(
                 budget_metadata if budget_metadata is not None else credential.budget_metadata,
                 model_api=model_api,
                 model_api_provided=model_api_provided,
@@ -395,14 +386,14 @@ class ModelProviderCredentialService:
                 "name": credential.name,
                 "provider": credential.provider,
                 "model": credential.default_model,
-                **_model_api_audit_payload(credential),
+                **model_api_audit_payload(credential),
                 "status": result.status,
                 "checks": [
                     redact_sensitive_payload(check.as_dict())
                     for check in result.checks
                 ],
                 "base_url_configured": bool(credential.base_url),
-                "base_url_host": _base_url_host(credential.base_url),
+                "base_url_host": base_url_host(credential.base_url),
             },
         )
         self._session.commit()
@@ -416,37 +407,10 @@ class ModelProviderCredentialService:
         agent_credential_id: UUID | None,
         agent_model: str,
     ) -> ResolvedModelProvider:
-        credential = None
-        if agent_credential_id is not None:
-            credential = self._selectable_credential(
-                workspace_id=workspace_id,
-                credential_id=agent_credential_id,
-            )
-            if credential is None:
-                raise ValueError("Agent model provider credential not found or unavailable")
-        else:
-            credential = self._default_credential(workspace_id)
-        if credential is None:
-            raise ModelProviderUnavailableError(
-                "No available model provider credential for workspace"
-            )
-        payload = self._secret_service.decrypt_payload(credential.encrypted_api_key)
-        api_key = payload.get("api_key")
-        if not isinstance(api_key, str) or not api_key:
-            raise ValueError("Model provider credential is missing api_key")
-        model = agent_model or credential.default_model
-        if model == "workspace-default":
-            model = credential.default_model
-        return ResolvedModelProvider(
-            provider=credential.provider,
-            model=model,
-            base_url=credential.base_url,
-            api_key=api_key,
-            model_api=model_api_for_provider(
-                credential.provider,
-                credential.budget_metadata,
-            ),
-            credential_id=credential.id,
+        return self._resolver().resolve_for_agent(
+            workspace_id=workspace_id,
+            agent_credential_id=agent_credential_id,
+            agent_model=agent_model,
         )
 
     def resolve_for_review(
@@ -456,56 +420,14 @@ class ModelProviderCredentialService:
         credential_id: UUID | None,
         review_model: str,
     ) -> ResolvedModelProvider:
-        credential = (
-            self._selectable_credential(
-                workspace_id=workspace_id,
-                credential_id=credential_id,
-            )
-            if credential_id is not None
-            else self._default_credential(workspace_id)
-        )
-        if credential is None:
-            raise ModelProviderUnavailableError(
-                "No available model provider credential for resource review"
-            )
-        payload = self._secret_service.decrypt_payload(credential.encrypted_api_key)
-        api_key = payload.get("api_key")
-        if not isinstance(api_key, str) or not api_key:
-            raise ValueError("Review model provider credential is missing api_key")
-        return ResolvedModelProvider(
-            provider=credential.provider,
-            model=review_model,
-            base_url=credential.base_url,
-            api_key=api_key,
-            model_api=model_api_for_provider(
-                credential.provider,
-                credential.budget_metadata,
-            ),
-            credential_id=credential.id,
+        return self._resolver().resolve_for_review(
+            workspace_id=workspace_id,
+            credential_id=credential_id,
+            review_model=review_model,
         )
 
-    def _default_credential(self, workspace_id: UUID) -> ModelProviderCredential | None:
-        default = self._session.scalar(
-            select(ModelProviderCredential).where(
-                ModelProviderCredential.workspace_id == workspace_id,
-                ModelProviderCredential.is_default.is_(True),
-                ModelProviderCredential.status == "active",
-            )
-        )
-        if self._is_selectable(default):
-            return default
-
-    def _selectable_credential(
-        self,
-        *,
-        workspace_id: UUID,
-        credential_id: UUID,
-    ) -> ModelProviderCredential | None:
-        credential = self.get(workspace_id=workspace_id, credential_id=credential_id)
-        return credential if self._is_selectable(credential) else None
-
-    def _is_selectable(self, credential: ModelProviderCredential | None) -> bool:
-        return credential_is_selectable(credential)
+    def _resolver(self) -> ModelProviderResolver:
+        return ModelProviderResolver(self._session, self._secret_service)
 
     def _require(self, *, workspace_id: UUID, credential_id: UUID) -> ModelProviderCredential:
         credential = self.get(workspace_id=workspace_id, credential_id=credential_id)
@@ -553,9 +475,9 @@ class ModelProviderCredentialService:
                 "name": credential.name,
                 "provider": credential.provider,
                 "base_url_configured": bool(credential.base_url),
-                "base_url_host": _base_url_host(credential.base_url),
+                "base_url_host": base_url_host(credential.base_url),
                 "default_model": credential.default_model,
-                **_model_api_audit_payload(credential),
+                **model_api_audit_payload(credential),
                 "is_default": credential.is_default,
                 "status": credential.status,
                 "health_status": credential.health_status,
@@ -575,128 +497,17 @@ class ModelProviderCredentialService:
         )
 
 
-def _base_url_host(base_url: str | None) -> str | None:
-    if not base_url:
-        return None
-    parsed = urlparse(base_url)
-    return parsed.netloc or None
 
 
-def _model_api_audit_payload(credential: ModelProviderCredential) -> dict[str, object]:
-    return {
-        "model_api": model_api_for_provider(
-            credential.provider,
-            credential.budget_metadata,
-        ),
-        "model_apis": list(model_api_options_for_provider(credential.provider)),
-        "default_model_api": default_model_api(credential.provider),
-    }
 
 
-def _budget_metadata_with_model_api(
-    metadata: dict[str, object] | None,
-    *,
-    model_api: object,
-    model_api_provided: bool,
-    provider: str,
-) -> dict[str, object]:
-    sanitized = sanitize_budget_metadata(metadata)
-    if not model_api_provided:
-        configured = sanitized.get("model_api")
-        if configured is not None:
-            sanitized["model_api"] = require_provider_model_api(provider, configured)
-        return sanitized
-    canonical = require_provider_model_api(provider, model_api)
-    if canonical is None:
-        sanitized.pop("model_api", None)
-    else:
-        sanitized["model_api"] = canonical
-    return sanitized
 
 
-def model_provider_last_health_check_at(
-    credential: ModelProviderCredential,
-) -> datetime | None:
-    timestamps = [
-        value
-        for value in (credential.last_success_at, credential.last_failure_at)
-        if value is not None
-    ]
-    return max(timestamps) if timestamps else None
 
 
-def model_provider_health_check_schedule_summary(
-    session: Session,
-    *,
-    workspace_id: UUID,
-    credential_id: UUID,
-) -> dict[str, object]:
-    from backend.app.scheduled_jobs.models import WorkspaceScheduledJob
-    from backend.app.workers.jobs import JobType
-
-    jobs = list(
-        session.scalars(
-            select(WorkspaceScheduledJob)
-            .where(
-                WorkspaceScheduledJob.workspace_id == workspace_id,
-                WorkspaceScheduledJob.resource_id == credential_id,
-                WorkspaceScheduledJob.job_type == JobType.MODEL_PROVIDER_HEALTH_CHECK.value,
-            )
-            .order_by(
-                WorkspaceScheduledJob.status.asc(),
-                WorkspaceScheduledJob.next_run_at.asc(),
-                WorkspaceScheduledJob.created_at.desc(),
-            )
-            .limit(_HEALTH_CHECK_SCHEDULE_JOB_LIMIT)
-        )
-    )
-    active_jobs = [job for job in jobs if job.status == "active"]
-    active_next_runs = [
-        job.next_run_at for job in active_jobs if job.next_run_at is not None
-    ]
-    return {
-        "configured": bool(jobs),
-        "active_count": len(active_jobs),
-        "paused_count": sum(1 for job in jobs if job.status == "paused"),
-        "next_run_at": min(active_next_runs) if active_next_runs else None,
-        "jobs": [_health_check_schedule_job_summary(job) for job in jobs],
-    }
 
 
-def _health_check_schedule_job_summary(job: WorkspaceScheduledJob) -> dict[str, object]:
-    return {
-        "id": job.id,
-        "name": job.name,
-        "status": job.status,
-        "schedule_type": job.schedule_type,
-        "next_run_at": job.next_run_at,
-        "last_run_at": job.last_run_at,
-        "routing": _health_check_schedule_routing_summary(job.routing),
-    }
 
 
-def _health_check_schedule_routing_summary(value: object) -> dict[str, object]:
-    if not isinstance(value, dict):
-        return {}
-    summary: dict[str, object] = {}
-    probes = value.get("probes")
-    if isinstance(probes, list) and all(isinstance(item, str) for item in probes):
-        summary["probes"] = probes
-    timeout_seconds = value.get("timeout_seconds")
-    if isinstance(timeout_seconds, int | float) and not isinstance(timeout_seconds, bool):
-        summary["timeout_seconds"] = timeout_seconds
-    return summary
 
 
-def _validated_base_url(
-    base_url: str | None,
-    *,
-    provider: str | None,
-    egress_policy: EgressUrlPolicy,
-) -> str | None:
-    if base_url is None:
-        return None
-    validated = validate_egress_url(base_url, policy=egress_policy)
-    if is_openai_compatible_provider(provider):
-        return normalize_openai_compatible_base_url(validated)
-    return validated.rstrip("/")
