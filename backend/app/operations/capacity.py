@@ -19,7 +19,7 @@ from backend.app.api.schemas.operations import (
 )
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.operations.utils import capacity_slots_from_metadata, positive_int
-from backend.app.operations.workers import RUNNING_LEASE_STATUSES
+from backend.app.operations.worker_lifecycle import RUNNING_LEASE_STATUSES
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota

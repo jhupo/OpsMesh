@@ -25,7 +25,9 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.operations.runtime_cleanup import RuntimeCleanupService
 from backend.app.operations.runtime_leases import RuntimeLeaseOperationsService
-from backend.app.operations.workers import WorkerOperationsService
+from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsService
+from backend.app.operations.worker_leases import WorkerLeaseOperationsService
+from backend.app.operations.worker_nodes import WorkerNodeOperationsService
 from backend.app.security.service import SecurityAuditService
 
 if TYPE_CHECKING:
@@ -55,7 +57,7 @@ async def record_worker_heartbeat(
         session=session,
         presented_token=worker_heartbeat_token,
     )
-    heartbeat = WorkerOperationsService(session).record_worker_heartbeat(
+    heartbeat = WorkerHeartbeatOperationsService(session).record_worker_heartbeat(
         workspace_id=context.workspace.id,
         worker_id=payload.worker_id,
         worker_type=payload.worker_type,
@@ -109,7 +111,7 @@ async def list_workers(
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[WorkerNodeResponse]:
-    items, total = WorkerOperationsService(session).list_worker_nodes(
+    items, total = WorkerNodeOperationsService(session).list_worker_nodes(
         page,
         status=status_filter,
         worker_type=worker_type,
@@ -128,7 +130,7 @@ async def drain_worker(
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> WorkerNodeResponse:
-    node = WorkerOperationsService(session).request_worker_drain(worker_id)
+    node = WorkerNodeOperationsService(session).request_worker_drain(worker_id)
     if node is None:
         raise HTTPException(status_code=404, detail="Worker not found")
     return WorkerNodeResponse.model_validate(node)
@@ -141,7 +143,7 @@ async def update_worker_status(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> WorkerNodeResponse:
-    node = WorkerOperationsService(session).set_worker_status(
+    node = WorkerNodeOperationsService(session).set_worker_status(
         workspace_id=context.workspace.id,
         actor_user_id=context.user.user_id,
         worker_id=worker_id,
@@ -161,7 +163,7 @@ async def list_worker_leases(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[WorkerLeaseResponse]:
-    items, total = WorkerOperationsService(session).list_worker_leases(
+    items, total = WorkerLeaseOperationsService(session).list_worker_leases(
         context.workspace.id,
         page,
         status=status_filter,
@@ -208,7 +210,7 @@ async def cleanup_runtimes(
         context.workspace.id,
         stale_after_seconds=stale_after_seconds,
     )
-    expired_leases = WorkerOperationsService(session).expire_stale_worker_leases(
+    expired_leases = WorkerLeaseOperationsService(session).expire_stale_worker_leases(
         workspace_id=context.workspace.id,
         stale_after_seconds=stale_lease_after_seconds,
     )

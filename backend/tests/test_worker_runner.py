@@ -27,7 +27,7 @@ from backend.app.identity.models import User
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
-from backend.app.operations.workers import WorkerOperationsService
+from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.model_request import ModelRequestReview
@@ -1661,7 +1661,7 @@ def test_worker_heartbeat_does_not_clear_quarantine() -> None:
         session.commit()
 
     with session_factory() as session:
-        WorkerOperationsService(session).record_worker_heartbeat(
+        WorkerHeartbeatOperationsService(session).record_worker_heartbeat(
             workspace_id=workspace_id,
             worker_id="worker-quarantine-heartbeat",
             worker_type="cloud",
@@ -2220,7 +2220,7 @@ def test_worker_heartbeat_appends_running_lease_lifecycle_event() -> None:
         session.commit()
 
     with session_factory() as session:
-        WorkerOperationsService(session).record_worker_heartbeat(
+        WorkerHeartbeatOperationsService(session).record_worker_heartbeat(
             workspace_id=workspace_id,
             worker_id="worker-heartbeat",
             worker_type="cloud",

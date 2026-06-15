@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings
 from backend.app.files.storage import create_storage
 from backend.app.operations.runtime_cleanup import RuntimeCleanupService
-from backend.app.operations.workers import WorkerOperationsService
+from backend.app.operations.worker_leases import WorkerLeaseOperationsService
 from backend.app.orchestration.run_control import RunControlService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.scheduled_jobs.service import WorkspaceScheduledJobService
@@ -95,7 +95,7 @@ class WorkerMaintenanceService:
             limit=self._config.recovery_batch_size,
             reason="worker_maintenance",
         )
-        expired_leases = WorkerOperationsService(session).expire_stale_worker_leases(
+        expired_leases = WorkerLeaseOperationsService(session).expire_stale_worker_leases(
             stale_after_seconds=self._config.run_lease_seconds,
         )
         stale_runtimes, deleted_runtime_records = RuntimeCleanupService(
