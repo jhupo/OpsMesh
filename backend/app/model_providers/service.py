@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -20,6 +19,13 @@ from backend.app.model_providers.health import (
     ModelProviderHealthTarget,
     ProviderProbeName,
     probe_model_provider,
+)
+from backend.app.model_providers.health_state import (
+    apply_health_check_result,
+    provider_credential_audit_metadata,
+    provider_health_audit_metadata,
+    record_provider_failure,
+    record_provider_success,
 )
 from backend.app.model_providers.health_summary import (
     model_provider_health_check_schedule_summary,
@@ -43,9 +49,6 @@ from backend.app.security.egress import (
     MODEL_PROVIDER_BASE_URL_POLICY,
     EgressUrlPolicy,
 )
-from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
-
-PROVIDER_UNHEALTHY_FAILURE_THRESHOLD = 3
 
 __all__ = [
     "ModelProviderCredentialService",
@@ -315,11 +318,7 @@ class ModelProviderCredentialService:
         credential = self.get(workspace_id=workspace_id, credential_id=credential_id)
         if credential is None:
             return
-        credential.health_status = "healthy"
-        credential.failure_count = 0
-        credential.last_success_at = datetime.now(UTC)
-        credential.last_failure_code = None
-        credential.last_failure_message = None
+        record_provider_success(credential)
         self._session.flush([credential])
 
     def record_failure(
@@ -335,15 +334,11 @@ class ModelProviderCredentialService:
         credential = self.get(workspace_id=workspace_id, credential_id=credential_id)
         if credential is None:
             return
-        credential.failure_count += 1
-        credential.health_status = (
-            "unhealthy"
-            if credential.failure_count >= PROVIDER_UNHEALTHY_FAILURE_THRESHOLD
-            else "degraded"
+        record_provider_failure(
+            credential,
+            error_code=error_code,
+            error_message=error_message,
         )
-        credential.last_failure_at = datetime.now(UTC)
-        credential.last_failure_code = error_code[:120]
-        credential.last_failure_message = error_message[:1000]
         self._session.flush([credential])
 
     async def run_health_check(
@@ -375,26 +370,14 @@ class ModelProviderCredentialService:
             probes=probes,
             timeout_seconds=timeout_seconds,
         )
-        self._apply_health_check_result(credential, result)
+        apply_health_check_result(credential, result)
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
             user_id=actor_user_id,
             action="model_provider_credential.health_checked",
             target_type="model_provider_credential",
             target_id=credential.id,
-            metadata={
-                "name": credential.name,
-                "provider": credential.provider,
-                "model": credential.default_model,
-                **model_api_audit_payload(credential),
-                "status": result.status,
-                "checks": [
-                    redact_sensitive_payload(check.as_dict())
-                    for check in result.checks
-                ],
-                "base_url_configured": bool(credential.base_url),
-                "base_url_host": base_url_host(credential.base_url),
-            },
+            metadata=provider_health_audit_metadata(credential, result),
         )
         self._session.commit()
         self._session.refresh(credential)
@@ -435,28 +418,6 @@ class ModelProviderCredentialService:
             raise ValueError("Model provider credential not found")
         return credential
 
-    def _apply_health_check_result(
-        self,
-        credential: ModelProviderCredential,
-        result: ModelProviderHealthCheckResult,
-    ) -> None:
-        now = datetime.now(UTC)
-        credential.health_status = result.status
-        if result.status == "healthy":
-            credential.failure_count = 0
-            credential.last_success_at = now
-            credential.last_failure_code = None
-            credential.last_failure_message = None
-            return
-        credential.failure_count += 1
-        credential.last_failure_at = now
-        credential.last_failure_code = (result.failure_code or result.status)[:120]
-        credential.last_failure_message = (
-            redact_sensitive_text(result.failure_message)
-            if result.failure_message is not None
-            else f"Provider health check is {result.status}."
-        )[:1000]
-
     def _audit(
         self,
         *,
@@ -471,19 +432,7 @@ class ModelProviderCredentialService:
             action=action,
             target_type="model_provider_credential",
             target_id=credential.id,
-            metadata={
-                "name": credential.name,
-                "provider": credential.provider,
-                "base_url_configured": bool(credential.base_url),
-                "base_url_host": base_url_host(credential.base_url),
-                "default_model": credential.default_model,
-                **model_api_audit_payload(credential),
-                "is_default": credential.is_default,
-                "status": credential.status,
-                "health_status": credential.health_status,
-                "failure_count": credential.failure_count,
-                "budget_configured": bool(credential.budget_metadata),
-            },
+            metadata=provider_credential_audit_metadata(credential),
         )
 
     def _unset_other_defaults(self, workspace_id: UUID, credential_id: UUID | None = None) -> None:
