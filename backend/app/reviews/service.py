@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -13,68 +12,25 @@ from backend.app.model_providers.service import (
     ModelProviderCredentialService,
     ModelProviderUnavailableError,
 )
-from backend.app.reviews.constants import (
-    DEFAULT_RESOURCE_REVIEW_MODEL,
-    PRIVATE_RESOURCE_REVIEW_SETTINGS_KEY,
-    RESOURCE_REVIEW_SETTINGS_KEY,
-    SEMANTIC_REVIEW_SETTINGS_KEY,
+from backend.app.reviews.config import ResourceReviewSettings
+from backend.app.reviews.llm import LlmResourceReviewer
+from backend.app.reviews.llm_review import (
+    llm_unavailable_review,
+    merge_policy_and_llm_reviews,
+    review_skipped,
 )
-from backend.app.reviews.llm import LlmResourceReviewer, LlmReviewResult
+from backend.app.reviews.models import ResourceReview
+from backend.app.reviews.scanner import ReviewScanner
+from backend.app.reviews.utils import (
+    _HIGH_RISK_LEVELS,
+    _connection_has_external_url,
+    _has_sensitive_keys,
+    _list_from_manifest,
+    _normalize_risk,
+    _policy_mode,
+)
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.redaction import redact_sensitive_payload
-from backend.app.workspaces.models import Workspace
-
-_HIGH_RISK_LEVELS = {"high", "critical"}
-_REVIEW_RISK_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
-_HIGH_RISK_TERMS = {
-    "bypass",
-    "credential",
-    "delete",
-    "payment",
-    "production",
-    "root",
-    "secret",
-    "shell",
-    "sudo",
-    "token",
-}
-_DANGEROUS_WORDS = {
-    "admin",
-    "approve",
-    "approval",
-    "bypass",
-    "credential",
-    "delete",
-    "deploy",
-    "exec",
-    "filesystem",
-    "network",
-    "payment",
-    "production",
-    "root",
-    "secret",
-    "shell",
-    "sudo",
-    "token",
-    "write",
-}
-_PUBLIC_SCOPES = {"public", "marketplace"}
-
-_PRIVATE_REVIEW_DEFAULTS = {
-    "agent_profile": False,
-    "skill": False,
-    "mcp_server": False,
-    "mcp_tool_allowlist": False,
-    "mcp_credential_reference": False,
-    "plugin": False,
-}
-
-@dataclass(frozen=True)
-class ResourceReview:
-    required: bool
-    risk_level: str
-    reasons: list[str]
-    signals: dict[str, object]
 
 
 class ResourceReviewService:
@@ -96,7 +52,7 @@ class ResourceReviewService:
         runtime_policy: dict[str, object],
         approval_policy: dict[str, object],
     ) -> ResourceReview:
-        scanner = _ReviewScanner()
+        scanner = ReviewScanner()
         scanner.scan_text("name", name)
         scanner.scan_text("role", role)
         scanner.scan_text("instructions", instructions)
@@ -136,7 +92,7 @@ class ResourceReviewService:
         manifest: dict[str, object],
         capability_keys: list[str],
     ) -> ResourceReview:
-        scanner = _ReviewScanner()
+        scanner = ReviewScanner()
         scanner.scan_text("visibility", visibility)
         scanner.scan_mapping("manifest", manifest)
         for key in capability_keys:
@@ -170,7 +126,7 @@ class ResourceReviewService:
         description: str,
         default_policy: dict[str, object],
     ) -> ResourceReview:
-        scanner = _ReviewScanner()
+        scanner = ReviewScanner()
         scanner.scan_text("key", key)
         scanner.scan_text("name", name)
         scanner.scan_text("category", category)
@@ -200,7 +156,7 @@ class ResourceReviewService:
         connection: dict[str, object],
         visibility: str,
     ) -> ResourceReview:
-        scanner = _ReviewScanner()
+        scanner = ReviewScanner()
         scanner.scan_text("server_type", server_type)
         scanner.scan_text("visibility", visibility)
         scanner.scan_mapping("connection", connection)
@@ -234,7 +190,7 @@ class ResourceReviewService:
         risk_level: str,
         policy: dict[str, object],
     ) -> ResourceReview:
-        scanner = _ReviewScanner()
+        scanner = ReviewScanner()
         scanner.scan_text("tool_name", tool_name)
         scanner.scan_mapping("policy", policy)
         normalized_risk = _normalize_risk(risk_level)
@@ -268,7 +224,7 @@ class ResourceReviewService:
         scopes: list[str],
         has_secret_payload: bool,
     ) -> ResourceReview:
-        scanner = _ReviewScanner()
+        scanner = ReviewScanner()
         scanner.scan_text("name", name)
         scanner.scan_text("provider", provider)
         scanner.scan_text("external_ref", external_ref)
@@ -297,14 +253,9 @@ class ResourceReviewService:
         )
 
     def review_plugin(
-        self,
-        *,
-        workspace_id: UUID | None,
-        visibility: str,
-        name: str,
-        manifest: dict[str, object],
+        self, *, workspace_id: UUID | None, visibility: str, name: str, manifest: dict[str, object]
     ) -> ResourceReview:
-        scanner = _ReviewScanner()
+        scanner = ReviewScanner()
         scanner.scan_text("visibility", visibility)
         scanner.scan_text("name", name)
         scanner.scan_mapping("manifest", manifest)
@@ -317,11 +268,7 @@ class ResourceReviewService:
             workspace_id=workspace_id,
             resource_type="plugin",
             visibility=visibility,
-            resource={
-                "visibility": visibility,
-                "name": name,
-                "manifest": manifest,
-            },
+            resource={"visibility": visibility, "name": name, "manifest": manifest},
             scanner=scanner,
         )
 
@@ -335,7 +282,7 @@ class ResourceReviewService:
         static_signals: dict[str, object],
         context: dict[str, object],
     ) -> ResourceReview:
-        scanner = _ReviewScanner()
+        scanner = ReviewScanner()
         scanner.scan_text("tool_kind", tool_kind)
         scanner.scan_mapping("arguments", arguments)
         scanner.scan_mapping("context", context)
@@ -412,30 +359,22 @@ class ResourceReviewService:
         resource_type: str,
         visibility: str,
         resource: dict[str, object],
-        scanner: _ReviewScanner,
+        scanner: ReviewScanner,
     ) -> ResourceReview:
         policy_review = scanner.result(reviewer="policy_guardrail")
-        if workspace_id is not None and not self._resource_review_enabled(
-            workspace_id,
-            resource_type,
-            visibility,
+        if workspace_id is not None and (
+            not self._review_settings().enabled(workspace_id, resource_type, visibility)
         ):
-            return _review_skipped(
-                policy_review,
-                resource_type=resource_type,
-                visibility=visibility,
-            )
+            return review_skipped(policy_review, resource_type=resource_type, visibility=visibility)
         if workspace_id is None:
-            return _llm_unavailable_review(
-                policy_review,
-                ValueError("Workspace id is required for semantic resource review"),
+            return llm_unavailable_review(
+                policy_review, ValueError("Workspace id is required for semantic resource review")
             )
         if self._settings is None:
-            return _llm_unavailable_review(
-                policy_review,
-                ValueError("Settings are required for semantic resource review"),
+            return llm_unavailable_review(
+                policy_review, ValueError("Settings are required for semantic resource review")
             )
-        review_config = self._review_config(workspace_id)
+        review_config = self._review_settings().semantic_config(workspace_id)
         try:
             provider = self._model_provider_service().resolve_for_review(
                 workspace_id=workspace_id,
@@ -450,31 +389,14 @@ class ResourceReviewService:
                 timeout_seconds=review_config.timeout_seconds,
             )
         except ModelProviderUnavailableError as exc:
-            return _llm_unavailable_review(policy_review, exc)
+            return llm_unavailable_review(policy_review, exc)
         except (ValueError, RuntimeError, OSError) as exc:
-            return _llm_unavailable_review(policy_review, exc)
-        merged = _merge_policy_and_llm_reviews(policy_review, llm_review)
+            return llm_unavailable_review(policy_review, exc)
+        merged = merge_policy_and_llm_reviews(policy_review, llm_review)
         return merged
 
-    def _resource_review_enabled(
-        self,
-        workspace_id: UUID,
-        resource_type: str,
-        visibility: str,
-    ) -> bool:
-        if _is_public_visibility(visibility):
-            return True
-        config = self._resource_review_settings(workspace_id)
-        scope_key = PRIVATE_RESOURCE_REVIEW_SETTINGS_KEY
-        defaults = _PRIVATE_REVIEW_DEFAULTS
-        raw_scope = config.get(scope_key)
-        scope_config = raw_scope if isinstance(raw_scope, dict) else {}
-        raw_value = scope_config.get(resource_type)
-        if raw_value is None:
-            return defaults.get(resource_type, True)
-        if not isinstance(raw_value, bool):
-            return defaults.get(resource_type, True)
-        return raw_value
+    def _review_settings(self) -> ResourceReviewSettings:
+        return ResourceReviewSettings(self._session)
 
     def _model_provider_service(self) -> ModelProviderCredentialService:
         if self._settings is None:
@@ -487,254 +409,3 @@ class ResourceReviewService:
                 previous_secrets=self._settings.credential_encryption_previous_secrets,
             ),
         )
-
-    def _review_config(self, workspace_id: UUID) -> _ResourceReviewConfig:
-        resource_review = self._resource_review_settings(workspace_id)
-        raw_semantic = resource_review.get(SEMANTIC_REVIEW_SETTINGS_KEY)
-        config = raw_semantic if isinstance(raw_semantic, dict) else {}
-        if config.get("enabled") is False:
-            raise ModelProviderUnavailableError("Semantic resource review is disabled")
-        return _ResourceReviewConfig(
-            credential_id=_uuid_or_none(config.get("model_provider_credential_id")),
-            model=_review_model(config.get("model")),
-            timeout_seconds=_review_timeout_seconds(config.get("timeout_seconds")),
-        )
-
-    def _resource_review_settings(self, workspace_id: UUID) -> dict[str, object]:
-        workspace = self._session.get(Workspace, workspace_id)
-        settings = workspace.settings if workspace is not None else {}
-        raw = settings.get(RESOURCE_REVIEW_SETTINGS_KEY) if isinstance(settings, dict) else None
-        return raw if isinstance(raw, dict) else {}
-
-
-class _ReviewScanner:
-    def __init__(self) -> None:
-        self._risk_level = "low"
-        self._reasons: list[str] = []
-        self._signals: dict[str, object] = {"matched_terms": []}
-
-    def add(self, risk_level: str, reason: str) -> None:
-        normalized = _normalize_risk(risk_level)
-        if _REVIEW_RISK_ORDER[normalized] > _REVIEW_RISK_ORDER[self._risk_level]:
-            self._risk_level = normalized
-        if reason not in self._reasons:
-            self._reasons.append(reason)
-
-    def scan_text(self, field: str, value: object) -> None:
-        if not isinstance(value, str) or not value:
-            return
-        lowered = value.lower()
-        matches = sorted(term for term in _DANGEROUS_WORDS if term in lowered)
-        if not matches:
-            return
-        matched_terms = self._signals.setdefault("matched_terms", [])
-        if isinstance(matched_terms, list):
-            for match in matches:
-                entry = {"field": field, "term": match}
-                if entry not in matched_terms:
-                    matched_terms.append(entry)
-        risk_level = (
-            "medium"
-            if field.startswith(("connection.", "manifest.", "policy."))
-            else "high"
-            if any(match in _HIGH_RISK_TERMS for match in matches)
-            else "medium"
-        )
-        self.add(risk_level, f"{field}.contains_sensitive_terms")
-
-    def scan_mapping(self, field: str, value: object) -> None:
-        if not isinstance(value, dict):
-            return
-        for path, item in _walk_mapping(value, field):
-            if isinstance(item, str):
-                self.scan_text(path, item)
-            elif isinstance(item, bool) and item and _path_has_dangerous_term(path):
-                self.add("medium", f"{path}.enabled")
-
-    def result(self, *, reviewer: str) -> ResourceReview:
-        reasons = list(self._reasons)
-        required = self._risk_level in _HIGH_RISK_LEVELS
-        if not reasons:
-            reasons.append("resource.low_risk")
-        signals = dict(self._signals)
-        signals["reviewer"] = reviewer
-        return ResourceReview(
-            required=required,
-            risk_level=self._risk_level,
-            reasons=reasons,
-            signals=signals,
-        )
-
-
-@dataclass(frozen=True)
-class _ResourceReviewConfig:
-    credential_id: UUID | None
-    model: str
-    timeout_seconds: float
-
-
-def _merge_policy_and_llm_reviews(
-    policy_review: ResourceReview,
-    llm_review: LlmReviewResult,
-) -> ResourceReview:
-    llm_required = bool(llm_review.required)
-    llm_risk = _normalize_risk(llm_review.risk_level)
-    llm_reasons = list(llm_review.reasons)
-    llm_signals = dict(llm_review.signals)
-    required = llm_required or llm_risk in _HIGH_RISK_LEVELS
-    reasons = [*llm_reasons, *policy_review.reasons]
-    deduped_reasons = list(dict.fromkeys(reasons))[:12]
-    signals = {
-        **llm_signals,
-        "policy_guardrail": {
-            "risk_level": policy_review.risk_level,
-            "required": policy_review.required,
-            "reasons": policy_review.reasons,
-            "signals": policy_review.signals,
-        },
-    }
-    return ResourceReview(
-        required=required,
-        risk_level=llm_risk,
-        reasons=deduped_reasons or ["llm_review.approved"],
-        signals=signals,
-    )
-
-
-def _llm_unavailable_review(
-    policy_review: ResourceReview,
-    exc: Exception,
-) -> ResourceReview:
-    signals = dict(policy_review.signals)
-    signals["reviewer"] = "llm_unavailable_fail_closed"
-    signals["semantic_review_error"] = type(exc).__name__
-    return ResourceReview(
-        required=True,
-        risk_level=_max_risk(policy_review.risk_level, "high"),
-        reasons=list(
-            dict.fromkeys(["llm_review.unavailable_requires_admin", *policy_review.reasons])
-        )[:12],
-        signals=signals,
-    )
-
-
-def _review_skipped(
-    policy_review: ResourceReview,
-    *,
-    resource_type: str,
-    visibility: str,
-) -> ResourceReview:
-    signals = dict(policy_review.signals)
-    signals["reviewer"] = "resource_review_policy"
-    signals["policy_guardrail"] = {
-        "risk_level": policy_review.risk_level,
-        "required": policy_review.required,
-        "reasons": policy_review.reasons,
-        "signals": policy_review.signals,
-    }
-    signals["skipped_reason"] = "resource_review.disabled_for_scope"
-    signals["resource_type"] = resource_type
-    signals["visibility"] = visibility
-    return ResourceReview(
-        required=False,
-        risk_level="low",
-        reasons=["resource_review.disabled_for_scope"],
-        signals=signals,
-    )
-
-
-def _max_risk(left: str, right: str) -> str:
-    left_risk = _normalize_risk(left)
-    right_risk = _normalize_risk(right)
-    return (
-        left_risk
-        if _REVIEW_RISK_ORDER[left_risk] >= _REVIEW_RISK_ORDER[right_risk]
-        else right_risk
-    )
-
-
-def _walk_mapping(value: dict[str, object], prefix: str) -> list[tuple[str, object]]:
-    rows: list[tuple[str, object]] = []
-    for key, item in value.items():
-        path = f"{prefix}.{key}"
-        rows.append((path, item))
-        if isinstance(item, dict):
-            rows.extend(_walk_mapping(item, path))
-        elif isinstance(item, list):
-            for index, child in enumerate(item[:50]):
-                child_path = f"{path}[{index}]"
-                rows.append((child_path, child))
-                if isinstance(child, dict):
-                    rows.extend(_walk_mapping(child, child_path))
-    return rows
-
-
-def _normalize_risk(value: object) -> str:
-    raw = str(value or "low").lower().strip()
-    return raw if raw in _REVIEW_RISK_ORDER else "low"
-
-
-def _review_model(value: object) -> str:
-    model = value.strip() if isinstance(value, str) else ""
-    return model or DEFAULT_RESOURCE_REVIEW_MODEL
-
-
-def _review_timeout_seconds(value: object) -> float:
-    if isinstance(value, bool):
-        return 20.0
-    if isinstance(value, int | float) and 1 <= value <= 120:
-        return float(value)
-    return 20.0
-
-
-def _uuid_or_none(value: object) -> UUID | None:
-    if value is None or value == "":
-        return None
-    if isinstance(value, UUID):
-        return value
-    if isinstance(value, str):
-        return UUID(value)
-    raise ValueError("Review model provider credential id must be a UUID")
-
-
-def _policy_mode(policy: dict[str, object]) -> str:
-    return str(policy.get("mode") or policy.get("tool_access") or "").lower().strip()
-
-
-def _path_has_dangerous_term(path: str) -> bool:
-    lowered = path.lower()
-    return any(term in lowered for term in _DANGEROUS_WORDS)
-
-
-def _list_from_manifest(manifest: dict[str, object], key: str) -> list[str]:
-    value = manifest.get(key)
-    if not isinstance(value, list):
-        value = manifest.get("tools")
-    if not isinstance(value, list):
-        return []
-    return [str(item) for item in value if isinstance(item, str) and item]
-
-
-def _connection_has_external_url(connection: dict[str, object]) -> bool:
-    for _, item in _walk_mapping(connection, "connection"):
-        if isinstance(item, str) and (
-            item.startswith("http://")
-            or item.startswith("https://")
-            or item.startswith("ws://")
-            or item.startswith("wss://")
-        ):
-            return True
-    return False
-
-
-def _is_public_visibility(value: object) -> bool:
-    return str(value or "private").lower().strip() in _PUBLIC_SCOPES
-
-
-def _has_sensitive_keys(value: dict[str, object]) -> bool:
-    for key, item in value.items():
-        if isinstance(key, str) and any(term in key.lower() for term in _DANGEROUS_WORDS):
-            return True
-        if isinstance(item, dict) and _has_sensitive_keys(item):
-            return True
-    return False
