@@ -4,7 +4,6 @@ import logging
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from threading import Event
 from typing import Protocol
 
@@ -19,73 +18,27 @@ from backend.app.core.config import Settings
 from backend.app.core.request_context import log_context
 from backend.app.core.trace_context import (
     current_trace_context,
-    current_trace_metadata,
     new_trace_context,
 )
-from backend.app.core.typing import dict_or_empty
 from backend.app.operations.service import OperationsService
-from backend.app.teams.runtime import TeamRuntimeService
+from backend.app.workers.capacity import merge_counts, worker_can_run_job
 from backend.app.workers.handlers import WorkerJobHandler
-from backend.app.workers.jobs import JobPayload, JobType
+from backend.app.workers.heartbeat import worker_heartbeat_details, worker_status_for_failures
+from backend.app.workers.jobs import JobPayload
+from backend.app.workers.lease_reporting import WorkerLeaseReporter
 from backend.app.workers.maintenance import (
     WorkerMaintenanceConfig,
     WorkerMaintenanceService,
     WorkerMaintenanceSummary,
 )
 from backend.app.workers.queue import RedisQueue
+from backend.app.workers.runner_models import WorkerRunnerConfig, WorkerRunSummary
 
 logger = logging.getLogger(__name__)
 
 
 class SessionFactory(Protocol):
     def __call__(self) -> Session: ...
-
-
-@dataclass(frozen=True)
-class WorkerRunnerConfig:
-    worker_id: str
-    worker_type: str = "cloud"
-    queue_name: str = "agent_runs"
-    max_jobs: int = 1
-    heartbeat_interval_seconds: float = 30.0
-    idle_sleep_seconds: float = 1.0
-    maintenance_interval_seconds: float = 60.0
-    run_lease_seconds: int = 900
-    recovery_batch_size: int = 100
-    job_scan_limit: int = 50
-    retry_base_delay_seconds: float = 5.0
-    retry_max_delay_seconds: float = 300.0
-
-
-@dataclass(frozen=True)
-class WorkerRunSummary:
-    processed: int
-    failed: int
-    idle_polls: int
-    recovered_runs: int
-    expired_leases: int
-    stale_runtimes: int
-    deleted_runtime_records: int
-    lifecycle_backup_jobs_enqueued: int
-    lifecycle_backup_jobs_skipped: int
-    lifecycle_retention_runs_applied: int
-    lifecycle_retention_runs_skipped: int
-    lifecycle_restore_drills_completed: int
-    lifecycle_restore_drills_skipped: int
-    team_execution_loop_jobs_enqueued: int
-    team_execution_loop_jobs_skipped: int
-    team_execution_loop_skip_reasons: dict[str, int]
-    task_events_published: int
-    task_event_publish_failures: int
-    webhook_delivery_jobs_enqueued: int
-    webhook_delivery_jobs_skipped: int
-    scheduled_job_actions_enqueued: int
-    scheduled_job_actions_recorded: int
-    scheduled_job_actions_skipped: int
-    scheduled_job_actions_enqueued_by_job_type: dict[str, int]
-    scheduled_job_actions_recorded_by_job_type: dict[str, int]
-    scheduled_job_actions_skipped_by_job_type: dict[str, int]
-    stopped: bool
 
 
 class WorkerRunner:
@@ -109,6 +62,10 @@ class WorkerRunner:
         self._settings = settings
         self._monotonic = monotonic
         self._sleep = sleep
+        self._lease_reporter = WorkerLeaseReporter(
+            config=config,
+            session_scope=self._session_scope,
+        )
 
     def run_once(self) -> bool:
         with self._session_scope() as session:
@@ -121,23 +78,23 @@ class WorkerRunner:
                 return False
             worker_capacity = capacity.capacity or {}
         job = self._queue.dequeue_matching(
-            lambda candidate: _worker_can_run_job(candidate, worker_capacity),
+            lambda candidate: worker_can_run_job(candidate, worker_capacity),
             scan_limit=self._config.job_scan_limit,
         )
         if job is None:
             return False
         with self._job_log_context(job):
-            self._start_lease(job)
+            self._lease_reporter.start_lease(job)
             try:
                 self._handle_job(job)
             except Exception as exc:
                 failure_status = "retrying" if job.can_retry else "failed"
-                self._finish_lease(
+                self._lease_reporter.finish_lease(
                     job,
                     status=failure_status,
                     metadata={"error": str(exc)},
                 )
-                self._record_team_execution_loop_failure(
+                self._lease_reporter.record_team_execution_loop_failure(
                     job,
                     status=failure_status,
                     error=exc,
@@ -148,7 +105,7 @@ class WorkerRunner:
                     delay_seconds=self._retry_delay(job),
                 )
                 raise
-            self._finish_lease(job, status="completed")
+            self._lease_reporter.finish_lease(job, status="completed")
             self._queue.ack(job)
         return True
 
@@ -165,9 +122,7 @@ class WorkerRunner:
 
     def _job_log_context(self, job: JobPayload) -> Iterator[None]:
         run_id = (
-            job.resource_id
-            if job.job_type.value in {"agent.run", "mcp.tool_execution"}
-            else None
+            job.resource_id if job.job_type.value in {"agent.run", "mcp.tool_execution"} else None
         )
         trace = job.trace_context()
         trace_metadata = {}
@@ -222,8 +177,9 @@ class WorkerRunner:
             now = self._monotonic()
             if now >= next_heartbeat_at:
                 self.record_heartbeat(
-                    self._status_for(failed),
-                    self._heartbeat_details(
+                    worker_status_for_failures(failed),
+                    worker_heartbeat_details(
+                        config=self._config,
                         processed=processed,
                         failed=failed,
                         idle_polls=idle_polls,
@@ -235,13 +191,9 @@ class WorkerRunner:
                         lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
                         lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
                         lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
-                        lifecycle_restore_drills_completed=(
-                            lifecycle_restore_drills_completed
-                        ),
+                        lifecycle_restore_drills_completed=(lifecycle_restore_drills_completed),
                         lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
-                        team_execution_loop_jobs_enqueued=(
-                            team_execution_loop_jobs_enqueued
-                        ),
+                        team_execution_loop_jobs_enqueued=(team_execution_loop_jobs_enqueued),
                         team_execution_loop_jobs_skipped=team_execution_loop_jobs_skipped,
                         team_execution_loop_skip_reasons=team_execution_loop_skip_reasons,
                         task_events_published=task_events_published,
@@ -270,31 +222,15 @@ class WorkerRunner:
                 expired_leases += maintenance.expired_leases
                 stale_runtimes += maintenance.stale_runtimes
                 deleted_runtime_records += maintenance.deleted_runtime_records
-                lifecycle_backup_jobs_enqueued += (
-                    maintenance.lifecycle_backup_jobs_enqueued
-                )
-                lifecycle_backup_jobs_skipped += (
-                    maintenance.lifecycle_backup_jobs_skipped
-                )
-                lifecycle_retention_runs_applied += (
-                    maintenance.lifecycle_retention_runs_applied
-                )
-                lifecycle_retention_runs_skipped += (
-                    maintenance.lifecycle_retention_runs_skipped
-                )
-                lifecycle_restore_drills_completed += (
-                    maintenance.lifecycle_restore_drills_completed
-                )
-                lifecycle_restore_drills_skipped += (
-                    maintenance.lifecycle_restore_drills_skipped
-                )
-                team_execution_loop_jobs_enqueued += (
-                    maintenance.team_execution_loop_jobs_enqueued
-                )
-                team_execution_loop_jobs_skipped += (
-                    maintenance.team_execution_loop_jobs_skipped
-                )
-                _merge_counts(
+                lifecycle_backup_jobs_enqueued += maintenance.lifecycle_backup_jobs_enqueued
+                lifecycle_backup_jobs_skipped += maintenance.lifecycle_backup_jobs_skipped
+                lifecycle_retention_runs_applied += maintenance.lifecycle_retention_runs_applied
+                lifecycle_retention_runs_skipped += maintenance.lifecycle_retention_runs_skipped
+                lifecycle_restore_drills_completed += maintenance.lifecycle_restore_drills_completed
+                lifecycle_restore_drills_skipped += maintenance.lifecycle_restore_drills_skipped
+                team_execution_loop_jobs_enqueued += maintenance.team_execution_loop_jobs_enqueued
+                team_execution_loop_jobs_skipped += maintenance.team_execution_loop_jobs_skipped
+                merge_counts(
                     team_execution_loop_skip_reasons,
                     maintenance.team_execution_loop_skip_reasons,
                 )
@@ -302,22 +238,18 @@ class WorkerRunner:
                 task_event_publish_failures += maintenance.task_event_publish_failures
                 webhook_delivery_jobs_enqueued += maintenance.webhook_delivery_jobs_enqueued
                 webhook_delivery_jobs_skipped += maintenance.webhook_delivery_jobs_skipped
-                scheduled_job_actions_enqueued += (
-                    maintenance.scheduled_job_actions_enqueued
-                )
-                scheduled_job_actions_recorded += (
-                    maintenance.scheduled_job_actions_recorded
-                )
+                scheduled_job_actions_enqueued += maintenance.scheduled_job_actions_enqueued
+                scheduled_job_actions_recorded += maintenance.scheduled_job_actions_recorded
                 scheduled_job_actions_skipped += maintenance.scheduled_job_actions_skipped
-                _merge_counts(
+                merge_counts(
                     scheduled_job_actions_enqueued_by_job_type,
                     maintenance.scheduled_job_actions_enqueued_by_job_type,
                 )
-                _merge_counts(
+                merge_counts(
                     scheduled_job_actions_recorded_by_job_type,
                     maintenance.scheduled_job_actions_recorded_by_job_type,
                 )
-                _merge_counts(
+                merge_counts(
                     scheduled_job_actions_skipped_by_job_type,
                     maintenance.scheduled_job_actions_skipped_by_job_type,
                 )
@@ -331,7 +263,8 @@ class WorkerRunner:
                 logger.exception("Worker job failed")
                 self.record_heartbeat(
                     "degraded",
-                    self._heartbeat_details(
+                    worker_heartbeat_details(
+                        config=self._config,
                         processed=processed,
                         failed=failed,
                         idle_polls=idle_polls,
@@ -343,13 +276,9 @@ class WorkerRunner:
                         lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
                         lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
                         lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
-                        lifecycle_restore_drills_completed=(
-                            lifecycle_restore_drills_completed
-                        ),
+                        lifecycle_restore_drills_completed=(lifecycle_restore_drills_completed),
                         lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
-                        team_execution_loop_jobs_enqueued=(
-                            team_execution_loop_jobs_enqueued
-                        ),
+                        team_execution_loop_jobs_enqueued=(team_execution_loop_jobs_enqueued),
                         team_execution_loop_jobs_skipped=team_execution_loop_jobs_skipped,
                         team_execution_loop_skip_reasons=team_execution_loop_skip_reasons,
                         task_events_published=task_events_published,
@@ -383,10 +312,11 @@ class WorkerRunner:
             idle_polls += 1
             self._sleep(self._config.idle_sleep_seconds)
 
-        status = "stopping" if self._is_stopped(stop_event) else self._status_for(failed)
+        status = "stopping" if self._is_stopped(stop_event) else worker_status_for_failures(failed)
         self.record_heartbeat(
             status,
-            self._heartbeat_details(
+            worker_heartbeat_details(
+                config=self._config,
                 processed=processed,
                 failed=failed,
                 idle_polls=idle_polls,
@@ -446,15 +376,9 @@ class WorkerRunner:
             scheduled_job_actions_enqueued=scheduled_job_actions_enqueued,
             scheduled_job_actions_recorded=scheduled_job_actions_recorded,
             scheduled_job_actions_skipped=scheduled_job_actions_skipped,
-            scheduled_job_actions_enqueued_by_job_type=(
-                scheduled_job_actions_enqueued_by_job_type
-            ),
-            scheduled_job_actions_recorded_by_job_type=(
-                scheduled_job_actions_recorded_by_job_type
-            ),
-            scheduled_job_actions_skipped_by_job_type=(
-                scheduled_job_actions_skipped_by_job_type
-            ),
+            scheduled_job_actions_enqueued_by_job_type=(scheduled_job_actions_enqueued_by_job_type),
+            scheduled_job_actions_recorded_by_job_type=(scheduled_job_actions_recorded_by_job_type),
+            scheduled_job_actions_skipped_by_job_type=(scheduled_job_actions_skipped_by_job_type),
             stopped=self._is_stopped(stop_event),
         )
 
@@ -505,151 +429,6 @@ class WorkerRunner:
             settings=self._settings,
         ).run()
 
-    def _status_for(self, failed: int) -> str:
-        return "degraded" if failed > 0 else "online"
-
-    def _heartbeat_details(
-        self,
-        *,
-        processed: int,
-        failed: int,
-        idle_polls: int,
-        recovered_runs: int,
-        expired_leases: int,
-        stale_runtimes: int,
-        deleted_runtime_records: int,
-        lifecycle_backup_jobs_enqueued: int,
-        lifecycle_backup_jobs_skipped: int,
-        lifecycle_retention_runs_applied: int,
-        lifecycle_retention_runs_skipped: int,
-        lifecycle_restore_drills_completed: int,
-        lifecycle_restore_drills_skipped: int,
-        team_execution_loop_jobs_enqueued: int,
-        team_execution_loop_jobs_skipped: int,
-        team_execution_loop_skip_reasons: dict[str, int],
-        task_events_published: int,
-        task_event_publish_failures: int,
-        webhook_delivery_jobs_enqueued: int,
-        webhook_delivery_jobs_skipped: int,
-        scheduled_job_actions_enqueued: int,
-        scheduled_job_actions_recorded: int,
-        scheduled_job_actions_skipped: int,
-        scheduled_job_actions_enqueued_by_job_type: dict[str, int],
-        scheduled_job_actions_recorded_by_job_type: dict[str, int],
-        scheduled_job_actions_skipped_by_job_type: dict[str, int],
-        last_error: str | None,
-    ) -> dict[str, object]:
-        details: dict[str, object] = {
-            "processed": processed,
-            "failed": failed,
-            "idle_polls": idle_polls,
-            "recovered_runs": recovered_runs,
-            "expired_leases": expired_leases,
-            "stale_runtimes": stale_runtimes,
-            "deleted_runtime_records": deleted_runtime_records,
-            "lifecycle_backup_jobs_enqueued": lifecycle_backup_jobs_enqueued,
-            "lifecycle_backup_jobs_skipped": lifecycle_backup_jobs_skipped,
-            "lifecycle_retention_runs_applied": lifecycle_retention_runs_applied,
-            "lifecycle_retention_runs_skipped": lifecycle_retention_runs_skipped,
-            "lifecycle_restore_drills_completed": lifecycle_restore_drills_completed,
-            "lifecycle_restore_drills_skipped": lifecycle_restore_drills_skipped,
-            "team_execution_loop_jobs_enqueued": team_execution_loop_jobs_enqueued,
-            "team_execution_loop_jobs_skipped": team_execution_loop_jobs_skipped,
-            "team_execution_loop_skip_reasons": dict(team_execution_loop_skip_reasons),
-            "task_events_published": task_events_published,
-            "task_event_publish_failures": task_event_publish_failures,
-            "webhook_delivery_jobs_enqueued": webhook_delivery_jobs_enqueued,
-            "webhook_delivery_jobs_skipped": webhook_delivery_jobs_skipped,
-            "scheduled_job_actions_enqueued": scheduled_job_actions_enqueued,
-            "scheduled_job_actions_recorded": scheduled_job_actions_recorded,
-            "scheduled_job_actions_skipped": scheduled_job_actions_skipped,
-            "scheduled_job_actions_enqueued_by_job_type": dict(
-                scheduled_job_actions_enqueued_by_job_type
-            ),
-            "scheduled_job_actions_recorded_by_job_type": dict(
-                scheduled_job_actions_recorded_by_job_type
-            ),
-            "scheduled_job_actions_skipped_by_job_type": dict(
-                scheduled_job_actions_skipped_by_job_type
-            ),
-            "capacity": {
-                "max_jobs": self._config.max_jobs,
-            },
-        }
-        if last_error is not None:
-            details["last_error"] = last_error
-        return details
-
-    def _start_lease(self, job: JobPayload) -> None:
-        try:
-            with self._session_scope() as session:
-                OperationsService(session).start_worker_lease(
-                    worker_id=self._config.worker_id,
-                    queue_name=self._config.queue_name,
-                    job=job,
-                    metadata={
-                        "priority": job.priority,
-                        "requested_by_user_id": str(job.requested_by_user_id)
-                        if job.requested_by_user_id is not None
-                        else None,
-                        "requested_by_agent_run_id": str(job.requested_by_agent_run_id)
-                        if job.requested_by_agent_run_id is not None
-                        else None,
-                        "routing": dict(job.routing),
-                        **(job.trace_metadata() or current_trace_metadata()),
-                    },
-                )
-        except Exception:
-            logger.exception("Failed to start worker lease")
-
-    def _finish_lease(
-        self,
-        job: JobPayload,
-        *,
-        status: str,
-        metadata: dict[str, object] | None = None,
-    ) -> None:
-        try:
-            lease_metadata = job.trace_metadata() or current_trace_metadata()
-            lease_metadata.update(metadata or {})
-            with self._session_scope() as session:
-                OperationsService(session).finish_worker_lease(
-                    job_id=job.job_id,
-                    status=status,
-                    metadata=lease_metadata,
-                )
-        except Exception:
-            logger.exception("Failed to finish worker lease")
-
-    def _record_team_execution_loop_failure(
-        self,
-        job: JobPayload,
-        *,
-        status: str,
-        error: BaseException,
-    ) -> None:
-        if job.job_type != JobType.TEAM_EXECUTION_LOOP:
-            return
-        try:
-            with self._session_scope() as session:
-                TeamRuntimeService(session).record_worker_failure(
-                    workspace_id=job.workspace_id,
-                    team_id=job.resource_id,
-                    worker_id=self._config.worker_id,
-                    queue_name=self._config.queue_name,
-                    job_id=job.job_id,
-                    status=status,
-                    attempt=job.attempt,
-                    max_attempts=job.max_attempts,
-                    will_retry=job.can_retry,
-                    error=error,
-                    actor_user_id=job.requested_by_user_id,
-                    routing=job.routing,
-                    trace_metadata=job.trace_metadata() or current_trace_metadata(),
-                )
-        except Exception:
-            logger.exception("Failed to record team execution loop worker failure")
-
     def _retry_delay(self, job: JobPayload) -> float:
         if not job.can_retry:
             return 0.0
@@ -662,60 +441,3 @@ class WorkerRunner:
 
     def _tracing_enabled(self) -> bool:
         return self._settings.tracing_enabled if self._settings is not None else True
-
-
-def _worker_can_run_job(job: JobPayload, capacity: dict[str, object]) -> bool:
-    routing = job.routing
-    if not routing:
-        return True
-    required_worker_types = _string_set(routing.get("worker_types"))
-    worker_type = _capacity_string(capacity, "worker_type")
-    if required_worker_types and worker_type not in required_worker_types:
-        return False
-    required_capabilities = _string_set(routing.get("capabilities"))
-    worker_capabilities = _string_set(capacity.get("capabilities"))
-    if required_capabilities and not required_capabilities <= worker_capabilities:
-        return False
-    required_runtime_modes = _string_set(routing.get("runtime_modes"))
-    worker_runtime_modes = _string_set(capacity.get("runtime_modes"))
-    if required_runtime_modes and not required_runtime_modes <= worker_runtime_modes:
-        return False
-    resource_requirements = dict_or_empty(routing.get("resource_requirements"))
-    for key, required_value in resource_requirements.items():
-        if _positive_number(capacity.get(key)) < _positive_number(required_value):
-            return False
-    return True
-
-
-def _merge_counts(target: dict[str, int], source: dict[str, int]) -> None:
-    for key, value in source.items():
-        if value <= 0:
-            continue
-        target[key] = target.get(key, 0) + value
-
-
-def _capacity_string(capacity: dict[str, object], key: str) -> str:
-    value = capacity.get(key)
-    return value if isinstance(value, str) else ""
-
-
-def _positive_number(value: object) -> float:
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int | float) and value > 0:
-        return float(value)
-    if isinstance(value, str):
-        try:
-            parsed = float(value)
-        except ValueError:
-            return 0
-        return parsed if parsed > 0 else 0
-    return 0
-
-
-def _string_set(value: object) -> set[str]:
-    if isinstance(value, str) and value:
-        return {value}
-    if not isinstance(value, list):
-        return set()
-    return {item for item in value if isinstance(item, str) and item}
