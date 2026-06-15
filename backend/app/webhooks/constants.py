@@ -1,0 +1,22 @@
+from __future__ import annotations
+
+from backend.app.security.egress import EgressUrlPolicy
+
+WEBHOOK_URL_POLICY = EgressUrlPolicy(allowed_schemes=frozenset({"http", "https"}))
+WEBHOOK_SECRET_MASK = "[redacted]"
+WEBHOOK_DELIVERY_TIMEOUT_SECONDS = 10
+WEBHOOK_DELIVERY_MAX_ATTEMPTS = 3
+WEBHOOK_RETRY_BASE_DELAY_SECONDS = 60
+WEBHOOK_ERROR_MAX_LENGTH = 2_000
+WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH = 1_000
+WEBHOOK_REPLAY_COOLDOWN_SECONDS = 60
+WEBHOOK_REPLAY_WORKSPACE_LIMIT = 10
+WEBHOOK_REPLAY_WORKSPACE_WINDOW_SECONDS = 60
+WEBHOOK_REDACTED_FIELD_NAMES = frozenset(
+    {
+        "ciphertext",
+        "encrypted_secret_payload",
+        "encrypted_signing_secret",
+        "signing_secret",
+    }
+)
