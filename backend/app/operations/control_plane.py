@@ -19,7 +19,7 @@ from backend.app.api.schemas.operations import (
 )
 from backend.app.operations.capacity import OperationsCapacityService
 from backend.app.operations.outcomes import OperationsOutcomeService
-from backend.app.operations.scheduler import OperationsSchedulerService
+from backend.app.operations.scheduler_backlog import SchedulerBacklogService
 from backend.app.operations.self_hosted_machines import OperationsSelfHostedMachineService
 from backend.app.redis.keys import RedisKeyBuilder
 
@@ -47,7 +47,7 @@ class OperationsControlPlaneService:
         queue = capacity.queue_latency(queue_name, workspace_id)
         worker_capacity = capacity.worker_capacity_aggregate()
         runtime_capacity = capacity.runtime_capacity_payload(workspace_id)
-        scheduler = OperationsSchedulerService(self._session).scheduler_payload(workspace_id)
+        scheduler = SchedulerBacklogService(self._session).scheduler_payload(workspace_id)
         outcome_service = OperationsOutcomeService(self._session)
         outcomes = outcome_service.outcomes_payload(workspace_id, window_seconds=window_seconds)
         mcp_jobs = outcome_service.mcp_jobs_payload(workspace_id)
@@ -159,9 +159,7 @@ def _control_plane_issues(
                 message="Runtime space quotas are saturated.",
                 count=len(saturated_spaces),
                 metadata={
-                    "runtime_space_ids": [
-                        str(space.runtime_space_id) for space in saturated_spaces
-                    ]
+                    "runtime_space_ids": [str(space.runtime_space_id) for space in saturated_spaces]
                 },
             )
         )
@@ -191,9 +189,7 @@ def _control_plane_issues(
                 message="Some queued steps are blocked by scheduler policy.",
                 count=scheduler.backlog.blocked_steps,
                 metadata={
-                    "blocked_reasons": [
-                        reason.model_dump() for reason in scheduler.blocked_reasons
-                    ]
+                    "blocked_reasons": [reason.model_dump() for reason in scheduler.blocked_reasons]
                 },
             )
         )
