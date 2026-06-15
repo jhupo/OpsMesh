@@ -1,30 +1,24 @@
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from subprocess import TimeoutExpired
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.runtime_manager.cleanup import (
     RuntimeResourceCleaner,
     cleanup_succeeded,
 )
-from backend.app.runtime_manager.command_output import (
-    bounded_error,
-    bounded_text,
-    command_failure_metadata,
-    lease_metadata,
-    positive_int_limit,
-)
+from backend.app.runtime_manager.command_executor import RuntimeCommandExecutor
+from backend.app.runtime_manager.command_output import lease_metadata
 from backend.app.runtime_manager.contracts import (
     DockerRuntimeClient,
-    RuntimeCommandResult,
     RuntimeCreateRequest,
     RuntimeLimits,
     RuntimeMount,
 )
+from backend.app.runtime_manager.events import RuntimeEventLog
+from backend.app.runtime_manager.leases import RuntimeLeaseStore, RuntimeSpaceReservationStore
 from backend.app.runtime_manager.metadata import (
     default_runtime_hardening_policy,
     runtime_hardening_metadata,
@@ -34,13 +28,11 @@ from backend.app.runtime_manager.metadata import (
     runtime_space_usage_for_runtime,
 )
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
+from backend.app.runtime_manager.runtime_guards import require_container
 from backend.app.runtime_manager.security_events import RuntimeSecurityEventRecorder
-from backend.app.runtime_spaces.models import RuntimeSpaceEvent
 from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.runtimes.models import (
     RuntimeCommand,
-    RuntimeEvent,
-    RuntimeLease,
     RuntimeTemplate,
     WorkspaceRuntime,
 )
@@ -58,6 +50,15 @@ class RuntimeManager:
         self._docker = docker_client
         self._cleaner = RuntimeResourceCleaner(docker_client, managed_host_roots)
         self._security_events = RuntimeSecurityEventRecorder(session)
+        self._events = RuntimeEventLog(session)
+        self._leases = RuntimeLeaseStore(session)
+        self._reservations = RuntimeSpaceReservationStore(session)
+        self._commands = RuntimeCommandExecutor(
+            session,
+            docker_client,
+            self._events,
+            self._security_events,
+        )
 
     def create_runtime(
         self,
@@ -170,13 +171,13 @@ class RuntimeManager:
                 )
             )
         except Exception:
-            self._release_runtime_space_reservation(runtime)
+            self._reservations.release(runtime)
             self._session.delete(runtime)
             self._session.flush()
             raise
         runtime.docker_container_id = container_id
         runtime.status = "created"
-        lease = self._ensure_runtime_lease(
+        lease = self._leases.ensure(
             runtime,
             status="active",
             metadata={
@@ -192,7 +193,7 @@ class RuntimeManager:
                 else None,
             },
         )
-        self._append_event(
+        self._events.append(
             runtime,
             "runtime.created",
             container_id,
@@ -203,7 +204,7 @@ class RuntimeManager:
                 "policy_resolution": dict(policy_metadata or {}),
             },
         )
-        self._append_event(
+        self._events.append(
             runtime,
             "runtime.lease_acquired",
             container_id,
@@ -214,30 +215,30 @@ class RuntimeManager:
         return runtime
 
     def start_runtime(self, runtime: WorkspaceRuntime) -> WorkspaceRuntime:
-        self._require_container(runtime)
+        require_container(runtime)
         self._docker.start_container(runtime.docker_container_id or "")
         runtime.status = "running"
         runtime.connection_status = "online"
         runtime.last_heartbeat_at = datetime.now(UTC)
-        lease = self._set_runtime_lease_status(runtime, "running")
-        self._append_event(runtime, "runtime.started", "", metadata=lease_metadata(lease))
+        lease = self._leases.set_status(runtime, "running")
+        self._events.append(runtime, "runtime.started", "", metadata=lease_metadata(lease))
         self._session.commit()
         self._session.refresh(runtime)
         return runtime
 
     def stop_runtime(self, runtime: WorkspaceRuntime) -> WorkspaceRuntime:
-        self._require_container(runtime)
+        require_container(runtime)
         self._docker.stop_container(runtime.docker_container_id or "")
         runtime.status = "stopped"
         runtime.connection_status = "offline"
-        lease = self._set_runtime_lease_status(runtime, "stopped")
-        self._append_event(runtime, "runtime.stopped", "", metadata=lease_metadata(lease))
+        lease = self._leases.set_status(runtime, "stopped")
+        self._events.append(runtime, "runtime.stopped", "", metadata=lease_metadata(lease))
         self._session.commit()
         self._session.refresh(runtime)
         return runtime
 
     def delete_runtime(self, runtime: WorkspaceRuntime) -> None:
-        self._require_container(runtime)
+        require_container(runtime)
         container_id = runtime.docker_container_id or ""
         try:
             self._docker.remove_container(container_id)
@@ -251,15 +252,15 @@ class RuntimeManager:
             )
             runtime.status = "cleanup_failed"
             runtime.connection_status = "offline"
-            self._append_event(
+            self._events.append(
                 runtime,
                 "runtime.cleanup_failed",
                 str(exc),
                 metadata=cleanup,
             )
             self._security_events.record_cleanup_failure(runtime, cleanup, reason=str(exc))
-            self._set_runtime_lease_status(runtime, "cleanup_failed", released_at=datetime.now(UTC))
-            self._release_runtime_space_reservation(runtime)
+            self._leases.set_status(runtime, "cleanup_failed", released_at=datetime.now(UTC))
+            self._reservations.release(runtime)
             self._session.commit()
             raise
         cleanup = self._cleaner.cleanup_runtime_resources(
@@ -270,7 +271,7 @@ class RuntimeManager:
         )
         runtime.status = "deleted" if cleanup_succeeded(cleanup) else "cleanup_failed"
         runtime.connection_status = "offline"
-        self._append_event(
+        self._events.append(
             runtime,
             "runtime.deleted" if runtime.status == "deleted" else "runtime.cleanup_failed",
             "" if runtime.status == "deleted" else "Managed runtime resource cleanup failed",
@@ -282,12 +283,12 @@ class RuntimeManager:
                 cleanup,
                 reason="Managed runtime resource cleanup failed",
             )
-        self._set_runtime_lease_status(
+        self._leases.set_status(
             runtime,
             "released" if runtime.status == "deleted" else "cleanup_failed",
             released_at=datetime.now(UTC),
         )
-        self._release_runtime_space_reservation(runtime)
+        self._reservations.release(runtime)
         self._session.commit()
 
     def cleanup_stale_runtime(self, runtime: WorkspaceRuntime) -> None:
@@ -311,7 +312,7 @@ class RuntimeManager:
         )
         runtime.status = "deleted" if cleanup_succeeded(cleanup) else "cleanup_failed"
         runtime.connection_status = "offline"
-        self._append_event(
+        self._events.append(
             runtime,
             "runtime.cleanup" if runtime.status == "deleted" else "runtime.cleanup_failed",
             ""
@@ -325,12 +326,12 @@ class RuntimeManager:
                 cleanup,
                 reason=error or "Managed runtime resource cleanup failed",
             )
-        self._set_runtime_lease_status(
+        self._leases.set_status(
             runtime,
             "released" if runtime.status == "deleted" else "cleanup_failed",
             released_at=datetime.now(UTC),
         )
-        self._release_runtime_space_reservation(runtime)
+        self._reservations.release(runtime)
         self._session.commit()
 
     def execute_command(
@@ -340,23 +341,9 @@ class RuntimeManager:
         runtime: WorkspaceRuntime,
         command: list[str],
     ) -> RuntimeCommand:
-        if runtime.workspace_id != workspace_id:
-            raise PermissionError("Runtime does not belong to workspace")
-        self._require_container(runtime)
-        record = RuntimeCommand(
-            workspace_id=workspace_id,
-            workspace_runtime_id=runtime.id,
-            runtime_space_id=runtime.runtime_space_id,
-            command=command,
-            status="running",
-            started_at=datetime.now(UTC),
-        )
-        self._session.add(record)
-        self._session.flush()
-        return self.execute_existing_command(
+        return self._commands.execute_command(
             workspace_id=workspace_id,
             runtime=runtime,
-            record=record,
             command=command,
         )
 
@@ -368,206 +355,9 @@ class RuntimeManager:
         record: RuntimeCommand,
         command: list[str],
     ) -> RuntimeCommand:
-        if runtime.workspace_id != workspace_id:
-            raise PermissionError("Runtime does not belong to workspace")
-        self._require_container(runtime)
-        timeout_value = runtime.limits.get("timeout_seconds", 60)
-        timeout_seconds = timeout_value if isinstance(timeout_value, int) else 60
-        record.command = command
-        record.status = "running"
-        record.started_at = datetime.now(UTC)
-        self._session.flush()
-
-        try:
-            result = self._docker.exec_command(
-                runtime.docker_container_id or "",
-                command,
-                timeout_seconds,
-            )
-        except TimeoutExpired as exc:
-            self._fail_command(
-                record,
-                status="timeout",
-                exit_code=None,
-                stderr=f"Command exceeded timeout of {timeout_seconds} seconds",
-            )
-            self._append_event(
-                runtime,
-                "runtime.command.timeout",
-                " ".join(command),
-                metadata=command_failure_metadata(record, "timeout", str(exc)),
-            )
-        except Exception as exc:
-            self._fail_command(
-                record,
-                status="failed",
-                exit_code=None,
-                stderr=bounded_error(exc),
-            )
-            self._append_event(
-                runtime,
-                "runtime.command.failed",
-                " ".join(command),
-                metadata=command_failure_metadata(record, "docker_exec_failed", str(exc)),
-            )
-        else:
-            self._complete_command(runtime, record, result)
-            self._append_event(runtime, "runtime.command.completed", " ".join(command))
-        self._session.commit()
-        self._session.refresh(record)
-        return record
-
-    def _complete_command(
-        self,
-        runtime: WorkspaceRuntime,
-        record: RuntimeCommand,
-        result: RuntimeCommandResult,
-    ) -> None:
-        record.exit_code = result.exit_code
-        max_output_bytes = positive_int_limit(runtime.limits.get("max_output_bytes"), 256_000)
-        stdout, stdout_truncated, stdout_bytes = bounded_text(result.stdout, max_output_bytes)
-        stderr, stderr_truncated, stderr_bytes = bounded_text(result.stderr, max_output_bytes)
-        record.stdout = stdout
-        record.stderr = stderr
-        record.status = "completed" if result.exit_code == 0 else "failed"
-        record.completed_at = datetime.now(UTC)
-        if stdout_truncated or stderr_truncated:
-            metadata = {
-                "command_id": str(record.id),
-                "max_output_bytes": max_output_bytes,
-                "stdout_bytes": stdout_bytes,
-                "stderr_bytes": stderr_bytes,
-                "stdout_truncated": stdout_truncated,
-                "stderr_truncated": stderr_truncated,
-            }
-            self._append_event(
-                runtime,
-                "runtime.command.output_limited",
-                "Command output exceeded runtime policy.",
-                metadata=metadata,
-            )
-            self._security_events.record_policy_limit(
-                runtime,
-                action="runtime.command.output_limited",
-                reason="Runtime command output exceeded policy.",
-                metadata=metadata,
-            )
-
-    def _fail_command(
-        self,
-        record: RuntimeCommand,
-        *,
-        status: str,
-        exit_code: int | None,
-        stderr: str,
-    ) -> None:
-        record.exit_code = exit_code
-        record.stdout = ""
-        record.stderr = stderr
-        record.status = status
-        record.completed_at = datetime.now(UTC)
-
-    def _append_event(
-        self,
-        runtime: WorkspaceRuntime,
-        event_type: str,
-        message: str,
-        *,
-        metadata: dict[str, object] | None = None,
-    ) -> None:
-        created_at = datetime.now(UTC)
-        event_metadata = {"runtime_id": str(runtime.id)} | (metadata or {})
-        self._session.add(
-            RuntimeEvent(
-                workspace_id=runtime.workspace_id,
-                workspace_runtime_id=runtime.id,
-                runtime_space_id=runtime.runtime_space_id,
-                event_type=event_type,
-                message=message,
-                event_metadata=event_metadata,
-                created_at=created_at,
-            )
-        )
-        if runtime.runtime_space_id is not None:
-            self._session.add(
-                RuntimeSpaceEvent(
-                    workspace_id=runtime.workspace_id,
-                    runtime_space_id=runtime.runtime_space_id,
-                    event_type=event_type,
-                    message=message,
-                    event_metadata={
-                        "runtime_id": str(runtime.id),
-                        "runtime_status": runtime.status,
-                        "connection_status": runtime.connection_status,
-                        **(metadata or {}),
-                    },
-                    created_at=created_at,
-                )
-            )
-
-    def _require_container(self, runtime: WorkspaceRuntime) -> None:
-        if not runtime.docker_container_id:
-            raise ValueError("Runtime has no Docker container")
-
-    def _ensure_runtime_lease(
-        self,
-        runtime: WorkspaceRuntime,
-        *,
-        status: str,
-        metadata: dict[str, object],
-    ) -> RuntimeLease:
-        lease = self._session.scalar(
-            select(RuntimeLease).where(RuntimeLease.workspace_runtime_id == runtime.id)
-        )
-        now = datetime.now(UTC)
-        if lease is None:
-            lease = RuntimeLease(
-                workspace_id=runtime.workspace_id,
-                workspace_runtime_id=runtime.id,
-                runtime_space_id=runtime.runtime_space_id,
-                docker_container_id=runtime.docker_container_id,
-                status=status,
-                lease_metadata=metadata,
-                acquired_at=now,
-            )
-            self._session.add(lease)
-            self._session.flush([lease])
-            return lease
-        lease.runtime_space_id = runtime.runtime_space_id
-        lease.docker_container_id = runtime.docker_container_id
-        lease.status = status
-        lease.lease_metadata = lease.lease_metadata | metadata
-        if status not in {"released", "cleanup_failed"}:
-            lease.released_at = None
-        self._session.flush([lease])
-        return lease
-
-    def _set_runtime_lease_status(
-        self,
-        runtime: WorkspaceRuntime,
-        status: str,
-        *,
-        released_at: datetime | None = None,
-    ) -> RuntimeLease | None:
-        lease = self._session.scalar(
-            select(RuntimeLease).where(RuntimeLease.workspace_runtime_id == runtime.id)
-        )
-        if lease is None:
-            return None
-        lease.status = status
-        lease.runtime_space_id = runtime.runtime_space_id
-        lease.docker_container_id = runtime.docker_container_id
-        if released_at is not None:
-            lease.released_at = released_at
-        self._session.flush([lease])
-        return lease
-
-    def _release_runtime_space_reservation(self, runtime: WorkspaceRuntime) -> bool:
-        if runtime.runtime_space_id is None:
-            return False
-        return RuntimeSpaceService(self._session).release_reservation_by_key(
-            workspace_id=runtime.workspace_id,
-            runtime_space_id=runtime.runtime_space_id,
-            reservation_key=runtime_space_reservation_key(runtime),
-            released_at=datetime.now(UTC),
+        return self._commands.execute_existing_command(
+            workspace_id=workspace_id,
+            runtime=runtime,
+            record=record,
+            command=command,
         )
