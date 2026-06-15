@@ -18,6 +18,7 @@ from backend.app.api.schemas.operations import (
     WorkerTypeCapacityResponse,
 )
 from backend.app.operations.models import WorkerLease, WorkerNode
+from backend.app.operations.utils import capacity_slots_from_metadata, positive_int
 from backend.app.operations.workers import RUNNING_LEASE_STATUSES
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
@@ -75,13 +76,15 @@ class OperationsCapacityService:
         nodes = list(self._session.scalars(select(WorkerNode)).all())
         running_jobs = int(
             self._session.scalar(
-                select(func.count()).select_from(WorkerLease).where(
+                select(func.count())
+                .select_from(WorkerLease)
+                .where(
                     WorkerLease.status.in_(RUNNING_LEASE_STATUSES),
                 )
             )
             or 0
         )
-        max_jobs = sum(_positive_int(node.capacity.get("max_jobs"), 1) for node in nodes)
+        max_jobs = sum(positive_int(node.capacity.get("max_jobs"), 1) for node in nodes)
         available_slots = max(0, max_jobs - running_jobs)
         online = sum(1 for node in nodes if node.status == "online")
         draining = sum(1 for node in nodes if node.status == "draining")
@@ -192,7 +195,7 @@ class OperationsCapacityService:
                 bucket["offline"] += 1
             if runtime.status in {"created", "running", "active"}:
                 bucket["running"] += 1
-            bucket["capacity_slots"] += _runtime_capacity_slots(runtime)
+            bucket["capacity_slots"] += capacity_slots_from_metadata(runtime.capabilities)
             bucket["active_runs"] += int(active_runs_by_runtime.get(runtime.id, 0))
         return [
             RuntimeProviderCapacityResponse(
@@ -228,7 +231,7 @@ class OperationsCapacityService:
                     "available_slots": 0,
                 },
             )
-            max_jobs = _positive_int(node.capacity.get("max_jobs"), 1)
+            max_jobs = positive_int(node.capacity.get("max_jobs"), 1)
             running_jobs = int(running_by_worker.get(node.worker_id, 0))
             bucket["workers_total"] += 1
             bucket["workers_online"] += 1 if node.status == "online" else 0
@@ -259,26 +262,6 @@ def _empty_queue_latency(queue_name: str) -> QueueLatencyResponse:
     )
 
 
-def _positive_int(value: object, fallback: int) -> int:
-    if isinstance(value, int) and value > 0:
-        return value
-    if isinstance(value, str):
-        try:
-            parsed = int(value)
-        except ValueError:
-            return max(1, fallback)
-        return parsed if parsed > 0 else max(1, fallback)
-    return max(1, fallback)
-
-
-def _runtime_capacity_slots(runtime: WorkspaceRuntime) -> int:
-    for key in ("max_concurrent_jobs", "max_jobs", "slots", "capacity_slots"):
-        value = _positive_int_or_none(runtime.capabilities.get(key))
-        if value is not None:
-            return value
-    return 1
-
-
 def _runtime_space_quota_usage(quota: RuntimeSpaceQuota) -> RuntimeSpaceQuotaUsageResponse:
     utilization = (
         round(quota.reserved_value / quota.limit_value, 4) if quota.limit_value > 0 else 0.0
@@ -291,15 +274,3 @@ def _runtime_space_quota_usage(quota: RuntimeSpaceQuota) -> RuntimeSpaceQuotaUsa
         utilization=utilization,
         saturated=quota.limit_value > 0 and quota.reserved_value >= quota.limit_value,
     )
-
-
-def _positive_int_or_none(value: object) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value if value > 0 else None
-    if isinstance(value, str):
-        try:
-            parsed = int(value)
-        except ValueError:
-            return None
-        return parsed if parsed > 0 else None
-    return None

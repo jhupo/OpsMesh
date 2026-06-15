@@ -12,6 +12,11 @@ from sqlalchemy.orm import Session
 from backend.app.api.schemas.operations import QueueMetricsResponse
 from backend.app.core.metrics import GaugeMetric
 from backend.app.operations.models import WorkerLease, WorkerNode
+from backend.app.operations.utils import (
+    capacity_slots_from_metadata,
+    ensure_aware_utc,
+    non_negative_int,
+)
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.models import RuntimeSpaceQuota
@@ -144,7 +149,7 @@ class OperationsObservabilityService:
         worker_states = {"online": 0, "offline": 0, "stale": 0}
         nodes = self._session.scalars(select(WorkerNode)).all()
         for node in nodes:
-            if _aware_datetime(node.last_seen_at) < stale_cutoff:
+            if ensure_aware_utc(node.last_seen_at) < stale_cutoff:
                 worker_states["stale"] += 1
             elif node.status == "online":
                 worker_states["online"] += 1
@@ -196,7 +201,7 @@ class OperationsObservabilityService:
         for runtime in self._session.scalars(select(WorkspaceRuntime)).all():
             key = (runtime.runtime_provider, runtime.runtime_type)
             bucket = grouped.setdefault(key, {"capacity_slots": 0, "active_runs": 0})
-            bucket["capacity_slots"] += _runtime_capacity_slots(runtime)
+            bucket["capacity_slots"] += capacity_slots_from_metadata(runtime.capabilities)
             bucket["active_runs"] += int(active_runs_by_runtime.get(runtime.id, 0))
 
         for (provider, runtime_type), values in sorted(grouped.items()):
@@ -305,7 +310,7 @@ class OperationsObservabilityService:
                 generated_at=now,
             )
             health_counts[health] = health_counts.get(health, 0) + 1
-            iteration_count += _non_negative_int(runtime_metadata.get("iteration_count"))
+            iteration_count += non_negative_int(runtime_metadata.get("iteration_count"))
             scheduling_policy = runtime_metadata.get("scheduling_policy")
             if not isinstance(scheduling_policy, dict) or (
                 scheduling_policy.get("scheduled_loop_enabled") is not False
@@ -340,19 +345,11 @@ class OperationsObservabilityService:
 
 
 def _oldest_job_age(now: datetime, jobs: list[JobPayload]) -> int | None:
-    ages = [max(0, int((now - _aware_datetime(job.created_at)).total_seconds())) for job in jobs]
+    ages = [
+        max(0, int((ensure_aware_utc(now) - ensure_aware_utc(job.created_at)).total_seconds()))
+        for job in jobs
+    ]
     return max(ages) if ages else None
-
-
-def _non_negative_int(value: object) -> int:
-    if isinstance(value, int) and not isinstance(value, bool):
-        return max(0, value)
-    if isinstance(value, str):
-        try:
-            return max(0, int(value))
-        except ValueError:
-            return 0
-    return 0
 
 
 def _team_runtime_metadata(team: AgentTeam) -> dict[str, object]:
@@ -412,32 +409,4 @@ def _datetime_from_metadata(value: object) -> datetime | None:
             return None
     else:
         return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
-def _runtime_capacity_slots(runtime: WorkspaceRuntime) -> int:
-    for key in ("max_concurrent_jobs", "max_jobs", "slots", "capacity_slots"):
-        value = _positive_int_or_none(runtime.capabilities.get(key))
-        if value is not None:
-            return value
-    return 1
-
-
-def _positive_int_or_none(value: object) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value if value > 0 else None
-    if isinstance(value, str):
-        try:
-            parsed = int(value)
-        except ValueError:
-            return None
-        return parsed if parsed > 0 else None
-    return None
-
-
-def _aware_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value
+    return ensure_aware_utc(parsed)

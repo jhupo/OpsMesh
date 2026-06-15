@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, TypeVar
 from uuid import UUID
 
@@ -625,72 +625,3 @@ class OperationsService:
 
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
         return page_scalars(self._session, statement, page)
-
-
-def _positive_int(value: object, fallback: int) -> int:
-    if isinstance(value, int) and value > 0:
-        return value
-    if isinstance(value, str):
-        try:
-            parsed = int(value)
-        except ValueError:
-            return max(1, fallback)
-        return parsed if parsed > 0 else max(1, fallback)
-    return max(1, fallback)
-
-
-def _positive_int_or_none(value: object) -> int | None:
-    if isinstance(value, int) and value > 0:
-        return value
-    return None
-
-
-def _worker_capacity(capacity: dict[str, object] | None, worker_type: str) -> dict[str, object]:
-    normalized = dict(capacity or {})
-    normalized.setdefault("worker_type", worker_type)
-    return normalized
-
-
-def _merge_worker_capacity(
-    current: dict[str, object] | None,
-    incoming: dict[str, object] | None,
-) -> dict[str, object]:
-    merged = dict(current or {})
-    merged.update(dict(incoming or {}))
-    return merged
-
-
-def _next_worker_node_status(node: WorkerNode, heartbeat_status: str) -> str:
-    if node.drain_requested_at is not None:
-        return "draining"
-    if node.status in {"offline", "maintenance", "disabled", "quarantined"}:
-        return node.status
-    return heartbeat_status
-
-
-def _worker_status_blocks_claims(node: WorkerNode) -> bool:
-    return node.drain_requested_at is not None or node.status in {
-        "offline",
-        "maintenance",
-        "disabled",
-        "quarantined",
-    }
-
-
-def _bounded_worker_capacity(
-    capacity: dict[str, object] | None,
-    worker_type: str,
-    caps: dict[str, int],
-) -> dict[str, object]:
-    normalized = _worker_capacity(capacity, worker_type)
-    for key, cap in caps.items():
-        value = normalized.get(key)
-        if isinstance(value, int) and not isinstance(value, bool) and value > cap:
-            normalized[key] = cap
-    return normalized
-
-
-def _aware_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value

@@ -16,6 +16,7 @@ from backend.app.api.schemas.operations import (
     RunOutcomeWindowResponse,
 )
 from backend.app.approvals.models import Approval
+from backend.app.operations.utils import ensure_aware_utc
 from backend.app.runs.models import AgentRun
 from backend.app.self_hosted.models import SelfHostedMcpJob
 
@@ -63,7 +64,7 @@ class OperationsOutcomeService:
                 pending_by_type.get(approval.approval_type, 0) + 1
             )
             pending_ages.append(
-                max(0, int((now - _aware_datetime(approval.created_at)).total_seconds()))
+                max(0, int((now - ensure_aware_utc(approval.created_at)).total_seconds()))
             )
             if approval.risk_level == "high":
                 high_risk_pending += 1
@@ -109,7 +110,7 @@ class OperationsOutcomeService:
                 tool_bucket[job.status] += 1
             if job.status == "queued":
                 queued_ages.append(
-                    max(0, int((now - _aware_datetime(job.created_at)).total_seconds()))
+                    max(0, int((now - ensure_aware_utc(job.created_at)).total_seconds()))
                 )
         return OperationsMcpJobsResponse(
             generated_at=now,
@@ -128,9 +129,3 @@ class OperationsOutcomeService:
                 for tool_name, counts in sorted(tool_counts.items())
             ],
         )
-
-
-def _aware_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value

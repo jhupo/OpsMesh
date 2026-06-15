@@ -19,6 +19,7 @@ from backend.app.api.schemas.operations import (
 )
 from backend.app.audit.service import AuditService
 from backend.app.core.typing import string_list
+from backend.app.operations.utils import ensure_aware_utc, positive_int_or_none
 from backend.app.orchestration.blocked_reasons import explain_blocked_reason
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task, TaskStep
@@ -114,7 +115,9 @@ class OperationsSchedulerService:
         ).all()
         active_runs = int(
             self._session.scalar(
-                select(func.count()).select_from(AgentRun).where(
+                select(func.count())
+                .select_from(AgentRun)
+                .where(
                     AgentRun.workspace_id == workspace_id,
                     AgentRun.status.in_(["queued", "running", "waiting_approval"]),
                 )
@@ -123,7 +126,9 @@ class OperationsSchedulerService:
         )
         waiting_approval_tasks = int(
             self._session.scalar(
-                select(func.count()).select_from(Task).where(
+                select(func.count())
+                .select_from(Task)
+                .where(
                     Task.workspace_id == workspace_id,
                     Task.status == "waiting_approval",
                 )
@@ -151,7 +156,7 @@ class OperationsSchedulerService:
                 queued_steps += 1
                 bucket["queued_steps"] += 1
                 queued_ages.append(
-                    max(0, int((now - _aware_datetime(step.created_at)).total_seconds()))
+                    max(0, int((now - ensure_aware_utc(step.created_at)).total_seconds()))
                 )
             elif step.status == "running":
                 running_steps += 1
@@ -231,7 +236,7 @@ class OperationsSchedulerService:
                     resource_key=explanation.resource_key,
                     runtime_space_id=step.runtime_space_id or task.runtime_space_id,
                     blocked_resource_keys=string_list(dependencies.get("blocked_resource_keys")),
-                    priority_score=_positive_int_or_none(dependencies.get("priority_score")),
+                    priority_score=positive_int_or_none(dependencies.get("priority_score")),
                     created_at=step.created_at,
                     updated_at=step.updated_at,
                 )
@@ -312,15 +317,15 @@ class OperationsSchedulerService:
         return SchedulerPolicyResponse(
             paused=scheduler.get("paused") is True,
             pause_reason=_non_empty_string_or_none(scheduler.get("pause_reason")),
-            max_active_runs=_positive_int_or_none(scheduler.get("max_active_runs")),
-            max_running_tasks=_positive_int_or_none(scheduler.get("max_running_tasks")),
-            max_runs_to_start_per_tick=_positive_int_or_none(
+            max_active_runs=positive_int_or_none(scheduler.get("max_active_runs")),
+            max_running_tasks=positive_int_or_none(scheduler.get("max_running_tasks")),
+            max_runs_to_start_per_tick=positive_int_or_none(
                 scheduler.get("max_runs_to_start_per_tick")
             ),
-            max_steps_per_task_per_tick=_positive_int_or_none(
+            max_steps_per_task_per_tick=positive_int_or_none(
                 scheduler.get("max_steps_per_task_per_tick")
             ),
-            starvation_boost_after_seconds=_positive_int_or_none(
+            starvation_boost_after_seconds=positive_int_or_none(
                 scheduler.get("starvation_boost_after_seconds")
             ),
             resource_limits=_positive_number_dict(scheduler.get("resource_limits")),
@@ -363,12 +368,6 @@ def _non_empty_string_or_none(value: object) -> str | None:
     return normalized or None
 
 
-def _positive_int_or_none(value: object) -> int | None:
-    if isinstance(value, int) and value > 0:
-        return value
-    return None
-
-
 def _positive_number_dict(value: object) -> dict[str, float]:
     if not isinstance(value, dict):
         return {}
@@ -377,9 +376,3 @@ def _positive_number_dict(value: object) -> dict[str, float]:
         if isinstance(item, int | float) and not isinstance(item, bool) and item > 0:
             normalized[str(key)] = float(item)
     return normalized
-
-
-def _aware_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value

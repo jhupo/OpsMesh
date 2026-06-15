@@ -15,6 +15,7 @@ from backend.app.core.trace_context import current_trace_metadata, with_current_
 from backend.app.core.typing import int_or_zero
 from backend.app.db.pagination import page_scalars
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
+from backend.app.operations.utils import positive_int
 from backend.app.operations.worker_lifecycle import (
     RUNNING_LEASE_STATUSES,
     append_worker_lifecycle_events,
@@ -224,7 +225,7 @@ class WorkerOperationsService:
         if node is not None and _worker_status_blocks_claims(node):
             return WorkerCapacitySnapshot(
                 worker_id=worker_id,
-                max_jobs=_positive_int(node.capacity.get("max_jobs"), default_max_jobs),
+                max_jobs=positive_int(node.capacity.get("max_jobs"), default_max_jobs),
                 running_jobs=self._running_leases_for_worker(worker_id),
                 available_slots=0,
                 accepting=False,
@@ -234,7 +235,7 @@ class WorkerOperationsService:
         if node is not None and node.drain_requested_at is not None:
             return WorkerCapacitySnapshot(
                 worker_id=worker_id,
-                max_jobs=_positive_int(node.capacity.get("max_jobs"), default_max_jobs),
+                max_jobs=positive_int(node.capacity.get("max_jobs"), default_max_jobs),
                 running_jobs=self._running_leases_for_worker(worker_id),
                 available_slots=0,
                 accepting=False,
@@ -242,7 +243,7 @@ class WorkerOperationsService:
                 capacity=dict(node.capacity),
             )
         max_jobs = (
-            _positive_int(node.capacity.get("max_jobs"), default_max_jobs)
+            positive_int(node.capacity.get("max_jobs"), default_max_jobs)
             if node is not None
             else max(1, default_max_jobs)
         )
@@ -464,15 +465,9 @@ def _worker_heartbeat_details(details: dict[str, object]) -> dict[str, object]:
     enqueued = int_or_zero(sanitized.get("scheduled_job_actions_enqueued"))
     recorded = int_or_zero(sanitized.get("scheduled_job_actions_recorded"))
     skipped = int_or_zero(sanitized.get("scheduled_job_actions_skipped"))
-    enqueued_by_type = _string_int_dict(
-        sanitized.get("scheduled_job_actions_enqueued_by_job_type")
-    )
-    recorded_by_type = _string_int_dict(
-        sanitized.get("scheduled_job_actions_recorded_by_job_type")
-    )
-    skipped_by_type = _string_int_dict(
-        sanitized.get("scheduled_job_actions_skipped_by_job_type")
-    )
+    enqueued_by_type = _string_int_dict(sanitized.get("scheduled_job_actions_enqueued_by_job_type"))
+    recorded_by_type = _string_int_dict(sanitized.get("scheduled_job_actions_recorded_by_job_type"))
+    skipped_by_type = _string_int_dict(sanitized.get("scheduled_job_actions_skipped_by_job_type"))
     if not any((enqueued, recorded, skipped, enqueued_by_type, recorded_by_type, skipped_by_type)):
         return sanitized
     provider_health_job_type = JobType.MODEL_PROVIDER_HEALTH_CHECK.value
@@ -500,18 +495,6 @@ def _string_int_dict(value: object) -> dict[str, int]:
         for key, item in value.items()
         if isinstance(item, int) and not isinstance(item, bool)
     }
-
-
-def _positive_int(value: object, fallback: int) -> int:
-    if isinstance(value, int) and value > 0:
-        return value
-    if isinstance(value, str):
-        try:
-            parsed = int(value)
-        except ValueError:
-            return max(1, fallback)
-        return parsed if parsed > 0 else max(1, fallback)
-    return max(1, fallback)
 
 
 def _non_empty_string_or_none(value: object) -> str | None:

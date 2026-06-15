@@ -14,6 +14,7 @@ from backend.app.core.config import Settings
 from backend.app.db.session import get_db_session
 from backend.app.files.storage import create_storage
 from backend.app.operations.models import WorkerNode
+from backend.app.operations.utils import ensure_aware_utc
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 
@@ -151,16 +152,10 @@ def _check_workers_online(session: Session, settings: Settings) -> str:
         return "unavailable"
     if not workers:
         return "none_online"
-    if any(_aware_datetime(worker.last_seen_at) >= stale_before for worker in workers):
+    if any(ensure_aware_utc(worker.last_seen_at) >= stale_before for worker in workers):
         return "ok"
     return "stale"
 
 
 def _dependency_failed(value: str) -> bool:
     return value not in {"ok", "disabled"}
-
-
-def _aware_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value

@@ -11,6 +11,7 @@ from backend.app.api.schemas.operations import (
     OperationsSelfHostedMachinesResponse,
 )
 from backend.app.core.typing import string_list
+from backend.app.operations.utils import age_seconds, positive_int_or_none
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.self_hosted.models import (
     RuntimeCredential,
@@ -116,7 +117,7 @@ class OperationsSelfHostedMachineService:
             credential = credentials.get(runtime.id)
             trust_state = _self_hosted_trust_state(worker, runtime, credential)
             state_counts[trust_state] = state_counts.get(trust_state, 0) + 1
-            heartbeat_age_seconds = _age_seconds(now, worker.last_heartbeat_at)
+            heartbeat_age_seconds = age_seconds(now, worker.last_heartbeat_at)
             stale = (
                 heartbeat_age_seconds is not None
                 and heartbeat_age_seconds >= stale_after_seconds
@@ -172,12 +173,6 @@ def _counts_by_uuid(rows: list[tuple[UUID | None, int]]) -> dict[UUID, int]:
     return {key: int(count) for key, count in rows if key is not None}
 
 
-def _age_seconds(now: datetime, value: datetime | None) -> int | None:
-    if value is None:
-        return None
-    return max(0, int((now - _aware_datetime(value)).total_seconds()))
-
-
 def _self_hosted_trust_state(
     worker: SelfHostedWorker,
     runtime: WorkspaceRuntime,
@@ -203,11 +198,11 @@ def _self_hosted_policy_summary(capabilities: dict[str, object]) -> dict[str, ob
         "supported_runtimes": string_list(capabilities.get("supported_runtimes")),
         "supported_network_modes": string_list(capabilities.get("supported_network_modes")),
         "allowed_runtime_space_ids": string_list(capabilities.get("allowed_runtime_space_ids")),
-        "max_concurrent_jobs": _positive_int_or_none(capabilities.get("max_concurrent_jobs")),
-        "max_concurrent_mcp_jobs": _positive_int_or_none(
+        "max_concurrent_jobs": positive_int_or_none(capabilities.get("max_concurrent_jobs")),
+        "max_concurrent_mcp_jobs": positive_int_or_none(
             capabilities.get("max_concurrent_mcp_jobs")
         ),
-        "max_artifact_bytes": _positive_int_or_none(capabilities.get("max_artifact_bytes")),
+        "max_artifact_bytes": positive_int_or_none(capabilities.get("max_artifact_bytes")),
     }
 
 
@@ -301,15 +296,3 @@ def _self_hosted_remediation_actions(
             }
         )
     return actions
-
-
-def _positive_int_or_none(value: object) -> int | None:
-    if isinstance(value, int) and value > 0:
-        return value
-    return None
-
-
-def _aware_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value

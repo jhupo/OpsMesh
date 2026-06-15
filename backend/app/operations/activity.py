@@ -17,6 +17,7 @@ from backend.app.api.schemas.operations import (
 )
 from backend.app.core.typing import string_list
 from backend.app.operations.models import WorkerLease, WorkerNode
+from backend.app.operations.utils import ensure_aware_utc
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.activity import run_activity
 from backend.app.runs.models import AgentRun, RunEvent
@@ -53,7 +54,7 @@ class OperationsActivityService:
                     continue
                 age_seconds = max(
                     0,
-                    int((now - _aware_datetime(job.created_at)).total_seconds()),
+                    int((now - ensure_aware_utc(job.created_at)).total_seconds()),
                 )
                 for worker_type in _job_worker_types(job):
                     bucket = _worker_lifecycle_bucket(buckets, worker_type)
@@ -76,7 +77,7 @@ class OperationsActivityService:
                 bucket["running_jobs"] = int(bucket["running_jobs"]) + 1
                 running_age_seconds = max(
                     0,
-                    int((now - _aware_datetime(lease.started_at)).total_seconds()),
+                    int((now - ensure_aware_utc(lease.started_at)).total_seconds()),
                 )
                 bucket["oldest_running_age_seconds"] = _max_optional_int(
                     bucket.get("oldest_running_age_seconds"),
@@ -99,8 +100,8 @@ class OperationsActivityService:
                             0,
                             int(
                                 (
-                                    _aware_datetime(lease.finished_at)
-                                    - _aware_datetime(lease.started_at)
+                                    ensure_aware_utc(lease.finished_at)
+                                    - ensure_aware_utc(lease.started_at)
                                 ).total_seconds()
                             ),
                         )
@@ -141,8 +142,7 @@ class OperationsActivityService:
             )
         active_runs_subquery = statement.order_by(None).subquery()
         total_active_runs = int(
-            self._session.scalar(select(func.count()).select_from(active_runs_subquery))
-            or 0
+            self._session.scalar(select(func.count()).select_from(active_runs_subquery)) or 0
         )
         status_counts = {
             str(status): int(count)
@@ -290,9 +290,7 @@ def _worker_lifecycle_response(
     values: dict[str, int | list[int] | None],
 ) -> WorkerLifecycleBucketResponse:
     terminal_jobs = (
-        int(values["completed_jobs"])
-        + int(values["failed_jobs"])
-        + int(values["expired_jobs"])
+        int(values["completed_jobs"]) + int(values["failed_jobs"]) + int(values["expired_jobs"])
     )
     unsuccessful_jobs = int(values["failed_jobs"]) + int(values["expired_jobs"])
     durations = values["durations"]
@@ -321,7 +319,7 @@ def _run_activity_oldest_response(
     activity: dict[str, object],
     now: datetime,
 ) -> RunActivityOldestRunResponse:
-    last_activity_at = _aware_datetime(cast(datetime, activity["since"]))
+    last_activity_at = ensure_aware_utc(cast(datetime, activity["since"]))
     return RunActivityOldestRunResponse(
         run_id=run.id,
         task_id=run.task_id,
@@ -332,16 +330,10 @@ def _run_activity_oldest_response(
         status=run.status,
         latest_event_type=latest_event.event_type if latest_event is not None else None,
         age_seconds=max(0, int((now - last_activity_at).total_seconds())),
-        started_at=_aware_datetime(run.started_at) if run.started_at is not None else None,
+        started_at=ensure_aware_utc(run.started_at) if run.started_at is not None else None,
         last_activity_at=last_activity_at,
     )
 
 
 def _max_optional_int(current: object, candidate: int) -> int:
     return candidate if not isinstance(current, int) else max(current, candidate)
-
-
-def _aware_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value
