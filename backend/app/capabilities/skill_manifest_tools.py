@@ -28,8 +28,6 @@ def manifest_mcp_tools(manifest: dict[str, object]) -> list[str]:
 
 def agent_installed_skill_ids(agent: AgentProfile) -> list[UUID]:
     raw_ids = agent.skills.get("installed_skill_ids")
-    if raw_ids is None:
-        raw_ids = agent.skills.get("workspace_skill_install_ids")
     if not isinstance(raw_ids, list):
         return []
     install_ids: list[UUID] = []

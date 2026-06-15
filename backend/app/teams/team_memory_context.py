@@ -10,10 +10,12 @@ from backend.app.teams.team_context_redaction import (
     redact_secret_like_text,
 )
 
-TEAM_MEMORY_SCOPES = {"team", "agent_team"}
+TEAM_MEMORY_SCOPES = {"team"}
 SHARED_MEMORY_SCOPES = {"workspace", "company", "organization", "shared"}
 MEMORY_SUMMARY_LIMIT = 8
 MEMORY_SNIPPET_LENGTH = 280
+TEAM_SOURCE_TYPE = "agent_team"
+TEAM_METADATA_KEY = "agent_team_id"
 
 
 def memory_visibility_scopes() -> list[str]:
@@ -28,12 +30,8 @@ def memory_summary_payload(
     visible_entries = _sort_memory_entries(
         [entry for entry in entries if _is_visible_to_team(entry, team)]
     )
-    team_entries = [
-        entry for entry in visible_entries if _is_team_memory(entry, team.id)
-    ]
-    shared_entries = [
-        entry for entry in visible_entries if not _is_team_memory(entry, team.id)
-    ]
+    team_entries = [entry for entry in visible_entries if _is_team_memory(entry, team.id)]
+    shared_entries = [entry for entry in visible_entries if not _is_team_memory(entry, team.id)]
 
     return {
         "workspace_id": team.workspace_id,
@@ -45,8 +43,7 @@ def memory_summary_payload(
         "last_updated_at": _last_updated_at(visible_entries),
         "tags": redact_context_value(_top_tags(visible_entries)),
         "entries": [
-            _memory_entry_payload(entry)
-            for entry in visible_entries[:MEMORY_SUMMARY_LIMIT]
+            _memory_entry_payload(entry) for entry in visible_entries[:MEMORY_SUMMARY_LIMIT]
         ],
     }
 
@@ -61,24 +58,10 @@ def _is_visible_to_team(entry: WorkspaceMemoryEntry, team: AgentTeam) -> bool:
 
 def _is_team_memory(entry: WorkspaceMemoryEntry, team_id: UUID) -> bool:
     metadata = entry.memory_metadata if isinstance(entry.memory_metadata, dict) else {}
-    candidate_values = {
-        _metadata_value(metadata, "team_id"),
-        _metadata_value(metadata, "teamId"),
-        _metadata_value(metadata, "agent_team_id"),
-        _metadata_value(metadata, "agentTeamId"),
-        _metadata_value(metadata, "scope_id"),
-        _metadata_value(metadata, "scopeId"),
-        entry.source_id if entry.source_type in {"team", "agent_team"} else None,
-    }
     team_id_text = str(team_id)
-    if any(str(value) == team_id_text for value in candidate_values if value is not None):
+    if entry.source_type == TEAM_SOURCE_TYPE and entry.source_id == team_id_text:
         return True
-    team_tag_values = {f"team:{team_id_text}", f"agent_team:{team_id_text}"}
-    return any(tag in team_tag_values for tag in entry.tags)
-
-
-def _metadata_value(metadata: dict[str, object], key: str) -> object:
-    return metadata.get(key)
+    return _metadata_uuid_text(metadata.get(TEAM_METADATA_KEY)) == team_id_text
 
 
 def _memory_entry_payload(entry: WorkspaceMemoryEntry) -> dict[str, object]:
@@ -114,10 +97,7 @@ def _top_tags(entries: list[WorkspaceMemoryEntry]) -> list[str]:
     for entry in entries:
         for tag in entry.tags:
             counts[tag] = counts.get(tag, 0) + 1
-    return [
-        tag
-        for tag, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:20]
-    ]
+    return [tag for tag, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:20]]
 
 
 def _memory_scope_counts(entries: list[WorkspaceMemoryEntry]) -> dict[str, int]:
@@ -146,3 +126,11 @@ def _datetime_timestamp(value: datetime | None) -> float:
     if value is None:
         return 0.0
     return value.timestamp()
+
+
+def _metadata_uuid_text(value: object) -> str | None:
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, str):
+        return value
+    return None

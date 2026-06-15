@@ -70,8 +70,6 @@ def requested_work_packages(task_input: object) -> list[dict[str, object]]:
     if not isinstance(task_input, dict):
         return []
     raw_packages = task_input.get("work_packages")
-    if raw_packages is None:
-        raw_packages = task_input.get("required_work_packages")
     if not isinstance(raw_packages, list):
         return []
     return [item for item in raw_packages if isinstance(item, dict)]

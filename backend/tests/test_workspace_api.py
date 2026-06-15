@@ -2822,7 +2822,7 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
                 visibility_scope="team",
                 importance=9,
                 memory_metadata={
-                    "team_id": str(team.id),
+                    "agent_team_id": str(team.id),
                     "api_key": "sk-memory-secret",
                     "note": "Authorization: Bearer memory-metadata-secret",
                 },
@@ -2831,12 +2831,12 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
                 workspace_id=workspace.id,
                 created_by_user_id=owner.id,
                 entry_type="team_memory",
-                title="Camel case team memory",
-                content="Team metadata can arrive with camelCase identifiers.",
+                title="Metadata team memory",
+                content="Team metadata uses the canonical agent_team_id identifier.",
                 tags=["team-memory"],
                 visibility_scope="team",
                 importance=8,
-                memory_metadata={"agentTeamId": str(team.id)},
+                memory_metadata={"agent_team_id": str(team.id)},
             ),
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
@@ -2849,7 +2849,7 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
                 tags=["team-memory", f"team:{other_team.id}"],
                 visibility_scope="team",
                 importance=10,
-                memory_metadata={"team_id": str(other_team.id)},
+                memory_metadata={"agent_team_id": str(other_team.id)},
             ),
             WorkspaceMemoryEntry(
                 workspace_id=other_workspace.id,
@@ -2875,7 +2875,7 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
                 tags=["team-memory", f"team:{other_team.id}"],
                 visibility_scope="team",
                 importance=100 + index,
-                memory_metadata={"team_id": str(other_team.id)},
+                memory_metadata={"agent_team_id": str(other_team.id)},
             )
             for index in range(205)
         ]
@@ -2951,7 +2951,7 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
     memory_titles = {entry["title"] for entry in runtime_body["memory_summary"]["entries"]}
     assert memory_titles == {
         "Customer escalation rule",
-        "Camel case team memory",
+        "Metadata team memory",
         "Shared incident runbook",
         "Team release ritual",
         "Workspace deployment preference",
@@ -3233,7 +3233,7 @@ def test_team_project_space_exposes_runtime_capacity_and_outputs() -> None:
                 checksum_sha256="c" * 64,
                 storage_key="files/brief.md",
                 file_metadata={
-                    "team_id": str(team.id),
+                    "agent_team_id": str(team.id),
                     "task_id": str(task.id),
                     "runtime_space_id": str(runtime_space.id),
                     "token": "file-hidden-token",
@@ -3247,7 +3247,10 @@ def test_team_project_space_exposes_runtime_capacity_and_outputs() -> None:
                 size_bytes=8_192,
                 checksum_sha256="d" * 64,
                 storage_key="files/foreign.md",
-                file_metadata={"team_id": str(other_team.id), "task_id": str(foreign_task.id)},
+                file_metadata={
+                    "agent_team_id": str(other_team.id),
+                    "task_id": str(foreign_task.id),
+                },
             ),
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
@@ -3259,7 +3262,7 @@ def test_team_project_space_exposes_runtime_capacity_and_outputs() -> None:
                 content="Outputs land in the project space.",
                 visibility_scope="team",
                 importance=9,
-                memory_metadata={"agentTeamId": str(team.id)},
+                memory_metadata={"agent_team_id": str(team.id)},
             ),
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
@@ -3283,7 +3286,7 @@ def test_team_project_space_exposes_runtime_capacity_and_outputs() -> None:
                 content="Must not leak.",
                 visibility_scope="team",
                 importance=100,
-                memory_metadata={"team_id": str(other_team.id)},
+                memory_metadata={"agent_team_id": str(other_team.id)},
             ),
             WorkspaceMemoryEntry(
                 workspace_id=other_workspace.id,

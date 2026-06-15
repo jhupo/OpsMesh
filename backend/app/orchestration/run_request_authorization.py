@@ -136,9 +136,7 @@ class RunAuthorizationService:
     ) -> list[dict[str, object]]:
         if profile is None or not isinstance(profile.skills, dict):
             return []
-        install_ids = string_list(profile.skills.get("installed_skill_ids")) or string_list(
-            profile.skills.get("skill_install_ids")
-        )
+        install_ids = string_list(profile.skills.get("installed_skill_ids"))
         if not install_ids:
             return []
         valid_install_ids = [

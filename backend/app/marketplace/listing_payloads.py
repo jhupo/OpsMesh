@@ -34,13 +34,11 @@ PRIVATE_DEFINITION_KEYS = frozenset(
         "runtime_space_id",
         "self_hosted_runtime_id",
         "skill_install_id",
-        "skill_install_ids",
         "source_agent_profile_id",
         "source_workspace_id",
         "workspace_id",
         "workspace_runtime_id",
         "workspace_skill_install_id",
-        "workspace_skill_install_ids",
     }
 )
 

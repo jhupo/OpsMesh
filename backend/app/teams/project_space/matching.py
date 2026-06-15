@@ -6,6 +6,13 @@ from backend.app.files.models import WorkspaceFile
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.teams.project_space.types import ProjectSpaceRelationshipIds
 
+TEAM_METADATA_KEYS = {"agent_team_id"}
+RUNTIME_SPACE_METADATA_KEYS = {"runtime_space_id", "project_space_id"}
+TASK_METADATA_KEYS = {"task_id"}
+TASK_STEP_METADATA_KEYS = {"task_step_id"}
+AGENT_RUN_METADATA_KEYS = {"agent_run_id"}
+ARTIFACT_METADATA_KEYS = {"artifact_id"}
+
 
 def workspace_file_matches_project(
     file: WorkspaceFile,
@@ -32,27 +39,27 @@ def metadata_matches_project(
     payload = metadata if isinstance(metadata, dict) else {}
     if _has_uuid_value(
         payload,
-        {"team_id", "agent_team_id", "agentTeamId"},
+        TEAM_METADATA_KEYS,
         {relationship_ids.team_id},
     ):
         return True
     if _has_uuid_value(
         payload,
-        {"runtime_space_id", "runtimeSpaceId", "project_space_id", "projectSpaceId"},
+        RUNTIME_SPACE_METADATA_KEYS,
         relationship_ids.runtime_space_ids,
     ):
         return True
-    if _has_uuid_value(payload, {"task_id", "taskId"}, relationship_ids.task_ids):
+    if _has_uuid_value(payload, TASK_METADATA_KEYS, relationship_ids.task_ids):
         return True
-    if _has_uuid_value(payload, {"task_step_id", "taskStepId"}, relationship_ids.task_step_ids):
+    if _has_uuid_value(payload, TASK_STEP_METADATA_KEYS, relationship_ids.task_step_ids):
         return True
     if _has_uuid_value(
         payload,
-        {"agent_run_id", "agentRunId", "run_id", "runId"},
+        AGENT_RUN_METADATA_KEYS,
         relationship_ids.agent_run_ids,
     ):
         return True
-    return _has_uuid_value(payload, {"artifact_id", "artifactId"}, relationship_ids.artifact_ids)
+    return _has_uuid_value(payload, ARTIFACT_METADATA_KEYS, relationship_ids.artifact_ids)
 
 
 def source_matches_project(
@@ -62,7 +69,7 @@ def source_matches_project(
 ) -> bool:
     if source_type is None or source_id is None:
         return False
-    if source_type in {"team", "agent_team"}:
+    if source_type == "agent_team":
         return source_id == str(relationship_ids.team_id)
     if source_type == "task":
         return source_id in {str(task_id) for task_id in relationship_ids.task_ids}

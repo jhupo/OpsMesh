@@ -36,6 +36,7 @@ __all__ = [
     "build_default_queue",
 ]
 
+
 class RunOrchestrationService:
     def __init__(
         self,
@@ -254,10 +255,7 @@ class RunOrchestrationService:
         if isinstance(task.team_snapshot, dict):
             return True
         task_input = task.input if isinstance(task.input, dict) else {}
-        return isinstance(task_input.get("work_packages"), list) or isinstance(
-            task_input.get("required_work_packages"),
-            list,
-        )
+        return isinstance(task_input.get("work_packages"), list)
 
     def _run_step_launcher(self) -> RunStepLauncher:
         return RunStepLauncher(

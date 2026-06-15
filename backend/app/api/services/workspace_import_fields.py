@@ -36,14 +36,13 @@ def _remap_agent_skills(
     if not skill_install_id_map:
         return skills
     remapped = dict(skills)
-    for key in ("installed_skill_ids", "skill_install_ids"):
-        values = remapped.get(key)
-        if not isinstance(values, list):
-            continue
-        remapped[key] = [
-            skill_install_id_map.get(value, value) if isinstance(value, str) else value
-            for value in values
-        ]
+    values = remapped.get("installed_skill_ids")
+    if not isinstance(values, list):
+        return remapped
+    remapped["installed_skill_ids"] = [
+        skill_install_id_map.get(value, value) if isinstance(value, str) else value
+        for value in values
+    ]
     return remapped
 
 
@@ -90,5 +89,3 @@ def _is_valid_uuid(value: str) -> bool:
     except ValueError:
         return False
     return True
-
-
