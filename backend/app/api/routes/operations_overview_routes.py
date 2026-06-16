@@ -31,7 +31,7 @@ from backend.app.operations.run_activity_payloads import RunActivityPayloadServi
 from backend.app.operations.self_hosted_machine_payloads import (
     OperationsSelfHostedMachineService,
 )
-from backend.app.operations.worker_activity import WorkerLifecycleActivityService
+from backend.app.operations.worker_lifecycle_payloads import WorkerLifecyclePayloadService
 from backend.app.redis.cache import RedisJsonCache
 from backend.app.redis.dependencies import get_cache_service, get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
@@ -162,7 +162,7 @@ async def operations_worker_lifecycle(
     cached = cache.get_or_set(
         cache_key,
         lambda: (
-            WorkerLifecycleActivityService(
+            WorkerLifecyclePayloadService(
                 session,
                 redis,
                 RedisKeyBuilder(settings.redis_key_prefix),
