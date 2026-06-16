@@ -23,12 +23,14 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
-from backend.app.operations.capacity import OperationsCapacityService
-from backend.app.operations.control_plane import OperationsControlPlaneService
+from backend.app.operations.control_plane_service import OperationsControlPlaneService
+from backend.app.operations.operation_capacity_payloads import OperationsCapacityPayloadService
 from backend.app.operations.outcomes import OperationsOutcomeService
 from backend.app.operations.overview import OperationsOverviewService
 from backend.app.operations.run_activity_operations import RunActivityOperationsService
-from backend.app.operations.self_hosted_machines import OperationsSelfHostedMachineService
+from backend.app.operations.self_hosted_machine_payloads import (
+    OperationsSelfHostedMachineService,
+)
 from backend.app.operations.worker_activity import WorkerLifecycleActivityService
 from backend.app.redis.cache import RedisJsonCache
 from backend.app.redis.dependencies import get_cache_service, get_redis_client
@@ -109,7 +111,7 @@ async def operations_capacity(
     cached = cache.get_or_set(
         cache_key,
         lambda: (
-            OperationsCapacityService(
+            OperationsCapacityPayloadService(
                 session,
                 redis,
                 RedisKeyBuilder(settings.redis_key_prefix),
@@ -134,7 +136,7 @@ async def operations_runtime_capacity(
     cached = cache.get_or_set(
         cache_key,
         lambda: (
-            OperationsCapacityService(
+            OperationsCapacityPayloadService(
                 session,
                 redis,
                 RedisKeyBuilder(settings.redis_key_prefix),
