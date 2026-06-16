@@ -49,13 +49,6 @@ def stale_run_failure_message(status: str) -> str:
     return "Worker stopped reporting before the run completed"
 
 
-def non_empty_string_or_none(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    stripped = value.strip()
-    return stripped or None
-
-
 def aware_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
