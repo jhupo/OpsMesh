@@ -20,7 +20,7 @@ from backend.app.operations.worker_capacity import (
     non_empty_string_or_none,
     worker_status_blocks_claims,
 )
-from backend.app.operations.worker_leases import WorkerLeaseOperationsService
+from backend.app.operations.worker_lease_queries import WorkerLeaseQueryService
 from backend.app.operations.worker_models import WorkerCapacitySnapshot
 
 T = TypeVar("T")
@@ -146,7 +146,7 @@ class WorkerNodeOperationsService:
         default_max_jobs: int = 1,
     ) -> WorkerCapacitySnapshot:
         node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
-        lease_service = WorkerLeaseOperationsService(self._session)
+        lease_service = WorkerLeaseQueryService(self._session)
         if node is not None and worker_status_blocks_claims(node):
             return WorkerCapacitySnapshot(
                 worker_id=worker_id,

@@ -26,7 +26,8 @@ from backend.app.db.session import get_db_session
 from backend.app.operations.runtime_cleanup import RuntimeCleanupService
 from backend.app.operations.runtime_leases import RuntimeLeaseOperationsService
 from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsService
-from backend.app.operations.worker_leases import WorkerLeaseOperationsService
+from backend.app.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
+from backend.app.operations.worker_lease_queries import WorkerLeaseQueryService
 from backend.app.operations.worker_nodes import WorkerNodeOperationsService
 from backend.app.security.service import SecurityAuditService
 
@@ -163,7 +164,7 @@ async def list_worker_leases(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[WorkerLeaseResponse]:
-    items, total = WorkerLeaseOperationsService(session).list_worker_leases(
+    items, total = WorkerLeaseQueryService(session).list_worker_leases(
         context.workspace.id,
         page,
         status=status_filter,
@@ -210,7 +211,7 @@ async def cleanup_runtimes(
         context.workspace.id,
         stale_after_seconds=stale_after_seconds,
     )
-    expired_leases = WorkerLeaseOperationsService(session).expire_stale_worker_leases(
+    expired_leases = WorkerLeaseMaintenanceService(session).expire_stale_worker_leases(
         workspace_id=context.workspace.id,
         stale_after_seconds=stale_lease_after_seconds,
     )

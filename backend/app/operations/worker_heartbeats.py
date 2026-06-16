@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.trace_context import with_current_trace_metadata
 from backend.app.operations.models import WorkerHeartbeat
 from backend.app.operations.worker_capacity import worker_capacity, worker_heartbeat_details
-from backend.app.operations.worker_leases import WorkerLeaseOperationsService
+from backend.app.operations.worker_lease_heartbeats import WorkerLeaseHeartbeatRecorder
 from backend.app.operations.worker_nodes import WorkerNodeOperationsService
 
 
@@ -66,7 +66,7 @@ class WorkerHeartbeatOperationsService:
             capacity=worker_capacity(capacity, worker_type),
             last_seen_at=now,
         )
-        WorkerLeaseOperationsService(self._session).record_running_worker_lease_heartbeat(
+        WorkerLeaseHeartbeatRecorder(self._session).record_running_worker_lease_heartbeat(
             worker_id=worker_id,
             queue_name=queue_name,
             status=status,

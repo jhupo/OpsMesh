@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterator
 from sqlalchemy.orm import Session
 
 from backend.app.core.trace_context import current_trace_metadata
-from backend.app.operations.worker_leases import WorkerLeaseOperationsService
+from backend.app.operations.worker_lease_writer import WorkerLeaseWriter
 from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.runner_models import WorkerRunnerConfig
@@ -29,7 +29,7 @@ class WorkerLeaseReporter:
     def start_lease(self, job: JobPayload) -> None:
         try:
             with self._session_scope() as session:
-                WorkerLeaseOperationsService(session).start_worker_lease(
+                WorkerLeaseWriter(session).start_worker_lease(
                     worker_id=self._config.worker_id,
                     queue_name=self._config.queue_name,
                     job=job,
@@ -59,7 +59,7 @@ class WorkerLeaseReporter:
             lease_metadata = job.trace_metadata() or current_trace_metadata()
             lease_metadata.update(metadata or {})
             with self._session_scope() as session:
-                WorkerLeaseOperationsService(session).finish_worker_lease(
+                WorkerLeaseWriter(session).finish_worker_lease(
                     job_id=job.job_id,
                     status=status,
                     metadata=lease_metadata,
