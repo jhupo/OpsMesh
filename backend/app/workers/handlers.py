@@ -1,7 +1,7 @@
 import asyncio
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunner
@@ -29,8 +29,7 @@ from backend.app.runtime_manager.dependencies import get_docker_runtime_client
 from backend.app.runtime_manager.service import RuntimeControlService
 from backend.app.secrets.rotation import HostedSecretReencryptService
 from backend.app.secrets.service import SecretEncryptionService
-from backend.app.tasks.message_append import TaskMessageAppendService
-from backend.app.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.tasks.models import Task
 from backend.app.teams.execution_loop import TeamExecutionLoopService
 from backend.app.webhooks.service import WebhookDeliveryService
 from backend.app.workers.job_routing import (
@@ -40,6 +39,12 @@ from backend.app.workers.job_routing import (
 )
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.revision_planner import RevisionRequestPlanner
+from backend.app.workers.routing_payloads import (
+    dict_payload,
+    provider_health_probes,
+    string_tuple,
+)
 from backend.app.workers.runtime_control_handler import (
     RuntimeCleanupJobHandler,
     RuntimeControlJobHandler,
@@ -145,16 +150,17 @@ class WorkerJobHandler:
             )
             .order_by(RevisionRequest.created_at.asc(), RevisionRequest.id.asc())
         ).all()
+        planner = RevisionRequestPlanner(self._session)
         created_steps = [
-            self._create_revision_step(task, revision)
+            planner.create_step(task, revision)
             for revision in revisions
-            if self._revision_step(task, revision) is None
+            if planner.existing_step(task, revision) is None
         ]
         now = datetime.now(UTC)
         for revision in revisions:
             revision.status = "planned"
             revision.resolved_at = now
-            self._append_task_message(
+            planner.append_task_message(
                 task,
                 message_type="revision.planned",
                 body="Revision request converted into follow-up work.",
@@ -262,7 +268,7 @@ class WorkerJobHandler:
                 workspace_id=job.workspace_id,
                 credential_id=job.resource_id,
                 actor_user_id=job.requested_by_user_id,
-                probes=_provider_health_probes(job.routing.get("probes")),
+                probes=provider_health_probes(job.routing.get("probes")),
                 timeout_seconds=positive_float(
                     job.routing.get("timeout_seconds"),
                     default=15,
@@ -276,8 +282,11 @@ class WorkerJobHandler:
     def _handle_mcp_tool_execution(self, job: JobPayload) -> None:
         payload = job.routing
         tool_name = required_string(payload, "tool_name", context="MCP tool execution job")
-        arguments = _dict(payload.get("arguments"))
-        runtime_allowed_tools = _string_tuple(payload.get("runtime_allowed_tools"))
+        arguments = dict_payload(payload.get("arguments"), context="MCP tool execution job")
+        runtime_allowed_tools = string_tuple(
+            payload.get("runtime_allowed_tools"),
+            context="MCP tool execution",
+        )
         server_id = optional_uuid(
             payload.get("mcp_server_id"),
             context="MCP tool execution",
@@ -302,97 +311,3 @@ class WorkerJobHandler:
             )
         )
         self._session.commit()
-
-    def _create_revision_step(self, task: Task, revision: RevisionRequest) -> TaskStep:
-        step = TaskStep(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
-            assigned_agent_profile_id=revision.assigned_agent_profile_id,
-            runtime_space_id=task.runtime_space_id,
-            work_package_id=_revision_work_package_id(revision),
-            title="Revision request",
-            description=revision.instruction,
-            status="queued",
-            order_index=self._next_step_order(task),
-            acceptance_criteria=[revision.instruction],
-            review_policy={"reviewer": "manager", "mode": "revision_request_review"},
-            dependencies={
-                "revision_request": {
-                    "id": str(revision.id),
-                    "domain_item_id": str(revision.domain_item_id)
-                    if revision.domain_item_id is not None
-                    else None,
-                    "payload": revision.payload,
-                }
-            },
-        )
-        self._session.add(step)
-        self._session.flush([step])
-        return step
-
-    def _revision_step(self, task: Task, revision: RevisionRequest) -> TaskStep | None:
-        return self._session.scalar(
-            select(TaskStep).where(
-                TaskStep.workspace_id == task.workspace_id,
-                TaskStep.task_id == task.id,
-                TaskStep.work_package_id == _revision_work_package_id(revision),
-            )
-        )
-
-    def _next_step_order(self, task: Task) -> int:
-        current = self._session.scalar(
-            select(func.coalesce(func.max(TaskStep.order_index), 0)).where(
-                TaskStep.workspace_id == task.workspace_id,
-                TaskStep.task_id == task.id,
-            )
-        )
-        return int(current or 0) + 1
-
-    def _append_task_message(
-        self,
-        task: Task,
-        *,
-        message_type: str,
-        body: str,
-        payload: dict[str, object],
-    ) -> TaskMessage:
-        return TaskMessageAppendService(self._session).append_for_task(
-            task,
-            message_type=message_type,
-            body=body,
-            payload=payload,
-        )
-
-
-def _dict(value: object) -> dict[str, object]:
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise ValueError("MCP tool execution job arguments must be an object")
-    return dict(value)
-
-
-def _provider_health_probes(value: object) -> tuple[str, ...]:
-    if value is None:
-        return ("models", "inference")
-    if not isinstance(value, list | tuple):
-        raise ValueError("probes must be a list")
-    probes = tuple(dict.fromkeys(item for item in value if isinstance(item, str) and item))
-    if not probes:
-        raise ValueError("probes must include at least one probe")
-    invalid = sorted(set(probes) - {"models", "inference"})
-    if invalid:
-        raise ValueError(f"Unsupported provider health probe: {', '.join(invalid)}")
-    return probes
-
-
-def _string_tuple(value: object) -> tuple[str, ...] | None:
-    if value is None:
-        return None
-    if not isinstance(value, list):
-        raise ValueError("MCP tool execution runtime_allowed_tools must be a list")
-    return tuple(item for item in value if isinstance(item, str) and item)
-
-
-def _revision_work_package_id(revision: RevisionRequest) -> str:
-    return f"revision-{revision.id.hex[:12]}"
