@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.session_management import (
     PersistentAgentSessionManagementService,
-    PersistentSessionSummary,
 )
+from backend.app.agent_runtime.session_views import PersistentSessionSummary
 from backend.app.agents.models import AgentProfile
 from backend.app.runs.status import RunStatus
 from backend.app.teams.command_center import TeamCommandCenterService

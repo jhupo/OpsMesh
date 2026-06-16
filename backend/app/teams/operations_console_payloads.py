@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.agent_runtime.session_management import PersistentSessionSummary
+from backend.app.agent_runtime.session_views import PersistentSessionSummary
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.operations_console_utils import (

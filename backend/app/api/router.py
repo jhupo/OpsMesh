@@ -20,7 +20,7 @@ from backend.app.api.routes.operations import router as operations_router
 from backend.app.api.routes.runtime_spaces import router as runtime_spaces_router
 from backend.app.api.routes.runtimes import router as runtimes_router
 from backend.app.api.routes.scheduled_jobs import router as scheduled_jobs_router
-from backend.app.api.routes.self_hosted import router as self_hosted_router
+from backend.app.api.routes.self_hosted.router import router as self_hosted_router
 from backend.app.api.routes.webhooks import router as webhooks_router
 from backend.app.api.routes.workspace_agents import router as workspace_agents_router
 from backend.app.api.routes.workspace_resources import router as workspace_resources_router
