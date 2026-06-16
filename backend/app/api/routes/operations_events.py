@@ -28,7 +28,8 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.operations.events import OperationsEventQueryService
-from backend.app.operations.stale_runs import StaleRunOperationsService
+from backend.app.operations.stale_run_diagnostics import StaleRunDiagnosticsService
+from backend.app.operations.stale_run_recovery import StaleRunRecoveryService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 
@@ -87,7 +88,7 @@ async def stale_runs_diagnostics(
     session: Session = Depends(get_db_session),
 ) -> StaleRunsDiagnosticsResponse:
     try:
-        return StaleRunOperationsService(session).diagnostics(
+        return StaleRunDiagnosticsService(session).diagnostics(
             context.workspace.id,
             stale_after_seconds=stale_after_seconds,
             statuses=list(statuses) if statuses else None,
@@ -106,7 +107,7 @@ async def recover_stale_runs(
     settings: Settings = Depends(get_settings),
 ) -> StaleRunRecoveryResponse:
     try:
-        return StaleRunOperationsService(
+        return StaleRunRecoveryService(
             session,
             redis,
             RedisKeyBuilder(settings.redis_key_prefix),
