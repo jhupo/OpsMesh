@@ -36,7 +36,7 @@ from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
-from backend.app.tools.product_tools import ProductToolService
+from backend.app.tools.product_tools.service import ProductToolService
 
 PRODUCT_TOOL_NAMES = frozenset(
     {

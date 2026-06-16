@@ -7,7 +7,7 @@ from backend.app.artifacts.models import Artifact
 from backend.app.files.security import validate_runtime_relative_path
 from backend.app.files.storage import ObjectStorage
 from backend.app.tools.context import ToolContext
-from backend.app.tools.product_tools import ProductToolService
+from backend.app.tools.product_tools.service import ProductToolService
 
 
 class RuntimeFileService:
