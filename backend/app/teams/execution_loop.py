@@ -29,7 +29,7 @@ from backend.app.teams.runtime import (
     TEAM_RUNTIME_STOPPED,
     TeamRuntimeService,
 )
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 __all__ = [
     "TeamExecutionLoopEnqueueSummary",

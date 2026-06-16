@@ -34,7 +34,7 @@ from backend.app.teams.operations_console_runtime_payloads import (
 )
 from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.teams.scheduling_blocks import scheduled_run_blocking_summary
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 PROVIDER_RUN_STATUSES = {
     RunStatus.QUEUED.value,

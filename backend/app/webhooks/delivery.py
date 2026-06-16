@@ -35,7 +35,7 @@ from backend.app.webhooks.utils import (
     _truncate,
     redact_webhook_sensitive_fields,
 )
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 class WebhookDeliveryReplayError(ValueError):

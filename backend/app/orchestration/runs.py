@@ -29,7 +29,7 @@ from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeam
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 __all__ = [
     "RunOrchestrationService",

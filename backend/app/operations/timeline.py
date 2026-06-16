@@ -18,7 +18,7 @@ from backend.app.operations.timeline_utils import (
     redact_metadata,
     redact_secret_like_text,
 )
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 class TeamRuntimeTimelineService:

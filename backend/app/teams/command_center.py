@@ -30,7 +30,7 @@ from backend.app.teams.execution_overview import TeamExecutionOverviewService
 from backend.app.teams.provider_readiness import TeamProviderReadinessService
 from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.teams.scheduling_blocks import scheduled_run_blocking_summary
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 class TeamCommandCenterService:

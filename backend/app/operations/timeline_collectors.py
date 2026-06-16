@@ -17,7 +17,7 @@ from backend.app.operations.timeline_scheduler_collectors import (
 )
 from backend.app.operations.timeline_team_context import TeamRuntimeTimelineContext
 from backend.app.operations.timeline_worker_collectors import TeamRuntimeWorkerTimelineCollector
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 class TeamRuntimeTimelineCollector:

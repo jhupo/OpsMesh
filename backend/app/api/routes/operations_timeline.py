@@ -17,7 +17,7 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.session import get_db_session
 from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

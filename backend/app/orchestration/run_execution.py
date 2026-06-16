@@ -21,7 +21,7 @@ from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
 from backend.app.workers.jobs import JobPayload
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 TERMINAL_RUN_STATUSES = {
     RunStatus.COMPLETED,

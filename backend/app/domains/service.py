@@ -21,7 +21,7 @@ from backend.app.domains.models import (
 )
 from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 T = TypeVar("T")
 

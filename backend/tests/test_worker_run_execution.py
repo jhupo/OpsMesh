@@ -71,7 +71,8 @@ from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue, consume_once
+from backend.app.workers.queue.consumer import consume_once
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.models import (
     Workspace,
     WorkspaceMember,

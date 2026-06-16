@@ -39,7 +39,7 @@ from backend.app.workers.job_routing import (
     required_string,
 )
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workers.runtime_control_handler import (
     RuntimeCleanupJobHandler,
     RuntimeControlJobHandler,

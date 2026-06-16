@@ -15,7 +15,7 @@ from backend.app.operations.stale_run_recovery_audit import StaleRunRecoveryAudi
 from backend.app.orchestration.run_control import RunControlService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 class StaleRunRecoveryService:

@@ -51,7 +51,7 @@ from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.workers import handlers as worker_handlers
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workers.runner import WorkerMaintenanceSummary, WorkerRunner, WorkerRunnerConfig
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 

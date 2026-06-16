@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 def enqueue_team_execution_loop_job(

@@ -33,7 +33,7 @@ from backend.app.db.session import get_db_session
 from backend.app.files.security import content_disposition_attachment
 from backend.app.files.storage import create_storage
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.data_lifecycle import WorkspaceDataLifecycleService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/exports", tags=["exports"])

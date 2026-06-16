@@ -10,13 +10,13 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from agents import set_tracing_disabled
+from backend.app.api.services.resources import WorkspaceResourceService
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.tasks import TaskCreateRequest
-from backend.app.api.services.resources import WorkspaceResourceService
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import SessionLocal
 from backend.app.identity.models import User
@@ -28,7 +28,8 @@ from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.handlers import WorkerJobHandler
-from backend.app.workers.queue import RedisQueue, consume_once
+from backend.app.workers.queue.consumer import consume_once
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 

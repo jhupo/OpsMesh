@@ -21,7 +21,7 @@ from backend.app.teams.execution_loop_runtime_candidates import (
     _runtime_candidate_is_skip,
     _team_loop_candidate,
 )
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 @dataclass(frozen=True)

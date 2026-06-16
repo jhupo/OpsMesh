@@ -31,7 +31,7 @@ from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"

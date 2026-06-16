@@ -32,7 +32,7 @@ from backend.app.workers.maintenance import (
     WorkerMaintenanceService,
     WorkerMaintenanceSummary,
 )
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workers.runner_models import WorkerRunnerConfig, WorkerRunSummary
 
 logger = logging.getLogger(__name__)

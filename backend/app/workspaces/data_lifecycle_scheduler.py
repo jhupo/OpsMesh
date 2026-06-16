@@ -11,7 +11,7 @@ from backend.app.audit.service import AuditService
 from backend.app.exports.models import WorkspaceExportJob
 from backend.app.exports.status import WorkspaceExportJobStatus
 from backend.app.files.storage import ObjectStorage
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.data_lifecycle_policy import _backup_policy
 from backend.app.workspaces.data_lifecycle_retention import WorkspaceRetentionService
 from backend.app.workspaces.data_lifecycle_schedule import (

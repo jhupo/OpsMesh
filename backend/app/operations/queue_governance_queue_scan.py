@@ -6,7 +6,7 @@ from uuid import UUID
 
 from backend.app.operations.queue_governance_time import aware_datetime
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 @dataclass(frozen=True, slots=True)

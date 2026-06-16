@@ -1,4 +1,4 @@
-﻿from collections.abc import Generator
+from collections.abc import Generator
 
 import fakeredis
 from fastapi.testclient import TestClient
@@ -21,7 +21,7 @@ from backend.app.tasks.models import TaskMessage, TaskStep
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"

@@ -35,7 +35,7 @@ from backend.app.scheduled_jobs.service import WorkspaceScheduledJobService
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workers.runner import WorkerRunner, WorkerRunnerConfig
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 

@@ -11,7 +11,7 @@ from backend.app.api.schemas.admin import (
     AdminWorkspaceRuntimeResponse,
 )
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 router = APIRouter()
 

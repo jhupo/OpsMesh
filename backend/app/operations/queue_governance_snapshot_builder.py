@@ -16,7 +16,7 @@ from backend.app.operations.queue_governance_run_drift import (
 from backend.app.operations.queue_governance_run_repository import QueueGovernanceRunRepository
 from backend.app.operations.queue_governance_snapshot_models import QueueGovernanceSnapshot
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 class QueueGovernanceSnapshotBuilder:

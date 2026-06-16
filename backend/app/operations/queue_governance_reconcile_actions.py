@@ -8,7 +8,7 @@ from backend.app.operations.queue_governance_reconcile_models import (
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.runs.models import AgentRun
 from backend.app.workers.jobs import JobPayload
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 class QueueGovernanceActionExecutor:

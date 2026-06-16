@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.webhooks.models import WebhookDeliveryAttempt
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 @dataclass(frozen=True)

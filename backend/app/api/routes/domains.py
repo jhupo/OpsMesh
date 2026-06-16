@@ -21,7 +21,7 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.session import get_db_session
 from backend.app.domains.service import DomainTaskService
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["domain-tasks"])
 

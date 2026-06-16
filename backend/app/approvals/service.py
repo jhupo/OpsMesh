@@ -28,7 +28,7 @@ from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 T = TypeVar("T")
 ResourceReviewTarget = (

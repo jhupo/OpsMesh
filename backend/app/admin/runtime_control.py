@@ -10,7 +10,7 @@ from backend.app.api.pagination import PageParams
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtimes.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 class AdminRuntimeService(AdminSessionService):

@@ -14,7 +14,7 @@ from backend.app.teams.operations_console_utils import (
 )
 from backend.app.teams.runtime import TeamRuntimeState
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 def _runtime_payload(

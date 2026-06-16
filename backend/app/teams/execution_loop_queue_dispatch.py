@@ -12,7 +12,7 @@ from backend.app.teams.execution_loop_runtime_candidates import (
     _scheduler_scan_candidate,
 )
 from backend.app.teams.models import AgentTeam
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 class TeamExecutionLoopQueueDispatcher:

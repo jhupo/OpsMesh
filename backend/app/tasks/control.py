@@ -17,7 +17,7 @@ from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.workers.lease_lifecycle import mark_agent_run_worker_cancel_requested
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 PAUSABLE_RUN_STATUSES = {
     RunStatus.QUEUED.value,

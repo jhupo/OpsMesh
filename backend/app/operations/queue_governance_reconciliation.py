@@ -22,7 +22,7 @@ from backend.app.operations.queue_governance_snapshot_builder import (
 )
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 class QueueGovernanceReconciliationService:

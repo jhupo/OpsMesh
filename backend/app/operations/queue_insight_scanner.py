@@ -6,7 +6,7 @@ from redis import Redis
 
 from backend.app.operations.queue_insight_models import QueueInsightScan
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 
 class QueueInsightScanner:

@@ -18,7 +18,7 @@ from backend.app.tasks.event_outbox import TaskEventOutboxPublisher
 from backend.app.tasks.events import RedisTaskEventBus
 from backend.app.teams.execution_loop import TeamExecutionLoopQueueService
 from backend.app.webhooks.service import WebhookDeliveryScheduler
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.data_lifecycle import WorkspaceDataLifecycleService
 
 logger = logging.getLogger(__name__)

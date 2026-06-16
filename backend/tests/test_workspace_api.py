@@ -73,7 +73,8 @@ from backend.app.teams.operations_console import TeamOperationsConsoleService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue, consume_once
+from backend.app.workers.queue.consumer import consume_once
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.models import (
     Workspace,
     WorkspaceInvite,
