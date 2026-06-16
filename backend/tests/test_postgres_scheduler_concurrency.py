@@ -26,10 +26,8 @@ from backend.app.scheduled_jobs.models import (
     WorkspaceScheduledJob,
     WorkspaceScheduledJobEvent,
 )
-from backend.app.scheduled_jobs.service import (
-    ScheduledJobMaintenanceSummary,
-    WorkspaceScheduledJobService,
-)
+from backend.app.scheduled_jobs.service import WorkspaceScheduledJobService
+from backend.app.scheduled_jobs.types import ScheduledJobMaintenanceSummary
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.status import TaskStatus
 from backend.app.workers.jobs import JobPayload
