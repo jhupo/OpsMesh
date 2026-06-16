@@ -38,6 +38,13 @@ def non_negative_int(value: object) -> int:
     return 0
 
 
+def non_empty_string_or_none(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
 def ensure_aware_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
