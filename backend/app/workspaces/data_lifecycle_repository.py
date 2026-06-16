@@ -175,6 +175,36 @@ class WorkspaceDataLifecycleRepository:
             .limit(1)
         )
 
+    def retention_export_job_candidates(
+        self,
+        *,
+        workspace_id: UUID,
+        cutoff: datetime,
+        limit: int,
+    ) -> list[WorkspaceExportJob]:
+        if limit <= 0:
+            return []
+        return list(
+            self._session.scalars(
+                select(WorkspaceExportJob)
+                .where(
+                    WorkspaceExportJob.workspace_id == workspace_id,
+                    WorkspaceExportJob.status.in_(
+                        [
+                            WorkspaceExportJobStatus.COMPLETED.value,
+                            WorkspaceExportJobStatus.FAILED.value,
+                        ]
+                    ),
+                    WorkspaceExportJob.created_at < cutoff,
+                )
+                .order_by(
+                    WorkspaceExportJob.created_at.asc(),
+                    WorkspaceExportJob.id.asc(),
+                )
+                .limit(limit)
+            ).all()
+        )
+
     def latest_failed_export_job(self, workspace_id: UUID) -> WorkspaceExportJob | None:
         return self._session.scalar(
             select(WorkspaceExportJob)

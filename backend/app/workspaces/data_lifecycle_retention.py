@@ -6,8 +6,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.service import AuditService
-from backend.app.exports.models import WorkspaceExportJob
-from backend.app.exports.status import WorkspaceExportJobStatus
 from backend.app.files.models import WorkspaceFile
 from backend.app.workspaces.data_lifecycle_policy import (
     _candidate_counts,
@@ -18,6 +16,7 @@ from backend.app.workspaces.data_lifecycle_policy import (
     _retention_recommended_actions,
     _retention_warnings,
 )
+from backend.app.workspaces.data_lifecycle_repository import WorkspaceDataLifecycleRepository
 from backend.app.workspaces.models import Workspace
 
 RETENTION_DELETED_FILE_STATUS = "retention_deleted"
@@ -71,18 +70,6 @@ class WorkspaceRetentionService:
             require_successful_backup=require_successful_backup,
         )
 
-    def _latest_successful_archive_export(self, workspace_id: UUID) -> WorkspaceExportJob | None:
-        return self._session.scalar(
-            select(WorkspaceExportJob)
-            .where(
-                WorkspaceExportJob.workspace_id == workspace_id,
-                WorkspaceExportJob.export_type == "workspace_archive",
-                WorkspaceExportJob.status == WorkspaceExportJobStatus.COMPLETED.value,
-            )
-            .order_by(WorkspaceExportJob.completed_at.desc(), WorkspaceExportJob.id.desc())
-            .limit(1)
-        )
-
     def _retention_response(
         self,
         *,
@@ -101,7 +88,9 @@ class WorkspaceRetentionService:
 
         generated_at = datetime.now(UTC)
         policy = _retention_policy(workspace.settings)
-        latest_success = self._latest_successful_archive_export(workspace_id)
+        latest_success = WorkspaceDataLifecycleRepository(
+            self._session
+        ).latest_successful_archive_export(workspace_id)
         blocked_reasons = _retention_blocked_reasons(
             policy=policy,
             require_successful_backup=require_successful_backup,
@@ -268,21 +257,13 @@ class WorkspaceRetentionService:
         if retention_days is None or limit <= 0:
             return []
         cutoff = generated_at - timedelta(days=retention_days)
-        jobs = self._session.scalars(
-            select(WorkspaceExportJob)
-            .where(
-                WorkspaceExportJob.workspace_id == workspace_id,
-                WorkspaceExportJob.status.in_(
-                    [
-                        WorkspaceExportJobStatus.COMPLETED.value,
-                        WorkspaceExportJobStatus.FAILED.value,
-                    ]
-                ),
-                WorkspaceExportJob.created_at < cutoff,
-            )
-            .order_by(WorkspaceExportJob.created_at.asc(), WorkspaceExportJob.id.asc())
-            .limit(limit)
-        ).all()
+        jobs = WorkspaceDataLifecycleRepository(
+            self._session
+        ).retention_export_job_candidates(
+            workspace_id=workspace_id,
+            cutoff=cutoff,
+            limit=limit,
+        )
         return [
             _candidate_payload(
                 resource_type="export_job",
