@@ -26,7 +26,7 @@ from backend.app.db.session import get_db_session
 from backend.app.operations.control_plane_service import OperationsControlPlaneService
 from backend.app.operations.operation_capacity_payloads import OperationsCapacityPayloadService
 from backend.app.operations.outcomes import OperationsOutcomeService
-from backend.app.operations.overview import OperationsOverviewService
+from backend.app.operations.overview_payloads import OperationsOverviewPayloadService
 from backend.app.operations.run_activity_payloads import RunActivityPayloadService
 from backend.app.operations.self_hosted_machine_payloads import (
     OperationsSelfHostedMachineService,
@@ -57,11 +57,15 @@ async def operations_overview(
     cache_key = f"overview:{context.workspace.id}:{queue_name}"
     cached = cache.get_or_set(
         cache_key,
-        lambda: OperationsOverviewService(
-            session,
-            redis,
-            RedisKeyBuilder(settings.redis_key_prefix),
-        ).overview_payload(context.workspace.id, queue_name),
+        lambda: (
+            OperationsOverviewPayloadService(
+                session,
+                redis,
+                RedisKeyBuilder(settings.redis_key_prefix),
+            )
+            .overview_payload(context.workspace.id, queue_name)
+            .model_dump(mode="json")
+        ),
         ttl_seconds=10,
     )
     return OperationsOverviewResponse(**cached.value)
