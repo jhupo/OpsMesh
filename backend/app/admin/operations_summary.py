@@ -1,47 +1,47 @@
 from __future__ import annotations
 
+from redis import Redis
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from backend.app.admin.base import AdminRedisService
 from backend.app.admin.common import positive_int, top_counts
-from backend.app.api.schemas.operations import QueueMetricsResponse
+from backend.app.admin.queue_operations import AdminQueueOperationsService
 from backend.app.approvals.models import Approval
 from backend.app.operations.models import WorkerLease, WorkerNode
+from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task
-from backend.app.workers.jobs import JobPayload
-from backend.app.workers.queue import RedisQueue
 
 
 class AdminOperationsSummaryService(AdminRedisService):
-    def queue_metrics(self, queue_name: str) -> QueueMetricsResponse:
-        if self._redis is None:
-            return QueueMetricsResponse(
-                queue_name=queue_name,
-                queued=0,
-                dead_letter=0,
-                idempotency_keys=0,
-            )
-        queue = RedisQueue(self._redis, self._keys, queue_name)
-        return QueueMetricsResponse(
-            queue_name=queue_name,
-            queued=queue.count_queued(),
-            dead_letter=queue.count_dead_letters(),
-            idempotency_keys=self._count_keys(self._keys.idempotency_key("*", "*")),
+    def __init__(
+        self,
+        session: Session,
+        redis: Redis[str] | None = None,
+        key_builder: RedisKeyBuilder | None = None,
+        *,
+        queue_operations: AdminQueueOperationsService | None = None,
+    ) -> None:
+        super().__init__(session, redis, key_builder)
+        self._queue_operations = queue_operations or AdminQueueOperationsService(
+            self._session,
+            self._redis,
+            self._keys,
         )
 
     def operations_summary(self, queue_name: str = "agent_runs") -> dict[str, object]:
-        queue_metrics = self.queue_metrics(queue_name)
+        queue_metrics = self._queue_operations.queue_metrics(queue_name)
         return {
             "queue": {
                 "queue_name": queue_name,
                 "queued": queue_metrics.queued,
                 "dead_letter": queue_metrics.dead_letter,
                 "idempotency_keys": queue_metrics.idempotency_keys,
-                "oldest_queued_at": self._oldest_queue_created_at(queue_name),
-                "highest_priority": self._highest_queue_priority(queue_name),
+                "oldest_queued_at": self._queue_operations.oldest_queued_at(queue_name),
+                "highest_priority": self._queue_operations.highest_queue_priority(queue_name),
             },
             "workers": self._worker_capacity_summary(),
             "runtime_spaces": self._runtime_space_usage_summary(),
@@ -63,36 +63,6 @@ class AdminOperationsSummaryService(AdminRedisService):
                 "top_security_reasons": self._top_security_reasons(),
             },
         }
-
-    def list_dead_letters(self, queue_name: str, limit: int) -> tuple[list[JobPayload], int]:
-        if self._redis is None:
-            return [], 0
-        queue = RedisQueue(self._redis, self._keys, queue_name)
-        return queue.list_dead_letters(limit), queue.count_dead_letters()
-
-    def requeue_dead_letter(self, queue_name: str, job_id) -> JobPayload | None:
-        if self._redis is None:
-            return None
-        queue = RedisQueue(self._redis, self._keys, queue_name)
-        return queue.requeue_dead_letter(job_id, workspace_id=None)
-
-    def _oldest_queue_created_at(self, queue_name: str) -> str | None:
-        queued_jobs = self._queued_jobs(queue_name)
-        if not queued_jobs:
-            return None
-        return min(job.created_at for job in queued_jobs).isoformat()
-
-    def _highest_queue_priority(self, queue_name: str) -> int | None:
-        queued_jobs = self._queued_jobs(queue_name)
-        if not queued_jobs:
-            return None
-        return max(job.priority for job in queued_jobs)
-
-    def _queued_jobs(self, queue_name: str, limit: int = 500) -> list[JobPayload]:
-        if self._redis is None:
-            return []
-        queue = RedisQueue(self._redis, self._keys, queue_name)
-        return queue.peek(limit=limit)
 
     def _worker_capacity_summary(self) -> dict[str, object]:
         workers = self._session.scalars(select(WorkerNode)).all()

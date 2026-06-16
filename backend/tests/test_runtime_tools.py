@@ -9,7 +9,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.admin.models import PlatformPolicy
-from backend.app.admin.policies import RISKY_EXECUTION_POLICY_KEY
+from backend.app.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.approvals.models import Approval
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base

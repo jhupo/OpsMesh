@@ -7,13 +7,13 @@ from sqlalchemy import select
 
 from backend.app.admin.base import AdminSessionService
 from backend.app.admin.common import normalized_worker_capacity, worker_node_snapshot
-from backend.app.admin.policy_control import AdminPolicyService
+from backend.app.admin.worker_policy_control import AdminWorkerPolicyControlService
 from backend.app.api.pagination import PageParams
 from backend.app.operations.models import WorkerLease, WorkerNode
 
 
 class AdminWorkerService(AdminSessionService):
-    def __init__(self, session, policy_service: AdminPolicyService) -> None:
+    def __init__(self, session, policy_service: AdminWorkerPolicyControlService) -> None:
         super().__init__(session)
         self._policy_service = policy_service
 

@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.admin.policies import PlatformPolicyService
+from backend.app.admin.policy_reader import PlatformPolicyService
 from backend.app.api.schemas.self_hosted import (
     ArtifactUploadRequest,
     EnrollmentTokenCreateRequest,

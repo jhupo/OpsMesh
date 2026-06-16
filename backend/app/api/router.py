@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from backend.app.api.routes.admin import router as admin_router
+from backend.app.api.routes.admin.router import router as admin_router
 from backend.app.api.routes.agent_messages import router as agent_messages_router
 from backend.app.api.routes.approvals import router as approvals_router
 from backend.app.api.routes.auth import router as auth_router

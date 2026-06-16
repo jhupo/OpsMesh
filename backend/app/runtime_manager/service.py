@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.admin.policies import PlatformPolicyService
+from backend.app.admin.policy_reader import PlatformPolicyService
 from backend.app.core.config import Settings
 from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeLimits
 from backend.app.runtime_manager.manager import RuntimeManager

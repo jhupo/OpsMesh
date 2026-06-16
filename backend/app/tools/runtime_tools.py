@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.admin.policies import PlatformPolicyService
+from backend.app.admin.policy_reader import PlatformPolicyService
 from backend.app.approvals.service import ApprovalService
 from backend.app.core.config import Settings
 from backend.app.reviews.tool_execution import ToolExecutionReview, ToolExecutionReviewService
