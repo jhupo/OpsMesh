@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
-from backend.app.api.schemas.capabilities import (
+from backend.app.api.schemas.capabilities.mcp_servers import (
     McpServerCreateRequest,
     McpServerHealthCheckRequest,
     McpToolAllowRequest,

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
-from backend.app.api.schemas.capabilities import (
+from backend.app.api.schemas.capabilities.mcp_credentials import (
     McpCredentialReferenceCreateRequest,
     McpCredentialReferenceResponse,
 )

@@ -4,17 +4,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
-from backend.app.api.schemas.capabilities import (
+from backend.app.api.schemas.capabilities.mcp_catalog import (
     McpCatalogServerResponse,
     McpCatalogToolPolicySummaryResponse,
     McpCatalogToolResponse,
     McpCatalogUsageResponse,
+    McpToolDescriptor,
+)
+from backend.app.api.schemas.capabilities.mcp_servers import (
     McpServerCreateRequest,
     McpServerHealthCheckRequest,
     McpServerResponse,
     McpToolAllowRequest,
     McpToolAllowResponse,
-    McpToolDescriptor,
 )
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency

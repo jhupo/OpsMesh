@@ -6,7 +6,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
-from backend.app.api.schemas.capabilities import McpCredentialReferenceCreateRequest
+from backend.app.api.schemas.capabilities.mcp_credentials import McpCredentialReferenceCreateRequest
 from backend.app.audit.service import AuditService
 from backend.app.capabilities.mcp_server_helpers import require_mcp_server
 from backend.app.capabilities.models import McpCredentialReference

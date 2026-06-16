@@ -8,7 +8,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
-from backend.app.api.schemas.capabilities import (
+from backend.app.api.schemas.capabilities.workspace_skills import (
     WorkspaceSkillInstallRequest,
     WorkspaceSkillRollbackRequest,
     WorkspaceSkillUpgradeRequest,

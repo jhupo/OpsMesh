@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.capabilities import (
+from backend.app.api.schemas.capabilities.governance import (
     WorkspaceCapabilityGovernanceApplyRequest,
     WorkspaceCapabilityGovernanceApplyResponse,
     WorkspaceCapabilityGovernanceResponse,

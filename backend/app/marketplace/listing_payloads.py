@@ -5,7 +5,10 @@ from hashlib import sha256
 
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.agents import AgentProfileCreateRequest
-from backend.app.api.schemas.capabilities import McpServerCreateRequest, McpToolAllowRequest
+from backend.app.api.schemas.capabilities.mcp_servers import (
+    McpServerCreateRequest,
+    McpToolAllowRequest,
+)
 from backend.app.core.typing import dict_or_empty, string_or_default
 from backend.app.marketplace.models import MarketplaceListing, TalentListing
 from backend.app.reviews.constants import (

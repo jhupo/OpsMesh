@@ -4,10 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
-from backend.app.api.schemas.capabilities import (
-    AgentToolPolicyDiagnosticsResponse,
+from backend.app.api.schemas.capabilities.mcp_observability import (
     McpToolCallLogRequest,
     McpToolCallLogResponse,
+)
+from backend.app.api.schemas.capabilities.policy_diagnostics import (
+    AgentToolPolicyDiagnosticsResponse,
     WorkspaceToolPolicyMatrixResponse,
 )
 from backend.app.auth.context import WorkspaceContext
