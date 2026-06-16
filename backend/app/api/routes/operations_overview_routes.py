@@ -27,7 +27,7 @@ from backend.app.operations.control_plane_service import OperationsControlPlaneS
 from backend.app.operations.operation_capacity_payloads import OperationsCapacityPayloadService
 from backend.app.operations.outcomes import OperationsOutcomeService
 from backend.app.operations.overview import OperationsOverviewService
-from backend.app.operations.run_activity_operations import RunActivityOperationsService
+from backend.app.operations.run_activity_payloads import RunActivityPayloadService
 from backend.app.operations.self_hosted_machine_payloads import (
     OperationsSelfHostedMachineService,
 )
@@ -187,7 +187,7 @@ async def operations_run_activity(
     cached = cache.get_or_set(
         cache_key,
         lambda: (
-            RunActivityOperationsService(session)
+            RunActivityPayloadService(session)
             .run_activity_payload(
                 context.workspace.id,
                 team_id=team_id,
