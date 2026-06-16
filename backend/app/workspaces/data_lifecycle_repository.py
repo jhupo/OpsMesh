@@ -55,10 +55,10 @@ class WorkspaceDataLifecycleRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def _has_active_archive_export_job(self, workspace_id: UUID) -> bool:
-        return self._active_archive_export_job_count(workspace_id) > 0
+    def has_active_archive_export_job(self, workspace_id: UUID) -> bool:
+        return self.active_archive_export_job_count(workspace_id) > 0
 
-    def _active_archive_export_job_count(self, workspace_id: UUID) -> int:
+    def active_archive_export_job_count(self, workspace_id: UUID) -> int:
         active_count = self._session.scalar(
             select(func.count(WorkspaceExportJob.id)).where(
                 WorkspaceExportJob.workspace_id == workspace_id,
@@ -73,7 +73,7 @@ class WorkspaceDataLifecycleRepository:
         )
         return int(active_count or 0)
 
-    def _latest_scheduled_archive_export_job(
+    def latest_scheduled_archive_export_job(
         self,
         workspace_id: UUID,
     ) -> WorkspaceExportJob | None:
@@ -95,7 +95,7 @@ class WorkspaceDataLifecycleRepository:
             None,
         )
 
-    def _latest_lifecycle_event(
+    def latest_lifecycle_event(
         self,
         workspace_id: UUID,
         actions: tuple[str, ...],
@@ -110,7 +110,7 @@ class WorkspaceDataLifecycleRepository:
             .limit(1)
         )
 
-    def _recent_lifecycle_events(
+    def recent_lifecycle_events(
         self,
         workspace_id: UUID,
         actions: tuple[str, ...],
@@ -129,7 +129,7 @@ class WorkspaceDataLifecycleRepository:
         )
 
 
-    def _latest_lifecycle_retention_run_at(self, workspace_id: UUID) -> datetime | None:
+    def latest_lifecycle_retention_run_at(self, workspace_id: UUID) -> datetime | None:
         latest = self._session.scalar(
             select(func.max(AuditEvent.created_at)).where(
                 AuditEvent.workspace_id == workspace_id,
@@ -138,7 +138,7 @@ class WorkspaceDataLifecycleRepository:
         )
         return _ensure_utc_datetime(latest)
 
-    def _record_lifecycle_schedule_event(
+    def record_lifecycle_schedule_event(
         self,
         *,
         workspace: Workspace,
@@ -155,7 +155,7 @@ class WorkspaceDataLifecycleRepository:
             metadata={"reason": reason, **metadata},
         )
 
-    def _latest_export_job(self, workspace_id: UUID) -> WorkspaceExportJob | None:
+    def latest_export_job(self, workspace_id: UUID) -> WorkspaceExportJob | None:
         return self._session.scalar(
             select(WorkspaceExportJob)
             .where(WorkspaceExportJob.workspace_id == workspace_id)
@@ -163,7 +163,7 @@ class WorkspaceDataLifecycleRepository:
             .limit(1)
         )
 
-    def _latest_successful_archive_export(self, workspace_id: UUID) -> WorkspaceExportJob | None:
+    def latest_successful_archive_export(self, workspace_id: UUID) -> WorkspaceExportJob | None:
         return self._session.scalar(
             select(WorkspaceExportJob)
             .where(
@@ -175,7 +175,7 @@ class WorkspaceDataLifecycleRepository:
             .limit(1)
         )
 
-    def _latest_failed_export_job(self, workspace_id: UUID) -> WorkspaceExportJob | None:
+    def latest_failed_export_job(self, workspace_id: UUID) -> WorkspaceExportJob | None:
         return self._session.scalar(
             select(WorkspaceExportJob)
             .where(
@@ -186,7 +186,7 @@ class WorkspaceDataLifecycleRepository:
             .limit(1)
         )
 
-    def _latest_archive_import_event(self, workspace_id: UUID) -> AuditEvent | None:
+    def latest_archive_import_event(self, workspace_id: UUID) -> AuditEvent | None:
         return self._session.scalar(
             select(AuditEvent)
             .where(
@@ -197,7 +197,7 @@ class WorkspaceDataLifecycleRepository:
             .limit(1)
         )
 
-    def _latest_archive_integrity_event(self, workspace_id: UUID) -> AuditEvent | None:
+    def latest_archive_integrity_event(self, workspace_id: UUID) -> AuditEvent | None:
         return self._session.scalar(
             select(AuditEvent)
             .where(
@@ -208,7 +208,7 @@ class WorkspaceDataLifecycleRepository:
             .limit(1)
         )
 
-    def _latest_restore_drill_event(self, workspace_id: UUID) -> AuditEvent | None:
+    def latest_restore_drill_event(self, workspace_id: UUID) -> AuditEvent | None:
         return self._session.scalar(
             select(AuditEvent)
             .where(
@@ -219,7 +219,7 @@ class WorkspaceDataLifecycleRepository:
             .limit(1)
         )
 
-    def _restore_test_history(
+    def restore_test_history(
         self,
         *,
         workspace_id: UUID,
@@ -268,7 +268,7 @@ class WorkspaceDataLifecycleRepository:
             "recent_tests": [_restore_test_payload(event) for event in events],
         }
 
-    def _import_conflict_history(self, workspace_id: UUID) -> dict[str, object]:
+    def import_conflict_history(self, workspace_id: UUID) -> dict[str, object]:
         events = self._session.scalars(
             select(AuditEvent)
             .where(
@@ -319,7 +319,7 @@ class WorkspaceDataLifecycleRepository:
             "recent_previews": [_import_preview_payload(event) for event in events],
         }
 
-    def _export_job_stats(self, workspace_id: UUID) -> dict[str, object]:
+    def export_job_stats(self, workspace_id: UUID) -> dict[str, object]:
         jobs = self._session.scalars(
             select(WorkspaceExportJob)
             .where(WorkspaceExportJob.workspace_id == workspace_id)
@@ -347,7 +347,7 @@ class WorkspaceDataLifecycleRepository:
             "latest_job": _job_payload(jobs[0] if jobs else None),
         }
 
-    def _archive_coverage_counts(self, workspace_id: UUID) -> dict[str, int]:
+    def archive_coverage_counts(self, workspace_id: UUID) -> dict[str, int]:
         counts: dict[str, int] = {}
         for collection, model in ARCHIVE_COVERAGE_MODELS.items():
             counts[collection] = int(
@@ -358,7 +358,7 @@ class WorkspaceDataLifecycleRepository:
             )
         return counts
 
-    def _file_stats(self, workspace_id: UUID) -> dict[str, object]:
+    def file_stats(self, workspace_id: UUID) -> dict[str, object]:
         count, total_bytes = self._session.execute(
             select(
                 func.count(WorkspaceFile.id),
@@ -383,7 +383,7 @@ class WorkspaceDataLifecycleRepository:
             "latest_uploaded_at": latest_upload,
         }
 
-    def _artifact_stats(self, workspace_id: UUID) -> dict[str, object]:
+    def artifact_stats(self, workspace_id: UUID) -> dict[str, object]:
         count, total_bytes = self._session.execute(
             select(
                 func.count(Artifact.id),
@@ -413,7 +413,7 @@ class WorkspaceDataLifecycleRepository:
             "latest_created_at": latest_artifact,
         }
 
-    def _access_stats(self, workspace_id: UUID) -> dict[str, object]:
+    def access_stats(self, workspace_id: UUID) -> dict[str, object]:
         events = self._session.scalars(
             select(FileAccessEvent).where(FileAccessEvent.workspace_id == workspace_id)
         ).all()

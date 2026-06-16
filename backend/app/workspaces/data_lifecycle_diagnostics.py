@@ -59,11 +59,11 @@ class WorkspaceLifecycleDiagnosticsService:
             return None
 
         generated_at = datetime.now(UTC)
-        latest_job = self._repo._latest_export_job(workspace_id)
-        latest_success = self._repo._latest_successful_archive_export(workspace_id)
-        file_stats = self._repo._file_stats(workspace_id)
-        artifact_stats = self._repo._artifact_stats(workspace_id)
-        access_stats = self._repo._access_stats(workspace_id)
+        latest_job = self._repo.latest_export_job(workspace_id)
+        latest_success = self._repo.latest_successful_archive_export(workspace_id)
+        file_stats = self._repo.file_stats(workspace_id)
+        artifact_stats = self._repo.artifact_stats(workspace_id)
+        access_stats = self._repo.access_stats(workspace_id)
         retention_policy = _retention_policy(workspace.settings)
         backup_policy = _backup_policy(
             workspace.settings,
@@ -125,19 +125,19 @@ class WorkspaceLifecycleDiagnosticsService:
             return None
 
         generated_at = datetime.now(UTC)
-        latest_job = self._repo._latest_export_job(workspace_id)
-        latest_success = self._repo._latest_successful_archive_export(workspace_id)
-        latest_import = self._repo._latest_archive_import_event(workspace_id)
-        latest_restore_drill = self._repo._latest_restore_drill_event(workspace_id)
-        latest_integrity = self._repo._latest_archive_integrity_event(workspace_id)
-        latest_failed_job = self._repo._latest_failed_export_job(workspace_id)
-        job_stats = self._repo._export_job_stats(workspace_id)
-        current_counts = self._repo._archive_coverage_counts(workspace_id)
-        restore_test_history = self._repo._restore_test_history(
+        latest_job = self._repo.latest_export_job(workspace_id)
+        latest_success = self._repo.latest_successful_archive_export(workspace_id)
+        latest_import = self._repo.latest_archive_import_event(workspace_id)
+        latest_restore_drill = self._repo.latest_restore_drill_event(workspace_id)
+        latest_integrity = self._repo.latest_archive_integrity_event(workspace_id)
+        latest_failed_job = self._repo.latest_failed_export_job(workspace_id)
+        job_stats = self._repo.export_job_stats(workspace_id)
+        current_counts = self._repo.archive_coverage_counts(workspace_id)
+        restore_test_history = self._repo.restore_test_history(
             workspace_id=workspace_id,
             latest_success=latest_success,
         )
-        import_conflict_history = self._repo._import_conflict_history(workspace_id)
+        import_conflict_history = self._repo.import_conflict_history(workspace_id)
         retention_policy = _retention_policy(workspace.settings)
         backup_policy = _backup_policy(
             workspace.settings,
@@ -198,12 +198,12 @@ class WorkspaceLifecycleDiagnosticsService:
         raw_restore_drill = _restore_drill_settings(workspace.settings)
         retention_interval_hours = _backup_interval_hours(raw_retention)
         restore_drill_interval_hours = _backup_interval_hours(raw_restore_drill)
-        latest_retention_run_at = self._repo._latest_lifecycle_retention_run_at(workspace.id)
-        latest_restore_drill = self._repo._latest_restore_drill_event(workspace.id)
+        latest_retention_run_at = self._repo.latest_lifecycle_retention_run_at(workspace.id)
+        latest_restore_drill = self._repo.latest_restore_drill_event(workspace.id)
         latest_restore_drill_at = (
             latest_restore_drill.created_at if latest_restore_drill is not None else None
         )
-        latest_success = self._repo._latest_successful_archive_export(workspace.id)
+        latest_success = self._repo.latest_successful_archive_export(workspace.id)
         retention_next_due_at = (
             latest_retention_run_at + timedelta(hours=retention_interval_hours)
             if latest_retention_run_at is not None and retention_interval_hours is not None
@@ -215,7 +215,7 @@ class WorkspaceLifecycleDiagnosticsService:
             and restore_drill_interval_hours is not None
             else None
         )
-        active_archive_export_count = self._repo._active_archive_export_job_count(workspace.id)
+        active_archive_export_count = self._repo.active_archive_export_job_count(workspace.id)
         scheduled_backup_due = _scheduled_backup_due(backup_policy)
         scheduled_restore_drill_due = _restore_drill_due(
             raw_policy=raw_restore_drill,
@@ -232,17 +232,17 @@ class WorkspaceLifecycleDiagnosticsService:
                 and active_archive_export_count > 0,
                 "active_archive_export_job_count": active_archive_export_count,
                 "latest_scheduled_archive_export_job": _job_payload(
-                    self._repo._latest_scheduled_archive_export_job(workspace.id)
+                    self._repo.latest_scheduled_archive_export_job(workspace.id)
                 ),
                 "latest_event": _audit_event_payload(
-                    self._repo._latest_lifecycle_event(
+                    self._repo.latest_lifecycle_event(
                         workspace.id,
                         BACKUP_LIFECYCLE_EVENT_ACTIONS,
                     )
                 ),
                 "recent_events": [
                     _audit_event_payload(event)
-                    for event in self._repo._recent_lifecycle_events(
+                    for event in self._repo.recent_lifecycle_events(
                         workspace.id,
                         BACKUP_LIFECYCLE_EVENT_ACTIONS,
                     )
@@ -271,14 +271,14 @@ class WorkspaceLifecycleDiagnosticsService:
                     )
                 ),
                 "latest_event": _audit_event_payload(
-                    self._repo._latest_lifecycle_event(
+                    self._repo.latest_lifecycle_event(
                         workspace.id,
                         RETENTION_LIFECYCLE_EVENT_ACTIONS,
                     )
                 ),
                 "recent_events": [
                     _audit_event_payload(event)
-                    for event in self._repo._recent_lifecycle_events(
+                    for event in self._repo.recent_lifecycle_events(
                         workspace.id,
                         RETENTION_LIFECYCLE_EVENT_ACTIONS,
                     )
@@ -302,14 +302,14 @@ class WorkspaceLifecycleDiagnosticsService:
                 if latest_success is not None
                 else None,
                 "latest_event": _audit_event_payload(
-                    self._repo._latest_lifecycle_event(
+                    self._repo.latest_lifecycle_event(
                         workspace.id,
                         RESTORE_DRILL_LIFECYCLE_EVENT_ACTIONS,
                     )
                 ),
                 "recent_events": [
                     _audit_event_payload(event)
-                    for event in self._repo._recent_lifecycle_events(
+                    for event in self._repo.recent_lifecycle_events(
                         workspace.id,
                         RESTORE_DRILL_LIFECYCLE_EVENT_ACTIONS,
                     )
