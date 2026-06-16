@@ -45,13 +45,6 @@ def string_int_dict(value: object) -> dict[str, int]:
     }
 
 
-def non_empty_string_or_none(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    return normalized or None
-
-
 def worker_capacity(capacity: dict[str, object] | None, worker_type: str) -> dict[str, object]:
     normalized = dict(capacity or {})
     normalized.setdefault("worker_type", worker_type)

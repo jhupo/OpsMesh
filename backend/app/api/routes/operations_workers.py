@@ -28,7 +28,8 @@ from backend.app.operations.runtime_leases import RuntimeLeaseOperationsService
 from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsService
 from backend.app.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
 from backend.app.operations.worker_lease_queries import WorkerLeaseQueryService
-from backend.app.operations.worker_nodes import WorkerNodeOperationsService
+from backend.app.operations.worker_node_control import WorkerNodeControlService
+from backend.app.operations.worker_node_repository import WorkerNodeRepository
 from backend.app.security.service import SecurityAuditService
 
 if TYPE_CHECKING:
@@ -112,7 +113,7 @@ async def list_workers(
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[WorkerNodeResponse]:
-    items, total = WorkerNodeOperationsService(session).list_worker_nodes(
+    items, total = WorkerNodeRepository(session).list_worker_nodes(
         page,
         status=status_filter,
         worker_type=worker_type,
@@ -131,7 +132,7 @@ async def drain_worker(
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> WorkerNodeResponse:
-    node = WorkerNodeOperationsService(session).request_worker_drain(worker_id)
+    node = WorkerNodeControlService(session).request_worker_drain(worker_id)
     if node is None:
         raise HTTPException(status_code=404, detail="Worker not found")
     return WorkerNodeResponse.model_validate(node)
@@ -144,7 +145,7 @@ async def update_worker_status(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> WorkerNodeResponse:
-    node = WorkerNodeOperationsService(session).set_worker_status(
+    node = WorkerNodeControlService(session).set_worker_status(
         workspace_id=context.workspace.id,
         actor_user_id=context.user.user_id,
         worker_id=worker_id,

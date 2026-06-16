@@ -20,8 +20,8 @@ from backend.app.core.trace_context import (
     current_trace_context,
     new_trace_context,
 )
+from backend.app.operations.worker_capacity_snapshot import WorkerCapacitySnapshotService
 from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsService
-from backend.app.operations.worker_nodes import WorkerNodeOperationsService
 from backend.app.workers.capacity import merge_counts, worker_can_run_job
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.heartbeat import worker_heartbeat_details, worker_status_for_failures
@@ -70,8 +70,7 @@ class WorkerRunner:
 
     def run_once(self) -> bool:
         with self._session_scope() as session:
-            operations = WorkerNodeOperationsService(session)
-            capacity = operations.worker_capacity_snapshot(
+            capacity = WorkerCapacitySnapshotService(session).worker_capacity_snapshot(
                 self._config.worker_id,
                 default_max_jobs=self._config.max_jobs,
             )

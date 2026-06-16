@@ -10,7 +10,7 @@ from backend.app.core.trace_context import with_current_trace_metadata
 from backend.app.operations.models import WorkerHeartbeat
 from backend.app.operations.worker_capacity import worker_capacity, worker_heartbeat_details
 from backend.app.operations.worker_lease_heartbeats import WorkerLeaseHeartbeatRecorder
-from backend.app.operations.worker_nodes import WorkerNodeOperationsService
+from backend.app.operations.worker_node_registry import WorkerNodeRegistry
 
 
 class WorkerHeartbeatOperationsService:
@@ -55,7 +55,7 @@ class WorkerHeartbeatOperationsService:
             heartbeat.status = status
             heartbeat.details = details
             heartbeat.last_seen_at = now
-        WorkerNodeOperationsService(self._session).upsert_worker_node(
+        WorkerNodeRegistry(self._session).upsert_worker_node(
             worker_id=worker_id,
             worker_type=worker_type,
             status=status,
