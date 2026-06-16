@@ -31,7 +31,8 @@ from backend.app.marketplace.listing_payloads import (
     mcp_tool_requests_from_listing,
 )
 from backend.app.marketplace.models import MarketplaceListing, WorkspaceMarketplaceInstall
-from backend.app.reviews.service import ResourceReview, ResourceReviewService
+from backend.app.reviews.models import ResourceReview
+from backend.app.reviews.service import ResourceReviewService
 
 
 class MarketplaceService:

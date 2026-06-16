@@ -10,6 +10,7 @@ from backend.app.operations.models import WorkerLease
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.control import TASK_PAUSED_REASON
+from backend.app.tasks.control_state import task_control_state
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.workers.jobs import JobType
@@ -56,7 +57,7 @@ class TaskControlDiagnosticsService:
             ).all()
         )
         messages = self._control_messages(workspace_id, task_id, message_limit)
-        control = _control_state(task)
+        control = task_control_state(task)
         paused_steps = [step for step in steps if _is_task_control_paused_step(step)]
         cancelled_runs = [run for run in runs if _is_pause_cancelled_run(run)]
         scheduled_runs = [run for run in runs if _is_resume_scheduled_run(run)]
@@ -182,12 +183,6 @@ def _recommended_actions(task: Task, summary: dict[str, object]) -> list[dict[st
     if not actions:
         actions.append({"action": "inspect_execution_status", "reason": "no_control_blockers"})
     return actions
-
-
-def _control_state(task: Task) -> dict[str, object]:
-    state = task.generic_state if isinstance(task.generic_state, dict) else {}
-    control = state.get("control")
-    return dict(control) if isinstance(control, dict) else {}
 
 
 def _is_task_control_paused_step(step: TaskStep) -> bool:

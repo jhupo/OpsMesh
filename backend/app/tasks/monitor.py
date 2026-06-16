@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import dict_or_empty, int_or_zero, string_list
+from backend.app.tasks.control_state import task_control_state
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.live_status import TaskLiveStatusService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
@@ -58,7 +59,7 @@ class TaskExecutionStatusService:
         live_summary = dict_or_empty(live.get("summary"))
         execution_summary = dict_or_empty(execution.get("summary"))
         manager_summary = dict_or_empty(manager.get("summary"))
-        control = _control_state(task)
+        control = task_control_state(task)
         blocked_reasons = _blocked_reasons(
             control=control,
             execution=execution,
@@ -262,12 +263,6 @@ def _manager_recommended_actions(manager: dict[str, object]) -> list[str]:
     if "specialist_steps_incomplete" in reasons:
         actions.append("monitor_specialists")
     return actions
-
-
-def _control_state(task: Task) -> dict[str, object]:
-    state = task.generic_state if isinstance(task.generic_state, dict) else {}
-    control = state.get("control")
-    return dict(control) if isinstance(control, dict) else {}
 
 
 def _list(value: object) -> list[object]:

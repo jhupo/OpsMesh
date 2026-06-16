@@ -5,14 +5,13 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.model_validation import AgentModelValidator
 from backend.app.agents.models import AgentProfile, AgentProfileVersion
 from backend.app.agents.payloads import (
     AGENT_PROFILE_FIELDS,
-    AGENT_PROFILE_REVIEW_FIELDS,
     copy_json_value,
     datetime_or_none,
     normalize_create_payload,
@@ -21,6 +20,8 @@ from backend.app.agents.payloads import (
     rollback_reason,
     uuid_or_none,
 )
+from backend.app.agents.queries import AgentProfileQueryService
+from backend.app.agents.reviews import AgentProfileReviewService
 from backend.app.agents.versions import AgentVersionRecorder
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.agents import (
@@ -35,9 +36,7 @@ from backend.app.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     RESOURCE_STATUS_REJECTED,
-    REVIEW_TYPE_AGENT_PROFILE,
 )
-from backend.app.reviews.service import ResourceReview, ResourceReviewService
 
 AGENT_STATUS_ACTIVE = RESOURCE_STATUS_ACTIVE
 AGENT_STATUS_ARCHIVED = "archived"
@@ -85,17 +84,10 @@ class AgentManagementService:
         )
 
         now = datetime.now(UTC)
-        review = ResourceReviewService(self._session, self._settings).review_agent_profile(
+        review_service = AgentProfileReviewService(self._session, self._settings)
+        review = review_service.review_create(
             workspace_id=workspace_id,
-            visibility="private",
-            name=str(values["name"]),
-            role=str(values["role"]),
-            instructions=str(values["instructions"]),
-            capabilities=dict(values["capabilities"]),
-            skills=dict(values["skills"]),
-            tool_policy=dict(values["tool_policy"]),
-            runtime_policy=dict(values["runtime_policy"]),
-            approval_policy=dict(values["approval_policy"]),
+            values=values,
         )
         profile = AgentProfile(
             workspace_id=workspace_id,
@@ -108,15 +100,11 @@ class AgentManagementService:
         self._session.add(profile)
         self._session.flush()
         if review.required:
-            ResourceReviewService(self._session, self._settings).request_resource_review(
+            review_service.request_review(
                 workspace_id=workspace_id,
                 actor_user_id=actor_user_id,
-                approval_type=REVIEW_TYPE_AGENT_PROFILE,
-                target_type="agent_profile",
-                target_id=profile.id,
-                target_name=profile.name,
+                profile=profile,
                 review=review,
-                snapshot=profile_snapshot(profile),
             )
         self._versions.record_version(
             profile,
@@ -169,18 +157,17 @@ class AgentManagementService:
 
         for field, value in values.items():
             setattr(profile, field, copy_json_value(field, value))
-        review = self._review_agent_update_if_needed(profile, values)
+        review = AgentProfileReviewService(self._session, self._settings).review_update(
+            profile,
+            values,
+        )
         if review is not None and review.required:
             profile.status = RESOURCE_STATUS_PENDING_APPROVAL
-            ResourceReviewService(self._session, self._settings).request_resource_review(
+            AgentProfileReviewService(self._session, self._settings).request_review(
                 workspace_id=workspace_id,
                 actor_user_id=actor_user_id,
-                approval_type=REVIEW_TYPE_AGENT_PROFILE,
-                target_type="agent_profile",
-                target_id=profile.id,
-                target_name=profile.name,
+                profile=profile,
                 review=review,
-                snapshot=profile_snapshot(profile),
             )
         self._versions.bump_version(
             profile,
@@ -206,26 +193,6 @@ class AgentManagementService:
         self._session.commit()
         self._session.refresh(profile)
         return profile
-
-    def _review_agent_update_if_needed(
-        self,
-        profile: AgentProfile,
-        values: dict[str, Any],
-    ) -> ResourceReview | None:
-        if not AGENT_PROFILE_REVIEW_FIELDS.intersection(values):
-            return None
-        return ResourceReviewService(self._session, self._settings).review_agent_profile(
-            workspace_id=profile.workspace_id,
-            visibility="private",
-            name=profile.name,
-            role=profile.role,
-            instructions=profile.instructions,
-            capabilities=dict(profile.capabilities or {}),
-            skills=dict(profile.skills or {}),
-            tool_policy=dict(profile.tool_policy or {}),
-            runtime_policy=dict(profile.runtime_policy or {}),
-            approval_policy=dict(profile.approval_policy or {}),
-        )
 
     def archive_agent(
         self,
@@ -413,20 +380,12 @@ class AgentManagementService:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[AgentProfileVersion]:
-        self._require_profile(workspace_id, agent_profile_id)
-        statement = (
-            select(AgentProfileVersion)
-            .where(
-                AgentProfileVersion.workspace_id == workspace_id,
-                AgentProfileVersion.agent_profile_id == agent_profile_id,
-            )
-            .order_by(AgentProfileVersion.version.desc())
+        return AgentProfileQueryService(self._session).list_versions(
+            workspace_id=workspace_id,
+            agent_profile_id=agent_profile_id,
+            limit=limit,
+            offset=offset,
         )
-        if offset:
-            statement = statement.offset(offset)
-        if limit is not None:
-            statement = statement.limit(limit)
-        return list(self._session.scalars(statement).all())
 
     def list_agent_versions(
         self,
@@ -434,34 +393,23 @@ class AgentManagementService:
         agent_profile_id: UUID,
         page: PageParams,
     ) -> tuple[list[AgentProfileVersion], int]:
-        self._require_profile(workspace_id, agent_profile_id)
-        statement = select(AgentProfileVersion).where(
-            AgentProfileVersion.workspace_id == workspace_id,
-            AgentProfileVersion.agent_profile_id == agent_profile_id,
+        return AgentProfileQueryService(self._session).list_agent_versions(
+            workspace_id,
+            agent_profile_id,
+            page,
         )
-        statement = statement.order_by(AgentProfileVersion.version.desc())
-        return page_scalars(self._session, statement, page)
 
     def count(self, workspace_id: UUID, *, status: str | None = None) -> int:
-        statement = (
-            select(func.count())
-            .select_from(AgentProfile)
-            .where(AgentProfile.workspace_id == workspace_id)
-        )
-        if status is not None:
-            statement = statement.where(AgentProfile.status == status)
-        return int(self._session.scalar(statement) or 0)
+        return AgentProfileQueryService(self._session).count(workspace_id, status=status)
 
     def _require_profile(self, workspace_id: UUID, agent_profile_id: UUID) -> AgentProfile:
-        profile = self._profile(workspace_id, agent_profile_id)
-        if profile is None:
-            raise ValueError("Agent profile not found")
-        return profile
+        return AgentProfileQueryService(self._session).require_profile(
+            workspace_id,
+            agent_profile_id,
+        )
 
     def _profile(self, workspace_id: UUID, agent_profile_id: UUID) -> AgentProfile | None:
-        return self._session.scalar(
-            select(AgentProfile).where(
-                AgentProfile.workspace_id == workspace_id,
-                AgentProfile.id == agent_profile_id,
-            )
+        return AgentProfileQueryService(self._session).profile(
+            workspace_id,
+            agent_profile_id,
         )

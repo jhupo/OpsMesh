@@ -10,6 +10,12 @@ from backend.app.agents.models import AgentProfile
 from backend.app.audit.service import AuditService
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.tasks.operator_dependencies import (
+    completed_source_steps,
+    dependency_step_ids,
+    manager_agent_id,
+    without_blocking_keys,
+)
 
 TASK_OPERATOR_ACTIONS = {
     "requeue_blocked_steps",
@@ -19,16 +25,6 @@ TASK_OPERATOR_ACTIONS = {
 }
 TERMINAL_STEP_STATUSES = {"completed", "cancelled"}
 TERMINAL_TASK_STATUSES = {"completed", "cancelled"}
-BLOCKING_DEPENDENCY_KEYS = {
-    "blocked_at",
-    "blocked_reason",
-    "blocked_resource_key",
-    "blocked_resource_keys",
-    "blocked_by",
-    "scheduler",
-}
-
-
 class TaskOperatorActionService:
     """Apply user/operator actions that turn task diagnostics into runnable work."""
 
@@ -135,7 +131,7 @@ class TaskOperatorActionService:
                 warnings.append(f"step_not_blocked:{step.id}")
                 continue
             step.status = "queued"
-            step.dependencies = _without_blocking_keys(step.dependencies)
+            step.dependencies = without_blocking_keys(step.dependencies)
             changed_step_ids.append(step.id)
 
         return {
@@ -155,7 +151,7 @@ class TaskOperatorActionService:
     ) -> dict[str, object]:
         steps = self._task_steps(task)
         step_by_id = {step.id: step for step in steps}
-        source_steps = _source_steps(steps, task_step_ids)
+        source_steps = completed_source_steps(steps, task_step_ids)
         if task_step_ids and len(source_steps) != len(set(task_step_ids)):
             raise ValueError("Task step not found")
         if not source_steps:
@@ -168,7 +164,7 @@ class TaskOperatorActionService:
         warnings: list[str] = []
 
         for step in steps:
-            upstream_step_ids = _dependency_step_ids(step.dependencies)
+            upstream_step_ids = dependency_step_ids(step.dependencies)
             if not upstream_step_ids or not source_step_ids.intersection(upstream_step_ids):
                 continue
             missing_step_ids = [
@@ -189,7 +185,7 @@ class TaskOperatorActionService:
                 warnings.append(f"downstream_active:{step.id}")
                 continue
 
-            cleaned_dependencies = _without_blocking_keys(step.dependencies)
+            cleaned_dependencies = without_blocking_keys(step.dependencies)
             cleared_blocking = cleaned_dependencies != step.dependencies
             status_changed = step.status in {"blocked", "failed"}
             if cleared_blocking:
@@ -249,7 +245,7 @@ class TaskOperatorActionService:
         step.assigned_agent_profile_id = agent_profile_id
         if step.status in {"blocked", "failed"}:
             step.status = "queued"
-            step.dependencies = _without_blocking_keys(step.dependencies)
+            step.dependencies = without_blocking_keys(step.dependencies)
 
         return {
             "changed_step_ids": [step.id],
@@ -272,13 +268,13 @@ class TaskOperatorActionService:
         instruction: str | None,
         reason: str | None,
     ) -> dict[str, object]:
-        manager_agent_id = _manager_agent_id(task)
-        if manager_agent_id is None:
+        manager_id = manager_agent_id(task)
+        if manager_id is None:
             raise ValueError("Task manager not found")
         manager = self._session.scalar(
             select(AgentProfile).where(
                 AgentProfile.workspace_id == task.workspace_id,
-                AgentProfile.id == manager_agent_id,
+                AgentProfile.id == manager_id,
                 AgentProfile.status == "active",
             )
         )
@@ -402,63 +398,3 @@ class TaskOperatorActionService:
             task.status = "running"
         elif task.status == "failed":
             task.status = "queued"
-
-
-def _source_steps(steps: list[TaskStep], task_step_ids: list[UUID]) -> list[TaskStep]:
-    requested_ids = set(task_step_ids)
-    return [
-        step
-        for step in steps
-        if step.status == "completed" and (not requested_ids or step.id in requested_ids)
-    ]
-
-
-def _dependency_step_ids(dependencies: object) -> list[UUID]:
-    if not isinstance(dependencies, dict):
-        return []
-    raw_values = dependencies.get("after_step_ids")
-    if not isinstance(raw_values, list):
-        return []
-    step_ids: list[UUID] = []
-    seen: set[UUID] = set()
-    for raw_value in raw_values:
-        try:
-            step_id = UUID(str(raw_value))
-        except (TypeError, ValueError):
-            continue
-        if step_id in seen:
-            continue
-        step_ids.append(step_id)
-        seen.add(step_id)
-    return step_ids
-
-
-def _without_blocking_keys(dependencies: object) -> dict[str, object]:
-    if not isinstance(dependencies, dict):
-        return {}
-    return {
-        key: value
-        for key, value in dependencies.items()
-        if key not in BLOCKING_DEPENDENCY_KEYS
-    }
-
-
-def _manager_agent_id(task: Task) -> UUID | None:
-    snapshot = task.team_snapshot if isinstance(task.team_snapshot, dict) else {}
-    team = snapshot.get("team") if isinstance(snapshot.get("team"), dict) else {}
-    manager_id = team.get("manager_agent_profile_id")
-    if isinstance(manager_id, str):
-        try:
-            return UUID(manager_id)
-        except ValueError:
-            return None
-    if isinstance(manager_id, UUID):
-        return manager_id
-    plan = task.project_plan if isinstance(task.project_plan, dict) else {}
-    planner_id = plan.get("planner_agent_profile_id")
-    if isinstance(planner_id, str):
-        try:
-            return UUID(planner_id)
-        except ValueError:
-            return None
-    return planner_id if isinstance(planner_id, UUID) else None

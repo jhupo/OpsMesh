@@ -16,10 +16,10 @@ from backend.app.tasks.manager_lifecycle import (
     handoff_chain,
     overall_status,
     step_id,
-    uuid_or_none,
 )
 from backend.app.tasks.manager_queue import manager_queue_item, manager_queue_summary
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.tasks.operator_dependencies import manager_agent_id as resolve_manager_agent_id
 from backend.app.teams.models import AgentTeam
 
 
@@ -38,7 +38,7 @@ class TaskManagerDiagnosticsService:
 
         steps = self._steps(workspace_id, task_id)
         messages = self._messages(workspace_id, task_id)
-        manager_agent_id = _manager_agent_id(task)
+        manager_agent_id = resolve_manager_agent_id(task)
         agents = self._agents(workspace_id, steps, messages, manager_agent_id)
         manager_agent = agents.get(manager_agent_id) if manager_agent_id is not None else None
         manager_steps = _manager_steps(steps)
@@ -191,16 +191,6 @@ class TaskManagerDiagnosticsService:
             )
         ).all()
         return {agent.id: agent for agent in agents}
-
-
-def _manager_agent_id(task: Task) -> UUID | None:
-    snapshot = task.team_snapshot if isinstance(task.team_snapshot, dict) else {}
-    team = snapshot.get("team") if isinstance(snapshot.get("team"), dict) else {}
-    manager_id = uuid_or_none(team.get("manager_agent_profile_id"))
-    if manager_id is not None:
-        return manager_id
-    plan = task.project_plan if isinstance(task.project_plan, dict) else {}
-    return uuid_or_none(plan.get("planner_agent_profile_id"))
 
 
 def _manager_steps(steps: list[TaskStep]) -> dict[str, object]:

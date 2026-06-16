@@ -4,6 +4,9 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.api.services.workspace_export_constants import SUPPORTED_WORKSPACE_EXPORT_FORMAT
+from backend.app.workspaces.data_lifecycle_diagnostic_queries import (
+    WorkspaceDataLifecycleDiagnosticQueries,
+)
 from backend.app.workspaces.data_lifecycle_payloads import (
     _archive_integrity_payload,
     _audit_event_payload,
@@ -52,6 +55,7 @@ class WorkspaceLifecycleDiagnosticsService:
     def __init__(self, session: Session) -> None:
         self._session = session
         self._repo = WorkspaceDataLifecycleRepository(session)
+        self._diagnostic_queries = WorkspaceDataLifecycleDiagnosticQueries(session)
 
     def get_diagnostics(self, *, workspace_id: UUID) -> dict[str, object] | None:
         workspace = self._session.get(Workspace, workspace_id)
@@ -61,9 +65,9 @@ class WorkspaceLifecycleDiagnosticsService:
         generated_at = datetime.now(UTC)
         latest_job = self._repo.latest_export_job(workspace_id)
         latest_success = self._repo.latest_successful_archive_export(workspace_id)
-        file_stats = self._repo.file_stats(workspace_id)
-        artifact_stats = self._repo.artifact_stats(workspace_id)
-        access_stats = self._repo.access_stats(workspace_id)
+        file_stats = self._diagnostic_queries.file_stats(workspace_id)
+        artifact_stats = self._diagnostic_queries.artifact_stats(workspace_id)
+        access_stats = self._diagnostic_queries.access_stats(workspace_id)
         retention_policy = _retention_policy(workspace.settings)
         backup_policy = _backup_policy(
             workspace.settings,
@@ -131,13 +135,13 @@ class WorkspaceLifecycleDiagnosticsService:
         latest_restore_drill = self._repo.latest_restore_drill_event(workspace_id)
         latest_integrity = self._repo.latest_archive_integrity_event(workspace_id)
         latest_failed_job = self._repo.latest_failed_export_job(workspace_id)
-        job_stats = self._repo.export_job_stats(workspace_id)
-        current_counts = self._repo.archive_coverage_counts(workspace_id)
-        restore_test_history = self._repo.restore_test_history(
+        job_stats = self._diagnostic_queries.export_job_stats(workspace_id)
+        current_counts = self._diagnostic_queries.archive_coverage_counts(workspace_id)
+        restore_test_history = self._diagnostic_queries.restore_test_history(
             workspace_id=workspace_id,
             latest_success=latest_success,
         )
-        import_conflict_history = self._repo.import_conflict_history(workspace_id)
+        import_conflict_history = self._diagnostic_queries.import_conflict_history(workspace_id)
         retention_policy = _retention_policy(workspace.settings)
         backup_policy = _backup_policy(
             workspace.settings,

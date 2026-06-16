@@ -4,20 +4,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.admin.policy_reader import PlatformPolicyService
 from backend.app.core.config import Settings
 from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeLimits
 from backend.app.runtime_manager.manager import RuntimeManager
-from backend.app.runtime_manager.runtime_policy import (
-    RuntimePolicyResolution,
-    RuntimePolicyResolver,
-    limits_metadata,
-)
+from backend.app.runtime_manager.queries import RuntimeControlQueryService
+from backend.app.runtime_manager.runtime_policy import limits_metadata
 from backend.app.runtime_manager.safety import RuntimeSafetyPolicy
-from backend.app.runtime_spaces.service import RuntimeSpaceService
+from backend.app.runtime_manager.template_guard import RuntimeTemplateGuard
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeEvent,
@@ -73,25 +70,21 @@ class RuntimeControlService:
         network_disabled: bool,
         runtime_space_id: UUID | None = None,
     ) -> WorkspaceRuntime | None:
-        template = self._session.get(RuntimeTemplate, template_id)
+        template = self._validated_template(
+            workspace_id=workspace_id,
+            template_id=template_id,
+            limits=limits,
+            network_disabled=network_disabled,
+            runtime_space_id=runtime_space_id,
+        )
         if template is None:
             return None
-        if runtime_space_id is not None:
-            RuntimeSpaceService(self._session).require_runtime_space(
-                workspace_id,
-                runtime_space_id,
-            )
-        policy = self._resolve_runtime_policy(
+        policy = RuntimeTemplateGuard(self._session, self._safety).resolve_runtime_policy(
             workspace_id=workspace_id,
             runtime_space_id=runtime_space_id,
             template=template,
             requested_limits=limits,
             requested_network_disabled=network_disabled,
-        )
-        self._safety.assert_template_allowed(template)
-        self._safety.assert_network_allowed(
-            template,
-            network_disabled=policy.network_disabled,
         )
         return self._manager.create_runtime(
             workspace_id=workspace_id,
@@ -123,7 +116,7 @@ class RuntimeControlService:
         )
         if template is None:
             return None
-        policy = self._resolve_runtime_policy(
+        policy = RuntimeTemplateGuard(self._session, self._safety).resolve_runtime_policy(
             workspace_id=workspace_id,
             runtime_space_id=runtime_space_id,
             template=template,
@@ -196,7 +189,7 @@ class RuntimeControlService:
         runtime = self.get_runtime(workspace_id, runtime_id)
         if runtime is None:
             return None
-        policy = self._resolve_runtime_policy(
+        policy = RuntimeTemplateGuard(self._session, self._safety).resolve_runtime_policy(
             workspace_id=workspace_id,
             runtime_space_id=runtime_space_id,
             template=template,
@@ -235,37 +228,15 @@ class RuntimeControlService:
         offset: int,
         status: str | None = None,
     ) -> tuple[list[WorkspaceRuntime], int]:
-        query: Select[tuple[WorkspaceRuntime]] = select(WorkspaceRuntime).where(
-            WorkspaceRuntime.workspace_id == workspace_id,
-            WorkspaceRuntime.status != "deleted",
+        return RuntimeControlQueryService(self._session).list_runtimes(
+            workspace_id,
+            limit=limit,
+            offset=offset,
+            status=status,
         )
-        count_query = (
-            select(func.count())
-            .select_from(WorkspaceRuntime)
-            .where(
-                WorkspaceRuntime.workspace_id == workspace_id,
-                WorkspaceRuntime.status != "deleted",
-            )
-        )
-        if status is not None:
-            query = query.where(WorkspaceRuntime.status == status)
-            count_query = count_query.where(WorkspaceRuntime.status == status)
-        total = int(self._session.scalar(count_query) or 0)
-        items = list(
-            self._session.scalars(
-                query.order_by(WorkspaceRuntime.created_at.desc()).limit(limit).offset(offset)
-            )
-        )
-        return items, total
 
     def get_runtime(self, workspace_id: UUID, runtime_id: UUID) -> WorkspaceRuntime | None:
-        return self._session.scalar(
-            select(WorkspaceRuntime).where(
-                WorkspaceRuntime.id == runtime_id,
-                WorkspaceRuntime.workspace_id == workspace_id,
-                WorkspaceRuntime.status != "deleted",
-            )
-        )
+        return RuntimeControlQueryService(self._session).get_runtime(workspace_id, runtime_id)
 
     def start_runtime(self, workspace_id: UUID, runtime_id: UUID) -> WorkspaceRuntime | None:
         runtime = self.get_runtime(workspace_id, runtime_id)
@@ -347,12 +318,10 @@ class RuntimeControlService:
         runtime = self.get_runtime(workspace_id, runtime_id)
         if runtime is None:
             return None
-        record = self._session.scalar(
-            select(RuntimeCommand).where(
-                RuntimeCommand.workspace_id == workspace_id,
-                RuntimeCommand.workspace_runtime_id == runtime_id,
-                RuntimeCommand.id == command_id,
-            )
+        record = RuntimeControlQueryService(self._session).get_command(
+            workspace_id=workspace_id,
+            runtime_id=runtime_id,
+            command_id=command_id,
         )
         if record is None:
             return None
@@ -374,27 +343,13 @@ class RuntimeControlService:
         network_disabled: bool,
         runtime_space_id: UUID | None,
     ) -> RuntimeTemplate | None:
-        template = self._session.get(RuntimeTemplate, template_id)
-        if template is None:
-            return None
-        if runtime_space_id is not None:
-            RuntimeSpaceService(self._session).require_runtime_space(
-                workspace_id,
-                runtime_space_id,
-            )
-        policy = self._resolve_runtime_policy(
+        return RuntimeTemplateGuard(self._session, self._safety).validated_template(
             workspace_id=workspace_id,
+            template_id=template_id,
+            limits=limits,
+            network_disabled=network_disabled,
             runtime_space_id=runtime_space_id,
-            template=template,
-            requested_limits=limits,
-            requested_network_disabled=network_disabled,
         )
-        self._safety.assert_template_allowed(template)
-        self._safety.assert_network_allowed(
-            template,
-            network_disabled=policy.network_disabled,
-        )
-        return template
 
     def list_commands(
         self,
@@ -406,28 +361,12 @@ class RuntimeControlService:
     ) -> tuple[list[RuntimeCommand], int] | None:
         if self.get_runtime(workspace_id, runtime_id) is None:
             return None
-        count_query = (
-            select(func.count())
-            .select_from(RuntimeCommand)
-            .where(
-                RuntimeCommand.workspace_id == workspace_id,
-                RuntimeCommand.workspace_runtime_id == runtime_id,
-            )
+        return RuntimeControlQueryService(self._session).list_commands(
+            workspace_id,
+            runtime_id,
+            limit=limit,
+            offset=offset,
         )
-        total = int(self._session.scalar(count_query) or 0)
-        items = list(
-            self._session.scalars(
-                select(RuntimeCommand)
-                .where(
-                    RuntimeCommand.workspace_id == workspace_id,
-                    RuntimeCommand.workspace_runtime_id == runtime_id,
-                )
-                .order_by(RuntimeCommand.started_at.desc().nullslast(), RuntimeCommand.id)
-                .limit(limit)
-                .offset(offset)
-            )
-        )
-        return items, total
 
     def list_events(
         self,
@@ -439,42 +378,9 @@ class RuntimeControlService:
     ) -> tuple[list[RuntimeEvent], int] | None:
         if self.get_runtime(workspace_id, runtime_id) is None:
             return None
-        count_query = (
-            select(func.count())
-            .select_from(RuntimeEvent)
-            .where(
-                RuntimeEvent.workspace_id == workspace_id,
-                RuntimeEvent.workspace_runtime_id == runtime_id,
-            )
-        )
-        total = int(self._session.scalar(count_query) or 0)
-        items = list(
-            self._session.scalars(
-                select(RuntimeEvent)
-                .where(
-                    RuntimeEvent.workspace_id == workspace_id,
-                    RuntimeEvent.workspace_runtime_id == runtime_id,
-                )
-                .order_by(RuntimeEvent.created_at.desc(), RuntimeEvent.id)
-                .limit(limit)
-                .offset(offset)
-            )
-        )
-        return items, total
-
-    def _resolve_runtime_policy(
-        self,
-        *,
-        workspace_id: UUID,
-        runtime_space_id: UUID | None,
-        template: RuntimeTemplate,
-        requested_limits: RuntimeLimits | None,
-        requested_network_disabled: bool,
-    ) -> RuntimePolicyResolution:
-        return RuntimePolicyResolver(self._session).resolve_runtime_policy(
-            workspace_id=workspace_id,
-            runtime_space_id=runtime_space_id,
-            template=template,
-            requested_limits=requested_limits,
-            requested_network_disabled=requested_network_disabled,
+        return RuntimeControlQueryService(self._session).list_events(
+            workspace_id,
+            runtime_id,
+            limit=limit,
+            offset=offset,
         )

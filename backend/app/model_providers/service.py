@@ -2,18 +2,15 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
 from backend.app.audit.models import AuditEvent
-from backend.app.audit.service import AuditService
 from backend.app.db.pagination import page_scalars
-from backend.app.model_providers.audit_payloads import (
-    base_url_host,
-    budget_metadata_with_model_api,
-    model_api_audit_payload,
-)
+from backend.app.model_providers.audit_payloads import budget_metadata_with_model_api
+from backend.app.model_providers.audit_writer import ModelProviderAuditWriter
+from backend.app.model_providers.defaults import ModelProviderDefaultService
 from backend.app.model_providers.health import (
     ModelProviderHealthCheckResult,
     ModelProviderHealthTarget,
@@ -22,8 +19,6 @@ from backend.app.model_providers.health import (
 )
 from backend.app.model_providers.health_state import (
     apply_health_check_result,
-    provider_credential_audit_metadata,
-    provider_health_audit_metadata,
     record_provider_failure,
     record_provider_success,
 )
@@ -92,7 +87,7 @@ class ModelProviderCredentialService:
         )
         encrypted = self._secret_service.encrypt_payload({"api_key": api_key})
         if is_default:
-            self._unset_other_defaults(workspace_id)
+            ModelProviderDefaultService(self._session).unset_other_defaults(workspace_id)
         credential = ModelProviderCredential(
             workspace_id=workspace_id,
             created_by_user_id=created_by_user_id,
@@ -114,22 +109,10 @@ class ModelProviderCredentialService:
         )
         self._session.add(credential)
         self._session.flush()
-        AuditService(self._session).record_user_action(
+        ModelProviderAuditWriter(self._session).credential_created(
             workspace_id=workspace_id,
             user_id=created_by_user_id,
-            action="model_provider_credential.created",
-            target_type="model_provider_credential",
-            target_id=credential.id,
-            metadata={
-                "name": credential.name,
-                "provider": credential.provider,
-                "base_url_configured": bool(credential.base_url),
-                "base_url_host": base_url_host(credential.base_url),
-                "default_model": credential.default_model,
-                **model_api_audit_payload(credential),
-                "is_default": credential.is_default,
-                "budget_configured": bool(credential.budget_metadata),
-            },
+            credential=credential,
         )
         self._session.commit()
         self._session.refresh(credential)
@@ -225,7 +208,10 @@ class ModelProviderCredentialService:
             credential.provider = next_provider
         if is_default is not None:
             if is_default:
-                self._unset_other_defaults(workspace_id, credential.id)
+                ModelProviderDefaultService(self._session).unset_other_defaults(
+                    workspace_id,
+                    credential.id,
+                )
             credential.is_default = is_default
         if budget_metadata is not None or model_api_provided:
             credential.budget_metadata = budget_metadata_with_model_api(
@@ -234,7 +220,7 @@ class ModelProviderCredentialService:
                 model_api_provided=model_api_provided,
                 provider=next_provider,
             )
-        self._audit(
+        ModelProviderAuditWriter(self._session).credential_changed(
             workspace_id=workspace_id,
             user_id=actor_user_id,
             credential=credential,
@@ -257,7 +243,7 @@ class ModelProviderCredentialService:
         credential.encrypted_api_key = encrypted.ciphertext
         credential.api_key_fingerprint = encrypted.fingerprint
         credential.encryption_key_id = encrypted.key_id
-        self._audit(
+        ModelProviderAuditWriter(self._session).credential_changed(
             workspace_id=workspace_id,
             user_id=actor_user_id,
             credential=credential,
@@ -275,9 +261,12 @@ class ModelProviderCredentialService:
         actor_user_id: UUID,
     ) -> ModelProviderCredential:
         credential = self._require(workspace_id=workspace_id, credential_id=credential_id)
-        self._unset_other_defaults(workspace_id, credential.id)
+        ModelProviderDefaultService(self._session).unset_other_defaults(
+            workspace_id,
+            credential.id,
+        )
         credential.is_default = True
-        self._audit(
+        ModelProviderAuditWriter(self._session).credential_changed(
             workspace_id=workspace_id,
             user_id=actor_user_id,
             credential=credential,
@@ -297,7 +286,7 @@ class ModelProviderCredentialService:
         credential = self._require(workspace_id=workspace_id, credential_id=credential_id)
         credential.status = "disabled"
         credential.is_default = False
-        self._audit(
+        ModelProviderAuditWriter(self._session).credential_changed(
             workspace_id=workspace_id,
             user_id=actor_user_id,
             credential=credential,
@@ -371,13 +360,11 @@ class ModelProviderCredentialService:
             timeout_seconds=timeout_seconds,
         )
         apply_health_check_result(credential, result)
-        AuditService(self._session).record_user_action(
+        ModelProviderAuditWriter(self._session).health_checked(
             workspace_id=workspace_id,
             user_id=actor_user_id,
-            action="model_provider_credential.health_checked",
-            target_type="model_provider_credential",
-            target_id=credential.id,
-            metadata=provider_health_audit_metadata(credential, result),
+            credential=credential,
+            result=result,
         )
         self._session.commit()
         self._session.refresh(credential)
@@ -417,46 +404,4 @@ class ModelProviderCredentialService:
         if credential is None:
             raise ValueError("Model provider credential not found")
         return credential
-
-    def _audit(
-        self,
-        *,
-        workspace_id: UUID,
-        user_id: UUID,
-        credential: ModelProviderCredential,
-        action: str,
-    ) -> None:
-        AuditService(self._session).record_user_action(
-            workspace_id=workspace_id,
-            user_id=user_id,
-            action=action,
-            target_type="model_provider_credential",
-            target_id=credential.id,
-            metadata=provider_credential_audit_metadata(credential),
-        )
-
-    def _unset_other_defaults(self, workspace_id: UUID, credential_id: UUID | None = None) -> None:
-        statement = update(ModelProviderCredential).where(
-            ModelProviderCredential.workspace_id == workspace_id
-        )
-        if credential_id is not None:
-            statement = statement.where(ModelProviderCredential.id != credential_id)
-        self._session.execute(
-            statement.values(is_default=False)
-        )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

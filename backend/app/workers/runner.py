@@ -22,9 +22,9 @@ from backend.app.core.trace_context import (
 )
 from backend.app.operations.worker_capacity_snapshot import WorkerCapacitySnapshotService
 from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsService
-from backend.app.workers.capacity import merge_counts, worker_can_run_job
+from backend.app.workers.capacity import worker_can_run_job
 from backend.app.workers.handlers import WorkerJobHandler
-from backend.app.workers.heartbeat import worker_heartbeat_details, worker_status_for_failures
+from backend.app.workers.heartbeat import worker_status_for_failures
 from backend.app.workers.jobs import JobPayload
 from backend.app.workers.lease_reporting import WorkerLeaseReporter
 from backend.app.workers.maintenance import (
@@ -33,6 +33,7 @@ from backend.app.workers.maintenance import (
     WorkerMaintenanceSummary,
 )
 from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.run_state import WorkerRunState
 from backend.app.workers.runner_models import WorkerRunnerConfig, WorkerRunSummary
 
 logger = logging.getLogger(__name__)
@@ -143,33 +144,7 @@ class WorkerRunner:
         max_jobs: int | None = None,
         stop_event: Event | None = None,
     ) -> WorkerRunSummary:
-        processed = 0
-        failed = 0
-        idle_polls = 0
-        recovered_runs = 0
-        expired_leases = 0
-        stale_runtimes = 0
-        deleted_runtime_records = 0
-        lifecycle_backup_jobs_enqueued = 0
-        lifecycle_backup_jobs_skipped = 0
-        lifecycle_retention_runs_applied = 0
-        lifecycle_retention_runs_skipped = 0
-        lifecycle_restore_drills_completed = 0
-        lifecycle_restore_drills_skipped = 0
-        team_execution_loop_jobs_enqueued = 0
-        team_execution_loop_jobs_skipped = 0
-        team_execution_loop_skip_reasons: dict[str, int] = {}
-        task_events_published = 0
-        task_event_publish_failures = 0
-        webhook_delivery_jobs_enqueued = 0
-        webhook_delivery_jobs_skipped = 0
-        scheduled_job_actions_enqueued = 0
-        scheduled_job_actions_recorded = 0
-        scheduled_job_actions_skipped = 0
-        scheduled_job_actions_enqueued_by_job_type: dict[str, int] = {}
-        scheduled_job_actions_recorded_by_job_type: dict[str, int] = {}
-        scheduled_job_actions_skipped_by_job_type: dict[str, int] = {}
-        last_error: str | None = None
+        state = WorkerRunState()
         next_heartbeat_at = 0.0
         next_maintenance_at = 0.0
 
@@ -177,210 +152,43 @@ class WorkerRunner:
             now = self._monotonic()
             if now >= next_heartbeat_at:
                 self.record_heartbeat(
-                    worker_status_for_failures(failed),
-                    worker_heartbeat_details(
-                        config=self._config,
-                        processed=processed,
-                        failed=failed,
-                        idle_polls=idle_polls,
-                        recovered_runs=recovered_runs,
-                        expired_leases=expired_leases,
-                        stale_runtimes=stale_runtimes,
-                        deleted_runtime_records=deleted_runtime_records,
-                        lifecycle_backup_jobs_enqueued=lifecycle_backup_jobs_enqueued,
-                        lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
-                        lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
-                        lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
-                        lifecycle_restore_drills_completed=(lifecycle_restore_drills_completed),
-                        lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
-                        team_execution_loop_jobs_enqueued=(team_execution_loop_jobs_enqueued),
-                        team_execution_loop_jobs_skipped=team_execution_loop_jobs_skipped,
-                        team_execution_loop_skip_reasons=team_execution_loop_skip_reasons,
-                        task_events_published=task_events_published,
-                        task_event_publish_failures=task_event_publish_failures,
-                        webhook_delivery_jobs_enqueued=webhook_delivery_jobs_enqueued,
-                        webhook_delivery_jobs_skipped=webhook_delivery_jobs_skipped,
-                        scheduled_job_actions_enqueued=scheduled_job_actions_enqueued,
-                        scheduled_job_actions_recorded=scheduled_job_actions_recorded,
-                        scheduled_job_actions_skipped=scheduled_job_actions_skipped,
-                        scheduled_job_actions_enqueued_by_job_type=(
-                            scheduled_job_actions_enqueued_by_job_type
-                        ),
-                        scheduled_job_actions_recorded_by_job_type=(
-                            scheduled_job_actions_recorded_by_job_type
-                        ),
-                        scheduled_job_actions_skipped_by_job_type=(
-                            scheduled_job_actions_skipped_by_job_type
-                        ),
-                        last_error=last_error,
-                    ),
+                    worker_status_for_failures(state.failed),
+                    state.heartbeat_details(self._config),
                 )
                 next_heartbeat_at = now + self._config.heartbeat_interval_seconds
             if now >= next_maintenance_at:
-                maintenance = self.run_maintenance()
-                recovered_runs += maintenance.recovered_runs
-                expired_leases += maintenance.expired_leases
-                stale_runtimes += maintenance.stale_runtimes
-                deleted_runtime_records += maintenance.deleted_runtime_records
-                lifecycle_backup_jobs_enqueued += maintenance.lifecycle_backup_jobs_enqueued
-                lifecycle_backup_jobs_skipped += maintenance.lifecycle_backup_jobs_skipped
-                lifecycle_retention_runs_applied += maintenance.lifecycle_retention_runs_applied
-                lifecycle_retention_runs_skipped += maintenance.lifecycle_retention_runs_skipped
-                lifecycle_restore_drills_completed += maintenance.lifecycle_restore_drills_completed
-                lifecycle_restore_drills_skipped += maintenance.lifecycle_restore_drills_skipped
-                team_execution_loop_jobs_enqueued += maintenance.team_execution_loop_jobs_enqueued
-                team_execution_loop_jobs_skipped += maintenance.team_execution_loop_jobs_skipped
-                merge_counts(
-                    team_execution_loop_skip_reasons,
-                    maintenance.team_execution_loop_skip_reasons,
-                )
-                task_events_published += maintenance.task_events_published
-                task_event_publish_failures += maintenance.task_event_publish_failures
-                webhook_delivery_jobs_enqueued += maintenance.webhook_delivery_jobs_enqueued
-                webhook_delivery_jobs_skipped += maintenance.webhook_delivery_jobs_skipped
-                scheduled_job_actions_enqueued += maintenance.scheduled_job_actions_enqueued
-                scheduled_job_actions_recorded += maintenance.scheduled_job_actions_recorded
-                scheduled_job_actions_skipped += maintenance.scheduled_job_actions_skipped
-                merge_counts(
-                    scheduled_job_actions_enqueued_by_job_type,
-                    maintenance.scheduled_job_actions_enqueued_by_job_type,
-                )
-                merge_counts(
-                    scheduled_job_actions_recorded_by_job_type,
-                    maintenance.scheduled_job_actions_recorded_by_job_type,
-                )
-                merge_counts(
-                    scheduled_job_actions_skipped_by_job_type,
-                    maintenance.scheduled_job_actions_skipped_by_job_type,
-                )
+                state.record_maintenance(self.run_maintenance())
                 next_maintenance_at = now + self._config.maintenance_interval_seconds
 
             try:
                 handled = self.run_once()
             except Exception as exc:
-                failed += 1
-                last_error = str(exc)
+                state.failed += 1
+                state.last_error = str(exc)
                 logger.exception("Worker job failed")
                 self.record_heartbeat(
                     "degraded",
-                    worker_heartbeat_details(
-                        config=self._config,
-                        processed=processed,
-                        failed=failed,
-                        idle_polls=idle_polls,
-                        recovered_runs=recovered_runs,
-                        expired_leases=expired_leases,
-                        stale_runtimes=stale_runtimes,
-                        deleted_runtime_records=deleted_runtime_records,
-                        lifecycle_backup_jobs_enqueued=lifecycle_backup_jobs_enqueued,
-                        lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
-                        lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
-                        lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
-                        lifecycle_restore_drills_completed=(lifecycle_restore_drills_completed),
-                        lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
-                        team_execution_loop_jobs_enqueued=(team_execution_loop_jobs_enqueued),
-                        team_execution_loop_jobs_skipped=team_execution_loop_jobs_skipped,
-                        team_execution_loop_skip_reasons=team_execution_loop_skip_reasons,
-                        task_events_published=task_events_published,
-                        task_event_publish_failures=task_event_publish_failures,
-                        webhook_delivery_jobs_enqueued=webhook_delivery_jobs_enqueued,
-                        webhook_delivery_jobs_skipped=webhook_delivery_jobs_skipped,
-                        scheduled_job_actions_enqueued=scheduled_job_actions_enqueued,
-                        scheduled_job_actions_recorded=scheduled_job_actions_recorded,
-                        scheduled_job_actions_skipped=scheduled_job_actions_skipped,
-                        scheduled_job_actions_enqueued_by_job_type=(
-                            scheduled_job_actions_enqueued_by_job_type
-                        ),
-                        scheduled_job_actions_recorded_by_job_type=(
-                            scheduled_job_actions_recorded_by_job_type
-                        ),
-                        scheduled_job_actions_skipped_by_job_type=(
-                            scheduled_job_actions_skipped_by_job_type
-                        ),
-                        last_error=last_error,
-                    ),
+                    state.heartbeat_details(self._config),
                 )
-                if max_jobs is not None and processed + failed >= max_jobs:
+                if max_jobs is not None and state.attempts >= max_jobs:
                     break
                 continue
             if handled:
-                processed += 1
-                if max_jobs is not None and processed + failed >= max_jobs:
+                state.processed += 1
+                if max_jobs is not None and state.attempts >= max_jobs:
                     break
                 continue
 
-            idle_polls += 1
+            state.idle_polls += 1
             self._sleep(self._config.idle_sleep_seconds)
 
-        status = "stopping" if self._is_stopped(stop_event) else worker_status_for_failures(failed)
+        stopped = self._is_stopped(stop_event)
+        status = "stopping" if stopped else worker_status_for_failures(state.failed)
         self.record_heartbeat(
             status,
-            worker_heartbeat_details(
-                config=self._config,
-                processed=processed,
-                failed=failed,
-                idle_polls=idle_polls,
-                recovered_runs=recovered_runs,
-                expired_leases=expired_leases,
-                stale_runtimes=stale_runtimes,
-                deleted_runtime_records=deleted_runtime_records,
-                lifecycle_backup_jobs_enqueued=lifecycle_backup_jobs_enqueued,
-                lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
-                lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
-                lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
-                lifecycle_restore_drills_completed=lifecycle_restore_drills_completed,
-                lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
-                team_execution_loop_jobs_enqueued=team_execution_loop_jobs_enqueued,
-                team_execution_loop_jobs_skipped=team_execution_loop_jobs_skipped,
-                team_execution_loop_skip_reasons=team_execution_loop_skip_reasons,
-                task_events_published=task_events_published,
-                task_event_publish_failures=task_event_publish_failures,
-                webhook_delivery_jobs_enqueued=webhook_delivery_jobs_enqueued,
-                webhook_delivery_jobs_skipped=webhook_delivery_jobs_skipped,
-                scheduled_job_actions_enqueued=scheduled_job_actions_enqueued,
-                scheduled_job_actions_recorded=scheduled_job_actions_recorded,
-                scheduled_job_actions_skipped=scheduled_job_actions_skipped,
-                scheduled_job_actions_enqueued_by_job_type=(
-                    scheduled_job_actions_enqueued_by_job_type
-                ),
-                scheduled_job_actions_recorded_by_job_type=(
-                    scheduled_job_actions_recorded_by_job_type
-                ),
-                scheduled_job_actions_skipped_by_job_type=(
-                    scheduled_job_actions_skipped_by_job_type
-                ),
-                last_error=last_error,
-            ),
+            state.heartbeat_details(self._config),
         )
-        return WorkerRunSummary(
-            processed=processed,
-            failed=failed,
-            idle_polls=idle_polls,
-            recovered_runs=recovered_runs,
-            expired_leases=expired_leases,
-            stale_runtimes=stale_runtimes,
-            deleted_runtime_records=deleted_runtime_records,
-            lifecycle_backup_jobs_enqueued=lifecycle_backup_jobs_enqueued,
-            lifecycle_backup_jobs_skipped=lifecycle_backup_jobs_skipped,
-            lifecycle_retention_runs_applied=lifecycle_retention_runs_applied,
-            lifecycle_retention_runs_skipped=lifecycle_retention_runs_skipped,
-            lifecycle_restore_drills_completed=lifecycle_restore_drills_completed,
-            lifecycle_restore_drills_skipped=lifecycle_restore_drills_skipped,
-            team_execution_loop_jobs_enqueued=team_execution_loop_jobs_enqueued,
-            team_execution_loop_jobs_skipped=team_execution_loop_jobs_skipped,
-            team_execution_loop_skip_reasons=team_execution_loop_skip_reasons,
-            task_events_published=task_events_published,
-            task_event_publish_failures=task_event_publish_failures,
-            webhook_delivery_jobs_enqueued=webhook_delivery_jobs_enqueued,
-            webhook_delivery_jobs_skipped=webhook_delivery_jobs_skipped,
-            scheduled_job_actions_enqueued=scheduled_job_actions_enqueued,
-            scheduled_job_actions_recorded=scheduled_job_actions_recorded,
-            scheduled_job_actions_skipped=scheduled_job_actions_skipped,
-            scheduled_job_actions_enqueued_by_job_type=(scheduled_job_actions_enqueued_by_job_type),
-            scheduled_job_actions_recorded_by_job_type=(scheduled_job_actions_recorded_by_job_type),
-            scheduled_job_actions_skipped_by_job_type=(scheduled_job_actions_skipped_by_job_type),
-            stopped=self._is_stopped(stop_event),
-        )
+        return state.summary(stopped=stopped)
 
     def record_heartbeat(self, status: str, details: dict[str, object]) -> None:
         details = self._heartbeat_trace_details(details)
