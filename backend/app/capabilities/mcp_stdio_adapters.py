@@ -16,7 +16,7 @@ from backend.app.capabilities.mcp_execution_types import (
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import WorkspaceRuntime
-from backend.app.self_hosted.service import SelfHostedRuntimeService
+from backend.app.self_hosted.mcp_jobs import SelfHostedMcpJobService
 
 
 class DockerRuntimeStdioMcpToolAdapter:
@@ -57,7 +57,7 @@ class SelfHostedStdioMcpToolAdapter:
     def __init__(
         self,
         *,
-        service: SelfHostedRuntimeService,
+        service: SelfHostedMcpJobService,
         runtime: WorkspaceRuntime,
         agent_run_id: UUID,
     ) -> None:

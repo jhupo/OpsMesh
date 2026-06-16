@@ -2,7 +2,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from backend.app.api.routes.self_hosted.dependencies import self_hosted_service
+from backend.app.api.routes.self_hosted.dependencies import (
+    self_hosted_dispatch_service,
+    self_hosted_progress_service,
+    self_hosted_run_completion_service,
+)
 from backend.app.api.schemas.runs import RunEventResponse
 from backend.app.api.schemas.self_hosted import (
     JobClaimResponse,
@@ -12,7 +16,9 @@ from backend.app.api.schemas.self_hosted import (
     SelfHostedJobResponse,
 )
 from backend.app.self_hosted.dependencies import get_authenticated_worker
-from backend.app.self_hosted.service import SelfHostedRuntimeService
+from backend.app.self_hosted.dispatch import SelfHostedDispatchService
+from backend.app.self_hosted.job_completion import SelfHostedRunCompletionService
+from backend.app.self_hosted.progress import SelfHostedProgressService
 from backend.app.self_hosted.types import AuthenticatedWorker
 
 router = APIRouter()
@@ -21,7 +27,7 @@ router = APIRouter()
 @router.get("/self-hosted/jobs/next", response_model=SelfHostedJobResponse | None)
 async def poll_job(
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
-    service: SelfHostedRuntimeService = Depends(self_hosted_service),
+    service: SelfHostedDispatchService = Depends(self_hosted_dispatch_service),
 ) -> SelfHostedJobResponse | None:
     try:
         run = service.poll_job(auth)
@@ -42,7 +48,7 @@ async def poll_job(
 async def claim_job(
     agent_run_id: UUID,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
-    service: SelfHostedRuntimeService = Depends(self_hosted_service),
+    service: SelfHostedDispatchService = Depends(self_hosted_dispatch_service),
 ) -> JobClaimResponse:
     try:
         claim = service.claim_job(auth, agent_run_id)
@@ -66,7 +72,7 @@ async def complete_job(
     agent_run_id: UUID,
     request: JobCompleteRequest,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
-    service: SelfHostedRuntimeService = Depends(self_hosted_service),
+    service: SelfHostedRunCompletionService = Depends(self_hosted_run_completion_service),
 ) -> JobCompleteResponse:
     try:
         claim = service.complete_job(auth, agent_run_id, request)
@@ -89,7 +95,7 @@ async def complete_job(
 async def upload_progress(
     request: ProgressEventRequest,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
-    service: SelfHostedRuntimeService = Depends(self_hosted_service),
+    service: SelfHostedProgressService = Depends(self_hosted_progress_service),
 ) -> RunEventResponse:
     try:
         event = service.upload_progress(auth, request)

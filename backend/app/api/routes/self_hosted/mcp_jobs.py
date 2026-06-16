@@ -2,7 +2,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from backend.app.api.routes.self_hosted.dependencies import self_hosted_service
+from backend.app.api.routes.self_hosted.dependencies import (
+    self_hosted_dispatch_service,
+    self_hosted_mcp_job_service,
+)
 from backend.app.api.schemas.self_hosted import (
     McpJobClaimResponse,
     McpJobCompleteRequest,
@@ -10,7 +13,8 @@ from backend.app.api.schemas.self_hosted import (
     SelfHostedMcpJobResponse,
 )
 from backend.app.self_hosted.dependencies import get_authenticated_worker
-from backend.app.self_hosted.service import SelfHostedRuntimeService
+from backend.app.self_hosted.dispatch import SelfHostedDispatchService
+from backend.app.self_hosted.mcp_jobs import SelfHostedMcpJobService
 from backend.app.self_hosted.types import AuthenticatedWorker
 
 router = APIRouter()
@@ -19,7 +23,7 @@ router = APIRouter()
 @router.get("/self-hosted/mcp-jobs/next", response_model=SelfHostedMcpJobResponse | None)
 async def poll_mcp_job(
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
-    service: SelfHostedRuntimeService = Depends(self_hosted_service),
+    service: SelfHostedDispatchService = Depends(self_hosted_dispatch_service),
 ) -> SelfHostedMcpJobResponse | None:
     try:
         job = service.poll_mcp_job(auth)
@@ -41,7 +45,7 @@ async def poll_mcp_job(
 async def claim_mcp_job(
     mcp_job_id: UUID,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
-    service: SelfHostedRuntimeService = Depends(self_hosted_service),
+    service: SelfHostedDispatchService = Depends(self_hosted_dispatch_service),
 ) -> McpJobClaimResponse:
     try:
         job = service.claim_mcp_job(auth, mcp_job_id)
@@ -63,7 +67,7 @@ async def complete_mcp_job(
     mcp_job_id: UUID,
     request: McpJobCompleteRequest,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
-    service: SelfHostedRuntimeService = Depends(self_hosted_service),
+    service: SelfHostedMcpJobService = Depends(self_hosted_mcp_job_service),
 ) -> McpJobCompleteResponse:
     try:
         job = service.complete_mcp_job(auth, mcp_job_id, request)

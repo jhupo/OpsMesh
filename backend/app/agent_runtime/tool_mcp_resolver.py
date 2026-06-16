@@ -12,12 +12,12 @@ from backend.app.capabilities.mcp_stdio_adapters import (
     SelfHostedStdioMcpToolAdapter,
 )
 from backend.app.capabilities.models import McpServer
-from backend.app.core.config import Settings, get_settings
+from backend.app.core.config import Settings
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import WorkspaceRuntime
-from backend.app.self_hosted.service import SelfHostedRuntimeService
+from backend.app.self_hosted.mcp_jobs import SelfHostedMcpJobService
 
 
 class ContextualMcpAdapterResolver:
@@ -42,7 +42,7 @@ class ContextualMcpAdapterResolver:
             return self._default_adapter_for(server)
         if run is not None and runtime is not None and runtime.runtime_provider == "self_hosted":
             return SelfHostedStdioMcpToolAdapter(
-                service=SelfHostedRuntimeService(self._session, self._settings or get_settings()),
+                service=SelfHostedMcpJobService(self._session),
                 runtime=runtime,
                 agent_run_id=run.id,
             )
