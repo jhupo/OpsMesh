@@ -15,11 +15,12 @@ from backend.app.marketplace.listing_payloads import (
 )
 from backend.app.marketplace.models import TalentListing
 from backend.app.marketplace.talent_repository import TalentMarketplaceRepository
+from backend.app.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.reviews.constants import (
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_AGENT_PROFILE,
 )
-from backend.app.reviews.service import ResourceReviewService
+from backend.app.reviews.service import ResourcePolicyReviewBuilder
 
 
 class TalentPublishService:
@@ -38,7 +39,7 @@ class TalentPublishService:
         agent = self._repository.require_agent(workspace_id, data.agent_profile_id)
         metadata = dict(data.metadata)
         metadata[AGENT_SNAPSHOT_METADATA_KEY] = asdict(agent_marketplace_snapshot(agent))
-        review = ResourceReviewService(self._session, self._settings).review_agent_profile(
+        review = ResourcePolicyReviewBuilder(self._session, self._settings).review_agent_profile(
             workspace_id=workspace_id,
             visibility="public",
             name=agent.name,
@@ -69,7 +70,7 @@ class TalentPublishService:
         self._session.add(listing)
         flush_or_raise_conflict(self._session, "Agent is already published at this version")
         if review.required:
-            ResourceReviewService(self._session, self._settings).request_resource_review(
+            ResourceReviewApprovalService(self._session).request_resource_review(
                 workspace_id=workspace_id,
                 actor_user_id=owner_user_id,
                 approval_type=REVIEW_TYPE_AGENT_PROFILE,

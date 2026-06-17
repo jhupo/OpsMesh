@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.payloads import AGENT_PROFILE_REVIEW_FIELDS, profile_snapshot
 from backend.app.core.config import Settings
+from backend.app.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.reviews.constants import REVIEW_TYPE_AGENT_PROFILE
 from backend.app.reviews.models import ResourceReview
-from backend.app.reviews.service import ResourceReviewService
+from backend.app.reviews.service import ResourcePolicyReviewBuilder
 
 
 class AgentProfileReviewService:
@@ -60,7 +61,7 @@ class AgentProfileReviewService:
         profile: AgentProfile,
         review: ResourceReview,
     ) -> None:
-        self._resource_reviews().request_resource_review(
+        ResourceReviewApprovalService(self._session).request_resource_review(
             workspace_id=workspace_id,
             actor_user_id=actor_user_id,
             approval_type=REVIEW_TYPE_AGENT_PROFILE,
@@ -71,5 +72,5 @@ class AgentProfileReviewService:
             snapshot=profile_snapshot(profile),
         )
 
-    def _resource_reviews(self) -> ResourceReviewService:
-        return ResourceReviewService(self._session, self._settings)
+    def _resource_reviews(self) -> ResourcePolicyReviewBuilder:
+        return ResourcePolicyReviewBuilder(self._session, self._settings)

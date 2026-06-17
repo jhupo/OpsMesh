@@ -13,12 +13,13 @@ from backend.app.capabilities.models import McpCredentialReference
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.db.pagination import page_scalars
+from backend.app.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_MCP_CREDENTIAL_REFERENCE,
 )
-from backend.app.reviews.service import ResourceReviewService
+from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.secrets.service import SecretEncryptionService
 
 
@@ -42,7 +43,7 @@ class McpCredentialService:
         server = None
         if data.mcp_server_id is not None:
             server = require_mcp_server(self._session, workspace_id, data.mcp_server_id)
-        review = ResourceReviewService(
+        review = ResourcePolicyReviewBuilder(
             self._session,
             self._settings,
         ).review_mcp_credential_reference(
@@ -72,7 +73,7 @@ class McpCredentialService:
         self._session.add(credential)
         flush_or_raise_conflict(self._session, "MCP credential name already exists")
         if review.required:
-            ResourceReviewService(self._session, self._settings).request_resource_review(
+            ResourceReviewApprovalService(self._session).request_resource_review(
                 workspace_id=workspace_id,
                 actor_user_id=actor_user_id,
                 approval_type=REVIEW_TYPE_MCP_CREDENTIAL_REFERENCE,

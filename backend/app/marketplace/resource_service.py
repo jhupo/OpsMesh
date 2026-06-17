@@ -31,8 +31,9 @@ from backend.app.marketplace.listing_payloads import (
     mcp_tool_requests_from_listing,
 )
 from backend.app.marketplace.models import MarketplaceListing, WorkspaceMarketplaceInstall
+from backend.app.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.reviews.models import ResourceReview
-from backend.app.reviews.service import ResourceReviewService
+from backend.app.reviews.service import ResourcePolicyReviewBuilder
 
 
 class MarketplaceService:
@@ -91,7 +92,7 @@ class MarketplaceService:
         self._session.add(listing)
         self._session.flush()
         if review.required:
-            ResourceReviewService(self._session, self._settings).request_resource_review(
+            ResourceReviewApprovalService(self._session).request_resource_review(
                 workspace_id=workspace_id,
                 actor_user_id=owner_user_id,
                 approval_type=listing_review_type(listing.listing_type),
@@ -138,7 +139,7 @@ class MarketplaceService:
         workspace_id: UUID,
         data: MarketplaceListingCreateRequest,
     ) -> ResourceReview:
-        reviewer = ResourceReviewService(self._session, self._settings)
+        reviewer = ResourcePolicyReviewBuilder(self._session, self._settings)
         if data.listing_type == "agent" and data.source_resource_id is not None:
             agent = self._session.get(AgentProfile, data.source_resource_id)
             if agent is not None and agent.workspace_id == workspace_id:

@@ -21,13 +21,14 @@ from backend.app.capabilities.mcp_server_helpers import (
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_MCP_SERVER,
     REVIEW_TYPE_MCP_TOOL_ALLOWLIST,
 )
-from backend.app.reviews.service import ResourceReviewService
+from backend.app.reviews.service import ResourcePolicyReviewBuilder
 
 
 class McpServerService:
@@ -47,7 +48,7 @@ class McpServerService:
         *,
         commit: bool = True,
     ) -> McpServer:
-        review = ResourceReviewService(self._session, self._settings).review_mcp_server(
+        review = ResourcePolicyReviewBuilder(self._session, self._settings).review_mcp_server(
             workspace_id=workspace_id,
             server_type=data.server_type,
             connection=data.connection,
@@ -61,7 +62,7 @@ class McpServerService:
         self._session.add(server)
         flush_or_raise_conflict(self._session, "MCP server name already exists")
         if review.required:
-            ResourceReviewService(self._session, self._settings).request_resource_review(
+            ResourceReviewApprovalService(self._session).request_resource_review(
                 workspace_id=workspace_id,
                 actor_user_id=actor_user_id,
                 approval_type=REVIEW_TYPE_MCP_SERVER,
@@ -113,7 +114,10 @@ class McpServerService:
         commit: bool = True,
     ) -> McpToolAllowlist:
         server = require_mcp_server(self._session, workspace_id, mcp_server_id)
-        review = ResourceReviewService(self._session, self._settings).review_mcp_tool_allowlist(
+        review = ResourcePolicyReviewBuilder(
+            self._session,
+            self._settings,
+        ).review_mcp_tool_allowlist(
             workspace_id=workspace_id,
             visibility=server.visibility,
             tool_name=data.tool_name,
@@ -130,7 +134,7 @@ class McpServerService:
         self._session.add(allow)
         flush_or_raise_conflict(self._session, "MCP tool is already allowed for this server")
         if review.required:
-            ResourceReviewService(self._session, self._settings).request_resource_review(
+            ResourceReviewApprovalService(self._session).request_resource_review(
                 workspace_id=workspace_id,
                 actor_user_id=actor_user_id,
                 approval_type=REVIEW_TYPE_MCP_TOOL_ALLOWLIST,

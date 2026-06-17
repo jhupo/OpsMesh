@@ -18,13 +18,14 @@ from backend.app.capabilities.models import (
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.db.pagination import page_scalars
+from backend.app.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_CAPABILITY,
     REVIEW_TYPE_SKILL,
 )
-from backend.app.reviews.service import ResourceReviewService
+from backend.app.reviews.service import ResourcePolicyReviewBuilder
 
 T = TypeVar("T")
 class CapabilityService:
@@ -52,7 +53,7 @@ class CapabilityService:
         workspace_id: UUID,
         actor_user_id: UUID | None = None,
     ) -> Capability:
-        review = ResourceReviewService(self._session, self._settings).review_capability(
+        review = ResourcePolicyReviewBuilder(self._session, self._settings).review_capability(
             workspace_id=workspace_id,
             key=data.key,
             name=data.name,
@@ -65,7 +66,7 @@ class CapabilityService:
         self._session.add(capability)
         flush_or_raise_conflict(self._session, "Capability key already exists")
         if review.required:
-            ResourceReviewService(self._session, self._settings).request_resource_review(
+            ResourceReviewApprovalService(self._session).request_resource_review(
                 workspace_id=workspace_id,
                 actor_user_id=actor_user_id,
                 approval_type=REVIEW_TYPE_CAPABILITY,
@@ -111,7 +112,7 @@ class CapabilityService:
         workspace_id: UUID | None = None,
         actor_user_id: UUID | None = None,
     ) -> Skill:
-        review = ResourceReviewService(self._session, self._settings).review_skill(
+        review = ResourcePolicyReviewBuilder(self._session, self._settings).review_skill(
             workspace_id=workspace_id,
             visibility=data.visibility,
             manifest=data.manifest,
@@ -127,7 +128,7 @@ class CapabilityService:
         self._session.add(skill)
         flush_or_raise_conflict(self._session, "Skill version already exists")
         if review.required and workspace_id is not None:
-            ResourceReviewService(self._session, self._settings).request_resource_review(
+            ResourceReviewApprovalService(self._session).request_resource_review(
                 workspace_id=workspace_id,
                 actor_user_id=actor_user_id,
                 approval_type=REVIEW_TYPE_SKILL,
