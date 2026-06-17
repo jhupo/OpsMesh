@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.runs.models import AgentRun
+from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
 from backend.app.self_hosted.dispatch_support import (
     SelfHostedClaimLockRepository,
@@ -82,28 +83,8 @@ class SelfHostedDispatchService:
         if run.status != RunStatus.QUEUED.value:
             raise ValueError("Agent run is not queued")
         now = datetime.now(UTC)
-        claimed = self._session.execute(
-            update(AgentRun)
-            .where(
-                AgentRun.id == run.id,
-                AgentRun.workspace_id == run.workspace_id,
-                AgentRun.runtime_id == auth.runtime.id,
-                AgentRun.status == RunStatus.QUEUED.value,
-            )
-            .values(status=RunStatus.RUNNING.value, started_at=now)
-        )
-        if claimed.rowcount != 1:
-            self._session.refresh(run)
-            existing_claim = self._locks.locked_job_claim_for_run(run)
-            if existing_claim is not None:
-                if (
-                    existing_claim.worker_id == auth.worker.id
-                    and existing_claim.status == "claimed"
-                ):
-                    return existing_claim
-                raise ValueError("Agent run is already claimed")
-            raise ValueError("Agent run is not queued")
-        self._session.refresh(run)
+        RunStateService().transition(run, RunStatus.RUNNING, started_at=now)
+        self._session.flush([run])
         self._reservations.ensure_job_slot(auth, run)
         if run.task_id is not None:
             task = self._session.get(Task, run.task_id)

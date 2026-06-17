@@ -6,16 +6,9 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task
-
-ACTIVE_RUN_STATUSES = (
-    RunStatus.QUEUED.value,
-    RunStatus.RUNNING.value,
-    RunStatus.WAITING_RUNTIME.value,
-    RunStatus.WAITING_APPROVAL.value,
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,7 +89,7 @@ def active_runs_statement(
 ) -> Select[tuple[AgentRun]]:
     statement = select(AgentRun).where(
         AgentRun.workspace_id == workspace_id,
-        AgentRun.status.in_(ACTIVE_RUN_STATUSES),
+            AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES),
     )
     if team_id is None:
         return statement

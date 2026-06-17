@@ -15,6 +15,7 @@ from backend.app.orchestration.run_resource_reservations import RunResourceReser
 from backend.app.orchestration.run_step_launcher import RunStepLauncher
 from backend.app.orchestration.run_team_runtime import RunTeamRuntimeResolver
 from backend.app.orchestration.scheduler import WorkspaceScheduler
+from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.orchestration.step_scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
@@ -286,14 +287,7 @@ class RunOrchestrationService:
             .where(
                 AgentRun.workspace_id == task.workspace_id,
                 AgentRun.task_id == task.id,
-                AgentRun.status.in_(
-                    [
-                        RunStatus.QUEUED.value,
-                        RunStatus.RUNNING.value,
-                        RunStatus.WAITING_RUNTIME.value,
-                        RunStatus.WAITING_APPROVAL.value,
-                    ]
-                ),
+                AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES),
             )
             .order_by(AgentRun.created_at.asc())
         )

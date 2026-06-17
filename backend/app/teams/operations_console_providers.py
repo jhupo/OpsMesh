@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.orchestration.statuses import ACTIVE_RUN_STATUSES
 from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeamMember
@@ -31,13 +31,6 @@ from backend.app.teams.operations_console_utils import (
     _string_list,
     _uuid_or_none,
 )
-
-PROVIDER_RUN_STATUSES = {
-    RunStatus.QUEUED.value,
-    RunStatus.RUNNING.value,
-    RunStatus.WAITING_RUNTIME.value,
-    RunStatus.WAITING_APPROVAL.value,
-}
 
 
 class TeamProviderManagementBuilder:
@@ -168,7 +161,7 @@ class TeamProviderManagementBuilder:
                 .join(Task, Task.id == AgentRun.task_id)
                 .where(
                     AgentRun.workspace_id == workspace_id,
-                    AgentRun.status.in_(PROVIDER_RUN_STATUSES),
+                    AgentRun.status.in_(ACTIVE_RUN_STATUSES),
                     Task.workspace_id == workspace_id,
                     Task.agent_team_id == team_id,
                 )

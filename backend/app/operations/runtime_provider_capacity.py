@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.operation_capacity import RuntimeProviderCapacityResponse
 from backend.app.operations.utils import capacity_slots_from_metadata
+from backend.app.orchestration.statuses import CAPACITY_CONSUMING_RUN_STATUS_VALUES
 from backend.app.runs.models import AgentRun
 from backend.app.runtimes.models import WorkspaceRuntime
 
@@ -60,7 +61,7 @@ class RuntimeProviderCapacityService:
                 .where(
                     AgentRun.workspace_id == workspace_id,
                     AgentRun.runtime_id.is_not(None),
-                    AgentRun.status.in_(["queued", "running", "waiting_approval"]),
+                    AgentRun.status.in_(CAPACITY_CONSUMING_RUN_STATUS_VALUES),
                 )
                 .group_by(AgentRun.runtime_id)
             ).all()

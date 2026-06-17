@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.statuses import ACTIVE_RUN_STATUSES
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
@@ -56,11 +57,7 @@ class SelfHostedWorkerControlService:
             if run is None:
                 continue
             affected_run_ids.append(str(run.id))
-            if run.status in {
-                RunStatus.QUEUED.value,
-                RunStatus.RUNNING.value,
-                RunStatus.WAITING_APPROVAL.value,
-            }:
+            if run.status in ACTIVE_RUN_STATUSES:
                 RunStateService().transition(
                     run,
                     RunStatus.FAILED,

@@ -13,7 +13,7 @@ from backend.app.orchestration.scheduler_policy import (
     SchedulerPolicyResolver,
     WorkspaceSchedulerPolicy,
 )
-from backend.app.orchestration.statuses import ORCHESTRATION_ACTIVE_RUN_STATUSES
+from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.orchestration.step_scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
@@ -21,7 +21,7 @@ from backend.app.orchestration.step_scheduling_state import (
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import TaskStep
 
-ACTIVE_RUN_STATUSES = tuple(ORCHESTRATION_ACTIVE_RUN_STATUSES)
+ACTIVE_RUN_STATUSES = ACTIVE_RUN_STATUS_VALUES
 
 
 @dataclass(frozen=True)

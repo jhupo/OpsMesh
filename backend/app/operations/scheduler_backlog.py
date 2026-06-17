@@ -15,6 +15,7 @@ from backend.app.api.schemas.operations import (
 from backend.app.operations.scheduler_policy import SchedulerPolicyService
 from backend.app.operations.utils import ensure_aware_utc
 from backend.app.orchestration.blocked_reasons import explain_blocked_reason
+from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task, TaskStep
 
@@ -103,7 +104,7 @@ class SchedulerBacklogService:
                 .select_from(AgentRun)
                 .where(
                     AgentRun.workspace_id == workspace_id,
-                    AgentRun.status.in_(["queued", "running", "waiting_approval"]),
+                    AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES),
                 )
             )
             or 0

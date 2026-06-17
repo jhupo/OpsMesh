@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.statuses import ACTIVE_RUN_STATUSES
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
@@ -131,11 +132,7 @@ class SelfHostedJobFinalizer:
             if run is None or run.workspace_id != worker.workspace_id:
                 continue
             affected_runs += 1
-            if run.status in {
-                RunStatus.QUEUED.value,
-                RunStatus.RUNNING.value,
-                RunStatus.WAITING_APPROVAL.value,
-            }:
+            if run.status in ACTIVE_RUN_STATUSES:
                 RunStateService().transition(
                     run,
                     RunStatus.FAILED,
@@ -181,11 +178,7 @@ class SelfHostedJobFinalizer:
             run = self._session.get(AgentRun, claim.agent_run_id)
             if run is None or run.workspace_id != workspace_id:
                 continue
-            if run.status in {
-                RunStatus.QUEUED.value,
-                RunStatus.RUNNING.value,
-                RunStatus.WAITING_APPROVAL.value,
-            }:
+            if run.status in ACTIVE_RUN_STATUSES:
                 RunStateService().transition(
                     run,
                     RunStatus.FAILED,

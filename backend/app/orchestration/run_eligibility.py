@@ -4,8 +4,8 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.status import TaskStatus
 
@@ -80,7 +80,7 @@ class RunEligibilityService:
             select(func.count(AgentRun.id)).where(
                 AgentRun.workspace_id == step.workspace_id,
                 AgentRun.task_step_id == step.id,
-                AgentRun.status.in_(active_run_statuses()),
+                AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES),
             )
         )
         return int(active_count or 0) > 0
@@ -100,7 +100,7 @@ class RunEligibilityService:
             select(func.count(AgentRun.id)).where(
                 AgentRun.workspace_id == task.workspace_id,
                 AgentRun.task_id == task.id,
-                AgentRun.status.in_(active_run_statuses()),
+                AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES),
             )
         )
         return int(active_runs or 0) > 0
@@ -143,12 +143,3 @@ class RunEligibilityService:
             for step in completed_steps
             if step.result_summary
         ]
-
-
-def active_run_statuses() -> list[str]:
-    return [
-        RunStatus.QUEUED.value,
-        RunStatus.RUNNING.value,
-        RunStatus.WAITING_RUNTIME.value,
-        RunStatus.WAITING_APPROVAL.value,
-    ]

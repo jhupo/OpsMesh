@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session
 from backend.app.audit.service import AuditService
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_terminal_state import RunTerminalStateService
+from backend.app.orchestration.statuses import (
+    ACTIVE_RUN_STATUS_VALUES,
+    STALE_RECOVERABLE_RUN_STATUS_VALUES,
+)
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
@@ -53,14 +57,7 @@ class RunControlService:
             select(AgentRun).where(
                 AgentRun.workspace_id == workspace_id,
                 AgentRun.task_id == task.id,
-                AgentRun.status.in_(
-                    [
-                        RunStatus.QUEUED.value,
-                        RunStatus.RUNNING.value,
-                        RunStatus.WAITING_RUNTIME.value,
-                        RunStatus.WAITING_APPROVAL.value,
-                    ]
-                ),
+                AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES),
             )
         ).all()
         worker_cancel_requests = 0
@@ -222,13 +219,7 @@ class RunControlService:
         candidates = self.session.scalars(
             select(AgentRun)
             .where(
-                AgentRun.status.in_(
-                    [
-                        RunStatus.QUEUED.value,
-                        RunStatus.RUNNING.value,
-                        RunStatus.WAITING_RUNTIME.value,
-                    ]
-                )
+                AgentRun.status.in_(STALE_RECOVERABLE_RUN_STATUS_VALUES)
             )
             .order_by(AgentRun.updated_at.asc(), AgentRun.created_at.asc())
             .limit(limit * 3)

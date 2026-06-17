@@ -11,7 +11,7 @@ from backend.app.agent_runtime.session_management import (
 )
 from backend.app.agent_runtime.session_views import PersistentSessionSummary
 from backend.app.agents.models import AgentProfile
-from backend.app.runs.status import RunStatus
+from backend.app.orchestration.statuses import ACTIVE_RUN_STATUSES
 from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.operations_console_controls import (
@@ -36,12 +36,7 @@ from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.teams.scheduling_blocks import scheduled_run_blocking_summary
 from backend.app.workers.queue.redis_queue import RedisQueue
 
-PROVIDER_RUN_STATUSES = {
-    RunStatus.QUEUED.value,
-    RunStatus.RUNNING.value,
-    RunStatus.WAITING_RUNTIME.value,
-    RunStatus.WAITING_APPROVAL.value,
-}
+PROVIDER_RUN_STATUSES = ACTIVE_RUN_STATUSES
 
 
 class TeamOperationsConsoleService:

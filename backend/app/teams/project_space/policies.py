@@ -1,6 +1,7 @@
-from backend.app.orchestration.statuses import ORCHESTRATION_ACTIVE_RUN_STATUSES
 
-ACTIVE_RUN_STATUSES = ORCHESTRATION_ACTIVE_RUN_STATUSES
+from backend.app.orchestration.statuses import ACTIVE_RUN_STATUSES as _ACTIVE_RUN_STATUSES
+
+ACTIVE_RUN_STATUSES = _ACTIVE_RUN_STATUSES
 ACTIVE_RESERVATION_STATUSES = {"active", "reserved"}
 
 SPACE_TIER_TEMPLATES: list[dict[str, object]] = [

@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from backend.app.runs.models import AgentRun
+from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import TaskStep
 from backend.app.teams.execution_overview_utils import (
     dedupe_strings,
@@ -102,7 +103,7 @@ def summary_bottlenecks(
             )
         )
 
-    waiting_runtime_count = sum(1 for run in runs if run.status == "waiting_runtime")
+    waiting_runtime_count = sum(1 for run in runs if run.status == RunStatus.WAITING_RUNTIME.value)
     if waiting_runtime_count:
         bottlenecks.append(
             _bottleneck(
@@ -113,7 +114,7 @@ def summary_bottlenecks(
                     {
                         run.task_id
                         for run in runs
-                        if run.status == "waiting_runtime" and run.task_id
+                        if run.status == RunStatus.WAITING_RUNTIME.value and run.task_id
                     },
                     key=str,
                 ),
@@ -121,14 +122,17 @@ def summary_bottlenecks(
             )
         )
 
-    waiting_approval_steps = [step for step in steps if step.status == "waiting_approval"]
-    if waiting_approval_steps:
+    waiting_approval_runs = [run for run in runs if run.status == RunStatus.WAITING_APPROVAL.value]
+    if waiting_approval_runs:
         bottlenecks.append(
             _bottleneck(
                 code="approval_wait",
                 severity="medium",
-                count=len(waiting_approval_steps),
-                task_ids=sorted({step.task_id for step in waiting_approval_steps}, key=str),
+                count=len(waiting_approval_runs),
+                task_ids=sorted(
+                    {run.task_id for run in waiting_approval_runs if run.task_id},
+                    key=str,
+                ),
                 recommended_action="review_pending_approvals",
             )
         )

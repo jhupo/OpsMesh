@@ -5,9 +5,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import string_list, uuid_or_none
+from backend.app.orchestration.statuses import WORKLOAD_RUN_STATUS_VALUES
 from backend.app.planning.org_structure import is_leadership_role, normalize_role
 from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import TaskStep
 
 
@@ -105,13 +105,7 @@ class MemberMatchingService:
                 .where(
                     AgentRun.workspace_id == workspace_id,
                     AgentRun.agent_profile_id == agent_profile_id,
-                    AgentRun.status.in_(
-                        [
-                            RunStatus.QUEUED.value,
-                            RunStatus.RUNNING.value,
-                            RunStatus.WAITING_APPROVAL.value,
-                        ]
-                    ),
+                    AgentRun.status.in_(WORKLOAD_RUN_STATUS_VALUES),
                     TaskStep.status.in_(["queued", "running"]),
                 )
             )
@@ -185,4 +179,3 @@ def _int_or_default(value: object, default: int) -> int:
     if isinstance(value, int):
         return value
     return default
-
