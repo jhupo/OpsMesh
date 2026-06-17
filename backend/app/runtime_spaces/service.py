@@ -15,10 +15,14 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceEvent,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime_spaces.reservations import (
-    RuntimeSpaceReservationResult,
-    RuntimeSpaceReservationService,
+from backend.app.runtime_spaces.reservation_attachment import (
+    RuntimeSpaceReservationAttachmentService,
 )
+from backend.app.runtime_spaces.reservation_capacity import (
+    RuntimeSpaceCapacityReservationService,
+    RuntimeSpaceReservationResult,
+)
+from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.runtime_spaces.targets import RuntimeSpaceTargetService
 
 T = TypeVar("T")
@@ -225,7 +229,7 @@ class RuntimeSpaceService:
         reservation_key: str,
         resource_usage: dict[str, int] | None = None,
     ) -> RuntimeSpaceReservationResult:
-        return RuntimeSpaceReservationService(self._session).reserve_run_capacity(
+        return RuntimeSpaceCapacityReservationService(self._session).reserve_run_capacity(
             workspace_id=workspace_id,
             runtime_space_id=runtime_space_id,
             task_id=task_id,
@@ -239,7 +243,7 @@ class RuntimeSpaceService:
         reservation: RuntimeSpaceReservation,
         agent_run_id: UUID,
     ) -> None:
-        RuntimeSpaceReservationService(self._session).attach_reservation_to_run(
+        RuntimeSpaceReservationAttachmentService(self._session).attach_reservation_to_run(
             reservation,
             agent_run_id,
         )
@@ -250,7 +254,9 @@ class RuntimeSpaceService:
         workspace_id: UUID,
         agent_run_id: UUID,
     ) -> dict[str, int]:
-        return RuntimeSpaceReservationService(self._session).active_reservation_usage_for_run(
+        return RuntimeSpaceReservationAttachmentService(
+            self._session
+        ).active_reservation_usage_for_run(
             workspace_id=workspace_id,
             agent_run_id=agent_run_id,
         )
@@ -262,7 +268,7 @@ class RuntimeSpaceService:
         agent_run_id: UUID,
         released_at: datetime | None = None,
     ) -> int:
-        return RuntimeSpaceReservationService(self._session).release_reservations_for_run(
+        return RuntimeSpaceReservationReleaseService(self._session).release_reservations_for_run(
             workspace_id=workspace_id,
             agent_run_id=agent_run_id,
             released_at=released_at,
@@ -276,7 +282,7 @@ class RuntimeSpaceService:
         reservation_key: str,
         released_at: datetime | None = None,
     ) -> bool:
-        return RuntimeSpaceReservationService(self._session).release_reservation_by_key(
+        return RuntimeSpaceReservationReleaseService(self._session).release_reservation_by_key(
             workspace_id=workspace_id,
             runtime_space_id=runtime_space_id,
             reservation_key=reservation_key,

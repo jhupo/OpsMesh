@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.runtime_manager.metadata import runtime_space_reservation_key
-from backend.app.runtime_spaces.service import RuntimeSpaceService
+from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.runtimes.models import RuntimeLease, WorkspaceRuntime
 
 
@@ -73,7 +73,7 @@ class RuntimeSpaceReservationStore:
     def release(self, runtime: WorkspaceRuntime) -> bool:
         if runtime.runtime_space_id is None:
             return False
-        return RuntimeSpaceService(self._session).release_reservation_by_key(
+        return RuntimeSpaceReservationReleaseService(self._session).release_reservation_by_key(
             workspace_id=runtime.workspace_id,
             runtime_space_id=runtime.runtime_space_id,
             reservation_key=runtime_space_reservation_key(runtime),

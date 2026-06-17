@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_spaces.service import RuntimeSpaceService
+from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.self_hosted.events import SelfHostedEventRecorder
 from backend.app.self_hosted.models import (
     RuntimeCredential,
@@ -38,7 +38,7 @@ class SelfHostedJobFinalizer:
             agent_run_id=run.id,
             released_at=released_at,
         )
-        RuntimeSpaceService(self._session).release_reservations_for_run(
+        RuntimeSpaceReservationReleaseService(self._session).release_reservations_for_run(
             workspace_id=run.workspace_id,
             agent_run_id=run.id,
             released_at=released_at,

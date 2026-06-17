@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 from backend.app.core.typing import string_list
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.models import RuntimeSpace
-from backend.app.runtime_spaces.service import RuntimeSpaceService
+from backend.app.runtime_spaces.reservation_attachment import (
+    RuntimeSpaceReservationAttachmentService,
+)
+from backend.app.runtime_spaces.reservation_capacity import RuntimeSpaceCapacityReservationService
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.self_hosted.jobs import SelfHostedJobFinalizer
 from backend.app.self_hosted.models import (
@@ -211,14 +214,16 @@ class SelfHostedRunReservationService:
                 workspace_quota.attach_reservation_to_run(workspace_reservation, run.id)
             return
 
-        runtime_space_service = RuntimeSpaceService(self._session)
-        runtime_space_usage = runtime_space_service.active_reservation_usage_for_run(
+        runtime_space_attachment = RuntimeSpaceReservationAttachmentService(self._session)
+        runtime_space_usage = runtime_space_attachment.active_reservation_usage_for_run(
             workspace_id=run.workspace_id,
             agent_run_id=run.id,
         )
         runtime_space_reservation = None
         if runtime_space_usage.get("self_hosted_jobs", 0) <= 0:
-            runtime_space_result = runtime_space_service.reserve_run_capacity(
+            runtime_space_result = RuntimeSpaceCapacityReservationService(
+                self._session
+            ).reserve_run_capacity(
                 workspace_id=run.workspace_id,
                 runtime_space_id=runtime_space_id,
                 task_id=run.task_id,
@@ -240,7 +245,7 @@ class SelfHostedRunReservationService:
         if workspace_reservation is not None:
             workspace_quota.attach_reservation_to_run(workspace_reservation, run.id)
         if runtime_space_reservation is not None:
-            runtime_space_service.attach_reservation_to_run(runtime_space_reservation, run.id)
+            runtime_space_attachment.attach_reservation_to_run(runtime_space_reservation, run.id)
 
 
 def positive_int(value: object) -> int | None:

@@ -13,7 +13,11 @@ from backend.app.orchestration.resource_usage import (
 from backend.app.orchestration.run_profile_lookup import RunProfileLookup
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceReservation
-from backend.app.runtime_spaces.service import RuntimeSpaceService
+from backend.app.runtime_spaces.reservation_attachment import (
+    RuntimeSpaceReservationAttachmentService,
+)
+from backend.app.runtime_spaces.reservation_capacity import RuntimeSpaceCapacityReservationService
+from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.workspaces.models import WorkspaceReservation
 from backend.app.workspaces.quotas import WorkspaceQuotaService
@@ -61,7 +65,7 @@ class RunResourceReservationService:
             run.id,
         )
         if bundle.runtime_space_reservation is not None:
-            RuntimeSpaceService(self.session).attach_reservation_to_run(
+            RuntimeSpaceReservationAttachmentService(self.session).attach_reservation_to_run(
                 bundle.runtime_space_reservation,
                 run.id,
             )
@@ -72,7 +76,7 @@ class RunResourceReservationService:
             released_at=released_at,
         )
         if bundle.runtime_space_reservation is not None:
-            RuntimeSpaceService(self.session).release_reservation_by_key(
+            RuntimeSpaceReservationReleaseService(self.session).release_reservation_by_key(
                 workspace_id=bundle.runtime_space_reservation.workspace_id,
                 runtime_space_id=bundle.runtime_space_reservation.runtime_space_id,
                 reservation_key=bundle.runtime_space_reservation.reservation_key,
@@ -80,7 +84,7 @@ class RunResourceReservationService:
             )
 
     def release_for_run(self, run: AgentRun, *, released_at: datetime) -> None:
-        RuntimeSpaceService(self.session).release_reservations_for_run(
+        RuntimeSpaceReservationReleaseService(self.session).release_reservations_for_run(
             workspace_id=run.workspace_id,
             agent_run_id=run.id,
             released_at=released_at,
@@ -125,7 +129,7 @@ class RunResourceReservationService:
         if runtime_space is not None and runtime_space.status == "paused":
             self.mark_step_scheduling_blocked(step, "runtime_space_paused", None)
             return False, None
-        result = RuntimeSpaceService(self.session).reserve_run_capacity(
+        result = RuntimeSpaceCapacityReservationService(self.session).reserve_run_capacity(
             workspace_id=task.workspace_id,
             runtime_space_id=runtime_space_id,
             task_id=task.id,

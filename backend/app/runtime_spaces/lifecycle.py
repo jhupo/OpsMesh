@@ -7,7 +7,7 @@ from backend.app.runtime_spaces.blockers import RuntimeSpaceBlockerService
 from backend.app.runtime_spaces.events import RuntimeSpaceEventLog
 from backend.app.runtime_spaces.models import RuntimeSpace
 from backend.app.runtime_spaces.quotas import RuntimeSpaceQuotaService
-from backend.app.runtime_spaces.reservations import RuntimeSpaceReservationService
+from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.runtime_spaces.targets import RuntimeSpaceTargetService
 from backend.app.runtime_spaces.utils import non_empty_string_or_none
 from backend.app.runtimes.models import WorkspaceRuntime
@@ -20,7 +20,7 @@ class RuntimeSpaceLifecycleService:
         self._quotas = RuntimeSpaceQuotaService(session)
         self._events = RuntimeSpaceEventLog(session)
         self._blockers = RuntimeSpaceBlockerService(session)
-        self._reservations = RuntimeSpaceReservationService(session)
+        self._reservations = RuntimeSpaceReservationReleaseService(session)
 
     def create_runtime_space(
         self,

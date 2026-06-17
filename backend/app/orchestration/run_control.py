@@ -11,7 +11,7 @@ from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_terminal_state import RunTerminalStateService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_spaces.service import RuntimeSpaceService
+from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
@@ -305,7 +305,7 @@ class RunControlService:
         )
 
     def release_reservations(self, run: AgentRun, *, released_at: datetime) -> None:
-        RuntimeSpaceService(self.session).release_reservations_for_run(
+        RuntimeSpaceReservationReleaseService(self.session).release_reservations_for_run(
             workspace_id=run.workspace_id,
             agent_run_id=run.id,
             released_at=released_at,

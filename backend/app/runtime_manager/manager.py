@@ -30,7 +30,7 @@ from backend.app.runtime_manager.metadata import (
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
 from backend.app.runtime_manager.runtime_guards import require_container
 from backend.app.runtime_manager.security_events import RuntimeSecurityEventRecorder
-from backend.app.runtime_spaces.service import RuntimeSpaceService
+from backend.app.runtime_spaces.reservation_capacity import RuntimeSpaceCapacityReservationService
 from backend.app.runtimes.models import (
     RuntimeCommand,
     RuntimeTemplate,
@@ -132,7 +132,9 @@ class RuntimeManager:
         }
         reservation_key = runtime_space_reservation_key(runtime)
         if runtime_space_id is not None:
-            reservation_result = RuntimeSpaceService(self._session).reserve_run_capacity(
+            reservation_result = RuntimeSpaceCapacityReservationService(
+                self._session
+            ).reserve_run_capacity(
                 workspace_id=workspace_id,
                 runtime_space_id=runtime_space_id,
                 task_id=None,
