@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from types import TracebackType
 from uuid import UUID
 
@@ -22,15 +22,14 @@ from backend.app.orchestration.run_result_payloads import (
 from backend.app.orchestration.run_task_progress import RunTaskProgressService
 from backend.app.orchestration.run_terminal_state import RunTerminalStateService
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runs.status import RunStatus, require_run_transition
+from backend.app.runs.service import RunStateService
+from backend.app.runs.status import RunStatus
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
-
-STEP_STATUS_RUNNING = "running"
-STEP_STATUS_COMPLETED = "completed"
-STEP_STATUS_FAILED = "failed"
+from backend.app.tasks.step_service import TaskStepStateService
+from backend.app.tasks.step_status import TaskStepStatus
 
 AppendEvent = Callable[[AgentRun, str, str, dict[str, object] | None], RunEvent]
 ReleaseRunReservations = Callable[[AgentRun, datetime], None]
@@ -61,9 +60,7 @@ class RunLifecycleService:
     callbacks: RunLifecycleCallbacks
 
     def mark_run_started(self, run: AgentRun) -> None:
-        require_run_transition(RunStatus(run.status), RunStatus.RUNNING)
-        run.status = RunStatus.RUNNING.value
-        run.started_at = datetime.now(UTC)
+        RunStateService().transition(run, RunStatus.RUNNING)
         self.session.flush([run])
         self.callbacks.append_event(run, "run.started", "Run started", None)
 
@@ -74,7 +71,7 @@ class RunLifecycleService:
         if run.task_step_id is not None:
             step = self.session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
-                step.status = STEP_STATUS_RUNNING
+                TaskStepStateService().transition(step, TaskStepStatus.RUNNING)
                 self.callbacks.append_event(run, "task_step.started", step.title, None)
                 self.append_task_message(
                     task_id=step.task_id,
@@ -88,8 +85,7 @@ class RunLifecycleService:
                 )
 
     def mark_run_waiting_runtime(self, run: AgentRun) -> None:
-        require_run_transition(RunStatus(run.status), RunStatus.WAITING_RUNTIME)
-        run.status = RunStatus.WAITING_RUNTIME.value
+        RunStateService().transition(run, RunStatus.WAITING_RUNTIME)
         self.callbacks.append_event(
             run,
             "run.waiting.runtime",
@@ -104,11 +100,12 @@ class RunLifecycleService:
         requested_by_user_id: UUID | None,
     ) -> None:
         result = coerce_agent_run_result(result)
-        require_run_transition(RunStatus(run.status), RunStatus.COMPLETED)
         final_output = result.final_output
-        run.status = RunStatus.COMPLETED.value
-        run.output = run_output_payload(result)
-        run.completed_at = datetime.now(UTC)
+        RunStateService().transition(
+            run,
+            RunStatus.COMPLETED,
+            output=run_output_payload(result),
+        )
         self.callbacks.sync_provider_conversation_id(run)
         self.callbacks.append_event(run, "run.completed", "Run completed", None)
         self.callbacks.release_reservations(run, run.completed_at)
@@ -187,11 +184,8 @@ class RunLifecycleService:
             )
 
     def mark_run_failed(self, run: AgentRun, exc: Exception) -> None:
-        require_run_transition(RunStatus(run.status), RunStatus.FAILED)
         error = normalize_agent_error(exc)
-        run.status = RunStatus.FAILED.value
-        run.error = error.as_dict()
-        run.completed_at = datetime.now(UTC)
+        RunStateService().transition(run, RunStatus.FAILED, error=error.as_dict())
         self.callbacks.append_event(run, "run.failed", error.message, None)
         self.callbacks.release_reservations(run, run.completed_at)
 
@@ -206,7 +200,7 @@ class RunLifecycleService:
         if run.task_step_id is not None:
             step = self.session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
-                step.status = STEP_STATUS_FAILED
+                TaskStepStateService().transition(step, TaskStepStatus.FAILED)
 
     def mark_run_recovered_failed(
         self,
@@ -260,10 +254,13 @@ class RunLifecycleService:
         step = self.session.get(TaskStep, run.task_step_id)
         if step is None or step.workspace_id != run.workspace_id:
             return
-        step.status = STEP_STATUS_COMPLETED
-        step.result_summary = PmAcceptanceService(self.session).step_result_summary(
+        TaskStepStateService().transition(
             step,
-            final_output,
+            TaskStepStatus.COMPLETED,
+            result_summary=PmAcceptanceService(self.session).step_result_summary(
+                step,
+                final_output,
+            ),
         )
         self.callbacks.append_event(run, "task_step.completed", step.title, None)
         self.append_task_message(

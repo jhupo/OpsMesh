@@ -12,9 +12,10 @@ from backend.app.artifacts.models import Artifact
 from backend.app.audit.service import AuditService
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.tasks.service import TaskStateService
+from backend.app.tasks.status import TaskStatus
 
 STEP_STATUS_QUEUED = "queued"
-TASK_STATUS_CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True)
@@ -48,11 +49,13 @@ class TaskCorrectionService:
         target_payload = self._resolve_target(task, request)
         created_step = None
         if request.mode == "stop_work":
-            task.status = TASK_STATUS_CANCELLED
+            TaskStateService().transition(task, TaskStatus.CANCELLED)
         else:
             created_step = self._create_follow_up_step(task, request, target_payload)
             if task.status in {"completed", "failed", "cancelled"}:
-                task.status = "in_progress"
+                TaskStateService().reset_to_draft(task)
+                TaskStateService().transition(task, TaskStatus.QUEUED)
+                TaskStateService().transition(task, TaskStatus.RUNNING)
 
         message = self._append_message(
             task,

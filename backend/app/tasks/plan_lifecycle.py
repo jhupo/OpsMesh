@@ -10,6 +10,7 @@ from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.tasks.service import TaskStateService
 from backend.app.teams.snapshots import build_team_snapshot
 from backend.app.workers.queue.redis_queue import RedisQueue
 
@@ -50,7 +51,7 @@ class TaskPlanLifecycleService:
         self._refresh_team_snapshot_for_retry(workspace_id, task, command)
         task.project_plan = None
         if task.status in {"blocked", "failed"}:
-            task.status = "draft"
+            TaskStateService().reset_to_draft(task)
         TaskPlanningAttemptService(self._session).ensure_initial_plan(
             task,
             transition_to_planning=task.status in {"draft", "queued", "blocked", "failed"},
@@ -104,7 +105,7 @@ class TaskPlanLifecycleService:
         previous_plan = task.project_plan
         task.project_plan = None
         if task.status in {"blocked", "failed"}:
-            task.status = "draft"
+            TaskStateService().reset_to_draft(task)
         TaskPlanningAttemptService(self._session).ensure_initial_plan(task)
         if task.project_plan is not None:
             task.project_plan = {

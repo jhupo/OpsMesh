@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.self_hosted import JobCompleteRequest
 from backend.app.runs.models import AgentRun
+from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
 from backend.app.self_hosted.events import SelfHostedEventRecorder
 from backend.app.self_hosted.jobs import SelfHostedJobFinalizer
@@ -78,17 +79,25 @@ class SelfHostedRunCompletionService:
         now = datetime.now(UTC)
         claim.status = data.status
         claim.completed_at = now
-        run.completed_at = now
         if data.status == "completed":
-            run.status = RunStatus.COMPLETED.value
-            run.output = data.output or {}
+            RunStateService().transition(
+                run,
+                RunStatus.COMPLETED,
+                completed_at=now,
+                output=data.output or {},
+            )
             self._jobs.mark_task_completed_from_run(run, data.output)
         else:
-            run.status = RunStatus.FAILED.value
-            run.error = data.error or {
-                "code": "self_hosted_job_failed",
-                "message": "Self-hosted job failed",
-            }
+            RunStateService().transition(
+                run,
+                RunStatus.FAILED,
+                completed_at=now,
+                error=data.error
+                or {
+                    "code": "self_hosted_job_failed",
+                    "message": "Self-hosted job failed",
+                },
+            )
             self._jobs.mark_task_failed_from_run(run)
         self._jobs.release_run_reservations(run, released_at=now)
         self._events.append_run_event(

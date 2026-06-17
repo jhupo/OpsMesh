@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.runs.models import AgentRun
+from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.self_hosted.events import SelfHostedEventRecorder
@@ -19,6 +20,8 @@ from backend.app.self_hosted.models import (
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
+from backend.app.tasks.step_service import TaskStepStateService
+from backend.app.tasks.step_status import TaskStepStatus
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 
@@ -60,8 +63,11 @@ class SelfHostedJobFinalizer:
         if run.task_step_id is not None:
             step = self._session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
-                step.status = "completed"
-                step.result_summary = _summary_from_payload(output)
+                TaskStepStateService().transition(
+                    step,
+                    TaskStepStatus.COMPLETED,
+                    result_summary=_summary_from_payload(output),
+                )
         if run.task_id is None:
             return
         task = self._session.get(Task, run.task_id)
@@ -77,7 +83,7 @@ class SelfHostedJobFinalizer:
         if run.task_step_id is not None:
             step = self._session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
-                step.status = "failed"
+                TaskStepStateService().transition(step, TaskStepStatus.FAILED)
         if run.task_id is None:
             return
         task = self._session.get(Task, run.task_id)
@@ -130,13 +136,16 @@ class SelfHostedJobFinalizer:
                 RunStatus.RUNNING.value,
                 RunStatus.WAITING_APPROVAL.value,
             }:
-                run.status = RunStatus.FAILED.value
-                run.completed_at = now
-                run.error = {
-                    "code": error_code,
-                    "message": error_message,
-                    "retryable": claim_status != "revoked",
-                }
+                RunStateService().transition(
+                    run,
+                    RunStatus.FAILED,
+                    completed_at=now,
+                    error={
+                        "code": error_code,
+                        "message": error_message,
+                        "retryable": claim_status != "revoked",
+                    },
+                )
                 self.mark_task_failed_from_run(run)
                 self._events.append_run_event(
                     run,
@@ -177,13 +186,16 @@ class SelfHostedJobFinalizer:
                 RunStatus.RUNNING.value,
                 RunStatus.WAITING_APPROVAL.value,
             }:
-                run.status = RunStatus.FAILED.value
-                run.completed_at = now
-                run.error = {
-                    "code": "self_hosted_job_claim_expired",
-                    "message": "Self-hosted job claim expired before completion.",
-                    "retryable": True,
-                }
+                RunStateService().transition(
+                    run,
+                    RunStatus.FAILED,
+                    completed_at=now,
+                    error={
+                        "code": "self_hosted_job_claim_expired",
+                        "message": "Self-hosted job claim expired before completion.",
+                        "retryable": True,
+                    },
+                )
                 self.mark_task_failed_from_run(run)
                 self._events.append_run_event(
                     run,
@@ -261,15 +273,19 @@ class SelfHostedJobFinalizer:
         run_input["pending_tool_results"] = pending_results
         run.input = run_input
         if job.status == "completed" and run.status == RunStatus.WAITING_RUNTIME.value:
-            run.status = RunStatus.QUEUED.value
+            RunStateService().transition(run, RunStatus.QUEUED)
         elif job.status in {"failed", "expired"} and run.status == RunStatus.WAITING_RUNTIME.value:
-            run.status = RunStatus.FAILED.value
-            run.error = job.error_payload or {
-                "code": "self_hosted_mcp_job_failed",
-                "message": "Self-hosted MCP job failed",
-                "retryable": True,
-            }
-            run.completed_at = datetime.now(UTC)
+            RunStateService().transition(
+                run,
+                RunStatus.FAILED,
+                completed_at=datetime.now(UTC),
+                error=job.error_payload
+                or {
+                    "code": "self_hosted_mcp_job_failed",
+                    "message": "Self-hosted MCP job failed",
+                    "retryable": True,
+                },
+            )
 
 
 def dt_iso(value: datetime | None) -> str | None:

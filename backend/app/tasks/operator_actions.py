@@ -16,6 +16,10 @@ from backend.app.tasks.operator_dependencies import (
     manager_agent_id,
     without_blocking_keys,
 )
+from backend.app.tasks.service import TaskStateService
+from backend.app.tasks.status import TaskStatus
+from backend.app.tasks.step_service import TaskStepStateService
+from backend.app.tasks.step_status import TaskStepStatus
 
 TASK_OPERATOR_ACTIONS = {
     "requeue_blocked_steps",
@@ -130,8 +134,11 @@ class TaskOperatorActionService:
             if step.status != "blocked":
                 warnings.append(f"step_not_blocked:{step.id}")
                 continue
-            step.status = "queued"
-            step.dependencies = without_blocking_keys(step.dependencies)
+            TaskStepStateService().transition(
+                step,
+                TaskStepStatus.QUEUED,
+                dependencies=without_blocking_keys(step.dependencies),
+            )
             changed_step_ids.append(step.id)
 
         return {
@@ -192,7 +199,11 @@ class TaskOperatorActionService:
                 step.dependencies = cleaned_dependencies
                 cleared_blocking_step_ids.append(step.id)
             if status_changed:
-                step.status = "queued"
+                TaskStepStateService().transition(
+                    step,
+                    TaskStepStatus.QUEUED,
+                    dependencies=cleaned_dependencies,
+                )
             if step.status == "queued":
                 scheduled_downstream_step_ids.append(step.id)
             if cleared_blocking or status_changed or step.status == "queued":
@@ -244,8 +255,11 @@ class TaskOperatorActionService:
         previous_agent_profile_id = step.assigned_agent_profile_id
         step.assigned_agent_profile_id = agent_profile_id
         if step.status in {"blocked", "failed"}:
-            step.status = "queued"
-            step.dependencies = without_blocking_keys(step.dependencies)
+            TaskStepStateService().transition(
+                step,
+                TaskStepStatus.QUEUED,
+                dependencies=without_blocking_keys(step.dependencies),
+            )
 
         return {
             "changed_step_ids": [step.id],
@@ -394,7 +408,7 @@ class TaskOperatorActionService:
     def _wake_task(self, task: Task, affected_step_ids: object) -> None:
         if not affected_step_ids:
             return
-        if task.status == "blocked":
-            task.status = "running"
-        elif task.status == "failed":
-            task.status = "queued"
+        if task.status == TaskStatus.BLOCKED.value:
+            TaskStateService().transition(task, TaskStatus.RUNNING)
+        elif task.status == TaskStatus.FAILED.value:
+            TaskStateService().transition(task, TaskStatus.QUEUED)

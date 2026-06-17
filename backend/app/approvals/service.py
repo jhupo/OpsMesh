@@ -23,6 +23,7 @@ from backend.app.reviews.constants import (
     RESOURCE_STATUS_REJECTED,
 )
 from backend.app.runs.models import AgentRun
+from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService
@@ -201,9 +202,12 @@ class ApprovalService:
         if approval.agent_run_id is not None:
             run = self._session.get(AgentRun, approval.agent_run_id)
             if run is not None:
-                run.status = RunStatus.FAILED.value
-                run.completed_at = datetime.now(UTC)
-                run.error = {"code": "approval_rejected", "message": "Approval was rejected"}
+                RunStateService().transition(
+                    run,
+                    RunStatus.FAILED,
+                    completed_at=datetime.now(UTC),
+                    error={"code": "approval_rejected", "message": "Approval was rejected"},
+                )
         if approval.task_id is not None:
             task = self._session.get(Task, approval.task_id)
             if task is not None:

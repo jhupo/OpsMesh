@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.runs.models import AgentRun
+from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.self_hosted.events import SelfHostedEventRecorder
@@ -60,13 +61,16 @@ class SelfHostedWorkerControlService:
                 RunStatus.RUNNING.value,
                 RunStatus.WAITING_APPROVAL.value,
             }:
-                run.status = RunStatus.FAILED.value
-                run.completed_at = now
-                run.error = {
-                    "code": "runtime_credential_revoked",
-                    "message": "Self-hosted runtime credential was revoked.",
-                    "credential_id": str(credential.id),
-                }
+                RunStateService().transition(
+                    run,
+                    RunStatus.FAILED,
+                    completed_at=now,
+                    error={
+                        "code": "runtime_credential_revoked",
+                        "message": "Self-hosted runtime credential was revoked.",
+                        "credential_id": str(credential.id),
+                    },
+                )
                 self._events.append_run_event(
                     run,
                     "self_hosted.run_failed_by_revoke",

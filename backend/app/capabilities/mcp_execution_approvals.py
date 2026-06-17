@@ -14,6 +14,7 @@ from backend.app.capabilities.mcp_payloads import payload_hash
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.reviews.tool_execution import ToolExecutionReview
 from backend.app.runs.models import AgentRun
+from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task
@@ -71,7 +72,7 @@ class McpToolApprovalRequester:
             },
         )
         log.approval_id = approval.id
-        run.status = RunStatus.WAITING_APPROVAL.value
+        RunStateService().transition(run, RunStatus.WAITING_APPROVAL)
         self._transition_task_to_waiting_approval(run)
         self._notify_approval_requested(
             request=request,

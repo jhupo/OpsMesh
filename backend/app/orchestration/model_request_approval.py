@@ -15,6 +15,7 @@ from backend.app.orchestration.model_request_reviewing import (
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.reviews.model_request import ModelRequestReview, ModelRequestReviewService
 from backend.app.runs.models import AgentRun
+from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService
@@ -69,7 +70,7 @@ class ModelRequestApprovalService:
                 "review": review.approval_payload(),
             },
         )
-        run.status = RunStatus.WAITING_APPROVAL.value
+        RunStateService().transition(run, RunStatus.WAITING_APPROVAL)
         if run.task_id is not None:
             task = self.session.get(Task, run.task_id)
             if task is not None and task.status == TaskStatus.RUNNING.value:

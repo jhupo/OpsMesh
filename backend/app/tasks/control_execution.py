@@ -9,8 +9,11 @@ from sqlalchemy.orm import Session
 from backend.app.api.schemas.tasks import TaskControlActionRequest
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus, require_run_transition
+from backend.app.runs.service import RunStateService
+from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.step_service import TaskStepStateService
+from backend.app.tasks.step_status import TaskStepStatus
 from backend.app.workers.lease_lifecycle import mark_agent_run_worker_cancel_requested
 from backend.app.workers.queue.redis_queue import RedisQueue
 
@@ -39,10 +42,12 @@ class TaskControlExecutionService:
         ).all()
         worker_cancel_requests = 0
         for run in runs:
-            require_run_transition(RunStatus(run.status), RunStatus.CANCELLED)
-            run.status = RunStatus.CANCELLED.value
-            run.completed_at = now
-            run.error = {"code": TASK_PAUSED_REASON, "message": "Task paused by owner control"}
+            RunStateService().transition(
+                run,
+                RunStatus.CANCELLED,
+                completed_at=now,
+                error={"code": TASK_PAUSED_REASON, "message": "Task paused by owner control"},
+            )
             worker_cancel_requests += mark_agent_run_worker_cancel_requested(
                 self._session,
                 workspace_id=run.workspace_id,
@@ -76,8 +81,11 @@ class TaskControlExecutionService:
                     "pause_reason": request.reason,
                 }
             )
-            step.dependencies = dependencies
-            step.status = "blocked"
+            TaskStepStateService().transition(
+                step,
+                TaskStepStatus.BLOCKED,
+                dependencies=dependencies,
+            )
         return len(steps)
 
     def unblock_paused_steps(self, task: Task) -> int:
@@ -101,8 +109,11 @@ class TaskControlExecutionService:
                 "pause_reason",
             ):
                 dependencies.pop(key, None)
-            step.dependencies = dependencies
-            step.status = "queued"
+            TaskStepStateService().transition(
+                step,
+                TaskStepStatus.QUEUED,
+                dependencies=dependencies,
+            )
             changed += 1
         return changed
 
