@@ -3,10 +3,8 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
-from backend.app.model_providers.service import (
-    ModelProviderCredentialService,
-    ModelProviderUnavailableError,
-)
+from backend.app.model_providers.resolution_service import ModelProviderResolutionService
+from backend.app.model_providers.service_models import ModelProviderUnavailableError
 from backend.app.reviews.config import ResourceReviewSettings
 from backend.app.reviews.llm import LlmResourceReviewer
 from backend.app.reviews.llm_review import (
@@ -51,7 +49,7 @@ class SemanticResourceReviewRunner:
             )
         review_config = self._review_settings.semantic_config(workspace_id)
         try:
-            provider = self._model_provider_service().resolve_for_review(
+            provider = self._model_provider_resolution().resolve_for_review(
                 workspace_id=workspace_id,
                 credential_id=review_config.credential_id,
                 review_model=review_config.model,
@@ -69,10 +67,10 @@ class SemanticResourceReviewRunner:
             return llm_unavailable_review(policy_review, exc)
         return merge_policy_and_llm_reviews(policy_review, llm_review)
 
-    def _model_provider_service(self) -> ModelProviderCredentialService:
+    def _model_provider_resolution(self) -> ModelProviderResolutionService:
         if self._settings is None:
             raise ModelProviderUnavailableError("Review settings are unavailable")
-        return ModelProviderCredentialService(
+        return ModelProviderResolutionService(
             self._session,
             SecretEncryptionService(
                 secret=self._settings.credential_encryption_secret,

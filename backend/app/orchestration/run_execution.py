@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.agent_runtime.contracts import AgentRunner
 from backend.app.agent_runtime.factory import build_agent_runner
 from backend.app.core.config import Settings, get_settings
-from backend.app.model_providers.service import ModelProviderUnavailableError
+from backend.app.model_providers.service_models import ModelProviderUnavailableError
 from backend.app.orchestration.model_run_gateway import ModelRunGateway
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_lifecycle import RunLifecycleService

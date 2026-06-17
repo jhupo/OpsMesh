@@ -4,12 +4,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.model_provider_summary import agent_model_provider_summary
 from backend.app.agents.models import AgentProfile
-from backend.app.model_providers.metadata import sanitize_budget_metadata
-from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.service import (
+from backend.app.model_providers.health_summary import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,
 )
+from backend.app.model_providers.metadata import sanitize_budget_metadata
+from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.teams.operations_console_provider_credentials import (
     _empty_health_check_schedule_payload,
 )

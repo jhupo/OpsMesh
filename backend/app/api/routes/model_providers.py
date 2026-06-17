@@ -19,8 +19,14 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
+from backend.app.model_providers.credential_commands import (
+    ModelProviderCredentialCommandService,
+)
+from backend.app.model_providers.credential_queries import (
+    ModelProviderCredentialQueryService,
+)
+from backend.app.model_providers.health_service import ModelProviderHealthService
 from backend.app.model_providers.model_api import canonical_model_api
-from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import EgressUrlValidationError
 from backend.app.security.redaction import redact_sensitive_payload_item
@@ -38,12 +44,12 @@ async def list_model_provider_credentials(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> PageResponse[ModelProviderCredentialResponse]:
-    service = _service(session, settings)
-    items, total = service.list(context.workspace.id, page)
+    queries = _queries(session, settings)
+    items, total = queries.list(context.workspace.id, page)
     return PageResponse(
         items=[
             _credential_response(
-                service,
+                queries,
                 workspace_id=context.workspace.id,
                 credential=credential,
             )
@@ -63,7 +69,7 @@ async def list_model_provider_usage_audit(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> PageResponse[ModelProviderUsageAuditResponse]:
-    items, total = _service(session, settings).list_usage_audit(
+    items, total = _queries(session, settings).list_usage_audit(
         context.workspace.id,
         page,
         action=action,
@@ -88,7 +94,7 @@ async def create_model_provider_credential(
     settings: Settings = Depends(get_settings),
 ) -> ModelProviderCredentialResponse:
     try:
-        credential = _service(session, settings).create(
+        credential = _commands(session, settings).create(
             workspace_id=context.workspace.id,
             created_by_user_id=context.user.user_id,
             name=request.name,
@@ -105,7 +111,7 @@ async def create_model_provider_credential(
     except ValueError as exc:
         raise _model_provider_http_error(exc) from exc
     return _credential_response(
-        _service(session, settings),
+        _queries(session, settings),
         workspace_id=context.workspace.id,
         credential=credential,
     )
@@ -120,7 +126,7 @@ async def update_model_provider_credential(
     settings: Settings = Depends(get_settings),
 ) -> ModelProviderCredentialResponse:
     try:
-        credential = _service(session, settings).update(
+        credential = _commands(session, settings).update(
             workspace_id=context.workspace.id,
             credential_id=credential_id,
             actor_user_id=context.user.user_id,
@@ -138,7 +144,7 @@ async def update_model_provider_credential(
     except ValueError as exc:
         raise _model_provider_http_error(exc) from exc
     return _credential_response(
-        _service(session, settings),
+        _queries(session, settings),
         workspace_id=context.workspace.id,
         credential=credential,
     )
@@ -153,7 +159,7 @@ async def rotate_model_provider_credential_key(
     settings: Settings = Depends(get_settings),
 ) -> ModelProviderCredentialResponse:
     try:
-        credential = _service(session, settings).rotate_key(
+        credential = _commands(session, settings).rotate_key(
             workspace_id=context.workspace.id,
             credential_id=credential_id,
             actor_user_id=context.user.user_id,
@@ -162,7 +168,7 @@ async def rotate_model_provider_credential_key(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return _credential_response(
-        _service(session, settings),
+        _queries(session, settings),
         workspace_id=context.workspace.id,
         credential=credential,
     )
@@ -183,16 +189,17 @@ async def check_model_provider_credential_health(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported provider health probe: {', '.join(invalid_probes)}",
         )
-    service = _service(session, settings)
+    health = _health(session, settings)
+    queries = _queries(session, settings)
     try:
-        result = await service.run_health_check(
+        result = await health.run_health_check(
             workspace_id=context.workspace.id,
             credential_id=credential_id,
             actor_user_id=context.user.user_id,
             probes=probes,
             timeout_seconds=request.timeout_seconds,
         )
-        credential = service.get(
+        credential = queries.get(
             workspace_id=context.workspace.id,
             credential_id=credential_id,
         )
@@ -205,7 +212,7 @@ async def check_model_provider_credential_health(
         )
     return ModelProviderHealthCheckResponse(
         credential=_credential_response(
-            service,
+            queries,
             workspace_id=context.workspace.id,
             credential=credential,
         ),
@@ -222,7 +229,7 @@ async def set_default_model_provider_credential(
     settings: Settings = Depends(get_settings),
 ) -> ModelProviderCredentialResponse:
     try:
-        credential = _service(session, settings).set_default(
+        credential = _commands(session, settings).set_default(
             workspace_id=context.workspace.id,
             credential_id=credential_id,
             actor_user_id=context.user.user_id,
@@ -230,7 +237,7 @@ async def set_default_model_provider_credential(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return _credential_response(
-        _service(session, settings),
+        _queries(session, settings),
         workspace_id=context.workspace.id,
         credential=credential,
     )
@@ -244,7 +251,7 @@ async def disable_model_provider_credential(
     settings: Settings = Depends(get_settings),
 ) -> ModelProviderCredentialResponse:
     try:
-        credential = _service(session, settings).disable(
+        credential = _commands(session, settings).disable(
             workspace_id=context.workspace.id,
             credential_id=credential_id,
             actor_user_id=context.user.user_id,
@@ -252,20 +259,29 @@ async def disable_model_provider_credential(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return _credential_response(
-        _service(session, settings),
+        _queries(session, settings),
         workspace_id=context.workspace.id,
         credential=credential,
     )
 
 
-def _service(session: Session, settings: Settings) -> ModelProviderCredentialService:
-    return ModelProviderCredentialService(
-        session,
-        SecretEncryptionService(
-            secret=settings.credential_encryption_secret,
-            key_id=settings.credential_encryption_key_id,
-            previous_secrets=settings.credential_encryption_previous_secrets,
-        ),
+def _commands(session: Session, settings: Settings) -> ModelProviderCredentialCommandService:
+    return ModelProviderCredentialCommandService(session, _secret_service(settings))
+
+
+def _queries(session: Session, settings: Settings) -> ModelProviderCredentialQueryService:
+    return ModelProviderCredentialQueryService(session, _secret_service(settings))
+
+
+def _health(session: Session, settings: Settings) -> ModelProviderHealthService:
+    return ModelProviderHealthService(session, _secret_service(settings))
+
+
+def _secret_service(settings: Settings) -> SecretEncryptionService:
+    return SecretEncryptionService(
+        secret=settings.credential_encryption_secret,
+        key_id=settings.credential_encryption_key_id,
+        previous_secrets=settings.credential_encryption_previous_secrets,
     )
 
 
@@ -280,7 +296,7 @@ def _model_provider_http_error(exc: ValueError) -> HTTPException:
 
 
 def _credential_response(
-    service: ModelProviderCredentialService,
+    queries: ModelProviderCredentialQueryService,
     *,
     workspace_id: UUID,
     credential: object,
@@ -288,7 +304,7 @@ def _credential_response(
     response = ModelProviderCredentialResponse.model_validate(credential)
     return response.model_copy(
         update={
-            "scheduled_health_check": service.health_check_schedule_summary(
+            "scheduled_health_check": queries.health_check_schedule_summary(
                 workspace_id=workspace_id,
                 credential_id=response.id,
             )

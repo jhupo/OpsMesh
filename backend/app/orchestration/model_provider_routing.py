@@ -7,11 +7,10 @@ from sqlalchemy.orm import Session
 from backend.app.agent_runtime.contracts import AgentRunRequest
 from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.core.typing import optional_string, uuid_or_none
+from backend.app.model_providers.health_service import ModelProviderHealthService
 from backend.app.model_providers.model_api import canonical_model_api
-from backend.app.model_providers.service import (
-    ModelProviderCredentialService,
-    ModelProviderUnavailableError,
-)
+from backend.app.model_providers.resolution_service import ModelProviderResolutionService
+from backend.app.model_providers.service_models import ModelProviderUnavailableError
 from backend.app.orchestration.model_provider_audit import ModelProviderAuditService
 from backend.app.orchestration.model_request_reviewing import model_provider_fallback_policy
 from backend.app.orchestration.run_events import RunEventRecorder
@@ -135,7 +134,7 @@ class ModelProviderRoutingService:
         prefer_model_api: bool = False,
     ) -> dict[str, Any]:
         model_api = canonical_model_api(model_api)
-        resolved = ModelProviderCredentialService(
+        resolved = ModelProviderResolutionService(
             self.session,
             self.request_builder.secret_service(),
         ).resolve_for_agent(
@@ -158,7 +157,7 @@ class ModelProviderRoutingService:
         }
 
     def record_success(self, run: AgentRun, credential_id: UUID | None) -> None:
-        ModelProviderCredentialService(
+        ModelProviderHealthService(
             self.session,
             self.request_builder.secret_service(),
         ).record_success(workspace_id=run.workspace_id, credential_id=credential_id)
@@ -170,7 +169,7 @@ class ModelProviderRoutingService:
         exc: Exception,
     ) -> None:
         error = normalize_agent_error(exc)
-        ModelProviderCredentialService(
+        ModelProviderHealthService(
             self.session,
             self.request_builder.secret_service(),
         ).record_failure(

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.core.config import Settings
 from backend.app.model_providers.model_api import canonical_model_api
-from backend.app.model_providers.service import ModelProviderCredentialService
+from backend.app.model_providers.resolution_service import ModelProviderResolutionService
 from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
 
@@ -65,7 +65,7 @@ class RunRequestModelProviderService:
         prefer_model_api: bool = False,
     ) -> dict[str, Any]:
         model_api = canonical_model_api(model_api)
-        resolved = ModelProviderCredentialService(
+        resolved = ModelProviderResolutionService(
             self.session,
             self.secret_service(),
         ).resolve_for_agent(

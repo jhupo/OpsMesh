@@ -13,6 +13,10 @@ from backend.app.model_providers.capabilities import (
     list_model_capabilities,
     resolve_model_capability,
 )
+from backend.app.model_providers.health_summary import (
+    model_provider_health_check_schedule_summary,
+    model_provider_last_health_check_at,
+)
 from backend.app.model_providers.metadata import budget_is_exhausted, sanitize_budget_metadata
 from backend.app.model_providers.model_api import (
     default_model_api,
@@ -20,10 +24,6 @@ from backend.app.model_providers.model_api import (
     model_api_options_for_provider,
 )
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.service import (
-    model_provider_health_check_schedule_summary,
-    model_provider_last_health_check_at,
-)
 
 
 def _model_provider_credential_option_payload(

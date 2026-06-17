@@ -17,7 +17,7 @@ from backend.app.core.config import Settings
 from backend.app.domains.models import RevisionRequest
 from backend.app.files.storage import create_storage
 from backend.app.memory.indexing import WorkspaceMemoryIndexingService
-from backend.app.model_providers.service import ModelProviderCredentialService
+from backend.app.model_providers.health_service import ModelProviderHealthService
 from backend.app.orchestration.run_execution import (
     RunExecutionDependencies,
     RunExecutionService,
@@ -261,7 +261,7 @@ class WorkerJobHandler:
         if job.requested_by_user_id is None:
             raise ValueError("Model provider health check jobs require requested_by_user_id")
         asyncio.run(
-            ModelProviderCredentialService(
+            ModelProviderHealthService(
                 self._session,
                 self._secret_service(),
             ).run_health_check(
