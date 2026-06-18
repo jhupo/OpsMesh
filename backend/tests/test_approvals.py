@@ -8,6 +8,8 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.api.pagination import PageParams
+from backend.app.approvals.decisions import ApprovalDecisionService
+from backend.app.approvals.queries import ApprovalQueryService
 from backend.app.approvals.service import ApprovalService
 from backend.app.capabilities.models import McpServer
 from backend.app.db import models as registered_models  # noqa: F401
@@ -48,7 +50,7 @@ def test_approval_approve_enqueues_resume_job() -> None:
     )
     session.commit()
 
-    decided = ApprovalService(session, queue).approve(approval, user.id, "ok")
+    decided = ApprovalDecisionService(session, queue).approve(approval, user.id, "ok")
     job = queue.dequeue()
 
     assert decided.status == "approved"
@@ -72,7 +74,7 @@ def test_approval_reject_marks_run_and_task_failed() -> None:
     )
     session.commit()
 
-    ApprovalService(session).reject(approval, user.id, "too risky")
+    ApprovalDecisionService(session).reject(approval, user.id, "too risky")
 
     assert run.status == RunStatus.FAILED.value
     assert task.status == TaskStatus.FAILED.value
@@ -93,7 +95,7 @@ def test_list_approvals_filters_by_status() -> None:
     )
     session.commit()
 
-    items, total = ApprovalService(session).list_approvals(
+    items, total = ApprovalQueryService(session).list_approvals(
         workspace.id,
         PageParams(),
         status="pending",
@@ -130,7 +132,7 @@ def test_approval_approve_activates_pending_resource_review_target() -> None:
     )
     session.commit()
 
-    ApprovalService(session).approve(approval, user.id, "trusted")
+    ApprovalDecisionService(session).approve(approval, user.id, "trusted")
 
     assert server.status == RESOURCE_STATUS_ACTIVE
 
@@ -162,7 +164,7 @@ def test_approval_reject_marks_pending_resource_review_target_rejected() -> None
     )
     session.commit()
 
-    ApprovalService(session).reject(approval, user.id, "too broad")
+    ApprovalDecisionService(session).reject(approval, user.id, "too broad")
 
     assert server.status == RESOURCE_STATUS_REJECTED
 
