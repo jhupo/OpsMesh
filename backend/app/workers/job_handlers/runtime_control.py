@@ -1,11 +1,8 @@
-from sqlalchemy.orm import Session
-
-from backend.app.core.config import Settings
 from backend.app.operations.runtime_cleanup import RuntimeCleanupService
 from backend.app.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
-from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeLimits
-from backend.app.runtime_manager.dependencies import get_docker_runtime_client
+from backend.app.runtime_manager.contracts import RuntimeLimits
 from backend.app.runtime_manager.service import RuntimeControlService
+from backend.app.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.workers.job_routing import (
     bool_value,
     optional_uuid,
@@ -22,8 +19,8 @@ RUNTIME_CONTROL_JOB = "Runtime control job"
 
 
 class RuntimeCleanupJobHandler:
-    def __init__(self, session: Session) -> None:
-        self._session = session
+    def __init__(self, context: WorkerJobHandlerContext) -> None:
+        self._context = context
 
     def handle(self, job: JobPayload) -> None:
         routing = dict(job.routing)
@@ -39,36 +36,27 @@ class RuntimeCleanupJobHandler:
             key="stale_lease_after_seconds",
             context=RUNTIME_CLEANUP_JOB,
         )
-        RuntimeCleanupService(self._session).cleanup_stale_runtimes(
+        RuntimeCleanupService(self._context.session).cleanup_stale_runtimes(
             job.workspace_id,
             stale_after_seconds=stale_after_seconds,
         )
-        WorkerLeaseMaintenanceService(self._session).expire_stale_worker_leases(
+        WorkerLeaseMaintenanceService(self._context.session).expire_stale_worker_leases(
             workspace_id=job.workspace_id,
             stale_after_seconds=stale_lease_after_seconds,
         )
 
 
 class RuntimeControlJobHandler:
-    def __init__(
-        self,
-        session: Session,
-        *,
-        settings: Settings | None,
-        docker_client: DockerRuntimeClient | None = None,
-    ) -> None:
-        self._session = session
-        self._settings = settings
-        self._docker_client = docker_client
+    def __init__(self, context: WorkerJobHandlerContext) -> None:
+        self._context = context
 
     def handle(self, job: JobPayload) -> None:
-        if self._settings is None:
-            raise ValueError("Worker settings are required for runtime control")
+        settings = self._context.require_settings(context="runtime control")
         action = required_string(job.routing, "action", context=RUNTIME_CONTROL_JOB)
         service = RuntimeControlService(
-            self._session,
-            settings=self._settings,
-            docker_client=self._docker_client or get_docker_runtime_client(),
+            self._context.session,
+            settings=settings,
+            docker_client=self._context.docker_client(),
         )
         match action:
             case "create":
