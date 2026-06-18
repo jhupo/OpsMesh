@@ -5,43 +5,16 @@ from uuid import UUID
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.agents.models import AgentProfile
 from backend.app.api.pagination import PageParams
 from backend.app.approvals.models import Approval
+from backend.app.approvals.run_gate import ApprovalRunGateService
 from backend.app.audit.service import AuditService
-from backend.app.capabilities.models import (
-    Capability,
-    McpCredentialReference,
-    McpServer,
-    McpToolAllowlist,
-    Skill,
-)
 from backend.app.db.pagination import page_scalars
-from backend.app.marketplace.models import MarketplaceListing, TalentListing
-from backend.app.reviews.constants import (
-    RESOURCE_STATUS_ACTIVE,
-    RESOURCE_STATUS_REJECTED,
-)
-from backend.app.runs.models import AgentRun
-from backend.app.runs.service import RunStateService
-from backend.app.runs.status import RunStatus
-from backend.app.tasks.models import Task
-from backend.app.tasks.service import TaskStateService
-from backend.app.tasks.status import TaskStatus
+from backend.app.reviews.resource_review_targets import ResourceReviewDecisionService
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue.redis_queue import RedisQueue
 
 T = TypeVar("T")
-ResourceReviewTarget = (
-    AgentProfile
-    | Capability
-    | Skill
-    | McpServer
-    | McpToolAllowlist
-    | McpCredentialReference
-    | MarketplaceListing
-    | TalentListing
-)
 
 
 class ApprovalService:
@@ -121,9 +94,13 @@ class ApprovalService:
         approval.decision_reason = reason
         approval.decided_at = datetime.now(UTC)
         self._append_audit_event(approval, user_id, f"approval.{status}")
-        self._apply_resource_review_decision(approval, user_id, status)
+        ResourceReviewDecisionService(self._session).apply_decision(
+            approval,
+            user_id=user_id,
+            status=status,
+        )
         if status == "rejected":
-            self._mark_run_failed(approval)
+            ApprovalRunGateService(self._session).fail_rejected_run(approval)
         if status == "approved" and approval.agent_run_id is not None and self._queue is not None:
             self._queue.enqueue(
                 JobPayload(
@@ -138,85 +115,6 @@ class ApprovalService:
         self._session.refresh(approval)
         return approval
 
-    def _apply_resource_review_decision(
-        self,
-        approval: Approval,
-        user_id: UUID,
-        status: str,
-    ) -> None:
-        payload = approval.payload if isinstance(approval.payload, dict) else {}
-        if payload.get("kind") != "resource_review":
-            return
-        target_type = str(payload.get("target_type") or "")
-        target_id = _uuid_or_none(payload.get("target_id"))
-        if target_id is None:
-            return
-        target = self._resource_review_target(approval.workspace_id, target_type, target_id)
-        if target is None:
-            return
-        next_status = _review_target_next_status(target, status)
-        target.status = next_status
-        AuditService(self._session).record_user_action(
-            workspace_id=approval.workspace_id,
-            user_id=user_id,
-            action=f"{target_type}.{next_status}",
-            target_type=target_type,
-            target_id=target_id,
-            metadata={"approval_id": str(approval.id), "approval_type": approval.approval_type},
-        )
-
-    def _resource_review_target(
-        self,
-        workspace_id: UUID,
-        target_type: str,
-        target_id: UUID,
-    ) -> ResourceReviewTarget | None:
-        model_by_type = {
-            "agent_profile": AgentProfile,
-            "capability": Capability,
-            "skill": Skill,
-            "mcp_server": McpServer,
-            "mcp_tool_allowlist": McpToolAllowlist,
-            "mcp_credential_reference": McpCredentialReference,
-            "marketplace_listing": MarketplaceListing,
-            "talent_listing": TalentListing,
-        }
-        model = model_by_type.get(target_type)
-        if model is None:
-            return None
-        target = self._session.get(model, target_id)
-        if target is None:
-            return None
-        if isinstance(target, Capability):
-            return target
-        target_workspace_id = getattr(target, "workspace_id", None)
-        if target_workspace_id is None:
-            target_workspace_id = getattr(target, "owner_workspace_id", None)
-        if target_workspace_id is None:
-            target_workspace_id = getattr(target, "source_workspace_id", None)
-        if target_workspace_id != workspace_id:
-            return None
-        return target
-
-    def _mark_run_failed(self, approval: Approval) -> None:
-        if approval.agent_run_id is not None:
-            run = self._session.get(AgentRun, approval.agent_run_id)
-            if run is not None:
-                RunStateService().transition(
-                    run,
-                    RunStatus.FAILED,
-                    completed_at=datetime.now(UTC),
-                    error={"code": "approval_rejected", "message": "Approval was rejected"},
-                )
-        if approval.task_id is not None:
-            task = self._session.get(Task, approval.task_id)
-            if task is not None:
-                TaskStateService().transition(
-                    task,
-                    TaskStatus.FAILED,
-                    completed_at=datetime.now(UTC),
-                )
-
     def _append_audit_event(self, approval: Approval, user_id: UUID, action: str) -> None:
         AuditService(self._session).record_user_action(
             workspace_id=approval.workspace_id,
@@ -228,22 +126,3 @@ class ApprovalService:
 
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
         return page_scalars(self._session, statement, page)
-
-
-def _review_target_next_status(target: ResourceReviewTarget, approval_status: str) -> str:
-    if approval_status != "approved":
-        return RESOURCE_STATUS_REJECTED
-    if isinstance(target, MarketplaceListing | TalentListing):
-        return "public"
-    return RESOURCE_STATUS_ACTIVE
-
-
-def _uuid_or_none(value: object) -> UUID | None:
-    if isinstance(value, UUID):
-        return value
-    if isinstance(value, str):
-        try:
-            return UUID(value)
-        except ValueError:
-            return None
-    return None
