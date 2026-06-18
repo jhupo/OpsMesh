@@ -4,7 +4,6 @@ from datetime import datetime
 from types import TracebackType
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunResult
@@ -19,6 +18,7 @@ from backend.app.orchestration.run_result_payloads import (
     coerce_agent_run_result,
     run_output_payload,
 )
+from backend.app.orchestration.run_step_completion import TaskStepCompletionService
 from backend.app.orchestration.run_task_progress import RunTaskProgressService
 from backend.app.orchestration.run_terminal_state import RunTerminalStateService
 from backend.app.runs.models import AgentRun, RunEvent
@@ -249,61 +249,14 @@ class RunLifecycleService:
         return False
 
     def mark_step_completed(self, run: AgentRun, final_output: str) -> None:
-        if run.task_step_id is None:
-            return
-        step = self.session.get(TaskStep, run.task_step_id)
-        if step is None or step.workspace_id != run.workspace_id:
-            return
-        TaskStepStateService().transition(
-            step,
-            TaskStepStatus.COMPLETED,
-            result_summary=PmAcceptanceService(self.session).step_result_summary(
-                step,
-                final_output,
-            ),
-        )
-        self.callbacks.append_event(run, "task_step.completed", step.title, None)
-        self.append_task_message(
-            task_id=step.task_id,
-            workspace_id=step.workspace_id,
-            message_type="step.completed",
-            body=step.result_summary or step.title,
-            task_step_id=step.id,
-            agent_run_id=run.id,
-            agent_profile_id=run.agent_profile_id,
-            payload={
-                **step_message_payload(step),
-                "result_summary": step.result_summary,
-            },
-        )
-        if step.work_package_id == "manager-planning":
-            self.append_manager_planning_completed_message(step, run)
+        self._step_completion().mark_step_completed(run, final_output)
 
     def append_manager_planning_completed_message(
         self,
         step: TaskStep,
         run: AgentRun,
     ) -> None:
-        if self.task_message_exists(
-            step.workspace_id,
-            step.task_id,
-            message_type="planning.completed",
-        ):
-            return
-        self.append_task_message(
-            task_id=step.task_id,
-            workspace_id=step.workspace_id,
-            message_type="planning.completed",
-            body="Project plan generated.",
-            task_step_id=step.id,
-            agent_run_id=run.id,
-            agent_profile_id=run.agent_profile_id,
-            payload={
-                **step_message_payload(step),
-                "source": "manager_planning_step",
-                "result_summary": step.result_summary,
-            },
-        )
+        self._step_completion().append_manager_planning_completed_message(step, run)
 
     def task_message_exists(
         self,
@@ -312,16 +265,14 @@ class RunLifecycleService:
         *,
         message_type: str,
     ) -> bool:
-        return (
-            self.session.scalar(
-                select(TaskMessage.id).where(
-                    TaskMessage.workspace_id == workspace_id,
-                    TaskMessage.task_id == task_id,
-                    TaskMessage.message_type == message_type,
-                )
-            )
-            is not None
+        return self._step_completion().task_message_exists(
+            workspace_id,
+            task_id,
+            message_type=message_type,
         )
+
+    def _step_completion(self) -> TaskStepCompletionService:
+        return TaskStepCompletionService(self.session, self.callbacks.append_event)
 
     def _memory_completion(self) -> RunMemoryCompletionService:
         return RunMemoryCompletionService(

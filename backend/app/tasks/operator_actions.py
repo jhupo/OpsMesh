@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.audit.service import AuditService
-from backend.app.tasks.message_append import TaskMessageAppendService
-from backend.app.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.tasks.manager_review_requests import ManagerReviewRequestService
+from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.operator_action_recording import TaskOperatorActionRecorder
 from backend.app.tasks.operator_dependencies import (
     completed_source_steps,
     dependency_step_ids,
-    manager_agent_id,
     without_blocking_keys,
 )
 from backend.app.tasks.service import TaskStateService
@@ -68,13 +66,14 @@ class TaskOperatorActionService:
                 agent_profile_id=agent_profile_id,
             )
         else:
-            result = self._request_manager_review(
+            result = ManagerReviewRequestService(self._session).request_manager_review(
                 task,
                 instruction=instruction,
                 reason=reason,
             )
 
-        message = self._append_message(
+        recorder = TaskOperatorActionRecorder(self._session)
+        message = recorder.append_message(
             task,
             action=action,
             result=result,
@@ -83,21 +82,17 @@ class TaskOperatorActionService:
             metadata=metadata,
         )
         self._wake_task(task, result["changed_step_ids"] or result["created_step_ids"])
-        AuditService(self._session).record_user_action(
+        recorder.record_audit(
             workspace_id=workspace_id,
-            user_id=actor_user_id,
-            action=f"task.operator.{action}",
-            target_type="task",
-            target_id=task.id,
-            metadata={
-                "task_step_ids": [str(step_id) for step_id in task_step_ids],
-                "agent_profile_id": str(agent_profile_id) if agent_profile_id else None,
-                "changed_step_ids": [str(step_id) for step_id in result["changed_step_ids"]],
-                "created_step_ids": [str(step_id) for step_id in result["created_step_ids"]],
-                "message_id": str(message.id),
-                "reason": reason,
-                "metadata": metadata,
-            },
+            actor_user_id=actor_user_id,
+            task=task,
+            action=action,
+            task_step_ids=task_step_ids,
+            agent_profile_id=agent_profile_id,
+            result=result,
+            message=message,
+            reason=reason,
+            metadata=metadata,
         )
         self._session.commit()
         self._session.refresh(task)
@@ -275,64 +270,6 @@ class TaskOperatorActionService:
             },
         }
 
-    def _request_manager_review(
-        self,
-        task: Task,
-        *,
-        instruction: str | None,
-        reason: str | None,
-    ) -> dict[str, object]:
-        manager_id = manager_agent_id(task)
-        if manager_id is None:
-            raise ValueError("Task manager not found")
-        manager = self._session.scalar(
-            select(AgentProfile).where(
-                AgentProfile.workspace_id == task.workspace_id,
-                AgentProfile.id == manager_id,
-                AgentProfile.status == "active",
-            )
-        )
-        if manager is None:
-            raise ValueError("Task manager not found")
-
-        next_order = self._next_step_order(task.workspace_id, task.id)
-        cycle = self._next_manager_review_cycle(task.workspace_id, task.id)
-        step = TaskStep(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
-            assigned_agent_profile_id=manager.id,
-            runtime_space_id=task.runtime_space_id,
-            work_package_id=f"manager-summary-operator-{cycle}",
-            required_role="project_manager",
-            required_skills=["project_management", "review"],
-            expected_artifacts=["manager_review"],
-            acceptance_criteria=["Manager review is recorded with a decision."],
-            review_policy={"mode": "operator_requested_review"},
-            title="Operator requested manager review",
-            description=instruction or "Review current task progress and decide next action.",
-            status="queued",
-            order_index=next_order,
-            dependencies={
-                "operator_action": {
-                    "action": "request_manager_review",
-                    "reason": reason,
-                    "requested_at": datetime.now(UTC).isoformat(),
-                }
-            },
-        )
-        self._session.add(step)
-        self._session.flush([step])
-        return {
-            "changed_step_ids": [],
-            "created_step_ids": [step.id],
-            "warnings": [],
-            "details": {
-                "manager_agent_profile_id": str(manager.id),
-                "created_work_package_id": step.work_package_id,
-                "order_index": step.order_index,
-            },
-        }
-
     def _target_steps(self, task: Task, task_step_ids: list[UUID]) -> list[TaskStep]:
         statement = select(TaskStep).where(
             TaskStep.workspace_id == task.workspace_id,
@@ -359,50 +296,6 @@ class TaskOperatorActionService:
                 )
                 .order_by(TaskStep.order_index.asc(), TaskStep.created_at.asc())
             )
-        )
-
-    def _next_step_order(self, workspace_id: UUID, task_id: UUID) -> int:
-        current = self._session.scalar(
-            select(func.coalesce(func.max(TaskStep.order_index), 0)).where(
-                TaskStep.workspace_id == workspace_id,
-                TaskStep.task_id == task_id,
-            )
-        )
-        return int(current or 0) + 1
-
-    def _next_manager_review_cycle(self, workspace_id: UUID, task_id: UUID) -> int:
-        existing = self._session.scalar(
-            select(func.count(TaskStep.id)).where(
-                TaskStep.workspace_id == workspace_id,
-                TaskStep.task_id == task_id,
-                TaskStep.work_package_id.like("manager-summary-operator-%"),
-            )
-        )
-        return int(existing or 0) + 1
-
-    def _append_message(
-        self,
-        task: Task,
-        *,
-        action: str,
-        result: dict[str, object],
-        instruction: str | None,
-        reason: str | None,
-        metadata: dict[str, object],
-    ) -> TaskMessage:
-        return TaskMessageAppendService(self._session).append_for_task(
-            task,
-            message_type=f"task.operator.{action}",
-            body=f"Operator action applied: {action}.",
-            payload={
-                "action": action,
-                "instruction": instruction,
-                "reason": reason,
-                "changed_step_ids": [str(step_id) for step_id in result["changed_step_ids"]],
-                "created_step_ids": [str(step_id) for step_id in result["created_step_ids"]],
-                "warnings": result["warnings"],
-                "metadata": metadata,
-            },
         )
 
     def _wake_task(self, task: Task, affected_step_ids: object) -> None:

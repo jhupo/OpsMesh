@@ -16,7 +16,6 @@ from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
 from backend.app.core.config import Settings
-from backend.app.core.trace_context import current_trace_metadata
 from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task
@@ -33,6 +32,7 @@ from .run_request_prompt import (
 )
 from .run_request_sessions import RunRequestSessionService
 from .run_request_tracing import agent_run_tracing
+from .run_runtime_metadata import RunRuntimeMetadataBuilder
 
 
 @dataclass(slots=True)
@@ -59,6 +59,10 @@ class RunRequestBuilder:
     @property
     def model_providers(self) -> RunRequestModelProviderService:
         return RunRequestModelProviderService(self.session, self.settings)
+
+    @property
+    def metadata_builder(self) -> RunRuntimeMetadataBuilder:
+        return RunRuntimeMetadataBuilder(self.authorization, self.context_provider)
 
     def build_agent_request(
         self,
@@ -174,26 +178,13 @@ class RunRequestBuilder:
         model_provider: dict[str, Any],
         authorization_snapshot: dict[str, object],
     ) -> dict[str, object]:
-        metadata: dict[str, object] = {
-            "agent_profile_id": str(profile.id) if profile.id is not None else None,
-            "agent_role": profile.role,
-            "run_model": model_provider["model"],
-            "model_provider_provider": model_provider["provider"],
-            "model_provider_credential_id": str(model_provider["model_provider_credential_id"])
-            if model_provider["model_provider_credential_id"] is not None
-            else None,
-            "model_provider_model_api": model_provider["model_api"],
-            "authorization_scope": "workspace",
-            "authorized_workspace_id": str(run.workspace_id),
-            "authorized_task_id": str(task.id) if task is not None else None,
-            "tool_policy_source": "agent_profile",
-            "authorization_snapshot_version": authorization_snapshot.get("version"),
-        }
-        metadata.update(self.authorization.step_context_for_run(run))
-        metadata.update(self.context_provider.mailbox_context_for_run(run, task, profile))
-        metadata.update(self.context_provider.team_context_for_run(run, task, profile))
-        metadata.update(current_trace_metadata())
-        return metadata
+        return self.metadata_builder.build(
+            run=run,
+            task=task,
+            profile=profile,
+            model_provider=model_provider,
+            authorization_snapshot=authorization_snapshot,
+        )
 
     def persistent_session_for_run(
         self,

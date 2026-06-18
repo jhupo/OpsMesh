@@ -8,20 +8,23 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agents.model_validation import AgentModelValidator
+from backend.app.agents.lifecycle import (
+    AGENT_STATUS_ACTIVE,
+    AGENT_STATUS_ARCHIVED,
+    AgentProfileLifecycleService,
+)
 from backend.app.agents.models import AgentProfile, AgentProfileVersion
 from backend.app.agents.payloads import (
     AGENT_PROFILE_FIELDS,
     copy_json_value,
     datetime_or_none,
-    normalize_create_payload,
     normalize_update_payload,
     profile_snapshot,
     rollback_reason,
     uuid_or_none,
 )
+from backend.app.agents.profile_commands import AgentProfileCommandService
 from backend.app.agents.queries import AgentProfileQueryService
-from backend.app.agents.reviews import AgentProfileReviewService
 from backend.app.agents.versions import AgentVersionRecorder
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.agents import (
@@ -32,21 +35,12 @@ from backend.app.api.schemas.agents import (
 )
 from backend.app.core.config import Settings
 from backend.app.db.pagination import page_scalars
-from backend.app.reviews.constants import (
-    RESOURCE_STATUS_ACTIVE,
-    RESOURCE_STATUS_PENDING_APPROVAL,
-    RESOURCE_STATUS_REJECTED,
-)
-
-AGENT_STATUS_ACTIVE = RESOURCE_STATUS_ACTIVE
-AGENT_STATUS_ARCHIVED = "archived"
 
 
 class AgentManagementService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self._session = session
         self._settings = settings
-        self._model_validator = AgentModelValidator(session)
         self._versions = AgentVersionRecorder(session)
 
     def list_agents(
@@ -72,60 +66,12 @@ class AgentManagementService:
         *,
         commit: bool = True,
     ) -> AgentProfile:
-        values = normalize_create_payload(data, {})
-        self._model_validator.validate_model_provider_credential(
+        return AgentProfileCommandService(self._session, self._settings).create_agent(
             workspace_id,
-            values["model_provider_credential_id"],
+            data,
+            actor_user_id,
+            commit=commit,
         )
-        self._model_validator.validate_agent_model_api(
-            workspace_id,
-            values["model_provider_credential_id"],
-            values["model_settings"],
-        )
-
-        now = datetime.now(UTC)
-        review_service = AgentProfileReviewService(self._session, self._settings)
-        review = review_service.review_create(
-            workspace_id=workspace_id,
-            values=values,
-        )
-        profile = AgentProfile(
-            workspace_id=workspace_id,
-            **values,
-            status=RESOURCE_STATUS_PENDING_APPROVAL if review.required else AGENT_STATUS_ACTIVE,
-            version=1,
-            archived_at=None,
-            last_versioned_at=now,
-        )
-        self._session.add(profile)
-        self._session.flush()
-        if review.required:
-            review_service.request_review(
-                workspace_id=workspace_id,
-                actor_user_id=actor_user_id,
-                profile=profile,
-                review=review,
-            )
-        self._versions.record_version(
-            profile,
-            changed_by_user_id=actor_user_id,
-            change_reason="Agent profile created",
-        )
-        self._versions.audit_profile_change(
-            profile,
-            actor_user_id=actor_user_id,
-            action="agent.created" if not review.required else "agent.review_requested",
-            changed_fields=sorted(AGENT_PROFILE_FIELDS),
-            extra_metadata={
-                "review_required": review.required,
-                "review_risk_level": review.risk_level,
-                "review_reasons": review.reasons,
-            },
-        )
-        if commit:
-            self._session.commit()
-            self._session.refresh(profile)
-        return profile
 
     def update_agent(
         self,
@@ -135,64 +81,11 @@ class AgentManagementService:
         actor_user_id: UUID | None = None,
     ) -> AgentProfile | None:
         profile = self._require_profile(workspace_id, agent_profile_id)
-        values = normalize_update_payload(
+        return AgentProfileCommandService(self._session, self._settings).update_agent(
+            profile,
             changes,
-            {},
+            actor_user_id,
         )
-        if not values:
-            return profile
-        if "status" in values:
-            raise ValueError("Use archive or activate to change agent lifecycle status")
-        before_snapshot = profile_snapshot(profile)
-        if "model_provider_credential_id" in values:
-            self._model_validator.validate_model_provider_credential(
-                workspace_id,
-                values["model_provider_credential_id"],
-            )
-        self._model_validator.validate_agent_model_api(
-            workspace_id,
-            values.get("model_provider_credential_id", profile.model_provider_credential_id),
-            values.get("model_settings", profile.model_settings),
-        )
-
-        for field, value in values.items():
-            setattr(profile, field, copy_json_value(field, value))
-        review = AgentProfileReviewService(self._session, self._settings).review_update(
-            profile,
-            values,
-        )
-        if review is not None and review.required:
-            profile.status = RESOURCE_STATUS_PENDING_APPROVAL
-            AgentProfileReviewService(self._session, self._settings).request_review(
-                workspace_id=workspace_id,
-                actor_user_id=actor_user_id,
-                profile=profile,
-                review=review,
-            )
-        self._versions.bump_version(
-            profile,
-            changed_by_user_id=actor_user_id,
-            change_reason="Agent profile updated",
-        )
-        self._versions.audit_profile_change(
-            profile,
-            actor_user_id=actor_user_id,
-            action=(
-                "agent.review_requested"
-                if review is not None and review.required
-                else "agent.updated"
-            ),
-            changed_fields=sorted(values),
-            before_snapshot=before_snapshot,
-            extra_metadata={
-                "review_required": review.required if review is not None else False,
-                "review_risk_level": review.risk_level if review is not None else None,
-                "review_reasons": review.reasons if review is not None else [],
-            },
-        )
-        self._session.commit()
-        self._session.refresh(profile)
-        return profile
 
     def archive_agent(
         self,
@@ -201,26 +94,7 @@ class AgentManagementService:
         actor_user_id: UUID | None = None,
     ) -> AgentProfile | None:
         profile = self._require_profile(workspace_id, agent_profile_id)
-        if profile.status == AGENT_STATUS_ARCHIVED:
-            return profile
-        before_snapshot = profile_snapshot(profile)
-        profile.status = AGENT_STATUS_ARCHIVED
-        profile.archived_at = datetime.now(UTC)
-        self._versions.bump_version(
-            profile,
-            changed_by_user_id=actor_user_id,
-            change_reason="Agent profile archived",
-        )
-        self._versions.audit_profile_change(
-            profile,
-            actor_user_id=actor_user_id,
-            action="agent.archived",
-            changed_fields=["archived_at", "status"],
-            before_snapshot=before_snapshot,
-        )
-        self._session.commit()
-        self._session.refresh(profile)
-        return profile
+        return AgentProfileLifecycleService(self._session).archive_agent(profile, actor_user_id)
 
     def activate_agent(
         self,
@@ -229,28 +103,7 @@ class AgentManagementService:
         actor_user_id: UUID | None = None,
     ) -> AgentProfile | None:
         profile = self._require_profile(workspace_id, agent_profile_id)
-        if profile.status == AGENT_STATUS_ACTIVE:
-            return profile
-        if profile.status in {RESOURCE_STATUS_PENDING_APPROVAL, RESOURCE_STATUS_REJECTED}:
-            raise ValueError("Agent profile requires approval before activation")
-        before_snapshot = profile_snapshot(profile)
-        profile.status = AGENT_STATUS_ACTIVE
-        profile.archived_at = None
-        self._versions.bump_version(
-            profile,
-            changed_by_user_id=actor_user_id,
-            change_reason="Agent profile activated",
-        )
-        self._versions.audit_profile_change(
-            profile,
-            actor_user_id=actor_user_id,
-            action="agent.activated",
-            changed_fields=["archived_at", "status"],
-            before_snapshot=before_snapshot,
-        )
-        self._session.commit()
-        self._session.refresh(profile)
-        return profile
+        return AgentProfileLifecycleService(self._session).activate_agent(profile, actor_user_id)
 
     def delete_agent(
         self,
@@ -262,9 +115,7 @@ class AgentManagementService:
         profile = self._profile(workspace_id, agent_profile_id)
         if profile is None:
             return False
-        self._session.delete(profile)
-        self._session.commit()
-        return True
+        return AgentProfileLifecycleService(self._session).delete_agent(profile)
 
     def clone_agent(
         self,
