@@ -30,7 +30,7 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.service import ResourceReview
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -68,8 +68,7 @@ def test_agent_management_lifecycle_versions_and_sessions() -> None:
             "name": "Researcher",
             "role": "researcher",
             "instructions": "Remember the company strategy.",
-            "model_api": "responses",
-            "model_settings": {"temperature": 0.2},
+            "model_settings": {"temperature": 0.2, "model_api": "responses"},
         },
     )
     assert created.status_code == 201
@@ -97,7 +96,7 @@ def test_agent_management_lifecycle_versions_and_sessions() -> None:
         headers=_headers(owner.id),
         json={
             "instructions": "Remember product and market context.",
-            "model_api": None,
+            "model_settings": {"temperature": 0.2},
         },
     )
     assert updated.status_code == 200
@@ -232,7 +231,7 @@ def test_agent_management_lifecycle_versions_and_sessions() -> None:
     )
 
 
-def test_agent_management_rejects_unknown_model_api() -> None:
+def test_agent_management_rejects_unknown_model_api_settings() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
     agent = AgentProfile(
@@ -249,13 +248,13 @@ def test_agent_management_rejects_unknown_model_api() -> None:
         json={
             "name": "Bad Protocol",
             "role": "researcher",
-            "model_api": "streaming-v3",
+            "model_settings": {"model_api": "streaming-v3"},
         },
     )
     patched = client.patch(
         f"/api/v1/workspaces/{workspace.id}/agents/{agent.id}",
         headers=_headers(owner.id),
-        json={"model_api": "streaming-v3"},
+        json={"model_settings": {"model_api": "streaming-v3"}},
     )
 
     assert created.status_code == 400
@@ -327,7 +326,7 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
             "role": "researcher",
             "model": "workspace-default",
             "model_provider_credential_id": str(primary.id),
-            "model_api": "responses",
+            "model_settings": {"model_api": "responses"},
         },
     )
     created = client.post(
@@ -338,9 +337,9 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
             "role": "researcher",
             "model": "workspace-default",
             "model_provider_credential_id": str(primary.id),
-            "model_api": "anthropic_messages",
             "model_settings": {
                 "temperature": 0.2,
+                "model_api": "anthropic_messages",
                 "api_key": "sk-agent-model-settings-secret",
             },
         },
@@ -355,7 +354,7 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
         headers=_headers(owner.id),
         json={
             "model_provider_credential_id": str(backup.id),
-            "model_api": "responses",
+            "model_settings": {"temperature": 0.2, "model_api": "responses"},
         },
     )
     cross_workspace_patch = client.patch(

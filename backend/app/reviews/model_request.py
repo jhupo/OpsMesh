@@ -10,7 +10,7 @@ from backend.app.reviews.constants import (
     MODEL_REQUEST_REVIEW_SETTINGS_KEY,
     RESOURCE_REVIEW_SETTINGS_KEY,
 )
-from backend.app.reviews.service import ResourceReviewService
+from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.workspaces.models import Workspace
 
@@ -48,7 +48,7 @@ class ModelRequestReview:
 class ModelRequestReviewService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self._session = session
-        self._resource_reviews = ResourceReviewService(session, settings)
+        self._resource_reviews = ResourcePolicyReviewBuilder(session, settings)
 
     def review_request(
         self,

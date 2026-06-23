@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
 from backend.app.api.schemas.approvals import ApprovalDecisionRequest, ApprovalResponse
-from backend.app.approvals.service import ApprovalService
+from backend.app.approvals.decisions import ApprovalDecisionService
+from backend.app.approvals.queries import ApprovalQueryService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction, WorkspaceRole
@@ -21,7 +22,7 @@ async def list_approvals(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[ApprovalResponse]:
-    items, total = ApprovalService(session).list_approvals(
+    items, total = ApprovalQueryService(session).list_approvals(
         context.workspace.id,
         page,
         status_filter,
@@ -37,13 +38,12 @@ async def approve(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
     session: Session = Depends(get_db_session),
 ) -> ApprovalResponse:
-    service = ApprovalService(session)
-    approval = service.get_scoped(context.workspace.id, approval_id)
+    approval = ApprovalQueryService(session).get_scoped(context.workspace.id, approval_id)
     if approval is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
     _require_resource_review_admin(context, approval.payload)
     return ApprovalResponse.model_validate(
-        service.approve(approval, context.user.user_id, request.reason)
+        ApprovalDecisionService(session).approve(approval, context.user.user_id, request.reason)
     )
 
 
@@ -54,13 +54,12 @@ async def reject(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
     session: Session = Depends(get_db_session),
 ) -> ApprovalResponse:
-    service = ApprovalService(session)
-    approval = service.get_scoped(context.workspace.id, approval_id)
+    approval = ApprovalQueryService(session).get_scoped(context.workspace.id, approval_id)
     if approval is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
     _require_resource_review_admin(context, approval.payload)
     return ApprovalResponse.model_validate(
-        service.reject(approval, context.user.user_id, request.reason)
+        ApprovalDecisionService(session).reject(approval, context.user.user_id, request.reason)
     )
 
 

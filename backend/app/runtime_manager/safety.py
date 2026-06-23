@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from backend.app.admin.policies import RiskyExecutionPolicy
+from backend.app.admin.risky_policy_values import RiskyExecutionPolicy
 from backend.app.runtimes.models import RuntimeTemplate
 
 

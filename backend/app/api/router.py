@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from backend.app.api.routes.admin import router as admin_router
+from backend.app.api.routes.admin.router import router as admin_router
 from backend.app.api.routes.agent_messages import router as agent_messages_router
 from backend.app.api.routes.approvals import router as approvals_router
 from backend.app.api.routes.auth import router as auth_router
@@ -20,9 +20,14 @@ from backend.app.api.routes.operations import router as operations_router
 from backend.app.api.routes.runtime_spaces import router as runtime_spaces_router
 from backend.app.api.routes.runtimes import router as runtimes_router
 from backend.app.api.routes.scheduled_jobs import router as scheduled_jobs_router
-from backend.app.api.routes.self_hosted import router as self_hosted_router
+from backend.app.api.routes.self_hosted.router import router as self_hosted_router
 from backend.app.api.routes.webhooks import router as webhooks_router
+from backend.app.api.routes.workspace_agent_sessions import (
+    router as workspace_agent_sessions_router,
+)
+from backend.app.api.routes.workspace_agents import router as workspace_agents_router
 from backend.app.api.routes.workspace_resources import router as workspace_resources_router
+from backend.app.api.routes.workspace_runs import router as workspace_runs_router
 from backend.app.api.routes.workspaces import router as workspaces_router
 
 api_router = APIRouter()
@@ -34,6 +39,9 @@ api_router.include_router(workspaces_router)
 api_router.include_router(marketplace_router)
 api_router.include_router(model_providers_router)
 api_router.include_router(model_provider_capabilities_router)
+api_router.include_router(workspace_agents_router)
+api_router.include_router(workspace_agent_sessions_router)
+api_router.include_router(workspace_runs_router)
 api_router.include_router(workspace_resources_router)
 api_router.include_router(agent_messages_router)
 api_router.include_router(notifications_router)

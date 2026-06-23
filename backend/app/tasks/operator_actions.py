@@ -1,15 +1,23 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.audit.service import AuditService
-from backend.app.tasks.message_append import TaskMessageAppendService
-from backend.app.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.tasks.manager_review_requests import ManagerReviewRequestService
+from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.operator_action_recording import TaskOperatorActionRecorder
+from backend.app.tasks.operator_dependencies import (
+    completed_source_steps,
+    dependency_step_ids,
+    without_blocking_keys,
+)
+from backend.app.tasks.service import TaskStateService
+from backend.app.tasks.status import TaskStatus
+from backend.app.tasks.step_service import TaskStepStateService
+from backend.app.tasks.step_status import TaskStepStatus
 
 TASK_OPERATOR_ACTIONS = {
     "requeue_blocked_steps",
@@ -19,16 +27,6 @@ TASK_OPERATOR_ACTIONS = {
 }
 TERMINAL_STEP_STATUSES = {"completed", "cancelled"}
 TERMINAL_TASK_STATUSES = {"completed", "cancelled"}
-BLOCKING_DEPENDENCY_KEYS = {
-    "blocked_at",
-    "blocked_reason",
-    "blocked_resource_key",
-    "blocked_resource_keys",
-    "blocked_by",
-    "scheduler",
-}
-
-
 class TaskOperatorActionService:
     """Apply user/operator actions that turn task diagnostics into runnable work."""
 
@@ -68,13 +66,14 @@ class TaskOperatorActionService:
                 agent_profile_id=agent_profile_id,
             )
         else:
-            result = self._request_manager_review(
+            result = ManagerReviewRequestService(self._session).request_manager_review(
                 task,
                 instruction=instruction,
                 reason=reason,
             )
 
-        message = self._append_message(
+        recorder = TaskOperatorActionRecorder(self._session)
+        message = recorder.append_message(
             task,
             action=action,
             result=result,
@@ -83,21 +82,17 @@ class TaskOperatorActionService:
             metadata=metadata,
         )
         self._wake_task(task, result["changed_step_ids"] or result["created_step_ids"])
-        AuditService(self._session).record_user_action(
+        recorder.record_audit(
             workspace_id=workspace_id,
-            user_id=actor_user_id,
-            action=f"task.operator.{action}",
-            target_type="task",
-            target_id=task.id,
-            metadata={
-                "task_step_ids": [str(step_id) for step_id in task_step_ids],
-                "agent_profile_id": str(agent_profile_id) if agent_profile_id else None,
-                "changed_step_ids": [str(step_id) for step_id in result["changed_step_ids"]],
-                "created_step_ids": [str(step_id) for step_id in result["created_step_ids"]],
-                "message_id": str(message.id),
-                "reason": reason,
-                "metadata": metadata,
-            },
+            actor_user_id=actor_user_id,
+            task=task,
+            action=action,
+            task_step_ids=task_step_ids,
+            agent_profile_id=agent_profile_id,
+            result=result,
+            message=message,
+            reason=reason,
+            metadata=metadata,
         )
         self._session.commit()
         self._session.refresh(task)
@@ -134,8 +129,11 @@ class TaskOperatorActionService:
             if step.status != "blocked":
                 warnings.append(f"step_not_blocked:{step.id}")
                 continue
-            step.status = "queued"
-            step.dependencies = _without_blocking_keys(step.dependencies)
+            TaskStepStateService().transition(
+                step,
+                TaskStepStatus.QUEUED,
+                dependencies=without_blocking_keys(step.dependencies),
+            )
             changed_step_ids.append(step.id)
 
         return {
@@ -155,7 +153,7 @@ class TaskOperatorActionService:
     ) -> dict[str, object]:
         steps = self._task_steps(task)
         step_by_id = {step.id: step for step in steps}
-        source_steps = _source_steps(steps, task_step_ids)
+        source_steps = completed_source_steps(steps, task_step_ids)
         if task_step_ids and len(source_steps) != len(set(task_step_ids)):
             raise ValueError("Task step not found")
         if not source_steps:
@@ -168,7 +166,7 @@ class TaskOperatorActionService:
         warnings: list[str] = []
 
         for step in steps:
-            upstream_step_ids = _dependency_step_ids(step.dependencies)
+            upstream_step_ids = dependency_step_ids(step.dependencies)
             if not upstream_step_ids or not source_step_ids.intersection(upstream_step_ids):
                 continue
             missing_step_ids = [
@@ -189,14 +187,18 @@ class TaskOperatorActionService:
                 warnings.append(f"downstream_active:{step.id}")
                 continue
 
-            cleaned_dependencies = _without_blocking_keys(step.dependencies)
+            cleaned_dependencies = without_blocking_keys(step.dependencies)
             cleared_blocking = cleaned_dependencies != step.dependencies
             status_changed = step.status in {"blocked", "failed"}
             if cleared_blocking:
                 step.dependencies = cleaned_dependencies
                 cleared_blocking_step_ids.append(step.id)
             if status_changed:
-                step.status = "queued"
+                TaskStepStateService().transition(
+                    step,
+                    TaskStepStatus.QUEUED,
+                    dependencies=cleaned_dependencies,
+                )
             if step.status == "queued":
                 scheduled_downstream_step_ids.append(step.id)
             if cleared_blocking or status_changed or step.status == "queued":
@@ -248,8 +250,11 @@ class TaskOperatorActionService:
         previous_agent_profile_id = step.assigned_agent_profile_id
         step.assigned_agent_profile_id = agent_profile_id
         if step.status in {"blocked", "failed"}:
-            step.status = "queued"
-            step.dependencies = _without_blocking_keys(step.dependencies)
+            TaskStepStateService().transition(
+                step,
+                TaskStepStatus.QUEUED,
+                dependencies=without_blocking_keys(step.dependencies),
+            )
 
         return {
             "changed_step_ids": [step.id],
@@ -262,64 +267,6 @@ class TaskOperatorActionService:
                 ),
                 "agent_profile_id": str(agent_profile_id),
                 "agent_role": agent.role,
-            },
-        }
-
-    def _request_manager_review(
-        self,
-        task: Task,
-        *,
-        instruction: str | None,
-        reason: str | None,
-    ) -> dict[str, object]:
-        manager_agent_id = _manager_agent_id(task)
-        if manager_agent_id is None:
-            raise ValueError("Task manager not found")
-        manager = self._session.scalar(
-            select(AgentProfile).where(
-                AgentProfile.workspace_id == task.workspace_id,
-                AgentProfile.id == manager_agent_id,
-                AgentProfile.status == "active",
-            )
-        )
-        if manager is None:
-            raise ValueError("Task manager not found")
-
-        next_order = self._next_step_order(task.workspace_id, task.id)
-        cycle = self._next_manager_review_cycle(task.workspace_id, task.id)
-        step = TaskStep(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
-            assigned_agent_profile_id=manager.id,
-            runtime_space_id=task.runtime_space_id,
-            work_package_id=f"manager-summary-operator-{cycle}",
-            required_role="project_manager",
-            required_skills=["project_management", "review"],
-            expected_artifacts=["manager_review"],
-            acceptance_criteria=["Manager review is recorded with a decision."],
-            review_policy={"mode": "operator_requested_review"},
-            title="Operator requested manager review",
-            description=instruction or "Review current task progress and decide next action.",
-            status="queued",
-            order_index=next_order,
-            dependencies={
-                "operator_action": {
-                    "action": "request_manager_review",
-                    "reason": reason,
-                    "requested_at": datetime.now(UTC).isoformat(),
-                }
-            },
-        )
-        self._session.add(step)
-        self._session.flush([step])
-        return {
-            "changed_step_ids": [],
-            "created_step_ids": [step.id],
-            "warnings": [],
-            "details": {
-                "manager_agent_profile_id": str(manager.id),
-                "created_work_package_id": step.work_package_id,
-                "order_index": step.order_index,
             },
         }
 
@@ -351,114 +298,10 @@ class TaskOperatorActionService:
             )
         )
 
-    def _next_step_order(self, workspace_id: UUID, task_id: UUID) -> int:
-        current = self._session.scalar(
-            select(func.coalesce(func.max(TaskStep.order_index), 0)).where(
-                TaskStep.workspace_id == workspace_id,
-                TaskStep.task_id == task_id,
-            )
-        )
-        return int(current or 0) + 1
-
-    def _next_manager_review_cycle(self, workspace_id: UUID, task_id: UUID) -> int:
-        existing = self._session.scalar(
-            select(func.count(TaskStep.id)).where(
-                TaskStep.workspace_id == workspace_id,
-                TaskStep.task_id == task_id,
-                TaskStep.work_package_id.like("manager-summary-operator-%"),
-            )
-        )
-        return int(existing or 0) + 1
-
-    def _append_message(
-        self,
-        task: Task,
-        *,
-        action: str,
-        result: dict[str, object],
-        instruction: str | None,
-        reason: str | None,
-        metadata: dict[str, object],
-    ) -> TaskMessage:
-        return TaskMessageAppendService(self._session).append_for_task(
-            task,
-            message_type=f"task.operator.{action}",
-            body=f"Operator action applied: {action}.",
-            payload={
-                "action": action,
-                "instruction": instruction,
-                "reason": reason,
-                "changed_step_ids": [str(step_id) for step_id in result["changed_step_ids"]],
-                "created_step_ids": [str(step_id) for step_id in result["created_step_ids"]],
-                "warnings": result["warnings"],
-                "metadata": metadata,
-            },
-        )
-
     def _wake_task(self, task: Task, affected_step_ids: object) -> None:
         if not affected_step_ids:
             return
-        if task.status == "blocked":
-            task.status = "running"
-        elif task.status == "failed":
-            task.status = "queued"
-
-
-def _source_steps(steps: list[TaskStep], task_step_ids: list[UUID]) -> list[TaskStep]:
-    requested_ids = set(task_step_ids)
-    return [
-        step
-        for step in steps
-        if step.status == "completed" and (not requested_ids or step.id in requested_ids)
-    ]
-
-
-def _dependency_step_ids(dependencies: object) -> list[UUID]:
-    if not isinstance(dependencies, dict):
-        return []
-    raw_values = dependencies.get("after_step_ids")
-    if not isinstance(raw_values, list):
-        return []
-    step_ids: list[UUID] = []
-    seen: set[UUID] = set()
-    for raw_value in raw_values:
-        try:
-            step_id = UUID(str(raw_value))
-        except (TypeError, ValueError):
-            continue
-        if step_id in seen:
-            continue
-        step_ids.append(step_id)
-        seen.add(step_id)
-    return step_ids
-
-
-def _without_blocking_keys(dependencies: object) -> dict[str, object]:
-    if not isinstance(dependencies, dict):
-        return {}
-    return {
-        key: value
-        for key, value in dependencies.items()
-        if key not in BLOCKING_DEPENDENCY_KEYS
-    }
-
-
-def _manager_agent_id(task: Task) -> UUID | None:
-    snapshot = task.team_snapshot if isinstance(task.team_snapshot, dict) else {}
-    team = snapshot.get("team") if isinstance(snapshot.get("team"), dict) else {}
-    manager_id = team.get("manager_agent_profile_id")
-    if isinstance(manager_id, str):
-        try:
-            return UUID(manager_id)
-        except ValueError:
-            return None
-    if isinstance(manager_id, UUID):
-        return manager_id
-    plan = task.project_plan if isinstance(task.project_plan, dict) else {}
-    planner_id = plan.get("planner_agent_profile_id")
-    if isinstance(planner_id, str):
-        try:
-            return UUID(planner_id)
-        except ValueError:
-            return None
-    return planner_id if isinstance(planner_id, UUID) else None
+        if task.status == TaskStatus.BLOCKED.value:
+            TaskStateService().transition(task, TaskStatus.RUNNING)
+        elif task.status == TaskStatus.FAILED.value:
+            TaskStateService().transition(task, TaskStatus.QUEUED)

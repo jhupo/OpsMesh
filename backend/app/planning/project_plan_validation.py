@@ -1,0 +1,59 @@
+from __future__ import annotations
+
+from backend.app.planning.project_plan_members import snapshot_agent_ids
+
+
+class ProjectPlanValidationError(ValueError):
+    pass
+
+
+def validate_project_plan(
+    plan: dict[str, object],
+    team_snapshot: dict[str, object] | None,
+) -> None:
+    if not isinstance(team_snapshot, dict):
+        raise ProjectPlanValidationError("Project plan requires a team snapshot")
+    packages = plan.get("work_packages")
+    if not isinstance(packages, list) or not packages:
+        raise ProjectPlanValidationError("Project plan must include work packages")
+
+    allowed_agent_ids = snapshot_agent_ids(team_snapshot)
+    package_ids = _validate_package_shape(packages, allowed_agent_ids)
+    _validate_dependencies(packages, package_ids)
+
+
+def _validate_package_shape(packages: list[object], allowed_agent_ids: set[str]) -> set[str]:
+    package_ids: set[str] = set()
+    for raw_package in packages:
+        if not isinstance(raw_package, dict):
+            raise ProjectPlanValidationError("Work package must be an object")
+        package_id = required_string(raw_package, "package_id")
+        if package_id in package_ids:
+            raise ProjectPlanValidationError(f"Duplicate work package id: {package_id}")
+        package_ids.add(package_id)
+        required_string(raw_package, "title")
+        required_string(raw_package, "required_role")
+
+        agent_id = raw_package.get("assigned_agent_profile_id")
+        if agent_id is not None and str(agent_id) not in allowed_agent_ids:
+            raise ProjectPlanValidationError("Work package assigned agent is not in team snapshot")
+    return package_ids
+
+
+def _validate_dependencies(packages: list[object], package_ids: set[str]) -> None:
+    for raw_package in packages:
+        if not isinstance(raw_package, dict):
+            continue
+        depends_on = raw_package.get("depends_on", [])
+        if not isinstance(depends_on, list):
+            raise ProjectPlanValidationError("Work package dependencies must be a list")
+        for dependency in depends_on:
+            if str(dependency) not in package_ids:
+                raise ProjectPlanValidationError(f"Unknown work package dependency: {dependency}")
+
+
+def required_string(value: dict[str, object], key: str) -> str:
+    raw_value = value.get(key)
+    if not isinstance(raw_value, str) or not raw_value:
+        raise ProjectPlanValidationError(f"Work package missing required field: {key}")
+    return raw_value

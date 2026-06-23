@@ -4,11 +4,12 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.admin.policies import PlatformPolicyService
+from backend.app.admin.policy_reader import PlatformPolicyService
 from backend.app.approvals.service import ApprovalService
 from backend.app.core.config import Settings
 from backend.app.reviews.tool_execution import ToolExecutionReview, ToolExecutionReviewService
 from backend.app.runs.models import RunEvent
+from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import RuntimeCommand, WorkspaceRuntime
@@ -169,7 +170,7 @@ class RuntimeToolService:
 
             run = self._session.get(AgentRun, context.agent_run_id)
             if run is not None:
-                run.status = RunStatus.WAITING_APPROVAL.value
+                RunStateService().transition(run, RunStatus.WAITING_APPROVAL)
         if context.task_id is not None:
             task = self._session.get(Task, context.task_id)
             if task is not None:

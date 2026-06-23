@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from uuid import UUID
@@ -6,7 +6,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.typing import string_list, string_or_default, uuid_or_none
 from backend.app.planning.member_matching import MemberMatchingService
+from backend.app.planning.org_structure import build_org_structure
 from backend.app.tasks.models import Task
 
 
@@ -49,25 +51,31 @@ class ProjectPlanDiagnosticsService:
                     "cycle_packages": 0,
                 },
                 "manager": _manager_diagnostics(None, snapshot),
+                "org_health": _org_health(snapshot, []),
                 "packages": [],
                 "dependency_graph": _dependency_graph([]),
                 "blocked_reasons": ["no_project_plan"],
             }
 
         raw_packages = plan.get("work_packages")
-        packages = [item for item in raw_packages if isinstance(item, dict)] if isinstance(
-            raw_packages,
-            list,
-        ) else []
+        packages = (
+            [item for item in raw_packages if isinstance(item, dict)]
+            if isinstance(
+                raw_packages,
+                list,
+            )
+            else []
+        )
         package_diagnostics = [
-            self._package_diagnostics(package, snapshot, workspace_id)
-            for package in packages
+            self._package_diagnostics(package, snapshot, workspace_id) for package in packages
         ]
         graph = _dependency_graph(_package_nodes(packages))
+        org_health = _org_health(snapshot, packages)
         blocked_reasons = _plan_blocked_reasons(
             package_diagnostics=package_diagnostics,
             graph=graph,
             manager=_manager_diagnostics(plan, snapshot),
+            org_health=org_health,
         )
         return {
             "workspace_id": workspace_id,
@@ -91,6 +99,7 @@ class ProjectPlanDiagnosticsService:
                 "cycle_packages": len(graph["cycle_package_ids"]),
             },
             "manager": _manager_diagnostics(plan, snapshot),
+            "org_health": org_health,
             "packages": package_diagnostics,
             "dependency_graph": graph,
             "blocked_reasons": blocked_reasons,
@@ -103,9 +112,9 @@ class ProjectPlanDiagnosticsService:
         workspace_id: UUID,
     ) -> dict[str, object]:
         package_id = _string_or_none(package.get("package_id"))
-        assigned_agent_profile_id = _uuid_or_none(package.get("assigned_agent_profile_id"))
-        required_role = _string_or_default(package.get("required_role"), "")
-        required_skills = _string_list(package.get("required_skills"))
+        assigned_agent_profile_id = uuid_or_none(package.get("assigned_agent_profile_id"))
+        required_role = string_or_default(package.get("required_role"), "")
+        required_skills = string_list(package.get("required_skills"))
         allowed_agent_ids = _snapshot_agent_ids(snapshot)
         assignment_status = "unassigned"
         if assigned_agent_profile_id is not None:
@@ -126,14 +135,14 @@ class ProjectPlanDiagnosticsService:
         )
         return {
             "package_id": package_id,
-            "title": _string_or_default(package.get("title"), ""),
+            "title": string_or_default(package.get("title"), ""),
             "required_role": required_role,
             "required_skills": required_skills,
             "assigned_agent_profile_id": assigned_agent_profile_id,
             "assignment_status": assignment_status,
-            "depends_on": _string_list(package.get("depends_on")),
-            "expected_artifacts": _string_list(package.get("expected_artifacts")),
-            "acceptance_criteria": _string_list(package.get("acceptance_criteria")),
+            "depends_on": string_list(package.get("depends_on")),
+            "expected_artifacts": string_list(package.get("expected_artifacts")),
+            "acceptance_criteria": string_list(package.get("acceptance_criteria")),
             "review_policy": package.get("review_policy")
             if isinstance(package.get("review_policy"), dict)
             else {},
@@ -158,7 +167,7 @@ def _manager_diagnostics(
 ) -> dict[str, object]:
     manager_agent_profile_id = None
     if isinstance(snapshot, dict) and isinstance(snapshot.get("team"), dict):
-        manager_agent_profile_id = _uuid_or_none(snapshot["team"].get("manager_agent_profile_id"))
+        manager_agent_profile_id = uuid_or_none(snapshot["team"].get("manager_agent_profile_id"))
     packages = []
     if isinstance(plan, dict) and isinstance(plan.get("work_packages"), list):
         packages = [item for item in plan["work_packages"] if isinstance(item, dict)]
@@ -227,6 +236,7 @@ def _plan_blocked_reasons(
     package_diagnostics: list[dict[str, object]],
     graph: dict[str, object],
     manager: dict[str, object],
+    org_health: dict[str, object],
 ) -> list[str]:
     reasons: list[str] = []
     if not package_diagnostics:
@@ -246,7 +256,46 @@ def _plan_blocked_reasons(
         reasons.append("missing_manager_planning")
     if manager["has_manager"] and not manager["has_manager_summary"]:
         reasons.append("missing_manager_summary")
+    reasons.extend(string_list(org_health.get("blocked_reasons")))
     return reasons
+
+
+def _org_health(
+    snapshot: dict[str, object] | None,
+    packages: list[dict[str, object]],
+) -> dict[str, object]:
+    org = build_org_structure(snapshot)
+    package_ids = {
+        str(package.get("package_id"))
+        for package in packages
+        if isinstance(package.get("package_id"), str)
+    }
+    blocked_reasons: list[str] = []
+    warnings: list[str] = []
+    if not org.executives:
+        warnings.append("missing_executive_role")
+    if not org.managers:
+        blocked_reasons.append("missing_project_manager_role")
+    if org.contributors and not org.leads:
+        warnings.append("missing_team_lead_role")
+    if org.cycle_member_ids:
+        blocked_reasons.append("reporting_cycle")
+    if org.orphan_member_ids:
+        warnings.append("orphan_reporting_members")
+    if org.leads and not any("lead-review" in package_id for package_id in package_ids):
+        blocked_reasons.append("missing_lead_review")
+    return {
+        "status": "blocked" if blocked_reasons else "warning" if warnings else "healthy",
+        "executive_count": len(org.executives),
+        "manager_count": len(org.managers),
+        "lead_count": len(org.leads),
+        "contributor_count": len(org.contributors),
+        "department_count": len(org.departments),
+        "cycle_member_ids": list(org.cycle_member_ids),
+        "orphan_member_ids": list(org.orphan_member_ids),
+        "blocked_reasons": blocked_reasons,
+        "warnings": warnings,
+    }
 
 
 def _package_nodes(packages: list[dict[str, object]]) -> list[_PackageNode]:
@@ -258,7 +307,7 @@ def _package_nodes(packages: list[dict[str, object]]) -> list[_PackageNode]:
         nodes.append(
             _PackageNode(
                 package_id=package_id,
-                depends_on=tuple(_string_list(package.get("depends_on"))),
+                depends_on=tuple(string_list(package.get("depends_on"))),
             )
         )
     return nodes
@@ -282,21 +331,3 @@ def _snapshot_agent_ids(snapshot: dict[str, object] | None) -> set[str]:
 def _string_or_none(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
-
-def _string_or_default(value: object, default: str) -> str:
-    return value if isinstance(value, str) and value else default
-
-
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
-
-
-def _uuid_or_none(value: object | None) -> UUID | None:
-    if value is None:
-        return None
-    try:
-        return UUID(str(value))
-    except (TypeError, ValueError):
-        return None

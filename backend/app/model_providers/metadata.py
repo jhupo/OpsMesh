@@ -43,12 +43,11 @@ def budget_is_exhausted(value: object, *, now: datetime | None = None) -> bool:
     if exhausted_until is not None:
         return (now or datetime.now(UTC)) < exhausted_until
 
-    for key in ("exhausted", "budget_exhausted", "limit_exhausted"):
-        if metadata.get(key) is True:
-            return True
+    if metadata.get("exhausted") is True:
+        return True
 
     status = metadata.get("status")
-    if isinstance(status, str) and status.lower() in {"exhausted", "over_budget"}:
+    if isinstance(status, str) and status.lower() == "exhausted":
         return True
 
     remaining = _number(metadata.get("remaining"))
@@ -61,8 +60,8 @@ def budget_is_exhausted(value: object, *, now: datetime | None = None) -> bool:
     ):
         return True
 
-    limits = _dict(metadata.get("limits") or metadata.get("limit") or metadata.get("budget"))
-    usage = _dict(metadata.get("usage") or metadata.get("used") or metadata.get("current"))
+    limits = _dict(metadata.get("limits"))
+    usage = _dict(metadata.get("usage"))
     if not limits or not usage:
         return False
 

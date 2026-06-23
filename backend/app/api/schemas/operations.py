@@ -1,734 +1,159 @@
-from datetime import datetime
-from typing import Literal
-from uuid import UUID
+from __future__ import annotations
 
-from pydantic import BaseModel, Field, computed_field, field_serializer
+from backend.app.api.schemas.operation_capacity import (
+    OperationsCapacityResponse,
+    OperationsRuntimeCapacityResponse,
+    OperationsWorkerLifecycleResponse,
+    RuntimeProviderCapacityResponse,
+    RuntimeSpaceQuotaUsageResponse,
+    RuntimeSpaceSaturationResponse,
+    WorkerCapacityAggregateResponse,
+    WorkerLifecycleBucketResponse,
+    WorkerTypeCapacityResponse,
+)
+from backend.app.api.schemas.operation_control_plane import (
+    OperationsControlPlaneIssueResponse,
+    OperationsControlPlaneResponse,
+    OperationsOverviewResponse,
+    OperationsRunActivityResponse,
+    OperationsSelfHostedMachineResponse,
+    OperationsSelfHostedMachinesResponse,
+    RunActivityOldestRunResponse,
+    RunActivityPhaseBucketResponse,
+)
+from backend.app.api.schemas.operation_events import (
+    RuntimeEventResponse,
+    SecurityEventResponse,
+    TeamRuntimeTimelineEventResponse,
+    TeamRuntimeTimelineResponse,
+    TeamRuntimeTimelineSummaryResponse,
+)
+from backend.app.api.schemas.operation_filters import (
+    AuditEventFilterResponse,
+    RunEventFilterResponse,
+    SecurityEventFilterResponse,
+)
+from backend.app.api.schemas.operation_outcomes import (
+    ApprovalBacklogResponse,
+    McpJobStatusBucketResponse,
+    McpJobToolBucketResponse,
+    OperationsMcpJobsResponse,
+    OperationsOutcomesResponse,
+    RunFailureReasonResponse,
+    RunOutcomeWindowResponse,
+)
+from backend.app.api.schemas.operation_queue import (
+    DeadLetterJobsResponse,
+    FailedJobInspectionResponse,
+    OperationsQueueInsightsResponse,
+    QueueGovernanceDiagnosticsResponse,
+    QueueGovernanceIssueResponse,
+    QueueGovernanceReconcileAction,
+    QueueGovernanceReconcileRequest,
+    QueueGovernanceReconcileResponse,
+    QueueJobTypeBucketResponse,
+    QueueLatencyResponse,
+    QueueMetricsResponse,
+    QueuePriorityBucketResponse,
+    RequeueDeadLetterResponse,
+    StaleRunDiagnosticResponse,
+    StaleRunRecoverStatus,
+    StaleRunRecoveryItemResponse,
+    StaleRunRecoveryRequest,
+    StaleRunRecoveryResponse,
+    StaleRunsDiagnosticsResponse,
+)
+from backend.app.api.schemas.operation_scheduler import (
+    BlockedStepExplanationResponse,
+    BlockedStepUnblockRequest,
+    BlockedStepUnblockResponse,
+    OperationsSchedulerResponse,
+    SchedulerBacklogResponse,
+    SchedulerBlockedReasonResponse,
+    SchedulerControlResponse,
+    SchedulerPauseRequest,
+    SchedulerPolicyResponse,
+    SchedulerPriorityBucketResponse,
+)
+from backend.app.api.schemas.operation_workers import (
+    RuntimeCleanupResponse,
+    RuntimeLeaseResponse,
+    WorkerControlStatus,
+    WorkerHeartbeatRequest,
+    WorkerHeartbeatResponse,
+    WorkerLeaseResponse,
+    WorkerNodeResponse,
+    WorkerStatusUpdateRequest,
+)
 
-from backend.app.api.schemas.audit import AuditEventResponse
-from backend.app.api.schemas.common import ORMModel, TimestampedModel
-from backend.app.api.schemas.redaction import redact_sensitive_payload
-from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
-from backend.app.workers.jobs import JobPayload
-
-
-class RuntimeEventResponse(BaseModel):
-    id: UUID
-    workspace_id: UUID
-    workspace_runtime_id: UUID
-    event_type: str
-    message: str
-    event_metadata: dict[str, object]
-    created_at: datetime
-
-    @field_serializer("event_metadata")
-    def _serialize_event_metadata(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
-
-
-class SecurityEventResponse(ORMModel):
-    id: UUID
-    workspace_id: UUID | None
-    user_id: UUID | None
-    action: str
-    outcome: str
-    severity: str
-    source_ip: str | None
-    user_agent: str | None
-    request_id: str | None
-    path: str
-    method: str
-    reason: str
-    event_metadata: dict[str, object]
-    created_at: datetime
-
-    @field_serializer("event_metadata")
-    def _serialize_event_metadata(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
-
-
-class WorkerHeartbeatRequest(BaseModel):
-    workspace_id: UUID | None = None
-    worker_id: str = Field(min_length=1, max_length=160)
-    worker_type: str = Field(default="cloud", max_length=80)
-    status: str = Field(default="online", max_length=32)
-    queue_name: str = Field(default="agent_runs", max_length=120)
-    worker_version: str | None = Field(default=None, max_length=120)
-    hostname: str | None = Field(default=None, max_length=255)
-    capacity: dict[str, object] = Field(default_factory=dict)
-    details: dict[str, object] = Field(default_factory=dict)
-
-
-class WorkerHeartbeatResponse(TimestampedModel):
-    workspace_id: UUID | None
-    worker_id: str
-    worker_type: str
-    status: str
-    queue_name: str
-    details: dict[str, object]
-    last_seen_at: datetime
-
-    @field_serializer("details")
-    def _serialize_details(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
-
-
-class WorkerNodeResponse(TimestampedModel):
-    worker_id: str
-    worker_type: str
-    status: str
-    queue_name: str
-    worker_version: str | None
-    hostname: str | None
-    capacity: dict[str, object]
-    details: dict[str, object]
-    drain_requested_at: datetime | None
-    last_seen_at: datetime
-
-    @field_serializer("capacity", "details")
-    def _serialize_worker_metadata(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
-
-
-WorkerControlStatus = Literal[
-    "online",
-    "offline",
-    "maintenance",
-    "disabled",
-    "quarantined",
-    "draining",
+__all__ = [
+    "ApprovalBacklogResponse",
+    "AuditEventFilterResponse",
+    "BlockedStepExplanationResponse",
+    "BlockedStepUnblockRequest",
+    "BlockedStepUnblockResponse",
+    "DeadLetterJobsResponse",
+    "FailedJobInspectionResponse",
+    "McpJobStatusBucketResponse",
+    "McpJobToolBucketResponse",
+    "OperationsCapacityResponse",
+    "OperationsControlPlaneIssueResponse",
+    "OperationsControlPlaneResponse",
+    "OperationsMcpJobsResponse",
+    "OperationsOutcomesResponse",
+    "OperationsOverviewResponse",
+    "OperationsQueueInsightsResponse",
+    "OperationsRunActivityResponse",
+    "OperationsRuntimeCapacityResponse",
+    "OperationsSchedulerResponse",
+    "OperationsSelfHostedMachineResponse",
+    "OperationsSelfHostedMachinesResponse",
+    "OperationsWorkerLifecycleResponse",
+    "QueueGovernanceDiagnosticsResponse",
+    "QueueGovernanceIssueResponse",
+    "QueueGovernanceReconcileAction",
+    "QueueGovernanceReconcileRequest",
+    "QueueGovernanceReconcileResponse",
+    "QueueJobTypeBucketResponse",
+    "QueueLatencyResponse",
+    "QueueMetricsResponse",
+    "QueuePriorityBucketResponse",
+    "RequeueDeadLetterResponse",
+    "RunActivityOldestRunResponse",
+    "RunActivityPhaseBucketResponse",
+    "RunEventFilterResponse",
+    "RunFailureReasonResponse",
+    "RunOutcomeWindowResponse",
+    "RuntimeCleanupResponse",
+    "RuntimeEventResponse",
+    "RuntimeLeaseResponse",
+    "RuntimeProviderCapacityResponse",
+    "RuntimeSpaceQuotaUsageResponse",
+    "RuntimeSpaceSaturationResponse",
+    "SchedulerBacklogResponse",
+    "SchedulerBlockedReasonResponse",
+    "SchedulerControlResponse",
+    "SchedulerPauseRequest",
+    "SchedulerPolicyResponse",
+    "SchedulerPriorityBucketResponse",
+    "SecurityEventFilterResponse",
+    "SecurityEventResponse",
+    "StaleRunDiagnosticResponse",
+    "StaleRunRecoverStatus",
+    "StaleRunRecoveryItemResponse",
+    "StaleRunRecoveryRequest",
+    "StaleRunRecoveryResponse",
+    "StaleRunsDiagnosticsResponse",
+    "TeamRuntimeTimelineEventResponse",
+    "TeamRuntimeTimelineResponse",
+    "TeamRuntimeTimelineSummaryResponse",
+    "WorkerCapacityAggregateResponse",
+    "WorkerControlStatus",
+    "WorkerHeartbeatRequest",
+    "WorkerHeartbeatResponse",
+    "WorkerLeaseResponse",
+    "WorkerLifecycleBucketResponse",
+    "WorkerNodeResponse",
+    "WorkerStatusUpdateRequest",
+    "WorkerTypeCapacityResponse",
 ]
-
-
-class WorkerStatusUpdateRequest(BaseModel):
-    status: WorkerControlStatus
-    reason: str | None = Field(default=None, max_length=240)
-
-
-class WorkerLeaseResponse(TimestampedModel):
-    workspace_id: UUID
-    worker_id: str
-    queue_name: str
-    job_id: UUID
-    job_type: str
-    resource_id: UUID
-    status: str
-    attempt: int
-    lease_metadata: dict[str, object]
-    started_at: datetime
-    last_heartbeat_at: datetime | None
-    finished_at: datetime | None
-
-    @field_serializer("lease_metadata")
-    def _serialize_lease_metadata(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
-
-
-class RuntimeLeaseResponse(TimestampedModel):
-    workspace_id: UUID
-    workspace_runtime_id: UUID
-    runtime_space_id: UUID | None
-    docker_container_id: str | None = Field(exclude=True, repr=False)
-    status: str
-    lease_metadata: dict[str, object]
-    acquired_at: datetime
-    released_at: datetime | None
-
-    @computed_field
-    @property
-    def has_docker_container(self) -> bool:
-        return self.docker_container_id is not None
-
-    @field_serializer("lease_metadata")
-    def _serialize_lease_metadata(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
-
-
-class QueueMetricsResponse(BaseModel):
-    queue_name: str
-    queued: int
-    dead_letter: int
-    idempotency_keys: int
-
-
-class DeadLetterJobsResponse(BaseModel):
-    items: list[JobPayload]
-    total: int
-
-
-class RequeueDeadLetterResponse(BaseModel):
-    requeued: bool
-    job: JobPayload | None = None
-
-
-class RuntimeCleanupResponse(BaseModel):
-    stale_marked_offline: int
-    deleted_records: int
-    expired_worker_leases: int = 0
-
-
-StaleRunRecoverStatus = Literal["queued", "running", "waiting_runtime"]
-
-
-class StaleRunDiagnosticResponse(BaseModel):
-    run_id: UUID
-    status: StaleRunRecoverStatus
-    stale_reason_code: str
-    stale_reason_message: str
-    age_seconds: int
-    created_at: datetime
-    updated_at: datetime
-    started_at: datetime | None
-    task_id: UUID | None
-    task_step_id: UUID | None
-    agent_profile_id: UUID | None
-    runtime_id: UUID | None
-    runtime_space_id: UUID | None
-    worker_id: str | None = None
-    worker_lease_status: str | None = None
-    worker_lease_started_at: datetime | None = None
-    worker_lease_age_seconds: int | None = None
-
-
-class StaleRunsDiagnosticsResponse(BaseModel):
-    generated_at: datetime
-    stale_after_seconds: int
-    total: int
-    items: list[StaleRunDiagnosticResponse]
-
-
-class StaleRunRecoveryRequest(BaseModel):
-    stale_after_seconds: int = Field(default=900, ge=60, le=86_400)
-    statuses: list[StaleRunRecoverStatus] = Field(
-        default_factory=lambda: ["queued", "running", "waiting_runtime"],
-        min_length=1,
-        max_length=3,
-    )
-    limit: int = Field(default=100, ge=1, le=500)
-    queue_name: str = Field(default="agent_runs", min_length=1, max_length=120)
-    reason: str | None = Field(default=None, max_length=240)
-
-
-class StaleRunRecoveryItemResponse(BaseModel):
-    run_id: UUID
-    previous_status: StaleRunRecoverStatus
-    action: Literal["requeued", "failed_closed"]
-    enqueued: bool = False
-
-
-class StaleRunRecoveryResponse(BaseModel):
-    workspace_id: UUID
-    stale_after_seconds: int
-    scanned_runs: int
-    requeued_runs: int
-    failed_closed_runs: int
-    expired_worker_leases: int
-    items: list[StaleRunRecoveryItemResponse]
-
-
-class FailedJobInspectionResponse(BaseModel):
-    runs: list[AgentRunResponse]
-    total: int
-
-
-class OperationsOverviewResponse(BaseModel):
-    queue: QueueMetricsResponse
-    failed_runs: int
-    offline_runtimes: int
-    workers_online: int
-    security_warnings: int
-    data_lifecycle: dict[str, object] = Field(default_factory=dict)
-
-    @field_serializer("data_lifecycle")
-    def _serialize_data_lifecycle(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
-
-
-class QueueLatencyResponse(BaseModel):
-    queue_name: str
-    queued: int
-    oldest_age_seconds: int | None
-    newest_age_seconds: int | None
-    average_age_seconds: int | None
-    highest_priority: int | None
-
-
-class QueuePriorityBucketResponse(BaseModel):
-    priority: int
-    queued: int
-    dead_letter: int
-    oldest_queued_age_seconds: int | None
-
-
-class QueueJobTypeBucketResponse(BaseModel):
-    job_type: str
-    queued: int
-    dead_letter: int
-    highest_priority: int | None
-    oldest_queued_age_seconds: int | None
-
-
-class OperationsQueueInsightsResponse(BaseModel):
-    generated_at: datetime
-    queue_name: str
-    scan_limit: int
-    queued_total: int
-    dead_letter_total: int
-    queued_scanned: int
-    dead_letter_scanned: int
-    truncated: bool
-    oldest_queued_age_seconds: int | None
-    highest_priority: int | None
-    priority_buckets: list[QueuePriorityBucketResponse]
-    job_type_buckets: list[QueueJobTypeBucketResponse]
-
-
-QueueGovernanceReconcileAction = Literal[
-    "requeue_missing_runs",
-    "remove_orphaned_jobs",
-    "remove_non_runnable_jobs",
-]
-
-
-class QueueGovernanceIssueResponse(BaseModel):
-    code: str
-    severity: Literal["info", "warning", "critical"]
-    message: str
-    count: int
-    resource_ids: list[UUID] = Field(default_factory=list)
-    job_ids: list[UUID] = Field(default_factory=list)
-    oldest_age_seconds: int | None = None
-    metadata: dict[str, object] = Field(default_factory=dict)
-
-    @field_serializer("metadata")
-    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
-
-
-class QueueGovernanceDiagnosticsResponse(BaseModel):
-    generated_at: datetime
-    queue_name: str
-    scan_limit: int
-    stale_after_seconds: int
-    queued_total: int
-    queued_scanned: int
-    agent_run_jobs_scanned: int
-    dead_letter_total: int
-    orphaned_queue_jobs: int
-    non_runnable_queue_jobs: int
-    duplicate_queue_jobs: int
-    queued_runs_missing_queue_job: int
-    old_queued_jobs: int
-    truncated: bool
-    issues: list[QueueGovernanceIssueResponse]
-    recommended_actions: list[QueueGovernanceReconcileAction]
-
-
-class QueueGovernanceReconcileRequest(BaseModel):
-    queue_name: str = Field(default="agent_runs", min_length=1, max_length=120)
-    scan_limit: int = Field(default=500, ge=1, le=5_000)
-    stale_after_seconds: int = Field(default=900, ge=60, le=86_400)
-    actions: list[QueueGovernanceReconcileAction] = Field(min_length=1, max_length=3)
-    max_items: int = Field(default=100, ge=1, le=500)
-    reason: str | None = Field(default=None, max_length=240)
-
-
-class QueueGovernanceReconcileResponse(BaseModel):
-    workspace_id: UUID
-    queue_name: str
-    scanned_jobs: int
-    actions: list[QueueGovernanceReconcileAction]
-    requeued_missing_runs: int
-    removed_orphaned_jobs: int
-    removed_non_runnable_jobs: int
-    skipped_items: int
-    remaining_issues: list[QueueGovernanceIssueResponse]
-
-
-class WorkerCapacityAggregateResponse(BaseModel):
-    workers_total: int
-    workers_online: int
-    workers_draining: int
-    workers_offline: int
-    max_jobs: int
-    running_jobs: int
-    available_slots: int
-    utilization: float
-
-
-class RuntimeSpaceQuotaUsageResponse(BaseModel):
-    quota_key: str
-    limit_value: int
-    reserved_value: int
-    unit: str
-    utilization: float
-    saturated: bool
-
-
-class RuntimeSpaceSaturationResponse(BaseModel):
-    runtime_space_id: UUID
-    name: str
-    status: str
-    active_runtimes: int
-    quotas: list[RuntimeSpaceQuotaUsageResponse]
-    saturated: bool
-
-
-class OperationsCapacityResponse(BaseModel):
-    generated_at: datetime
-    queue: QueueLatencyResponse
-    worker_capacity: WorkerCapacityAggregateResponse
-    runtime_spaces: list[RuntimeSpaceSaturationResponse]
-
-
-class RuntimeProviderCapacityResponse(BaseModel):
-    provider: str
-    runtime_type: str
-    total: int
-    online: int
-    offline: int
-    degraded: int
-    running: int
-    capacity_slots: int
-    active_runs: int
-    utilization: float
-
-
-class WorkerTypeCapacityResponse(BaseModel):
-    worker_type: str
-    workers_total: int
-    workers_online: int
-    workers_draining: int
-    max_jobs: int
-    running_jobs: int
-    available_slots: int
-    utilization: float
-
-
-class WorkerLifecycleBucketResponse(BaseModel):
-    worker_type: str
-    queued_jobs: int
-    running_jobs: int
-    completed_jobs: int
-    failed_jobs: int
-    retried_jobs: int
-    expired_jobs: int
-    failure_rate: float
-    average_duration_seconds: int | None
-    oldest_queued_age_seconds: int | None
-    oldest_running_age_seconds: int | None
-
-
-class OperationsWorkerLifecycleResponse(BaseModel):
-    generated_at: datetime
-    queue_name: str
-    worker_types: list[WorkerLifecycleBucketResponse]
-
-
-class RunActivityOldestRunResponse(BaseModel):
-    run_id: UUID
-    task_id: UUID | None
-    task_step_id: UUID | None
-    agent_profile_id: UUID | None
-    runtime_id: UUID | None
-    runtime_space_id: UUID | None
-    status: str
-    latest_event_type: str | None
-    age_seconds: int
-    started_at: datetime | None
-    last_activity_at: datetime
-
-
-class RunActivityPhaseBucketResponse(BaseModel):
-    phase: str
-    label: str
-    count: int
-    oldest_age_seconds: int | None
-    oldest_run: RunActivityOldestRunResponse | None = None
-    recommended_action: str | None = None
-
-
-class OperationsRunActivityResponse(BaseModel):
-    generated_at: datetime
-    team_id: UUID | None = None
-    total_active_runs: int
-    scanned_active_runs: int
-    truncated: bool
-    status_counts: dict[str, int]
-    phases: list[RunActivityPhaseBucketResponse]
-    oldest_active_run: RunActivityOldestRunResponse | None = None
-
-
-class OperationsRuntimeCapacityResponse(BaseModel):
-    generated_at: datetime
-    providers: list[RuntimeProviderCapacityResponse]
-    worker_types: list[WorkerTypeCapacityResponse]
-    runtime_spaces: list[RuntimeSpaceSaturationResponse]
-
-
-class SchedulerBacklogResponse(BaseModel):
-    queued_steps: int
-    running_steps: int
-    waiting_approval_tasks: int
-    blocked_steps: int
-    active_runs: int
-    oldest_queued_age_seconds: int | None
-    highest_priority: int | None
-
-
-class SchedulerPriorityBucketResponse(BaseModel):
-    priority: int
-    queued_steps: int
-    running_steps: int
-    blocked_steps: int
-
-
-class SchedulerBlockedReasonResponse(BaseModel):
-    reason: str
-    code: str
-    message: str
-    resource_key: str | None = None
-    count: int
-
-
-class BlockedStepExplanationResponse(BaseModel):
-    task_step_id: UUID
-    task_id: UUID
-    task_title: str
-    step_title: str
-    status: str
-    reason: str
-    code: str
-    message: str
-    resource_key: str | None = None
-    runtime_space_id: UUID | None = None
-    blocked_resource_keys: list[str] = Field(default_factory=list)
-    priority_score: int | None = None
-    created_at: datetime
-    updated_at: datetime
-
-
-class BlockedStepUnblockRequest(BaseModel):
-    code: str | None = Field(default=None, max_length=120)
-    reason: str | None = Field(default=None, max_length=240)
-    runtime_space_id: UUID | None = None
-    limit: int = Field(default=100, ge=1, le=500)
-
-
-class BlockedStepUnblockResponse(BaseModel):
-    workspace_id: UUID
-    unblocked_steps: int
-
-
-class SchedulerPauseRequest(BaseModel):
-    reason: str | None = Field(default=None, max_length=240)
-
-
-class SchedulerPolicyResponse(BaseModel):
-    paused: bool = False
-    pause_reason: str | None = None
-    max_active_runs: int | None
-    max_running_tasks: int | None
-    max_runs_to_start_per_tick: int | None
-    max_steps_per_task_per_tick: int | None
-    starvation_boost_after_seconds: int | None
-    resource_limits: dict[str, float]
-
-
-class OperationsSchedulerResponse(BaseModel):
-    generated_at: datetime
-    backlog: SchedulerBacklogResponse
-    priority_buckets: list[SchedulerPriorityBucketResponse]
-    blocked_reasons: list[SchedulerBlockedReasonResponse]
-    policy: SchedulerPolicyResponse
-
-
-class SchedulerControlResponse(BaseModel):
-    workspace_id: UUID
-    paused: bool
-    pause_reason: str | None = None
-    cleared_blocked_steps: int = 0
-    policy: SchedulerPolicyResponse
-
-
-class RunFailureReasonResponse(BaseModel):
-    code: str
-    count: int
-
-
-class RunOutcomeWindowResponse(BaseModel):
-    window_seconds: int
-    total_runs: int
-    completed_runs: int
-    failed_runs: int
-    cancelled_runs: int
-    failure_rate: float
-    failure_reasons: list[RunFailureReasonResponse]
-
-
-class ApprovalBacklogResponse(BaseModel):
-    pending: int
-    high_risk_pending: int
-    oldest_pending_age_seconds: int | None
-    pending_by_type: dict[str, int]
-
-
-class OperationsOutcomesResponse(BaseModel):
-    generated_at: datetime
-    runs: RunOutcomeWindowResponse
-    approvals: ApprovalBacklogResponse
-
-
-class McpJobStatusBucketResponse(BaseModel):
-    status: str
-    count: int
-
-
-class McpJobToolBucketResponse(BaseModel):
-    tool_name: str
-    queued: int
-    claimed: int
-    completed: int
-    failed: int
-    total: int
-
-
-class OperationsMcpJobsResponse(BaseModel):
-    generated_at: datetime
-    total: int
-    queued: int
-    claimed: int
-    completed: int
-    failed: int
-    oldest_queued_age_seconds: int | None
-    statuses: list[McpJobStatusBucketResponse]
-    tools: list[McpJobToolBucketResponse]
-
-
-class OperationsSelfHostedMachineResponse(BaseModel):
-    worker_id: UUID
-    workspace_runtime_id: UUID
-    runtime_space_id: UUID | None
-    name: str
-    machine_id: str
-    version: str
-    trust_state: str
-    worker_status: str
-    runtime_status: str
-    connection_status: str
-    credential_status: str | None
-    last_heartbeat_at: datetime | None
-    heartbeat_age_seconds: int | None
-    stale: bool
-    active_job_claims: int
-    active_mcp_jobs: int
-    queued_mcp_jobs: int
-    policy_summary: dict[str, object]
-    capabilities: dict[str, object]
-    warning_code: str | None = None
-    warning_message: str | None = None
-    remediation_actions: list[dict[str, object]] = Field(default_factory=list)
-
-    @field_serializer("policy_summary", "capabilities")
-    def _serialize_machine_metadata(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
-
-    @field_serializer("remediation_actions")
-    def _serialize_remediation_actions(
-        self,
-        value: list[dict[str, object]],
-    ) -> list[dict[str, object]]:
-        return [redact_sensitive_payload(item) for item in value]
-
-
-class OperationsSelfHostedMachinesResponse(BaseModel):
-    generated_at: datetime
-    total: int
-    active: int
-    degraded: int
-    quarantined: int
-    revoked: int
-    offline: int
-    stale: int
-    active_job_claims: int
-    active_mcp_jobs: int
-    queued_mcp_jobs: int
-    items: list[OperationsSelfHostedMachineResponse]
-
-
-class OperationsControlPlaneIssueResponse(BaseModel):
-    severity: str
-    code: str
-    message: str
-    count: int = 1
-    metadata: dict[str, object] = Field(default_factory=dict)
-
-    @field_serializer("metadata")
-    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
-
-
-class OperationsControlPlaneResponse(BaseModel):
-    generated_at: datetime
-    health: str
-    queue: QueueLatencyResponse
-    worker_capacity: WorkerCapacityAggregateResponse
-    runtime_capacity: OperationsRuntimeCapacityResponse
-    scheduler: OperationsSchedulerResponse
-    outcomes: OperationsOutcomesResponse
-    mcp_jobs: OperationsMcpJobsResponse
-    self_hosted_machines: OperationsSelfHostedMachinesResponse
-    issues: list[OperationsControlPlaneIssueResponse]
-
-
-class TeamRuntimeTimelineEventResponse(BaseModel):
-    id: str
-    source_type: str
-    event_type: str
-    occurred_at: datetime
-    resource_id: str
-    message: str
-    metadata: dict[str, object] = Field(default_factory=dict)
-
-    @field_serializer("metadata")
-    def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
-
-
-class TeamRuntimeTimelineSummaryResponse(BaseModel):
-    total_events: int
-    returned_events: int
-    source_counts: dict[str, int]
-    event_type_counts: dict[str, int]
-    include_runs: bool
-    include_queue: bool
-
-
-class TeamRuntimeTimelineResponse(BaseModel):
-    workspace_id: UUID
-    team_id: UUID
-    generated_at: datetime
-    limit: int
-    offset: int
-    summary: TeamRuntimeTimelineSummaryResponse
-    items: list[TeamRuntimeTimelineEventResponse]
-
-
-class AuditEventFilterResponse(BaseModel):
-    items: list[AuditEventResponse]
-    total: int
-    limit: int
-    offset: int
-
-
-class RunEventFilterResponse(BaseModel):
-    items: list[RunEventResponse]
-    total: int
-    limit: int
-    offset: int
-
-
-class SecurityEventFilterResponse(BaseModel):
-    items: list[SecurityEventResponse]
-    total: int
-    limit: int
-    offset: int

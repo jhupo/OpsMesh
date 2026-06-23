@@ -21,7 +21,7 @@ from backend.app.memory.jobs import enqueue_workspace_memory_index_job
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.jobs import JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"

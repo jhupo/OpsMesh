@@ -100,7 +100,7 @@ class TaskDeliveryDecisionService:
             request=request,
         )
         if task.status not in {"completed", "failed", "cancelled"}:
-            task.status = TaskStatus.BLOCKED.value
+            TaskStateService().transition(task, TaskStatus.BLOCKED)
         correction = self._create_follow_up_correction(
             task,
             actor_user_id=actor_user_id,

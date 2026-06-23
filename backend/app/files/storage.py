@@ -1,3 +1,4 @@
+import os
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Protocol
@@ -35,27 +36,36 @@ class LocalStorage:
         return self.read(storage_key)
 
     def delete(self, storage_key: str) -> None:
-        self._path_for_key(storage_key).unlink(missing_ok=True)
+        _io_path(self._path_for_key(storage_key)).unlink(missing_ok=True)
 
     def open(self, storage_key: str) -> BinaryIO:
-        return self._path_for_key(storage_key).open("rb")
+        return _io_path(self._path_for_key(storage_key)).open("rb")
 
     def write(self, storage_key: str, content: bytes) -> None:
-        path = self._path_for_key(storage_key)
+        path = _io_path(self._path_for_key(storage_key))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
 
     def read(self, storage_key: str) -> bytes:
-        return self._path_for_key(storage_key).read_bytes()
+        return _io_path(self._path_for_key(storage_key)).read_bytes()
 
     def exists(self, storage_key: str) -> bool:
-        return self._path_for_key(storage_key).exists()
+        return _io_path(self._path_for_key(storage_key)).exists()
 
     def _path_for_key(self, storage_key: str) -> Path:
         path = (self._root / validate_storage_key(storage_key)).resolve()
         if not path.is_relative_to(self._root):
             raise ValueError("Storage key escapes storage root")
         return path
+
+
+def _io_path(path: Path) -> Path:
+    if os.name != "nt":
+        return path
+    path_text = str(path)
+    if path_text.startswith("\\\\?\\"):
+        return path
+    return Path(f"\\\\?\\{path_text}")
 
 
 class S3Storage:

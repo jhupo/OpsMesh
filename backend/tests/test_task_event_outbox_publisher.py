@@ -16,7 +16,7 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.tasks.event_outbox import TaskEventOutboxPublisher, TaskEventOutboxService
 from backend.app.tasks.events import RedisTaskEventBus, TaskEvent
 from backend.app.tasks.models import Task, TaskEventOutbox
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workers.runner import WorkerRunner, WorkerRunnerConfig
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 

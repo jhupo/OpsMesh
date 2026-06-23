@@ -1,0 +1,5 @@
+ACTIVE_STATUS = "active"
+COMPLETED_STATUS = "completed"
+PAUSED_STATUS = "paused"
+QUEUE_JOB_ACTION = "queue_job"
+RECORD_DUE_ACTION = "record_due_action"

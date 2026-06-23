@@ -29,7 +29,7 @@ from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -767,13 +767,13 @@ def test_admin_system_version_reports_current_package_version() -> None:
 
 
 def test_admin_check_updates_returns_latest_release(monkeypatch) -> None:
-    from backend.app.admin.release_updates import (
+    from backend.app.admin.releases.cache import clear_release_update_cache
+    from backend.app.admin.releases.models import (
         ReleaseAsset,
         ReleaseUpdateCheck,
-        ReleaseUpdateService,
         ReleaseVersion,
-        clear_release_update_cache,
     )
+    from backend.app.admin.releases.service import ReleaseUpdateService
 
     clear_release_update_cache()
 

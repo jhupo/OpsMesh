@@ -4,8 +4,10 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.core.typing import string_list, uuid_or_none
+from backend.app.orchestration.statuses import WORKLOAD_RUN_STATUS_VALUES
+from backend.app.planning.org_structure import is_leadership_role, normalize_role
 from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import TaskStep
 
 
@@ -53,7 +55,7 @@ class MemberMatchingService:
             if member.get("accepts_tasks") is False:
                 continue
 
-            agent_profile_id = _uuid_or_none(member.get("agent_profile_id"))
+            agent_profile_id = uuid_or_none(member.get("agent_profile_id"))
             if agent_profile_id is None:
                 continue
 
@@ -79,7 +81,7 @@ class MemberMatchingService:
             matches.append(
                 MemberMatch(
                     agent_profile_id=agent_profile_id,
-                    team_member_id=_uuid_or_none(member.get("id")),
+                    team_member_id=uuid_or_none(member.get("id")),
                     team_role=team_role,
                     score=score,
                     reasons=tuple(reasons),
@@ -103,13 +105,7 @@ class MemberMatchingService:
                 .where(
                     AgentRun.workspace_id == workspace_id,
                     AgentRun.agent_profile_id == agent_profile_id,
-                    AgentRun.status.in_(
-                        [
-                            RunStatus.QUEUED.value,
-                            RunStatus.RUNNING.value,
-                            RunStatus.WAITING_APPROVAL.value,
-                        ]
-                    ),
+                    AgentRun.status.in_(WORKLOAD_RUN_STATUS_VALUES),
                     TaskStep.status.in_(["queued", "running"]),
                 )
             )
@@ -126,7 +122,8 @@ def _score_member(
     score = 0.0
     reasons: list[str] = []
     role = str(member.get("team_role") or "").lower()
-    normalized_required_role = required_role.lower()
+    normalized_role = normalize_role(role)
+    normalized_required_role = normalize_role(required_role)
     if normalized_required_role and role == normalized_required_role:
         score += 100
         reasons.append("role_exact")
@@ -145,6 +142,25 @@ def _score_member(
                 score += float(weight) * 25
                 reasons.append(f"skill:{skill}")
 
+    responsibilities = " ".join(string_list(member.get("responsibilities"))).lower()
+    for skill in required_skills:
+        if skill.lower() in responsibilities:
+            score += 10
+            reasons.append(f"responsibility:{skill}")
+
+    department = str(member.get("department") or "").lower()
+    if department and normalized_required_role and normalized_required_role in department:
+        score += 12
+        reasons.append("department_match")
+
+    if (
+        is_leadership_role(normalized_role)
+        and normalized_required_role
+        and normalized_required_role != normalized_role
+    ):
+        score -= 80
+        reasons.append("leadership_execution_penalty")
+
     if member.get("is_required") is True:
         score += 2
         reasons.append("required_member")
@@ -157,15 +173,6 @@ def _snapshot_members(snapshot: dict[str, object]) -> list[dict[str, object]]:
     if not isinstance(raw_members, list):
         return []
     return [member for member in raw_members if isinstance(member, dict)]
-
-
-def _uuid_or_none(value: object | None) -> UUID | None:
-    if value is None:
-        return None
-    try:
-        return UUID(str(value))
-    except ValueError:
-        return None
 
 
 def _int_or_default(value: object, default: int) -> int:

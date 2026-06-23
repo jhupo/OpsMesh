@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 
+from backend.app.core.typing import string_list
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.models import RuntimeSpace
 
@@ -50,7 +51,7 @@ def _evaluate_allowed_tools(
     worker_tools = _optional_string_set(worker_capabilities.get("allowed_tools"))
     if worker_tools is None:
         return WorkerJobPolicyDecision(allowed=True)
-    required_tools = set(_string_list(snapshot.get("allowed_tools")))
+    required_tools = set(string_list(snapshot.get("allowed_tools")))
     denied_tools = sorted(required_tools - worker_tools)
     if not denied_tools:
         return WorkerJobPolicyDecision(allowed=True)
@@ -70,7 +71,7 @@ def _evaluate_supported_models(
     run: AgentRun,
     snapshot: dict[str, object],
 ) -> WorkerJobPolicyDecision:
-    supported_models = _string_list(worker_capabilities.get("supported_models"))
+    supported_models = string_list(worker_capabilities.get("supported_models"))
     if not supported_models:
         return WorkerJobPolicyDecision(allowed=True)
     model = _run_model(run, snapshot)
@@ -88,7 +89,7 @@ def _evaluate_supported_runtimes(
     worker_capabilities: dict[str, object],
     snapshot: dict[str, object],
 ) -> WorkerJobPolicyDecision:
-    supported_runtimes = _string_list(worker_capabilities.get("supported_runtimes"))
+    supported_runtimes = string_list(worker_capabilities.get("supported_runtimes"))
     if not supported_runtimes:
         return WorkerJobPolicyDecision(allowed=True)
     required_runtimes = _runtime_requirements(snapshot)
@@ -190,7 +191,7 @@ def _worker_network_modes(worker_capabilities: dict[str, object]) -> set[str]:
     for key in ("supported_network_modes", "network_expectations"):
         modes |= {
             _normalize_network_mode(mode)
-            for mode in _string_list(worker_capabilities.get(key))
+            for mode in string_list(worker_capabilities.get(key))
         }
     for key in ("network_mode", "network"):
         value = worker_capabilities.get(key)
@@ -225,12 +226,6 @@ def _optional_string_set(value: object) -> set[str] | None:
     if not isinstance(value, list):
         return set()
     return {item for item in value if isinstance(item, str)}
-
-
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
 
 
 def _matches_any(value: str, patterns: list[str]) -> bool:

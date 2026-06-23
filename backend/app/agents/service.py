@@ -5,10 +5,27 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.lifecycle import (
+    AGENT_STATUS_ACTIVE,
+    AGENT_STATUS_ARCHIVED,
+    AgentProfileLifecycleService,
+)
 from backend.app.agents.models import AgentProfile, AgentProfileVersion
+from backend.app.agents.payloads import (
+    AGENT_PROFILE_FIELDS,
+    copy_json_value,
+    datetime_or_none,
+    normalize_update_payload,
+    profile_snapshot,
+    rollback_reason,
+    uuid_or_none,
+)
+from backend.app.agents.profile_commands import AgentProfileCommandService
+from backend.app.agents.queries import AgentProfileQueryService
+from backend.app.agents.versions import AgentVersionRecorder
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.agents import (
     AgentProfileCloneRequest,
@@ -16,95 +33,15 @@ from backend.app.api.schemas.agents import (
     AgentProfileRollbackRequest,
     AgentProfileUpdateRequest,
 )
-from backend.app.audit.service import AuditService
 from backend.app.core.config import Settings
-from backend.app.model_providers.model_api import (
-    canonical_model_api,
-    default_model_api,
-    model_api_for_agent_provider,
-    model_api_options_for_provider,
-    require_known_model_api,
-    require_provider_model_api,
-    unsupported_agent_model_api,
-)
-from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.reviews.constants import (
-    RESOURCE_STATUS_ACTIVE,
-    RESOURCE_STATUS_PENDING_APPROVAL,
-    RESOURCE_STATUS_REJECTED,
-    REVIEW_TYPE_AGENT_PROFILE,
-)
-from backend.app.reviews.service import ResourceReview, ResourceReviewService
-
-AGENT_STATUS_ACTIVE = RESOURCE_STATUS_ACTIVE
-AGENT_STATUS_ARCHIVED = "archived"
-
-AGENT_PROFILE_FIELDS = (
-    "name",
-    "role",
-    "description",
-    "instructions",
-    "model",
-    "model_provider_credential_id",
-    "model_settings",
-    "capabilities",
-    "skills",
-    "tool_policy",
-    "runtime_policy",
-    "memory_policy",
-    "approval_policy",
-)
-AGENT_PROFILE_REVIEW_FIELDS = {
-    "name",
-    "role",
-    "instructions",
-    "capabilities",
-    "skills",
-    "tool_policy",
-    "runtime_policy",
-    "approval_policy",
-    "model",
-    "model_provider_credential_id",
-    "model_settings",
-}
-
-JSON_PROFILE_FIELDS = (
-    "model_settings",
-    "capabilities",
-    "skills",
-    "tool_policy",
-    "runtime_policy",
-    "memory_policy",
-    "approval_policy",
-)
-
-NON_NULL_PROFILE_FIELDS = (
-    "name",
-    "role",
-    "description",
-    "instructions",
-    "model",
-)
-
-CREATE_DEFAULTS: dict[str, object] = {
-    "description": "",
-    "instructions": "",
-    "model": "gpt-4.1",
-    "model_provider_credential_id": None,
-    "model_settings": {},
-    "capabilities": {},
-    "skills": {},
-    "tool_policy": {},
-    "runtime_policy": {},
-    "memory_policy": {},
-    "approval_policy": {},
-}
+from backend.app.db.pagination import page_scalars
 
 
 class AgentManagementService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self._session = session
         self._settings = settings
+        self._versions = AgentVersionRecorder(session)
 
     def list_agents(
         self,
@@ -115,10 +52,8 @@ class AgentManagementService:
         statement = select(AgentProfile).where(AgentProfile.workspace_id == workspace_id)
         if status is not None:
             statement = statement.where(AgentProfile.status == status)
-        total = self._session.scalar(select(func.count()).select_from(statement.subquery())) or 0
         statement = statement.order_by(AgentProfile.created_at.desc(), AgentProfile.id.desc())
-        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
-        return list(rows), total
+        return page_scalars(self._session, statement, page)
 
     def get_agent(self, workspace_id: UUID, agent_profile_id: UUID) -> AgentProfile | None:
         return self._profile(workspace_id, agent_profile_id)
@@ -128,71 +63,15 @@ class AgentManagementService:
         workspace_id: UUID,
         data: AgentProfileCreateRequest | Mapping[str, Any],
         actor_user_id: UUID | None = None,
+        *,
+        commit: bool = True,
     ) -> AgentProfile:
-        values = self._normalize_create_payload(data, {})
-        self._validate_model_provider_credential(
+        return AgentProfileCommandService(self._session, self._settings).create_agent(
             workspace_id,
-            values["model_provider_credential_id"],
+            data,
+            actor_user_id,
+            commit=commit,
         )
-        self._validate_agent_model_api(
-            workspace_id,
-            values["model_provider_credential_id"],
-            values["model_settings"],
-        )
-
-        now = datetime.now(UTC)
-        review = ResourceReviewService(self._session, self._settings).review_agent_profile(
-            workspace_id=workspace_id,
-            visibility="private",
-            name=str(values["name"]),
-            role=str(values["role"]),
-            instructions=str(values["instructions"]),
-            capabilities=dict(values["capabilities"]),
-            skills=dict(values["skills"]),
-            tool_policy=dict(values["tool_policy"]),
-            runtime_policy=dict(values["runtime_policy"]),
-            approval_policy=dict(values["approval_policy"]),
-        )
-        profile = AgentProfile(
-            workspace_id=workspace_id,
-            **values,
-            status=RESOURCE_STATUS_PENDING_APPROVAL if review.required else AGENT_STATUS_ACTIVE,
-            version=1,
-            archived_at=None,
-            last_versioned_at=now,
-        )
-        self._session.add(profile)
-        self._session.flush()
-        if review.required:
-            ResourceReviewService(self._session, self._settings).request_resource_review(
-                workspace_id=workspace_id,
-                actor_user_id=actor_user_id,
-                approval_type=REVIEW_TYPE_AGENT_PROFILE,
-                target_type="agent_profile",
-                target_id=profile.id,
-                target_name=profile.name,
-                review=review,
-                snapshot=_profile_snapshot(profile),
-            )
-        self._record_version(
-            profile,
-            changed_by_user_id=actor_user_id,
-            change_reason="Agent profile created",
-        )
-        self._audit_profile_change(
-            profile,
-            actor_user_id=actor_user_id,
-            action="agent.created" if not review.required else "agent.review_requested",
-            changed_fields=sorted(AGENT_PROFILE_FIELDS),
-            extra_metadata={
-                "review_required": review.required,
-                "review_risk_level": review.risk_level,
-                "review_reasons": review.reasons,
-            },
-        )
-        self._session.commit()
-        self._session.refresh(profile)
-        return profile
 
     def update_agent(
         self,
@@ -202,85 +81,10 @@ class AgentManagementService:
         actor_user_id: UUID | None = None,
     ) -> AgentProfile | None:
         profile = self._require_profile(workspace_id, agent_profile_id)
-        values = self._normalize_update_payload(
+        return AgentProfileCommandService(self._session, self._settings).update_agent(
+            profile,
             changes,
-            {},
-            current_model_settings=profile.model_settings,
-        )
-        if not values:
-            return profile
-        if "status" in values:
-            raise ValueError("Use archive or activate to change agent lifecycle status")
-        before_snapshot = _profile_snapshot(profile)
-        if "model_provider_credential_id" in values:
-            self._validate_model_provider_credential(
-                workspace_id,
-                values["model_provider_credential_id"],
-            )
-        self._validate_agent_model_api(
-            workspace_id,
-            values.get("model_provider_credential_id", profile.model_provider_credential_id),
-            values.get("model_settings", profile.model_settings),
-        )
-
-        for field, value in values.items():
-            setattr(profile, field, self._copy_json_value(field, value))
-        review = self._review_agent_update_if_needed(profile, values)
-        if review is not None and review.required:
-            profile.status = RESOURCE_STATUS_PENDING_APPROVAL
-            ResourceReviewService(self._session, self._settings).request_resource_review(
-                workspace_id=workspace_id,
-                actor_user_id=actor_user_id,
-                approval_type=REVIEW_TYPE_AGENT_PROFILE,
-                target_type="agent_profile",
-                target_id=profile.id,
-                target_name=profile.name,
-                review=review,
-                snapshot=_profile_snapshot(profile),
-            )
-        self._bump_version(
-            profile,
-            changed_by_user_id=actor_user_id,
-            change_reason="Agent profile updated",
-        )
-        self._audit_profile_change(
-            profile,
-            actor_user_id=actor_user_id,
-            action=(
-                "agent.review_requested"
-                if review is not None and review.required
-                else "agent.updated"
-            ),
-            changed_fields=sorted(values),
-            before_snapshot=before_snapshot,
-            extra_metadata={
-                "review_required": review.required if review is not None else False,
-                "review_risk_level": review.risk_level if review is not None else None,
-                "review_reasons": review.reasons if review is not None else [],
-            },
-        )
-        self._session.commit()
-        self._session.refresh(profile)
-        return profile
-
-    def _review_agent_update_if_needed(
-        self,
-        profile: AgentProfile,
-        values: dict[str, Any],
-    ) -> ResourceReview | None:
-        if not AGENT_PROFILE_REVIEW_FIELDS.intersection(values):
-            return None
-        return ResourceReviewService(self._session, self._settings).review_agent_profile(
-            workspace_id=profile.workspace_id,
-            visibility="private",
-            name=profile.name,
-            role=profile.role,
-            instructions=profile.instructions,
-            capabilities=dict(profile.capabilities or {}),
-            skills=dict(profile.skills or {}),
-            tool_policy=dict(profile.tool_policy or {}),
-            runtime_policy=dict(profile.runtime_policy or {}),
-            approval_policy=dict(profile.approval_policy or {}),
+            actor_user_id,
         )
 
     def archive_agent(
@@ -290,26 +94,7 @@ class AgentManagementService:
         actor_user_id: UUID | None = None,
     ) -> AgentProfile | None:
         profile = self._require_profile(workspace_id, agent_profile_id)
-        if profile.status == AGENT_STATUS_ARCHIVED:
-            return profile
-        before_snapshot = _profile_snapshot(profile)
-        profile.status = AGENT_STATUS_ARCHIVED
-        profile.archived_at = datetime.now(UTC)
-        self._bump_version(
-            profile,
-            changed_by_user_id=actor_user_id,
-            change_reason="Agent profile archived",
-        )
-        self._audit_profile_change(
-            profile,
-            actor_user_id=actor_user_id,
-            action="agent.archived",
-            changed_fields=["archived_at", "status"],
-            before_snapshot=before_snapshot,
-        )
-        self._session.commit()
-        self._session.refresh(profile)
-        return profile
+        return AgentProfileLifecycleService(self._session).archive_agent(profile, actor_user_id)
 
     def activate_agent(
         self,
@@ -318,28 +103,7 @@ class AgentManagementService:
         actor_user_id: UUID | None = None,
     ) -> AgentProfile | None:
         profile = self._require_profile(workspace_id, agent_profile_id)
-        if profile.status == AGENT_STATUS_ACTIVE:
-            return profile
-        if profile.status in {RESOURCE_STATUS_PENDING_APPROVAL, RESOURCE_STATUS_REJECTED}:
-            raise ValueError("Agent profile requires approval before activation")
-        before_snapshot = _profile_snapshot(profile)
-        profile.status = AGENT_STATUS_ACTIVE
-        profile.archived_at = None
-        self._bump_version(
-            profile,
-            changed_by_user_id=actor_user_id,
-            change_reason="Agent profile activated",
-        )
-        self._audit_profile_change(
-            profile,
-            actor_user_id=actor_user_id,
-            action="agent.activated",
-            changed_fields=["archived_at", "status"],
-            before_snapshot=before_snapshot,
-        )
-        self._session.commit()
-        self._session.refresh(profile)
-        return profile
+        return AgentProfileLifecycleService(self._session).activate_agent(profile, actor_user_id)
 
     def delete_agent(
         self,
@@ -351,9 +115,7 @@ class AgentManagementService:
         profile = self._profile(workspace_id, agent_profile_id)
         if profile is None:
             return False
-        self._session.delete(profile)
-        self._session.commit()
-        return True
+        return AgentProfileLifecycleService(self._session).delete_agent(profile)
 
     def clone_agent(
         self,
@@ -364,17 +126,15 @@ class AgentManagementService:
     ) -> AgentProfile:
         source = self._require_profile(workspace_id, agent_profile_id)
         values = {
-            field: self._copy_json_value(field, getattr(source, field))
-            for field in AGENT_PROFILE_FIELDS
+            field: copy_json_value(field, getattr(source, field)) for field in AGENT_PROFILE_FIELDS
         }
         values.update(
-            self._normalize_update_payload(
+            normalize_update_payload(
                 overrides,
                 {},
-                current_model_settings=source.model_settings,
             )
         )
-        self._validate_model_provider_credential(
+        self._model_validator.validate_model_provider_credential(
             workspace_id,
             values["model_provider_credential_id"],
         )
@@ -388,7 +148,7 @@ class AgentManagementService:
         )
         if latest_version is not None:
             latest_version.change_reason = f"Cloned from agent profile {source.id}"
-            self._audit_profile_change(
+            self._versions.audit_profile_change(
                 cloned,
                 actor_user_id=actor_user_id,
                 action="agent.cloned",
@@ -418,19 +178,15 @@ class AgentManagementService:
         if historical is None:
             raise ValueError("Agent profile version not found")
 
-        before_snapshot = _profile_snapshot(profile)
+        before_snapshot = profile_snapshot(profile)
         snapshot = historical.snapshot
-        values = {
-            field: snapshot.get(field)
-            for field in AGENT_PROFILE_FIELDS
-            if field in snapshot
-        }
+        values = {field: snapshot.get(field) for field in AGENT_PROFILE_FIELDS if field in snapshot}
         missing = [field for field in AGENT_PROFILE_FIELDS if field not in values]
         if missing:
             raise ValueError("Agent profile version snapshot is incomplete")
-        credential_id = _uuid_or_none(values["model_provider_credential_id"])
-        self._validate_model_provider_credential(workspace_id, credential_id)
-        self._validate_agent_model_api(
+        credential_id = uuid_or_none(values["model_provider_credential_id"])
+        self._model_validator.validate_model_provider_credential(workspace_id, credential_id)
+        self._model_validator.validate_agent_model_api(
             workspace_id,
             credential_id,
             values["model_settings"],
@@ -439,23 +195,23 @@ class AgentManagementService:
         for field, value in values.items():
             if field == "model_provider_credential_id":
                 value = credential_id
-            setattr(profile, field, self._copy_json_value(field, value))
+            setattr(profile, field, copy_json_value(field, value))
         status = str(snapshot.get("status") or AGENT_STATUS_ACTIVE)
         if status not in {AGENT_STATUS_ACTIVE, AGENT_STATUS_ARCHIVED}:
             raise ValueError("Agent profile version snapshot has invalid status")
         profile.status = status
-        profile.archived_at = _datetime_or_none(snapshot.get("archived_at"))
+        profile.archived_at = datetime_or_none(snapshot.get("archived_at"))
         if profile.status == AGENT_STATUS_ACTIVE:
             profile.archived_at = None
         elif profile.archived_at is None:
             profile.archived_at = datetime.now(UTC)
 
-        self._bump_version(
+        self._versions.bump_version(
             profile,
             changed_by_user_id=actor_user_id,
-            change_reason=_rollback_reason(request) or f"Rolled back to version {version}",
+            change_reason=rollback_reason(request) or f"Rolled back to version {version}",
         )
-        self._audit_profile_change(
+        self._versions.audit_profile_change(
             profile,
             actor_user_id=actor_user_id,
             action="agent.rolled_back",
@@ -475,20 +231,12 @@ class AgentManagementService:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[AgentProfileVersion]:
-        self._require_profile(workspace_id, agent_profile_id)
-        statement = (
-            select(AgentProfileVersion)
-            .where(
-                AgentProfileVersion.workspace_id == workspace_id,
-                AgentProfileVersion.agent_profile_id == agent_profile_id,
-            )
-            .order_by(AgentProfileVersion.version.desc())
+        return AgentProfileQueryService(self._session).list_versions(
+            workspace_id=workspace_id,
+            agent_profile_id=agent_profile_id,
+            limit=limit,
+            offset=offset,
         )
-        if offset:
-            statement = statement.offset(offset)
-        if limit is not None:
-            statement = statement.limit(limit)
-        return list(self._session.scalars(statement).all())
 
     def list_agent_versions(
         self,
@@ -496,382 +244,23 @@ class AgentManagementService:
         agent_profile_id: UUID,
         page: PageParams,
     ) -> tuple[list[AgentProfileVersion], int]:
-        self._require_profile(workspace_id, agent_profile_id)
-        statement = select(AgentProfileVersion).where(
-            AgentProfileVersion.workspace_id == workspace_id,
-            AgentProfileVersion.agent_profile_id == agent_profile_id,
+        return AgentProfileQueryService(self._session).list_agent_versions(
+            workspace_id,
+            agent_profile_id,
+            page,
         )
-        total = self._session.scalar(select(func.count()).select_from(statement.subquery())) or 0
-        rows = self._session.scalars(
-            statement.order_by(AgentProfileVersion.version.desc())
-            .limit(page.limit)
-            .offset(page.offset)
-        ).all()
-        return list(rows), total
 
     def count(self, workspace_id: UUID, *, status: str | None = None) -> int:
-        statement = select(func.count()).select_from(AgentProfile).where(
-            AgentProfile.workspace_id == workspace_id
-        )
-        if status is not None:
-            statement = statement.where(AgentProfile.status == status)
-        return int(self._session.scalar(statement) or 0)
+        return AgentProfileQueryService(self._session).count(workspace_id, status=status)
 
     def _require_profile(self, workspace_id: UUID, agent_profile_id: UUID) -> AgentProfile:
-        profile = self._profile(workspace_id, agent_profile_id)
-        if profile is None:
-            raise ValueError("Agent profile not found")
-        return profile
+        return AgentProfileQueryService(self._session).require_profile(
+            workspace_id,
+            agent_profile_id,
+        )
 
     def _profile(self, workspace_id: UUID, agent_profile_id: UUID) -> AgentProfile | None:
-        return self._session.scalar(
-            select(AgentProfile).where(
-                AgentProfile.workspace_id == workspace_id,
-                AgentProfile.id == agent_profile_id,
-            )
+        return AgentProfileQueryService(self._session).profile(
+            workspace_id,
+            agent_profile_id,
         )
-
-    def _validate_model_provider_credential(
-        self,
-        workspace_id: UUID,
-        credential_id: object,
-    ) -> None:
-        credential_uuid = _uuid_or_none(credential_id)
-        if credential_uuid is None:
-            return
-        credential = self._session.scalar(
-            select(ModelProviderCredential).where(
-                ModelProviderCredential.workspace_id == workspace_id,
-                ModelProviderCredential.id == credential_uuid,
-            )
-        )
-        if credential is None:
-            raise ValueError("Model provider credential not found")
-        if credential.status != "active":
-            raise ValueError("Model provider credential is not active")
-
-    def _validate_agent_model_api(
-        self,
-        workspace_id: UUID,
-        credential_id: object,
-        model_settings: object,
-    ) -> None:
-        if not isinstance(model_settings, Mapping):
-            return
-        model_api = model_settings.get("model_api")
-        if model_api is None:
-            return
-        credential_uuid = _uuid_or_none(credential_id)
-        if credential_uuid is None:
-            require_known_model_api(model_api)
-            return
-        credential = self._session.scalar(
-            select(ModelProviderCredential).where(
-                ModelProviderCredential.workspace_id == workspace_id,
-                ModelProviderCredential.id == credential_uuid,
-            )
-        )
-        if credential is None:
-            return
-        require_provider_model_api(credential.provider, model_api)
-
-    def _normalize_create_payload(
-        self,
-        data: object,
-        fields: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        values = dict(CREATE_DEFAULTS)
-        payload = _payload_dict(data)
-        payload.update(fields)
-        payload.pop("status", None)
-        _merge_top_level_model_api(payload)
-        unknown = set(payload) - set(AGENT_PROFILE_FIELDS)
-        if unknown:
-            raise ValueError(f"Unsupported agent profile fields: {', '.join(sorted(unknown))}")
-        missing_required = [field for field in ("name", "role") if not payload.get(field)]
-        if missing_required:
-            raise ValueError(f"Missing agent profile fields: {', '.join(missing_required)}")
-        _reject_null_profile_fields(payload)
-        values.update(payload)
-        return {
-            field: self._copy_json_value(field, values[field])
-            for field in AGENT_PROFILE_FIELDS
-        }
-
-    def _normalize_update_payload(
-        self,
-        data: object,
-        fields: Mapping[str, Any],
-        *,
-        current_model_settings: Mapping[str, object] | None = None,
-    ) -> dict[str, Any]:
-        payload = _payload_dict(data)
-        payload.update(fields)
-        _merge_top_level_model_api(payload, current_model_settings=current_model_settings)
-        unknown = set(payload) - (set(AGENT_PROFILE_FIELDS) | {"status"})
-        if unknown:
-            raise ValueError(f"Unsupported agent profile fields: {', '.join(sorted(unknown))}")
-        _reject_null_profile_fields(payload)
-        for required_text_field in ("name", "role"):
-            if required_text_field in payload and not payload[required_text_field]:
-                raise ValueError(f"Agent profile {required_text_field} is required")
-        return {
-            field: self._copy_json_value(field, value)
-            for field, value in payload.items()
-        }
-
-    def _bump_version(
-        self,
-        profile: AgentProfile,
-        *,
-        changed_by_user_id: UUID | None,
-        change_reason: str | None,
-    ) -> None:
-        profile.version += 1
-        profile.last_versioned_at = datetime.now(UTC)
-        self._session.flush()
-        self._record_version(
-            profile,
-            changed_by_user_id=changed_by_user_id,
-            change_reason=change_reason,
-        )
-
-    def _record_version(
-        self,
-        profile: AgentProfile,
-        *,
-        changed_by_user_id: UUID | None,
-        change_reason: str | None,
-    ) -> AgentProfileVersion:
-        version = AgentProfileVersion(
-            workspace_id=profile.workspace_id,
-            agent_profile_id=profile.id,
-            version=profile.version,
-            snapshot=_profile_snapshot(profile),
-            changed_by_user_id=changed_by_user_id,
-            change_reason=change_reason,
-        )
-        self._session.add(version)
-        self._session.flush()
-        return version
-
-    def _audit_profile_change(
-        self,
-        profile: AgentProfile,
-        *,
-        actor_user_id: UUID | None,
-        action: str,
-        changed_fields: list[str],
-        before_snapshot: dict[str, object] | None = None,
-        extra_metadata: dict[str, object] | None = None,
-    ) -> None:
-        if actor_user_id is None:
-            return
-        metadata: dict[str, object] = {
-            "name": profile.name,
-            "role": profile.role,
-            "status": profile.status,
-            "version": profile.version,
-            "changed_fields": changed_fields,
-            "model_provider": _model_provider_audit_summary(
-                self._session,
-                profile.workspace_id,
-                profile.model_provider_credential_id,
-                profile.model_settings,
-            ),
-        }
-        if before_snapshot is not None:
-            metadata["before"] = _profile_audit_state(before_snapshot)
-            metadata["after"] = _profile_audit_state(_profile_snapshot(profile))
-        if extra_metadata:
-            metadata.update(extra_metadata)
-        AuditService(self._session).record_user_action(
-            workspace_id=profile.workspace_id,
-            user_id=actor_user_id,
-            action=action,
-            target_type="agent_profile",
-            target_id=profile.id,
-            metadata=metadata,
-        )
-
-    @staticmethod
-    def _copy_json_value(field: str, value: Any) -> Any:
-        if field in JSON_PROFILE_FIELDS:
-            if value is None:
-                return {}
-            if not isinstance(value, Mapping):
-                raise ValueError(f"Agent profile {field} must be an object")
-            return dict(value)
-        if field == "model_provider_credential_id":
-            return _uuid_or_none(value)
-        return value
-
-
-def _payload_dict(data: object) -> dict[str, Any]:
-    if data is None:
-        return {}
-    if isinstance(data, Mapping):
-        return dict(data)
-    model_dump = getattr(data, "model_dump", None)
-    if callable(model_dump):
-        return dict(model_dump(exclude_unset=True))
-    raise ValueError("Agent profile payload must be a mapping")
-
-
-def _reject_null_profile_fields(payload: Mapping[str, Any]) -> None:
-    null_fields = [
-        field
-        for field in NON_NULL_PROFILE_FIELDS
-        if field in payload and payload[field] is None
-    ]
-    if null_fields:
-        raise ValueError(f"Agent profile fields cannot be null: {', '.join(null_fields)}")
-
-
-def _rollback_reason(data: object) -> str | None:
-    payload = _payload_dict(data)
-    reason = payload.get("reason")
-    if reason is None:
-        return None
-    if not isinstance(reason, str):
-        raise ValueError("Rollback reason must be a string")
-    return reason
-
-
-def _profile_snapshot(profile: AgentProfile) -> dict[str, object]:
-    snapshot: dict[str, object] = {
-        "id": str(profile.id),
-        "workspace_id": str(profile.workspace_id),
-        "version": profile.version,
-        "status": profile.status,
-        "archived_at": profile.archived_at.isoformat() if profile.archived_at else None,
-    }
-    for field in AGENT_PROFILE_FIELDS:
-        value = getattr(profile, field)
-        if isinstance(value, UUID):
-            snapshot[field] = str(value)
-        elif field in JSON_PROFILE_FIELDS:
-            snapshot[field] = dict(value or {})
-        else:
-            snapshot[field] = value
-    return snapshot
-
-
-def _profile_audit_state(snapshot: Mapping[str, object]) -> dict[str, object]:
-    return {
-        "status": snapshot.get("status"),
-        "version": snapshot.get("version"),
-        "model": snapshot.get("model"),
-        "model_provider_credential_id": snapshot.get("model_provider_credential_id"),
-    }
-
-
-def _merge_top_level_model_api(
-    payload: dict[str, Any],
-    *,
-    current_model_settings: Mapping[str, object] | None = None,
-) -> None:
-    if "model_api" not in payload:
-        return
-    raw_model_api = payload.pop("model_api")
-    raw_settings = payload.get("model_settings")
-    if raw_settings is None:
-        raw_settings = current_model_settings
-    if raw_settings is not None and not isinstance(raw_settings, Mapping):
-        raise ValueError("Agent profile model_settings must be an object")
-    settings = dict(raw_settings or {})
-    model_api = require_known_model_api(raw_model_api)
-    if model_api is None:
-        settings.pop("model_api", None)
-    else:
-        settings["model_api"] = model_api
-    payload["model_settings"] = settings
-
-
-def _model_provider_audit_summary(
-    session: Session,
-    workspace_id: UUID,
-    credential_id: UUID | None,
-    model_settings: Mapping[str, object] | None = None,
-) -> dict[str, object]:
-    if credential_id is None:
-        agent_model_api = _configured_model_api(model_settings)
-        return {
-            "credential_id": None,
-            "provider": None,
-            "default_model": None,
-            "model_api": agent_model_api,
-            "model_apis": [],
-            "default_model_api": None,
-            "credential_status": None,
-            "credential_health_status": None,
-        }
-    credential = session.scalar(
-        select(ModelProviderCredential).where(
-            ModelProviderCredential.workspace_id == workspace_id,
-            ModelProviderCredential.id == credential_id,
-        )
-    )
-    if credential is None:
-        return {
-            "credential_id": str(credential_id),
-            "provider": None,
-            "default_model": None,
-            "model_api": None,
-            "model_apis": [],
-            "default_model_api": None,
-            "credential_status": "missing",
-            "credential_health_status": None,
-        }
-    unsupported_model_api = unsupported_agent_model_api(
-        credential.provider,
-        dict(model_settings or {}),
-    )
-    try:
-        effective_model_api = model_api_for_agent_provider(
-            credential.provider,
-            dict(model_settings or {}),
-            credential.budget_metadata,
-        )
-    except ValueError:
-        effective_model_api = None
-    payload = {
-        "credential_id": str(credential.id),
-        "provider": credential.provider,
-        "default_model": credential.default_model,
-        "model_api": effective_model_api,
-        "model_apis": list(model_api_options_for_provider(credential.provider)),
-        "default_model_api": default_model_api(credential.provider),
-        "credential_status": credential.status,
-        "credential_health_status": credential.health_status,
-        "is_default": credential.is_default,
-    }
-    if unsupported_model_api is not None:
-        payload["requested_model_api"] = unsupported_model_api
-    return payload
-
-
-def _configured_model_api(model_settings: Mapping[str, object] | None) -> str | None:
-    if model_settings is None:
-        return None
-    return canonical_model_api(model_settings.get("model_api"))
-
-
-def _uuid_or_none(value: object) -> UUID | None:
-    if value is None:
-        return None
-    if isinstance(value, UUID):
-        return value
-    if isinstance(value, str):
-        return UUID(value)
-    raise ValueError("Expected UUID value")
-
-
-def _datetime_or_none(value: object) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        return datetime.fromisoformat(value)
-    raise ValueError("Expected datetime value")

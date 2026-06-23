@@ -6,15 +6,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from uuid import uuid4
 
-from backend.app.capabilities.adapters import (
-    DockerRuntimeStdioMcpToolAdapter,
+from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
+from backend.app.capabilities.mcp_execution_types import McpExecutionError
+from backend.app.capabilities.mcp_remote_adapters import (
     HostedMcpToolAdapter,
     HttpJsonRpcMcpToolAdapter,
-    McpAdapterResolver,
     SseMcpToolAdapter,
-    UnsupportedMcpToolAdapter,
 )
-from backend.app.capabilities.execution import McpExecutionError
+from backend.app.capabilities.mcp_stdio_adapters import DockerRuntimeStdioMcpToolAdapter
+from backend.app.capabilities.mcp_unsupported_adapter import UnsupportedMcpToolAdapter
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.runtime_manager.contracts import RuntimeCommandResult

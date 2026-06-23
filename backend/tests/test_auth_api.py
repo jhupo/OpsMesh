@@ -266,9 +266,9 @@ def test_user_token_api_rejects_token_when_user_is_disabled() -> None:
     assert rejected.status_code == 401
 
 
-def test_internal_token_with_x_user_id_remains_supported() -> None:
+def test_internal_token_with_x_user_id_authenticates_user() -> None:
     client, session = _client()
-    user = User(email="legacy-auth@example.com", display_name="Legacy Auth")
+    user = User(email="internal-auth@example.com", display_name="Internal Auth")
     session.add(user)
     session.commit()
 

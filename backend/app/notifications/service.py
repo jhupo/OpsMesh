@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.notifications import NotificationCreateRequest
+from backend.app.db.pagination import page_scalars
 from backend.app.notifications.models import WorkspaceNotification
 
 
@@ -165,11 +166,7 @@ class NotificationCenterService:
         statement: Select[tuple[WorkspaceNotification]],
         page: PageParams,
     ) -> tuple[list[WorkspaceNotification], int]:
-        total = self._session.scalar(
-            select(func.count()).select_from(statement.order_by(None).subquery())
-        )
-        rows = self._session.scalars(statement.limit(page.limit).offset(page.offset)).all()
-        return list(rows), int(total or 0)
+        return page_scalars(self._session, statement, page)
 
     def _count(
         self,

@@ -15,6 +15,7 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
+from backend.app.db.pagination import page_scalars
 from backend.app.db.session import get_db_session
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import EgressUrlValidationError
@@ -26,7 +27,7 @@ from backend.app.webhooks.service import (
     WebhookSubscriptionService,
 )
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.queue import RedisQueue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/webhook-subscriptions",
@@ -144,7 +145,7 @@ async def list_webhook_delivery_attempts(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[WebhookDeliveryAttemptResponse]:
-    from sqlalchemy import func, select
+    from sqlalchemy import select
 
     statement = (
         select(WebhookDeliveryAttempt)
@@ -157,11 +158,10 @@ async def list_webhook_delivery_attempts(
             WebhookDeliveryAttempt.id.desc(),
         )
     )
-    total = session.scalar(select(func.count()).select_from(statement.order_by(None).subquery()))
-    rows = session.scalars(statement.limit(page.limit).offset(page.offset)).all()
+    rows, total = page_scalars(session, statement, page)
     return PageResponse(
-        items=list(rows),
-        total=int(total or 0),
+        items=rows,
+        total=total,
         limit=page.limit,
         offset=page.offset,
     )

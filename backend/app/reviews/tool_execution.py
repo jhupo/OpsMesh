@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
-from backend.app.reviews.service import ResourceReviewService
+from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.security.redaction import redact_sensitive_payload
 
 _HIGH_RISK_TERMS = {
@@ -60,7 +60,7 @@ class ToolExecutionReview:
 
 class ToolExecutionReviewService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
-        self._resource_reviews = ResourceReviewService(session, settings)
+        self._resource_reviews = ResourcePolicyReviewBuilder(session, settings)
 
     def review_mcp_tool_call(
         self,

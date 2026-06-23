@@ -8,7 +8,7 @@ from uuid import uuid4
 import fakeredis
 from redis.exceptions import ConnectionError
 
-from backend.app.api.routes.workspace_resources import (
+from backend.app.api.routes.workspace_task_streaming import (
     _read_task_bus_events,
     _sse_event,
     _task_event_stream_payload,

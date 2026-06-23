@@ -13,6 +13,15 @@ class TaskTransition:
 
 
 class TaskStateService:
+    def reset_to_draft(self, task: Task) -> TaskTransition:
+        current_status = TaskStatus(task.status)
+        if current_status == TaskStatus.DRAFT:
+            return TaskTransition(current_status, TaskStatus.DRAFT, changed=False)
+        task.status = TaskStatus.DRAFT.value
+        task.completed_at = None
+        task.final_output = None
+        return TaskTransition(current_status, TaskStatus.DRAFT, changed=True)
+
     def transition(
         self,
         task: Task,

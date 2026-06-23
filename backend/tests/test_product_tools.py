@@ -23,7 +23,7 @@ from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolPermissionError, ToolResourceNotFoundError
-from backend.app.tools.product_tools import ProductToolService
+from backend.app.tools.product_tools.service import ProductToolService
 from backend.app.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 

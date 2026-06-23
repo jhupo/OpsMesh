@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from backend.app.model_providers.service import ResolvedModelProvider
+from backend.app.model_providers.service_models import ResolvedModelProvider
 from backend.app.security.redaction import redact_sensitive_payload
 
 

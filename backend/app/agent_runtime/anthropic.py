@@ -1,23 +1,18 @@
 import json
-from urllib.parse import urlparse
 
 import httpx
 
+from backend.app.agent_runtime import anthropic_protocol
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeEvent,
     AgentRuntimeToolResult,
-    AgentRunTracing,
 )
 from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.core.resilience import CircuitBreakerConfig, async_retry_with_circuit
-from backend.app.model_providers.model_api import ANTHROPIC_MESSAGES_API
-from backend.app.model_providers.provider_keys import canonical_model_provider
 from backend.app.security.redaction import redact_sensitive_payload
 
-ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com"
-ANTHROPIC_VERSION = "2023-06-01"
 DEFAULT_MODEL_PROVIDER_CIRCUIT_CONFIG = CircuitBreakerConfig()
 
 
@@ -39,7 +34,7 @@ class AnthropicMessagesRunner:
         if not request.api_key:
             raise ValueError("Anthropic provider requires an api_key")
         result = await async_retry_with_circuit(
-            key=_model_provider_circuit_key(request),
+            key=anthropic_protocol.model_provider_circuit_key(request),
             func=lambda: self._run_once(request),
             max_attempts=self._max_attempts,
             circuit_config=self._circuit_config,
@@ -51,9 +46,9 @@ class AnthropicMessagesRunner:
         user_input = self._input_for_request(request)
         messages = await self._messages_for_request(request, user_input)
         first_response = await self._create_message(request, messages)
-        tool_uses = _tool_uses(first_response)
+        tool_uses = anthropic_protocol.tool_uses(first_response)
         if not tool_uses or request.tool_executor is None:
-            result = _result_from_response(request, first_response)
+            result = anthropic_protocol.result_from_response(request, first_response)
             await self._persist_session_turn(request, user_input, result.final_output)
             return result
 
@@ -90,7 +85,7 @@ class AnthropicMessagesRunner:
             )
             for tool_use, result in tool_results
         ]
-        result = _result_from_response(request, final_response, events=events)
+        result = anthropic_protocol.result_from_response(request, final_response, events=events)
         await self._persist_session_turn(request, user_input, result.final_output)
         return result
 
@@ -102,7 +97,7 @@ class AnthropicMessagesRunner:
         messages: list[dict[str, object]] = []
         if request.session is not None:
             for item in await request.session.get_items():
-                message = _session_item_to_message(item)
+                message = anthropic_protocol.session_item_to_message(item)
                 if message is not None:
                     messages.append(message)
         messages.append({"role": "user", "content": user_input})
@@ -130,36 +125,39 @@ class AnthropicMessagesRunner:
     ) -> dict[str, object]:
         payload: dict[str, object] = {
             "model": request.model or request.agent_profile.model,
-            "max_tokens": _max_tokens(request.agent_profile.model_settings),
+            "max_tokens": anthropic_protocol.max_tokens(request.agent_profile.model_settings),
             "system": request.agent_profile.instructions,
             "messages": messages,
         }
-        temperature = _float_setting(request.agent_profile.model_settings, "temperature")
+        temperature = anthropic_protocol.float_setting(
+            request.agent_profile.model_settings,
+            "temperature",
+        )
         if temperature is not None:
             payload["temperature"] = temperature
-        tools = _anthropic_tools(request)
+        tools = anthropic_protocol.tool_definitions(request)
         if tools:
             payload["tools"] = tools
-            tool_choice = _anthropic_tool_choice(request.agent_profile.model_settings)
+            tool_choice = anthropic_protocol.tool_choice(request.agent_profile.model_settings)
             if tool_choice is not None:
                 payload["tool_choice"] = tool_choice
         client = self._client
         if client is not None:
             response = await client.post(
-                _messages_url(request.base_url),
-                headers=_headers(request.api_key or ""),
+                anthropic_protocol.messages_url(request.base_url),
+                headers=anthropic_protocol.headers(request.api_key or ""),
                 json=payload,
             )
             response.raise_for_status()
-            return _json_object(response.json())
+            return anthropic_protocol.json_object(response.json())
         async with httpx.AsyncClient(timeout=self._timeout_seconds) as ephemeral_client:
             response = await ephemeral_client.post(
-                _messages_url(request.base_url),
-                headers=_headers(request.api_key or ""),
+                anthropic_protocol.messages_url(request.base_url),
+                headers=anthropic_protocol.headers(request.api_key or ""),
                 json=payload,
             )
             response.raise_for_status()
-            return _json_object(response.json())
+            return anthropic_protocol.json_object(response.json())
 
     def _execute_tool_use(
         self,
@@ -183,7 +181,7 @@ class AnthropicMessagesRunner:
         return request.tool_executor.execute_tool(
             context=request.context,
             tool_name=tool_name,
-            arguments=_json_object(tool_use.get("input")),
+            arguments=anthropic_protocol.json_object(tool_use.get("input")),
         )
 
     def _tool_result_content(
@@ -226,213 +224,3 @@ class AnthropicMessagesRunner:
             + "\n\nCompleted runtime tool results:\n"
             + "\n".join(continuation_lines)
         )
-
-
-def _headers(api_key: str) -> dict[str, str]:
-    return {
-        "anthropic-version": ANTHROPIC_VERSION,
-        "x-api-key": api_key,
-        "content-type": "application/json",
-    }
-
-
-def _messages_url(base_url: str | None) -> str:
-    root = (base_url or ANTHROPIC_DEFAULT_BASE_URL).rstrip("/")
-    if root.endswith("/v1/messages"):
-        return root
-    if root.endswith("/v1"):
-        return f"{root}/messages"
-    return f"{root}/v1/messages"
-
-
-def _anthropic_tools(request: AgentRunRequest) -> list[dict[str, object]]:
-    if request.tool_executor is None:
-        return []
-    return [
-        {
-            "name": tool_name,
-            "description": f"Execute the approved MCP tool `{tool_name}`.",
-            "input_schema": {
-                "type": "object",
-                "additionalProperties": True,
-            },
-        }
-        for tool_name in request.context.allowed_tools
-    ]
-
-
-def _anthropic_tool_choice(settings: dict[str, object] | None) -> dict[str, object] | None:
-    if settings is None:
-        return None
-    value = settings.get("tool_choice")
-    if value == "auto":
-        return {"type": "auto"}
-    if value == "required":
-        return {"type": "any"}
-    if isinstance(value, str) and value and value != "none":
-        return {"type": "tool", "name": value}
-    return None
-
-
-def _tool_uses(response: dict[str, object]) -> list[dict[str, object]]:
-    content = response.get("content")
-    if not isinstance(content, list):
-        return []
-    return [
-        item
-        for item in content
-        if isinstance(item, dict) and item.get("type") == "tool_use"
-    ]
-
-
-def _result_from_response(
-    request: AgentRunRequest,
-    response: dict[str, object],
-    *,
-    events: list[AgentRuntimeEvent] | None = None,
-) -> AgentRunResult:
-    text = _response_text(response)
-    usage = response.get("usage")
-    runtime_events = list(events or [])
-    if isinstance(usage, dict):
-        runtime_events.append(
-            AgentRuntimeEvent(
-                event_type="model.usage",
-                message="Model usage recorded.",
-                payload={"usage": usage},
-            )
-        )
-    runtime_events.append(_model_request_event(request))
-    return AgentRunResult(
-        final_output=text,
-        raw_output=_safe_raw_output(request, response),
-        events=tuple(runtime_events),
-    )
-
-
-def _safe_raw_output(
-    request: AgentRunRequest,
-    response: dict[str, object],
-) -> dict[str, object]:
-    return {
-        "provider": request.provider or "anthropic",
-        "model": request.model or request.agent_profile.model,
-        "model_api": _anthropic_model_api(request),
-        "model_provider_credential_id": str(request.model_provider_credential_id)
-        if request.model_provider_credential_id is not None
-        else None,
-        "trace": _trace_payload(request.tracing),
-        "response": redact_sensitive_payload(dict(response)),
-    }
-
-
-def _model_request_event(request: AgentRunRequest) -> AgentRuntimeEvent:
-    return AgentRuntimeEvent(
-        event_type="model.request",
-        message="Model provider request metadata recorded.",
-        payload={
-            "model_provider": {
-                "provider": request.provider or "anthropic",
-                "model": request.model or request.agent_profile.model,
-                "model_api": _anthropic_model_api(request),
-                "credential_id": str(request.model_provider_credential_id)
-                if request.model_provider_credential_id is not None
-                else None,
-            },
-            "trace": _trace_event_payload(request.tracing),
-        },
-    )
-
-
-def _anthropic_model_api(request: AgentRunRequest) -> str:
-    return ANTHROPIC_MESSAGES_API
-
-
-def _trace_event_payload(tracing: AgentRunTracing | None) -> dict[str, object] | None:
-    if tracing is None:
-        return None
-    return {
-        "workflow_name": tracing.workflow_name,
-        "trace_id": tracing.trace_id,
-        "group_id": tracing.group_id,
-        "metadata": redact_sensitive_payload(dict(tracing.metadata)),
-        "disabled": tracing.disabled,
-    }
-
-
-def _trace_payload(tracing: AgentRunTracing | None) -> dict[str, object] | None:
-    if tracing is None:
-        return None
-    return {
-        "workflow_name": tracing.workflow_name,
-        "trace_id": tracing.trace_id,
-        "group_id": tracing.group_id,
-        "metadata": redact_sensitive_payload(dict(tracing.metadata)),
-        "disabled": tracing.disabled,
-        "include_sensitive_data": tracing.include_sensitive_data,
-    }
-
-
-def _response_text(response: dict[str, object]) -> str:
-    content = response.get("content")
-    if not isinstance(content, list):
-        return ""
-    return "\n".join(
-        str(item.get("text"))
-        for item in content
-        if isinstance(item, dict) and item.get("type") == "text" and item.get("text") is not None
-    )
-
-
-def _session_item_to_message(item: object) -> dict[str, object] | None:
-    if not isinstance(item, dict):
-        return None
-    role = item.get("role")
-    content = item.get("content")
-    if role not in {"user", "assistant"}:
-        return None
-    if not isinstance(content, str) or not content:
-        return None
-    return {"role": role, "content": content}
-
-
-def _max_tokens(settings: dict[str, object] | None) -> int:
-    if settings is None:
-        return 1024
-    value = settings.get("max_tokens")
-    return value if isinstance(value, int) and not isinstance(value, bool) else 1024
-
-
-def _float_setting(settings: dict[str, object] | None, key: str) -> float | None:
-    if settings is None:
-        return None
-    value = settings.get(key)
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        return float(value)
-    return None
-
-
-def _json_object(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
-
-
-def _model_provider_circuit_key(request: AgentRunRequest) -> str:
-    provider = canonical_model_provider(request.provider or "anthropic")
-    host = _base_url_host(request.base_url) or "anthropic-default"
-    model_api = _anthropic_model_api(request)
-    credential = (
-        str(request.model_provider_credential_id)
-        if request.model_provider_credential_id is not None
-        else "no-credential"
-    )
-    return (
-        f"model-provider:{provider}:{host}:{credential}:{model_api}:"
-        f"{request.model or request.agent_profile.model}"
-    )
-
-
-def _base_url_host(base_url: str | None) -> str | None:
-    if not base_url:
-        return None
-    parsed = urlparse(base_url)
-    return parsed.netloc or parsed.path or None
