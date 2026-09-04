@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 from uuid import uuid4
@@ -124,6 +125,37 @@ def test_streamable_http_mcp_adapter_retries_retryable_status(monkeypatch) -> No
 
     assert response == {"ok": True}
     assert len(sdk.tool_calls) == 2
+
+
+def test_streamable_http_mcp_adapter_preserves_sync_contract_inside_async_runner(
+    monkeypatch,
+) -> None:
+    sdk = _FakeMcpSdk([_FakeCallToolResult(structured_content={"ok": True})])
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.streamable_http_client",
+        sdk.streamable_http_client,
+    )
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        sdk.client_session,
+    )
+    adapter = StreamableHttpMcpToolAdapter(egress_policy=_local_test_egress_policy())
+
+    async def invoke() -> dict[str, object]:
+        return adapter.call(
+            server=McpServer(
+                workspace_id=uuid4(),
+                name="http-tools",
+                server_type="streamable_http",
+                connection={"url": "https://async.example.test/mcp"},
+            ),
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+            credential_refs=[],
+            timeout_seconds=5,
+        )
+
+    assert asyncio.run(invoke()) == {"ok": True}
 
 
 def test_streamable_http_mcp_adapter_sanitizes_remote_errors(monkeypatch) -> None:
