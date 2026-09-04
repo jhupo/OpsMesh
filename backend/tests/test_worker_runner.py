@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from threading import Event
 from uuid import UUID, uuid4
@@ -42,6 +43,7 @@ from backend.app.runtime_manager.contracts import (
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtimes.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
+from backend.app.tasks.collaboration_state import TaskCollaborationStateService
 from backend.app.tasks.events import RedisTaskEventBus
 from backend.app.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep
 from backend.app.tasks.status import TaskStatus
@@ -86,6 +88,22 @@ def approve_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
 class DeterministicAgentRunner:
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
         return AgentRunResult(final_output="deterministic_run_completed")
+
+
+class ApprovingTeamAgentRunner:
+    async def run(self, request: AgentRunRequest) -> AgentRunResult:
+        review_policy = request.context.metadata.get("review_policy")
+        if isinstance(review_policy, dict) and review_policy.get("mode") == "final_acceptance":
+            return AgentRunResult(
+                final_output=json.dumps(
+                    {
+                        "decision": "approved",
+                        "summary": "manager_approved_delivery",
+                        "reasons": [],
+                    }
+                )
+            )
+        return AgentRunResult(final_output=f"completed_by:{request.agent_profile.name}")
 
 
 class FakeDockerClient(DockerRuntimeClient):
@@ -266,6 +284,94 @@ def test_worker_runner_maintenance_reclaims_job_after_crash_before_lease() -> No
 
     assert queue.count_processing() == 0
     assert queue.dequeue() == job
+
+
+def test_multi_agent_handoff_survives_worker_restart_and_manager_approval() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, task_id, user_id = _seed_multi_agent_task(session_factory)
+
+    with session_factory() as session:
+        task = session.get(Task, task_id)
+        assert task is not None
+        orchestration = RunOrchestrationService(session, queue)
+        first_run = orchestration.create_queued_run_for_task(task)
+        assert first_run is not None
+        assert orchestration.enqueue_run(first_run, requested_by_user_id=user_id) is True
+        session.commit()
+
+    first_worker = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="worker-before-restart", queue_name="agent_runs"),
+        agent_runner=ApprovingTeamAgentRunner(),
+    )
+    assert first_worker.run_once() is True
+
+    with session_factory() as session:
+        state = TaskCollaborationStateService(session).get_state(
+            workspace_id=workspace_id,
+            task_id=task_id,
+        )
+        assert state is not None
+        phases = {phase["phase"]: phase for phase in state["phases"]}
+        assert phases["manager_planning"]["status"] == "completed"
+        assert phases["specialist_execution"]["status"] == "in_progress"
+        assert phases["handoff"]["status"] == "running"
+        assert any(item["status"] == "handoff_in_progress" for item in state["handoffs"])
+
+    restarted_worker = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="worker-after-restart", queue_name="agent_runs"),
+        agent_runner=ApprovingTeamAgentRunner(),
+    )
+    recovered_jobs = 0
+    while restarted_worker.run_once():
+        recovered_jobs += 1
+
+    assert recovered_jobs == 2
+    assert queue.count_queued(workspace_id=workspace_id) == 0
+    assert queue.count_processing(workspace_id=workspace_id) == 0
+
+    with session_factory() as session:
+        task = session.get(Task, task_id)
+        assert task is not None
+        runs = session.scalars(
+            select(AgentRun).where(AgentRun.task_id == task_id).order_by(AgentRun.created_at)
+        ).all()
+        decision = session.scalar(
+            select(TaskMessage).where(
+                TaskMessage.task_id == task_id,
+                TaskMessage.message_type == "pm.acceptance_decision",
+            )
+        )
+        leases = session.scalars(
+            select(WorkerLease)
+            .where(WorkerLease.workspace_id == workspace_id)
+            .order_by(WorkerLease.started_at)
+        ).all()
+        state = TaskCollaborationStateService(session).get_state(
+            workspace_id=workspace_id,
+            task_id=task_id,
+        )
+
+        assert task.status == TaskStatus.COMPLETED.value
+        assert task.final_output is not None
+        assert task.final_output["final_output"] == "manager_approved_delivery"
+        assert len(runs) == 3
+        assert all(run.status == RunStatus.COMPLETED.value for run in runs)
+        assert decision is not None
+        assert decision.payload["decision"] == "approved"
+        assert [lease.worker_id for lease in leases] == [
+            "worker-before-restart",
+            "worker-after-restart",
+            "worker-after-restart",
+        ]
+        assert all(lease.status == "completed" for lease in leases)
+        assert state is not None
+        assert state["summary"]["status"] == "complete"
+        assert state["summary"]["blocked_reasons"] == []
 
 
 def test_worker_heartbeat_preserves_existing_capacity_routing_fields() -> None:
@@ -2703,6 +2809,85 @@ def _session_factory() -> sessionmaker[Session]:
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+def _seed_multi_agent_task(
+    session_factory: sessionmaker[Session],
+) -> tuple[UUID, UUID, UUID]:
+    with session_factory() as session:
+        user = User(email="restart-team@example.com", display_name="Team Owner")
+        session.add(user)
+        session.flush()
+        workspace = Workspace(
+            owner_user_id=user.id,
+            name="Restart Team",
+            slug="restart-team",
+        )
+        session.add(workspace)
+        session.flush()
+        session.add(WorkspaceMember(user_id=user.id, workspace_id=workspace.id, role="owner"))
+        credential = ModelProviderCredentialCommandService(
+            session,
+            SecretEncryptionService(
+                secret="change-me-credential-encryption-secret",
+                key_id="local",
+            ),
+        ).create(
+            workspace_id=workspace.id,
+            created_by_user_id=user.id,
+            name="Team provider",
+            provider="openai",
+            api_key="sk-test-multi-agent-restart",
+            default_model="gpt-4.1",
+            base_url=None,
+            is_default=True,
+        )
+        manager = AgentProfile(
+            workspace_id=workspace.id,
+            name="Manager",
+            role="project_manager",
+            instructions="Plan the task and approve the specialist delivery.",
+            model="gpt-4.1",
+            model_provider_credential_id=credential.id,
+        )
+        specialist = AgentProfile(
+            workspace_id=workspace.id,
+            name="Specialist",
+            role="developer",
+            instructions="Complete the assigned work package.",
+            model="gpt-4.1",
+            model_provider_credential_id=credential.id,
+        )
+        session.add_all([manager, specialist])
+        session.flush()
+        team = AgentTeam(
+            workspace_id=workspace.id,
+            name="Restart-safe team",
+            team_type="software",
+            manager_agent_profile_id=manager.id,
+        )
+        session.add(team)
+        session.flush()
+        session.add(
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=specialist.id,
+                team_role="developer",
+                order_index=1,
+            )
+        )
+        task = Task(
+            workspace_id=workspace.id,
+            created_by_user_id=user.id,
+            agent_team_id=team.id,
+            title="Build restart-safe delivery",
+            description="Complete specialist work and obtain manager approval.",
+            status=TaskStatus.QUEUED.value,
+        )
+        session.add(task)
+        session.commit()
+        return workspace.id, task.id, user.id
 
 
 def _seed_archive_export_job(

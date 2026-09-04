@@ -114,7 +114,7 @@ def handoff_state(
     blocked_downstream_step_ids = [
         downstream_step["task_step_id"]
         for downstream_step in downstream_steps
-        if downstream_step.get("blocked_reasons")
+        if _has_handoff_blocker(downstream_step.get("blocked_reasons"))
     ]
     completed_downstream_step_ids = [
         downstream_step["task_step_id"]
@@ -155,6 +155,12 @@ def handoff_state(
             has_result_summary=payload.get("result_summary") is not None,
         ),
     }
+
+
+def _has_handoff_blocker(value: object) -> bool:
+    if not isinstance(value, list):
+        return False
+    return any(reason != "active_run_exists" for reason in value if isinstance(reason, str))
 
 
 def handoff_status(

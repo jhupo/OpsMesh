@@ -294,7 +294,9 @@ def _protocol_status(phases: list[dict[str, object]], blocked_reasons: list[str]
         return "needs_attention"
     if blocked_reasons:
         return "needs_attention"
-    if phases and all(phase.get("status") in {"completed", "not_required"} for phase in phases):
+    if phases and all(
+        phase.get("status") in {"completed", "healthy", "not_required"} for phase in phases
+    ):
         return "complete"
     return "running"
 
