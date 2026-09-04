@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
@@ -10,7 +11,7 @@ from backend.app.api.schemas.redaction import redact_sensitive_payload, redact_s
 
 class McpServerCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
-    server_type: str = Field(default="stdio", max_length=80)
+    server_type: Literal["stdio", "streamable_http", "sse", "hosted"] = "stdio"
     connection: dict[str, object] = Field(default_factory=dict)
     visibility: str = Field(default="private", pattern="^(private|public)$")
 

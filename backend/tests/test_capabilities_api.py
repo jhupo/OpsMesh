@@ -257,7 +257,7 @@ def test_llm_resource_review_can_require_admin_approval(monkeypatch) -> None:
         headers=_headers(owner.id),
         json={
             "name": "normal-remote-tools",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {"url": "https://mcp.example.test/rpc"},
         },
     )
@@ -419,7 +419,7 @@ def test_resource_review_uses_admin_configured_review_model(monkeypatch) -> None
         headers=_headers(owner.id),
         json={
             "name": "normal-remote-tools",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {"url": "https://mcp.example.test/rpc"},
         },
     )
@@ -478,7 +478,7 @@ def test_resource_review_defaults_to_codex_auto_review_model(monkeypatch) -> Non
         headers=_headers(owner.id),
         json={
             "name": "normal-remote-tools",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {"url": "https://mcp.example.test/rpc"},
         },
     )
@@ -769,7 +769,7 @@ def test_mcp_credentials_can_be_listed_filtered_and_disabled() -> None:
         json={
             "name": "hosted-tools",
             "server_type": "hosted",
-            "connection": {"transport": "http_jsonrpc", "url": "https://mcp.example.test/rpc"},
+            "connection": {"transport": "streamable_http", "url": "https://mcp.example.test/rpc"},
         },
     )
     other_server = client.post(
@@ -851,12 +851,12 @@ def test_mcp_server_response_redacts_connection_secrets_and_url_details() -> Non
         headers=_headers(owner.id),
         json={
             "name": "remote-tools",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {
                 "url": "https://mcp.example.test/private/rpc?token=secret",
                 "headers": {"Authorization": "Bearer secret-token"},
                 "nested": {"api_key": "sk-secret"},
-                "transport": "http_jsonrpc",
+                "transport": "streamable_http",
             },
         },
     )
@@ -873,7 +873,7 @@ def test_mcp_server_response_redacts_connection_secrets_and_url_details() -> Non
         "url_host": "mcp.example.test",
         "headers": "[redacted]",
         "nested": {"api_key": "[redacted]"},
-        "transport": "http_jsonrpc",
+        "transport": "streamable_http",
     }
     assert listed.status_code == 200
     assert listed.json()["items"][0]["connection"]["url_host"] == "mcp.example.test"
@@ -912,7 +912,7 @@ def test_mcp_catalog_summarizes_tools_credentials_and_agent_scope() -> None:
             "name": "image-tools",
             "server_type": "hosted",
             "connection": {
-                "transport": "http_jsonrpc",
+                "transport": "streamable_http",
                 "url": "https://mcp.example.test/rpc",
                 "requires_credentials": True,
             },
@@ -999,7 +999,7 @@ def test_mcp_catalog_summarizes_tools_credentials_and_agent_scope() -> None:
     assert by_name["image-tools"]["executable"] is True
     assert by_name["image-tools"]["connection_summary"] == {
         "requires_credentials": True,
-        "transport": "http_jsonrpc",
+        "transport": "streamable_http",
         "remote_host": "mcp.example.test",
         "has_remote_url": True,
         "has_stdio_command": False,
@@ -1029,7 +1029,7 @@ def test_mcp_catalog_flags_missing_required_credentials() -> None:
         json={
             "name": "hosted-tools",
             "server_type": "hosted",
-            "connection": {"transport": "http_jsonrpc", "url": "https://example.test/mcp"},
+            "connection": {"transport": "streamable_http", "url": "https://example.test/mcp"},
         },
     )
     allowed = client.post(
@@ -1059,7 +1059,7 @@ def test_mcp_catalog_and_policy_diagnostics_block_stale_health_checks() -> None:
         headers=_headers(owner.id),
         json={
             "name": "remote-tools",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {"url": "https://mcp.example.test/rpc"},
         },
     )
@@ -1159,7 +1159,7 @@ def test_mcp_unhealthy_health_check_redacts_error_code_in_responses_and_audit() 
         headers=_headers(owner.id),
         json={
             "name": "unhealthy-remote-tools",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {"url": "https://mcp.example.test/rpc"},
         },
     )
@@ -1212,7 +1212,7 @@ def test_workspace_capability_governance_can_refresh_stale_mcp_health_checks() -
         headers=_headers(owner.id),
         json={
             "name": "refreshable-remote-tools",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {
                 "url": "https://mcp.example.test/private/rpc?token=hidden",
                 "headers": {"Authorization": "Bearer hidden"},
@@ -1311,7 +1311,7 @@ def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:
         headers=_headers(owner.id),
         json={
             "name": "image-tools",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {"url": "https://mcp.example.test/rpc"},
         },
     )
@@ -1407,7 +1407,7 @@ def test_mcp_server_and_tool_can_be_disabled() -> None:
         headers=_headers(owner.id),
         json={
             "name": "image-tools",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {"url": "https://mcp.example.test/rpc"},
         },
     )
@@ -1908,7 +1908,7 @@ def test_workspace_skill_availability_reports_required_mcp_tool_state() -> None:
             "name": "image-tools",
             "server_type": "hosted",
             "connection": {
-                "transport": "http_jsonrpc",
+                "transport": "streamable_http",
                 "url": "https://mcp.example.test/rpc",
             },
         },
@@ -2020,7 +2020,7 @@ def test_agent_tool_policy_diagnostics_explain_skill_and_mcp_effective_access() 
             "name": "image-tools",
             "server_type": "hosted",
             "connection": {
-                "transport": "http_jsonrpc",
+                "transport": "streamable_http",
                 "url": "https://mcp.example.test/private?token=hidden",
             },
         },
@@ -2131,7 +2131,7 @@ def test_workspace_tool_policy_matrix_summarizes_agent_tool_access() -> None:
             "name": "image-tools",
             "server_type": "hosted",
             "connection": {
-                "transport": "http_jsonrpc",
+                "transport": "streamable_http",
                 "url": "https://mcp.example.test/private?token=hidden",
                 "requires_credentials": True,
             },
@@ -2251,7 +2251,7 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
             "name": "image-tools",
             "server_type": "hosted",
             "connection": {
-                "transport": "http_jsonrpc",
+                "transport": "streamable_http",
                 "url": "https://mcp.example.test/private?token=hidden",
                 "requires_credentials": True,
             },
@@ -2297,7 +2297,7 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
         headers=_headers(other.id),
         json={
             "name": "foreign-tools",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {"url": "https://foreign.example.test/private"},
         },
     )
@@ -2446,7 +2446,7 @@ def test_workspace_capability_governance_actions_apply_safe_quarantine() -> None
         headers=_headers(owner.id),
         json={
             "name": "broken-http",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {"headers": {"Authorization": "Bearer hidden-server-token"}},
         },
     )
@@ -2457,7 +2457,7 @@ def test_workspace_capability_governance_actions_apply_safe_quarantine() -> None
             "name": "needs-credential",
             "server_type": "hosted",
             "connection": {
-                "transport": "http_jsonrpc",
+                "transport": "streamable_http",
                 "url": "https://mcp.example.test/private?token=hidden",
                 "requires_credentials": True,
             },
@@ -2584,7 +2584,7 @@ def test_workspace_capability_governance_repairs_unallowed_agent_mcp_tools() -> 
         headers=_headers(owner.id),
         json={
             "name": "image-tools",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {
                 "url": "https://mcp.example.test/private?token=hidden",
                 "headers": {"Authorization": "Bearer hidden"},
@@ -2704,7 +2704,7 @@ def test_workspace_capability_governance_reenables_disabled_mcp_tools() -> None:
         headers=_headers(owner.id),
         json={
             "name": "image-tools",
-            "server_type": "http_jsonrpc",
+            "server_type": "streamable_http",
             "connection": {
                 "url": "https://mcp.example.test/private?token=hidden",
                 "headers": {"Authorization": "Bearer hidden"},

@@ -29,7 +29,7 @@ class OpenAIToolBridge:
         tool_name: str,
         executor: AgentRuntimeToolExecutor,
     ) -> Any:
-        async def call_mcp_tool(
+        def call_mcp_tool(
             ctx: RunContextWrapper[Any],
             arguments: dict[str, object],
         ) -> dict[str, object]:

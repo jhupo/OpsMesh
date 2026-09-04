@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Coroutine
 from datetime import timedelta
-from queue import Queue
-from threading import Thread
-from typing import Any, TypeVar
 from urllib.parse import urlparse
 
 import httpx
@@ -34,7 +30,6 @@ MCP_REMOTE_CALL_CIRCUIT_CONFIG = CircuitBreakerConfig(
     reset_after_seconds=60,
 )
 MCP_REMOTE_CALL_MAX_ATTEMPTS = 2
-T = TypeVar("T")
 
 
 class StreamableHttpMcpToolAdapter:
@@ -167,7 +162,7 @@ class HostedMcpToolAdapter:
         timeout_seconds: int,
     ) -> dict[str, object]:
         transport = (string_setting(server.connection, "transport") or "").lower().strip()
-        if transport in {"http", "https", "http_jsonrpc", "jsonrpc"}:
+        if transport == "streamable_http":
             return self._http_adapter.call(
                 server=server,
                 tool_name=tool_name,
@@ -175,7 +170,7 @@ class HostedMcpToolAdapter:
                 credential_refs=credential_refs,
                 timeout_seconds=timeout_seconds,
             )
-        if transport in {"sse", "http_sse"}:
+        if transport == "sse":
             return self._sse_adapter.call(
                 server=server,
                 tool_name=tool_name,
@@ -211,8 +206,8 @@ def call_remote_mcp(
 ) -> dict[str, object]:
     return retry_with_circuit(
         key=circuit_key,
-        func=lambda: run_async(
-            lambda: call_remote_mcp_async(
+        func=lambda: asyncio.run(
+            call_remote_mcp_async(
                 url=url,
                 headers=headers,
                 tool_name=tool_name,
@@ -331,29 +326,6 @@ def _normalize_remote_exception(exc: Exception, *, transport: str) -> McpExecuti
         f"{transport.upper()} MCP server request failed",
         code=f"mcp_{transport}_request_failed",
     )
-
-
-def run_async(factory: Callable[[], Coroutine[Any, Any, T]]) -> T:
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(factory())
-
-    result_queue: Queue[tuple[T | None, BaseException | None]] = Queue(maxsize=1)
-
-    def target() -> None:
-        try:
-            result_queue.put((asyncio.run(factory()), None))
-        except BaseException as exc:
-            result_queue.put((None, exc))
-
-    thread = Thread(target=target, daemon=True)
-    thread.start()
-    thread.join()
-    result, error = result_queue.get()
-    if error is not None:
-        raise error
-    return result  # type: ignore[return-value]
 
 
 def is_retryable_mcp_error(exc: Exception) -> bool:

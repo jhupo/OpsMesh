@@ -2111,7 +2111,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     server = McpServer(
         workspace_id=workspace.id,
         name="Image MCP",
-        server_type="http",
+        server_type="streamable_http",
         connection={"url": "https://mcp.example.test/rpc"},
     )
     session.add(server)
@@ -2213,7 +2213,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
                     "allowlist_id": str(allow.id),
                     "mcp_server_id": str(server.id),
                     "mcp_server_name": "Image MCP",
-                    "server_type": "http",
+                    "server_type": "streamable_http",
                     "tool_name": "generate_image",
                     "capability_key": "image.generate",
                     "requires_approval": True,

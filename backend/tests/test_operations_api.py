@@ -577,7 +577,7 @@ def test_team_runtime_timeline_aggregates_redacts_and_scopes_events() -> None:
     mcp_server = McpServer(
         workspace_id=workspace.id,
         name="docs-tools",
-        server_type="http_jsonrpc",
+        server_type="streamable_http",
         connection={"url": "https://mcp.example.test/private/rpc?token=hidden"},
         status="active",
         health_status="healthy",
@@ -585,7 +585,7 @@ def test_team_runtime_timeline_aggregates_redacts_and_scopes_events() -> None:
     other_mcp_server = McpServer(
         workspace_id=workspace.id,
         name="other-tools",
-        server_type="http_jsonrpc",
+        server_type="streamable_http",
         connection={"url": "https://other-mcp.example.test/private"},
         status="active",
         health_status="healthy",

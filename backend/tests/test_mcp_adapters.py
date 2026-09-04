@@ -57,7 +57,7 @@ def test_streamable_http_mcp_adapter_uses_official_client_session(monkeypatch) -
         server=McpServer(
             workspace_id=uuid4(),
             name="http-tools",
-            server_type="http",
+            server_type="streamable_http",
             connection={
                 "url": "https://mcp.example.test/mcp",
                 "headers": {"x-static": "yes"},
@@ -113,7 +113,7 @@ def test_streamable_http_mcp_adapter_retries_retryable_status(monkeypatch) -> No
         server=McpServer(
             workspace_id=uuid4(),
             name="http-tools",
-            server_type="http",
+            server_type="streamable_http",
             connection={"url": "https://retry.example.test/mcp"},
         ),
         tool_name="generate_image",
@@ -141,7 +141,7 @@ def test_streamable_http_mcp_adapter_sanitizes_remote_errors(monkeypatch) -> Non
             server=McpServer(
                 workspace_id=uuid4(),
                 name="http-tools",
-                server_type="http",
+                server_type="streamable_http",
                 connection={"url": "https://errors.example.test/mcp"},
             ),
             tool_name="generate_image",
@@ -188,7 +188,7 @@ def test_hosted_mcp_adapter_delegates_to_official_remote_http_transport(monkeypa
             name="hosted-tools",
             server_type="hosted",
             connection={
-                "transport": "http_jsonrpc",
+                "transport": "streamable_http",
                 "url": "https://hosted.example.test/mcp",
             },
         ),
@@ -228,7 +228,7 @@ def test_http_mcp_adapter_blocks_private_egress_before_request() -> None:
             server=McpServer(
                 workspace_id=uuid4(),
                 name="http-tools",
-                server_type="http",
+                server_type="streamable_http",
                 connection={"url": "http://127.0.0.1/mcp"},
             ),
             tool_name="generate_image",
@@ -330,7 +330,7 @@ def test_mcp_adapter_resolver_selects_remote_adapters_and_blocks_unsafe_direct_s
         McpServer(
             workspace_id=uuid4(),
             name="http-tools",
-            server_type="http",
+            server_type="streamable_http",
             connection={"url": "https://example.test/mcp"},
         )
     )
@@ -347,7 +347,7 @@ def test_mcp_adapter_resolver_selects_remote_adapters_and_blocks_unsafe_direct_s
             workspace_id=uuid4(),
             name="hosted-tools",
             server_type="hosted",
-            connection={"transport": "http_jsonrpc", "url": "https://example.test/mcp"},
+            connection={"transport": "streamable_http", "url": "https://example.test/mcp"},
         )
     )
     stdio_adapter = resolver.resolve(

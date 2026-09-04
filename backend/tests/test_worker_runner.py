@@ -1996,7 +1996,7 @@ def test_worker_runner_processes_mcp_tool_execution_job() -> None:
         server = McpServer(
             workspace_id=workspace_id,
             name="image-tools",
-            server_type="http",
+            server_type="streamable_http",
             connection={"url": "https://mcp.example.test/jsonrpc"},
         )
         session.add(server)

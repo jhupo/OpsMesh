@@ -5,7 +5,7 @@ from backend.app.capabilities.mcp_catalog import McpCatalogTool
 from backend.app.capabilities.mcp_policy import mcp_health_check_stale
 from backend.app.capabilities.models import McpServer
 
-REMOTE_SERVER_TYPES = {"http", "https", "http_jsonrpc", "jsonrpc", "sse", "http_sse"}
+REMOTE_SERVER_TYPES = {"streamable_http", "sse"}
 
 
 def credential_status(
@@ -37,9 +37,9 @@ def execution_mode(server: McpServer) -> str:
         if runtime == "self_hosted":
             return "self_hosted_stdio"
         return "isolated_runtime_stdio"
-    if server_type in {"http", "https", "http_jsonrpc", "jsonrpc"}:
+    if server_type == "streamable_http":
         return "remote_http"
-    if server_type in {"sse", "http_sse"}:
+    if server_type == "sse":
         return "remote_sse"
     if server_type == "hosted":
         return "hosted"

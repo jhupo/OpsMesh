@@ -19,9 +19,9 @@ class McpAdapterResolver:
 
     def resolve(self, server: McpServer) -> McpToolAdapter:
         server_type = server.server_type.lower().strip()
-        if server_type in {"http", "https", "http_jsonrpc", "jsonrpc"}:
+        if server_type == "streamable_http":
             return StreamableHttpMcpToolAdapter(secret_service=self.secret_service)
-        if server_type in {"sse", "http_sse"}:
+        if server_type == "sse":
             return SseMcpToolAdapter(secret_service=self.secret_service)
         if server_type == "hosted":
             return HostedMcpToolAdapter(secret_service=self.secret_service)

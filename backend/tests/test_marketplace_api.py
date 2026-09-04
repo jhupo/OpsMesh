@@ -429,7 +429,7 @@ def test_marketplace_install_mcp_server_listing_creates_server_and_tools() -> No
     source_server = McpServer(
         workspace_id=publisher_workspace.id,
         name="Public Search MCP",
-        server_type="http_jsonrpc",
+        server_type="streamable_http",
         connection={"url": "https://mcp.example.test/rpc"},
         visibility="private",
     )
@@ -444,7 +444,7 @@ def test_marketplace_install_mcp_server_listing_creates_server_and_tools() -> No
             "visibility": "public",
             "source_resource_id": str(source_server.id),
             "manifest": {
-                "server_type": "http_jsonrpc",
+                "server_type": "streamable_http",
                 "connection": {"url": "https://mcp.example.test/rpc"},
                 "tools": [
                     {
