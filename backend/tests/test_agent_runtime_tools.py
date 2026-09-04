@@ -16,7 +16,8 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.reviews.service import ResourceReview, ResourceReviewService
+from backend.app.reviews.models import ResourceReview
+from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import RuntimeCommandResult
@@ -29,7 +30,7 @@ from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 @pytest.fixture(autouse=True)
 def _approve_semantic_tool_execution_review(monkeypatch: pytest.MonkeyPatch) -> None:
-    def approved_review(self: ResourceReviewService, **_: object) -> ResourceReview:
+    def approved_review(self: ResourcePolicyReviewBuilder, **_: object) -> ResourceReview:
         return ResourceReview(
             required=False,
             risk_level="low",
@@ -38,7 +39,7 @@ def _approve_semantic_tool_execution_review(monkeypatch: pytest.MonkeyPatch) -> 
         )
 
     monkeypatch.setattr(
-        ResourceReviewService,
+        ResourcePolicyReviewBuilder,
         "review_tool_execution",
         approved_review,
     )
@@ -368,6 +369,7 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
         workspace_id=workspace.id,
         task_id=task.id,
         agent_profile_id=sender.id,
+        status=RunStatus.RUNNING.value,
         input={
             "authorization_snapshot": {
                 "workspace_id": str(workspace.id),

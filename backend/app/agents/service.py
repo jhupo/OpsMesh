@@ -13,6 +13,7 @@ from backend.app.agents.lifecycle import (
     AGENT_STATUS_ARCHIVED,
     AgentProfileLifecycleService,
 )
+from backend.app.agents.model_validation import AgentModelValidator
 from backend.app.agents.models import AgentProfile, AgentProfileVersion
 from backend.app.agents.payloads import (
     AGENT_PROFILE_FIELDS,
@@ -41,6 +42,7 @@ class AgentManagementService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self._session = session
         self._settings = settings
+        self._model_validator = AgentModelValidator(session)
         self._versions = AgentVersionRecorder(session)
 
     def list_agents(

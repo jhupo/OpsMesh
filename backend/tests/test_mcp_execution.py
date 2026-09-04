@@ -30,8 +30,10 @@ from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.reviews.service import ResourceReview, ResourceReviewService
+from backend.app.reviews.models import ResourceReview
+from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.runs.status import RunStatus
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tools.errors import ToolPermissionError, ToolResourceNotFoundError
@@ -40,7 +42,7 @@ from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 @pytest.fixture(autouse=True)
 def _approve_semantic_tool_execution_review(monkeypatch: pytest.MonkeyPatch) -> None:
-    def approved_review(self: ResourceReviewService, **_: object) -> ResourceReview:
+    def approved_review(self: ResourcePolicyReviewBuilder, **_: object) -> ResourceReview:
         return ResourceReview(
             required=False,
             risk_level="low",
@@ -49,7 +51,7 @@ def _approve_semantic_tool_execution_review(monkeypatch: pytest.MonkeyPatch) -> 
         )
 
     monkeypatch.setattr(
-        ResourceReviewService,
+        ResourcePolicyReviewBuilder,
         "review_tool_execution",
         approved_review,
     )
@@ -875,6 +877,7 @@ def _seed_run_with_mcp_tool(
         workspace_id=workspace.id,
         task_id=task.id,
         task_step_id=step.id,
+        status=RunStatus.RUNNING.value,
         input={
             "authorization_snapshot": {
                 "version": 1,

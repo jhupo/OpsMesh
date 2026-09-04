@@ -14,18 +14,21 @@ from backend.app.audit.models import AuditEvent
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.model_providers import service as model_provider_service_module
+from backend.app.model_providers import health_service as model_provider_health_service_module
+from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
+from backend.app.model_providers.credential_queries import ModelProviderCredentialQueryService
 from backend.app.model_providers.health import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
+from backend.app.model_providers.health_service import ModelProviderHealthService
 from backend.app.model_providers.model_api import (
     model_api_for_agent_provider,
     unsupported_agent_model_api,
 )
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.service import (
-    ModelProviderCredentialService,
+from backend.app.model_providers.resolution_service import ModelProviderResolutionService
+from backend.app.model_providers.service_models import (
     ModelProviderUnavailableError,
 )
 from backend.app.secrets.service import SecretEncryptionService
@@ -67,7 +70,7 @@ def test_agent_model_api_override_is_limited_to_provider_supported_protocols() -
 def test_create_encrypts_api_key_and_records_audit() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
 
     credential = service.create(
         workspace_id=workspace.id,
@@ -103,7 +106,7 @@ def test_create_encrypts_api_key_and_records_audit() -> None:
 def test_create_normalizes_openai_compatible_base_url() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
 
     credential = service.create(
         workspace_id=workspace.id,
@@ -122,7 +125,7 @@ def test_create_normalizes_openai_compatible_base_url() -> None:
 def test_update_normalizes_openai_compatible_base_url_and_drops_query() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -147,7 +150,7 @@ def test_update_normalizes_openai_compatible_base_url_and_drops_query() -> None:
 def test_update_can_set_and_clear_model_api() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -182,7 +185,7 @@ def test_update_can_set_and_clear_model_api() -> None:
 def test_model_provider_rejects_unknown_or_unsupported_model_api() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
 
     with pytest.raises(ValueError, match="Unsupported model_api"):
         service.create(
@@ -221,7 +224,7 @@ def test_model_provider_rejects_unknown_or_unsupported_model_api() -> None:
 def test_update_provider_uses_formal_provider_key_before_base_url_normalization() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -248,7 +251,7 @@ def test_update_provider_uses_formal_provider_key_before_base_url_normalization(
 def test_update_provider_renormalizes_existing_base_url() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -283,7 +286,7 @@ def test_update_provider_renormalizes_existing_base_url() -> None:
 def test_create_rejects_unsafe_base_url(base_url: str) -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
 
     with pytest.raises(ValueError):
         service.create(
@@ -301,7 +304,7 @@ def test_create_rejects_unsafe_base_url(base_url: str) -> None:
 def test_setting_new_default_unsets_previous_default_in_same_workspace() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
 
     first = service.create(
         workspace_id=workspace.id,
@@ -374,7 +377,7 @@ def test_database_enforces_single_active_default_per_workspace() -> None:
 def test_resolve_uses_workspace_default_when_agent_has_no_override() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -386,7 +389,7 @@ def test_resolve_uses_workspace_default_when_agent_has_no_override() -> None:
         is_default=True,
     )
 
-    resolved = service.resolve_for_agent(
+    resolved = _resolution_service(session).resolve_for_agent(
         workspace_id=workspace.id,
         agent_credential_id=None,
         agent_model="workspace-default",
@@ -401,7 +404,7 @@ def test_resolve_uses_workspace_default_when_agent_has_no_override() -> None:
 def test_resolve_for_review_uses_configured_review_model() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     default_credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -423,12 +426,12 @@ def test_resolve_for_review_uses_configured_review_model() -> None:
         is_default=False,
     )
 
-    default_review = service.resolve_for_review(
+    default_review = _resolution_service(session).resolve_for_review(
         workspace_id=workspace.id,
         credential_id=None,
         review_model="codex-auto-review",
     )
-    configured_review = service.resolve_for_review(
+    configured_review = _resolution_service(session).resolve_for_review(
         workspace_id=workspace.id,
         credential_id=review_credential.id,
         review_model="workspace-review-large",
@@ -445,7 +448,7 @@ def test_resolve_for_review_uses_configured_review_model() -> None:
 def test_resolve_exposes_configured_model_api() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -458,7 +461,7 @@ def test_resolve_exposes_configured_model_api() -> None:
         model_api="chat_completions",
     )
 
-    resolved = service.resolve_for_agent(
+    resolved = _resolution_service(session).resolve_for_agent(
         workspace_id=workspace.id,
         agent_credential_id=None,
         agent_model="workspace-default",
@@ -472,7 +475,7 @@ def test_resolve_exposes_configured_model_api() -> None:
 def test_resolve_preserves_non_openai_provider_and_base_url() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -485,7 +488,7 @@ def test_resolve_preserves_non_openai_provider_and_base_url() -> None:
         budget_metadata={"model_api": "anthropic_messages"},
     )
 
-    resolved = service.resolve_for_agent(
+    resolved = _resolution_service(session).resolve_for_agent(
         workspace_id=workspace.id,
         agent_credential_id=None,
         agent_model="workspace-default",
@@ -503,7 +506,7 @@ def test_anthropic_health_check_uses_default_messages_model_api(
 ) -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -532,10 +535,10 @@ def test_anthropic_health_check_uses_default_messages_model_api(
             ),
         )
 
-    monkeypatch.setattr(model_provider_service_module, "probe_model_provider", fake_probe)
+    monkeypatch.setattr(model_provider_health_service_module, "probe_model_provider", fake_probe)
 
     result = asyncio.run(
-        service.run_health_check(
+        _health_service(session).run_health_check(
             workspace_id=workspace.id,
             credential_id=credential.id,
             actor_user_id=user.id,
@@ -556,7 +559,7 @@ def test_anthropic_health_check_uses_default_messages_model_api(
 def test_resolve_fails_closed_when_default_provider_is_unhealthy() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     primary = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -579,14 +582,14 @@ def test_resolve_fails_closed_when_default_provider_is_unhealthy() -> None:
     )
 
     for _ in range(3):
-        service.record_failure(
+        _health_service(session).record_failure(
             workspace_id=workspace.id,
             credential_id=primary.id,
             error_code="RuntimeError",
             error_message="provider unavailable",
         )
     with pytest.raises(ModelProviderUnavailableError):
-        service.resolve_for_agent(
+        _resolution_service(session).resolve_for_agent(
             workspace_id=workspace.id,
             agent_credential_id=None,
             agent_model="workspace-default",
@@ -600,7 +603,7 @@ def test_resolve_fails_closed_when_default_provider_is_unhealthy() -> None:
 def test_resolve_fails_closed_when_default_provider_is_disabled() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     primary = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -628,7 +631,7 @@ def test_resolve_fails_closed_when_default_provider_is_disabled() -> None:
         actor_user_id=user.id,
     )
     with pytest.raises(ModelProviderUnavailableError):
-        service.resolve_for_agent(
+        _resolution_service(session).resolve_for_agent(
             workspace_id=workspace.id,
             agent_credential_id=None,
             agent_model="workspace-default",
@@ -642,7 +645,7 @@ def test_resolve_fails_closed_when_default_provider_is_disabled() -> None:
 def test_resolve_fails_closed_when_default_budget_is_exhausted() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     primary = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -666,7 +669,7 @@ def test_resolve_fails_closed_when_default_budget_is_exhausted() -> None:
     )
 
     with pytest.raises(ModelProviderUnavailableError):
-        service.resolve_for_agent(
+        _resolution_service(session).resolve_for_agent(
             workspace_id=workspace.id,
             agent_credential_id=None,
             agent_model="workspace-default",
@@ -679,7 +682,7 @@ def test_resolve_fails_closed_when_default_budget_is_exhausted() -> None:
 def test_resolve_treats_future_exhausted_until_as_temporarily_exhausted() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     primary = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -703,7 +706,7 @@ def test_resolve_treats_future_exhausted_until_as_temporarily_exhausted() -> Non
     )
 
     with pytest.raises(ModelProviderUnavailableError):
-        service.resolve_for_agent(
+        _resolution_service(session).resolve_for_agent(
             workspace_id=workspace.id,
             agent_credential_id=None,
             agent_model="workspace-default",
@@ -711,7 +714,7 @@ def test_resolve_treats_future_exhausted_until_as_temporarily_exhausted() -> Non
     primary.budget_metadata = {
         "exhausted_until": (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
     }
-    available = service.resolve_for_agent(
+    available = _resolution_service(session).resolve_for_agent(
         workspace_id=workspace.id,
         agent_credential_id=None,
         agent_model="workspace-default",
@@ -723,7 +726,7 @@ def test_resolve_treats_future_exhausted_until_as_temporarily_exhausted() -> Non
 def test_resolve_agent_override_can_use_specific_model() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -735,7 +738,7 @@ def test_resolve_agent_override_can_use_specific_model() -> None:
         is_default=False,
     )
 
-    resolved = service.resolve_for_agent(
+    resolved = _resolution_service(session).resolve_for_agent(
         workspace_id=workspace.id,
         agent_credential_id=credential.id,
         agent_model="anthropic/claude-sonnet",
@@ -751,7 +754,7 @@ def test_resolve_rejects_cross_workspace_credential() -> None:
     session = _session()
     user, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
     _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
-    credential = _service(session).create(
+    credential = _command_service(session).create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         name="Private",
@@ -763,7 +766,7 @@ def test_resolve_rejects_cross_workspace_credential() -> None:
     )
 
     try:
-        _service(session).resolve_for_agent(
+        _resolution_service(session).resolve_for_agent(
             workspace_id=other_workspace.id,
             agent_credential_id=credential.id,
             agent_model="gpt-4.1",
@@ -779,7 +782,7 @@ def test_resolve_without_default_fails_closed() -> None:
     _, workspace = _seed_workspace(session)
 
     with pytest.raises(ValueError, match="No available model provider credential"):
-        _service(session).resolve_for_agent(
+        _resolution_service(session).resolve_for_agent(
             workspace_id=workspace.id,
             agent_credential_id=None,
             agent_model="gpt-4.1",
@@ -789,7 +792,7 @@ def test_resolve_without_default_fails_closed() -> None:
 def test_rotate_key_updates_secret_material_without_changing_metadata() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -808,7 +811,7 @@ def test_rotate_key_updates_secret_material_without_changing_metadata() -> None:
         actor_user_id=user.id,
         api_key="sk-new",
     )
-    resolved = service.resolve_for_agent(
+    resolved = _resolution_service(session).resolve_for_agent(
         workspace_id=workspace.id,
         agent_credential_id=credential.id,
         agent_model="workspace-default",
@@ -822,7 +825,7 @@ def test_rotate_key_updates_secret_material_without_changing_metadata() -> None:
 def test_update_audit_redacts_full_base_url() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -869,7 +872,7 @@ def test_update_audit_redacts_full_base_url() -> None:
 def test_update_rejects_unsafe_base_url(base_url: str) -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -895,7 +898,7 @@ def test_update_rejects_unsafe_base_url(base_url: str) -> None:
 def test_disable_removes_credential_from_default_resolution() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -915,7 +918,7 @@ def test_disable_removes_credential_from_default_resolution() -> None:
     assert disabled.status == "disabled"
     assert disabled.is_default is False
     with pytest.raises(ValueError, match="No available model provider credential"):
-        service.resolve_for_agent(
+        _resolution_service(session).resolve_for_agent(
             workspace_id=workspace.id,
             agent_credential_id=None,
             agent_model="gpt-4.1",
@@ -925,7 +928,7 @@ def test_disable_removes_credential_from_default_resolution() -> None:
 def test_resolve_rejects_disabled_agent_override_credential() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -943,7 +946,7 @@ def test_resolve_rejects_disabled_agent_override_credential() -> None:
     )
 
     try:
-        service.resolve_for_agent(
+        _resolution_service(session).resolve_for_agent(
             workspace_id=workspace.id,
             agent_credential_id=credential.id,
             agent_model="workspace-default",
@@ -957,7 +960,7 @@ def test_resolve_rejects_disabled_agent_override_credential() -> None:
 def test_records_provider_health_success_and_failure() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -969,7 +972,7 @@ def test_records_provider_health_success_and_failure() -> None:
         is_default=False,
     )
 
-    service.record_failure(
+    _health_service(session).record_failure(
         workspace_id=workspace.id,
         credential_id=credential.id,
         error_code="RateLimitError",
@@ -981,7 +984,7 @@ def test_records_provider_health_success_and_failure() -> None:
     assert credential.last_failure_message == "rate limited"
     assert credential.failure_count == 1
 
-    service.record_success(workspace_id=workspace.id, credential_id=credential.id)
+    _health_service(session).record_success(workspace_id=workspace.id, credential_id=credential.id)
     assert credential.health_status == "healthy"
     assert credential.failure_count == 0
     assert credential.last_success_at is not None
@@ -994,7 +997,7 @@ def test_health_check_persists_result_and_records_redacted_audit(
 ) -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    service = _service(session)
+    service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -1043,10 +1046,10 @@ def test_health_check_persists_result_and_records_redacted_audit(
             ),
         )
 
-    monkeypatch.setattr(model_provider_service_module, "probe_model_provider", fake_probe)
+    monkeypatch.setattr(model_provider_health_service_module, "probe_model_provider", fake_probe)
 
     result = asyncio.run(
-        service.run_health_check(
+        _health_service(session).run_health_check(
             workspace_id=workspace.id,
             credential_id=credential.id,
             actor_user_id=user.id,
@@ -1153,8 +1156,8 @@ def test_usage_audit_lists_only_sanitized_provider_events_for_workspace() -> Non
     )
     session.commit()
 
-    rows, total = _service(session).list_usage_audit(workspace.id, PageParams())
-    fallback_rows, fallback_total = _service(session).list_usage_audit(
+    rows, total = _query_service(session).list_usage_audit(workspace.id, PageParams())
+    fallback_rows, fallback_total = _query_service(session).list_usage_audit(
         workspace.id,
         PageParams(),
         action="model_provider.fallback_unavailable",
@@ -1166,8 +1169,29 @@ def test_usage_audit_lists_only_sanitized_provider_events_for_workspace() -> Non
     assert fallback_rows[0].target_id == "run-2"
 
 
-def _service(session: Session) -> ModelProviderCredentialService:
-    return ModelProviderCredentialService(
+def _command_service(session: Session) -> ModelProviderCredentialCommandService:
+    return ModelProviderCredentialCommandService(
+        session,
+        SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
+    )
+
+
+def _query_service(session: Session) -> ModelProviderCredentialQueryService:
+    return ModelProviderCredentialQueryService(
+        session,
+        SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
+    )
+
+
+def _health_service(session: Session) -> ModelProviderHealthService:
+    return ModelProviderHealthService(
+        session,
+        SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
+    )
+
+
+def _resolution_service(session: Session) -> ModelProviderResolutionService:
+    return ModelProviderResolutionService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     )

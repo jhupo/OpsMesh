@@ -13,7 +13,8 @@ from backend.app.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.approvals.models import Approval
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
-from backend.app.reviews.service import ResourceReview, ResourceReviewService
+from backend.app.reviews.models import ResourceReview
+from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import (
@@ -33,7 +34,7 @@ from backend.app.workspaces.models import Workspace
 
 @pytest.fixture(autouse=True)
 def _approve_semantic_runtime_tool_review(monkeypatch: pytest.MonkeyPatch) -> None:
-    def approved_review(self: ResourceReviewService, **_: object) -> ResourceReview:
+    def approved_review(self: ResourcePolicyReviewBuilder, **_: object) -> ResourceReview:
         return ResourceReview(
             required=False,
             risk_level="low",
@@ -42,7 +43,7 @@ def _approve_semantic_runtime_tool_review(monkeypatch: pytest.MonkeyPatch) -> No
         )
 
     monkeypatch.setattr(
-        ResourceReviewService,
+        ResourcePolicyReviewBuilder,
         "review_tool_execution",
         approved_review,
     )

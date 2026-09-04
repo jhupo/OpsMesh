@@ -2,7 +2,10 @@
 
 ## What This Project Is
 
-OpsMesh is a backend-first, multi-user platform for running AI agent teams with control, isolation, and auditability. The backend owns workspace isolation, agent orchestration, task execution, worker queues, Docker runtime control, file/artifact management, approvals, markets, and audit evidence.
+OpsMesh is a backend-first, open-source enterprise agent framework for running AI agent teams with
+control, isolation, and auditability. The backend owns workspace isolation, agent orchestration,
+task execution, worker queues, Docker runtime control, file/artifact management, approvals,
+marketplaces, and audit evidence.
 
 Frontend work is intentionally out of scope for now. The current priority is a reliable backend control plane.
 
@@ -102,6 +105,10 @@ The backend must provide:
 20. [Backend Next Task Table](backend-next-task-table.md)
 
    Active execution checklist for the next backend phase.
+
+21. [Open-Source SDK Strategy](open-source-sdk-strategy.md)
+
+   Candidate SDKs, adoption order, evaluation criteria, and the boundaries OpsMesh continues to own.
 
 ## Non-Negotiable Backend Rules
 

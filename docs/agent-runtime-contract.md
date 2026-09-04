@@ -2,7 +2,10 @@
 
 ## Purpose
 
-This document defines the boundary between the OpsMesh product layer and the OpenAI Agents SDK runtime layer.
+This document defines the boundary between the OpsMesh product layer and the Python OpenAI Agents
+SDK runtime layer. The `openai-agents` package is the only Agent orchestration core in the current
+phase. Other model providers, when added later, must implement the OpsMesh-owned provider contract
+without introducing another Agent framework.
 
 The product layer owns users, workspaces, tasks, permissions, runtimes, approvals, files, artifacts, and audit logs. The OpenAI Agents SDK layer owns agent execution primitives such as `Agent`, `Runner`, tools, handoffs, guardrails, sessions, and traces.
 

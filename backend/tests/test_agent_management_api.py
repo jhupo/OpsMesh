@@ -24,7 +24,7 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.model_providers.service import ModelProviderCredentialService
+from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.service import ResourceReview
@@ -47,7 +47,7 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
         )
 
     monkeypatch.setattr(
-        "backend.app.reviews.service.ResourceReviewService.review_agent_profile",
+        "backend.app.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
         fake_review,
     )
 
@@ -271,7 +271,7 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
         email="other-provider@example.com",
         slug="other-provider-space",
     )
-    provider_service = ModelProviderCredentialService(
+    provider_service = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     )
@@ -560,7 +560,7 @@ def test_agent_update_requires_resource_review_for_high_impact_changes(monkeypat
         )
 
     monkeypatch.setattr(
-        "backend.app.reviews.service.ResourceReviewService.review_agent_profile",
+        "backend.app.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
         review_agent_profile,
     )
 

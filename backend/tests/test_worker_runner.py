@@ -25,7 +25,7 @@ from backend.app.exports.models import WorkspaceExportJob
 from backend.app.exports.status import WorkspaceExportJobStatus
 from backend.app.identity.models import User
 from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.model_providers.service import ModelProviderCredentialService
+from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsService
 from backend.app.orchestration.runs import RunOrchestrationService
@@ -48,7 +48,6 @@ from backend.app.tasks.status import TaskStatus
 from backend.app.teams.execution_loop import TeamExecutionLoopQueueService
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.runtime import TeamRuntimeService
-from backend.app.workers import handlers as worker_handlers
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue.redis_queue import RedisQueue
@@ -75,7 +74,7 @@ def approve_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(
-        "backend.app.reviews.service.ResourceReviewService.review_tool_execution",
+        "backend.app.reviews.service.ResourcePolicyReviewBuilder.review_tool_execution",
         fake_resource_review,
     )
     monkeypatch.setattr(
@@ -604,7 +603,7 @@ def test_worker_maintenance_skips_team_runtime_when_provider_readiness_blocked()
         team = session.get(AgentTeam, team_id)
         assert workspace is not None
         assert team is not None
-        credential = ModelProviderCredentialService(
+        credential = ModelProviderCredentialCommandService(
             session,
             SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
         ).create(
@@ -682,7 +681,7 @@ def test_worker_maintenance_skips_team_runtime_when_provider_budget_exhausted() 
         team = session.get(AgentTeam, team_id)
         assert workspace is not None
         assert team is not None
-        credential = ModelProviderCredentialService(
+        credential = ModelProviderCredentialCommandService(
             session,
             SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
         ).create(
@@ -759,7 +758,7 @@ def test_worker_maintenance_skips_team_runtime_when_provider_inactive() -> None:
         team = session.get(AgentTeam, team_id)
         assert workspace is not None
         assert team is not None
-        credential = ModelProviderCredentialService(
+        credential = ModelProviderCredentialCommandService(
             session,
             SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
         ).create(
@@ -814,7 +813,10 @@ def test_team_runtime_maintenance_consume_then_reschedules_on_next_cadence(
     session_factory = _session_factory()
     queue = _queue()
     docker = FakeDockerClient()
-    monkeypatch.setattr(worker_handlers, "get_docker_runtime_client", lambda: docker)
+    monkeypatch.setattr(
+        "backend.app.workers.job_handlers.context.get_docker_runtime_client",
+        lambda: docker,
+    )
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(
         session_factory,
         with_runtime_template=True,
@@ -1075,7 +1077,10 @@ def test_worker_runner_team_execution_loop_ensures_workspace_runtime(
     session_factory = _session_factory()
     queue = _queue()
     docker = FakeDockerClient()
-    monkeypatch.setattr(worker_handlers, "get_docker_runtime_client", lambda: docker)
+    monkeypatch.setattr(
+        "backend.app.workers.job_handlers.context.get_docker_runtime_client",
+        lambda: docker,
+    )
     workspace_id, team_id, user_id, _ = _seed_team_loop_task(
         session_factory,
         with_runtime_template=True,
@@ -1125,7 +1130,10 @@ def test_degraded_team_runtime_maintenance_job_recovers_workspace_runtime(
     session_factory = _session_factory()
     queue = _queue()
     docker = FakeDockerClient()
-    monkeypatch.setattr(worker_handlers, "get_docker_runtime_client", lambda: docker)
+    monkeypatch.setattr(
+        "backend.app.workers.job_handlers.context.get_docker_runtime_client",
+        lambda: docker,
+    )
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(
         session_factory,
         with_runtime_template=True,
@@ -1202,7 +1210,10 @@ def test_worker_runner_team_runtime_soak_keeps_persistent_context_between_iterat
     session_factory = _session_factory()
     queue = _queue()
     docker = FakeDockerClient()
-    monkeypatch.setattr(worker_handlers, "get_docker_runtime_client", lambda: docker)
+    monkeypatch.setattr(
+        "backend.app.workers.job_handlers.context.get_docker_runtime_client",
+        lambda: docker,
+    )
     workspace_id, team_id, user_id, _task_id = _seed_team_loop_task(
         session_factory,
         with_runtime_template=True,
@@ -1274,7 +1285,10 @@ def test_team_runtime_scheduled_soak_across_thirty_minutes(
     session_factory = _session_factory()
     queue = _queue()
     docker = FakeDockerClient()
-    monkeypatch.setattr(worker_handlers, "get_docker_runtime_client", lambda: docker)
+    monkeypatch.setattr(
+        "backend.app.workers.job_handlers.context.get_docker_runtime_client",
+        lambda: docker,
+    )
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(
         session_factory,
         with_runtime_template=True,
@@ -2765,7 +2779,7 @@ def _seed_run(
         )
         session.add_all([member, task, agent])
         session.flush()
-        credential = ModelProviderCredentialService(
+        credential = ModelProviderCredentialCommandService(
             session,
             SecretEncryptionService(
                 secret="change-me-credential-encryption-secret",

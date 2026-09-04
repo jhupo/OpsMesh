@@ -1,0 +1,244 @@
+# Open-Source SDK Strategy
+
+## Purpose
+
+OpsMesh differentiates itself through its enterprise agent control plane: tenant boundaries,
+durable product state, governance, runtime policy, approvals, operations, and auditability. It
+should reuse maintained open-source projects for standard protocols and infrastructure mechanics.
+
+This document identifies the strongest current candidates, the code they may replace, and the
+boundaries OpsMesh must continue to own.
+
+## Decision Criteria
+
+An SDK is not adopted only because it reduces line count. Evaluate:
+
+- protocol and feature coverage;
+- license compatibility with the MIT-licensed project;
+- maintenance activity and security response;
+- Python 3.11+ support, async support, and typing quality;
+- predictable timeout, cancellation, retry, and error semantics;
+- secret handling and observability hooks;
+- versioning and migration policy;
+- testability without a live external service;
+- deployment and operational cost;
+- whether it can remain behind an OpsMesh-owned contract.
+
+For a high-impact dependency, use a small proof of concept and an architecture decision record. A
+successful proof must include failure and security cases, not only a happy-path demo.
+
+## Recommended Adoption Order
+
+### P0: Python OpenAI Agents SDK foundation
+
+**Current position:** `openai-agents` is already the agent execution foundation and is the only
+Agent orchestration core for the current phase. The upstream project is
+`openai/openai-agents-python`. OpsMesh still contains product-level adapters for run state, provider
+behavior, tools, approvals, and sandboxes.
+
+**Use upstream for:** agent turns, tools, handoffs, sessions, serializable run state, human approval
+interruptions, MCP integration, and sandbox client contracts when those APIs are stable.
+
+**Keep in OpsMesh:** workspace authorization, durable task/run models, scheduling, quotas, provider
+credential policy, audit events, artifact ownership, and recovery evidence.
+
+**Next action:** create a version support matrix against the installed and target Agents SDK versions.
+Exercise tool calling, structured output, streaming, sessions, approval pause/resume, MCP, provider
+selection, and serialized run restoration. Replace custom code only after behavior is equivalent.
+
+Other model providers are deferred. When provider expansion begins, each provider must implement the
+OpsMesh-owned provider contract and pass the same runtime contract tests. Do not add another Agent
+orchestration framework.
+
+### P0: MCP Python SDK v2
+
+**Candidate:** [modelcontextprotocol/python-sdk](https://github.com/modelcontextprotocol/python-sdk)
+
+The official SDK supplies clients, protocol negotiation, JSON-RPC handling, tool discovery and
+calls, and the standard stdio, Streamable HTTP, and SSE transports. This overlaps with custom
+code in `backend/app/capabilities/mcp_remote_adapters.py`,
+`backend/app/capabilities/mcp_stdio_adapters.py`, and MCP payload parsing helpers.
+
+**Adopt:** protocol negotiation, framing, message parsing, transport lifecycle, and standard error
+types.
+
+**Keep:** server catalog, workspace credentials, allowlists, egress rules, payload limits,
+approvals, circuit policy, call logs, run events, self-hosted dispatch, and redaction.
+
+**Migration shape:** implement an SDK-backed adapter behind the existing `McpToolAdapter` contract,
+use the custom implementation only as a temporary test fixture, then remove it before switching the
+composition root. Prefer Streamable HTTP for new servers; expose SSE only when it is part of the
+upstream protocol contract.
+
+### P0: Docker SDK for Python
+
+**Candidate:** [Docker SDK for Python](https://docs.docker.com/reference/api/engine/sdk/)
+
+The current Docker client constructs CLI commands. The official SDK provides a typed client for
+images, containers, exec, logs, and API-version negotiation.
+
+**Adopt:** Docker daemon communication, image/container operations, exec lifecycle, log streams,
+and structured daemon errors.
+
+**Keep:** `DockerRuntimeClient` as the OpsMesh boundary, allowed-image checks, resource policies,
+mount validation, capability dropping, read-only root filesystems, network restrictions, leases,
+workspace labels, cleanup verification, and security evidence.
+
+**Migration shape:** add an SDK implementation behind the existing protocol, replay all runtime
+manager tests against both clients, then switch the composition root. Do not expose Docker SDK
+objects outside `runtime_manager`.
+
+### P1: OpenTelemetry Python
+
+**Candidates:**
+
+- [OpenTelemetry Python](https://github.com/open-telemetry/opentelemetry-python)
+- [OpenTelemetry Python instrumentation](https://opentelemetry.io/docs/languages/python/libraries/)
+
+**Adopt:** W3C trace propagation, spans, context propagation, OTLP export, and maintained
+instrumentation for FastAPI, HTTP clients, SQLAlchemy, Redis, and supported model/tool clients.
+
+**Keep:** audit events, security events, domain event names, redaction policy, and stable
+workspace/task/run correlation fields.
+
+Start with traces. OpenTelemetry metrics can follow after the Prometheus migration. Treat log
+signal integration separately because its Python stability may differ from traces and metrics.
+
+### P1: Prometheus Python client
+
+**Candidate:** [prometheus/client_python](https://github.com/prometheus/client_python)
+
+Replace custom metric family and exposition formatting in `backend/app/core/metrics.py`. Preserve
+the domain collectors under `backend/app/operations`, but publish through official Counter,
+Histogram, and Gauge primitives. Define and test label-cardinality limits before migration.
+
+### P1: pgvector-python
+
+**Candidate:** [pgvector/pgvector-python](https://github.com/pgvector/pgvector-python)
+
+OpsMesh already uses Postgres and has lexical and Postgres full-text memory search. pgvector adds
+SQLAlchemy vector types, distance operators, and HNSW/IVFFlat indexes without introducing a second
+database.
+
+**Adopt:** vector column types, similarity queries, and vector index declarations.
+
+**Keep:** knowledge-source registration, chunk ownership, workspace filters, ingestion state,
+embedding-provider abstraction, citations, retention, and hybrid ranking policy.
+
+Begin with one embedding model and reciprocal-rank fusion over Postgres full-text and vector
+results. Add a separate vector database only after measured Postgres limits justify it.
+
+### P1: Authlib
+
+**Candidate:** [Authlib](https://authlib.org/)
+
+Use Authlib to integrate OpsMesh with external OAuth 2.0 and OpenID Connect identity providers.
+OpsMesh should be an OIDC client and protected resource server, not a new enterprise identity
+provider.
+
+**Keep:** local users, workspace membership, role mapping, token revocation metadata, audit events,
+and a simple local authentication mode for development and self-hosted installations.
+
+Do not begin this integration until issuer mapping, account-linking, workspace invitation, and role
+claim semantics are specified.
+
+### P1: Tenacity
+
+**Candidate:** [jd/tenacity](https://github.com/jd/tenacity)
+
+Use Tenacity for bounded retries around idempotent outbound transport calls. It can replace generic
+backoff loops in HTTP/provider integrations.
+
+Do not use Tenacity to replace durable worker retry state, idempotency keys, task transitions,
+dead-letter handling, or circuit state that must survive a process restart.
+
+## Architecture Spikes
+
+### Temporal Python SDK
+
+**Candidate:** [temporalio/sdk-python](https://github.com/temporalio/sdk-python)
+
+Temporal can provide durable timers, retries, cancellation, signals, workflow history, and recovery
+for long-running agent tasks. The Agents SDK also documents a Temporal integration path. This
+overlaps substantially with the current Redis queue, worker leases, task state machines, approval
+waits, and recovery services.
+
+Do not migrate by replacing infrastructure first. Build one representative workflow containing:
+
+1. manager planning;
+2. parallel specialist work;
+3. an MCP tool call;
+4. a long human approval wait;
+5. worker termination and recovery;
+6. cancellation and artifact finalization.
+
+Compare code size, operational dependencies, Postgres synchronization, replay constraints,
+observability, local development, migration risk, and failure recovery. Postgres must remain the
+product source of truth even if Temporal becomes the execution source of truth for workflow
+progress.
+
+### OpenFGA and OPA
+
+**Candidates:**
+
+- [OpenFGA](https://github.com/openfga/openfga) for relationship-based authorization.
+- [Open Policy Agent](https://www.openpolicyagent.org/) for general policy evaluation.
+
+The current owner/admin/operator/viewer model is intentionally simple. Do not add an external
+authorization service until a concrete scenario cannot be expressed safely with local RBAC.
+
+Evaluate OpenFGA for relationships such as organization, department, project, delegated agent,
+shared artifact, and cross-workspace collaboration. Evaluate OPA for deployment-managed runtime,
+network, tool-risk, and compliance policies. They solve different problems; do not deploy both by
+default.
+
+### Deferred provider expansion: Any-LLM and LiteLLM
+
+The OpenAI Agents SDK exposes Any-LLM and LiteLLM integrations for multi-provider access. They are
+outside the current phase and may be evaluated only after the native OpenAI Agents SDK path is
+stable. The SDK describes these adapters as beta or best-effort.
+
+Before adoption, run provider contract tests for:
+
+- structured output and schema failures;
+- function and MCP tool calls;
+- streaming events and cancellation;
+- usage and cost metadata;
+- multimodal input filtering;
+- error normalization and retry classification;
+- per-workspace credential isolation;
+- base URL and secret redaction;
+- no implicit provider fallback across policy boundaries.
+
+Keep the existing provider adapter when upstream behavior cannot meet these contracts.
+
+## Components Not Recommended As A New Core
+
+- Do not add LangChain or LlamaIndex as a second agent orchestration framework. Use focused parsing
+  or retrieval packages only when they provide clear value behind a local contract.
+- Do not introduce Celery while the project is evaluating Temporal and already owns a Redis worker
+  path. Two queue semantics would increase operational and recovery complexity.
+- Do not add a separate vector database before pgvector is measured under representative load.
+- Do not introduce Kubernetes only to match a reference architecture. Package for Kubernetes when
+  horizontal scale, scheduling, or isolation requirements justify it.
+- Do not replace application audit events with vendor tracing or OpenTelemetry spans.
+- Do not delegate workspace authorization, secret redaction, approval policy, or runtime safety to
+  an LLM SDK.
+
+## SDK Migration Definition Of Done
+
+An SDK migration is complete when:
+
+- an OpsMesh-owned interface isolates the dependency;
+- behavior and security contract tests pass;
+- timeouts, cancellation, retries, and shutdown are explicit;
+- workspace context and trace context propagate correctly;
+- no secret-bearing upstream object reaches logs or API responses;
+- metrics and errors preserve stable product semantics;
+- old default code is removed;
+- dependency and lock files are updated intentionally;
+- deployment and upgrade documentation is current;
+- a rollback path exists for high-risk runtime migrations.
+
+Compatibility shims are not an acceptable migration outcome. A dependency replacement must update
+the active contract and all in-repository callers, then remove the superseded implementation.

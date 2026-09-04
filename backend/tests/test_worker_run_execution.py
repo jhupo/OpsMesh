@@ -11,6 +11,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
+from backend.app.agent_runtime import openai_agents as openai_runtime
 from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult, AgentRuntimeEvent
 from backend.app.agent_runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
 from backend.app.agents.models import AgentProfile
@@ -28,8 +29,10 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.model_providers.service import (
-    ModelProviderCredentialService,
+from backend.app.model_providers.credential_commands import (
+    ModelProviderCredentialCommandService,
+)
+from backend.app.model_providers.service_models import (
     ModelProviderUnavailableError,
 )
 from backend.app.orchestration.model_request_reviewing import (
@@ -54,7 +57,8 @@ from backend.app.orchestration.runs import (
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.model_request import ModelRequestReview
-from backend.app.reviews.service import ResourceReview
+from backend.app.reviews.models import ResourceReview
+from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.activity import activity_phase
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
@@ -100,7 +104,8 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
         )
 
     monkeypatch.setattr(
-        "backend.app.reviews.service.ResourceReviewService.review_tool_execution",
+        ResourcePolicyReviewBuilder,
+        "review_tool_execution",
         fake_resource_review,
     )
     monkeypatch.setattr(
@@ -186,6 +191,102 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
     assert events[2].event_metadata["allowed_tool_count"] == 0
     assert events[3].event_metadata["model"] == "gpt-4.1"
     assert events[4].event_metadata["runtime_event_count"] == 0
+
+
+def test_worker_executes_openai_agents_runner_through_control_plane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Researcher",
+        role="researcher",
+        instructions="Return the requested research summary.",
+        model="gpt-4.1",
+        model_settings={"model_api": "responses", "temperature": 0},
+    )
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="SDK-backed research",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add_all([agent, task])
+    session.flush()
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("opsmesh"),
+        queue_name="agent_runs",
+    )
+    orchestration = RunOrchestrationService(session, queue)
+    run = orchestration.create_queued_run_for_task(task)
+    assert run is not None
+    run.agent_profile_id = agent.id
+    orchestration.enqueue_run(run, requested_by_user_id=user.id)
+    session.commit()
+
+    captured: dict[str, object] = {}
+
+    class FakeSdkResult:
+        final_output = "sdk-e2e-ok"
+        last_response_id = "resp_sdk_e2e"
+        conversation_id = "conv_sdk_e2e"
+        usage = None
+        events: list[object] = []
+
+    async def fake_runner_run(agent: object, input_text: str, **kwargs: object) -> FakeSdkResult:
+        captured["agent"] = agent
+        captured["input_text"] = input_text
+        captured["kwargs"] = kwargs
+        return FakeSdkResult()
+
+    monkeypatch.setattr(openai_runtime.Runner, "run", fake_runner_run)
+    settings = Settings(environment="test")
+    handled = consume_once(
+        queue,
+        WorkerJobHandler(
+            session,
+            queue,
+            agent_runner=openai_runtime.OpenAIAgentsRunner(),
+            settings=settings,
+        ).handle,
+    )
+
+    session.refresh(run)
+    session.refresh(task)
+    events = session.scalars(
+        select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
+    ).all()
+
+    assert handled is True
+    assert run.status == RunStatus.COMPLETED.value
+    assert task.status == TaskStatus.COMPLETED.value
+    assert run.output is not None
+    assert run.output["final_output"] == "sdk-e2e-ok"
+    assert run.output["raw_output"]["last_response_id"] == "resp_sdk_e2e"
+    assert run.output["raw_output"]["conversation_id"] == "conv_sdk_e2e"
+    assert run.output["raw_output"]["sdk_continuation"] == {
+        "provider": "openai_agents",
+        "mode": "sdk_continuation_snapshot",
+        "native_tool_call_continuation": False,
+        "last_response_id": "resp_sdk_e2e",
+        "conversation_id": "conv_sdk_e2e",
+    }
+    assert captured["input_text"]
+    assert captured["agent"].name == "Researcher"
+    assert captured["agent"].instructions == "Return the requested research summary."
+    assert captured["kwargs"]["context"].run_id == run.id
+    assert captured["kwargs"]["max_turns"] == 10
+    assert [event.event_type for event in events] == [
+        "run.claimed",
+        "run.started",
+        "run.context_built",
+        "model.request_started",
+        "model.response_received",
+        "model_provider.used",
+        "run.completed",
+    ]
 
 
 def test_worker_fails_closed_without_model_provider_credential() -> None:
@@ -1228,13 +1329,13 @@ def test_team_scheduler_policy_limits_team_steps_without_relaxing_workspace_poli
 
     assert [run.task_id for run in runs] == [first_task.id]
     assert queue.count_queued(workspace_id=workspace.id) == 1
-    assert second_step.dependencies["blocked_reason"] == "workspace_run_quota_exceeded"
+    assert second_step.dependencies["blocked_reason"] == "team_member_capacity_exceeded"
 
 
 def test_team_scheduler_blocks_step_when_model_provider_unavailable() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    credential = ModelProviderCredentialService(
+    credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -1359,7 +1460,7 @@ def test_team_scheduler_releases_reservations_when_model_provider_unavailable() 
         reserved_value=0,
         unit="count",
     )
-    credential = ModelProviderCredentialService(
+    credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -2242,7 +2343,7 @@ def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> Non
         credential_encryption_secret="unit-test-secret",
         credential_encryption_key_id="test-key",
     )
-    credential = ModelProviderCredentialService(
+    credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -2369,7 +2470,7 @@ def test_queued_team_run_uses_frozen_agent_model_provider_protocol() -> None:
         credential_encryption_secret="unit-test-secret",
         credential_encryption_key_id="test-key",
     )
-    credential = ModelProviderCredentialService(
+    credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -4024,7 +4125,7 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
         credential_encryption_secret="test-secret",
         credential_encryption_key_id="test-key",
     )
-    credential = ModelProviderCredentialService(
+    credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(
             secret=settings.credential_encryption_secret,
@@ -4108,7 +4209,7 @@ def test_agent_request_model_api_overrides_credential_default_protocol() -> None
         credential_encryption_secret="test-secret",
         credential_encryption_key_id="test-key",
     )
-    credential = ModelProviderCredentialService(
+    credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(
             secret=settings.credential_encryption_secret,
@@ -4179,7 +4280,7 @@ def test_agent_request_fails_closed_when_workspace_default_snapshot_becomes_unhe
         credential_encryption_secret="test-secret",
         credential_encryption_key_id="test-key",
     )
-    service = ModelProviderCredentialService(
+    service = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(
             secret=settings.credential_encryption_secret,
@@ -4264,7 +4365,7 @@ def test_agent_request_does_not_fallback_explicit_inactive_provider_override() -
         credential_encryption_secret="test-secret",
         credential_encryption_key_id="test-key",
     )
-    service = ModelProviderCredentialService(
+    service = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(
             secret=settings.credential_encryption_secret,
@@ -4360,7 +4461,7 @@ def test_worker_fails_closed_without_model_provider_fallback() -> None:
         credential_encryption_secret="test-secret",
         credential_encryption_key_id="test-key",
     )
-    service = ModelProviderCredentialService(
+    service = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(
             secret=settings.credential_encryption_secret,
@@ -4507,7 +4608,7 @@ def test_worker_falls_back_across_model_provider_vendors() -> None:
         credential_encryption_secret="test-secret",
         credential_encryption_key_id="test-key",
     )
-    service = ModelProviderCredentialService(
+    service = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(
             secret=settings.credential_encryption_secret,
@@ -4663,7 +4764,7 @@ def test_worker_ignores_budget_exhausted_model_provider_fallback_policy() -> Non
         credential_encryption_secret="test-secret",
         credential_encryption_key_id="test-key",
     )
-    service = ModelProviderCredentialService(
+    service = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(
             secret=settings.credential_encryption_secret,
@@ -4813,7 +4914,7 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
         secret=settings.credential_encryption_secret,
         key_id=settings.credential_encryption_key_id,
     )
-    primary = ModelProviderCredentialService(session, secret_service).create(
+    primary = ModelProviderCredentialCommandService(session, secret_service).create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         name="Primary",
@@ -4823,7 +4924,7 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
         base_url=None,
         is_default=False,
     )
-    foreign = ModelProviderCredentialService(session, secret_service).create(
+    foreign = ModelProviderCredentialCommandService(session, secret_service).create(
         workspace_id=other_workspace.id,
         created_by_user_id=other_user.id,
         name="Foreign",
@@ -5674,7 +5775,10 @@ def _build_agent_request(
     *,
     settings: Settings | None = None,
 ) -> AgentRunRequest:
-    return RunRequestBuilder(session, settings).build_agent_request(run, job)
+    return RunRequestBuilder(session, settings or Settings(environment="test")).build_agent_request(
+        run,
+        job,
+    )
 
 
 def _run_agent_sync(
@@ -5763,7 +5867,7 @@ def _seed_default_model_provider(
     user_id: UUID,
     api_key: str = "sk-unit-test-provider",
 ) -> None:
-    ModelProviderCredentialService(
+    ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="change-me-credential-encryption-secret", key_id="local"),
     ).create(
@@ -5851,5 +5955,3 @@ def _patch_portable_types_for_sqlite() -> None:
                 column.type = column.type.as_generic()
             if isinstance(column.type, JSONB):
                 column.type = SqliteJSON()
-
-

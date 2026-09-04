@@ -6,7 +6,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-import backend.app.agent_runtime.anthropic as anthropic_runtime
+import backend.app.agent_runtime.anthropic_protocol as anthropic_protocol
 import backend.app.agent_runtime.openai_agents as openai_runtime
 from backend.app.agent_runtime.anthropic import AnthropicMessagesRunner
 from backend.app.agent_runtime.contracts import (
@@ -21,6 +21,11 @@ from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.factory import build_agent_runner
 from backend.app.agent_runtime.multi_provider import ProviderDispatchingAgentRunner
 from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
+from backend.app.agent_runtime.openai_results import (
+    OpenAIAgentsResultMapper,
+    runtime_event_from_sdk_item,
+)
+from backend.app.agent_runtime.openai_tools import runtime_allowed_tools
 from backend.app.agent_runtime.sessions import PersistentAgentSessionRef, SQLAlchemyAgentSession
 from backend.app.agents.models import AgentProfile
 from backend.app.core.config import Settings
@@ -488,8 +493,8 @@ def test_anthropic_runner_circuit_key_uses_formal_provider_and_separates_hosts()
         api_key="anthropic-key",
     )
 
-    canonical_key = anthropic_runtime._model_provider_circuit_key(canonical_request)
-    router_key = anthropic_runtime._model_provider_circuit_key(router_request)
+    canonical_key = anthropic_protocol.model_provider_circuit_key(canonical_request)
+    router_key = anthropic_protocol.model_provider_circuit_key(router_request)
 
     assert canonical_key.startswith(
         "model-provider:anthropic:api.anthropic.com:no-credential:"
@@ -896,7 +901,7 @@ def test_openai_agents_runner_raw_output_is_json_safe() -> None:
         def to_state(self) -> State:
             return State()
 
-    payload = OpenAIAgentsRunner()._safe_raw_output(Result())
+    payload = OpenAIAgentsResultMapper().safe_raw_output(Result())
 
     assert payload == {
         "final_output": "done",
@@ -1115,7 +1120,7 @@ def test_openai_agents_runner_runtime_event_payload_is_redacted() -> None:
                 },
             }
 
-    event = OpenAIAgentsRunner()._runtime_event_from_sdk_item(SdkEvent())
+    event = runtime_event_from_sdk_item(SdkEvent())
 
     assert event is not None
     assert event.payload == {
@@ -1162,7 +1167,7 @@ def test_openai_agents_runner_tools_include_provenance_guardrail() -> None:
 
 
 def test_openai_agents_runner_tool_provenance_accepts_restored_mapping_context() -> None:
-    assert openai_runtime._runtime_allowed_tools(
+    assert runtime_allowed_tools(
         {"allowed_tools": ["generate_image", "write_artifact"]}
     ) == ("generate_image", "write_artifact")
 

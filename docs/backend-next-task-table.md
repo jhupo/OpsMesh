@@ -9,6 +9,7 @@ Frontend remains out of scope. Billing remains out of scope.
 - Finish one functional point at a time.
 - Run targeted pytest files for the touched module.
 - Run targeted `ruff check`.
+- Do not run the full pytest suite unless preparing a release tag.
 - Run `git diff --check`.
 - Commit and push each completed functional point.
 - Keep API responses metadata-only and redacted.
@@ -60,7 +61,7 @@ The remaining work is to turn those pieces into production-grade operating loops
 
 | Order | Priority | Goal | Current Status | Acceptance Evidence |
 | --- | --- | --- | --- | --- |
-| 1 | P0 | Multi-agent project execution E2E closure | In progress | A workspace/team can run a project through plan quality checks, specialist work, handoff, manager review, requeue/finalize, stall detection, and recovery after worker restart with redacted operations-console evidence |
+| 1 | P0 | Multi-agent project execution E2E closure | In progress | A workspace/team can run a project through plan quality checks, specialist work, handoff, manager review, requeue/finalize, stall detection, and recovery after worker restart with redacted operations-console evidence; local `test_worker_executes_openai_agents_runner_through_control_plane` covers the control-plane to OpenAI Agents SDK runner path without network access |
 | 2 | P0 | Provider/model operations closure | Pending | Each agent can declare provider/model/protocol; operations APIs expose readiness, fallback, budget/limit metadata, failure reasons, and redacted provenance for OpenAI, OpenAI-compatible, and Anthropic paths |
 | 3 | P1 | MCP tool permission production closure | In progress | Workspace/team/agent tool-policy matrix can explain, dry-run, apply, and audit permission remediation; governance apply now supports MCP health-check refresh for stale/unhealthy servers with redacted evidence |
 | 4 | P1 | Workspace data lifecycle production closure | Pending | Backup, restore drill, retention, import conflict preview, integrity verification, and recovery recommendations form an auditable closed loop with scheduled-job evidence |

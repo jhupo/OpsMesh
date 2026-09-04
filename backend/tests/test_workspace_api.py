@@ -27,13 +27,13 @@ from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.model_providers import service as model_provider_service_module
+from backend.app.model_providers import health_service as model_provider_health_service_module
+from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.model_providers.health import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.dependencies import get_redis_client
@@ -978,7 +978,7 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
     )
     session.add_all([manager, developer, replacement_developer, observer])
     session.flush()
-    unhealthy_credential = ModelProviderCredentialService(
+    unhealthy_credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -3417,7 +3417,7 @@ def test_team_runtime_timeline_includes_scheduler_scan_metadata() -> None:
 def test_team_runtime_timeline_includes_blocked_step_provider_metadata() -> None:
     _, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
-    credential = ModelProviderCredentialService(
+    credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -3538,7 +3538,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     )
     session.add_all([manager, runtime])
     session.flush()
-    default_credential = ModelProviderCredentialService(
+    default_credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -3551,7 +3551,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
         base_url=None,
         is_default=True,
     )
-    credential = ModelProviderCredentialService(
+    credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -4245,7 +4245,7 @@ def test_team_operations_console_marks_inactive_provider_not_selectable() -> Non
     )
     session.add(manager)
     session.flush()
-    credential = ModelProviderCredentialService(
+    credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -4314,7 +4314,7 @@ def test_team_operations_console_marks_inactive_provider_not_selectable() -> Non
 def test_team_operations_console_provider_readiness_blocks_unhealthy_default() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
-    service = ModelProviderCredentialService(
+    service = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     )
@@ -4417,7 +4417,7 @@ def test_team_operations_console_provider_readiness_blocks_unhealthy_default() -
 def test_team_operations_console_exposes_anthropic_default_model_api() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
-    service = ModelProviderCredentialService(
+    service = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     )
@@ -4499,7 +4499,7 @@ def test_team_operations_console_exposes_anthropic_default_model_api() -> None:
 def test_team_operations_console_blocks_missing_explicit_provider() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
-    default_credential = ModelProviderCredentialService(
+    default_credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -4870,7 +4870,7 @@ def test_team_execution_loop_records_skipped_runtime_heartbeat() -> None:
 def test_team_execution_loop_marks_runtime_stalled_after_repeated_noop() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
-    credential = ModelProviderCredentialService(
+    credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -5285,7 +5285,7 @@ def test_team_execution_loop_skips_enqueue_when_provider_readiness_blocked() -> 
     queue = RedisQueue(queue_redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     client, session = _client(queue=queue)
     owner, workspace = _seed_workspace(session, role="owner")
-    credential = ModelProviderCredentialService(
+    credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -5412,7 +5412,7 @@ def test_team_execution_loop_ignores_non_runtime_provider_blockers() -> None:
     queue = RedisQueue(queue_redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     client, session = _client(queue=queue)
     owner, workspace = _seed_workspace(session, role="owner")
-    service = ModelProviderCredentialService(
+    service = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     )
@@ -6066,7 +6066,7 @@ def test_create_task_with_team_captures_workspace_team_snapshot() -> None:
         json={
             "name": "Frontend Dev",
             "role": "frontend_engineer",
-            "model_api": "responses",
+            "model_settings": {"model_api": "responses"},
         },
     )
     team = client.post(
@@ -6218,7 +6218,7 @@ def test_api_team_task_e2e_runs_workers_and_accepts_delivery(
     )
     client, session = _client(queue=queue)
     owner, workspace = _seed_workspace(session, role="owner")
-    ModelProviderCredentialService(
+    ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(
             secret="change-me-credential-encryption-secret",
@@ -6845,7 +6845,7 @@ def test_model_provider_health_check_updates_status_without_returning_secret(
             ),
         )
 
-    monkeypatch.setattr(model_provider_service_module, "probe_model_provider", fake_probe)
+    monkeypatch.setattr(model_provider_health_service_module, "probe_model_provider", fake_probe)
     credential = client.post(
         f"/api/v1/workspaces/{workspace.id}/model-provider-credentials",
         headers=_headers(owner.id),
@@ -9607,7 +9607,7 @@ def test_create_task_correction_for_step_creates_follow_up_step_and_message() ->
     assert message is not None
     assert message.message_type == "task.correction.created"
     assert message.payload["created_step_id"] == str(created_step.id)
-    assert task.status == "in_progress"
+    assert task.status == TaskStatus.RUNNING.value
 
 
 def test_stop_work_correction_cancels_task_without_creating_step() -> None:

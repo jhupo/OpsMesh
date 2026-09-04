@@ -18,13 +18,13 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.model_providers import service as model_provider_service_module
+from backend.app.model_providers import health_service as model_provider_health_service_module
+from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.model_providers.health import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.scheduled_jobs.models import (
@@ -259,7 +259,7 @@ def test_scheduled_model_provider_health_check_is_scoped_and_redacted() -> None:
         email="health-other@example.com",
         slug="health-other",
     )
-    credential = ModelProviderCredentialService(
+    credential = ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     ).create(
@@ -374,14 +374,14 @@ def test_worker_runs_model_provider_health_check_job(monkeypatch) -> None:
             ),
         )
 
-    monkeypatch.setattr(model_provider_service_module, "probe_model_provider", fake_probe)
+    monkeypatch.setattr(model_provider_health_service_module, "probe_model_provider", fake_probe)
     with session_factory() as session:
         owner, workspace = _seed_workspace(
             session,
             email="worker-health@example.com",
             slug="worker-health",
         )
-        credential = ModelProviderCredentialService(
+        credential = ModelProviderCredentialCommandService(
             session,
             SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
         ).create(

@@ -20,8 +20,8 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.reviews.llm import LlmReviewResult, _parse_review_result
 from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
@@ -3088,7 +3088,7 @@ def _seed_default_model_provider(
     workspace_id: UUID,
     user_id: UUID,
 ) -> None:
-    ModelProviderCredentialService(
+    ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="test-credential-secret", key_id="test"),
     ).create(
