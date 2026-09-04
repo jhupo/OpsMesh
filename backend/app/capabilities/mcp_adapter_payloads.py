@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from uuid import uuid4
 
 from backend.app.capabilities.mcp_execution_types import McpExecutionError
+
+MCP_PYTHON_SDK_PACKAGE = "mcp"
+MCP_PYTHON_SDK_STDIO_ENTRYPOINT = "mcp.client.stdio.stdio_client"
 
 
 def string_setting(payload: dict[str, object], key: str) -> str | None:
@@ -33,19 +35,31 @@ def jsonable(value: Any) -> object:
     return str(value)
 
 
-def tool_call_payload(
+def stdio_sdk_request(
     *,
-    method: str | None,
+    command: list[str],
     tool_name: str,
     arguments: dict[str, object],
+    timeout_seconds: int,
 ) -> dict[str, object]:
+    if not command:
+        raise McpExecutionError(
+            "Stdio MCP server is missing command",
+            code="mcp_stdio_command_missing",
+        )
     return {
-        "jsonrpc": "2.0",
-        "id": str(uuid4()),
-        "method": method or "tools/call",
-        "params": {
+        "client": {
+            "package": MCP_PYTHON_SDK_PACKAGE,
+            "entrypoint": MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
+        },
+        "server": {
+            "command": command[0],
+            "args": command[1:],
+        },
+        "tool": {
             "name": tool_name,
             "arguments": arguments,
+            "timeout_seconds": timeout_seconds,
         },
     }
 
@@ -68,35 +82,41 @@ def stdio_command(connection: dict[str, object]) -> list[str]:
     )
 
 
-def result_from_jsonrpc_body(raw_body: bytes | str, *, transport: str) -> dict[str, object]:
+def result_from_sdk_output(raw_body: bytes | str) -> dict[str, object]:
     if isinstance(raw_body, bytes):
         try:
             raw_body = raw_body.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise McpExecutionError(
-                f"{transport.upper()} MCP server returned invalid UTF-8",
-                code=f"mcp_{transport}_invalid_encoding",
+                "MCP stdio SDK client returned invalid UTF-8",
+                code="mcp_stdio_invalid_encoding",
             ) from exc
     try:
         body = json.loads(raw_body)
     except json.JSONDecodeError as exc:
         raise McpExecutionError(
-            f"{transport.upper()} MCP server returned invalid JSON",
-            code=f"mcp_{transport}_invalid_json",
+            "MCP stdio SDK client returned invalid JSON",
+            code="mcp_stdio_invalid_output",
         ) from exc
     if not isinstance(body, dict):
         raise McpExecutionError(
-            f"{transport.upper()} MCP server returned an invalid JSON-RPC envelope",
-            code=f"mcp_{transport}_invalid_envelope",
+            "MCP stdio SDK client returned an invalid result",
+            code="mcp_stdio_invalid_output",
         )
-    error = body.get("error")
-    if isinstance(error, dict):
+    if body.get("isError") is True:
         raise McpExecutionError(
-            "Remote MCP tool failed",
+            "MCP stdio tool failed",
             code="mcp_remote_error",
         )
-    result = body.get("result")
-    return result if isinstance(result, dict) else {"result": jsonable(result)}
+    structured_content = body.get("structuredContent")
+    if isinstance(structured_content, dict):
+        return {
+            str(key): value
+            for key, value in structured_content.items()
+            if isinstance(key, str)
+        }
+    content = body.get("content")
+    return {"content": content if isinstance(content, list) else []}
 
 
 def result_from_sse_body(raw_body: bytes) -> dict[str, object]:

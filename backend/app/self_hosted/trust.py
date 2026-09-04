@@ -108,6 +108,12 @@ class SelfHostedTrustService:
                     "max_concurrent_mcp_jobs",
                     "max_artifact_bytes",
                 ],
+                "mcp_stdio": {
+                    "transport": "stdio",
+                    "sdk_package": "mcp",
+                    "sdk_entrypoint": "mcp.client.stdio.stdio_client",
+                    "request_field": "request",
+                },
             },
             "security": {
                 "enrollment_token_transport": "one_time_registration_payload",

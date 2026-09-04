@@ -76,12 +76,18 @@ session initialization, standard tool calls, and protocol result models.
 approvals, circuit policy, call logs, run events, self-hosted dispatch, and redaction.
 
 **Current boundary:** remote HTTP, SSE, and hosted remote connections resolve to the SDK-backed
-adapter behind `McpToolAdapter`; the superseded remote JSON-RPC/SSE parser is removed. Stdio remains
-runtime-backed because user-controlled MCP processes may not execute on the API or worker host.
+adapter behind `McpToolAdapter`; the superseded remote JSON-RPC/SSE parser is removed. Stdio is now
+also SDK-backed, but the client process is launched only inside a Docker runtime or a trusted
+self-hosted connector. The control plane passes a versioned request contract and receives a
+serialized `CallToolResult`; it never starts a user-controlled stdio process.
 
-**Next action:** run the official stdio client inside Docker/self-hosted runtime components, while
-preserving the existing queued job, workspace, approval, and audit contracts. Prefer Streamable
-HTTP for new remote servers; retain SSE only for servers that require the upstream SSE transport.
+The Docker entrypoint is `python -m backend.app.runtime_manager.mcp_stdio_client`. Runtime images
+that enable stdio must include the OpsMesh package and the pinned MCP Python SDK dependency. The
+self-hosted connector receives the same `request` payload and must call the public
+`mcp.client.stdio.stdio_client` and `ClientSession` interfaces directly before posting completion.
+No JSON-RPC framing or transport compatibility layer belongs in the connector or control plane.
+Prefer Streamable HTTP for new remote servers; retain SSE only for servers that require the upstream
+SSE transport.
 
 ### P0: Docker SDK for Python
 

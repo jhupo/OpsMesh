@@ -998,7 +998,11 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
         agent_run_id=run.id,
         mcp_server_id=server.id,
         tool_name="generate_image",
-        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+        request_payload={
+            "transport": "stdio",
+            "sdk": {"package": "mcp", "entrypoint": "mcp.client.stdio.stdio_client"},
+            "request": {"server": {"command": "mcp-image", "args": []}},
+        },
     )
     blocked_job = SelfHostedMcpJob(
         workspace_id=workspace.id,
@@ -1006,7 +1010,11 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
         agent_run_id=run.id,
         mcp_server_id=server.id,
         tool_name="delete_image",
-        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+        request_payload={
+            "transport": "stdio",
+            "sdk": {"package": "mcp", "entrypoint": "mcp.client.stdio.stdio_client"},
+            "request": {"server": {"command": "mcp-image", "args": []}},
+        },
     )
     session.add_all([queued_job, blocked_job])
     session.commit()
@@ -1090,7 +1098,11 @@ def test_self_hosted_mcp_job_duplicate_claim_with_stale_session_is_idempotent() 
         agent_run_id=run.id,
         mcp_server_id=server.id,
         tool_name="generate_image",
-        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+        request_payload={
+            "transport": "stdio",
+            "sdk": {"package": "mcp", "entrypoint": "mcp.client.stdio.stdio_client"},
+            "request": {"server": {"command": "mcp-image", "args": []}},
+        },
     )
     session.add(job)
     session.commit()
@@ -1155,7 +1167,11 @@ def test_self_hosted_mcp_job_poll_skips_incompatible_head_of_queue() -> None:
         agent_run_id=run.id,
         mcp_server_id=server.id,
         tool_name="delete_image",
-        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+        request_payload={
+            "transport": "stdio",
+            "sdk": {"package": "mcp", "entrypoint": "mcp.client.stdio.stdio_client"},
+            "request": {"server": {"command": "mcp-image", "args": []}},
+        },
     )
     compatible_job = SelfHostedMcpJob(
         workspace_id=workspace.id,
@@ -1163,7 +1179,11 @@ def test_self_hosted_mcp_job_poll_skips_incompatible_head_of_queue() -> None:
         agent_run_id=run.id,
         mcp_server_id=server.id,
         tool_name="generate_image",
-        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+        request_payload={
+            "transport": "stdio",
+            "sdk": {"package": "mcp", "entrypoint": "mcp.client.stdio.stdio_client"},
+            "request": {"server": {"command": "mcp-image", "args": []}},
+        },
     )
     session.add_all([blocked_job, compatible_job])
     session.commit()
@@ -1207,7 +1227,11 @@ def test_self_hosted_worker_cleanup_expires_stale_mcp_jobs_idempotently() -> Non
         agent_run_id=run.id,
         mcp_server_id=server.id,
         tool_name="generate_image",
-        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+        request_payload={
+            "transport": "stdio",
+            "sdk": {"package": "mcp", "entrypoint": "mcp.client.stdio.stdio_client"},
+            "request": {"server": {"command": "mcp-image", "args": []}},
+        },
         status="queued",
     )
     fresh_job = SelfHostedMcpJob(
@@ -1216,7 +1240,11 @@ def test_self_hosted_worker_cleanup_expires_stale_mcp_jobs_idempotently() -> Non
         agent_run_id=run.id,
         mcp_server_id=server.id,
         tool_name="search_web",
-        request_payload={"jsonrpc": "2.0", "method": "tools/call"},
+        request_payload={
+            "transport": "stdio",
+            "sdk": {"package": "mcp", "entrypoint": "mcp.client.stdio.stdio_client"},
+            "request": {"server": {"command": "mcp-image", "args": []}},
+        },
         status="queued",
     )
     session.add_all([stale_job, fresh_job])
@@ -1290,7 +1318,11 @@ def test_self_hosted_service_creates_scoped_mcp_job() -> None:
         agent_run_id=run.id,
         mcp_server_id=server.id,
         tool_name="generate_image",
-        request_payload={"jsonrpc": "2.0"},
+        request_payload={
+            "transport": "stdio",
+            "sdk": {"package": "mcp", "entrypoint": "mcp.client.stdio.stdio_client"},
+            "request": {"server": {"command": "mcp-image", "args": []}},
+        },
     )
     event = session.query(RunEvent).filter_by(agent_run_id=run.id).one()
 

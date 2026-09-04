@@ -286,7 +286,7 @@ def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> N
     runtime_manager = RecordingRuntimeManager(
         RuntimeCommandResult(
             exit_code=0,
-            stdout=json.dumps({"jsonrpc": "2.0", "id": "1", "result": {"ok": True}}),
+            stdout=json.dumps({"structuredContent": {"ok": True}}),
             stderr="",
         )
     )
@@ -311,12 +311,24 @@ def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> N
     assert runtime_manager.calls[0]["workspace_id"] == workspace_id
     assert runtime_manager.calls[0]["runtime"] is runtime
     command = runtime_manager.calls[0]["command"]
-    assert command[:2] == ["mcp-server", "--stdio"]
-    payload = json.loads(command[2])
-    assert payload["method"] == "tools/call"
-    assert payload["params"] == {
+    assert command[:3] == [
+        "python",
+        "-m",
+        "backend.app.runtime_manager.mcp_stdio_client",
+    ]
+    payload = json.loads(command[3])
+    assert payload["client"] == {
+        "package": "mcp",
+        "entrypoint": "mcp.client.stdio.stdio_client",
+    }
+    assert payload["server"] == {
+        "command": "mcp-server",
+        "args": ["--stdio"],
+    }
+    assert payload["tool"] == {
         "name": "generate_image",
         "arguments": {"prompt": "mountain"},
+        "timeout_seconds": 5,
     }
 
 

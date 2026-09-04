@@ -159,7 +159,7 @@ introduce a second Agent framework.
 | Area | Preferred upstream | Direction |
 | --- | --- | --- |
 | Agent turns, tools, handoffs, sessions, HITL | Python OpenAI Agents SDK (`openai-agents`) | Current and only Agent orchestration core; keep the product control plane |
-| MCP protocol and transports | [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | Current for remote Streamable HTTP/SSE; migrate isolated stdio inside the runtime boundary |
+| MCP protocol and transports | [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | Current for remote Streamable HTTP/SSE and isolated stdio; keep the SDK client inside Docker/self-hosted runtimes |
 | Docker Engine access | [Docker SDK for Python](https://docs.docker.com/reference/api/engine/sdk/) | Replace CLI construction behind the existing runtime client contract |
 | Traces and instrumentation | [OpenTelemetry Python](https://github.com/open-telemetry/opentelemetry-python) | Adopt for API, worker, database, Redis, HTTP, model, and tool spans |
 | Prometheus exposition | [Prometheus Python client](https://github.com/prometheus/client_python) | Keep domain collectors; replace custom metric formatting |
@@ -189,8 +189,9 @@ recommended order, and boundaries that remain owned by OpsMesh.
 
 ### 2. Consolidate upstream SDK usage
 
-- Complete SDK-backed stdio inside Docker/self-hosted runtimes and evaluate MCP Python SDK v2 when
-  the OpenAI Agents SDK supports it; keep authorization and audit at the OpsMesh boundary.
+- Keep the SDK-backed stdio entrypoint and self-hosted request contract versioned, then evaluate MCP
+  Python SDK v2 when the OpenAI Agents SDK supports it; keep authorization and audit at the OpsMesh
+  boundary.
 - Migrate Docker operations to the Docker SDK without weakening hardening, leases, or cleanup proof.
 - Introduce OpenTelemetry and the Prometheus client instead of extending custom telemetry formats.
 - Review native Agents SDK HITL, run-state, sandbox, and durable-execution integrations.

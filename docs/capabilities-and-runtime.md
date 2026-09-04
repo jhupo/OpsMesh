@@ -281,10 +281,13 @@ Rules:
 - MCP tool names should be namespaced to avoid collisions.
 
 Remote MCP execution uses the official MCP Python SDK `ClientSession` with its Streamable HTTP or
-SSE transport. OpsMesh owns the adapter boundary for workspace authorization, credentials, egress,
-timeouts, retry/circuit policy, redaction, and audit evidence; it does not reimplement MCP framing
-or JSON-RPC parsing. Stdio MCP remains isolated inside Docker or a trusted self-hosted runtime and
-must not execute in the API or worker host process.
+SSE transport. Stdio MCP uses the same SDK's `stdio_client` and `ClientSession`, launched through
+`python -m backend.app.runtime_manager.mcp_stdio_client` inside an isolated Docker runtime or by a
+trusted self-hosted connector. OpsMesh owns the adapter boundary for workspace authorization,
+credentials, egress, timeouts, retry/circuit policy, redaction, and audit evidence; it does not
+reimplement MCP framing or JSON-RPC parsing. The runtime image or connector must provide the pinned
+MCP Python SDK and return a serialized SDK `CallToolResult`; the API and worker hosts never execute
+user-controlled stdio processes.
 
 ## Tool Catalog
 

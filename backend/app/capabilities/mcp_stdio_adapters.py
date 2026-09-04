@@ -4,10 +4,11 @@ import json
 from uuid import UUID
 
 from backend.app.capabilities.mcp_adapter_payloads import (
-    result_from_jsonrpc_body,
+    MCP_PYTHON_SDK_PACKAGE,
+    MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
+    result_from_sdk_output,
     stdio_command,
-    string_setting,
-    tool_call_payload,
+    stdio_sdk_request,
 )
 from backend.app.capabilities.mcp_execution_types import (
     McpExecutionError,
@@ -33,24 +34,30 @@ class DockerRuntimeStdioMcpToolAdapter:
         credential_refs: list[McpCredentialReference],
         timeout_seconds: int,
     ) -> dict[str, object]:
-        _ = credential_refs, timeout_seconds
+        _ = credential_refs
         command = stdio_command(server.connection)
-        payload = tool_call_payload(
-            method=string_setting(server.connection, "method"),
+        request = stdio_sdk_request(
+            command=command,
             tool_name=tool_name,
             arguments=arguments,
+            timeout_seconds=timeout_seconds,
         )
         record = self._runtime_manager.execute_command(
             workspace_id=server.workspace_id,
             runtime=self._runtime,
-            command=[*command, json.dumps(payload, ensure_ascii=False)],
+            command=[
+                "python",
+                "-m",
+                "backend.app.runtime_manager.mcp_stdio_client",
+                json.dumps(request, ensure_ascii=False, separators=(",", ":")),
+            ],
         )
         if record.status != "completed" or record.exit_code != 0:
             raise McpExecutionError(
                 "Docker runtime MCP stdio command failed",
                 code="mcp_stdio_runtime_failed",
             )
-        return result_from_jsonrpc_body(record.stdout, transport="stdio")
+        return result_from_sdk_output(record.stdout)
 
 
 class SelfHostedStdioMcpToolAdapter:
@@ -74,16 +81,21 @@ class SelfHostedStdioMcpToolAdapter:
         credential_refs: list[McpCredentialReference],
         timeout_seconds: int,
     ) -> dict[str, object]:
-        _ = credential_refs, timeout_seconds
+        _ = credential_refs
         command = stdio_command(server.connection)
-        payload = {
+        request = stdio_sdk_request(
+            command=command,
+            tool_name=tool_name,
+            arguments=arguments,
+            timeout_seconds=timeout_seconds,
+        )
+        payload: dict[str, object] = {
             "transport": "stdio",
-            "command": command,
-            "jsonrpc": tool_call_payload(
-                method=string_setting(server.connection, "method"),
-                tool_name=tool_name,
-                arguments=arguments,
-            ),
+            "sdk": {
+                "package": MCP_PYTHON_SDK_PACKAGE,
+                "entrypoint": MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
+            },
+            "request": request,
         }
         job = self._service.create_mcp_job(
             workspace_id=server.workspace_id,
