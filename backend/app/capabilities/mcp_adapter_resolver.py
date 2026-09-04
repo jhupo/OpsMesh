@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from backend.app.capabilities.mcp_execution_adapters import McpToolAdapter
 from backend.app.capabilities.mcp_remote_adapters import (
     HostedMcpToolAdapter,
-    HttpJsonRpcMcpToolAdapter,
     SseMcpToolAdapter,
+    StreamableHttpMcpToolAdapter,
 )
 from backend.app.capabilities.mcp_unsupported_adapter import UnsupportedMcpToolAdapter
 from backend.app.capabilities.models import McpServer
@@ -20,7 +20,7 @@ class McpAdapterResolver:
     def resolve(self, server: McpServer) -> McpToolAdapter:
         server_type = server.server_type.lower().strip()
         if server_type in {"http", "https", "http_jsonrpc", "jsonrpc"}:
-            return HttpJsonRpcMcpToolAdapter(secret_service=self.secret_service)
+            return StreamableHttpMcpToolAdapter(secret_service=self.secret_service)
         if server_type in {"sse", "http_sse"}:
             return SseMcpToolAdapter(secret_service=self.secret_service)
         if server_type == "hosted":

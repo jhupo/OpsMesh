@@ -516,7 +516,7 @@ Tasks:
   - [x] Add internal MCP execution service with run snapshot authorization, adapter boundary, payload limits, logs, events, task messages, and blocked-call security evidence.
   - [x] Add workspace MCP catalog API that aggregates servers, allowed tools, credential status, execution mode, and agent-scoped availability.
   - [x] Add real stdio, HTTP/SSE, and hosted MCP protocol adapters.
-    - [x] Add HTTP JSON-RPC MCP adapter and adapter resolver.
+    - [x] Add official SDK-backed Streamable HTTP MCP adapter and adapter resolver.
     - [x] Add SSE and hosted MCP adapters.
     - [x] Add stdio adapter through Docker/self-hosted runtime safety boundary.
   - [x] Wire MCP execution into worker/OpenAI tool invocation through runtime tool executor and OpenAI function-tool bridge.

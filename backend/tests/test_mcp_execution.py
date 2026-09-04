@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -714,19 +713,15 @@ def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> 
     )
     session.add(credential)
     session.commit()
-    captured: dict[str, object] = {}
-
-    def fake_urlopen(request, timeout: int):  # type: ignore[no-untyped-def]
-        captured["url"] = request.full_url
-        captured["headers"] = {key.lower(): value for key, value in request.header_items()}
-        captured["payload"] = json.loads(request.data.decode("utf-8"))
-        captured["timeout"] = timeout
-        return _FakeHttpResponse(
-            b'event: message\n'
-            b'data: {"jsonrpc":"2.0","id":"1","result":{"status":"created"}}\n\n'
-        )
-
-    monkeypatch.setattr("backend.app.capabilities.mcp_remote_adapters.urlopen", fake_urlopen)
+    sdk = _FakeSseSdk(_FakeSdkCallToolResult(structured_content={"status": "created"}))
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.sse_client",
+        sdk.sse_client,
+    )
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        sdk.client_session,
+    )
 
     result = McpToolExecutionService(session, McpAdapterResolver()).execute(
         McpExecutionRequest(
@@ -740,18 +735,17 @@ def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> 
 
     assert result.status == "completed"
     assert result.response == {"status": "created"}
-    assert captured["url"] == "https://mcp.example.test/sse"
-    assert captured["timeout"] == 15
-    assert captured["headers"] == {
-        "content-type": "application/json",
-        "accept": "text/event-stream",
-        "x-client": "opsmesh",
-        "x-api-key": "test-secret",
+    assert sdk.transport_call == {
+        "url": "https://mcp.example.test/sse",
+        "timeout": 15,
+        "sse_read_timeout": 15,
+        "headers": {"x-client": "opsmesh", "x-api-key": "test-secret"},
     }
-    assert captured["payload"]["method"] == "tools/call"
-    assert captured["payload"]["params"] == {
+    assert sdk.initialize_calls == 1
+    assert sdk.tool_call == {
         "name": "generate_image",
         "arguments": {"prompt": "mountain"},
+        "timeout_seconds": 15,
     }
 
 
@@ -762,13 +756,15 @@ def test_mcp_sse_adapter_normalizes_remote_errors(monkeypatch) -> None:
         connection={"url": "https://mcp.example.test/sse"},
     )
 
-    def fake_urlopen(request, timeout: int):  # type: ignore[no-untyped-def]
-        return _FakeHttpResponse(
-            b'data: {"jsonrpc":"2.0","id":"1",'
-            b'"error":{"code":-32000,"message":"sk-secret remote failure"}}\n\n'
-        )
-
-    monkeypatch.setattr("backend.app.capabilities.mcp_remote_adapters.urlopen", fake_urlopen)
+    sdk = _FakeSseSdk(_FakeSdkCallToolResult(is_error=True))
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.sse_client",
+        sdk.sse_client,
+    )
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        sdk.client_session,
+    )
 
     try:
         SseMcpToolAdapter().call(
@@ -785,18 +781,79 @@ def test_mcp_sse_adapter_normalizes_remote_errors(monkeypatch) -> None:
         raise AssertionError("Expected SSE remote errors to be normalized")
 
 
-class _FakeHttpResponse:
-    def __init__(self, body: bytes) -> None:
-        self._body = body
+class _FakeSdkCallToolResult:
+    def __init__(
+        self,
+        *,
+        structured_content: dict[str, object] | None = None,
+        is_error: bool = False,
+    ) -> None:
+        self.content: list[object] = []
+        self.structuredContent = structured_content
+        self.isError = is_error
 
-    def __enter__(self) -> _FakeHttpResponse:
-        return self
 
-    def __exit__(self, *exc_info: object) -> None:
+class _FakeSseTransport:
+    async def __aenter__(self) -> tuple[object, object]:
+        return object(), object()
+
+    async def __aexit__(self, *exc_info: object) -> None:
         return None
 
-    def read(self) -> bytes:
-        return self._body
+
+class _FakeSseClientSession:
+    def __init__(self, sdk: _FakeSseSdk) -> None:
+        self._sdk = sdk
+
+    async def __aenter__(self) -> _FakeSseClientSession:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
+
+    async def initialize(self) -> None:
+        self._sdk.initialize_calls += 1
+
+    async def call_tool(
+        self,
+        name: str,
+        *,
+        arguments: dict[str, object],
+        read_timeout_seconds: timedelta,
+    ) -> _FakeSdkCallToolResult:
+        self._sdk.tool_call = {
+            "name": name,
+            "arguments": arguments,
+            "timeout_seconds": read_timeout_seconds.total_seconds(),
+        }
+        return self._sdk.result
+
+
+class _FakeSseSdk:
+    def __init__(self, result: _FakeSdkCallToolResult) -> None:
+        self.result = result
+        self.transport_call: dict[str, object] = {}
+        self.initialize_calls = 0
+        self.tool_call: dict[str, object] = {}
+
+    def sse_client(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        timeout: int,
+        sse_read_timeout: int,
+    ) -> _FakeSseTransport:
+        self.transport_call = {
+            "url": url,
+            "headers": headers,
+            "timeout": timeout,
+            "sse_read_timeout": sse_read_timeout,
+        }
+        return _FakeSseTransport()
+
+    def client_session(self, read_stream: object, write_stream: object) -> _FakeSseClientSession:
+        return _FakeSseClientSession(self)
 
 
 class RecordingAdapter:

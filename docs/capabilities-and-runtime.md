@@ -280,6 +280,12 @@ Rules:
 - Write-capable MCP calls should support approval.
 - MCP tool names should be namespaced to avoid collisions.
 
+Remote MCP execution uses the official MCP Python SDK `ClientSession` with its Streamable HTTP or
+SSE transport. OpsMesh owns the adapter boundary for workspace authorization, credentials, egress,
+timeouts, retry/circuit policy, redaction, and audit evidence; it does not reimplement MCP framing
+or JSON-RPC parsing. Stdio MCP remains isolated inside Docker or a trusted self-hosted runtime and
+must not execute in the API or worker host process.
+
 ## Tool Catalog
 
 The product should expose a catalog of tool groups rather than raw low-level tool names.

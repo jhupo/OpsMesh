@@ -33,7 +33,7 @@ product contract.
 | Agent and team orchestration | Implemented |
 | Worker queues and scheduling | Implemented |
 | Docker and self-hosted execution | Implemented |
-| MCP, skills, tools, and marketplace | Implemented; upstream SDK consolidation is planned |
+| MCP, skills, tools, and marketplace | Implemented; remote HTTP/SSE uses the official MCP Python SDK |
 | Files, artifacts, memory, approvals, and audit | Implemented |
 | Web Portal | Planned; intentionally not scaffolded yet |
 | Enterprise SSO and fine-grained authorization | Planned |
@@ -113,7 +113,8 @@ flowchart TB
 ### Capabilities and tools
 
 - Capability, skill, tool-group, MCP server, credential, and allowlist management.
-- MCP execution over stdio, HTTP, and SSE with workspace policy and call logging.
+- MCP execution over isolated stdio plus SDK-backed Streamable HTTP and SSE, with workspace policy
+  and call logging.
 - Public and private marketplace resources with review, installation, version, and provenance data.
 - Run authorization snapshots that freeze the capabilities allowed for a concrete execution.
 
@@ -158,7 +159,7 @@ introduce a second Agent framework.
 | Area | Preferred upstream | Direction |
 | --- | --- | --- |
 | Agent turns, tools, handoffs, sessions, HITL | Python OpenAI Agents SDK (`openai-agents`) | Current and only Agent orchestration core; keep the product control plane |
-| MCP protocol and transports | [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | High-priority migration from custom protocol and transport handling |
+| MCP protocol and transports | [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | Current for remote Streamable HTTP/SSE; migrate isolated stdio inside the runtime boundary |
 | Docker Engine access | [Docker SDK for Python](https://docs.docker.com/reference/api/engine/sdk/) | Replace CLI construction behind the existing runtime client contract |
 | Traces and instrumentation | [OpenTelemetry Python](https://github.com/open-telemetry/opentelemetry-python) | Adopt for API, worker, database, Redis, HTTP, model, and tool spans |
 | Prometheus exposition | [Prometheus Python client](https://github.com/prometheus/client_python) | Keep domain collectors; replace custom metric formatting |
@@ -180,14 +181,16 @@ recommended order, and boundaries that remain owned by OpsMesh.
 
 ### 1. Restore and protect the quality baseline
 
-- Keep Ruff, mypy, migrations, and the complete test suite green after the current modularization.
+- Keep Ruff, mypy, and migrations green after the current modularization. Run focused tests during
+  development; reserve the complete suite for the release-tag gate.
 - Add architecture and import-boundary checks for public service facades.
 - Reduce oversized modules without creating chains of pass-through wrappers.
 - Establish coverage expectations for tenant denial paths and isolated execution.
 
 ### 2. Consolidate upstream SDK usage
 
-- Prototype MCP Python SDK v2 and Agents SDK native MCP support behind the existing policy boundary.
+- Complete SDK-backed stdio inside Docker/self-hosted runtimes and evaluate MCP Python SDK v2 when
+  the OpenAI Agents SDK supports it; keep authorization and audit at the OpsMesh boundary.
 - Migrate Docker operations to the Docker SDK without weakening hardening, leases, or cleanup proof.
 - Introduce OpenTelemetry and the Prometheus client instead of extending custom telemetry formats.
 - Review native Agents SDK HITL, run-state, sandbox, and durable-execution integrations.

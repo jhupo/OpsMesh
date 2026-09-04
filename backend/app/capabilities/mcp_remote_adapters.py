@@ -1,16 +1,22 @@
 from __future__ import annotations
 
-import json
-from urllib.error import HTTPError, URLError
+import asyncio
+from collections.abc import Callable, Coroutine
+from datetime import timedelta
+from queue import Queue
+from threading import Thread
+from typing import Any, TypeVar
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+
+import httpx
+from mcp import ClientSession
+from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamable_http_client
+from mcp.types import CallToolResult
 
 from backend.app.capabilities.mcp_adapter_payloads import (
-    jsonable,
-    result_from_sse_body,
     string_dict_setting,
     string_setting,
-    tool_call_payload,
 )
 from backend.app.capabilities.mcp_execution_types import McpExecutionError
 from backend.app.capabilities.models import McpCredentialReference, McpServer
@@ -28,9 +34,10 @@ MCP_REMOTE_CALL_CIRCUIT_CONFIG = CircuitBreakerConfig(
     reset_after_seconds=60,
 )
 MCP_REMOTE_CALL_MAX_ATTEMPTS = 2
+T = TypeVar("T")
 
 
-class HttpJsonRpcMcpToolAdapter:
+class StreamableHttpMcpToolAdapter:
     def __init__(
         self,
         *,
@@ -56,51 +63,19 @@ class HttpJsonRpcMcpToolAdapter:
         if not url:
             raise McpExecutionError("HTTP MCP server is missing url", code="mcp_server_url_missing")
         validate_mcp_url(url, egress_policy=self._egress_policy, transport="http")
-
         headers = {
-            "content-type": "application/json",
-            "accept": "application/json",
             **string_dict_setting(server.connection, "headers"),
             **self._credential_headers(credential_refs),
         }
-        payload = tool_call_payload(
-            method=string_setting(server.connection, "method"),
+        return call_remote_mcp(
+            url=url,
+            headers=headers,
             tool_name=tool_name,
             arguments=arguments,
-        )
-        request = Request(
-            url,
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers=headers,
-            method="POST",
-        )
-        raw_body = call_remote_mcp(
-            request=request,
             timeout_seconds=timeout_seconds,
             circuit_key=mcp_circuit_key(url, transport="http"),
             transport="http",
         )
-
-        try:
-            body = json.loads(raw_body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise McpExecutionError(
-                "HTTP MCP server returned invalid JSON",
-                code="mcp_http_invalid_json",
-            ) from exc
-        if not isinstance(body, dict):
-            raise McpExecutionError(
-                "HTTP MCP server returned an invalid JSON-RPC envelope",
-                code="mcp_http_invalid_envelope",
-            )
-        error = body.get("error")
-        if isinstance(error, dict):
-            raise McpExecutionError(
-                "Remote MCP tool failed",
-                code="mcp_remote_error",
-            )
-        result = body.get("result")
-        return result if isinstance(result, dict) else {"result": jsonable(result)}
 
     def _credential_headers(self, credential_refs: list[McpCredentialReference]) -> dict[str, str]:
         headers: dict[str, str] = {}
@@ -134,7 +109,7 @@ class HttpJsonRpcMcpToolAdapter:
         return headers
 
 
-class SseMcpToolAdapter(HttpJsonRpcMcpToolAdapter):
+class SseMcpToolAdapter(StreamableHttpMcpToolAdapter):
     def call(
         self,
         *,
@@ -151,32 +126,19 @@ class SseMcpToolAdapter(HttpJsonRpcMcpToolAdapter):
         if not url:
             raise McpExecutionError("SSE MCP server is missing url", code="mcp_server_url_missing")
         validate_mcp_url(url, egress_policy=self._egress_policy, transport="sse")
-
         headers = {
-            "content-type": "application/json",
-            "accept": "text/event-stream",
             **string_dict_setting(server.connection, "headers"),
             **self._credential_headers(credential_refs),
         }
-        payload = tool_call_payload(
-            method=string_setting(server.connection, "method"),
+        return call_remote_mcp(
+            url=url,
+            headers=headers,
             tool_name=tool_name,
             arguments=arguments,
-        )
-        request = Request(
-            url,
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers=headers,
-            method="POST",
-        )
-        raw_body = call_remote_mcp(
-            request=request,
             timeout_seconds=timeout_seconds,
             circuit_key=mcp_circuit_key(url, transport="sse"),
             transport="sse",
         )
-
-        return result_from_sse_body(raw_body)
 
 
 class HostedMcpToolAdapter:
@@ -186,7 +148,7 @@ class HostedMcpToolAdapter:
         secret_service: SecretEncryptionService | None = None,
         egress_policy: EgressUrlPolicy = MCP_EGRESS_URL_POLICY,
     ) -> None:
-        self._http_adapter = HttpJsonRpcMcpToolAdapter(
+        self._http_adapter = StreamableHttpMcpToolAdapter(
             secret_service=secret_service,
             egress_policy=egress_policy,
         )
@@ -239,43 +201,159 @@ def validate_mcp_url(url: str, *, egress_policy: EgressUrlPolicy, transport: str
 
 def call_remote_mcp(
     *,
-    request: Request,
+    url: str,
+    headers: dict[str, str],
+    tool_name: str,
+    arguments: dict[str, object],
     timeout_seconds: int,
     circuit_key: str,
     transport: str,
-) -> bytes:
+) -> dict[str, object]:
     return retry_with_circuit(
         key=circuit_key,
-        func=lambda: read_url(request, timeout_seconds=timeout_seconds, transport=transport),
+        func=lambda: run_async(
+            lambda: call_remote_mcp_async(
+                url=url,
+                headers=headers,
+                tool_name=tool_name,
+                arguments=arguments,
+                timeout_seconds=timeout_seconds,
+                transport=transport,
+            )
+        ),
         max_attempts=MCP_REMOTE_CALL_MAX_ATTEMPTS,
         circuit_config=MCP_REMOTE_CALL_CIRCUIT_CONFIG,
         should_retry=is_retryable_mcp_error,
     )
 
 
-def read_url(request: Request, *, timeout_seconds: int, transport: str) -> bytes:
+async def call_remote_mcp_async(
+    *,
+    url: str,
+    headers: dict[str, str],
+    tool_name: str,
+    arguments: dict[str, object],
+    timeout_seconds: int,
+    transport: str,
+) -> dict[str, object]:
     try:
-        with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
-            return response.read()
-    except HTTPError as exc:
-        if exc.code == 408 or exc.code == 429 or exc.code >= 500:
-            code = f"mcp_{transport}_retryable_status_error"
-        else:
-            code = f"mcp_{transport}_status_error"
-        raise McpExecutionError(
-            f"{transport.upper()} MCP server returned status {exc.code}",
+        if transport == "http":
+            timeout = httpx.Timeout(timeout_seconds)
+            async with (
+                httpx.AsyncClient(headers=headers, timeout=timeout) as http_client,
+                streamable_http_client(
+                    url,
+                    http_client=http_client,
+                ) as (read_stream, write_stream, _),
+            ):
+                return await _call_tool(
+                    read_stream,
+                    write_stream,
+                    tool_name,
+                    arguments,
+                    timeout_seconds,
+                )
+        async with sse_client(
+            url,
+            headers=headers,
+            timeout=timeout_seconds,
+            sse_read_timeout=timeout_seconds,
+        ) as (read_stream, write_stream):
+            return await _call_tool(
+                read_stream,
+                write_stream,
+                tool_name,
+                arguments,
+                timeout_seconds,
+            )
+    except McpExecutionError:
+        raise
+    except Exception as exc:
+        raise _normalize_remote_exception(exc, transport=transport) from exc
+
+
+async def _call_tool(
+    read_stream: object,
+    write_stream: object,
+    tool_name: str,
+    arguments: dict[str, object],
+    timeout_seconds: int,
+) -> dict[str, object]:
+    async with ClientSession(read_stream, write_stream) as session:  # type: ignore[arg-type]
+        await session.initialize()
+        result = await session.call_tool(
+            tool_name,
+            arguments=arguments,
+            read_timeout_seconds=timedelta(seconds=timeout_seconds),
+        )
+    return _result_payload(result)
+
+
+def _result_payload(result: CallToolResult) -> dict[str, object]:
+    if result.isError:
+        raise McpExecutionError("Remote MCP tool failed", code="mcp_remote_error")
+    if isinstance(result.structuredContent, dict):
+        return {
+            str(key): value
+            for key, value in result.structuredContent.items()
+            if isinstance(key, str)
+        }
+    return {
+        "content": [
+            item.model_dump(mode="json", by_alias=True, exclude_none=True)
+            for item in result.content
+        ]
+    }
+
+
+def _normalize_remote_exception(exc: Exception, *, transport: str) -> McpExecutionError:
+    status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    if isinstance(status_code, int):
+        code = (
+            f"mcp_{transport}_retryable_status_error"
+            if status_code == 408 or status_code == 429 or status_code >= 500
+            else f"mcp_{transport}_status_error"
+        )
+        return McpExecutionError(
+            f"{transport.upper()} MCP server returned status {status_code}",
             code=code,
-        ) from exc
-    except URLError as exc:
-        raise McpExecutionError(
-            f"{transport.upper()} MCP server request failed",
-            code=f"mcp_{transport}_request_failed",
-        ) from exc
-    except TimeoutError as exc:
-        raise McpExecutionError(
+        )
+    if isinstance(exc, TimeoutError) or exc.__class__.__name__ in {
+        "TimeoutException",
+        "ReadTimeout",
+        "ConnectTimeout",
+    }:
+        return McpExecutionError(
             f"{transport.upper()} MCP server request timed out",
             code=f"mcp_{transport}_timeout",
-        ) from exc
+        )
+    return McpExecutionError(
+        f"{transport.upper()} MCP server request failed",
+        code=f"mcp_{transport}_request_failed",
+    )
+
+
+def run_async(factory: Callable[[], Coroutine[Any, Any, T]]) -> T:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(factory())
+
+    result_queue: Queue[tuple[T | None, BaseException | None]] = Queue(maxsize=1)
+
+    def target() -> None:
+        try:
+            result_queue.put((asyncio.run(factory()), None))
+        except BaseException as exc:
+            result_queue.put((None, exc))
+
+    thread = Thread(target=target, daemon=True)
+    thread.start()
+    thread.join()
+    result, error = result_queue.get()
+    if error is not None:
+        raise error
+    return result  # type: ignore[return-value]
 
 
 def is_retryable_mcp_error(exc: Exception) -> bool:

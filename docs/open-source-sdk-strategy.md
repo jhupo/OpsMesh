@@ -58,25 +58,30 @@ Other model providers are deferred. When provider expansion begins, each provide
 OpsMesh-owned provider contract and pass the same runtime contract tests. Do not add another Agent
 orchestration framework.
 
-### P0: MCP Python SDK v2
+### P0: MCP Python SDK
 
-**Candidate:** [modelcontextprotocol/python-sdk](https://github.com/modelcontextprotocol/python-sdk)
+**Adopted:** [modelcontextprotocol/python-sdk](https://github.com/modelcontextprotocol/python-sdk)
 
-The official SDK supplies clients, protocol negotiation, JSON-RPC handling, tool discovery and
-calls, and the standard stdio, Streamable HTTP, and SSE transports. This overlaps with custom
-code in `backend/app/capabilities/mcp_remote_adapters.py`,
-`backend/app/capabilities/mcp_stdio_adapters.py`, and MCP payload parsing helpers.
+The remote adapter uses the official `ClientSession`, Streamable HTTP transport, and SSE transport
+for initialization and tool calls. Streamable HTTP receives an OpsMesh-configured `httpx` client so
+the SDK owns protocol behavior while OpsMesh controls headers and timeouts. The direct dependency is constrained to `mcp>=1.27.1,<2.0.0`
+because the current OpenAI Agents SDK requires MCP 1.x. The official SDK now has a 2.x line, but an
+OpsMesh upgrade must move together with the Agents SDK instead of introducing a version branch or
+compatibility layer.
 
-**Adopt:** protocol negotiation, framing, message parsing, transport lifecycle, and standard error
-types.
+**SDK-owned:** protocol negotiation, JSON-RPC framing and parsing, remote transport lifecycle,
+session initialization, standard tool calls, and protocol result models.
 
-**Keep:** server catalog, workspace credentials, allowlists, egress rules, payload limits,
+**OpsMesh-owned:** server catalog, workspace credentials, allowlists, egress rules, payload limits,
 approvals, circuit policy, call logs, run events, self-hosted dispatch, and redaction.
 
-**Migration shape:** implement an SDK-backed adapter behind the existing `McpToolAdapter` contract,
-use the custom implementation only as a temporary test fixture, then remove it before switching the
-composition root. Prefer Streamable HTTP for new servers; expose SSE only when it is part of the
-upstream protocol contract.
+**Current boundary:** remote HTTP, SSE, and hosted remote connections resolve to the SDK-backed
+adapter behind `McpToolAdapter`; the superseded remote JSON-RPC/SSE parser is removed. Stdio remains
+runtime-backed because user-controlled MCP processes may not execute on the API or worker host.
+
+**Next action:** run the official stdio client inside Docker/self-hosted runtime components, while
+preserving the existing queued job, workspace, approval, and audit contracts. Prefer Streamable
+HTTP for new remote servers; retain SSE only for servers that require the upstream SSE transport.
 
 ### P0: Docker SDK for Python
 

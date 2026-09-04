@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from uuid import uuid4
 
@@ -10,8 +8,8 @@ from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
 from backend.app.capabilities.mcp_execution_types import McpExecutionError
 from backend.app.capabilities.mcp_remote_adapters import (
     HostedMcpToolAdapter,
-    HttpJsonRpcMcpToolAdapter,
     SseMcpToolAdapter,
+    StreamableHttpMcpToolAdapter,
 )
 from backend.app.capabilities.mcp_stdio_adapters import DockerRuntimeStdioMcpToolAdapter
 from backend.app.capabilities.mcp_unsupported_adapter import UnsupportedMcpToolAdapter
@@ -23,7 +21,18 @@ from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import EgressUrlPolicy
 
 
-def test_http_jsonrpc_mcp_adapter_posts_tool_call_and_injects_hosted_headers() -> None:
+def test_streamable_http_mcp_adapter_uses_official_client_session(monkeypatch) -> None:
+    sdk = _FakeMcpSdk(
+        [_FakeCallToolResult(content=[_FakeContent({"type": "text", "text": "ok"})])]
+    )
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.streamable_http_client",
+        sdk.streamable_http_client,
+    )
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        sdk.client_session,
+    )
     secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
     encrypted = secret_service.encrypt_payload(
         {
@@ -41,95 +50,123 @@ def test_http_jsonrpc_mcp_adapter_posts_tool_call_and_injects_hosted_headers() -
         encryption_key_id=encrypted.key_id,
     )
 
-    with JsonRpcServer({"result": {"content": [{"type": "text", "text": "ok"}]}}) as server:
-        response = HttpJsonRpcMcpToolAdapter(
-            secret_service=secret_service,
-            egress_policy=_local_test_egress_policy(),
-        ).call(
-            server=McpServer(
-                workspace_id=uuid4(),
-                name="http-tools",
-                server_type="http",
-                connection={
-                    "url": server.url,
-                    "headers": {"x-static": "yes"},
-                },
-            ),
-            tool_name="generate_image",
-            arguments={"prompt": "mountain"},
-            credential_refs=[credential],
-            timeout_seconds=5,
-        )
+    response = StreamableHttpMcpToolAdapter(
+        secret_service=secret_service,
+        egress_policy=_local_test_egress_policy(),
+    ).call(
+        server=McpServer(
+            workspace_id=uuid4(),
+            name="http-tools",
+            server_type="http",
+            connection={
+                "url": "https://mcp.example.test/mcp",
+                "headers": {"x-static": "yes"},
+            },
+        ),
+        tool_name="generate_image",
+        arguments={"prompt": "mountain"},
+        credential_refs=[credential],
+        timeout_seconds=5,
+    )
 
     assert response == {"content": [{"type": "text", "text": "ok"}]}
-    assert server.requests[0]["headers"]["authorization"] == "Bearer secret-token"
-    assert server.requests[0]["headers"]["x-tenant"] == "acme"
-    assert server.requests[0]["headers"]["x-static"] == "yes"
-    assert server.requests[0]["body"]["method"] == "tools/call"
-    assert server.requests[0]["body"]["params"] == {
-        "name": "generate_image",
-        "arguments": {"prompt": "mountain"},
-    }
+    assert sdk.transport_calls == [
+        {
+            "transport": "streamable_http",
+            "url": "https://mcp.example.test/mcp",
+            "headers": {
+                "x-static": "yes",
+                "authorization": "Bearer secret-token",
+                "x-tenant": "acme",
+            },
+            "timeout": 5,
+        }
+    ]
+    assert sdk.initialize_calls == 1
+    assert sdk.tool_calls == [
+        {
+            "name": "generate_image",
+            "arguments": {"prompt": "mountain"},
+            "timeout_seconds": 5,
+        }
+    ]
 
 
-def test_http_jsonrpc_mcp_adapter_retries_retryable_status() -> None:
-    with JsonRpcServer(
+def test_streamable_http_mcp_adapter_retries_retryable_status(monkeypatch) -> None:
+    sdk = _FakeMcpSdk(
         [
-            {"error": {"code": 500, "message": "temporary"}},
-            {"result": {"ok": True}},
-        ],
-        status_codes=[500, 200],
-    ) as server:
-        response = HttpJsonRpcMcpToolAdapter(
-            egress_policy=_local_test_egress_policy(),
-        ).call(
+            _FakeStatusError(500),
+            _FakeCallToolResult(structured_content={"ok": True}),
+        ]
+    )
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.streamable_http_client",
+        sdk.streamable_http_client,
+    )
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        sdk.client_session,
+    )
+    response = StreamableHttpMcpToolAdapter(
+        egress_policy=_local_test_egress_policy(),
+    ).call(
+        server=McpServer(
+            workspace_id=uuid4(),
+            name="http-tools",
+            server_type="http",
+            connection={"url": "https://retry.example.test/mcp"},
+        ),
+        tool_name="generate_image",
+        arguments={"prompt": "mountain"},
+        credential_refs=[],
+        timeout_seconds=5,
+    )
+
+    assert response == {"ok": True}
+    assert len(sdk.tool_calls) == 2
+
+
+def test_streamable_http_mcp_adapter_sanitizes_remote_errors(monkeypatch) -> None:
+    sdk = _FakeMcpSdk([_FakeCallToolResult(is_error=True)])
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.streamable_http_client",
+        sdk.streamable_http_client,
+    )
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        sdk.client_session,
+    )
+    try:
+        StreamableHttpMcpToolAdapter(egress_policy=_local_test_egress_policy()).call(
             server=McpServer(
                 workspace_id=uuid4(),
                 name="http-tools",
                 server_type="http",
-                connection={"url": server.url},
+                connection={"url": "https://errors.example.test/mcp"},
             ),
             tool_name="generate_image",
             arguments={"prompt": "mountain"},
             credential_refs=[],
             timeout_seconds=5,
         )
-
-    assert response == {"ok": True}
-    assert len(server.requests) == 2
-
-
-def test_http_jsonrpc_mcp_adapter_sanitizes_remote_errors() -> None:
-    with JsonRpcServer(
-        {
-            "error": {
-                "code": -32000,
-                "message": "remote leaked secret-token",
-            }
-        }
-    ) as server:
-        try:
-            HttpJsonRpcMcpToolAdapter(egress_policy=_local_test_egress_policy()).call(
-                server=McpServer(
-                    workspace_id=uuid4(),
-                    name="http-tools",
-                    server_type="http",
-                    connection={"url": server.url},
-                ),
-                tool_name="generate_image",
-                arguments={"prompt": "mountain"},
-                credential_refs=[],
-                timeout_seconds=5,
-            )
-        except McpExecutionError as exc:
-            assert exc.code == "mcp_remote_error"
-            assert str(exc) == "Remote MCP tool failed"
-            assert "secret-token" not in str(exc)
-        else:
-            raise AssertionError("Expected remote MCP error")
+    except McpExecutionError as exc:
+        assert exc.code == "mcp_remote_error"
+        assert str(exc) == "Remote MCP tool failed"
+        assert "secret-token" not in str(exc)
+    else:
+        raise AssertionError("Expected remote MCP error")
 
 
-def test_hosted_mcp_adapter_delegates_to_remote_http_transport() -> None:
+def test_hosted_mcp_adapter_delegates_to_official_remote_http_transport(monkeypatch) -> None:
+    sdk = _FakeMcpSdk([_FakeCallToolResult(structured_content={"ok": True})])
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.streamable_http_client",
+        sdk.streamable_http_client,
+    )
+    monkeypatch.setattr(
+        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        sdk.client_session,
+    )
     secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
     encrypted = secret_service.encrypt_payload({"api_key": "secret-key"})
     credential = McpCredentialReference(
@@ -142,25 +179,27 @@ def test_hosted_mcp_adapter_delegates_to_remote_http_transport() -> None:
         encryption_key_id=encrypted.key_id,
     )
 
-    with JsonRpcServer({"result": {"ok": True}}) as server:
-        response = HostedMcpToolAdapter(
-            secret_service=secret_service,
-            egress_policy=_local_test_egress_policy(),
-        ).call(
-            server=McpServer(
-                workspace_id=uuid4(),
-                name="hosted-tools",
-                server_type="hosted",
-                connection={"transport": "http_jsonrpc", "url": server.url},
-            ),
-            tool_name="generate_image",
-            arguments={"prompt": "mountain"},
-            credential_refs=[credential],
-            timeout_seconds=5,
-        )
+    response = HostedMcpToolAdapter(
+        secret_service=secret_service,
+        egress_policy=_local_test_egress_policy(),
+    ).call(
+        server=McpServer(
+            workspace_id=uuid4(),
+            name="hosted-tools",
+            server_type="hosted",
+            connection={
+                "transport": "http_jsonrpc",
+                "url": "https://hosted.example.test/mcp",
+            },
+        ),
+        tool_name="generate_image",
+        arguments={"prompt": "mountain"},
+        credential_refs=[credential],
+        timeout_seconds=5,
+    )
 
     assert response == {"ok": True}
-    assert server.requests[0]["headers"]["x-api-key"] == "secret-key"
+    assert sdk.transport_calls[0]["headers"]["x-api-key"] == "secret-key"
 
 
 def test_hosted_mcp_adapter_blocks_missing_remote_transport() -> None:
@@ -185,7 +224,7 @@ def test_hosted_mcp_adapter_blocks_missing_remote_transport() -> None:
 
 def test_http_mcp_adapter_blocks_private_egress_before_request() -> None:
     try:
-        HttpJsonRpcMcpToolAdapter().call(
+        StreamableHttpMcpToolAdapter().call(
             server=McpServer(
                 workspace_id=uuid4(),
                 name="http-tools",
@@ -320,7 +359,7 @@ def test_mcp_adapter_resolver_selects_remote_adapters_and_blocks_unsafe_direct_s
         )
     )
 
-    assert isinstance(http_adapter, HttpJsonRpcMcpToolAdapter)
+    assert isinstance(http_adapter, StreamableHttpMcpToolAdapter)
     assert isinstance(sse_adapter, SseMcpToolAdapter)
     assert isinstance(hosted_adapter, HostedMcpToolAdapter)
     assert isinstance(stdio_adapter, UnsupportedMcpToolAdapter)
@@ -333,76 +372,112 @@ def _local_test_egress_policy() -> EgressUrlPolicy:
     )
 
 
-class JsonRpcServer:
+class _FakeCallToolResult:
     def __init__(
         self,
-        response_body: dict[str, object] | list[dict[str, object]],
         *,
-        status_codes: list[int] | None = None,
+        content: list[_FakeContent] | None = None,
+        structured_content: dict[str, object] | None = None,
+        is_error: bool = False,
     ) -> None:
-        self._response_bodies = (
-            response_body if isinstance(response_body, list) else [response_body]
-        )
-        self._status_codes = status_codes or [200]
-        self.requests: list[dict[str, Any]] = []
-        self._server: ThreadingHTTPServer | None = None
-        self._thread: threading.Thread | None = None
+        self.content = content or []
+        self.structuredContent = structured_content
+        self.isError = is_error
 
-    @property
-    def url(self) -> str:
-        if self._server is None:
-            raise RuntimeError("Server is not running")
-        host, port = self._server.server_address
-        return f"http://{host}:{port}/mcp"
 
-    def __enter__(self) -> JsonRpcServer:
-        parent = self
+class _FakeContent:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self._payload = payload
 
-        class Handler(BaseHTTPRequestHandler):
-            def do_POST(self) -> None:
-                content_length = int(self.headers.get("content-length", "0"))
-                raw_body = self.rfile.read(content_length)
-                parent.requests.append(
-                    {
-                        "headers": {key.lower(): value for key, value in self.headers.items()},
-                        "body": json.loads(raw_body.decode("utf-8")),
-                    }
-                )
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": parent.requests[-1]["body"].get("id"),
-                    **parent._response_body_for_request(),
-                }
-                status_code = parent._status_code_for_request()
-                response_bytes = json.dumps(response).encode("utf-8")
-                self.send_response(status_code)
-                self.send_header("content-type", "application/json")
-                self.send_header("content-length", str(len(response_bytes)))
-                self.end_headers()
-                self.wfile.write(response_bytes)
+    def model_dump(self, **_: object) -> dict[str, object]:
+        return self._payload
 
-            def log_message(self, format: str, *args: object) -> None:
-                return None
 
-        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-        self._thread.start()
+class _FakeStatusError(Exception):
+    def __init__(self, status_code: int) -> None:
+        super().__init__("remote secret must not escape")
+        self.response = _FakeStatusResponse(status_code)
+
+
+class _FakeStatusResponse:
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+
+
+class _FakeTransport:
+    def __init__(self, streams: tuple[object, ...]) -> None:
+        self._streams = streams
+
+    async def __aenter__(self) -> tuple[object, ...]:
+        return self._streams
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
+
+
+class _FakeClientSession:
+    def __init__(self, sdk: _FakeMcpSdk) -> None:
+        self._sdk = sdk
+
+    async def __aenter__(self) -> _FakeClientSession:
         return self
 
-    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
-        if self._server is not None:
-            self._server.shutdown()
-            self._server.server_close()
-        if self._thread is not None:
-            self._thread.join(timeout=5)
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
 
-    def _response_body_for_request(self) -> dict[str, object]:
-        index = min(len(self.requests) - 1, len(self._response_bodies) - 1)
-        return self._response_bodies[index]
+    async def initialize(self) -> None:
+        self._sdk.initialize_calls += 1
 
-    def _status_code_for_request(self) -> int:
-        index = min(len(self.requests) - 1, len(self._status_codes) - 1)
-        return self._status_codes[index]
+    async def call_tool(
+        self,
+        name: str,
+        *,
+        arguments: dict[str, object],
+        read_timeout_seconds: object,
+    ) -> _FakeCallToolResult:
+        self._sdk.tool_calls.append(
+            {
+                "name": name,
+                "arguments": arguments,
+                "timeout_seconds": read_timeout_seconds.total_seconds(),
+            }
+        )
+        outcome = self._sdk.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+class _FakeMcpSdk:
+    def __init__(self, outcomes: list[_FakeCallToolResult | Exception]) -> None:
+        self.outcomes = outcomes
+        self.transport_calls: list[dict[str, Any]] = []
+        self.initialize_calls = 0
+        self.tool_calls: list[dict[str, Any]] = []
+
+    def streamable_http_client(
+        self,
+        url: str,
+        *,
+        http_client: Any,
+    ) -> _FakeTransport:
+        headers = {
+            key: value
+            for key, value in http_client.headers.items()
+            if key in {"authorization", "x-static", "x-tenant", "x-api-key"}
+        }
+        self.transport_calls.append(
+            {
+                "transport": "streamable_http",
+                "url": url,
+                "headers": headers,
+                "timeout": http_client.timeout.connect,
+            }
+        )
+        return _FakeTransport((object(), object(), None))
+
+    def client_session(self, read_stream: object, write_stream: object) -> _FakeClientSession:
+        return _FakeClientSession(self)
 
 
 class RecordingRuntimeManager:
