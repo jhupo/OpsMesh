@@ -81,8 +81,8 @@ also SDK-backed, but the client process is launched only inside a Docker runtime
 self-hosted connector. The control plane passes a versioned request contract and receives a
 serialized `CallToolResult`; it never starts a user-controlled stdio process.
 
-The Docker entrypoint is `python -m backend.app.runtime_manager.mcp_stdio_client`. Runtime images
-that enable stdio must include the OpsMesh package and the pinned MCP Python SDK dependency. The
+The Docker entrypoint is `python -m opsmesh_runtime.mcp_stdio_client`. Runtime images that enable
+stdio must include the small `opsmesh-runtime` package and its pinned MCP Python SDK dependency. The
 self-hosted connector receives the same `request` payload and must call the public
 `mcp.client.stdio.stdio_client` and `ClientSession` interfaces directly before posting completion.
 No JSON-RPC framing or transport compatibility layer belongs in the connector or control plane.

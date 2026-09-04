@@ -76,3 +76,12 @@ The remaining work is to turn those pieces into production-grade operating loops
 | 3 | P1 | Add MCP permission remediation evidence to operations/timeline APIs | In progress | Capability governance apply now records redacted MCP health refresh evidence, team runtime timeline surfaces relevant MCP governance remediation events for MCP servers used by team members, governance apply can remove unallowed agent MCP tool references, and `allow_mcp_tools` can re-enable existing disabled MCP allowlist entries with audit evidence; remaining repair actions are credential/connection changes that require explicit operator configuration |
 | 4 | P1 | Add lifecycle recovery-action rollup to workspace operations responses | Done | `/operations/overview` now includes redacted `data_lifecycle` status, latest backup, latest restore drill, retention safety, import conflict preview, recommended actions, and next safe action with empty-workspace and ready-with-warning coverage |
 | 5 | P1 | Add one isolated remote validation script/table entry for the above closures | Done | `scripts/remote-backend-validation.sh` creates disposable Docker network/Postgres/Redis/test containers, runs targeted pytest/ruff with overrideable arguments, documents the workflow, and avoids `opsmesh-postgres` |
+
+## MCP Runtime Delivery Queue
+
+| Order | Priority | Task | Status | Acceptance Evidence |
+| --- | --- | --- | --- | --- |
+| 1 | P0 | Dedicated isolated runtime image and MCP SDK capability probe | In progress | `Dockerfile.runtime` installs only `opsmesh-runtime` plus MCP SDK, runs non-root, uses `/workspace`, and exposes `python -m opsmesh_runtime.mcp_stdio_client --check`; Docker adapter fails closed before launching a server |
+| 2 | P0 | Official SDK stdio integration proof | In progress | A real FastMCP fixture verifies SDK initialization and tool execution locally; Docker image execution still requires environment validation |
+| 3 | P0 | Self-hosted MCP connector execution loop | Pending | Connector polls, claims, executes with official SDK, completes, persists claimed work for restart, and rejects invalid capability contracts |
+| 4 | P1 | MCP runtime security and recovery evidence | Pending | Targeted tests cover timeout, process failure, duplicate completion, restart/reclaim, redaction, and workspace denial paths |

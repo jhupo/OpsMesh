@@ -282,7 +282,7 @@ Rules:
 
 Remote MCP execution uses the official MCP Python SDK `ClientSession` with its Streamable HTTP or
 SSE transport. Stdio MCP uses the same SDK's `stdio_client` and `ClientSession`, launched through
-`python -m backend.app.runtime_manager.mcp_stdio_client` inside an isolated Docker runtime or by a
+`python -m opsmesh_runtime.mcp_stdio_client` inside an isolated Docker runtime or by a
 trusted self-hosted connector. OpsMesh owns the adapter boundary for workspace authorization,
 credentials, egress, timeouts, retry/circuit policy, redaction, and audit evidence; it does not
 reimplement MCP framing or JSON-RPC parsing. The runtime image or connector must provide the pinned

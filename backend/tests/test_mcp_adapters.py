@@ -284,11 +284,27 @@ def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> N
         limits={},
     )
     runtime_manager = RecordingRuntimeManager(
-        RuntimeCommandResult(
-            exit_code=0,
-            stdout=json.dumps({"structuredContent": {"ok": True}}),
-            stderr="",
-        )
+        [
+            RuntimeCommandResult(
+                exit_code=0,
+                stdout=json.dumps(
+                    {
+                        "status": "ready",
+                        "contract_version": 1,
+                        "sdk_package": "mcp",
+                        "sdk_version": "1.27.1",
+                        "stdio_client": "available",
+                        "client_session": "available",
+                    }
+                ),
+                stderr="",
+            ),
+            RuntimeCommandResult(
+                exit_code=0,
+                stdout=json.dumps({"structuredContent": {"ok": True}}),
+                stderr="",
+            ),
+        ]
     )
 
     response = DockerRuntimeStdioMcpToolAdapter(
@@ -310,11 +326,17 @@ def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> N
     assert response == {"ok": True}
     assert runtime_manager.calls[0]["workspace_id"] == workspace_id
     assert runtime_manager.calls[0]["runtime"] is runtime
-    command = runtime_manager.calls[0]["command"]
+    assert runtime_manager.calls[0]["command"] == [
+        "python",
+        "-m",
+        "opsmesh_runtime.mcp_stdio_client",
+        "--check",
+    ]
+    command = runtime_manager.calls[1]["command"]
     assert command[:3] == [
         "python",
         "-m",
-        "backend.app.runtime_manager.mcp_stdio_client",
+        "opsmesh_runtime.mcp_stdio_client",
     ]
     payload = json.loads(command[3])
     assert payload["client"] == {
@@ -332,10 +354,98 @@ def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> N
     }
 
 
+def test_docker_runtime_stdio_mcp_adapter_reuses_valid_sdk_capability() -> None:
+    workspace_id = uuid4()
+    runtime = WorkspaceRuntime(
+        id=uuid4(),
+        workspace_id=workspace_id,
+        name="team-runtime",
+        docker_container_id="container-123",
+        limits={},
+        capabilities={
+            "mcp_stdio_sdk": {
+                "status": "ready",
+                "contract_version": 1,
+                "sdk_package": "mcp",
+                "sdk_version": "1.27.1",
+                "stdio_client": "available",
+                "client_session": "available",
+            }
+        },
+    )
+    runtime_manager = RecordingRuntimeManager(
+        [
+            RuntimeCommandResult(
+                exit_code=0,
+                stdout=json.dumps({"structuredContent": {"ok": True}}),
+                stderr="",
+            )
+        ]
+    )
+
+    response = DockerRuntimeStdioMcpToolAdapter(
+        runtime_manager=runtime_manager,
+        runtime=runtime,
+    ).call(
+        server=McpServer(
+            workspace_id=workspace_id,
+            name="stdio-tools",
+            server_type="stdio",
+            connection={"command": "mcp-server"},
+        ),
+        tool_name="generate_image",
+        arguments={},
+        credential_refs=[],
+        timeout_seconds=5,
+    )
+
+    assert response == {"ok": True}
+    assert len(runtime_manager.calls) == 1
+    assert runtime_manager.calls[0]["command"][:3] == [
+        "python",
+        "-m",
+        "opsmesh_runtime.mcp_stdio_client",
+    ]
+
+
+def test_docker_runtime_stdio_mcp_adapter_rejects_invalid_sdk_report() -> None:
+    workspace_id = uuid4()
+    runtime_manager = RecordingRuntimeManager(
+        [RuntimeCommandResult(exit_code=0, stdout="{}", stderr="")]
+    )
+
+    try:
+        DockerRuntimeStdioMcpToolAdapter(
+            runtime_manager=runtime_manager,
+            runtime=WorkspaceRuntime(
+                id=uuid4(),
+                workspace_id=workspace_id,
+                name="team-runtime",
+                docker_container_id="container-123",
+                limits={},
+            ),
+        ).call(
+            server=McpServer(
+                workspace_id=workspace_id,
+                name="stdio-tools",
+                server_type="stdio",
+                connection={"command": "mcp-server"},
+            ),
+            tool_name="generate_image",
+            arguments={},
+            credential_refs=[],
+            timeout_seconds=5,
+        )
+    except McpExecutionError as exc:
+        assert exc.code == "mcp_stdio_runtime_not_ready"
+    else:
+        raise AssertionError("Expected an invalid MCP SDK capability report to fail closed")
+
+
 def test_docker_runtime_stdio_mcp_adapter_sanitizes_command_failure() -> None:
     workspace_id = uuid4()
     runtime_manager = RecordingRuntimeManager(
-        RuntimeCommandResult(exit_code=2, stdout="", stderr="secret stderr")
+        [RuntimeCommandResult(exit_code=2, stdout="", stderr="secret stderr")]
     )
 
     try:
@@ -361,7 +471,7 @@ def test_docker_runtime_stdio_mcp_adapter_sanitizes_command_failure() -> None:
             timeout_seconds=5,
         )
     except McpExecutionError as exc:
-        assert exc.code == "mcp_stdio_runtime_failed"
+        assert exc.code == "mcp_stdio_sdk_unavailable"
         assert "secret" not in str(exc)
     else:
         raise AssertionError("Expected failed stdio runtime command to be normalized")
@@ -525,8 +635,8 @@ class _FakeMcpSdk:
 
 
 class RecordingRuntimeManager:
-    def __init__(self, result: RuntimeCommandResult) -> None:
-        self._result = result
+    def __init__(self, results: list[RuntimeCommandResult]) -> None:
+        self._results = results
         self.calls: list[dict[str, Any]] = []
 
     def execute_command(
@@ -543,13 +653,14 @@ class RecordingRuntimeManager:
                 "command": command,
             }
         )
+        result = self._results.pop(0)
         return RuntimeCommand(
             workspace_id=workspace_id,
             workspace_runtime_id=runtime.id,
             runtime_space_id=runtime.runtime_space_id,
             command=command,
-            status="completed" if self._result.exit_code == 0 else "failed",
-            exit_code=self._result.exit_code,
-            stdout=self._result.stdout,
-            stderr=self._result.stderr,
+            status="completed" if result.exit_code == 0 else "failed",
+            exit_code=result.exit_code,
+            stdout=result.stdout,
+            stderr=result.stderr,
         )

@@ -30,6 +30,20 @@ The API is exposed at `http://localhost:8000`. Health checks are available at:
 
 The local compose stack is only for development and CI checks. Production backend processes are managed by systemd.
 
+Build the dedicated isolated runtime image before enabling Docker-backed agent or stdio MCP
+execution:
+
+```bash
+docker build -f Dockerfile.runtime -t opsmesh-runtime:local .
+docker run --rm opsmesh-runtime:local \
+  python -m opsmesh_runtime.mcp_stdio_client --check
+```
+
+The runtime image contains the small `opsmesh-runtime` package and the pinned official MCP Python
+SDK, not the API application or database clients. It runs as `opsmesh-runtime`, uses `/workspace`
+as its working directory, and reports SDK readiness before a stdio server is launched. Keep
+`OPSMESH_RUNTIME_ALLOWED_IMAGES` restricted to reviewed runtime image tags or immutable digests.
+
 ## VPS Layout
 
 Provision a VPS with Python 3.11+, `uv`, Postgres, Redis, Docker, and systemd. Keep release assets under `/opt/opsmesh`:
@@ -63,6 +77,8 @@ Set production values in `/opt/opsmesh/.env`, especially:
 - `OPSMESH_READINESS_WORKER_CHECK_ENABLED=true`
 - `OPSMESH_CREDENTIAL_ENCRYPTION_SECRET`
 - `OPSMESH_STORAGE_ROOT=/var/lib/opsmesh/storage`
+- `OPSMESH_RUNTIME_ALLOWED_IMAGES=["opsmesh-runtime:local"]` or a reviewed immutable runtime image
+  digest
 
 Install Docker on the VPS and leave the daemon available only to the worker service user if hosted runtime execution is enabled. The backend starts no compose stack; Docker is only the runtime substrate for isolated task containers, and the API process must not be able to control the Docker daemon.
 

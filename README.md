@@ -44,6 +44,22 @@ product contract.
 The APIs and database model may change before the first stable release. See the
 [backend completion plan](docs/backend-completion-plan.md) for detailed implementation status.
 
+### Reference Architecture Coverage
+
+| Reference layer | Current implementation |
+| --- | --- |
+| Web Portal and result views | Planned; frontend intentionally remains empty |
+| SSO, department identity, WAF, and load balancing | Planned; local API authentication and workspace RBAC exist |
+| API/Agent Gateway | Implemented at the application boundary: authentication, workspace roles, routing, rate limiting, security headers, and audit |
+| Session, configuration, and tool resolution | Implemented, including persistent sessions, authorization snapshots, Agent/team configuration, and contextual tool resolution |
+| Multi-Agent runtime | Implemented with the OpenAI Agents SDK, manager/specialist handoffs, approval waits, durable recovery, and worker restart E2E evidence |
+| Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, and call audit; production remediation remains in progress |
+| MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; runtime image and self-hosted connector delivery are in progress |
+| Run isolation and workspace | Docker and self-hosted control-plane contracts are implemented; a dedicated `opsmesh-runtime` image now provides the isolated MCP SDK helper |
+| Knowledge service | Partial: workspace memory, lexical search, and Postgres full-text abstraction exist; source ingestion, citations, vector search, and hybrid ranking are planned |
+| Observability and operations | Partial: structured logs, Prometheus-format metrics, dashboards, alerts, audit, security events, queue/runtime diagnostics, and recovery actions exist; OpenTelemetry and official Prometheus client migration remain |
+| Infrastructure and scaling | Postgres, Redis, storage, VPS/systemd, Docker runtime, and remote validation assets exist; Kubernetes, multi-region, and microVM backends are future work |
+
 ## Target Architecture
 
 The target architecture separates the user experience, control plane, capability plane, execution
@@ -121,6 +137,8 @@ flowchart TB
 ### Isolated execution
 
 - Docker runtime lifecycle with CPU, memory, storage, process, timeout, and network policies.
+- Dedicated `opsmesh-runtime:local` image with a non-root MCP Python SDK stdio client and readiness
+  probe.
 - Runtime spaces, quota reservations, leases, cleanup evidence, and operator controls.
 - Self-hosted runtime enrollment, trust state, heartbeat, job claim, progress, and artifact upload.
 - Workspace file staging and artifact collection without executing untrusted code on the API host.
@@ -267,6 +285,7 @@ Start the API, worker, Postgres, and Redis:
 
 ```bash
 cp .env.example .env
+docker build -f Dockerfile.runtime -t opsmesh-runtime:local .
 docker compose up --build
 ```
 

@@ -1,0 +1,15 @@
+[project]
+name = "opsmesh-runtime"
+version = "0.1.0"
+description = "Isolated runtime helpers for OpsMesh agent workloads."
+requires-python = ">=3.11"
+dependencies = [
+    "mcp==1.27.1",
+]
+
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["opsmesh_runtime*"]

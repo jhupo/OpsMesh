@@ -6,19 +6,23 @@ from backend.app.api.schemas.self_hosted import (
     ArtifactUploadRequest,
     EnrollmentTokenCreateRequest,
     LocalFileReferenceRequest,
+    McpJobCompleteRequest,
     RuntimeRegistrationRequest,
     WorkerHeartbeatRequest,
 )
 from backend.app.core.config import Settings
 from backend.app.self_hosted.artifacts import SelfHostedArtifactService
+from backend.app.self_hosted.dispatch import SelfHostedDispatchService
 from backend.app.self_hosted.events import SelfHostedEventRecorder
 from backend.app.self_hosted.identity import SelfHostedIdentityService
 from backend.app.self_hosted.jobs import SelfHostedJobFinalizer
 from backend.app.self_hosted.maintenance import SelfHostedMaintenanceService
+from backend.app.self_hosted.mcp_jobs import SelfHostedMcpJobService
 from backend.app.self_hosted.models import (
     LocalFileReference,
     RuntimeCredential,
     SelfHostedArtifactUpload,
+    SelfHostedMcpJob,
     SelfHostedWorker,
 )
 from backend.app.self_hosted.policy_gate import SelfHostedPolicyGate
@@ -40,6 +44,7 @@ class SelfHostedRuntimeService:
         self._events = SelfHostedEventRecorder(session)
         self._identity = SelfHostedIdentityService(session, settings, self._events)
         self._jobs = SelfHostedJobFinalizer(session, self._events)
+        self._dispatch = SelfHostedDispatchService(session, self._events, self._jobs)
         self._policy_gate = SelfHostedPolicyGate(session)
         self._worker_control = SelfHostedWorkerControlService(
             session,
@@ -84,6 +89,47 @@ class SelfHostedRuntimeService:
         data: ArtifactUploadRequest,
     ) -> SelfHostedArtifactUpload:
         return SelfHostedArtifactService(self._session).register_artifact_upload(auth, data)
+
+    def create_mcp_job(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime_id: UUID,
+        agent_run_id: UUID,
+        mcp_server_id: UUID,
+        tool_name: str,
+        request_payload: dict[str, object],
+    ) -> SelfHostedMcpJob:
+        return SelfHostedMcpJobService(self._session).create_mcp_job(
+            workspace_id=workspace_id,
+            runtime_id=runtime_id,
+            agent_run_id=agent_run_id,
+            mcp_server_id=mcp_server_id,
+            tool_name=tool_name,
+            request_payload=request_payload,
+        )
+
+    def complete_mcp_job(
+        self,
+        auth: AuthenticatedWorker,
+        mcp_job_id: UUID,
+        data: McpJobCompleteRequest,
+    ) -> SelfHostedMcpJob:
+        return SelfHostedMcpJobService(self._session).complete_mcp_job(
+            auth,
+            mcp_job_id,
+            data,
+        )
+
+    def poll_mcp_job(self, auth: AuthenticatedWorker) -> SelfHostedMcpJob | None:
+        return self._dispatch.poll_mcp_job(auth)
+
+    def claim_mcp_job(
+        self,
+        auth: AuthenticatedWorker,
+        mcp_job_id: UUID,
+    ) -> SelfHostedMcpJob:
+        return self._dispatch.claim_mcp_job(auth, mcp_job_id)
 
     def revoke_credential(
         self,

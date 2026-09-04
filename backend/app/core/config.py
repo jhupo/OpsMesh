@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     credential_encryption_key_id: str = Field(default="local")
     credential_encryption_previous_secrets: dict[str, str] = Field(default_factory=dict)
     secret_vault_providers: dict[str, dict[str, object]] = Field(default_factory=dict)
-    runtime_allowed_images: list[str] = Field(default_factory=lambda: ["python:3.12-slim"])
+    runtime_allowed_images: list[str] = Field(default_factory=lambda: ["opsmesh-runtime:local"])
     release_dir: str | None = Field(default=None)
     release_update_enabled: bool = Field(default=False)
     release_update_script: str = Field(default="/opt/opsmesh/current/scripts/server-update.sh")

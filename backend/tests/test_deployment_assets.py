@@ -20,6 +20,20 @@ def test_dockerfile_defines_non_root_api_runtime() -> None:
     assert "backend.app.main:create_app" in dockerfile
 
 
+def test_runtime_dockerfile_installs_only_isolated_runtime_package() -> None:
+    dockerfile = read_repo_file("Dockerfile.runtime")
+    runtime_project = read_repo_file("runtime/pyproject.toml")
+
+    assert "FROM python:3.12-slim" in dockerfile
+    assert "COPY runtime/pyproject.toml" in dockerfile
+    assert "COPY runtime/opsmesh_runtime" in dockerfile
+    assert "python -m opsmesh_runtime.mcp_stdio_client --check" in dockerfile
+    assert "USER opsmesh-runtime" in dockerfile
+    assert "WORKDIR /workspace" in dockerfile
+    assert "backend/app" not in dockerfile
+    assert '"mcp==1.27.1"' in runtime_project
+
+
 def test_compose_declares_api_worker_and_dependencies() -> None:
     compose = read_repo_file("docker-compose.yml")
 
@@ -51,6 +65,7 @@ def test_env_template_lists_required_runtime_settings() -> None:
     assert "OPSMESH_SERVICE_NAME=opsmesh-backend" in env_example
     assert "OPSMESH_STORAGE_ROOT=.opsmesh-storage" in env_example
     assert "OPSMESH_AGENT_RUNNER_BACKEND" not in env_example
+    assert 'OPSMESH_RUNTIME_ALLOWED_IMAGES=["opsmesh-runtime:local"]' in env_example
 
 
 def test_deployment_docs_cover_processes_and_production_guards() -> None:
@@ -145,6 +160,7 @@ def test_server_env_template_uses_shared_runtime_services() -> None:
     assert "OPSMESH_READINESS_WORKER_CHECK_ENABLED=true" in env_example
     assert "OPSMESH_EXTERNAL_CALL_MAX_ATTEMPTS=2" in env_example
     assert "OPSMESH_AUDIT_EVENT_WORM_ENABLED=true" in env_example
+    assert 'OPSMESH_RUNTIME_ALLOWED_IMAGES=["opsmesh-runtime:local"]' in env_example
     assert "OPSMESH_PROMETHEUS_PORT=9090" in env_example
     assert "OPSMESH_ALERTMANAGER_PORT=9093" in env_example
     assert "OPSMESH_GRAFANA_PORT=3000" in env_example

@@ -119,6 +119,30 @@ def result_from_sdk_output(raw_body: bytes | str) -> dict[str, object]:
     return {"content": content if isinstance(content, list) else []}
 
 
+def capability_report_from_sdk_output(raw_body: bytes | str) -> dict[str, object]:
+    if isinstance(raw_body, bytes):
+        try:
+            raw_body = raw_body.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise McpExecutionError(
+                "MCP stdio SDK capability probe returned invalid UTF-8",
+                code="mcp_stdio_runtime_not_ready",
+            ) from exc
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError as exc:
+        raise McpExecutionError(
+            "MCP stdio SDK capability probe returned invalid JSON",
+            code="mcp_stdio_runtime_not_ready",
+        ) from exc
+    if not isinstance(body, dict):
+        raise McpExecutionError(
+            "MCP stdio SDK capability probe returned an invalid report",
+            code="mcp_stdio_runtime_not_ready",
+        )
+    return body
+
+
 def result_from_sse_body(raw_body: bytes) -> dict[str, object]:
     try:
         body = raw_body.decode("utf-8")

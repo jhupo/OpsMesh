@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+from pathlib import Path
 
 from backend.app.capabilities.mcp_adapter_payloads import stdio_sdk_request
-from backend.app.runtime_manager import mcp_stdio_client
+from runtime.opsmesh_runtime import mcp_stdio_client
 
 
 def test_stdio_sdk_client_uses_official_stdio_transport_and_session(monkeypatch) -> None:
@@ -28,6 +30,32 @@ def test_stdio_sdk_client_uses_official_stdio_transport_and_session(monkeypatch)
         "arguments": {"prompt": "mountain"},
         "timeout_seconds": 7,
     }
+
+
+def test_stdio_sdk_client_calls_real_official_mcp_server() -> None:
+    server_path = Path(__file__).parent / "fixtures" / "mcp_stdio_server.py"
+    request = stdio_sdk_request(
+        command=[sys.executable, str(server_path)],
+        tool_name="echo",
+        arguments={"message": "runtime-ready"},
+        timeout_seconds=5,
+    )
+
+    result = asyncio.run(mcp_stdio_client.execute_request(request))
+
+    assert result["isError"] is False
+    assert result["structuredContent"] == {"message": "runtime-ready"}
+
+
+def test_stdio_sdk_client_reports_runtime_capability() -> None:
+    report = mcp_stdio_client.capability_report()
+
+    assert report["status"] == "ready"
+    assert report["contract_version"] == 1
+    assert report["sdk_package"] == "mcp"
+    assert report["stdio_client"] == "available"
+    assert report["client_session"] == "available"
+    assert isinstance(report["sdk_version"], str)
 
 
 class _FakeTransport:
