@@ -144,6 +144,8 @@ flowchart TB
 8. Audit records remain independent of model-provider tracing.
 9. Domain contracts stay product-owned; standard protocols and infrastructure use mature SDKs.
 10. Compatibility code is prohibited; contract changes update all in-repository callers directly.
+11. When an adopted SDK provides a capability, call its public interface directly; custom code may
+    only enforce OpsMesh policy or translate the product contract.
 
 ## Open-Source First
 

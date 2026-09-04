@@ -66,6 +66,11 @@ Before adding custom infrastructure code:
 6. Delete superseded custom code after migration. Do not leave two default implementations without
    a narrowly scoped migration step.
 
+When an adopted SDK already exposes the required capability, call its documented public interface
+directly. Do not recreate equivalent protocol, transport, execution, serialization, retry, or
+telemetry logic. An OpsMesh adapter may translate product-owned contracts, enforce authorization,
+redaction, limits, and audit evidence, but it must delegate the underlying capability to the SDK.
+
 Compatibility code is prohibited. When a contract changes, update its callers, tests, migrations,
 and documentation in the same change. Do not add legacy aliases, deprecated endpoint shims,
 version branches, silent fallbacks, duplicate implementations, or adapters whose only purpose is
@@ -107,6 +112,8 @@ Agents SDK and OpsMesh control plane.
   not create long chains of one-line pass-through wrappers or generic `utils` dumping grounds.
 - Reuse an existing domain service, repository, schema, error type, redaction helper, and event
   writer before introducing a parallel abstraction.
+- Use an adopted SDK's existing public interface directly when it provides the required capability;
+  keep custom code limited to product-specific policy, contract translation, and evidence.
 - Avoid circular imports and import-time side effects. Construct infrastructure dependencies at the
   application or worker composition boundary.
 - Do not write compatibility code. Replace obsolete contracts directly and update all in-repository

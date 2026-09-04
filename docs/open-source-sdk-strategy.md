@@ -9,6 +9,14 @@ should reuse maintained open-source projects for standard protocols and infrastr
 This document identifies the strongest current candidates, the code they may replace, and the
 boundaries OpsMesh must continue to own.
 
+## Native SDK Interface Rule
+
+When an adopted SDK already provides a required capability, OpsMesh must call the SDK's documented
+public interface directly. We do not duplicate protocol, transport, execution, serialization,
+retry, or telemetry implementations. An OpsMesh adapter is appropriate only for translating a
+product-owned contract and enforcing workspace authorization, redaction, limits, approvals, or
+audit evidence around the SDK call.
+
 ## Decision Criteria
 
 An SDK is not adopted only because it reduces line count. Evaluate:
