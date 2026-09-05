@@ -16,6 +16,11 @@ class McpServerCreateRequest(BaseModel):
     visibility: str = Field(default="private", pattern="^(private|public)$")
 
 
+class McpServerUpdateRequest(BaseModel):
+    connection: dict[str, object] | None = None
+    visibility: str | None = Field(default=None, pattern="^(private|public)$")
+
+
 class McpServerHealthCheckRequest(BaseModel):
     health_status: str = Field(pattern="^(healthy|unhealthy|unknown)$")
     error_code: str | None = Field(default=None, max_length=120)

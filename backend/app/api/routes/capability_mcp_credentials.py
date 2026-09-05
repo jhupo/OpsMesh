@@ -7,6 +7,8 @@ from backend.app.api.pagination import PageParams, PageResponse, pagination_para
 from backend.app.api.schemas.capabilities.mcp_credentials import (
     McpCredentialReferenceCreateRequest,
     McpCredentialReferenceResponse,
+    McpCredentialReferenceRotateRequest,
+    McpCredentialReferenceUpdateRequest,
 )
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
@@ -49,6 +51,74 @@ async def create_mcp_credential_reference(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return McpCredentialReferenceResponse.model_validate(credential)
+
+
+@router.patch(
+    "/mcp-credentials/{credential_id}",
+    response_model=McpCredentialReferenceResponse,
+)
+async def update_mcp_credential_reference(
+    credential_id: UUID,
+    request: McpCredentialReferenceUpdateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> McpCredentialReferenceResponse:
+    try:
+        credential = McpCredentialService(session, settings=settings).update_credential_reference(
+            context.workspace.id,
+            credential_id,
+            request,
+            context.user.user_id,
+        )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    except ValueError as exc:
+        detail = str(exc)
+        error_status = (
+            status.HTTP_400_BAD_REQUEST
+            if detail != "MCP credential reference not found"
+            else status.HTTP_404_NOT_FOUND
+        )
+        raise HTTPException(status_code=error_status, detail=detail) from exc
+    return McpCredentialReferenceResponse.model_validate(credential)
+
+
+@router.post(
+    "/mcp-credentials/{credential_id}/rotate",
+    response_model=McpCredentialReferenceResponse,
+)
+async def rotate_mcp_credential_reference(
+    credential_id: UUID,
+    request: McpCredentialReferenceRotateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> McpCredentialReferenceResponse:
+    try:
+        credential = McpCredentialService(
+            session,
+            SecretEncryptionService(
+                secret=settings.credential_encryption_secret,
+                key_id=settings.credential_encryption_key_id,
+                previous_secrets=settings.credential_encryption_previous_secrets,
+            ),
+            settings,
+        ).rotate_credential_reference(
+            context.workspace.id,
+            credential_id,
+            request,
+            context.user.user_id,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        error_status = (
+            status.HTTP_404_NOT_FOUND
+            if detail == "MCP credential reference not found"
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=error_status, detail=detail) from exc
     return McpCredentialReferenceResponse.model_validate(credential)
 
 

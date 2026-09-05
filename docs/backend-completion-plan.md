@@ -138,6 +138,12 @@ Current state:
   never raw external references or hosted secret payloads.
 - MCP server API responses redact sensitive connection fields and expose remote URL hosts rather
   than full URLs.
+- Operators can explicitly reconfigure an MCP connection through the management API; connection
+  changes invalidate the previous health result and write redacted audit metadata before the
+  server can execute again.
+- Operators can update credential metadata and rotate either an encrypted hosted secret or an
+  external vault reference. Rotation never returns raw secret material and records only provider,
+  storage mode, fingerprint, scope, and review metadata.
 - Workspace runtime APIs hide raw Docker container IDs and expose only whether a container handle
   exists; admin/operator APIs retain metadata needed for control-plane remediation.
 - The execution service now resolves an MCP server/tool from the run authorization snapshot, injects workspace-owned credential references into an adapter, enforces payload policy, and records call logs, run events, task messages, and security events.
@@ -176,7 +182,9 @@ Build:
 - [x] Wire MCP execution into worker/OpenAI tool invocation through runtime tool executor and OpenAI function-tool bridge.
 - [x] Add optional approval hooks for high-risk and explicitly approval-required MCP tools.
 - [x] Add workspace MCP credential management APIs for listing, filtering, and disabling credential references.
+- [x] Add explicit MCP credential metadata update and hosted/external credential rotation APIs with redacted audit evidence.
 - [x] Add workspace MCP server/tool disable APIs so unsafe or unhealthy integrations can be stopped without deletion.
+- [x] Add explicit MCP server connection reconfiguration with health invalidation and resource-review integration.
 - [x] Add workspace MCP tool-call log query APIs with server, tool, and status filters.
 - [x] Add workspace-skill MCP availability diagnostics for required tools, missing allowlist entries, missing credentials, disabled installs, and unhealthy servers.
 

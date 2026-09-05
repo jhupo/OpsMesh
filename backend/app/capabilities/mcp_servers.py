@@ -9,6 +9,7 @@ from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.capabilities.mcp_servers import (
     McpServerCreateRequest,
     McpServerHealthCheckRequest,
+    McpServerUpdateRequest,
     McpToolAllowRequest,
 )
 from backend.app.audit.service import AuditService
@@ -18,6 +19,7 @@ from backend.app.capabilities.mcp_server_helpers import (
     mcp_health_error,
     require_mcp_server,
 )
+from backend.app.capabilities.mcp_server_rules import connection_summary
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
@@ -99,6 +101,79 @@ class McpServerService:
         if commit:
             commit_or_raise_conflict(self._session, "MCP server name already exists")
             self._session.refresh(server)
+        return server
+
+    def update_mcp_server(
+        self,
+        workspace_id: UUID,
+        mcp_server_id: UUID,
+        data: McpServerUpdateRequest,
+        actor_user_id: UUID | None = None,
+    ) -> McpServer:
+        server = require_mcp_server(self._session, workspace_id, mcp_server_id)
+        if data.connection is None and data.visibility is None:
+            raise ValueError("Provide connection or visibility to update MCP server")
+
+        next_connection = data.connection if data.connection is not None else server.connection
+        next_visibility = data.visibility or server.visibility
+        review = ResourcePolicyReviewBuilder(self._session, self._settings).review_mcp_server(
+            workspace_id=workspace_id,
+            server_type=server.server_type,
+            connection=next_connection,
+            visibility=next_visibility,
+        )
+        previous_connection = connection_summary(server)
+        previous_visibility = server.visibility
+        connection_changed = data.connection is not None
+        if data.connection is not None:
+            server.connection = dict(data.connection)
+        if data.visibility is not None:
+            server.visibility = data.visibility
+        if connection_changed:
+            server.health_status = "unknown"
+            server.last_health_check_at = None
+            server.last_error = None
+        if review.required:
+            server.status = RESOURCE_STATUS_PENDING_APPROVAL
+            ResourceReviewApprovalService(self._session).request_resource_review(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                approval_type=REVIEW_TYPE_MCP_SERVER,
+                target_type="mcp_server",
+                target_id=server.id,
+                target_name=server.name,
+                review=review,
+                snapshot={
+                    "id": str(server.id),
+                    "name": server.name,
+                    "server_type": server.server_type,
+                    "visibility": server.visibility,
+                    "status": server.status,
+                    "connection": dict(server.connection),
+                },
+            )
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="mcp_server.review_requested" if review.required else "mcp_server.updated",
+                target_type="mcp_server",
+                target_id=server.id,
+                metadata={
+                    "name": server.name,
+                    "server_type": server.server_type,
+                    "previous_connection": previous_connection,
+                    "connection": connection_summary(server),
+                    "previous_visibility": previous_visibility,
+                    "visibility": server.visibility,
+                    "health_reset": connection_changed,
+                    "review_required": review.required,
+                    "review_risk_level": review.risk_level,
+                    "review_reasons": review.reasons,
+                },
+            )
+        self._session.commit()
+        self._session.refresh(server)
         return server
 
     def list_mcp_servers(self, workspace_id: UUID, page: PageParams) -> tuple[list[McpServer], int]:

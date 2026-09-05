@@ -758,6 +758,101 @@ def test_hosted_mcp_credentials_are_encrypted_and_not_returned() -> None:
     assert stored.secret_fingerprint == body["secret_fingerprint"]
 
 
+def test_mcp_server_connection_update_resets_health_and_records_redacted_audit() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "configurable-mcp",
+            "server_type": "streamable_http",
+            "connection": {"url": "https://old.example.test/mcp"},
+        },
+    )
+    assert server.status_code == 201
+    server_id = server.json()["id"]
+    healthy = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server_id}/health-check",
+        headers=_headers(owner.id),
+        json={"health_status": "healthy"},
+    )
+    assert healthy.status_code == 200
+
+    updated = client.patch(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server_id}",
+        headers=_headers(owner.id),
+        json={"connection": {"url": "https://new.example.test/mcp?token=secret"}},
+    )
+
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["health_status"] == "unknown"
+    assert body["last_health_check_at"] is None
+    assert body["connection"]["url_host"] == "new.example.test"
+    assert "secret" not in str(body)
+    audit = session.query(AuditEvent).filter_by(action="mcp_server.updated").one()
+    assert audit.audit_metadata["health_reset"] is True
+    assert audit.audit_metadata["connection"]["remote_host"] == "new.example.test"
+    assert "token" not in str(audit.audit_metadata)
+
+
+def test_mcp_credential_rotation_encrypts_and_supports_external_reference() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={"name": "credential-mcp"},
+    )
+    assert server.status_code == 201
+    credential = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server.json()["id"],
+            "name": "rotating-key",
+            "provider": "hosted",
+            "secret_payload": {"api_key": "old-secret"},
+        },
+    )
+    assert credential.status_code == 201
+    credential_id = credential.json()["id"]
+    old_fingerprint = credential.json()["secret_fingerprint"]
+
+    rotated = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials/{credential_id}/rotate",
+        headers=_headers(owner.id),
+        json={"secret_payload": {"api_key": "new-secret"}},
+    )
+    assert rotated.status_code == 200
+    rotated_body = rotated.json()
+    assert rotated_body["provider"] == "hosted"
+    assert rotated_body["secret_fingerprint"] != old_fingerprint
+    assert "new-secret" not in str(rotated_body)
+
+    external = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials/{credential_id}/rotate",
+        headers=_headers(owner.id),
+        json={"provider": "vault", "external_ref": "secret/mcp@v2"},
+    )
+    assert external.status_code == 200
+    external_body = external.json()
+    assert external_body["provider"] == "vault"
+    assert external_body["external_ref_configured"] is True
+    assert external_body["external_ref_kind"] == "secret"
+    assert external_body["secret_fingerprint"] is None
+    assert "secret/mcp@v2" not in str(external_body)
+    actions = [
+        event.action
+        for event in session.query(AuditEvent)
+        .filter(AuditEvent.target_id == credential_id)
+        .order_by(AuditEvent.created_at.asc())
+    ]
+    assert actions.count("mcp_credential.rotated") == 2
+    assert "new-secret" not in str(session.query(AuditEvent).all())
+
+
 def test_mcp_credentials_can_be_listed_filtered_and_disabled() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

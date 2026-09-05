@@ -15,6 +15,7 @@ from backend.app.api.schemas.capabilities.mcp_servers import (
     McpServerCreateRequest,
     McpServerHealthCheckRequest,
     McpServerResponse,
+    McpServerUpdateRequest,
     McpToolAllowRequest,
     McpToolAllowResponse,
 )
@@ -54,6 +55,32 @@ async def create_mcp_server(
         )
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    return McpServerResponse.model_validate(server)
+
+
+@router.patch("/mcp-servers/{mcp_server_id}", response_model=McpServerResponse)
+async def update_mcp_server(
+    mcp_server_id: UUID,
+    request: McpServerUpdateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> McpServerResponse:
+    try:
+        server = McpServerService(session, settings=settings).update_mcp_server(
+            context.workspace.id,
+            mcp_server_id,
+            request,
+            context.user.user_id,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        error_status = (
+            status.HTTP_404_NOT_FOUND
+            if detail == "MCP server not found"
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=error_status, detail=detail) from exc
     return McpServerResponse.model_validate(server)
 
 

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 from backend.app.api.schemas.common import TimestampedModel
 from backend.app.secrets.service import (
@@ -17,6 +17,27 @@ class McpCredentialReferenceCreateRequest(BaseModel):
     external_ref: str = Field(default="", max_length=512)
     secret_payload: dict[str, object] | None = None
     scopes: list[str] = Field(default_factory=list)
+
+
+class McpCredentialReferenceUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    scopes: list[str] | None = None
+
+
+class McpCredentialReferenceRotateRequest(BaseModel):
+    provider: str | None = Field(default=None, min_length=1, max_length=80)
+    external_ref: str | None = Field(default=None, max_length=512)
+    secret_payload: dict[str, object] | None = None
+
+    @model_validator(mode="after")
+    def validate_rotation_source(self) -> "McpCredentialReferenceRotateRequest":
+        has_external_ref = bool(self.external_ref and self.external_ref.strip())
+        has_secret_payload = self.secret_payload is not None
+        if has_external_ref == has_secret_payload:
+            raise ValueError("Provide exactly one of external_ref or secret_payload")
+        if has_external_ref and not self.provider:
+            raise ValueError("provider is required when rotating to an external reference")
+        return self
 
 
 class McpCredentialReferenceResponse(TimestampedModel):
