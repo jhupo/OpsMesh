@@ -6,6 +6,7 @@ from uuid import UUID
 from backend.app.capabilities.mcp_adapter_payloads import (
     MCP_PYTHON_SDK_PACKAGE,
     MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
+    MCP_STDIO_CONTRACT_VERSION,
     capability_report_from_sdk_output,
     result_from_sdk_output,
     stdio_command,
@@ -128,6 +129,7 @@ class SelfHostedStdioMcpToolAdapter:
             timeout_seconds=timeout_seconds,
         )
         payload: dict[str, object] = {
+            "contract_version": MCP_STDIO_CONTRACT_VERSION,
             "transport": "stdio",
             "sdk": {
                 "package": MCP_PYTHON_SDK_PACKAGE,
@@ -158,7 +160,7 @@ def _sdk_report_is_ready(report: object) -> bool:
     return (
         isinstance(report, dict)
         and report.get("status") == "ready"
-        and report.get("contract_version") == 1
+        and report.get("contract_version") == MCP_STDIO_CONTRACT_VERSION
         and report.get("sdk_package") == MCP_PYTHON_SDK_PACKAGE
         and report.get("stdio_client") == "available"
         and report.get("client_session") == "available"

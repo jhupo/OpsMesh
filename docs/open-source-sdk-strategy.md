@@ -83,9 +83,11 @@ serialized `CallToolResult`; it never starts a user-controlled stdio process.
 
 The Docker entrypoint is `python -m opsmesh_runtime.mcp_stdio_client`. Runtime images that enable
 stdio must include the small `opsmesh-runtime` package and its pinned MCP Python SDK dependency. The
-self-hosted connector receives the same `request` payload and must call the public
-`mcp.client.stdio.stdio_client` and `ClientSession` interfaces directly before posting completion.
-No JSON-RPC framing or transport compatibility layer belongs in the connector or control plane.
+self-hosted `opsmesh-self-hosted-worker` connector receives the same v1 `request` payload and calls
+the public `mcp.client.stdio.stdio_client` and `ClientSession` interfaces directly before posting
+completion. Its local SQLite store and `filelock` single-instance guard own only crash recovery and
+process coordination; no JSON-RPC framing or transport compatibility layer belongs in the
+connector or control plane.
 Prefer Streamable HTTP for new remote servers; retain SSE only for servers that require the upstream
 SSE transport.
 

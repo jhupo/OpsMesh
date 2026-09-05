@@ -54,8 +54,8 @@ The APIs and database model may change before the first stable release. See the
 | Session, configuration, and tool resolution | Implemented, including persistent sessions, authorization snapshots, Agent/team configuration, and contextual tool resolution |
 | Multi-Agent runtime | Implemented with the OpenAI Agents SDK, manager/specialist handoffs, approval waits, durable recovery, and worker restart E2E evidence |
 | Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, and call audit; production remediation remains in progress |
-| MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; runtime image and self-hosted connector delivery are in progress |
-| Run isolation and workspace | Docker and self-hosted control-plane contracts are implemented; a dedicated `opsmesh-runtime` image now provides the isolated MCP SDK helper |
+| MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; the self-hosted connector now provides durable claim, execution, completion, and restart recovery |
+| Run isolation and workspace | Docker and self-hosted control-plane contracts are implemented; a dedicated `opsmesh-runtime` image provides the isolated MCP SDK helper and connector CLI |
 | Knowledge service | Partial: workspace memory, lexical search, and Postgres full-text abstraction exist; source ingestion, citations, vector search, and hybrid ranking are planned |
 | Observability and operations | Partial: structured logs, Prometheus-format metrics, dashboards, alerts, audit, security events, queue/runtime diagnostics, and recovery actions exist; OpenTelemetry and official Prometheus client migration remain |
 | Infrastructure and scaling | Postgres, Redis, storage, VPS/systemd, Docker runtime, and remote validation assets exist; Kubernetes, multi-region, and microVM backends are future work |
@@ -288,6 +288,22 @@ cp .env.example .env
 docker build -f Dockerfile.runtime -t opsmesh-runtime:local .
 docker compose up --build
 ```
+
+Install and run the self-hosted MCP connector after registering a runtime and receiving its runtime
+credential:
+
+```bash
+python -m pip install ./runtime
+export OPSMESH_API_URL=https://opsmesh.example.com/api/v1
+export OPSMESH_RUNTIME_CREDENTIAL=ccwc_replace_with_runtime_credential
+opsmesh-self-hosted-worker --state-path ~/.opsmesh/connector-state.sqlite3
+```
+
+The connector executes only the versioned stdio MCP request contract through the official MCP
+Python SDK. It persists claimed work and completed results locally so a restart can resume delivery
+without repeating a recorded tool result. See the
+[self-hosted connector guide](docs/self-hosted-connector.md) for registration, security, recovery,
+and service deployment details.
 
 On PowerShell, use `Copy-Item .env.example .env` instead of `cp`.
 

@@ -13,10 +13,12 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 MCP_SDK_PACKAGE = "mcp"
+MCP_SDK_STDIO_ENTRYPOINT = "mcp.client.stdio.stdio_client"
 RUNTIME_CONTRACT_VERSION = 1
 
 
 async def execute_request(request: dict[str, object]) -> dict[str, object]:
+    validate_request_contract(request)
     server = _mapping(request, "server")
     tool = _mapping(request, "tool")
     server_parameters = StdioServerParameters(
@@ -24,17 +26,41 @@ async def execute_request(request: dict[str, object]) -> dict[str, object]:
         args=_string_list(server, "args"),
     )
     timeout_seconds = _positive_int(tool, "timeout_seconds")
-    async with (
-        stdio_client(server_parameters) as (read_stream, write_stream),
-        ClientSession(read_stream, write_stream) as session,
-    ):
-        await session.initialize()
-        result = await session.call_tool(
-            _string(tool, "name"),
-            arguments=_mapping(tool, "arguments"),
-            read_timeout_seconds=timedelta(seconds=timeout_seconds),
-        )
+    async with asyncio.timeout(timeout_seconds):
+        async with (
+            stdio_client(server_parameters) as (read_stream, write_stream),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            await session.initialize()
+            result = await session.call_tool(
+                _string(tool, "name"),
+                arguments=_mapping(tool, "arguments"),
+                read_timeout_seconds=timedelta(seconds=timeout_seconds),
+            )
     return cast(dict[str, object], result.model_dump(mode="json", by_alias=True, exclude_none=True))
+
+
+def validate_request_contract(request: dict[str, object]) -> None:
+    contract_version = request.get("contract_version")
+    if (
+        not isinstance(contract_version, int)
+        or isinstance(contract_version, bool)
+        or contract_version != RUNTIME_CONTRACT_VERSION
+    ):
+        raise ValueError("unsupported MCP stdio request contract version")
+    client = _mapping(request, "client")
+    if (
+        client.get("package") != MCP_SDK_PACKAGE
+        or client.get("entrypoint") != MCP_SDK_STDIO_ENTRYPOINT
+    ):
+        raise ValueError("unsupported MCP stdio SDK contract")
+    server = _mapping(request, "server")
+    _string(server, "command")
+    _string_list(server, "args")
+    tool = _mapping(request, "tool")
+    _string(tool, "name")
+    _mapping(tool, "arguments")
+    _positive_int(tool, "timeout_seconds")
 
 
 def capability_report() -> dict[str, object]:

@@ -58,6 +58,41 @@ def test_stdio_sdk_client_reports_runtime_capability() -> None:
     assert isinstance(report["sdk_version"], str)
 
 
+def test_stdio_sdk_client_rejects_unknown_contract_version() -> None:
+    request = stdio_sdk_request(
+        command=["mcp-server"],
+        tool_name="echo",
+        arguments={},
+        timeout_seconds=5,
+    )
+    request["contract_version"] = 2
+
+    try:
+        asyncio.run(mcp_stdio_client.execute_request(request))
+    except ValueError as exc:
+        assert "unsupported MCP stdio request contract version" in str(exc)
+    else:
+        raise AssertionError("Expected an unknown request contract version to be rejected")
+
+
+def test_stdio_sdk_client_times_out_during_session_initialization(monkeypatch) -> None:
+    monkeypatch.setattr(mcp_stdio_client, "stdio_client", lambda _: _FakeTransport())
+    monkeypatch.setattr(mcp_stdio_client, "ClientSession", lambda *_: _HangingSession())
+    request = stdio_sdk_request(
+        command=["mcp-server"],
+        tool_name="echo",
+        arguments={},
+        timeout_seconds=1,
+    )
+
+    try:
+        asyncio.run(mcp_stdio_client.execute_request(request))
+    except TimeoutError:
+        pass
+    else:
+        raise AssertionError("Expected MCP session initialization to time out")
+
+
 class _FakeTransport:
     async def __aenter__(self) -> tuple[object, object]:
         return object(), object()
@@ -92,6 +127,11 @@ class _FakeSession:
             "timeout_seconds": read_timeout_seconds.total_seconds(),
         }
         return _FakeResult()
+
+
+class _HangingSession(_FakeSession):
+    async def initialize(self) -> None:
+        await asyncio.sleep(2)
 
 
 class _FakeResult:

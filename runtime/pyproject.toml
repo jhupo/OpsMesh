@@ -4,8 +4,13 @@ version = "0.1.0"
 description = "Isolated runtime helpers for OpsMesh agent workloads."
 requires-python = ">=3.11"
 dependencies = [
+    "filelock>=3.20.0,<4.0.0",
+    "httpx>=0.28.0,<1.0.0",
     "mcp==1.27.1",
 ]
+
+[project.scripts]
+opsmesh-self-hosted-worker = "opsmesh_runtime.connector_cli:main"
 
 [build-system]
 requires = ["setuptools>=69.0"]

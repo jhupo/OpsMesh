@@ -289,6 +289,15 @@ reimplement MCP framing or JSON-RPC parsing. The runtime image or connector must
 MCP Python SDK and return a serialized SDK `CallToolResult`; the API and worker hosts never execute
 user-controlled stdio processes.
 
+The self-hosted connector uses the control-plane-issued runtime credential to heartbeat, poll,
+claim, and complete workspace-scoped MCP jobs. A local SQLite recovery store records the claimed
+request, the execution phase, and the serialized result before completion is posted. On restart,
+recorded results are posted again through the idempotent completion endpoint. If the connector was
+terminated while the MCP tool was executing, the job fails as interrupted instead of automatically
+repeating a possibly side-effecting action. The control plane returns a worker's existing claimed
+job before offering new work, closing the crash window between the claim response and local state
+persistence.
+
 ## Tool Catalog
 
 The product should expose a catalog of tool groups rather than raw low-level tool names.

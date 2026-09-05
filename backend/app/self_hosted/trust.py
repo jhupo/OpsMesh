@@ -6,6 +6,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.capabilities.mcp_adapter_payloads import (
+    MCP_PYTHON_SDK_PACKAGE,
+    MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
+    MCP_STDIO_CONTRACT_VERSION,
+)
 from backend.app.core.config import Settings
 from backend.app.core.typing import string_list
 from backend.app.runtimes.models import WorkspaceRuntime
@@ -109,9 +114,11 @@ class SelfHostedTrustService:
                     "max_artifact_bytes",
                 ],
                 "mcp_stdio": {
+                    "contract_version": MCP_STDIO_CONTRACT_VERSION,
                     "transport": "stdio",
-                    "sdk_package": "mcp",
-                    "sdk_entrypoint": "mcp.client.stdio.stdio_client",
+                    "sdk_package": MCP_PYTHON_SDK_PACKAGE,
+                    "sdk_version": "1.27.1",
+                    "sdk_entrypoint": MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
                     "request_field": "request",
                 },
             },

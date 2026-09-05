@@ -339,6 +339,7 @@ def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> N
         "opsmesh_runtime.mcp_stdio_client",
     ]
     payload = json.loads(command[3])
+    assert payload["contract_version"] == 1
     assert payload["client"] == {
         "package": "mcp",
         "entrypoint": "mcp.client.stdio.stdio_client",

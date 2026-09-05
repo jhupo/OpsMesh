@@ -110,6 +110,19 @@ class SelfHostedDispatchService:
 
     def poll_mcp_job(self, auth: AuthenticatedWorker) -> SelfHostedMcpJob | None:
         self._eligibility.require_accepting_jobs(auth)
+        claimed_job = self._session.scalar(
+            select(SelfHostedMcpJob)
+            .where(
+                SelfHostedMcpJob.workspace_id == auth.worker.workspace_id,
+                SelfHostedMcpJob.workspace_runtime_id == auth.runtime.id,
+                SelfHostedMcpJob.worker_id == auth.worker.id,
+                SelfHostedMcpJob.status == "claimed",
+            )
+            .order_by(SelfHostedMcpJob.claimed_at.asc())
+            .limit(1)
+        )
+        if claimed_job is not None:
+            return claimed_job
         if not self._capacity.allows_mcp_job(auth):
             return None
         jobs = self._session.scalars(

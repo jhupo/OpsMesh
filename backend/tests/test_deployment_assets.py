@@ -32,6 +32,8 @@ def test_runtime_dockerfile_installs_only_isolated_runtime_package() -> None:
     assert "WORKDIR /workspace" in dockerfile
     assert "backend/app" not in dockerfile
     assert '"mcp==1.27.1"' in runtime_project
+    assert '"filelock>=3.20.0,<4.0.0"' in runtime_project
+    assert 'opsmesh-self-hosted-worker = "opsmesh_runtime.connector_cli:main"' in runtime_project
 
 
 def test_compose_declares_api_worker_and_dependencies() -> None:

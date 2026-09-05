@@ -44,6 +44,38 @@ SDK, not the API application or database clients. It runs as `opsmesh-runtime`, 
 as its working directory, and reports SDK readiness before a stdio server is launched. Keep
 `OPSMESH_RUNTIME_ALLOWED_IMAGES` restricted to reviewed runtime image tags or immutable digests.
 
+## Self-Hosted MCP Connector
+
+Create an enrollment token as a workspace owner, register the machine through
+`POST /api/v1/self-hosted/register`, and retain the returned runtime credential in the machine's
+secret manager. Install the connector from the runtime package:
+
+```bash
+python -m pip install ./runtime
+```
+
+Run the connector with the API prefix and credential in environment variables. The credential is
+intentionally not accepted as a command-line argument because process arguments are commonly
+visible to other local users:
+
+```bash
+export OPSMESH_API_URL=https://opsmesh.example.com/api/v1
+export OPSMESH_RUNTIME_CREDENTIAL=ccwc_replace_with_runtime_credential
+opsmesh-self-hosted-worker --state-path /var/lib/opsmesh-connector/state.sqlite3
+```
+
+Use `--once` for a health or packaging smoke. `--check` validates the installed MCP SDK without
+requiring credentials. Remote API URLs must use HTTPS; plaintext HTTP is accepted only for loopback
+development. Run exactly one connector process per state file. A `filelock` guard enforces that
+rule, while SQLite stores claimed requests, execution phase, and result-ready completion payloads.
+
+Configure the connector as a service with its credential supplied by the host secret manager and a
+private, persistent state directory. A restart reposts a recorded result without rerunning the MCP
+tool. Execution interrupted before a result was durably recorded is completed as a sanitized
+failure because automatically repeating a side-effecting tool would be unsafe. An empty heartbeat
+capability object preserves the capabilities established at registration; pass
+`--capabilities-file` only when supplying the complete replacement capability object.
+
 ## VPS Layout
 
 Provision a VPS with Python 3.11+, `uv`, Postgres, Redis, Docker, and systemd. Keep release assets under `/opt/opsmesh`:

@@ -7,6 +7,7 @@ from backend.app.capabilities.mcp_execution_types import McpExecutionError
 
 MCP_PYTHON_SDK_PACKAGE = "mcp"
 MCP_PYTHON_SDK_STDIO_ENTRYPOINT = "mcp.client.stdio.stdio_client"
+MCP_STDIO_CONTRACT_VERSION = 1
 
 
 def string_setting(payload: dict[str, object], key: str) -> str | None:
@@ -48,6 +49,7 @@ def stdio_sdk_request(
             code="mcp_stdio_command_missing",
         )
     return {
+        "contract_version": MCP_STDIO_CONTRACT_VERSION,
         "client": {
             "package": MCP_PYTHON_SDK_PACKAGE,
             "entrypoint": MCP_PYTHON_SDK_STDIO_ENTRYPOINT,

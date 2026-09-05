@@ -832,10 +832,24 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
     assert result.status == "waiting_self_hosted"
     assert result.output is not None
     assert result.output["mcp_job_id"] == str(job.id)
-    assert job.request_payload["command"] == ["mcp-image"]
-    assert job.request_payload["jsonrpc"]["params"] == {
-        "name": "generate_image",
-        "arguments": {"prompt": "mountain"},
+    assert job.request_payload["contract_version"] == 1
+    assert job.request_payload["transport"] == "stdio"
+    assert job.request_payload["sdk"] == {
+        "package": "mcp",
+        "entrypoint": "mcp.client.stdio.stdio_client",
+    }
+    assert job.request_payload["request"] == {
+        "contract_version": 1,
+        "client": {
+            "package": "mcp",
+            "entrypoint": "mcp.client.stdio.stdio_client",
+        },
+        "server": {"command": "mcp-image", "args": []},
+        "tool": {
+            "name": "generate_image",
+            "arguments": {"prompt": "mountain"},
+            "timeout_seconds": 30,
+        },
     }
 
 
@@ -878,11 +892,22 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
     session.add_all([allow, run])
     session.commit()
     docker = RecordingDockerClient(
-        RuntimeCommandResult(
-            exit_code=0,
-            stdout='{"jsonrpc":"2.0","id":"1","result":{"asset_id":"img_123"}}',
-            stderr="",
-        )
+        [
+            RuntimeCommandResult(
+                exit_code=0,
+                stdout=(
+                    '{"status":"ready","contract_version":1,"sdk_package":"mcp",'
+                    '"sdk_version":"1.27.1","stdio_client":"available",'
+                    '"client_session":"available"}'
+                ),
+                stderr="",
+            ),
+            RuntimeCommandResult(
+                exit_code=0,
+                stdout='{"structuredContent":{"asset_id":"img_123"}}',
+                stderr="",
+            ),
+        ]
     )
 
     result = BackendToolExecutor.for_mcp_adapter(
@@ -902,11 +927,17 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
 
     assert result.status == "completed"
     assert result.output == {"asset_id": "img_123"}
-    assert docker.exec_calls[0]["container_id"] == "container-123"
-    assert docker.exec_calls[0]["timeout_seconds"] == 11
-    command = docker.exec_calls[0]["command"]
-    assert command[:2] == ["mcp-image", "--stdio"]
-    assert '"generate_image"' in command[2]
+    assert docker.exec_calls[0]["command"] == [
+        "python",
+        "-m",
+        "opsmesh_runtime.mcp_stdio_client",
+        "--check",
+    ]
+    assert docker.exec_calls[1]["container_id"] == "container-123"
+    assert docker.exec_calls[1]["timeout_seconds"] == 11
+    command = docker.exec_calls[1]["command"]
+    assert command[:3] == ["python", "-m", "opsmesh_runtime.mcp_stdio_client"]
+    assert '"generate_image"' in command[3]
 
 
 def test_waiting_runtime_status_transition_is_allowed() -> None:
@@ -930,8 +961,8 @@ class StaticMcpAdapter:
 
 
 class RecordingDockerClient:
-    def __init__(self, command_result: RuntimeCommandResult) -> None:
-        self._command_result = command_result
+    def __init__(self, command_results: list[RuntimeCommandResult]) -> None:
+        self._command_results = command_results
         self.exec_calls: list[dict[str, object]] = []
 
     def create_container(self, request: object) -> str:
@@ -962,7 +993,7 @@ class RecordingDockerClient:
                 "timeout_seconds": timeout_seconds,
             }
         )
-        return self._command_result
+        return self._command_results.pop(0)
 
 
 def _session() -> Session:

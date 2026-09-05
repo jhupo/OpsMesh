@@ -1024,7 +1024,7 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
         f"/api/v1/self-hosted/mcp-jobs/{queued_job.id}/claim",
         headers=_runtime_headers(credential),
     )
-    capacity_blocked = client.get(
+    recoverable_claim = client.get(
         "/api/v1/self-hosted/mcp-jobs/next",
         headers=_runtime_headers(credential),
     )
@@ -1045,8 +1045,8 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
     assert next_job.json()["id"] == str(queued_job.id)
     assert claim.status_code == 200
     assert claim.json()["status"] == "claimed"
-    assert capacity_blocked.status_code == 200
-    assert capacity_blocked.json() is None
+    assert recoverable_claim.status_code == 200
+    assert recoverable_claim.json()["id"] == str(queued_job.id)
     assert completed.status_code == 200
     assert completed.json()["status"] == "completed"
     assert incompatible_claim.status_code == 409
