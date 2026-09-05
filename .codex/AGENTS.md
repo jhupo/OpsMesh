@@ -151,6 +151,18 @@ Agents SDK and OpsMesh control plane.
 7. Run targeted checks for the affected modules. Expand checks only when the change crosses a
    documented boundary or has a concrete integration risk.
 8. Update README or architecture documents when behavior, boundaries, setup, or roadmap changes.
+9. After completing a functional point, return to the active roadmap and select the highest-priority
+   remaining product goal. Prefer moving to a different major subsystem once the current subsystem's
+   stated acceptance criteria are met; do not create an open-ended sequence of local refinements.
+10. Continue work in the same subsystem only for a concrete security or reliability defect, failed
+    acceptance criterion, release blocker, or dependency that blocks the next roadmap goal. Record
+    that reason in the task table or relevant design document instead of treating optional polish as
+    the default next phase.
+
+Roadmap breadth is evaluated across completed functional points, not within a single change. Keep
+each implementation and commit coherent, then deliberately advance the broader control plane,
+capability plane, runtime, operations, and data-lifecycle goals rather than repeatedly optimizing
+one feature area.
 
 ## Validation
 
