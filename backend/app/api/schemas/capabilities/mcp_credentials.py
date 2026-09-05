@@ -37,6 +37,8 @@ class McpCredentialReferenceRotateRequest(BaseModel):
             raise ValueError("Provide exactly one of external_ref or secret_payload")
         if has_external_ref and not self.provider:
             raise ValueError("provider is required when rotating to an external reference")
+        if has_external_ref and self.provider == "hosted":
+            raise ValueError("provider hosted requires secret_payload")
         return self
 
 
