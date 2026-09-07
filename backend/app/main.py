@@ -54,13 +54,13 @@ def create_app_with_dependencies(
     app.state.settings = app_settings
     app.state.redis_client = redis_client
     app.dependency_overrides[get_settings] = lambda: app.state.settings
-    app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(RequestContextMiddleware, settings=app_settings)
     app.add_middleware(
         RateLimitMiddleware,
         settings=app_settings,
         limiter=rate_limiter,
     )
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestContextMiddleware, settings=app_settings)
     if app_settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,

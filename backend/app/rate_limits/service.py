@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class RateLimitDecision:
     allowed: bool
+    backend_available: bool
     limit: int
     remaining: int
     reset_epoch_seconds: int
@@ -50,6 +51,7 @@ class RedisFixedWindowRateLimiter:
             logger.warning("Rate limiter failed open", exc_info=True)
             return RateLimitDecision(
                 allowed=True,
+                backend_available=False,
                 limit=limit,
                 remaining=limit,
                 reset_epoch_seconds=reset,
@@ -58,6 +60,7 @@ class RedisFixedWindowRateLimiter:
         remaining = max(limit - count, 0)
         return RateLimitDecision(
             allowed=count <= limit,
+            backend_available=True,
             limit=limit,
             remaining=remaining,
             reset_epoch_seconds=reset,

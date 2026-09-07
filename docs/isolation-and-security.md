@@ -54,6 +54,12 @@ Changing a password immediately revokes every active user token. Platform admini
 disable, and reactivate users through the separately authenticated admin API; disabling a user also
 revokes every active token, and reactivation never restores revoked credentials.
 
+The API gateway applies separate rate-limit buckets to authentication, platform administration,
+and normal API traffic. Authentication and platform-admin routes fail closed when Redis cannot
+make a rate-limit decision; ordinary API traffic may remain available during that dependency
+failure. Forwarded client IP headers are ignored unless `OPSMESH_TRUSTED_PROXY_HOPS` explicitly
+matches the deployment proxy chain. Production configuration requires gateway rate limiting.
+
 ## Required Authorization Rule
 
 Application code must never authorize access by resource ID alone.

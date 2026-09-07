@@ -6,13 +6,15 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
+from backend.app.core.client_ip import resolve_client_ip
 from backend.app.security.models import SecurityEvent
 from backend.app.security.redaction import redact_sensitive_payload
 
 
 class SecurityAuditService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, trusted_proxy_hops: int | None = None) -> None:
         self._session = session
+        self._trusted_proxy_hops = trusted_proxy_hops
 
     def record_request_event(
         self,
@@ -32,7 +34,10 @@ class SecurityAuditService:
             action=action,
             outcome=outcome,
             severity=severity,
-            source_ip=self._source_ip(request),
+            source_ip=resolve_client_ip(
+                request,
+                trusted_proxy_hops=self._resolve_trusted_proxy_hops(request),
+            ),
             user_agent=request.headers.get("user-agent"),
             request_id=getattr(request.state, "request_id", None),
             path=request.url.path,
@@ -44,11 +49,10 @@ class SecurityAuditService:
         self._session.add(event)
         return event
 
-    @staticmethod
-    def _source_ip(request: Request) -> str | None:
-        forwarded_for = request.headers.get("x-forwarded-for")
-        if forwarded_for:
-            return forwarded_for.split(",", maxsplit=1)[0].strip()
-        if request.client is None:
-            return None
-        return request.client.host
+    def _resolve_trusted_proxy_hops(self, request: Request) -> int:
+        if self._trusted_proxy_hops is not None:
+            return self._trusted_proxy_hops
+        app = request.scope.get("app")
+        settings = getattr(getattr(app, "state", None), "settings", None)
+        value = getattr(settings, "trusted_proxy_hops", 0)
+        return value if isinstance(value, int) and value >= 0 else 0

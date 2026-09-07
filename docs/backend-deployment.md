@@ -358,6 +358,9 @@ API rate limiting is disabled by default for local development. Enable it in sha
 OPSMESH_API_RATE_LIMIT_ENABLED=true
 OPSMESH_API_RATE_LIMIT_REQUESTS=600
 OPSMESH_API_RATE_LIMIT_WINDOW_SECONDS=60
+OPSMESH_AUTH_RATE_LIMIT_REQUESTS=20
+OPSMESH_ADMIN_RATE_LIMIT_REQUESTS=120
+OPSMESH_TRUSTED_PROXY_HOPS=1
 ```
 
 Rate limits use Redis fixed windows and fail open if Redis is temporarily unavailable, so cache instability does not take down the API.

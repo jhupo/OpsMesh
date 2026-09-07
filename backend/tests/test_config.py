@@ -39,6 +39,9 @@ def test_settings_defaults_are_local_development_friendly() -> None:
     assert settings.external_call_max_attempts == 2
     assert settings.external_call_circuit_failure_threshold == 5
     assert settings.external_call_circuit_reset_seconds == 60
+    assert settings.auth_rate_limit_requests == 20
+    assert settings.admin_rate_limit_requests == 120
+    assert settings.trusted_proxy_hops == 0
     assert settings.secret_vault_providers == {}
     assert settings.release_dir is None
     assert settings.release_update_enabled is False
@@ -96,10 +99,16 @@ def test_production_requires_real_token_and_disabled_docs() -> None:
             platform_admin_token="admin-secret",
             token_hash_pepper="pepper",
             enable_api_docs=False,
+            api_rate_limit_enabled=True,
         )
 
     settings = _production_settings()
     assert settings.environment == "production"
+
+
+def test_production_requires_api_rate_limiting() -> None:
+    with pytest.raises(ValueError, match="OPSMESH_API_RATE_LIMIT_ENABLED"):
+        _production_settings(api_rate_limit_enabled=False)
 
 
 def test_internal_api_token_supports_rotation_list() -> None:
@@ -384,6 +393,7 @@ def _production_settings(**overrides: object) -> Settings:
         "readiness_worker_check_enabled": True,
         "token_hash_pepper": "pepper",
         "enable_api_docs": False,
+        "api_rate_limit_enabled": True,
         "credential_encryption_secret": "credential-secret",
         "database_url": "postgresql+psycopg://app:strong@db.example.com:5432/app",
         "redis_url": "redis://redis.example.com:6379/0",

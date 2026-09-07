@@ -1,16 +1,19 @@
 import logging
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from hashlib import sha256
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.status import HTTP_429_TOO_MANY_REQUESTS
+from starlette.status import HTTP_429_TOO_MANY_REQUESTS, HTTP_503_SERVICE_UNAVAILABLE
 from starlette.types import ASGIApp
 
 from backend.app.api.errors import error_response
+from backend.app.core.client_ip import resolve_client_ip
 from backend.app.core.config import Settings
 from backend.app.core.metrics import record_http_request
 from backend.app.core.request_context import request_id_var
@@ -31,6 +34,7 @@ from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
 logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
 
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -38,6 +42,13 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "X-Permitted-Cross-Domain-Policies": "none",
 }
+
+
+@dataclass(frozen=True)
+class GatewayRateLimitPolicy:
+    name: str
+    limit: int
+    fail_closed: bool
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -55,7 +66,12 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        request_id = request.headers.get(REQUEST_ID_HEADER) or uuid.uuid4().hex
+        supplied_request_id = request.headers.get(REQUEST_ID_HEADER, "")
+        request_id = (
+            supplied_request_id
+            if REQUEST_ID_PATTERN.fullmatch(supplied_request_id)
+            else uuid.uuid4().hex
+        )
         request_id_token = request_id_var.set(request_id)
         trace_context = None
         if self._settings.tracing_enabled:
@@ -135,12 +151,36 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not self._settings.api_rate_limit_enabled:
             return await call_next(request)
 
+        policy = self._policy(request.url.path)
         decision = self._limiter.check(
-            identifier=self._identifier(request),
-            limit=self._settings.api_rate_limit_requests,
+            identifier=self._identifier(request, policy),
+            limit=policy.limit,
             window_seconds=self._settings.api_rate_limit_window_seconds,
         )
-        if not decision.allowed:
+        if not decision.backend_available and policy.fail_closed:
+            logger.error(
+                "Rate limiter unavailable for protected gateway route",
+                extra={
+                    "rate_limit_policy": policy.name,
+                    "http_path": request.url.path,
+                    "request_id": getattr(request.state, "request_id", None),
+                },
+            )
+            response: Response = error_response(
+                status_code=HTTP_503_SERVICE_UNAVAILABLE,
+                code="rate_limit_unavailable",
+                message="Authentication gateway is temporarily unavailable",
+                request_id=getattr(request.state, "request_id", None),
+            )
+        elif not decision.allowed:
+            logger.warning(
+                "API gateway rate limit exceeded",
+                extra={
+                    "rate_limit_policy": policy.name,
+                    "http_path": request.url.path,
+                    "request_id": getattr(request.state, "request_id", None),
+                },
+            )
             response: Response = error_response(
                 status_code=HTTP_429_TOO_MANY_REQUESTS,
                 code="rate_limited",
@@ -153,22 +193,49 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         response.headers["X-RateLimit-Limit"] = str(decision.limit)
         response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
         response.headers["X-RateLimit-Reset"] = str(decision.reset_epoch_seconds)
+        if response.status_code == HTTP_429_TOO_MANY_REQUESTS:
+            response.headers["Retry-After"] = str(
+                max(decision.reset_epoch_seconds - int(time.time()), 1)
+            )
         return response
 
-    @staticmethod
-    def _identifier(request: Request) -> str:
+    def _policy(self, path: str) -> GatewayRateLimitPolicy:
+        prefix = self._settings.api_prefix.rstrip("/")
+        if path in {
+            f"{prefix}/auth/login",
+            f"{prefix}/auth/register",
+            f"{prefix}/workspaces/invites/accept",
+        }:
+            return GatewayRateLimitPolicy(
+                name="authentication",
+                limit=self._settings.auth_rate_limit_requests,
+                fail_closed=True,
+            )
+        if path == f"{prefix}/admin" or path.startswith(f"{prefix}/admin/"):
+            return GatewayRateLimitPolicy(
+                name="platform_admin",
+                limit=self._settings.admin_rate_limit_requests,
+                fail_closed=True,
+            )
+        return GatewayRateLimitPolicy(
+            name="api",
+            limit=self._settings.api_rate_limit_requests,
+            fail_closed=False,
+        )
+
+    def _identifier(self, request: Request, policy: GatewayRateLimitPolicy) -> str:
         authorization = request.headers.get("authorization", "")
         user_id = request.headers.get("x-user-id")
-        forwarded_for = request.headers.get("x-forwarded-for")
-        client_host = forwarded_for.split(",", maxsplit=1)[0].strip() if forwarded_for else None
-        if client_host is None and request.client is not None:
-            client_host = request.client.host
+        client_host = resolve_client_ip(
+            request,
+            trusted_proxy_hops=self._settings.trusted_proxy_hops,
+        )
         material = "|".join(
             [
+                policy.name,
                 authorization,
                 user_id or "",
                 client_host or "unknown",
-                request.url.path,
             ]
         )
         return sha256(material.encode("utf-8")).hexdigest()

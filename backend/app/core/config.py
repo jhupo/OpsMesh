@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     api_rate_limit_enabled: bool = Field(default=False)
     api_rate_limit_requests: int = Field(default=600, ge=1)
     api_rate_limit_window_seconds: int = Field(default=60, ge=1)
+    auth_rate_limit_requests: int = Field(default=20, ge=1)
+    admin_rate_limit_requests: int = Field(default=120, ge=1)
+    trusted_proxy_hops: int = Field(default=0, ge=0, le=10)
     credential_encryption_secret: str = Field(default="change-me-credential-encryption-secret")
     credential_encryption_key_id: str = Field(default="local")
     credential_encryption_previous_secrets: dict[str, str] = Field(default_factory=dict)
@@ -152,6 +155,8 @@ class Settings(BaseSettings):
                 raise ValueError("OPSMESH_TOKEN_HASH_PEPPER must be set in production")
             if self.enable_api_docs:
                 raise ValueError("OPSMESH_ENABLE_API_DOCS must be false in production")
+            if not self.api_rate_limit_enabled:
+                raise ValueError("OPSMESH_API_RATE_LIMIT_ENABLED must be true in production")
             if self.credential_encryption_secret == "change-me-credential-encryption-secret":
                 raise ValueError(
                     "OPSMESH_CREDENTIAL_ENCRYPTION_SECRET must be set in production"
@@ -229,6 +234,11 @@ class Settings(BaseSettings):
             ),
             "external_call_circuit_reset_seconds": self.external_call_circuit_reset_seconds,
             "api_rate_limit_enabled": self.api_rate_limit_enabled,
+            "api_rate_limit_requests": self.api_rate_limit_requests,
+            "api_rate_limit_window_seconds": self.api_rate_limit_window_seconds,
+            "auth_rate_limit_requests": self.auth_rate_limit_requests,
+            "admin_rate_limit_requests": self.admin_rate_limit_requests,
+            "trusted_proxy_hops": self.trusted_proxy_hops,
             "audit_event_retention_days": self.audit_event_retention_days,
             "audit_event_worm_enabled": self.audit_event_worm_enabled,
             "audit_integrity_check_interval_seconds": (
