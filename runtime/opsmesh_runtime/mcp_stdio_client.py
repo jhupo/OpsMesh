@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
 from datetime import timedelta
 from importlib.metadata import version
@@ -15,6 +16,9 @@ from mcp.client.stdio import stdio_client
 MCP_SDK_PACKAGE = "mcp"
 MCP_SDK_STDIO_ENTRYPOINT = "mcp.client.stdio.stdio_client"
 RUNTIME_CONTRACT_VERSION = 1
+_ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_MAX_ENVIRONMENT_VARIABLES = 128
+_MAX_ENVIRONMENT_BYTES = 65_536
 
 
 async def execute_request(request: dict[str, object]) -> dict[str, object]:
@@ -24,6 +28,7 @@ async def execute_request(request: dict[str, object]) -> dict[str, object]:
     server_parameters = StdioServerParameters(
         command=_string(server, "command"),
         args=_string_list(server, "args"),
+        env=_optional_string_mapping(server, "env"),
     )
     timeout_seconds = _positive_int(tool, "timeout_seconds")
     async with asyncio.timeout(timeout_seconds):
@@ -57,6 +62,7 @@ def validate_request_contract(request: dict[str, object]) -> None:
     server = _mapping(request, "server")
     _string(server, "command")
     _string_list(server, "args")
+    _optional_string_mapping(server, "env")
     tool = _mapping(request, "tool")
     _string(tool, "name")
     _mapping(tool, "arguments")
@@ -79,11 +85,13 @@ def main(argv: list[str] | None = None) -> int:
     if arguments == ["--check"]:
         print(json.dumps(capability_report(), ensure_ascii=False, separators=(",", ":")))
         return 0
-    if len(arguments) != 1:
-        print("MCP stdio SDK client requires one JSON request argument", file=sys.stderr)
+    if arguments == ["--request-stdin"]:
+        raw_request = sys.stdin.read()
+    else:
+        print("MCP stdio SDK client requires --request-stdin", file=sys.stderr)
         return 2
     try:
-        request = json.loads(arguments[0])
+        request = json.loads(raw_request)
         if not isinstance(request, dict):
             raise ValueError("request must be an object")
         result = asyncio.run(execute_request(request))
@@ -112,6 +120,29 @@ def _string_list(payload: dict[str, object], key: str) -> list[str]:
     value = payload.get(key)
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         raise ValueError(f"request field {key!r} must be a string list")
+    return value
+
+
+def _optional_string_mapping(
+    payload: dict[str, object],
+    key: str,
+) -> dict[str, str] | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict) or any(
+        not isinstance(item_key, str) or not isinstance(item_value, str)
+        for item_key, item_value in value.items()
+    ):
+        raise ValueError(f"request field {key!r} must be a string mapping")
+    if any(not _ENVIRONMENT_NAME.fullmatch(item_key) for item_key in value):
+        raise ValueError(f"request field {key!r} contains an invalid environment name")
+    encoded_bytes = sum(
+        len(item_key.encode("utf-8")) + len(item_value.encode("utf-8"))
+        for item_key, item_value in value.items()
+    )
+    if len(value) > _MAX_ENVIRONMENT_VARIABLES or encoded_bytes > _MAX_ENVIRONMENT_BYTES:
+        raise ValueError(f"request field {key!r} exceeds environment limits")
     return value
 
 

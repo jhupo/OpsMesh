@@ -237,11 +237,13 @@ class RuntimeManager:
         workspace_id: UUID,
         runtime: WorkspaceRuntime,
         command: list[str],
+        stdin_data: str | None = None,
     ) -> RuntimeCommand:
         return self._commands.execute_command(
             workspace_id=workspace_id,
             runtime=runtime,
             command=command,
+            stdin_data=stdin_data,
         )
 
     def execute_existing_command(
@@ -251,10 +253,12 @@ class RuntimeManager:
         runtime: WorkspaceRuntime,
         record: RuntimeCommand,
         command: list[str],
+        stdin_data: str | None = None,
     ) -> RuntimeCommand:
         return self._commands.execute_existing_command(
             workspace_id=workspace_id,
             runtime=runtime,
             record=record,
             command=command,
+            stdin_data=stdin_data,
         )

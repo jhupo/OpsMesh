@@ -4,10 +4,11 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+from opentelemetry.trace import SpanKind
 from redis import Redis
 from redis.exceptions import ResponseError
 
-from backend.app.core.trace_context import current_trace_context
+from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.redis.locks import redis_lock
 from backend.app.workers.jobs import JobPayload
@@ -36,8 +37,22 @@ class RedisQueue(
 
     def enqueue(self, job: JobPayload, *, force: bool = False) -> bool:
         current_trace = current_trace_context()
-        if self.tracing_enabled and job.trace_context() is None and current_trace is not None:
-            job = job.with_trace_context(current_trace.child())
+        if self.tracing_enabled:
+            with telemetry_span(
+                "opsmesh.queue.enqueue",
+                parent=current_trace,
+                kind=SpanKind.PRODUCER,
+                attributes={
+                    "messaging.destination.name": self.queue_name,
+                    "messaging.operation.name": "send",
+                    "messaging.system": "redis",
+                    "opsmesh.job.type": job.job_type.value,
+                },
+            ) as enqueue_trace:
+                return self._enqueue(job.with_trace_context(enqueue_trace), force=force)
+        return self._enqueue(job, force=force)
+
+    def _enqueue(self, job: JobPayload, *, force: bool) -> bool:
         idempotency_key = self.keys.idempotency_key(str(job.workspace_id), job.idempotency_key)
         payload = self._serialize(job)
         queue_key = self.keys.queue(self.queue_name)

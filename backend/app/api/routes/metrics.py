@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from prometheus_client import CONTENT_TYPE_LATEST
 from redis.exceptions import RedisError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -26,10 +27,15 @@ async def metrics(
             session,
             redis,
             RedisKeyBuilder(settings.redis_key_prefix),
-        ).prometheus_gauges(settings.worker_queue_name)
+        ).prometheus_gauges(
+            settings.worker_queue_name,
+            audit_integrity_stale_after_seconds=(
+                settings.audit_integrity_stale_after_seconds
+            ),
+        )
     except (OSError, RedisError, SQLAlchemyError, TimeoutError):
         gauges = []
     return PlainTextResponse(
         metrics_registry.render_prometheus(gauges=gauges),
-        media_type="text/plain; version=0.0.4; charset=utf-8",
+        media_type=CONTENT_TYPE_LATEST,
     )

@@ -42,22 +42,26 @@ def stdio_sdk_request(
     tool_name: str,
     arguments: dict[str, object],
     timeout_seconds: int,
+    environment: dict[str, str] | None = None,
 ) -> dict[str, object]:
     if not command:
         raise McpExecutionError(
             "Stdio MCP server is missing command",
             code="mcp_stdio_command_missing",
         )
+    server: dict[str, object] = {
+        "command": command[0],
+        "args": command[1:],
+    }
+    if environment:
+        server["env"] = dict(environment)
     return {
         "contract_version": MCP_STDIO_CONTRACT_VERSION,
         "client": {
             "package": MCP_PYTHON_SDK_PACKAGE,
             "entrypoint": MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
         },
-        "server": {
-            "command": command[0],
-            "args": command[1:],
-        },
+        "server": server,
         "tool": {
             "name": tool_name,
             "arguments": arguments,

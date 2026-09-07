@@ -13,6 +13,9 @@ from backend.app.capabilities.mcp_remote_adapters import (
     StreamableHttpMcpToolAdapter,
 )
 from backend.app.capabilities.mcp_stdio_adapters import DockerRuntimeStdioMcpToolAdapter
+from backend.app.capabilities.mcp_stdio_credentials import (
+    self_hosted_stdio_environment_refs,
+)
 from backend.app.capabilities.mcp_unsupported_adapter import UnsupportedMcpToolAdapter
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.db import models as registered_models  # noqa: F401
@@ -338,7 +341,10 @@ def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> N
         "-m",
         "opsmesh_runtime.mcp_stdio_client",
     ]
-    payload = json.loads(command[3])
+    assert command[3] == "--request-stdin"
+    stdin_data = runtime_manager.calls[1]["stdin_data"]
+    assert isinstance(stdin_data, str)
+    payload = json.loads(stdin_data)
     assert payload["contract_version"] == 1
     assert payload["client"] == {
         "package": "mcp",
@@ -407,6 +413,89 @@ def test_docker_runtime_stdio_mcp_adapter_reuses_valid_sdk_capability() -> None:
         "-m",
         "opsmesh_runtime.mcp_stdio_client",
     ]
+
+
+def test_docker_runtime_stdio_mcp_adapter_injects_hosted_credentials_via_stdin() -> None:
+    workspace_id = uuid4()
+    secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
+    encrypted = secret_service.encrypt_payload({"env": {"MCP_API_KEY": "runtime-secret"}})
+    credential = McpCredentialReference(
+        workspace_id=workspace_id,
+        name="stdio-key",
+        provider="hosted",
+        external_ref="",
+        encrypted_secret_payload=encrypted.ciphertext,
+        secret_fingerprint=encrypted.fingerprint,
+        encryption_key_id=encrypted.key_id,
+    )
+    runtime = WorkspaceRuntime(
+        id=uuid4(),
+        workspace_id=workspace_id,
+        name="team-runtime",
+        docker_container_id="container-123",
+        limits={},
+        capabilities={
+            "mcp_stdio_sdk": {
+                "status": "ready",
+                "contract_version": 1,
+                "sdk_package": "mcp",
+                "sdk_version": "1.27.1",
+                "stdio_client": "available",
+                "client_session": "available",
+            }
+        },
+    )
+    runtime_manager = RecordingRuntimeManager(
+        [RuntimeCommandResult(exit_code=0, stdout='{"structuredContent":{"ok":true}}', stderr="")]
+    )
+
+    response = DockerRuntimeStdioMcpToolAdapter(
+        runtime_manager=runtime_manager,
+        runtime=runtime,
+        secret_service=secret_service,
+    ).call(
+        server=McpServer(
+            workspace_id=workspace_id,
+            name="stdio-tools",
+            server_type="stdio",
+            connection={"command": "mcp-server"},
+        ),
+        tool_name="authenticated_tool",
+        arguments={},
+        credential_refs=[credential],
+        timeout_seconds=5,
+    )
+
+    call = runtime_manager.calls[0]
+    assert response == {"ok": True}
+    assert call["command"] == [
+        "python",
+        "-m",
+        "opsmesh_runtime.mcp_stdio_client",
+        "--request-stdin",
+    ]
+    assert "runtime-secret" not in str(call["command"])
+    stdin_data = call["stdin_data"]
+    assert isinstance(stdin_data, str)
+    request = json.loads(stdin_data)
+    assert request["server"]["env"] == {"MCP_API_KEY": "runtime-secret"}
+
+
+def test_self_hosted_stdio_credentials_block_connector_runtime_credential() -> None:
+    credential = McpCredentialReference(
+        workspace_id=uuid4(),
+        name="forbidden",
+        provider="self_hosted_env",
+        external_ref="env:OPSMESH_RUNTIME_CREDENTIAL",
+    )
+
+    try:
+        self_hosted_stdio_environment_refs([credential])
+    except McpExecutionError as exc:
+        assert exc.code == "mcp_self_hosted_credential_forbidden"
+        assert "OPSMESH_RUNTIME_CREDENTIAL" not in str(exc)
+    else:
+        raise AssertionError("Expected the connector credential to remain unavailable to MCP")
 
 
 def test_docker_runtime_stdio_mcp_adapter_rejects_invalid_sdk_report() -> None:
@@ -646,12 +735,14 @@ class RecordingRuntimeManager:
         workspace_id: object,
         runtime: WorkspaceRuntime,
         command: list[str],
+        stdin_data: str | None = None,
     ) -> RuntimeCommand:
         self.calls.append(
             {
                 "workspace_id": workspace_id,
                 "runtime": runtime,
                 "command": command,
+                "stdin_data": stdin_data,
             }
         )
         result = self._results.pop(0)

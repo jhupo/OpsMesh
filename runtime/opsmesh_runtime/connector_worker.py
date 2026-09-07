@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Coroutine
+import os
+from collections.abc import Callable, Coroutine, Mapping
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from .connector_models import (
     ConnectorContractError,
+    ConnectorCredentialError,
     McpJob,
     McpJobCompletion,
     PendingMcpJob,
@@ -39,10 +41,12 @@ class SelfHostedMcpConnector:
         api: McpJobApi,
         state: ConnectorStateStore,
         executor: McpRequestExecutor = execute_request,
+        environment: Mapping[str, str] | None = None,
     ) -> None:
         self._api = api
         self._state = state
         self._executor = executor
+        self._environment = environment if environment is not None else os.environ
 
     def run_once(self) -> LoopOutcome:
         pending = self._state.next_pending()
@@ -73,7 +77,15 @@ class SelfHostedMcpConnector:
 
     def _execute(self, job: McpJob) -> LoopOutcome:
         try:
-            request = request_from_job_payload(job.request_payload)
+            request = request_from_job_payload(
+                job.request_payload,
+                environment=self._environment,
+            )
+        except ConnectorCredentialError:
+            completion = McpJobCompletion.failed(
+                code="self_hosted_mcp_credential_unavailable",
+                message="A required self-hosted MCP credential is unavailable.",
+            )
         except ConnectorContractError:
             completion = McpJobCompletion.failed(
                 code="self_hosted_mcp_contract_invalid",

@@ -73,7 +73,11 @@ class SelfHostedMcpJobService:
     ) -> SelfHostedMcpJob:
         job = self._locked_mcp_job(auth, mcp_job_id)
         if job.status in {"completed", "failed"}:
-            if job.status != data.status:
+            if (
+                job.status != data.status
+                or job.response_payload != data.response_payload
+                or job.error_payload != data.error_payload
+            ):
                 raise ValueError("Self-hosted MCP job was already completed differently")
             return job
         if job.status != "claimed" or job.worker_id != auth.worker.id:

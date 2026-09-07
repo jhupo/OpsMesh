@@ -29,6 +29,7 @@ jobs:
           cp -R deploy/server/monitoring release-bundle/deploy/server/monitoring
           cp scripts/server-update.sh release-bundle/scripts/server-update.sh
           cp scripts/server-smoke-test.sh release-bundle/scripts/server-smoke-test.sh
+          cp scripts/render-alertmanager-config.py release-bundle/scripts/render-alertmanager-config.py
           cat > release-bundle/manifest.json <<EOF
           {
             "schema_version": 1,
@@ -39,8 +40,10 @@ jobs:
             "deployment_mode": "systemd",
             "systemd_units": [
               "deploy/server/systemd/opsmesh-api.service",
-              "deploy/server/systemd/opsmesh-worker.service"
+              "deploy/server/systemd/opsmesh-worker.service",
+              "deploy/server/systemd/opsmesh-observability.service"
             ],
+            "alertmanager_config_renderer": "scripts/render-alertmanager-config.py",
             "update_script": "scripts/server-update.sh",
             "smoke_script": "scripts/server-smoke-test.sh"
           }
@@ -64,8 +67,10 @@ jobs:
             "deployment_mode": "systemd",
             "systemd_units": [
               "deploy/server/systemd/opsmesh-api.service",
-              "deploy/server/systemd/opsmesh-worker.service"
+              "deploy/server/systemd/opsmesh-worker.service",
+              "deploy/server/systemd/opsmesh-observability.service"
             ],
+            "alertmanager_config_renderer": "scripts/render-alertmanager-config.py",
             "update_script": "scripts/server-update.sh",
             "smoke_script": "scripts/server-smoke-test.sh"
           }

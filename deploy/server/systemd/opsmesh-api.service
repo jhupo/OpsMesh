@@ -9,6 +9,7 @@ User=opsmesh-api
 Group=opsmesh
 WorkingDirectory=/opt/opsmesh/current
 EnvironmentFile=/opt/opsmesh/.env
+Environment=OPSMESH_SERVICE_NAME=opsmesh-api
 ExecStart=/bin/sh -c 'exec /opt/opsmesh/current/.venv/bin/uvicorn backend.app.main:create_app --factory --host "${OPSMESH_API_BIND:-127.0.0.1}" --port "${OPSMESH_API_PORT:-8000}"'
 Restart=always
 RestartSec=5

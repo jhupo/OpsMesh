@@ -115,7 +115,10 @@ class FakeDockerClient(DockerRuntimeClient):
         container_id: str,
         command: list[str],
         timeout_seconds: int,
+        *,
+        stdin_data: str | None = None,
     ) -> RuntimeCommandResult:
+        _ = stdin_data
         self.executed.append((container_id, command, timeout_seconds))
         return RuntimeCommandResult(exit_code=0, stdout="ok\n", stderr="")
 

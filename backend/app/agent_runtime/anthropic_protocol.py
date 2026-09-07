@@ -80,21 +80,26 @@ def result_from_response(
     events: list[AgentRuntimeEvent] | None = None,
 ) -> AgentRunResult:
     text = response_text(response)
-    usage = response.get("usage")
     runtime_events = list(events or [])
-    if isinstance(usage, dict):
-        runtime_events.append(
-            AgentRuntimeEvent(
-                event_type="model.usage",
-                message="Model usage recorded.",
-                payload={"usage": usage},
-            )
-        )
+    response_usage_event = usage_event(response)
+    if response_usage_event is not None:
+        runtime_events.append(response_usage_event)
     runtime_events.append(model_request_event(request))
     return AgentRunResult(
         final_output=text,
         raw_output=safe_raw_output(request, response),
         events=tuple(runtime_events),
+    )
+
+
+def usage_event(response: dict[str, object]) -> AgentRuntimeEvent | None:
+    usage = response.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    return AgentRuntimeEvent(
+        event_type="model.usage",
+        message="Model usage recorded.",
+        payload={"usage": usage},
     )
 
 

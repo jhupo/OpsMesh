@@ -17,6 +17,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
 from backend.app.core.config import Settings
 from backend.app.runs.models import AgentRun
+from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType
@@ -39,6 +40,7 @@ from .run_runtime_metadata import RunRuntimeMetadataBuilder
 class RunRequestBuilder:
     session: Session
     settings: Settings | None
+    docker_client: DockerRuntimeClient | None = None
 
     @property
     def authorization(self) -> RunAuthorizationService:
@@ -159,6 +161,9 @@ class RunRequestBuilder:
             tool_executor=BackendToolExecutor.for_mcp_adapter(
                 self.session,
                 McpAdapterResolver(secret_service=self.mcp_secret_service()),
+                settings=self.settings,
+                docker_client=self.docker_client,
+                secret_service=self.mcp_secret_service(),
             )
             if allowed_tools
             else None,

@@ -36,6 +36,7 @@ class RuntimeCommandExecutor:
         workspace_id: UUID,
         runtime: WorkspaceRuntime,
         command: list[str],
+        stdin_data: str | None = None,
     ) -> RuntimeCommand:
         if runtime.workspace_id != workspace_id:
             raise PermissionError("Runtime does not belong to workspace")
@@ -55,6 +56,7 @@ class RuntimeCommandExecutor:
             runtime=runtime,
             record=record,
             command=command,
+            stdin_data=stdin_data,
         )
 
     def execute_existing_command(
@@ -64,6 +66,7 @@ class RuntimeCommandExecutor:
         runtime: WorkspaceRuntime,
         record: RuntimeCommand,
         command: list[str],
+        stdin_data: str | None = None,
     ) -> RuntimeCommand:
         if runtime.workspace_id != workspace_id:
             raise PermissionError("Runtime does not belong to workspace")
@@ -80,6 +83,7 @@ class RuntimeCommandExecutor:
                 runtime.docker_container_id or "",
                 command,
                 timeout_seconds,
+                stdin_data=stdin_data,
             )
         except TimeoutExpired as exc:
             self._fail_command(

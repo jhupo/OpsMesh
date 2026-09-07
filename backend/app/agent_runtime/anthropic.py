@@ -72,7 +72,11 @@ class AnthropicMessagesRunner:
             }
         )
         final_response = await self._create_message(request, messages)
-        events = [
+        events = []
+        first_usage_event = anthropic_protocol.usage_event(first_response)
+        if first_usage_event is not None:
+            events.append(first_usage_event)
+        events.extend(
             AgentRuntimeEvent(
                 event_type="tool.completed",
                 message="Anthropic tool call completed.",
@@ -84,7 +88,7 @@ class AnthropicMessagesRunner:
                 },
             )
             for tool_use, result in tool_results
-        ]
+        )
         result = anthropic_protocol.result_from_response(request, final_response, events=events)
         await self._persist_session_turn(request, user_input, result.final_output)
         return result

@@ -1,0 +1,24 @@
+[Unit]
+Description=OpsMesh Observability Stack
+After=network-online.target docker.service opsmesh-api.service
+Wants=network-online.target docker.service
+ConditionPathExists=/opt/opsmesh/alertmanager.generated.yml
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/opsmesh/current/deploy/server/monitoring
+EnvironmentFile=/opt/opsmesh/.env
+ExecStartPre=/usr/bin/docker compose --env-file /opt/opsmesh/.env -f docker-compose.yml config --quiet
+ExecStart=/usr/bin/docker compose --env-file /opt/opsmesh/.env -f docker-compose.yml up --remove-orphans
+ExecStop=/usr/bin/docker compose --env-file /opt/opsmesh/.env -f docker-compose.yml down
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

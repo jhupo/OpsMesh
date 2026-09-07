@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
@@ -11,6 +11,7 @@ from starlette.requests import Request
 
 from backend.app.api.pagination import PageParams
 from backend.app.api.services.workspace_reads import WorkspaceReadService
+from backend.app.audit.integrity import AuditIntegrityService
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
 from backend.app.core.config import Settings
@@ -199,10 +200,69 @@ def test_audit_events_are_append_only_and_worm_protected() -> None:
     assert session.get(AuditEvent, event.id) is not None
 
 
+def test_integrity_check_persists_tamper_evidence_and_scheduler_skips_fresh_checks() -> None:
+    session = _session()
+    user, first_workspace = _seed_workspace(session)
+    second_workspace = Workspace(
+        owner=user,
+        name="Second",
+        slug=str(uuid4()),
+        settings={},
+    )
+    session.add_all(
+        [
+            second_workspace,
+            WorkspaceMember(workspace=second_workspace, user=user, role="owner"),
+        ]
+    )
+    session.commit()
+    AuditService(session).record_user_action(
+        workspace_id=first_workspace.id,
+        user_id=user.id,
+        action="workspace.created",
+        target_type="workspace",
+        target_id=first_workspace.id,
+    )
+    session.commit()
+    now = datetime.now(UTC)
+    integrity = AuditIntegrityService(session)
+
+    initial = integrity.run_due(interval_seconds=3_600, limit=100, now=now)
+    session.commit()
+    repeated = integrity.run_due(
+        interval_seconds=3_600,
+        limit=100,
+        now=now + timedelta(minutes=30),
+    )
+
+    assert initial.checked_workspaces == 2
+    assert initial.valid_workspaces == 2
+    assert initial.invalid_workspaces == 0
+    assert repeated.checked_workspaces == 0
+    assert repeated.skipped_workspaces == 2
+
+    event_id = session.scalar(
+        select(AuditEvent.id).where(AuditEvent.workspace_id == first_workspace.id)
+    )
+    assert event_id is not None
+    session.execute(update(AuditEvent).where(AuditEvent.id == event_id).values(action="tampered"))
+    session.commit()
+    check = integrity.check_workspace(
+        first_workspace.id,
+        checked_at=now + timedelta(hours=2),
+    )
+    session.commit()
+
+    assert check.valid is False
+    assert check.broken_event_id == event_id
+    assert check.reason == "current_hash_mismatch"
+    assert integrity.latest(first_workspace.id).id == check.id
+
+
 def test_audit_retention_filters_queries_but_worm_cleanup_retains_rows() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    now = datetime(2026, 6, 5, tzinfo=UTC)
+    now = datetime.now(UTC)
     old_event = _audit_event(
         workspace_id=workspace.id,
         user_id=user.id,
@@ -255,6 +315,9 @@ def test_audit_retention_can_delete_expired_rows_when_worm_is_disabled() -> None
         action="workspace.fresh",
         created_at=now - timedelta(days=5),
     )
+    old_event.current_hash = AuditService.calculate_event_hash(old_event)
+    fresh_event.previous_hash = old_event.current_hash
+    fresh_event.current_hash = AuditService.calculate_event_hash(fresh_event)
     session.add_all([old_event, fresh_event])
     session.commit()
 
@@ -269,6 +332,9 @@ def test_audit_retention_can_delete_expired_rows_when_worm_is_disabled() -> None
     assert cleanup.deleted_count == 1
     assert session.get(AuditEvent, old_event.id) is None
     assert session.get(AuditEvent, fresh_event.id) is not None
+    verification = AuditService(session).verify_workspace_hash_chain(workspace.id)
+    assert verification.valid is True
+    assert verification.checked_events == 1
 
 
 def _session() -> Session:
@@ -295,6 +361,7 @@ def _audit_event(
     created_at: datetime,
 ) -> AuditEvent:
     return AuditEvent(
+        id=uuid4(),
         workspace_id=workspace_id,
         actor_type="user",
         actor_id=str(user_id),

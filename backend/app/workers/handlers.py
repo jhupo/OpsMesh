@@ -9,6 +9,7 @@ from backend.app.core.config import Settings
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.workers.job_handlers import (
     AgentRunJobHandler,
+    AuditIntegrityJobHandler,
     McpToolExecutionJobHandler,
     MemoryIndexJobHandler,
     ModelProviderHealthJobHandler,
@@ -58,6 +59,7 @@ def _build_handler_registry(
 ) -> dict[JobType, WorkerJobTypeHandler]:
     return {
         JobType.AGENT_RUN: AgentRunJobHandler(context),
+        JobType.AUDIT_INTEGRITY_CHECK: AuditIntegrityJobHandler(context),
         JobType.MCP_TOOL_EXECUTION: McpToolExecutionJobHandler(context),
         JobType.TASK_PLAN: TaskPlanJobHandler(context),
         JobType.TEAM_EXECUTION_LOOP: TeamExecutionLoopJobHandler(context),

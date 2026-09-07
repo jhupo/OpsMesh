@@ -9,6 +9,7 @@ User=opsmesh-worker
 Group=opsmesh
 WorkingDirectory=/opt/opsmesh/current
 EnvironmentFile=/opt/opsmesh/.env
+Environment=OPSMESH_SERVICE_NAME=opsmesh-worker
 Environment=OPSMESH_RUN_MIGRATIONS=false
 ExecStart=/opt/opsmesh/current/.venv/bin/python -m backend.app.workers.cli
 Restart=always

@@ -18,6 +18,7 @@ from backend.app.orchestration.run_request_builder import RunRequestBuilder
 from backend.app.orchestration.run_runtime_event_messages import RunRuntimeEventMessageMapper
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
+from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
 from backend.app.workers.jobs import JobPayload
@@ -42,6 +43,7 @@ class RunExecutionService:
     queue: RedisQueue | None = None
     agent_runner: AgentRunner | None = None
     settings: Settings | None = None
+    docker_client: DockerRuntimeClient | None = None
 
     def __post_init__(self) -> None:
         self.settings = self.settings or get_settings()
@@ -167,7 +169,7 @@ class RunExecutionService:
         )
 
     def _request_builder(self) -> RunRequestBuilder:
-        return RunRequestBuilder(self.session, self._settings())
+        return RunRequestBuilder(self.session, self._settings(), self.docker_client)
 
     def _events(self) -> RunEventRecorder:
         return RunEventRecorder(self.session)

@@ -7,12 +7,13 @@ from hashlib import sha256
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Select, delete, func, select
+from sqlalchemy import Select, delete, func, select, text
 from sqlalchemy.orm import Session
 
 from backend.app.audit.models import AuditEvent
 from backend.app.core.config import Settings, get_settings
 from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.workspaces.models import Workspace
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class AuditService:
         metadata: dict[str, object] | None = None,
     ) -> AuditEvent:
         created_at = datetime.now(UTC)
+        self._lock_workspace(workspace_id)
         event = AuditEvent(
             id=uuid4(),
             workspace_id=workspace_id,
@@ -124,8 +126,10 @@ class AuditService:
                 reason="worm_retained",
             )
 
+        if self._session.get_bind().dialect.name == "postgresql":
+            self._session.execute(text("SET LOCAL opsmesh.audit_retention_delete = 'on'"))
         result = self._session.execute(delete(AuditEvent).where(*filters))
-        deleted_count = int(result.rowcount or 0)
+        deleted_count = int(getattr(result, "rowcount", 0) or 0)
         self._session.flush()
         return AuditRetentionCleanupResult(
             retention_days=self._settings.audit_event_retention_days,
@@ -140,14 +144,20 @@ class AuditService:
     def verify_workspace_hash_chain(self, workspace_id: UUID) -> AuditHashChainVerification:
         events = self._session.scalars(
             select(AuditEvent)
-            .where(
-                AuditEvent.workspace_id == workspace_id,
-                AuditEvent.current_hash.is_not(None),
-            )
+            .where(AuditEvent.workspace_id == workspace_id)
             .order_by(AuditEvent.created_at.asc(), AuditEvent.id.asc())
         ).all()
-        previous_hash: str | None = None
+        # A retention cleanup may remove a valid prefix. The first retained event still
+        # authenticates its deleted predecessor through its own hashed previous_hash.
+        previous_hash = events[0].previous_hash if events else None
         for index, event in enumerate(events, start=1):
+            if event.current_hash is None:
+                return AuditHashChainVerification(
+                    checked_events=index,
+                    valid=False,
+                    broken_event_id=event.id,
+                    reason="missing_current_hash",
+                )
             if event.previous_hash != previous_hash:
                 return AuditHashChainVerification(
                     checked_events=index,
@@ -164,6 +174,13 @@ class AuditService:
                 )
             previous_hash = event.current_hash
         return AuditHashChainVerification(checked_events=len(events), valid=True)
+
+    def _lock_workspace(self, workspace_id: UUID) -> None:
+        workspace = self._session.scalar(
+            select(Workspace.id).where(Workspace.id == workspace_id).with_for_update()
+        )
+        if workspace is None:
+            raise ValueError("Workspace not found")
 
     def _latest_hash(self, workspace_id: UUID) -> str | None:
         with self._session.no_autoflush:

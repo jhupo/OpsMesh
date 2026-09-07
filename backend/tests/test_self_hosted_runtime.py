@@ -1033,6 +1033,21 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
         headers=_runtime_headers(credential),
         json={"status": "completed", "response_payload": {"ok": True}},
     )
+    duplicate_completed = client.post(
+        f"/api/v1/self-hosted/mcp-jobs/{queued_job.id}/complete",
+        headers=_runtime_headers(credential),
+        json={"status": "completed", "response_payload": {"ok": True}},
+    )
+    conflicting_completed = client.post(
+        f"/api/v1/self-hosted/mcp-jobs/{queued_job.id}/complete",
+        headers=_runtime_headers(credential),
+        json={"status": "completed", "response_payload": {"ok": False}},
+    )
+    invalid_completed = client.post(
+        f"/api/v1/self-hosted/mcp-jobs/{queued_job.id}/complete",
+        headers=_runtime_headers(credential),
+        json={"status": "completed"},
+    )
     incompatible_claim = client.post(
         f"/api/v1/self-hosted/mcp-jobs/{blocked_job.id}/claim",
         headers=_runtime_headers(credential),
@@ -1049,6 +1064,10 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
     assert recoverable_claim.json()["id"] == str(queued_job.id)
     assert completed.status_code == 200
     assert completed.json()["status"] == "completed"
+    assert duplicate_completed.status_code == 200
+    assert conflicting_completed.status_code == 409
+    assert "already completed differently" in conflicting_completed.json()["error"]["message"]
+    assert invalid_completed.status_code == 422
     assert incompatible_claim.status_code == 409
     assert "not compatible" in incompatible_claim.json()["error"]["message"]
     session.refresh(queued_job)

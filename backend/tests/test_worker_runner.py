@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from threading import Event
 from uuid import UUID, uuid4
 
@@ -21,6 +22,7 @@ from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpTool
 from backend.app.core.config import Settings
 from backend.app.core.request_context import current_log_context
 from backend.app.core.trace_context import TraceContext, trace_context
+from backend.app.costs.models import ModelPricingRule, ModelUsageRecord, WorkspaceCostBudget
 from backend.app.db.base import Base
 from backend.app.exports.models import WorkspaceExportJob
 from backend.app.exports.status import WorkspaceExportJobStatus
@@ -106,6 +108,15 @@ class ApprovingTeamAgentRunner:
         return AgentRunResult(final_output=f"completed_by:{request.agent_profile.name}")
 
 
+class MustNotRunAgentRunner:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def run(self, request: AgentRunRequest) -> AgentRunResult:
+        self.calls += 1
+        raise AssertionError("model runner must not be called after budget exhaustion")
+
+
 class FakeDockerClient(DockerRuntimeClient):
     def __init__(self) -> None:
         self.created_requests: list[RuntimeCreateRequest] = []
@@ -132,7 +143,10 @@ class FakeDockerClient(DockerRuntimeClient):
         container_id: str,
         command: list[str],
         timeout_seconds: int,
+        *,
+        stdin_data: str | None = None,
     ) -> RuntimeCommandResult:
+        _ = stdin_data
         return RuntimeCommandResult(exit_code=0, stdout="ok\n", stderr="")
 
 
@@ -180,6 +194,21 @@ def test_worker_runner_run_once_processes_agent_job() -> None:
         assert event is not None
         assert event.event_metadata["trace_id"] == parent_trace.trace_id
         assert event.event_metadata["parent_span_id"] == parent_trace.span_id
+        usage = session.scalar(
+            select(ModelUsageRecord).where(ModelUsageRecord.agent_run_id == run_id)
+        )
+        assert usage is not None
+        assert usage.metering_status == "missing_usage"
+        assert usage.trace_id == parent_trace.trace_id
+        assert (
+            session.scalar(
+                select(RunEvent).where(
+                    RunEvent.agent_run_id == run_id,
+                    RunEvent.event_type == "cost.usage_recorded",
+                )
+            )
+            is not None
+        )
 
 
 def test_worker_runner_loop_records_heartbeat_and_summary() -> None:
@@ -246,6 +275,107 @@ def test_worker_runner_loop_records_heartbeat_and_summary() -> None:
         assert all(isinstance(event.event_metadata["span_id"], str) for event in run_events)
 
 
+def test_worker_blocks_model_call_when_workspace_cost_budget_is_exhausted() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, run_id, user_id = _seed_run(session_factory, slug="budget-block")
+    now = datetime.now(UTC)
+    with session_factory() as session:
+        historical_run = AgentRun(
+            workspace_id=workspace_id,
+            status=RunStatus.COMPLETED.value,
+            input={},
+            completed_at=now,
+        )
+        session.add(historical_run)
+        session.flush()
+        pricing = ModelPricingRule(
+            workspace_id=workspace_id,
+            created_by_user_id=user_id,
+            provider="openai",
+            model="gpt-4.1",
+            version="budget-test-v1",
+            currency="USD",
+            input_rate_per_million=Decimal("0"),
+            output_rate_per_million=Decimal("0"),
+            request_rate=Decimal("0.02"),
+            effective_from=now - timedelta(days=1),
+            source="test",
+        )
+        session.add(pricing)
+        session.flush()
+        session.add_all(
+            [
+                WorkspaceCostBudget(
+                    workspace_id=workspace_id,
+                    currency="USD",
+                    monthly_limit=Decimal("0.01"),
+                    warning_ratio=Decimal("0.8"),
+                    enforcement="block",
+                    enabled=True,
+                ),
+                ModelUsageRecord(
+                    workspace_id=workspace_id,
+                    agent_run_id=historical_run.id,
+                    provider="openai",
+                    model="gpt-4.1",
+                    pricing_rule_id=pricing.id,
+                    pricing_version=pricing.version,
+                    metering_status="priced",
+                    job_attempt=0,
+                    request_count=1,
+                    input_tokens=1,
+                    output_tokens=1,
+                    cached_input_tokens=0,
+                    reasoning_tokens=0,
+                    total_tokens=2,
+                    currency="USD",
+                    input_cost=Decimal("0"),
+                    output_cost=Decimal("0"),
+                    cached_input_cost=Decimal("0"),
+                    request_cost=Decimal("0.02"),
+                    total_cost=Decimal("0.02"),
+                    raw_usage={},
+                    occurred_at=now,
+                ),
+            ]
+        )
+        session.commit()
+    queue.enqueue(
+        JobPayload(
+            workspace_id=workspace_id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run_id,
+            requested_by_user_id=user_id,
+            idempotency_key=f"agent.run:{workspace_id}:{run_id}",
+        )
+    )
+    model_runner = MustNotRunAgentRunner()
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(worker_id="worker-budget", queue_name="agent_runs"),
+        agent_runner=model_runner,
+    )
+
+    assert runner.run_once() is True
+
+    with session_factory() as session:
+        run = session.get(AgentRun, run_id)
+        assert run is not None
+        assert run.status == RunStatus.FAILED.value
+        assert model_runner.calls == 0
+        assert (
+            session.scalar(
+                select(RunEvent).where(
+                    RunEvent.agent_run_id == run_id,
+                    RunEvent.event_type == "cost.budget_blocked",
+                )
+            )
+            is not None
+        )
+
+
 def test_worker_runner_maintenance_reclaims_job_after_crash_before_lease() -> None:
     session_factory = _session_factory()
     queue = _queue(visibility_timeout_seconds=-1)
@@ -283,7 +413,12 @@ def test_worker_runner_maintenance_reclaims_job_after_crash_before_lease() -> No
     runner.run_maintenance()
 
     assert queue.count_processing() == 0
-    assert queue.dequeue() == job
+    reclaimed = queue.dequeue()
+    assert reclaimed is not None
+    trace_fields = {"trace_id", "span_id", "parent_span_id"}
+    assert reclaimed.model_dump(exclude=trace_fields) == job.model_dump(exclude=trace_fields)
+    assert reclaimed.trace_id is not None
+    assert reclaimed.span_id is not None
 
 
 def test_multi_agent_handoff_survives_worker_restart_and_manager_approval() -> None:

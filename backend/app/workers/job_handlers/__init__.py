@@ -4,6 +4,7 @@ from backend.app.workers.job_handlers.io import (
     WorkspaceArchiveExportJobHandler,
 )
 from backend.app.workers.job_handlers.maintenance import (
+    AuditIntegrityJobHandler,
     ModelProviderHealthJobHandler,
     SecretReencryptJobHandler,
 )
@@ -22,6 +23,7 @@ from backend.app.workers.job_handlers.team_execution_loop import (
 
 __all__ = [
     "AgentRunJobHandler",
+    "AuditIntegrityJobHandler",
     "McpToolExecutionJobHandler",
     "MemoryIndexJobHandler",
     "ModelProviderHealthJobHandler",

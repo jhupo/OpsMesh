@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import stat
 import sys
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -155,6 +157,90 @@ def test_connector_sanitizes_sdk_execution_failure(tmp_path: Path) -> None:
     assert "must-not-escape" not in str(error)
 
 
+def test_connector_resolves_local_environment_without_persisting_secret(tmp_path: Path) -> None:
+    job = _job()
+    job.request_payload["environment_refs"] = {"MCP_API_KEY": "MCP_API_KEY"}
+    api = _RecordingApi(job)
+    observed: list[dict[str, object]] = []
+
+    with ConnectorStateStore(tmp_path / "connector.sqlite3") as state:
+
+        async def executor(request: dict[str, object]) -> dict[str, object]:
+            observed.append(request)
+            pending = state.next_pending()
+            assert pending is not None
+            assert "runtime-secret" not in str(pending.job.request_payload)
+            return {"structuredContent": {"ok": True}}
+
+        outcome = SelfHostedMcpConnector(
+            api=api,
+            state=state,
+            executor=executor,
+            environment={"MCP_API_KEY": "runtime-secret"},
+        ).run_once()
+
+    assert outcome == "completed"
+    assert observed[0]["server"]["env"] == {"MCP_API_KEY": "runtime-secret"}
+
+
+def test_connector_fails_closed_when_local_credential_is_missing(tmp_path: Path) -> None:
+    job = _job()
+    job.request_payload["environment_refs"] = {"MCP_API_KEY": "MCP_API_KEY"}
+    api = _RecordingApi(job)
+    executions: list[dict[str, object]] = []
+
+    async def executor(request: dict[str, object]) -> dict[str, object]:
+        executions.append(request)
+        return {}
+
+    with ConnectorStateStore(tmp_path / "connector.sqlite3") as state:
+        outcome = SelfHostedMcpConnector(
+            api=api,
+            state=state,
+            executor=executor,
+            environment={},
+        ).run_once()
+
+    error = api.completions[0][1].error_payload
+    assert outcome == "failed"
+    assert executions == []
+    assert error is not None
+    assert error["code"] == "self_hosted_mcp_credential_unavailable"
+    assert "MCP_API_KEY" not in str(error)
+    assert "runtime-secret" not in str(error)
+
+
+def test_connector_rejects_preexpanded_environment_in_durable_job(tmp_path: Path) -> None:
+    job = _job()
+    request = job.request_payload["request"]
+    assert isinstance(request, dict)
+    server = request["server"]
+    assert isinstance(server, dict)
+    server["env"] = {"MCP_API_KEY": "must-not-be-persisted"}
+    api = _RecordingApi(job)
+
+    with ConnectorStateStore(tmp_path / "connector.sqlite3") as state:
+        outcome = SelfHostedMcpConnector(api=api, state=state).run_once()
+
+    error = api.completions[0][1].error_payload
+    assert outcome == "failed"
+    assert error is not None
+    assert error["code"] == "self_hosted_mcp_contract_invalid"
+    assert "must-not-be-persisted" not in str(error)
+
+
+def test_connector_state_restricts_recovery_directory_on_posix(tmp_path: Path) -> None:
+    if os.name == "nt":
+        return
+
+    state_path = tmp_path / "private" / "connector.sqlite3"
+    with ConnectorStateStore(state_path):
+        pass
+
+    assert stat.S_IMODE(state_path.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(state_path.stat().st_mode) == 0o600
+
+
 def test_http_connector_api_uses_runtime_header_and_expected_endpoints() -> None:
     job = _job()
     requests: list[httpx.Request] = []
@@ -217,10 +303,32 @@ def test_http_connector_api_does_not_expose_response_body_or_credential() -> Non
             api.poll_mcp_job()
         except ConnectorApiError as exc:
             assert "500" in str(exc)
+            assert exc.status_code == 500
+            assert exc.retryable is True
             assert "runtime-secret" not in str(exc)
             assert "server-secret" not in str(exc)
         else:
             raise AssertionError("Expected the failed control-plane request to be normalized")
+
+
+def test_http_connector_api_marks_permanent_statuses_non_retryable() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, text="runtime-secret server-secret")
+
+    with HttpMcpJobApi(
+        api_url="https://example.test/api/v1",
+        credential="runtime-secret",
+        transport=httpx.MockTransport(handler),
+    ) as api:
+        try:
+            api.poll_mcp_job()
+        except ConnectorApiError as exc:
+            assert exc.status_code == 409
+            assert exc.retryable is False
+            assert "runtime-secret" not in str(exc)
+            assert "server-secret" not in str(exc)
+        else:
+            raise AssertionError("Expected the permanent control-plane failure to be normalized")
 
 
 class _RecordingApi:

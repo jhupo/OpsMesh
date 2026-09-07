@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from backend.app.api.schemas.common import TimestampedModel
 from backend.app.api.schemas.redaction import redact_sensitive_payload
@@ -173,6 +173,15 @@ class McpJobCompleteRequest(BaseModel):
     status: str = Field(pattern="^(completed|failed)$")
     response_payload: dict[str, object] | None = None
     error_payload: dict[str, object] | None = None
+
+    @model_validator(mode="after")
+    def validate_terminal_payload(self) -> "McpJobCompleteRequest":
+        if self.status == "completed":
+            if self.response_payload is None or self.error_payload is not None:
+                raise ValueError("Completed MCP jobs require a response without an error")
+        elif self.error_payload is None or self.response_payload is not None:
+            raise ValueError("Failed MCP jobs require an error without a response")
+        return self
 
 
 class McpJobCompleteResponse(BaseModel):

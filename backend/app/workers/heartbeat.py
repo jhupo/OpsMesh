@@ -36,6 +36,8 @@ def worker_heartbeat_details(
     scheduled_job_actions_enqueued_by_job_type: dict[str, int],
     scheduled_job_actions_recorded_by_job_type: dict[str, int],
     scheduled_job_actions_skipped_by_job_type: dict[str, int],
+    audit_integrity_workspaces_checked: int,
+    audit_integrity_workspaces_invalid: int,
     last_error: str | None,
 ) -> dict[str, object]:
     details: dict[str, object] = {
@@ -71,6 +73,8 @@ def worker_heartbeat_details(
         "scheduled_job_actions_skipped_by_job_type": dict(
             scheduled_job_actions_skipped_by_job_type
         ),
+        "audit_integrity_workspaces_checked": audit_integrity_workspaces_checked,
+        "audit_integrity_workspaces_invalid": audit_integrity_workspaces_invalid,
         "capacity": {
             "max_jobs": config.max_jobs,
         },

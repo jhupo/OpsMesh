@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import json
+import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from backend.app.capabilities.mcp_adapter_payloads import stdio_sdk_request
 from runtime.opsmesh_runtime import mcp_stdio_client
@@ -11,7 +15,13 @@ from runtime.opsmesh_runtime import mcp_stdio_client
 def test_stdio_sdk_client_uses_official_stdio_transport_and_session(monkeypatch) -> None:
     transport = _FakeTransport()
     session = _FakeSession()
-    monkeypatch.setattr(mcp_stdio_client, "stdio_client", lambda _: transport)
+    parameters: list[Any] = []
+
+    def stdio_client(server_parameters: object) -> _FakeTransport:
+        parameters.append(server_parameters)
+        return transport
+
+    monkeypatch.setattr(mcp_stdio_client, "stdio_client", stdio_client)
     monkeypatch.setattr(mcp_stdio_client, "ClientSession", lambda *_: session)
 
     request = stdio_sdk_request(
@@ -19,11 +29,13 @@ def test_stdio_sdk_client_uses_official_stdio_transport_and_session(monkeypatch)
         tool_name="generate_image",
         arguments={"prompt": "mountain"},
         timeout_seconds=7,
+        environment={"MCP_API_KEY": "runtime-secret"},
     )
 
     result = asyncio.run(mcp_stdio_client.execute_request(request))
 
     assert result == {"structuredContent": {"ok": True}}
+    assert parameters[0].env == {"MCP_API_KEY": "runtime-secret"}
     assert session.initialized is True
     assert session.tool_call == {
         "name": "generate_image",
@@ -47,6 +59,37 @@ def test_stdio_sdk_client_calls_real_official_mcp_server() -> None:
     assert result["structuredContent"] == {"message": "runtime-ready"}
 
 
+def test_stdio_sdk_client_cli_streams_credentials_to_real_server_via_stdin() -> None:
+    server_path = Path(__file__).parent / "fixtures" / "mcp_stdio_server.py"
+    request = stdio_sdk_request(
+        command=[sys.executable, str(server_path)],
+        tool_name="environment_configured",
+        arguments={"name": "MCP_API_KEY"},
+        timeout_seconds=5,
+        environment={"MCP_API_KEY": "runtime-secret"},
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "runtime.opsmesh_runtime.mcp_stdio_client",
+            "--request-stdin",
+        ],
+        capture_output=True,
+        check=False,
+        input=json.dumps(request),
+        text=True,
+        timeout=10,
+    )
+
+    result = json.loads(completed.stdout)
+    assert completed.returncode == 0
+    assert result["structuredContent"] == {"configured": True}
+    assert "runtime-secret" not in str(completed.args)
+    assert "runtime-secret" not in completed.stderr
+
+
 def test_stdio_sdk_client_reports_runtime_capability() -> None:
     report = mcp_stdio_client.capability_report()
 
@@ -56,6 +99,31 @@ def test_stdio_sdk_client_reports_runtime_capability() -> None:
     assert report["stdio_client"] == "available"
     assert report["client_session"] == "available"
     assert isinstance(report["sdk_version"], str)
+
+
+def test_stdio_sdk_client_cli_reads_request_from_stdin(monkeypatch, capsys) -> None:
+    request = stdio_sdk_request(
+        command=["mcp-server"],
+        tool_name="echo",
+        arguments={"message": "stdin"},
+        timeout_seconds=5,
+        environment={"MCP_API_KEY": "runtime-secret"},
+    )
+    observed: list[dict[str, object]] = []
+
+    async def execute_request(payload: dict[str, object]) -> dict[str, object]:
+        observed.append(payload)
+        return {"structuredContent": {"ok": True}}
+
+    monkeypatch.setattr(mcp_stdio_client, "execute_request", execute_request)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(request)))
+
+    exit_code = mcp_stdio_client.main(["--request-stdin"])
+
+    output = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert observed == [request]
+    assert output == {"structuredContent": {"ok": True}}
 
 
 def test_stdio_sdk_client_rejects_unknown_contract_version() -> None:

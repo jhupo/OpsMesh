@@ -2,7 +2,7 @@
 
 ## Product Shape
 
-OpsMesh is a multi-user workspace product for operating AI agent teams inside isolated user workspaces. OpenAI Agents SDK provides the execution primitives, while this application owns the business layer: users, workspaces, agent definitions, task orchestration, permissions, persistence, audit logs, markets, and product APIs.
+OpsMesh is a multi-user workspace product for operating AI agent teams inside isolated user workspaces. The OpenAI Agents SDK and product-owned provider adapters provide model execution primitives, while this application owns the business layer: users, workspaces, agent definitions, task orchestration, permissions, persistence, audit logs, markets, cost accounting, and product APIs.
 
 The core unit is a workspace. A workspace is the boundary for data, agents, tasks, tools, files, memory, and access control.
 
@@ -40,7 +40,7 @@ User and workspace isolation is mandatory. The product must enforce isolation ac
 
 The backend should be organized into three major domains: the OpenAI Agents Runtime Layer, the Agent Management and Orchestration Layer, and the Product Backend Service Layer. Long-running work is executed by workers through queues and persisted state, not directly inside API requests. See [Backend Service Architecture](backend-service-architecture.md).
 
-The runtime model should support both platform-managed cloud Docker runtimes and future self-hosted runtimes on user-owned machines. Self-hosted workers connect outbound to the platform, keep sensitive data local when configured, and execute tasks in local isolated runtimes. See [Self-Hosted Runtimes](self-hosted-runtimes.md).
+The runtime model supports both platform-managed Docker runtimes and self-hosted connector runtimes on user-owned machines. Self-hosted workers connect outbound to the platform, keep sensitive data local when configured, and execute tasks in local isolated runtimes. See [Self-Hosted Runtimes](self-hosted-runtimes.md).
 
 ## Multi-User Workspace Model
 
@@ -101,7 +101,9 @@ An agent profile stores configuration, not arbitrary application code:
 - version
 - status
 
-The runtime turns an `agent_profile` into an OpenAI Agents SDK `Agent` or `SandboxAgent`.
+The runtime turns an `agent_profile` into an OpenAI Agents SDK `Agent` and executes it through the
+SDK runner. Provider-specific adapters remain behind the same product-owned run contract, while
+executable tools cross the isolated runtime boundary.
 
 Specialist agents should be exposed in two ways:
 
@@ -119,16 +121,17 @@ draft -> queued -> planning -> running -> waiting_approval -> running -> complet
                                       -> cancelled
 ```
 
-Recommended first workflow:
+Current durable workflow:
 
 1. User creates a task in a workspace.
-2. Orchestration service enqueues the task.
-3. Manager agent reads the task and creates a plan.
-4. The system persists `task_steps`.
-5. Specialist agents execute steps.
-6. Human approvals pause sensitive actions.
-7. Manager agent synthesizes final output.
-8. The task stores artifacts, run summary, and audit events.
+2. The API persists task and run intent, freezes the authorization snapshot, and enqueues an idempotent Redis job.
+3. A worker claims the job under a lease and loads workspace-scoped configuration from Postgres.
+4. Provider readiness, pricing, budget, capability, and approval policies fail closed before side effects.
+5. Manager and specialist agents execute through the agent runtime and durable handoff state.
+6. MCP calls and executable tools cross the governed tool boundary and use approved isolated runtimes.
+7. Human approvals persist a wait state; an approved run is requeued instead of resumed inside the API request.
+8. The worker stores output, artifacts, run events, audit hashes, and model usage costs before acknowledging the job.
+9. API and worker logs and traces share W3C trace context; Prometheus exposes application and governance metrics.
 
 The orchestrator, not the model, owns durable state transitions. Models may propose plans and actions, but the service validates and persists them.
 
@@ -192,9 +195,9 @@ Actions that should require approval:
 
 Approval records must include requester agent, proposed action, arguments, risk level, approver, decision, and final outcome.
 
-## Observability And Audit
+## Observability, Audit, And Cost
 
-The product should capture:
+The product captures:
 
 - task state changes
 - agent run start/end
@@ -205,17 +208,21 @@ The product should capture:
 - approvals
 - errors and retries
 - generated artifacts
+- model token usage, pricing snapshots, cost totals, and budget state
 
-OpenAI tracing is useful for debugging model workflows. Product audit logs should remain independent and durable inside Postgres.
+OpenTelemetry exports correlated API, worker, database, Redis, model, MCP, and tool spans to Tempo,
+and structured redacted logs to Loki. Prometheus collects application, queue, runtime, audit
+integrity, and cost-governance metrics for Grafana and Alertmanager. Product audit logs remain
+independent of tracing, are hash chained, and are WORM protected in Postgres.
 
-## Initial Implementation Path
+## Current Execution Guarantees
 
-1. Build FastAPI backend with Postgres and Redis connections.
-2. Add workspace, membership, agent profile, task, and run schemas.
-3. Implement a simple manager agent and one specialist agent.
-4. Add task queue worker that runs an agent task through OpenAI Agents SDK.
-5. Persist run events and expose progress through APIs.
-6. Add approval pause/resume.
-7. Add workspace memory and file/artifact support.
+1. API routes authorize and persist intent; long-running work executes only in workers.
+2. Postgres holds every state needed for restart recovery; Redis state is replaceable coordination data.
+3. Every worker, tool, file, memory, and runtime lookup carries workspace scope.
+4. Provider credentials are resolved and decrypted only at the narrow execution boundary.
+5. Tool policy, approval, runtime isolation, quota, and cost limits fail closed.
+6. Run events, product audit evidence, model usage, artifacts, and failure state are durable.
+7. Logs, traces, and metrics are correlated but never replace product audit records.
 
 Workspace files and artifacts are first-class resources. Uploads, downloads, previews, runtime staging, artifact collection, and exports must all enforce workspace authorization. See [Workspace Data Management](workspace-data-management.md).

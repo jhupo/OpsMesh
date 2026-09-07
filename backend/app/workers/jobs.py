@@ -23,6 +23,7 @@ class JobType(StrEnum):
     WEBHOOK_DELIVERY = "webhook.delivery"
     SECRET_REENCRYPT = "secret.reencrypt"
     MODEL_PROVIDER_HEALTH_CHECK = "model_provider.health_check"
+    AUDIT_INTEGRITY_CHECK = "audit.integrity_check"
 
 
 class JobPayload(BaseModel):

@@ -12,8 +12,6 @@ part of the product direction, but no frontend framework or user interface has b
 implemented yet. This is intentional so the frontend can be designed against stable product and
 API contracts later.
 
-![OpsMesh backend architecture](docs/assets/opsmesh-backend-architecture.svg)
-
 ## Why OpsMesh
 
 Agent SDKs are good at model turns, tools, handoffs, sessions, and guardrails. An enterprise agent
@@ -38,7 +36,7 @@ product contract.
 | Web Portal | Planned; intentionally not scaffolded yet |
 | Enterprise SSO and fine-grained authorization | Planned |
 | Knowledge registry and vector/hybrid retrieval | Planned |
-| OpenTelemetry and cost accounting | Planned |
+| Logs, metrics, tracing, audit integrity, and cost accounting | Implemented |
 | Kubernetes and multi-region deployment | Future, driven by measured scale requirements |
 
 The APIs and database model may change before the first stable release. See the
@@ -57,57 +55,137 @@ The APIs and database model may change before the first stable release. See the
 | MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; the self-hosted connector now provides durable claim, execution, completion, and restart recovery |
 | Run isolation and workspace | Docker and self-hosted control-plane contracts are implemented; a dedicated `opsmesh-runtime` image provides the isolated MCP SDK helper and connector CLI |
 | Knowledge service | Partial: workspace memory, lexical search, and Postgres full-text abstraction exist; source ingestion, citations, vector search, and hybrid ranking are planned |
-| Observability and operations | Partial: structured logs, Prometheus-format metrics, dashboards, alerts, audit, security events, queue/runtime diagnostics, and recovery actions exist; OpenTelemetry and official Prometheus client migration remain |
+| Observability and operations | Implemented for the VPS topology: OTLP logs and traces, official Prometheus metrics, Loki, Tempo, Grafana correlation, alerts, WORM audit verification, cost ledger, budgets, queue/runtime diagnostics, and recovery actions |
 | Infrastructure and scaling | Postgres, Redis, storage, VPS/systemd, Docker runtime, and remote validation assets exist; Kubernetes, multi-region, and microVM backends are future work |
 
-## Target Architecture
+## Current Architecture
 
-The target architecture separates the user experience, control plane, capability plane, execution
-plane, and infrastructure. Planned components are marked explicitly.
+The running backend separates synchronous product APIs, durable state, asynchronous execution,
+isolated tool runtimes, governance evidence, and telemetry backends. Postgres remains the source of
+truth; Redis contains coordination state only.
 
 ```mermaid
-flowchart TB
-    Portal["Web Portal<br/>(planned)"]:::planned
+flowchart LR
     Clients["API clients"]
-    SSO["Enterprise access<br/>SSO / gateway / WAF<br/>(planned)"]:::planned
 
-    Access["API access boundary<br/>authentication / RBAC / rate limits / security headers"]
-    Control["Agent control plane<br/>workspaces / agents / teams / sessions / configuration"]
-    Orchestration["Task orchestration<br/>planning / scheduling / approvals / recovery"]
-    Registry["Capability registry<br/>skills / MCP / tools / marketplace"]
-    Knowledge["Knowledge service<br/>full-text + vector retrieval<br/>(planned)"]:::planned
-    ToolGateway["Tool execution boundary<br/>authorization / credentials / limits / audit"]
-    Runtime["Agent runtime<br/>OpenAI Agents SDK / provider adapters"]
-    Workers["Worker fleet<br/>queues / leases / retries / maintenance"]
-    Sandbox["Isolated execution<br/>Docker / self-hosted runtimes"]
+    subgraph Control["Synchronous control plane"]
+        Access["FastAPI access boundary<br/>authentication / workspace RBAC<br/>rate limits / security headers"]
+        Services["Product services<br/>workspaces / teams / tasks / files<br/>memory / approvals / operations"]
+        Orchestration["Durable orchestration<br/>plans / runs / events / recovery"]
+        Capabilities["Capability governance<br/>skills / MCP / tools / marketplace<br/>credentials / authorization snapshots"]
+        Access --> Services
+        Services --> Orchestration
+        Services --> Capabilities
+    end
 
-    Postgres[(Postgres<br/>durable source of truth)]
-    Redis[(Redis<br/>queues / locks / pub-sub / cache)]
-    Storage[(Local or S3-compatible storage)]
-    Observe["Operations and governance<br/>metrics / logs / audit / security events"]
+    subgraph State["State and coordination"]
+        Postgres[("Postgres<br/>durable source of truth")]
+        Redis[("Redis<br/>queues / locks / leases<br/>idempotency / pub-sub")]
+        Storage[("Local or S3 storage<br/>workspace files / artifacts")]
+    end
 
-    Portal -.-> SSO
-    SSO -.-> Access
+    subgraph Execution["Asynchronous execution plane"]
+        Workers["Worker fleet<br/>claim / retry / recovery / maintenance"]
+        Agents["Agent runtime<br/>OpenAI Agents SDK<br/>provider adapters"]
+        ToolBoundary["Tool execution boundary<br/>policy / approval / limits<br/>secret injection / audit"]
+        MCP["Official MCP SDK<br/>HTTP / SSE / isolated stdio"]
+        Docker["Managed Docker runtimes"]
+        SelfHosted["Self-hosted connector runtimes"]
+        Workers --> Agents
+        Agents --> ToolBoundary
+        ToolBoundary --> MCP
+        ToolBoundary --> Docker
+        ToolBoundary --> SelfHosted
+    end
+
+    subgraph Evidence["Governance and observability"]
+        Audit["WORM audit log<br/>hash-chain verification"]
+        Costs["Model usage ledger<br/>pricing / summaries / budgets"]
+        Collector["OpenTelemetry Collector"]
+        Prometheus["Prometheus"]
+        Loki["Loki"]
+        Tempo["Tempo"]
+        Grafana["Grafana + Alertmanager"]
+        Collector --> Loki
+        Collector --> Tempo
+        Prometheus --> Grafana
+        Loki --> Grafana
+        Tempo --> Grafana
+    end
+
     Clients --> Access
-    Access --> Control
-    Control --> Orchestration
-    Control --> Registry
-    Control -.-> Knowledge
-    Orchestration --> Runtime
-    Orchestration --> Workers
-    Registry --> ToolGateway
-    Knowledge -.-> ToolGateway
-    Runtime --> ToolGateway
-    Workers --> Sandbox
-    ToolGateway --> Sandbox
-    Control --> Postgres
-    Workers --> Redis
-    Sandbox --> Storage
-    Observe --- Control
-    Observe --- Workers
-    Observe --- ToolGateway
+    Services --> Postgres
+    Orchestration --> Postgres
+    Orchestration --> Redis
+    Redis --> Workers
+    Workers --> Postgres
+    Docker --> Storage
+    SelfHosted --> Storage
+    Capabilities --> ToolBoundary
+    Services --> Audit
+    Workers --> Audit
+    Agents --> Costs
+    Audit --> Postgres
+    Costs --> Postgres
+    Access -.->|OTLP logs and traces| Collector
+    Workers -.->|OTLP logs and traces| Collector
+    Access -.->|application and domain metrics| Prometheus
+    Collector -.->|collector metrics| Prometheus
+```
 
-    classDef planned fill:#fff,stroke:#777,stroke-dasharray:5 5,color:#444;
+## Current Agent Run Flow
+
+API requests persist intent and return without running agent work inline. Workers recover the
+complete execution contract from durable state, enforce cost and capability policy, and commit
+product evidence independently from telemetry.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client
+    participant API as FastAPI control plane
+    participant DB as Postgres
+    participant Queue as Redis queue
+    participant Worker
+    participant Agent as Agent runtime
+    participant Policy as Capability and approval boundary
+    participant Runtime as MCP / Docker / self-hosted
+    participant Observe as OTel / Prometheus
+
+    Client->>API: Create or resume workspace task
+    API->>API: Authenticate and authorize workspace action
+    API->>DB: Persist task, run, policy snapshot, and event
+    API->>Queue: Enqueue idempotent job
+    API-->>Client: Return durable resource and status
+
+    Worker->>Queue: Claim job and create lease
+    Worker->>DB: Load workspace-scoped run and frozen configuration
+    Worker->>DB: Check provider readiness and matching cost budget
+    Worker->>Agent: Execute model turn with trace context
+
+    opt Model requests a tool
+        Agent->>Policy: Submit typed tool request
+        Policy->>DB: Validate snapshot, limits, credentials, and approval policy
+        alt Human approval required
+            Policy->>DB: Persist approval wait and audit evidence
+            Client->>API: Approve or reject
+            API->>DB: Persist decision
+            API->>Queue: Requeue approved run
+        else Tool request allowed
+            Policy->>Runtime: Execute through approved isolated boundary
+            Runtime-->>Policy: Return redacted result and artifacts
+            Policy-->>Agent: Return typed tool result
+        end
+    end
+
+    Agent-->>Worker: Return output, events, and provider usage
+    Worker->>DB: Persist output, run events, audit chain, and cost ledger
+    Worker->>Queue: Acknowledge job and release lease
+    API-->>Observe: Export structured logs, traces, and metrics
+    Worker-->>Observe: Export correlated logs and traces
+    Client->>API: Read status, events, and artifacts
+    API->>DB: Query durable workspace state
+    API-->>Client: Return current result
 ```
 
 ## Current Capabilities
@@ -147,8 +225,10 @@ flowchart TB
 
 - Human approvals for risky operations and fail-closed policy enforcement.
 - Encrypted hosted credentials, external vault references, redaction, and egress validation.
-- Durable audit and security events, including workspace audit hash-chain verification.
-- Workspace operations aggregates, Prometheus-format metrics, Grafana dashboards, and alerts.
+- Durable audit and security events, including database-level WORM protection and scheduled
+  workspace hash-chain verification.
+- Structured OTLP logs, OpenTelemetry traces, official Prometheus metrics, Loki/Tempo/Grafana
+  correlation, alert delivery, model usage/cost ledgers, pricing rules, and budget enforcement.
 - Scheduled jobs, notifications, signed webhooks, and workspace import/export lifecycle support.
 
 ## Architecture Principles
@@ -179,8 +259,8 @@ introduce a second Agent framework.
 | Agent turns, tools, handoffs, sessions, HITL | Python OpenAI Agents SDK (`openai-agents`) | Current and only Agent orchestration core; keep the product control plane |
 | MCP protocol and transports | [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | Current for remote Streamable HTTP/SSE and isolated stdio; keep the SDK client inside Docker/self-hosted runtimes |
 | Docker Engine access | [Docker SDK for Python](https://docs.docker.com/reference/api/engine/sdk/) | Replace CLI construction behind the existing runtime client contract |
-| Traces and instrumentation | [OpenTelemetry Python](https://github.com/open-telemetry/opentelemetry-python) | Adopt for API, worker, database, Redis, HTTP, model, and tool spans |
-| Prometheus exposition | [Prometheus Python client](https://github.com/prometheus/client_python) | Keep domain collectors; replace custom metric formatting |
+| Logs, traces, and instrumentation | [OpenTelemetry Python](https://github.com/open-telemetry/opentelemetry-python) | Current for API/worker OTLP logs and FastAPI, database, Redis, HTTP, queue, model, and tool traces |
+| Prometheus exposition | [Prometheus Python client](https://github.com/prometheus/client_python) | Current; domain collectors publish through official Counter, Histogram, and Gauge primitives |
 | Vector and hybrid retrieval | [pgvector-python](https://github.com/pgvector/pgvector-python) | Extend the current Postgres full-text memory path before adding another database |
 | OAuth 2.0 and OpenID Connect | [Authlib](https://authlib.org/) | Use for future enterprise SSO; do not build an identity provider |
 | Durable workflows | [Temporal Python SDK](https://github.com/temporalio/sdk-python) | Run an architecture spike before replacing the current queue and state machine |
@@ -211,7 +291,8 @@ recommended order, and boundaries that remain owned by OpsMesh.
   Python SDK v2 when the OpenAI Agents SDK supports it; keep authorization and audit at the OpsMesh
   boundary.
 - Migrate Docker operations to the Docker SDK without weakening hardening, leases, or cleanup proof.
-- Introduce OpenTelemetry and the Prometheus client instead of extending custom telemetry formats.
+- Operate and extend the OpenTelemetry and official Prometheus paths without introducing custom
+  telemetry protocols.
 - Review native Agents SDK HITL, run-state, sandbox, and durable-execution integrations.
 
 ### 3. Build a unified capability and knowledge plane
@@ -241,7 +322,8 @@ recommended order, and boundaries that remain owned by OpsMesh.
 - Add horizontally scalable deployment, managed data services, and Kubernetes packaging when demand
   exceeds the current VPS/systemd model.
 - Evaluate microVM or managed sandbox backends for higher-assurance hostile multi-tenant execution.
-- Add cost and token accounting without coupling core execution to a billing system.
+- Evolve cost policy from the workspace ledger and budget guardrail using measured provider usage;
+  keep billing concerns outside core execution.
 
 ## Repository Layout
 
@@ -330,9 +412,9 @@ uv run uvicorn backend.app.main:create_app --factory --reload --host 0.0.0.0 --p
 
 ## Deployment
 
-The current production model runs API and worker processes on a VPS through systemd. Docker is
-available only to the worker as the substrate for isolated task runtimes. Local Docker Compose is
-for development and CI, not the production topology.
+The current production model runs API and worker processes on a VPS through systemd. The worker
+uses Docker for isolated task runtimes, while a separate root-owned systemd unit manages the pinned
+observability Compose stack. The API has no Docker daemon access.
 
 See [Backend Deployment](docs/backend-deployment.md) for release bundles, service users, runtime
 permissions, health checks, monitoring, updates, and rollback.
@@ -349,6 +431,7 @@ permissions, health checks, monitoring, updates, and rollback.
 - [Isolation And Security](docs/isolation-and-security.md)
 - [Threat Model](docs/threat-model.md)
 - [Open-Source SDK Strategy](docs/open-source-sdk-strategy.md)
+- [Observability, Audit, and Cost Operations](docs/observability-audit-and-costs.md)
 - [Roadmap](docs/roadmap.md)
 - [Backend Completion Plan](docs/backend-completion-plan.md)
 

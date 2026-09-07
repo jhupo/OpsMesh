@@ -623,6 +623,7 @@ def test_anthropic_messages_runner_executes_tool_use_loop() -> None:
                             "input": {"query": "runtime"},
                         }
                     ],
+                    "usage": {"input_tokens": 20, "output_tokens": 5},
                 },
             )
         return httpx.Response(
@@ -632,6 +633,7 @@ def test_anthropic_messages_runner_executes_tool_use_loop() -> None:
                 "type": "message",
                 "role": "assistant",
                 "content": [{"type": "text", "text": "tool-result-ok"}],
+                "usage": {"input_tokens": 30, "output_tokens": 7},
             },
         )
 
@@ -668,7 +670,14 @@ def test_anthropic_messages_runner_executes_tool_use_loop() -> None:
     assert calls[0]["tool_choice"] == {"type": "tool", "name": "search_docs"}
     assert calls[1]["messages"][1]["content"][0]["name"] == "search_docs"
     assert calls[1]["messages"][2]["content"][0]["tool_use_id"] == "toolu_123"
-    assert result.events[0].payload == {
+    assert [event.event_type for event in result.events] == [
+        "model.usage",
+        "tool.completed",
+        "model.usage",
+        "model.request",
+    ]
+    assert result.events[0].payload == {"usage": {"input_tokens": 20, "output_tokens": 5}}
+    assert result.events[1].payload == {
         "tool_name": "search_docs",
         "tool_call_id": "toolu_123",
         "status": "completed",

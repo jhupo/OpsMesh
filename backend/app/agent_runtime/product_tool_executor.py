@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRuntimeContext, AgentRuntimeToolResult
@@ -27,6 +28,7 @@ from backend.app.agent_runtime.tool_payloads import (
 )
 from backend.app.approvals.service import ApprovalService
 from backend.app.core.config import Settings
+from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.reviews.tool_execution import ToolExecutionReview, ToolExecutionReviewService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
@@ -66,6 +68,29 @@ class ProductToolExecutor:
         self._settings = settings
 
     def execute(
+        self,
+        *,
+        context: AgentRuntimeContext,
+        tool_name: str,
+        arguments: dict[str, object],
+    ) -> AgentRuntimeToolResult:
+        with telemetry_span(
+            "opsmesh.product.tool.execute",
+            parent=current_trace_context(),
+            kind=SpanKind.INTERNAL,
+            attributes={
+                "opsmesh.workspace.id": str(context.workspace_id),
+                "opsmesh.run.id": str(context.run_id),
+                "opsmesh.tool.name": tool_name,
+            },
+        ):
+            return self._execute(
+                context=context,
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+
+    def _execute(
         self,
         *,
         context: AgentRuntimeContext,

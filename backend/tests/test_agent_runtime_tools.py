@@ -1,3 +1,4 @@
+import json
 from uuid import UUID, uuid4
 
 import pytest
@@ -11,7 +12,12 @@ from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.agent_runtime.contracts import AgentRuntimeContext
 from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.models import AgentProfile
-from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
+from backend.app.capabilities.models import (
+    McpCredentialReference,
+    McpServer,
+    McpToolAllowlist,
+    McpToolCallLog,
+)
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
@@ -22,6 +28,7 @@ from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import RuntimeCommandResult
 from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.secrets.service import SecretEncryptionService
 from backend.app.self_hosted.models import SelfHostedMcpJob
 from backend.app.tasks.models import Task
 from backend.app.tools.errors import ToolPermissionError
@@ -798,6 +805,13 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
     )
     session.add_all([runtime, task, server])
     session.flush()
+    credential = McpCredentialReference(
+        workspace_id=workspace.id,
+        mcp_server_id=server.id,
+        name="local-image-key",
+        provider="self_hosted_env",
+        external_ref="env:MCP_IMAGE_API_KEY",
+    )
     allow = McpToolAllowlist(
         workspace_id=workspace.id,
         mcp_server_id=server.id,
@@ -814,7 +828,7 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
             }
         },
     )
-    session.add_all([allow, run])
+    session.add_all([credential, allow, run])
     session.commit()
 
     result = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
@@ -838,6 +852,10 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
         "package": "mcp",
         "entrypoint": "mcp.client.stdio.stdio_client",
     }
+    assert job.request_payload["environment_refs"] == {
+        "MCP_IMAGE_API_KEY": "MCP_IMAGE_API_KEY"
+    }
+    assert "runtime-secret" not in str(job.request_payload)
     assert job.request_payload["request"] == {
         "contract_version": 1,
         "client": {
@@ -873,6 +891,20 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
     )
     session.add_all([runtime, task, server])
     session.flush()
+    secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
+    encrypted = secret_service.encrypt_payload(
+        {"env": {"MCP_IMAGE_API_KEY": "runtime-secret"}}
+    )
+    credential = McpCredentialReference(
+        workspace_id=workspace.id,
+        mcp_server_id=server.id,
+        name="hosted-image-key",
+        provider="hosted",
+        external_ref="",
+        encrypted_secret_payload=encrypted.ciphertext,
+        secret_fingerprint=encrypted.fingerprint,
+        encryption_key_id=encrypted.key_id,
+    )
     allow = McpToolAllowlist(
         workspace_id=workspace.id,
         mcp_server_id=server.id,
@@ -889,7 +921,7 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
             }
         },
     )
-    session.add_all([allow, run])
+    session.add_all([credential, allow, run])
     session.commit()
     docker = RecordingDockerClient(
         [
@@ -914,6 +946,7 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
         session,
         StaticMcpAdapter(),
         docker_client=docker,
+        secret_service=secret_service,
     ).execute_tool(
         context=AgentRuntimeContext(
             workspace_id=workspace.id,
@@ -936,8 +969,18 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
     assert docker.exec_calls[1]["container_id"] == "container-123"
     assert docker.exec_calls[1]["timeout_seconds"] == 11
     command = docker.exec_calls[1]["command"]
-    assert command[:3] == ["python", "-m", "opsmesh_runtime.mcp_stdio_client"]
-    assert '"generate_image"' in command[3]
+    assert command == [
+        "python",
+        "-m",
+        "opsmesh_runtime.mcp_stdio_client",
+        "--request-stdin",
+    ]
+    assert "runtime-secret" not in str(command)
+    stdin_data = docker.exec_calls[1]["stdin_data"]
+    assert isinstance(stdin_data, str)
+    request = json.loads(stdin_data)
+    assert request["tool"]["name"] == "generate_image"
+    assert request["server"]["env"] == {"MCP_IMAGE_API_KEY": "runtime-secret"}
 
 
 def test_waiting_runtime_status_transition_is_allowed() -> None:
@@ -985,12 +1028,15 @@ class RecordingDockerClient:
         container_id: str,
         command: list[str],
         timeout_seconds: int,
+        *,
+        stdin_data: str | None = None,
     ) -> RuntimeCommandResult:
         self.exec_calls.append(
             {
                 "container_id": container_id,
                 "command": command,
                 "timeout_seconds": timeout_seconds,
+                "stdin_data": stdin_data,
             }
         )
         return self._command_results.pop(0)

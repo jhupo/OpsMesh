@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -25,6 +26,8 @@ _PHASES = {"claimed", "executing", "result_ready"}
 class ConnectorStateStore:
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        with suppress(OSError):
+            os.chmod(path.parent, 0o700)
         self._connection = sqlite3.connect(path)
         try:
             os.chmod(path, 0o600)

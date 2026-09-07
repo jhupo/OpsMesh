@@ -81,11 +81,18 @@ class DockerCliRuntimeClient(DockerRuntimeClient):
         container_id: str,
         command: list[str],
         timeout_seconds: int,
+        *,
+        stdin_data: str | None = None,
     ) -> RuntimeCommandResult:
+        docker_command = ["docker", "exec"]
+        if stdin_data is not None:
+            docker_command.append("-i")
+        docker_command.extend([container_id, *command])
         result = self._run(
-            ["docker", "exec", container_id, *command],
+            docker_command,
             timeout_seconds=timeout_seconds,
             check=False,
+            stdin_data=stdin_data,
         )
         return RuntimeCommandResult(
             exit_code=result.exit_code,
@@ -99,14 +106,25 @@ class DockerCliRuntimeClient(DockerRuntimeClient):
         *,
         timeout_seconds: int,
         check: bool = True,
+        stdin_data: str | None = None,
     ) -> RuntimeCommandResult:
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=timeout_seconds,
-        )
+        if stdin_data is None:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=timeout_seconds,
+            )
+        else:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                check=False,
+                input=stdin_data,
+                text=True,
+                timeout=timeout_seconds,
+            )
         if check and completed.returncode != 0:
             raise RuntimeError(completed.stderr or completed.stdout)
         return RuntimeCommandResult(

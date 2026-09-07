@@ -16,16 +16,28 @@ from backend.app.capabilities.mcp_execution_types import (
     McpExecutionError,
     McpExecutionPending,
 )
+from backend.app.capabilities.mcp_stdio_credentials import (
+    hosted_stdio_environment,
+    self_hosted_stdio_environment_refs,
+)
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.secrets.service import SecretEncryptionService
 from backend.app.self_hosted.mcp_jobs import SelfHostedMcpJobService
 
 
 class DockerRuntimeStdioMcpToolAdapter:
-    def __init__(self, *, runtime_manager: RuntimeManager, runtime: WorkspaceRuntime) -> None:
+    def __init__(
+        self,
+        *,
+        runtime_manager: RuntimeManager,
+        runtime: WorkspaceRuntime,
+        secret_service: SecretEncryptionService | None = None,
+    ) -> None:
         self._runtime_manager = runtime_manager
         self._runtime = runtime
+        self._secret_service = secret_service
 
     def call(
         self,
@@ -36,7 +48,6 @@ class DockerRuntimeStdioMcpToolAdapter:
         credential_refs: list[McpCredentialReference],
         timeout_seconds: int,
     ) -> dict[str, object]:
-        _ = credential_refs
         command = stdio_command(server.connection)
         self.assert_sdk_ready(workspace_id=server.workspace_id)
         request = stdio_sdk_request(
@@ -44,6 +55,10 @@ class DockerRuntimeStdioMcpToolAdapter:
             tool_name=tool_name,
             arguments=arguments,
             timeout_seconds=timeout_seconds,
+            environment=hosted_stdio_environment(
+                credential_refs,
+                secret_service=self._secret_service,
+            ),
         )
         record = self._runtime_manager.execute_command(
             workspace_id=server.workspace_id,
@@ -52,8 +67,9 @@ class DockerRuntimeStdioMcpToolAdapter:
                 "python",
                 "-m",
                 "opsmesh_runtime.mcp_stdio_client",
-                json.dumps(request, ensure_ascii=False, separators=(",", ":")),
+                "--request-stdin",
             ],
+            stdin_data=json.dumps(request, ensure_ascii=False, separators=(",", ":")),
         )
         if record.status != "completed" or record.exit_code != 0:
             raise McpExecutionError(
@@ -120,7 +136,6 @@ class SelfHostedStdioMcpToolAdapter:
         credential_refs: list[McpCredentialReference],
         timeout_seconds: int,
     ) -> dict[str, object]:
-        _ = credential_refs
         command = stdio_command(server.connection)
         request = stdio_sdk_request(
             command=command,
@@ -136,6 +151,7 @@ class SelfHostedStdioMcpToolAdapter:
                 "entrypoint": MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
             },
             "request": request,
+            "environment_refs": self_hosted_stdio_environment_refs(credential_refs),
         }
         job = self._service.create_mcp_job(
             workspace_id=server.workspace_id,

@@ -13,17 +13,28 @@ bundle_url=""
 bundle_file=""
 bundle_sha256=""
 dry_run="false"
-timeout_seconds="${OPSMESH_RELEASE_UPDATE_TIMEOUT_SECONDS:-900}"
 opsmesh_root="${OPSMESH_ROOT:-/opt/opsmesh}"
+env_file="${OPSMESH_ENV_FILE:-${opsmesh_root}/.env}"
+
+if [ -f "${env_file}" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "${env_file}"
+    set +a
+fi
+
+timeout_seconds="${OPSMESH_RELEASE_UPDATE_TIMEOUT_SECONDS:-900}"
+opsmesh_root="${OPSMESH_ROOT:-${opsmesh_root}}"
 releases_dir="${OPSMESH_RELEASES_DIR:-${opsmesh_root}/releases}"
 current_link="${OPSMESH_CURRENT_LINK:-${opsmesh_root}/current}"
 state_file="${OPSMESH_RELEASE_STATE_FILE:-${opsmesh_root}/release-state.env}"
-env_file="${OPSMESH_ENV_FILE:-${opsmesh_root}/.env}"
 repository="${OPSMESH_RELEASE_UPDATE_REPOSITORY:-jhupo/OpsMesh}"
 github_base_url="${OPSMESH_RELEASE_UPDATE_GITHUB_URL:-https://github.com}"
 download_dir="${OPSMESH_RELEASE_DOWNLOAD_DIR:-${opsmesh_root}/downloads}"
 api_service="${OPSMESH_API_SERVICE:-opsmesh-api}"
 worker_service="${OPSMESH_WORKER_SERVICE:-opsmesh-worker}"
+observability_service="${OPSMESH_OBSERVABILITY_SERVICE:-opsmesh-observability}"
+observability_enabled="${OPSMESH_OBSERVABILITY_ENABLED:-false}"
 systemctl_bin="${OPSMESH_SYSTEMCTL:-systemctl}"
 uv_sync_args="${OPSMESH_UV_SYNC_ARGS:---frozen --no-dev}"
 
@@ -213,6 +224,9 @@ run_migrations() {
 restart_services() {
     "${systemctl_bin}" daemon-reload
     "${systemctl_bin}" restart "${api_service}" "${worker_service}"
+    if [ "${observability_enabled}" = "true" ]; then
+        "${systemctl_bin}" restart "${observability_service}"
+    fi
 }
 
 write_state() {
@@ -402,6 +416,8 @@ echo "current_link=${current_link}"
 echo "env_file=${env_file}"
 echo "api_service=${api_service}"
 echo "worker_service=${worker_service}"
+echo "observability_service=${observability_service}"
+echo "observability_enabled=${observability_enabled}"
 case "${action}" in
     update)
         echo "manifest=${resolved_manifest:-}"

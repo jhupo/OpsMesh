@@ -21,6 +21,7 @@ from backend.app.self_hosted.models import (
     SelfHostedJobClaim,
     SelfHostedMcpJob,
 )
+from backend.app.self_hosted.policy_gate import SelfHostedPolicyGate
 from backend.app.self_hosted.types import AuthenticatedWorker
 from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService
@@ -41,8 +42,10 @@ class SelfHostedDispatchService:
         self._capacity = SelfHostedWorkerCapacityService(session)
         self._locks = SelfHostedClaimLockRepository(session, jobs)
         self._reservations = SelfHostedRunReservationService(session)
+        self._policy_gate = SelfHostedPolicyGate(session)
 
     def poll_job(self, auth: AuthenticatedWorker) -> AgentRun | None:
+        self._policy_gate.require_enabled()
         self._eligibility.require_accepting_jobs(auth)
         statement = (
             select(AgentRun)
@@ -59,6 +62,7 @@ class SelfHostedDispatchService:
         return None
 
     def claim_job(self, auth: AuthenticatedWorker, agent_run_id: UUID) -> SelfHostedJobClaim:
+        self._policy_gate.require_enabled()
         auth = self._locks.locked_auth(auth)
         self._eligibility.require_accepting_jobs(auth)
         run = self._locks.locked_agent_run(agent_run_id)
@@ -109,6 +113,7 @@ class SelfHostedDispatchService:
         return claim
 
     def poll_mcp_job(self, auth: AuthenticatedWorker) -> SelfHostedMcpJob | None:
+        self._policy_gate.require_enabled()
         self._eligibility.require_accepting_jobs(auth)
         claimed_job = self._session.scalar(
             select(SelfHostedMcpJob)
@@ -138,6 +143,7 @@ class SelfHostedDispatchService:
         return next((job for job in jobs if self._eligibility.can_accept_mcp_job(auth, job)), None)
 
     def claim_mcp_job(self, auth: AuthenticatedWorker, mcp_job_id: UUID) -> SelfHostedMcpJob:
+        self._policy_gate.require_enabled()
         auth = self._locks.locked_auth(auth)
         self._eligibility.require_accepting_jobs(auth)
         job = self._locks.locked_mcp_job(auth, mcp_job_id)

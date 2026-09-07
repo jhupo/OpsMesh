@@ -5,16 +5,19 @@ from sqlalchemy.orm import Session
 from backend.app.api.schemas.self_hosted import (
     ArtifactUploadRequest,
     EnrollmentTokenCreateRequest,
+    JobCompleteRequest,
     LocalFileReferenceRequest,
     McpJobCompleteRequest,
     RuntimeRegistrationRequest,
     WorkerHeartbeatRequest,
 )
 from backend.app.core.config import Settings
+from backend.app.runs.models import AgentRun
 from backend.app.self_hosted.artifacts import SelfHostedArtifactService
 from backend.app.self_hosted.dispatch import SelfHostedDispatchService
 from backend.app.self_hosted.events import SelfHostedEventRecorder
 from backend.app.self_hosted.identity import SelfHostedIdentityService
+from backend.app.self_hosted.job_completion import SelfHostedRunCompletionService
 from backend.app.self_hosted.jobs import SelfHostedJobFinalizer
 from backend.app.self_hosted.maintenance import SelfHostedMaintenanceService
 from backend.app.self_hosted.mcp_jobs import SelfHostedMcpJobService
@@ -22,6 +25,7 @@ from backend.app.self_hosted.models import (
     LocalFileReference,
     RuntimeCredential,
     SelfHostedArtifactUpload,
+    SelfHostedJobClaim,
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
@@ -89,6 +93,24 @@ class SelfHostedRuntimeService:
         data: ArtifactUploadRequest,
     ) -> SelfHostedArtifactUpload:
         return SelfHostedArtifactService(self._session).register_artifact_upload(auth, data)
+
+    def poll_job(self, auth: AuthenticatedWorker) -> AgentRun | None:
+        return self._dispatch.poll_job(auth)
+
+    def claim_job(self, auth: AuthenticatedWorker, agent_run_id: UUID) -> SelfHostedJobClaim:
+        return self._dispatch.claim_job(auth, agent_run_id)
+
+    def complete_job(
+        self,
+        auth: AuthenticatedWorker,
+        agent_run_id: UUID,
+        data: JobCompleteRequest,
+    ) -> SelfHostedJobClaim:
+        return SelfHostedRunCompletionService(self._session).complete_job(
+            auth,
+            agent_run_id,
+            data,
+        )
 
     def create_mcp_job(
         self,

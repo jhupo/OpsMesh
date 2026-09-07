@@ -289,6 +289,12 @@ reimplement MCP framing or JSON-RPC parsing. The runtime image or connector must
 MCP Python SDK and return a serialized SDK `CallToolResult`; the API and worker hosts never execute
 user-controlled stdio processes.
 
+Docker stdio credentials use hosted encrypted payloads with an `env` string mapping. The worker
+decrypts them only at invocation and streams the request through `docker exec` stdin, so raw values
+are not stored in runtime command records or process arguments. Self-hosted stdio credentials use
+provider `self_hosted_env` with `env:VARIABLE_NAME` references; the connector resolves the value
+from its local environment immediately before process launch and persists only the variable name.
+
 The self-hosted connector uses the control-plane-issued runtime credential to heartbeat, poll,
 claim, and complete workspace-scoped MCP jobs. A local SQLite recovery store records the claimed
 request, the execution phase, and the serialized result before completion is posted. On restart,

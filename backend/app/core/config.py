@@ -53,6 +53,18 @@ class Settings(BaseSettings):
         ge=1,
     )
     tracing_enabled: bool = Field(default=True)
+    otel_logs_enabled: bool = Field(default=True)
+    otel_exporter_otlp_endpoint: str | None = Field(default=None)
+    otel_exporter_otlp_insecure: bool = Field(default=False)
+    otel_exporter_otlp_headers: dict[str, str] = Field(default_factory=dict)
+    otel_trace_sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
+    otel_export_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    otel_batch_max_queue_size: int = Field(default=2_048, ge=1)
+    otel_batch_max_export_size: int = Field(default=512, ge=1)
+    otel_batch_schedule_delay_ms: int = Field(default=5_000, ge=100, le=60_000)
+    otel_excluded_urls: str = Field(
+        default="/api/v1/health,/api/v1/health/live,/api/v1/metrics"
+    )
     request_slow_log_threshold_ms: int = Field(default=1_000, ge=1)
     internal_api_token: str = Field(default="change-me-in-production")
     platform_admin_token: str | None = Field(default=None)
@@ -60,6 +72,8 @@ class Settings(BaseSettings):
     token_hash_pepper: str = Field(default="change-me-token-pepper")
     audit_event_retention_days: int | None = Field(default=None, ge=1)
     audit_event_worm_enabled: bool = Field(default=True)
+    audit_integrity_check_interval_seconds: int = Field(default=3_600, ge=60)
+    audit_integrity_stale_after_seconds: int = Field(default=7_200, ge=60)
     storage_backend: StorageBackend = Field(default="local")
     storage_root: str = Field(default=".opsmesh-storage")
     s3_bucket: str = Field(default="")
@@ -116,6 +130,7 @@ class Settings(BaseSettings):
             "release_update_bundle_file",
             "release_update_checksum_url",
             "release_update_checksum_file",
+            "otel_exporter_otlp_endpoint",
         ):
             value = getattr(self, field_name)
             if value is not None:
@@ -123,6 +138,11 @@ class Settings(BaseSettings):
                 setattr(self, field_name, stripped or None)
         if self.storage_backend == "s3" and not self.s3_bucket.strip():
             raise ValueError("OPSMESH_S3_BUCKET must be set when OPSMESH_STORAGE_BACKEND=s3")
+        if self.otel_batch_max_export_size > self.otel_batch_max_queue_size:
+            raise ValueError(
+                "OPSMESH_OTEL_BATCH_MAX_EXPORT_SIZE must not exceed "
+                "OPSMESH_OTEL_BATCH_MAX_QUEUE_SIZE"
+            )
         if self.environment.lower() in {"production", "prod"}:
             if self.internal_api_token == "change-me-in-production":
                 raise ValueError("OPSMESH_INTERNAL_API_TOKEN must be set in production")
@@ -150,6 +170,21 @@ class Settings(BaseSettings):
                 raise ValueError("OPSMESH_CORS_ORIGINS must be set in production")
             if self.storage_root == ".opsmesh-storage":
                 raise ValueError("OPSMESH_STORAGE_ROOT must be explicit in production")
+            if self.log_format != "json":
+                raise ValueError("OPSMESH_LOG_FORMAT must be json in production")
+            if (
+                self.tracing_enabled or self.otel_logs_enabled
+            ) and self.otel_exporter_otlp_endpoint is None:
+                raise ValueError(
+                    "OPSMESH_OTEL_EXPORTER_OTLP_ENDPOINT must be set when OTLP logs or "
+                    "tracing are enabled in production"
+                )
+            if self.otel_exporter_otlp_insecure and not _is_loopback_endpoint(
+                self.otel_exporter_otlp_endpoint
+            ):
+                raise ValueError(
+                    "insecure OTLP export is allowed only to a loopback collector in production"
+                )
         return self
 
     @property
@@ -181,6 +216,13 @@ class Settings(BaseSettings):
             ),
             "blocking_thread_pool_workers": self.blocking_thread_pool_workers,
             "tracing_enabled": self.tracing_enabled,
+            "otel_logs_enabled": self.otel_logs_enabled,
+            "otel_exporter_otlp_endpoint": _redact_url(self.otel_exporter_otlp_endpoint)
+            if self.otel_exporter_otlp_endpoint is not None
+            else None,
+            "otel_exporter_otlp_insecure": self.otel_exporter_otlp_insecure,
+            "otel_exporter_otlp_header_names": sorted(self.otel_exporter_otlp_headers),
+            "otel_trace_sample_ratio": self.otel_trace_sample_ratio,
             "external_call_max_attempts": self.external_call_max_attempts,
             "external_call_circuit_failure_threshold": (
                 self.external_call_circuit_failure_threshold
@@ -189,6 +231,10 @@ class Settings(BaseSettings):
             "api_rate_limit_enabled": self.api_rate_limit_enabled,
             "audit_event_retention_days": self.audit_event_retention_days,
             "audit_event_worm_enabled": self.audit_event_worm_enabled,
+            "audit_integrity_check_interval_seconds": (
+                self.audit_integrity_check_interval_seconds
+            ),
+            "audit_integrity_stale_after_seconds": self.audit_integrity_stale_after_seconds,
             "storage_backend": self.storage_backend,
             "storage_root": self.storage_root,
             "s3_bucket": self.s3_bucket if self.storage_backend == "s3" else "",
@@ -243,6 +289,16 @@ def _redact_url(value: str) -> str:
     redacted_auth = "***:***@" if username is not None else ""
     netloc = f"{redacted_auth}{hostname}{port}"
     return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+
+
+def _is_loopback_endpoint(value: str | None) -> bool:
+    if value is None:
+        return False
+    try:
+        hostname = urlsplit(value).hostname
+    except ValueError:
+        return False
+    return hostname in {"127.0.0.1", "::1", "localhost"}
 
 
 @lru_cache(maxsize=1)

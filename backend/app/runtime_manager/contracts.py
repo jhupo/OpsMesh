@@ -79,4 +79,6 @@ class DockerRuntimeClient(Protocol):
         container_id: str,
         command: list[str],
         timeout_seconds: int,
+        *,
+        stdin_data: str | None = None,
     ) -> RuntimeCommandResult: ...

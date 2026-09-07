@@ -36,6 +36,8 @@ class WorkerRunState:
     scheduled_job_actions_enqueued_by_job_type: dict[str, int] = field(default_factory=dict)
     scheduled_job_actions_recorded_by_job_type: dict[str, int] = field(default_factory=dict)
     scheduled_job_actions_skipped_by_job_type: dict[str, int] = field(default_factory=dict)
+    audit_integrity_workspaces_checked: int = 0
+    audit_integrity_workspaces_invalid: int = 0
     last_error: str | None = None
 
     @property
@@ -78,6 +80,12 @@ class WorkerRunState:
             self.scheduled_job_actions_skipped_by_job_type,
             maintenance.scheduled_job_actions_skipped_by_job_type,
         )
+        self.audit_integrity_workspaces_checked += (
+            maintenance.audit_integrity_workspaces_checked
+        )
+        self.audit_integrity_workspaces_invalid += (
+            maintenance.audit_integrity_workspaces_invalid
+        )
 
     def heartbeat_details(self, config: WorkerRunnerConfig) -> dict[str, object]:
         return worker_heartbeat_details(
@@ -108,6 +116,8 @@ class WorkerRunState:
             scheduled_job_actions_enqueued_by_job_type=self.scheduled_job_actions_enqueued_by_job_type,
             scheduled_job_actions_recorded_by_job_type=self.scheduled_job_actions_recorded_by_job_type,
             scheduled_job_actions_skipped_by_job_type=self.scheduled_job_actions_skipped_by_job_type,
+            audit_integrity_workspaces_checked=self.audit_integrity_workspaces_checked,
+            audit_integrity_workspaces_invalid=self.audit_integrity_workspaces_invalid,
             last_error=self.last_error,
         )
 
@@ -139,5 +149,7 @@ class WorkerRunState:
             scheduled_job_actions_enqueued_by_job_type=self.scheduled_job_actions_enqueued_by_job_type,
             scheduled_job_actions_recorded_by_job_type=self.scheduled_job_actions_recorded_by_job_type,
             scheduled_job_actions_skipped_by_job_type=self.scheduled_job_actions_skipped_by_job_type,
+            audit_integrity_workspaces_checked=self.audit_integrity_workspaces_checked,
+            audit_integrity_workspaces_invalid=self.audit_integrity_workspaces_invalid,
             stopped=stopped,
         )

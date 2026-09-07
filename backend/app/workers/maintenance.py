@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
+from backend.app.audit.integrity import AuditIntegrityService
 from backend.app.core.config import Settings
 from backend.app.files.storage import create_storage
 from backend.app.operations.runtime_cleanup import RuntimeCleanupService
@@ -59,6 +60,8 @@ class WorkerMaintenanceSummary:
     scheduled_job_actions_enqueued_by_job_type: dict[str, int] = field(default_factory=dict)
     scheduled_job_actions_recorded_by_job_type: dict[str, int] = field(default_factory=dict)
     scheduled_job_actions_skipped_by_job_type: dict[str, int] = field(default_factory=dict)
+    audit_integrity_workspaces_checked: int = 0
+    audit_integrity_workspaces_invalid: int = 0
 
 
 class WorkerMaintenanceService:
@@ -127,6 +130,14 @@ class WorkerMaintenanceService:
             queue=self._queue,
             limit=self._config.recovery_batch_size,
         )
+        audit_integrity = AuditIntegrityService(session).run_due(
+            interval_seconds=(
+                self._settings.audit_integrity_check_interval_seconds
+                if self._settings is not None
+                else 3_600
+            ),
+            limit=self._config.recovery_batch_size,
+        )
         return WorkerMaintenanceSummary(
             recovered_runs=recovery.recovered_runs,
             expired_leases=expired_leases,
@@ -157,6 +168,8 @@ class WorkerMaintenanceService:
             scheduled_job_actions_skipped_by_job_type=(
                 scheduled_job_summary.skipped_by_job_type or {}
             ),
+            audit_integrity_workspaces_checked=audit_integrity.checked_workspaces,
+            audit_integrity_workspaces_invalid=audit_integrity.invalid_workspaces,
         )
 
     @contextmanager

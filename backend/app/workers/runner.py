@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from threading import Event
 from typing import Protocol
 
+from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunner
@@ -19,6 +20,7 @@ from backend.app.core.request_context import log_context
 from backend.app.core.trace_context import (
     current_trace_context,
     new_trace_context,
+    telemetry_span,
 )
 from backend.app.operations.worker_capacity_snapshot import WorkerCapacitySnapshotService
 from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsService
@@ -121,22 +123,42 @@ class WorkerRunner:
             )
             handler.handle(job)
 
+    @contextmanager
     def _job_log_context(self, job: JobPayload) -> Iterator[None]:
         run_id = (
             job.resource_id if job.job_type.value in {"agent.run", "mcp.tool_execution"} else None
         )
-        trace = job.trace_context()
-        trace_metadata = {}
-        if trace is not None:
-            trace_metadata = trace.metadata()
-        elif self._tracing_enabled():
-            trace_metadata = new_trace_context().metadata()
-        return log_context(
-            worker_id=self._config.worker_id,
-            workspace_id=job.workspace_id,
-            run_id=run_id,
-            **trace_metadata,
-        )
+        parent_trace = job.trace_context()
+        if not self._tracing_enabled():
+            with log_context(
+                worker_id=self._config.worker_id,
+                workspace_id=job.workspace_id,
+                run_id=run_id,
+            ):
+                yield
+            return
+        with (
+            telemetry_span(
+                "opsmesh.worker.process_job",
+                parent=parent_trace,
+                kind=SpanKind.CONSUMER,
+                attributes={
+                    "messaging.destination.name": self._config.queue_name,
+                    "messaging.operation.name": "process",
+                    "messaging.system": "redis",
+                    "opsmesh.job.attempt": job.attempt,
+                    "opsmesh.job.type": job.job_type.value,
+                    "opsmesh.workspace.id": str(job.workspace_id),
+                },
+            ) as active_trace,
+            log_context(
+                worker_id=self._config.worker_id,
+                workspace_id=job.workspace_id,
+                run_id=run_id,
+                **active_trace.metadata(),
+            ),
+        ):
+            yield
 
     def run(
         self,

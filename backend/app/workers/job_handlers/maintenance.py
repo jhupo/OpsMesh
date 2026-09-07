@@ -1,5 +1,6 @@
 import asyncio
 
+from backend.app.audit.integrity import AuditIntegrityService
 from backend.app.model_providers.health_service import ModelProviderHealthService
 from backend.app.secrets.rotation import HostedSecretReencryptService
 from backend.app.workers.job_handlers.context import WorkerJobHandlerContext
@@ -47,3 +48,13 @@ class ModelProviderHealthJobHandler:
                 ),
             )
         )
+
+
+class AuditIntegrityJobHandler:
+    def __init__(self, context: WorkerJobHandlerContext) -> None:
+        self._context = context
+
+    def handle(self, job: JobPayload) -> None:
+        if job.resource_id != job.workspace_id:
+            raise ValueError("Audit integrity job workspace mismatch")
+        AuditIntegrityService(self._context.session).check_workspace(job.workspace_id)

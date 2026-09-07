@@ -129,6 +129,22 @@ def test_production_requires_worker_readiness_check() -> None:
         _production_settings(readiness_worker_check_enabled=False)
 
 
+def test_production_requires_secure_or_loopback_trace_export() -> None:
+    with pytest.raises(ValueError, match="OPSMESH_OTEL_EXPORTER_OTLP_ENDPOINT"):
+        _production_settings(otel_exporter_otlp_endpoint=None)
+
+    with pytest.raises(ValueError, match="insecure OTLP export"):
+        _production_settings(
+            otel_exporter_otlp_endpoint="http://collector.example.com:4317",
+            otel_exporter_otlp_insecure=True,
+        )
+
+
+def test_otel_batch_size_cannot_exceed_queue_size() -> None:
+    with pytest.raises(ValueError, match="OPSMESH_OTEL_BATCH_MAX_EXPORT_SIZE"):
+        Settings(otel_batch_max_queue_size=10, otel_batch_max_export_size=11)
+
+
 def test_production_rejects_unsafe_runtime_and_infrastructure_defaults() -> None:
     with pytest.raises(ValueError, match="DATABASE_URL"):
         _production_settings(
@@ -373,6 +389,8 @@ def _production_settings(**overrides: object) -> Settings:
         "redis_url": "redis://redis.example.com:6379/0",
         "cors_origins": ["https://console.example.com"],
         "storage_root": "/srv/opsmesh/storage",
+        "otel_exporter_otlp_endpoint": "http://127.0.0.1:4317",
+        "otel_exporter_otlp_insecure": True,
     }
     values.update(overrides)
     return Settings(**values)

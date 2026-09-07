@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
@@ -15,6 +17,8 @@ from .mcp_stdio_client import (
 
 JobPhase = Literal["claimed", "executing", "result_ready"]
 CompletionStatus = Literal["completed", "failed"]
+_ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_RESERVED_ENVIRONMENT_NAMES = frozenset({"OPSMESH_RUNTIME_CREDENTIAL"})
 
 
 class ConnectorContractError(ValueError):
@@ -25,8 +29,23 @@ class ConnectorStateError(RuntimeError):
     """Raised when durable connector state is invalid or cannot transition."""
 
 
+class ConnectorCredentialError(RuntimeError):
+    """Raised when a self-hosted MCP credential cannot be resolved locally."""
+
+
 class ConnectorApiError(RuntimeError):
     """Raised for a sanitized control-plane transport or response failure."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retryable = retryable
 
 
 @dataclass(frozen=True)
@@ -96,7 +115,11 @@ class PendingMcpJob:
     completion: McpJobCompletion | None
 
 
-def request_from_job_payload(payload: dict[str, object]) -> dict[str, object]:
+def request_from_job_payload(
+    payload: dict[str, object],
+    *,
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, object]:
     contract_version = payload.get("contract_version")
     sdk = payload.get("sdk")
     request = payload.get("request")
@@ -113,4 +136,54 @@ def request_from_job_payload(payload: dict[str, object]) -> dict[str, object]:
         validate_request_contract(request)
     except ValueError as exc:
         raise ConnectorContractError("Unsupported self-hosted MCP request contract") from exc
-    return request
+    if "env" in _mapping(request, "server"):
+        raise ConnectorContractError(
+            "Self-hosted MCP request must not contain expanded credential values"
+        )
+    environment_refs = _environment_refs(payload)
+    if not environment_refs:
+        return request
+    available_environment = environment or {}
+    resolved_environment: dict[str, str] = {}
+    for target_name, source_name in environment_refs.items():
+        value = available_environment.get(source_name)
+        if value is None:
+            raise ConnectorCredentialError(
+                "Self-hosted MCP credential environment variable is unavailable"
+            )
+        resolved_environment[target_name] = value
+    resolved_request = dict(request)
+    server = dict(_mapping(request, "server"))
+    server["env"] = resolved_environment
+    resolved_request["server"] = server
+    try:
+        validate_request_contract(resolved_request)
+    except ValueError as exc:
+        raise ConnectorCredentialError(
+            "Self-hosted MCP credential environment is invalid"
+        ) from exc
+    return resolved_request
+
+
+def _environment_refs(payload: dict[str, object]) -> dict[str, str]:
+    raw_references = payload.get("environment_refs")
+    if raw_references is None:
+        return {}
+    if not isinstance(raw_references, dict) or any(
+        not isinstance(target_name, str)
+        or not isinstance(source_name, str)
+        or not _ENVIRONMENT_NAME.fullmatch(target_name)
+        or not _ENVIRONMENT_NAME.fullmatch(source_name)
+        or target_name in _RESERVED_ENVIRONMENT_NAMES
+        or source_name in _RESERVED_ENVIRONMENT_NAMES
+        for target_name, source_name in raw_references.items()
+    ):
+        raise ConnectorContractError("Unsupported self-hosted MCP credential contract")
+    return raw_references
+
+
+def _mapping(payload: dict[str, object], key: str) -> dict[str, object]:
+    value = payload.get(key)
+    if not isinstance(value, dict):
+        raise ConnectorContractError("Unsupported self-hosted MCP request contract")
+    return value

@@ -9,7 +9,7 @@ from backend.app.agent_runtime.sessions import (
 from backend.app.agents.models import AgentProfile, AgentProfileVersion
 from backend.app.approvals.models import Approval
 from backend.app.artifacts.models import Artifact
-from backend.app.audit.models import AuditEvent
+from backend.app.audit.models import AuditEvent, AuditIntegrityCheck
 from backend.app.capabilities.models import (
     Capability,
     McpCredentialReference,
@@ -20,6 +20,7 @@ from backend.app.capabilities.models import (
     ToolGroup,
     WorkspaceSkillInstall,
 )
+from backend.app.costs.models import ModelPricingRule, ModelUsageRecord, WorkspaceCostBudget
 from backend.app.domains.models import DomainItem, DomainProject, ReviewComment, RevisionRequest
 from backend.app.exports.models import WorkspaceExportJob
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
@@ -87,6 +88,7 @@ __all__ = [
     "Approval",
     "Artifact",
     "AuditEvent",
+    "AuditIntegrityCheck",
     "Capability",
     "DomainItem",
     "DomainProject",
@@ -97,6 +99,8 @@ __all__ = [
     "McpToolAllowlist",
     "McpToolCallLog",
     "MarketplaceListing",
+    "ModelPricingRule",
+    "ModelUsageRecord",
     "ModelProviderCredential",
     "PersistentAgentSession",
     "PersistentAgentSessionItem",
@@ -133,6 +137,7 @@ __all__ = [
     "User",
     "UserAPIToken",
     "Workspace",
+    "WorkspaceCostBudget",
     "WorkspaceInvite",
     "WorkspaceAgentInstall",
     "WorkspaceExportJob",

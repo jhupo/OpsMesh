@@ -17,6 +17,7 @@ from backend.app.runs.models import AgentRun
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.secrets.service import SecretEncryptionService
 from backend.app.self_hosted.mcp_jobs import SelfHostedMcpJobService
 
 
@@ -28,12 +29,14 @@ class ContextualMcpAdapterResolver:
         context: AgentRuntimeContext,
         settings: Settings | None = None,
         docker_client: DockerRuntimeClient | None = None,
+        secret_service: SecretEncryptionService | None = None,
     ) -> None:
         self._session = session
         self._default_adapter = default_adapter
         self._context = context
         self._settings = settings
         self._docker_client = docker_client
+        self._secret_service = secret_service
 
     def resolve(self, server: McpServer) -> McpToolAdapter:
         run = self._current_run()
@@ -52,6 +55,7 @@ class ContextualMcpAdapterResolver:
             return DockerRuntimeStdioMcpToolAdapter(
                 runtime_manager=RuntimeManager(self._session, self._docker_client),
                 runtime=runtime,
+                secret_service=self._secret_service,
             )
         return self._default_adapter_for(server)
 

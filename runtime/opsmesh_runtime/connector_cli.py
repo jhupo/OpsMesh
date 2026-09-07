@@ -95,7 +95,9 @@ def _run_forever(
                     api.heartbeat(capabilities)
                     next_heartbeat = time.monotonic() + heartbeat_interval_seconds
                 outcome = connector.run_once()
-            except ConnectorApiError:
+            except ConnectorApiError as exc:
+                if not exc.retryable:
+                    raise
                 print(
                     "Self-hosted connector control-plane request failed; retrying",
                     file=sys.stderr,

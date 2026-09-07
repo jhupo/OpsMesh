@@ -12,6 +12,7 @@ from backend.app.operations.observability_constants import (
     PROMETHEUS_QUEUE_SCAN_LIMIT,
     PROMETHEUS_WORKER_STALE_AFTER_SECONDS,
 )
+from backend.app.operations.prometheus_governance_metrics import GovernancePrometheusMetrics
 from backend.app.operations.prometheus_runtime_metrics import RuntimePrometheusMetrics
 from backend.app.operations.prometheus_team_runtime_metrics import TeamRuntimePrometheusMetrics
 from backend.app.operations.prometheus_worker_metrics import WorkerPrometheusMetrics
@@ -35,6 +36,7 @@ class OperationsPrometheusMetricsService:
         *,
         worker_stale_after_seconds: int = PROMETHEUS_WORKER_STALE_AFTER_SECONDS,
         queue_scan_limit: int = PROMETHEUS_QUEUE_SCAN_LIMIT,
+        audit_integrity_stale_after_seconds: int = 7_200,
     ) -> list[GaugeMetric]:
         now = datetime.now(UTC)
         gauges: list[GaugeMetric] = []
@@ -74,13 +76,32 @@ class OperationsPrometheusMetricsService:
                 ]
             )
         except (OSError, RedisError, TimeoutError):
-            pass
+            gauges.append(_collection_status("redis", success=False))
+        else:
+            gauges.append(_collection_status("redis", success=True))
         try:
             gauges.extend(
                 WorkerPrometheusMetrics(self._session).gauges(now, worker_stale_after_seconds)
             )
             gauges.extend(RuntimePrometheusMetrics(self._session).gauges())
             gauges.extend(TeamRuntimePrometheusMetrics(self._session).gauges(now))
+            gauges.extend(
+                GovernancePrometheusMetrics(self._session).gauges(
+                    now,
+                    audit_stale_after_seconds=audit_integrity_stale_after_seconds,
+                )
+            )
         except SQLAlchemyError:
-            pass
+            gauges.append(_collection_status("postgres", success=False))
+        else:
+            gauges.append(_collection_status("postgres", success=True))
         return gauges
+
+
+def _collection_status(source: str, *, success: bool) -> GaugeMetric:
+    return GaugeMetric(
+        "opsmesh_metrics_collection_success",
+        int(success),
+        labels={"source": source},
+        help_text="Whether the latest domain metrics collection succeeded.",
+    )

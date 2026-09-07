@@ -14,8 +14,10 @@ from backend.app.core.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
+from backend.app.db.session import engine
 from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
 from backend.app.redis.client import close_redis_client, create_redis_client
+from backend.app.telemetry.tracing import configure_api_telemetry
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -69,6 +71,11 @@ def create_app_with_dependencies(
         )
     register_error_handlers(app)
     app.include_router(api_router, prefix=app_settings.api_prefix)
+    app.state.telemetry_runtime = configure_api_telemetry(
+        app,
+        app_settings,
+        engine=engine,
+    )
     return app
 
 
@@ -80,6 +87,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         redis_client = getattr(app.state, "redis_client", None)
         if redis_client is not None:
             close_redis_client(redis_client)
+        telemetry_runtime = getattr(app.state, "telemetry_runtime", None)
+        if telemetry_runtime is not None:
+            telemetry_runtime.shutdown()
         shutdown_blocking_executor(wait=False)
 
 

@@ -60,6 +60,75 @@
       "targets": [{"expr": "opsmesh_runtime_space_quota_usage_ratio", "legendFormat": "{{quota_key}} {{unit}}", "refId": "A"}],
       "title": "Runtime Quota Usage",
       "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
+      "fieldConfig": {"defaults": {"mappings": [], "unit": "short"}},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 16},
+      "id": 7,
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "opsmesh_audit_integrity_workspaces", "legendFormat": "{{state}}", "refId": "A"}],
+      "title": "Audit Integrity",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
+      "fieldConfig": {"defaults": {"mappings": [], "unit": "short"}},
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 16},
+      "id": 8,
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "opsmesh_cost_budget_workspaces", "legendFormat": "{{state}}", "refId": "A"}],
+      "title": "Cost Budgets",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
+      "fieldConfig": {"defaults": {"mappings": [], "unit": "short"}},
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 16},
+      "id": 9,
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "opsmesh_model_usage_records_24h", "legendFormat": "{{state}}", "refId": "A"}],
+      "title": "Model Usage Metering",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "opsmesh-loki"},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 28},
+      "id": 10,
+      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+      "targets": [{"expr": "{service_name=~\"opsmesh-(api|worker)\"} | json", "refId": "A"}],
+      "title": "API and Worker Logs",
+      "type": "logs"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never"}, "mappings": [], "unit": "ms"}},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 22},
+      "id": 11,
+      "options": {"legend": {"displayMode": "hidden", "placement": "bottom", "showLegend": false}, "tooltip": {"mode": "single"}},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(opsmesh_http_request_duration_ms_bucket[5m])))", "legendFormat": "P95", "refId": "A"}],
+      "title": "HTTP P95 Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
+      "fieldConfig": {"defaults": {"mappings": [], "unit": "short"}},
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 22},
+      "id": 12,
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "opsmesh_model_cost_current_month", "legendFormat": "{{currency}}", "refId": "A"}],
+      "title": "Current Month Model Cost",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
+      "fieldConfig": {"defaults": {"mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}},
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 22},
+      "id": 13,
+      "options": {"displayMode": "lcd", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "opsmesh_metrics_collection_success", "legendFormat": "{{source}}", "refId": "A"}],
+      "title": "Metrics Collection",
+      "type": "bargauge"
     }
   ],
   "refresh": "30s",

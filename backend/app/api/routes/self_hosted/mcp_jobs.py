@@ -50,7 +50,12 @@ async def claim_mcp_job(
     try:
         job = service.claim_mcp_job(auth, mcp_job_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        status_code = (
+            status.HTTP_400_BAD_REQUEST
+            if "disabled by platform safety policy" in str(exc)
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     if job.claimed_at is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

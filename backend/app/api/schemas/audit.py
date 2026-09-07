@@ -25,3 +25,24 @@ class AuditEventResponse(ORMModel):
     @field_serializer("audit_metadata")
     def _serialize_audit_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+
+class AuditIntegrityCheckResponse(ORMModel):
+    id: UUID
+    workspace_id: UUID
+    checked_events: int
+    valid: bool
+    broken_event_id: UUID | None
+    reason: str | None
+    created_at: datetime
+
+
+class AuditIntegrityStatusResponse(ORMModel):
+    status: str
+    stale: bool
+    latest: AuditIntegrityCheckResponse | None
+
+
+class AuditIntegrityVerificationQueuedResponse(ORMModel):
+    job_id: UUID
+    status: str

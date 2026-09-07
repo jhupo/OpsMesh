@@ -72,7 +72,10 @@ class FakeDockerClient(DockerRuntimeClient):
         container_id: str,
         command: list[str],
         timeout_seconds: int,
+        *,
+        stdin_data: str | None = None,
     ) -> RuntimeCommandResult:
+        _ = stdin_data
         self.executed.append((container_id, command, timeout_seconds))
         return RuntimeCommandResult(exit_code=0, stdout="ok\n", stderr="")
 
@@ -220,6 +223,68 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     assert runtime.capabilities["managed_resources"]["docker_volumes"] == [
         docker.created_requests[0].mounts[0].source
     ]
+
+
+def test_runtime_manager_passes_stdin_without_persisting_it() -> None:
+    class StdinDockerClient(FakeDockerClient):
+        stdin_values: list[str | None] = []
+
+        def exec_command(
+            self,
+            container_id: str,
+            command: list[str],
+            timeout_seconds: int,
+            *,
+            stdin_data: str | None = None,
+        ) -> RuntimeCommandResult:
+            self.stdin_values.append(stdin_data)
+            return super().exec_command(
+                container_id,
+                command,
+                timeout_seconds,
+                stdin_data=stdin_data,
+            )
+
+    session = _session()
+    workspace = Workspace(
+        owner_user_id=uuid4(),
+        name="Acme",
+        slug="acme-transient-stdin",
+        settings={},
+    )
+    template = RuntimeTemplate(
+        name="python-stdin",
+        image="python:3.12-slim",
+        default_limits={},
+        default_network_policy={"disabled": True},
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([workspace, template])
+    session.commit()
+    docker = StdinDockerClient()
+    manager = RuntimeManager(session, docker)
+    runtime = manager.create_runtime(
+        workspace_id=workspace.id,
+        template=template,
+        name="analysis",
+        limits=RuntimeLimits(
+            cpu_count=1,
+            memory_mb=256,
+            disk_mb=512,
+            timeout_seconds=10,
+        ),
+    )
+
+    record = manager.execute_command(
+        workspace_id=workspace.id,
+        runtime=runtime,
+        command=["python", "-m", "worker", "--request-stdin"],
+        stdin_data='{"env":{"MCP_API_KEY":"runtime-secret"}}',
+    )
+
+    assert docker.stdin_values == ['{"env":{"MCP_API_KEY":"runtime-secret"}}']
+    assert "runtime-secret" not in str(record.command)
+    assert "runtime-secret" not in str(record.stderr)
 
 
 def test_runtime_manager_reserves_and_releases_runtime_space_docker_usage() -> None:
@@ -451,7 +516,10 @@ def test_runtime_manager_records_command_timeout_without_leaving_running_command
             container_id: str,
             command: list[str],
             timeout_seconds: int,
+            *,
+            stdin_data: str | None = None,
         ) -> RuntimeCommandResult:
+            _ = stdin_data
             self.executed.append((container_id, command, timeout_seconds))
             raise TimeoutExpired(cmd=command, timeout=timeout_seconds)
 
@@ -502,7 +570,10 @@ def test_runtime_manager_records_docker_exec_failure_without_raising() -> None:
             container_id: str,
             command: list[str],
             timeout_seconds: int,
+            *,
+            stdin_data: str | None = None,
         ) -> RuntimeCommandResult:
+            _ = stdin_data
             self.executed.append((container_id, command, timeout_seconds))
             raise RuntimeError("docker exec unavailable")
 
@@ -551,7 +622,10 @@ def test_runtime_manager_limits_command_output_and_records_policy_event() -> Non
             container_id: str,
             command: list[str],
             timeout_seconds: int,
+            *,
+            stdin_data: str | None = None,
         ) -> RuntimeCommandResult:
+            _ = stdin_data
             self.executed.append((container_id, command, timeout_seconds))
             return RuntimeCommandResult(exit_code=0, stdout="abcdef", stderr="xyz")
 
@@ -1042,6 +1116,55 @@ def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch
     assert "--mount" in command
     assert command[command.index("--workdir") + 1] == "/workspace"
     assert "opsmesh.runtime_id=runtime-1" in command
+
+
+def test_docker_cli_exec_streams_transient_stdin_without_argv_secret(monkeypatch) -> None:
+    from backend.app.runtime_manager.docker_client import DockerCliRuntimeClient
+
+    captured: dict[str, object] = {}
+
+    def fake_run(
+        command: list[str],
+        *,
+        capture_output: bool,
+        check: bool,
+        input: str,
+        text: bool,
+        timeout: int,
+    ):
+        _ = capture_output, check, text, timeout
+        captured["command"] = command
+        captured["input"] = input
+
+        class Completed:
+            returncode = 0
+            stdout = "ok"
+            stderr = ""
+
+        return Completed()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    result = DockerCliRuntimeClient().exec_command(
+        "container-123",
+        ["python", "-m", "worker", "--request-stdin"],
+        10,
+        stdin_data="runtime-secret",
+    )
+
+    assert result.exit_code == 0
+    assert captured["command"] == [
+        "docker",
+        "exec",
+        "-i",
+        "container-123",
+        "python",
+        "-m",
+        "worker",
+        "--request-stdin",
+    ]
+    assert "runtime-secret" not in str(captured["command"])
+    assert captured["input"] == "runtime-secret"
 
 
 def test_runtime_control_service_applies_team_runtime_space_policy() -> None:

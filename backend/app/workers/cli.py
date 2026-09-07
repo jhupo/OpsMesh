@@ -9,9 +9,10 @@ from threading import Event
 from backend.app.agent_runtime.factory import build_agent_runner
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.logging import configure_logging
-from backend.app.db.session import SessionLocal
+from backend.app.db.session import SessionLocal, engine
 from backend.app.orchestration.runs import build_default_queue
 from backend.app.redis.client import redis_client
+from backend.app.telemetry.tracing import configure_worker_telemetry
 from backend.app.workers.runner import WorkerRunner, WorkerRunnerConfig
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,14 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     settings = get_settings()
     configure_logging(settings)
+    telemetry_runtime = configure_worker_telemetry(settings, engine=engine)
+    try:
+        return _run_worker(args, settings)
+    finally:
+        telemetry_runtime.shutdown()
+
+
+def _run_worker(args: argparse.Namespace, settings: Settings) -> int:
 
     stop_event = Event()
     _install_signal_handlers(stop_event)

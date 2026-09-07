@@ -54,3 +54,24 @@ def _reject_audit_event_delete(mapper: object, connection: object, target: Audit
 
 event.listen(AuditEvent, "before_update", _reject_audit_event_update)
 event.listen(AuditEvent, "before_delete", _reject_audit_event_delete)
+
+
+class AuditIntegrityCheck(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "audit_integrity_checks"
+    __table_args__ = (
+        Index(
+            "ix_audit_integrity_checks_workspace_created",
+            "workspace_id",
+            "created_at",
+        ),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    checked_events: Mapped[int] = mapped_column(nullable=False)
+    valid: Mapped[bool] = mapped_column(nullable=False)
+    broken_event_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(nullable=False)

@@ -47,4 +47,6 @@ class WorkerRunSummary:
     scheduled_job_actions_enqueued_by_job_type: dict[str, int]
     scheduled_job_actions_recorded_by_job_type: dict[str, int]
     scheduled_job_actions_skipped_by_job_type: dict[str, int]
+    audit_integrity_workspaces_checked: int
+    audit_integrity_workspaces_invalid: int
     stopped: bool

@@ -55,6 +55,43 @@ The optional `--capabilities-file` must contain the complete capability object. 
 empty heartbeat object, which tells the control plane to preserve the capabilities established at
 registration.
 
+## Stdio MCP Credentials
+
+Self-hosted stdio MCP servers resolve credentials from the Connector machine, not from the cloud.
+Create an MCP credential reference with provider `self_hosted_env` and an external reference in the
+form `env:VARIABLE_NAME`. The control plane queues and stores only that variable name. Immediately
+before starting the MCP server, the Connector reads the value from its own process environment and
+injects it into the child process.
+
+Missing variables, malformed references, duplicate target names, hosted cloud credentials, and the
+reserved `OPSMESH_RUNTIME_CREDENTIAL` variable fail closed. Raw values are never stored in the
+control-plane MCP job, Connector recovery database, command arguments, completion payload, or error
+message.
+
+## Deployed Control-Plane Smoke
+
+Run the packaged connector smoke from a release checkout on the self-hosted machine. It creates a
+private temporary virtual environment, installs `runtime`, checks the pinned MCP SDK, authenticates
+with the deployed API, sends a heartbeat, and performs one or more `--once` cycles:
+
+```bash
+export OPSMESH_API_URL=https://opsmesh.example.com/api/v1
+export OPSMESH_RUNTIME_CREDENTIAL=ccwc_replace_with_runtime_credential
+scripts/self-hosted-connector-smoke.sh
+```
+
+With a queued self-hosted MCP job, require an actual completion rather than an empty poll:
+
+```bash
+OPSMESH_CONNECTOR_EXPECTED_STATUS=completed \
+    OPSMESH_CONNECTOR_SMOKE_TIMEOUT_SECONDS=120 \
+    scripts/self-hosted-connector-smoke.sh
+```
+
+The script prints only the connector status JSON. It never prints the runtime credential or control
+plane response bodies. Set `OPSMESH_CONNECTOR_SMOKE_DIR` to retain the private virtual environment
+and SQLite recovery ledger for restart/replay verification.
+
 ## Execution And Recovery
 
 The connector processes one MCP job at a time:
@@ -66,6 +103,11 @@ The connector processes one MCP job at a time:
 5. Persist the serialized SDK result as `result_ready` before posting completion.
 6. Remove local state only after the completion endpoint confirms the same terminal status.
 
+The completion contract is strict: `completed` requires a response payload and forbids an error;
+`failed` requires an error payload and forbids a response. A repeated completion is accepted only
+when its terminal status and payloads exactly match the stored result. A conflicting retry is
+rejected, so a delayed or compromised worker cannot overwrite durable execution evidence.
+
 After restart, a `result_ready` completion is posted again without re-executing the tool. A
 `claimed` request that did not begin execution is resumed. An `executing` request has an uncertain
 side-effect outcome, so it is completed with `self_hosted_mcp_execution_interrupted` instead of
@@ -73,5 +115,7 @@ being invoked twice. If the process stopped immediately after the API claim, the
 returns that worker's claimed job before new work so the connector can recreate its local record.
 
 Transport failures, response bodies, SDK exception messages, tool arguments, and runtime
-credentials are not copied into completion errors. Operators receive stable error codes while
-sensitive details remain local.
+credentials are not copied into completion errors. Transient control-plane failures (`408`, `429`,
+`5xx`, and transport failures) are retried; permanent HTTP failures and invalid connector
+contracts stop the process while preserving the local recovery record for operator intervention.
+Operators receive stable error codes while sensitive details remain local.

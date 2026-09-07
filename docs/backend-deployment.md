@@ -5,7 +5,7 @@ This project ships as a backend control plane with two long-running process type
 - API process: serves workspace, task, runtime, approval, file, and operations APIs.
 - Worker process: pulls queued agent runs from Redis and records durable run state in Postgres.
 
-Production server deployments run the API and worker directly on the VPS through systemd and a release-local Python virtual environment. Docker is still required on the host for dangerous task runtimes; it is not used to run the backend API or worker.
+Production server deployments run the API and worker directly on the VPS through systemd and a release-local Python virtual environment. Docker is still required on the host for dangerous task runtimes and the pinned observability stack; it is not used to run the backend API or worker.
 
 Postgres remains the source of truth. Redis is used for queues, locks, pub/sub, and short-lived cache. User-controlled execution must still happen in Docker runtimes or self-hosted isolated machines, never inside the API or worker process.
 
@@ -112,11 +112,13 @@ Set production values in `/opt/opsmesh/.env`, especially:
 - `OPSMESH_RUNTIME_ALLOWED_IMAGES=["opsmesh-runtime:local"]` or a reviewed immutable runtime image
   digest
 
-Install Docker on the VPS and leave the daemon available only to the worker service user if hosted runtime execution is enabled. The backend starts no compose stack; Docker is only the runtime substrate for isolated task containers, and the API process must not be able to control the Docker daemon.
+Install Docker on the VPS and leave the daemon available only to the worker service user if hosted runtime execution is enabled. The backend API and worker are not Compose services. Docker runs isolated task containers and the separately managed observability stack; the API process must not be able to control the Docker daemon.
 
 ## systemd Services
 
-Create separate unprivileged service users and install systemd units for the API and worker:
+Create separate unprivileged service users and install systemd units for the API and worker. The
+observability unit is root-owned because Docker manages its containers; the Collector receives
+application telemetry over the loopback OTLP endpoint and does not mount the host filesystem:
 
 ```bash
 sudo groupadd --system opsmesh
@@ -179,6 +181,12 @@ sudo systemctl enable opsmesh-api opsmesh-worker
 
 Put Nginx or another controlled ingress in front of `127.0.0.1:8000` before exposing the API outside the server.
 
+Install `deploy/server/systemd/opsmesh-observability.service` with the API and worker units after
+rendering `/opt/opsmesh/alertmanager.generated.yml`. Complete setup and secret-isolation steps are
+in [Observability, Audit, and Cost Operations](observability-audit-and-costs.md). The monitoring
+Compose file is Linux-specific: it uses host networking so Prometheus can scrape the API at
+`127.0.0.1:8000`, while every monitoring listener is also pinned to `127.0.0.1`.
+
 ## Release Bundles and Server Updates
 
 Pushing a tag such as `v1.2.3` runs the backend quality gate and creates a GitHub Release with VPS/systemd deployment assets:
@@ -187,7 +195,7 @@ Pushing a tag such as `v1.2.3` runs the backend quality gate and creates a GitHu
 - `opsmesh-server-v1.2.3.tar.gz`
 - `opsmesh-server-v1.2.3.tar.gz.sha256`
 
-The manifest records the bundle URL and bundle sha256. It does not reference a backend container image. The server updater downloads or reads the manifest, verifies the bundle sha256, unpacks it into `/opt/opsmesh/releases/<tag>`, switches `/opt/opsmesh/current`, runs `uv sync`, applies `alembic upgrade head`, restarts `opsmesh-api` and `opsmesh-worker`, then runs the health smoke.
+The manifest records the bundle URL and bundle sha256. It does not reference a backend container image. The server updater downloads or reads the manifest, verifies the bundle sha256, unpacks it into `/opt/opsmesh/releases/<tag>`, switches `/opt/opsmesh/current`, runs `uv sync`, applies `alembic upgrade head`, restarts `opsmesh-api`, `opsmesh-worker`, and the enabled `opsmesh-observability` service, then runs the health smoke.
 
 On the server, update by tag:
 
@@ -283,19 +291,26 @@ OPSMESH_ENV_FILE=/opt/opsmesh/.env \
 
 That check verifies `docker.service` and runs `docker info` as the worker user when `sudo` is available. The API service user should not have Docker daemon access.
 
-Run the smoke test with monitoring checks after Prometheus, Alertmanager, and Grafana are started:
+Run the smoke test with monitoring checks after the complete observability stack is started:
 
 ```bash
 OPSMESH_SMOKE_MONITORING=true /opt/opsmesh/current/scripts/server-smoke-test.sh
 ```
 
-Keep Grafana and Alertmanager behind SSH tunneling, VPN, or authenticated ingress unless a production SSO/auth layer is configured.
+That mode checks the observability systemd unit, Prometheus, Alertmanager, Loki, Tempo, the
+OpenTelemetry Collector, Grafana, the OpsMesh Prometheus target and governance series, recent log
+ingestion, and an end-to-end W3C trace. Keep Grafana and Alertmanager behind SSH tunneling, VPN, or
+authenticated ingress unless a production SSO/auth layer is configured.
 
-The release bundle also carries the minimal monitoring stack assets under `deploy/server/monitoring`:
+The release bundle carries the pinned observability stack assets under `deploy/server/monitoring`:
 
-- Prometheus scrapes `127.0.0.1:8000/api/v1/metrics` and loads `alert-rules.yml`.
-- Alertmanager loads `alertmanager.yml`; the checked-in receiver keeps alerts visible until an operator adds email, Slack, or webhook routing.
-- Grafana provisions the Prometheus datasource and the `OpsMesh Control Plane` dashboard from `deploy/server/monitoring/grafana`.
+- Prometheus scrapes the host API and the observability services and loads `alert-rules.yml`.
+- Alertmanager refuses to start without a separately rendered real webhook receiver config.
+- OpenTelemetry Collector exports API/worker traces to Tempo and OTLP application logs to Loki;
+  JSON stdout remains available through systemd for local diagnosis.
+- Tempo emits span metrics and service graphs back to Prometheus.
+- Grafana provisions Prometheus, Loki, and Tempo correlation plus the `OpsMesh Control Plane`
+  dashboard.
 
 ## Isolated Remote Backend Validation
 
@@ -328,8 +343,10 @@ Before running with `OPSMESH_ENVIRONMENT=production`, set strong values for:
 - `OPSMESH_READINESS_WORKER_CHECK_ENABLED=true`
 - `OPSMESH_CREDENTIAL_ENCRYPTION_SECRET`
 - `OPSMESH_GRAFANA_ADMIN_PASSWORD`
+- `OPSMESH_OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317`
+- `OPSMESH_ALERTMANAGER_CONFIG_FILE=/opt/opsmesh/alertmanager.generated.yml`
 
-The application refuses to boot in production when default internal secrets are used, API docs are still enabled, worker readiness is disabled, or local default database credentials are configured.
+The application refuses to boot in production when default internal secrets are used, API docs are still enabled, worker readiness is disabled, local default database credentials are configured, or OTLP logs/tracing are enabled without a valid secure or loopback collector.
 
 The credential encryption secret protects hosted MCP credentials, model provider keys, and webhook signing secrets stored by the platform. Rotate it by setting a new `OPSMESH_CREDENTIAL_ENCRYPTION_SECRET` and `OPSMESH_CREDENTIAL_ENCRYPTION_KEY_ID`, while keeping old key material in `OPSMESH_CREDENTIAL_ENCRYPTION_PREVIOUS_SECRETS` as a JSON object keyed by old key ID. Once old encrypted rows have been re-encrypted under the current key, remove the retired key from the previous-secret keyring.
 

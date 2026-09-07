@@ -109,7 +109,7 @@ workspace labels, cleanup verification, and security evidence.
 manager tests against both clients, then switch the composition root. Do not expose Docker SDK
 objects outside `runtime_manager`.
 
-### P1: OpenTelemetry Python
+### Adopted: OpenTelemetry Python
 
 **Candidates:**
 
@@ -122,16 +122,17 @@ instrumentation for FastAPI, HTTP clients, SQLAlchemy, Redis, and supported mode
 **Keep:** audit events, security events, domain event names, redaction policy, and stable
 workspace/task/run correlation fields.
 
-Start with traces. OpenTelemetry metrics can follow after the Prometheus migration. Treat log
-signal integration separately because its Python stability may differ from traces and metrics.
+The active implementation exports structured API/worker logs and traces over OTLP, propagates W3C
+context through HTTP and Redis jobs, and instruments FastAPI, HTTPX, SQLAlchemy, and Redis. Product
+audit events remain an independent Postgres record.
 
-### P1: Prometheus Python client
+### Adopted: Prometheus Python client
 
 **Candidate:** [prometheus/client_python](https://github.com/prometheus/client_python)
 
-Replace custom metric family and exposition formatting in `backend/app/core/metrics.py`. Preserve
-the domain collectors under `backend/app/operations`, but publish through official Counter,
-Histogram, and Gauge primitives. Define and test label-cardinality limits before migration.
+`backend/app/core/metrics.py` publishes process, HTTP, and domain metrics through official Counter,
+Histogram, Gauge, and collector primitives. Domain collectors stay under `backend/app/operations`,
+and route-template labels prevent request-ID path cardinality.
 
 ### P1: pgvector-python
 

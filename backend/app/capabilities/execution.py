@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from opentelemetry.trace import SpanKind
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -24,6 +25,7 @@ from backend.app.capabilities.mcp_execution_validation import McpExecutionValida
 from backend.app.capabilities.mcp_policy import MCP_LIMIT_COUNTED_STATUSES
 from backend.app.capabilities.models import McpToolAllowlist, McpToolCallLog
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.reviews.tool_execution import ToolExecutionReviewService
 
 
@@ -39,6 +41,19 @@ class McpToolExecutionService:
         self._settings = settings or get_settings()
 
     def execute(self, request: McpExecutionRequest) -> McpExecutionResult:
+        with telemetry_span(
+            "opsmesh.mcp.tool.execute",
+            parent=current_trace_context(),
+            kind=SpanKind.CLIENT,
+            attributes={
+                "opsmesh.workspace.id": str(request.workspace_id),
+                "opsmesh.run.id": str(request.agent_run_id),
+                "opsmesh.tool.name": request.tool_name,
+            },
+        ):
+            return self._execute(request)
+
+    def _execute(self, request: McpExecutionRequest) -> McpExecutionResult:
         validated = McpExecutionValidator(self._session, self._settings).validate(request)
         run = validated.run
         snapshot = validated.snapshot

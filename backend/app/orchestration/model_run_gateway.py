@@ -1,10 +1,13 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunner, AgentRunRequest, AgentRunResult
 from backend.app.core.config import Settings
+from backend.app.core.trace_context import current_trace_context, telemetry_span
+from backend.app.costs.service import CostAccountingService, CostBudgetExceededError
 from backend.app.orchestration.model_provider_audit import ModelProviderAuditService
 from backend.app.orchestration.model_provider_routing import ModelProviderRoutingService
 from backend.app.orchestration.model_request_approval import ModelRequestApprovalService
@@ -43,6 +46,10 @@ class ModelRunGateway:
                 job,
                 fallback_selected=False,
             )
+        except CostBudgetExceededError as exc:
+            self.mark_run_failed(run, exc)
+            self.session.commit()
+            return None
         except Exception as exc:
             fallback_request = routing.fallback_request(
                 run=run,
@@ -64,6 +71,10 @@ class ModelRunGateway:
                 job,
                 fallback_selected=True,
             )
+        except CostBudgetExceededError as exc:
+            self.mark_run_failed(run, exc)
+            self.session.commit()
+            return None
         except Exception as fallback_exc:
             self.events.append_model_request_failed_event(run, fallback_request, fallback_exc)
             audit.record_request_failed(run, fallback_request, job, fallback_exc)
@@ -96,12 +107,59 @@ class ModelRunGateway:
         routing = self.routing()
         audit = self.audit()
         try:
+            CostAccountingService(self.session).assert_budget_available(
+                run.workspace_id,
+                provider=request.provider or "openai",
+                model=request.model or request.agent_profile.model,
+            )
+        except CostBudgetExceededError as exc:
+            self.events.append_event(
+                run,
+                "cost.budget_blocked",
+                "Model request blocked by workspace cost budget",
+                {"reason": str(exc)},
+            )
+            raise
+        try:
             self.events.append_model_request_started_event(
                 run,
                 request,
                 fallback_selected=fallback_selected,
             )
-            result = await self.agent_runner.run(request)
+            with telemetry_span(
+                "opsmesh.model.request",
+                parent=current_trace_context(),
+                kind=SpanKind.CLIENT,
+                attributes={
+                    "opsmesh.workspace.id": str(run.workspace_id),
+                    "opsmesh.run.id": str(run.id),
+                    "gen_ai.provider.name": request.provider or "openai",
+                    "gen_ai.request.model": request.model or request.agent_profile.model,
+                    "opsmesh.model.fallback": fallback_selected,
+                },
+            ):
+                result = await self.agent_runner.run(request)
+            usage_record = CostAccountingService(self.session).record_usage(
+                run=run,
+                request=request,
+                result=result,
+                job_attempt=job.attempt,
+            )
+            self.events.append_event(
+                run,
+                "cost.usage_recorded",
+                "Model usage and cost recorded",
+                {
+                    "model_usage_record_id": str(usage_record.id),
+                    "metering_status": usage_record.metering_status,
+                    "currency": usage_record.currency,
+                    "total_cost": str(usage_record.total_cost)
+                    if usage_record.total_cost is not None
+                    else None,
+                    "total_tokens": usage_record.total_tokens,
+                    "job_attempt": usage_record.job_attempt,
+                },
+            )
             self.events.append_model_response_received_event(run, request, result)
         except Exception as exc:
             self.events.append_model_request_failed_event(run, request, exc)

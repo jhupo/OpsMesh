@@ -1,8 +1,22 @@
-from collections.abc import Iterable
+from __future__ import annotations
+
+from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from threading import Lock
+from typing import Literal, cast
+
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
+from prometheus_client.core import GaugeMetricFamily
+from prometheus_client.gc_collector import GCCollector
+from prometheus_client.platform_collector import PlatformCollector
+from prometheus_client.process_collector import ProcessCollector
+from prometheus_client.registry import Collector
 
 DEFAULT_HTTP_DURATION_BUCKETS = (10, 50, 100, 250, 500, 1000, 2500, 5000)
+HTTP_METHODS = frozenset({"DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"})
+MetricKind = Literal["counter", "gauge", "histogram"]
+PrometheusMetric = Counter | Gauge | Histogram
 
 
 @dataclass(frozen=True)
@@ -13,48 +27,69 @@ class GaugeMetric:
     help_text: str | None = None
 
 
-@dataclass
-class HistogramState:
-    buckets: dict[float, int] = field(default_factory=dict)
-    count: int = 0
-    total: float = 0.0
+class DomainGaugeCollector(Collector):
+    """Expose request-time Postgres and Redis snapshots through the official client."""
+
+    def __init__(self, gauges: Iterable[GaugeMetric]) -> None:
+        self._gauges = tuple(gauges)
+
+    def collect(self) -> Iterable[GaugeMetricFamily]:
+        grouped: dict[tuple[str, str, tuple[str, ...]], list[GaugeMetric]] = defaultdict(list)
+        for gauge in self._gauges:
+            label_names = tuple(sorted(gauge.labels))
+            grouped[
+                (
+                    gauge.name,
+                    gauge.help_text or f"{gauge.name} metric.",
+                    label_names,
+                )
+            ].append(gauge)
+
+        for (name, help_text, label_names), gauges in sorted(grouped.items()):
+            family = GaugeMetricFamily(name, help_text, labels=list(label_names))
+            for gauge in gauges:
+                labels = _string_labels(gauge.labels)
+                family.add_metric([labels[name] for name in label_names], float(gauge.value))
+            yield family
 
 
 @dataclass
 class MetricsRegistry:
-    counters: dict[tuple[str, tuple[tuple[str, str], ...]], int] = field(default_factory=dict)
-    gauges: dict[tuple[str, tuple[tuple[str, str], ...]], float] = field(default_factory=dict)
-    histograms: dict[tuple[str, tuple[tuple[str, str], ...]], HistogramState] = field(
+    _registry: CollectorRegistry = field(default_factory=lambda: _new_registry())
+    _metrics: dict[tuple[MetricKind, str, tuple[str, ...]], PrometheusMetric] = field(
         default_factory=dict
     )
-    help_texts: dict[str, str] = field(default_factory=dict)
     _lock: Lock = field(default_factory=Lock)
 
     def increment(
         self,
         name: str,
         *,
-        labels: dict[str, object] | None = None,
+        labels: Mapping[str, object] | None = None,
         amount: int = 1,
         help_text: str | None = None,
     ) -> None:
-        key = _metric_key(name, labels)
-        with self._lock:
-            self._remember_help(name, help_text)
-            self.counters[key] = self.counters.get(key, 0) + amount
+        normalized = _string_labels(labels or {})
+        metric = cast(
+            Counter,
+            self._metric("counter", name, tuple(sorted(normalized)), help_text),
+        )
+        metric.labels(**normalized).inc(amount)
 
     def set_gauge(
         self,
         name: str,
         value: float,
         *,
-        labels: dict[str, object] | None = None,
+        labels: Mapping[str, object] | None = None,
         help_text: str | None = None,
     ) -> None:
-        key = _metric_key(name, labels)
-        with self._lock:
-            self._remember_help(name, help_text)
-            self.gauges[key] = float(value)
+        normalized = _string_labels(labels or {})
+        metric = cast(
+            Gauge,
+            self._metric("gauge", name, tuple(sorted(normalized)), help_text),
+        )
+        metric.labels(**normalized).set(float(value))
 
     def observe(
         self,
@@ -62,77 +97,83 @@ class MetricsRegistry:
         value: float,
         *,
         buckets: tuple[float, ...],
-        labels: dict[str, object] | None = None,
+        labels: Mapping[str, object] | None = None,
         help_text: str | None = None,
     ) -> None:
-        key = _metric_key(name, labels)
-        with self._lock:
-            self._remember_help(name, help_text)
-            histogram = self.histograms.setdefault(key, HistogramState())
-            for bucket in buckets:
-                if value <= bucket:
-                    histogram.buckets[bucket] = histogram.buckets.get(bucket, 0) + 1
-            histogram.buckets[float("inf")] = histogram.buckets.get(float("inf"), 0) + 1
-            histogram.count += 1
-            histogram.total += value
+        normalized = _string_labels(labels or {})
+        metric = cast(
+            Histogram,
+            self._metric(
+                "histogram",
+                name,
+                tuple(sorted(normalized)),
+                help_text,
+                buckets=buckets,
+            ),
+        )
+        metric.labels(**normalized).observe(float(value))
 
     def render_prometheus(self, *, gauges: Iterable[GaugeMetric] = ()) -> str:
-        metric_lines: dict[str, list[str]] = {}
-        metric_types: dict[str, str] = {}
-        help_texts: dict[str, str] = {}
-        with self._lock:
-            help_texts.update(self.help_texts)
-            for (name, labels), value in sorted(self.counters.items()):
-                metric_types[name] = "counter"
-                metric_lines.setdefault(name, []).append(
-                    f"{name}{_render_labels(dict(labels))} {value}"
-                )
-            for (name, labels), value in sorted(self.gauges.items()):
-                metric_types[name] = "gauge"
-                metric_lines.setdefault(name, []).append(
-                    f"{name}{_render_labels(dict(labels))} {_format_number(value)}"
-                )
-            for (name, labels), histogram in sorted(self.histograms.items()):
-                metric_types[name] = "histogram"
-                label_dict = dict(labels)
-                lines = metric_lines.setdefault(name, [])
-                for bucket, value in sorted(histogram.buckets.items()):
-                    rendered_bucket = "+Inf" if bucket == float("inf") else _format_number(bucket)
-                    labels_with_bucket = label_dict | {"le": rendered_bucket}
-                    lines.append(
-                        f"{name}_bucket{_render_labels(labels_with_bucket)} {value}"
-                    )
-                rendered_labels = _render_labels(label_dict)
-                lines.append(f"{name}_count{rendered_labels} {histogram.count}")
-                lines.append(f"{name}_sum{rendered_labels} {_format_number(histogram.total)}")
-
-        for gauge in gauges:
-            metric_types[gauge.name] = "gauge"
-            if gauge.help_text is not None:
-                help_texts[gauge.name] = gauge.help_text
-            metric_lines.setdefault(gauge.name, []).append(
-                f"{gauge.name}{_render_labels(_string_labels(gauge.labels))} "
-                f"{_format_number(gauge.value)}"
-            )
-
-        lines: list[str] = []
-        for name in sorted(metric_lines):
-            help_text = _escape_help(help_texts.get(name) or _default_help(name))
-            lines.append(f"# HELP {name} {help_text}")
-            lines.append(f"# TYPE {name} {metric_types[name]}")
-            lines.extend(sorted(metric_lines[name]))
-        return "\n".join(lines) + ("\n" if lines else "")
+        rendered = generate_latest(self._registry)
+        domain_gauges = tuple(gauges)
+        if domain_gauges:
+            registry = CollectorRegistry(auto_describe=True)
+            registry.register(DomainGaugeCollector(domain_gauges))
+            rendered += generate_latest(registry)
+        return rendered.decode("utf-8")
 
     def clear(self) -> None:
         with self._lock:
-            self.counters.clear()
-            self.gauges.clear()
-            self.histograms.clear()
-            self.help_texts.clear()
+            self._registry = _new_registry()
+            self._metrics.clear()
 
-    def _remember_help(self, name: str, help_text: str | None) -> None:
-        if help_text is not None:
-            self.help_texts[name] = help_text
+    def _metric(
+        self,
+        kind: MetricKind,
+        name: str,
+        label_names: tuple[str, ...],
+        help_text: str | None,
+        *,
+        buckets: tuple[float, ...] = (),
+    ) -> PrometheusMetric:
+        key = (kind, name, label_names)
+        with self._lock:
+            existing = self._metrics.get(key)
+            if existing is not None:
+                return existing
+            description = help_text or f"{name} metric."
+            if kind == "counter":
+                metric: PrometheusMetric = Counter(
+                    name,
+                    description,
+                    labelnames=label_names,
+                    registry=self._registry,
+                )
+            elif kind == "gauge":
+                metric = Gauge(
+                    name,
+                    description,
+                    labelnames=label_names,
+                    registry=self._registry,
+                )
+            else:
+                metric = Histogram(
+                    name,
+                    description,
+                    labelnames=label_names,
+                    buckets=buckets,
+                    registry=self._registry,
+                )
+            self._metrics[key] = metric
+            return metric
+
+
+def _new_registry() -> CollectorRegistry:
+    registry = CollectorRegistry(auto_describe=True)
+    GCCollector(registry=registry)
+    PlatformCollector(registry=registry)
+    ProcessCollector(registry=registry)
+    return registry
 
 
 metrics_registry = MetricsRegistry()
@@ -140,7 +181,7 @@ metrics_registry = MetricsRegistry()
 
 def record_http_request(method: str, path: str, status_code: int, duration_ms: int) -> None:
     labels = {
-        "method": method,
+        "method": method if method in HTTP_METHODS else "OTHER",
         "path": _normalize_path(path),
         "status": str(status_code),
     }
@@ -158,44 +199,8 @@ def record_http_request(method: str, path: str, status_code: int, duration_ms: i
     )
 
 
-def _metric_key(
-    name: str,
-    labels: dict[str, object] | None,
-) -> tuple[str, tuple[tuple[str, str], ...]]:
-    normalized_labels = tuple(
-        sorted((key, str(value)) for key, value in (labels or {}).items())
-    )
-    return name, normalized_labels
-
-
-def _render_labels(labels: dict[str, str]) -> str:
-    if not labels:
-        return ""
-    rendered = ",".join(
-        f'{key}="{_escape_label_value(value)}"' for key, value in sorted(labels.items())
-    )
-    return "{" + rendered + "}"
-
-
-def _string_labels(labels: dict[str, object]) -> dict[str, str]:
+def _string_labels(labels: Mapping[str, object]) -> dict[str, str]:
     return {key: str(value) for key, value in labels.items()}
-
-
-def _escape_label_value(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
-
-
-def _escape_help(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("\n", "\\n")
-
-
-def _default_help(name: str) -> str:
-    return f"{name} metric."
-
-
-def _format_number(value: float) -> str:
-    numeric = float(value)
-    return str(int(numeric)) if numeric.is_integer() else str(numeric)
 
 
 def _normalize_path(path: str) -> str:

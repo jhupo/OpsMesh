@@ -110,6 +110,10 @@ The backend must provide:
 
    Candidate SDKs, adoption order, evaluation criteria, and the boundaries OpsMesh continues to own.
 
+22. [Observability, Audit, and Cost Operations](observability-audit-and-costs.md)
+
+   Production signal flow, deployment, verification, audit integrity, and model cost operations.
+
 ## Non-Negotiable Backend Rules
 
 - Workspace isolation is mandatory.

@@ -90,15 +90,21 @@ class HttpMcpJobApi:
         try:
             response = self._client.request(method, path, json=json)
         except httpx.HTTPError as exc:
-            raise ConnectorApiError("Control plane request failed") from exc
+            raise ConnectorApiError("Control plane request failed", retryable=True) from exc
         if not response.is_success:
+            status_code = response.status_code
             raise ConnectorApiError(
-                f"Control plane request failed with HTTP status {response.status_code}"
+                f"Control plane request failed with HTTP status {status_code}",
+                status_code=status_code,
+                retryable=status_code in {408, 429} or status_code >= 500,
             )
         try:
             return response.json()
         except ValueError as exc:
-            raise ConnectorApiError("Control plane returned invalid JSON") from exc
+            raise ConnectorApiError(
+                "Control plane returned invalid JSON",
+                retryable=True,
+            ) from exc
 
 
 def _validated_api_url(api_url: str) -> str:

@@ -15,8 +15,10 @@ groups:
         expr: |
           sum(rate(opsmesh_http_requests_total{status=~"5.."}[5m]))
           /
-          clamp_min(sum(rate(opsmesh_http_requests_total[5m])), 1)
+          clamp_min(sum(rate(opsmesh_http_requests_total[5m])), 0.000001)
           > 0.05
+          and
+          sum(increase(opsmesh_http_requests_total[5m])) >= 20
         for: 10m
         labels:
           severity: warning
@@ -24,6 +26,22 @@ groups:
         annotations:
           summary: OpsMesh API 5xx rate is elevated
           description: More than 5 percent of API requests returned 5xx responses for 10 minutes.
+
+      - alert: OpsMeshHighHttpLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(opsmesh_http_request_duration_ms_bucket[5m]))
+          ) > 1000
+          and
+          sum(increase(opsmesh_http_request_duration_ms_count[5m])) >= 20
+        for: 10m
+        labels:
+          severity: warning
+          service: opsmesh-api
+        annotations:
+          summary: OpsMesh API latency is elevated
+          description: Overall API P95 latency exceeded one second for 10 minutes.
 
       - alert: OpsMeshQueueBacklogHigh
         expr: opsmesh_queue_jobs{state="queued"} > 100
@@ -94,3 +112,89 @@ groups:
         annotations:
           summary: OpsMesh runtime-space quota usage is high
           description: Quota {{ $labels.quota_key }} is above 85 percent reserved usage.
+
+      - alert: OpsMeshAuditIntegrityInvalid
+        expr: opsmesh_audit_integrity_workspaces{state="invalid"} > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: opsmesh-audit
+        annotations:
+          summary: Audit hash-chain verification failed
+          description: At least one workspace has a broken or incomplete audit hash chain.
+
+      - alert: OpsMeshAuditIntegrityNotCurrent
+        expr: sum(opsmesh_audit_integrity_workspaces{state=~"missing|stale"}) > 0
+        for: 2h
+        labels:
+          severity: warning
+          service: opsmesh-audit
+        annotations:
+          summary: Audit integrity verification is missing or stale
+          description: At least one workspace does not have a current audit integrity check.
+
+      - alert: OpsMeshModelUsageUnpriced
+        expr: sum(opsmesh_model_usage_records_24h{state=~"unpriced|missing_usage"}) > 0
+        for: 15m
+        labels:
+          severity: warning
+          service: opsmesh-costs
+        annotations:
+          summary: Model usage cannot be fully priced
+          description: Recent model calls have missing usage data or no matching pricing rule.
+
+      - alert: OpsMeshCostBudgetExhausted
+        expr: opsmesh_cost_budget_workspaces{state="exhausted"} > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: opsmesh-costs
+        annotations:
+          summary: A workspace model-cost budget is exhausted
+          description: At least one enabled workspace budget has reached its monthly limit.
+
+      - alert: OpsMeshObservabilityTargetDown
+        expr: up{job=~"alertmanager|loki|tempo|otel-collector"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: opsmesh-observability
+        annotations:
+          summary: An observability backend is unavailable
+          description: Prometheus cannot scrape {{ $labels.job }}.
+
+      - alert: OpsMeshMetricsCollectionFailed
+        expr: |
+          opsmesh_metrics_collection_success == 0
+          or absent(opsmesh_metrics_collection_success{source="postgres"})
+          or absent(opsmesh_metrics_collection_success{source="redis"})
+        for: 5m
+        labels:
+          severity: critical
+          service: opsmesh-observability
+        annotations:
+          summary: OpsMesh domain metrics collection is failing
+          description: Postgres or Redis metrics collection failed or stopped reporting.
+
+      - alert: OpsMeshTelemetryExportFailed
+        expr: |
+          sum(increase(otelcol_exporter_send_failed_spans_total[15m]))
+          + sum(increase(otelcol_exporter_send_failed_log_records_total[15m]))
+          > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: opsmesh-observability
+        annotations:
+          summary: OpenTelemetry export is failing
+          description: The Collector failed to export logs or traces during the last 15 minutes.
+
+      - alert: OpsMeshAlertDeliveryFailed
+        expr: increase(alertmanager_notifications_failed_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: opsmesh-alertmanager
+        annotations:
+          summary: Alertmanager notification delivery failed
+          description: Alertmanager failed to deliver at least one operator notification.

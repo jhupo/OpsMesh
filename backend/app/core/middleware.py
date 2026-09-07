@@ -22,6 +22,7 @@ from backend.app.core.trace_context import (
     TraceContext,
     reset_trace_context,
     set_trace_context,
+    trace_context_from_current_span,
     trace_context_from_headers,
     traceparent_header,
 )
@@ -56,11 +57,11 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         request_id = request.headers.get(REQUEST_ID_HEADER) or uuid.uuid4().hex
         request_id_token = request_id_var.set(request_id)
-        trace_context = (
-            trace_context_from_headers(request.headers)
-            if self._settings.tracing_enabled
-            else None
-        )
+        trace_context = None
+        if self._settings.tracing_enabled:
+            trace_context = trace_context_from_current_span() or trace_context_from_headers(
+                request.headers
+            )
         trace_tokens = set_trace_context(trace_context) if trace_context is not None else {}
         request.state.request_id = request_id
         if trace_context is not None:
@@ -180,7 +181,7 @@ def _elapsed_ms(started_at: float) -> int:
 def _metrics_path(request: Request) -> str:
     route = request.scope.get("route")
     route_path = getattr(route, "path", None)
-    return route_path if isinstance(route_path, str) and route_path else request.url.path
+    return route_path if isinstance(route_path, str) and route_path else "/__unmatched__"
 
 
 def _request_log_extra(request: Request, status_code: int, duration_ms: int) -> dict[str, object]:

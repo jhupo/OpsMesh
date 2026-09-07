@@ -7,6 +7,9 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 
+from opentelemetry import propagate, trace
+from opentelemetry.trace import NonRecordingSpan, SpanContext, SpanKind, TraceFlags
+
 TRACE_ID_HEADER = "X-Trace-ID"
 SPAN_ID_HEADER = "X-Span-ID"
 PARENT_SPAN_ID_HEADER = "X-Parent-Span-ID"
@@ -59,9 +62,14 @@ def child_trace_context(parent: TraceContext | None = None) -> TraceContext:
 
 
 def trace_context_from_headers(headers: Mapping[str, str]) -> TraceContext:
-    traceparent_context = _trace_context_from_traceparent(headers.get(TRACEPARENT_HEADER))
-    if traceparent_context is not None:
-        return traceparent_context
+    extracted = propagate.extract(dict(headers))
+    extracted_span = trace.get_current_span(extracted).get_span_context()
+    if extracted_span.is_valid:
+        return TraceContext(
+            trace_id=format(extracted_span.trace_id, "032x"),
+            span_id=new_span_id(),
+            parent_span_id=format(extracted_span.span_id, "016x"),
+        )
 
     trace_id = _normalize_trace_id(headers.get(TRACE_ID_HEADER))
     parent_span_id = _normalize_span_id(headers.get(SPAN_ID_HEADER))
@@ -71,6 +79,16 @@ def trace_context_from_headers(headers: Mapping[str, str]) -> TraceContext:
         trace_id=trace_id,
         span_id=new_span_id(),
         parent_span_id=parent_span_id,
+    )
+
+
+def trace_context_from_current_span() -> TraceContext | None:
+    span_context = trace.get_current_span().get_span_context()
+    if not span_context.is_valid:
+        return None
+    return TraceContext(
+        trace_id=format(span_context.trace_id, "032x"),
+        span_id=format(span_context.span_id, "016x"),
     )
 
 
@@ -137,28 +155,50 @@ def trace_context(context: TraceContext) -> Iterator[None]:
         reset_trace_context(tokens)
 
 
+@contextmanager
+def telemetry_span(
+    name: str,
+    *,
+    parent: TraceContext | None = None,
+    kind: SpanKind = SpanKind.INTERNAL,
+    attributes: Mapping[str, str | int | float | bool] | None = None,
+) -> Iterator[TraceContext]:
+    parent_context = None
+    if parent is not None:
+        parent_span = NonRecordingSpan(
+            SpanContext(
+                trace_id=int(parent.trace_id, 16),
+                span_id=int(parent.span_id, 16),
+                is_remote=True,
+                trace_flags=TraceFlags(TraceFlags.SAMPLED),
+            )
+        )
+        parent_context = trace.set_span_in_context(parent_span)
+    tracer = trace.get_tracer("opsmesh.control-plane")
+    with tracer.start_as_current_span(
+        name,
+        context=parent_context,
+        kind=kind,
+        attributes=dict(attributes or {}),
+        record_exception=True,
+        set_status_on_exception=True,
+    ) as span:
+        span_context = span.get_span_context()
+        active = (
+            TraceContext(
+                trace_id=format(span_context.trace_id, "032x"),
+                span_id=format(span_context.span_id, "016x"),
+                parent_span_id=parent.span_id if parent is not None else None,
+            )
+            if span_context.is_valid
+            else child_trace_context(parent)
+        )
+        with trace_context(active):
+            yield active
+
+
 def traceparent_header(context: TraceContext) -> str:
     return f"00-{context.trace_id}-{context.span_id}-01"
-
-
-def _trace_context_from_traceparent(value: str | None) -> TraceContext | None:
-    if value is None:
-        return None
-    parts = value.strip().lower().split("-")
-    if len(parts) != 4:
-        return None
-    version, trace_id, parent_span_id, _flags = parts
-    if version != "00":
-        return None
-    trace_id = _normalize_trace_id(trace_id)
-    parent_span_id = _normalize_span_id(parent_span_id)
-    if trace_id is None or parent_span_id is None:
-        return None
-    return TraceContext(
-        trace_id=trace_id,
-        span_id=new_span_id(),
-        parent_span_id=parent_span_id,
-    )
 
 
 def _normalize_trace_id(value: str | None) -> str | None:

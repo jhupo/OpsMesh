@@ -5,6 +5,7 @@ from backend.app.api.routes.agent_messages import router as agent_messages_route
 from backend.app.api.routes.approvals import router as approvals_router
 from backend.app.api.routes.auth import router as auth_router
 from backend.app.api.routes.capabilities import router as capabilities_router
+from backend.app.api.routes.costs import router as costs_router
 from backend.app.api.routes.domains import router as domains_router
 from backend.app.api.routes.exports import router as exports_router
 from backend.app.api.routes.files import router as files_router
@@ -50,6 +51,7 @@ api_router.include_router(files_router)
 api_router.include_router(approvals_router)
 api_router.include_router(domains_router)
 api_router.include_router(capabilities_router)
+api_router.include_router(costs_router)
 api_router.include_router(runtime_spaces_router)
 api_router.include_router(runtimes_router)
 api_router.include_router(self_hosted_router)
