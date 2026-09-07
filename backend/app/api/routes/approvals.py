@@ -11,6 +11,8 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction, WorkspaceRole
 from backend.app.db.session import get_db_session
+from backend.app.workers.dependencies import get_worker_queue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/approvals", tags=["approvals"])
 
@@ -37,13 +39,18 @@ async def approve(
     request: ApprovalDecisionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
     session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> ApprovalResponse:
     approval = ApprovalQueryService(session).get_scoped(context.workspace.id, approval_id)
     if approval is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
     _require_resource_review_admin(context, approval.payload)
     return ApprovalResponse.model_validate(
-        ApprovalDecisionService(session).approve(approval, context.user.user_id, request.reason)
+        ApprovalDecisionService(session, queue).approve(
+            approval,
+            context.user.user_id,
+            request.reason,
+        )
     )
 
 
