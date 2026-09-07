@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from backend.app.agent_runtime.contracts import AgentRuntimeEvent
+from agents import __version__ as agents_sdk_version
+
+from backend.app.agent_runtime.contracts import (
+    AgentRuntimeEvent,
+    AgentRuntimeResumeState,
+)
 from backend.app.security.redaction import redact_sensitive_payload
 
 
@@ -26,12 +32,42 @@ class OpenAIAgentsResultMapper:
         if last_agent is not None:
             payload["last_agent"] = str(getattr(last_agent, "name", last_agent))
         self._capture_resume_input(result, payload, sdk_continuation)
-        self._capture_run_state(result, payload, sdk_continuation)
         usage = getattr(result, "usage", None)
         if usage is not None:
             payload["usage"] = jsonable(usage)
         payload["sdk_continuation"] = sdk_continuation
         return redact_sensitive_payload(payload)
+
+    def resume_state(self, result: Any) -> AgentRuntimeResumeState | None:
+        interruptions = getattr(result, "interruptions", None)
+        if not isinstance(interruptions, list | tuple) or not interruptions:
+            return None
+        to_state = getattr(result, "to_state", None)
+        if not callable(to_state):
+            raise ValueError("Interrupted OpenAI Agents run did not expose resumable state")
+        state = to_state()
+        to_json = getattr(state, "to_json", None)
+        if not callable(to_json):
+            raise ValueError("Interrupted OpenAI Agents run state is not serializable")
+        state_payload = to_json(
+            context_serializer=_serialize_runtime_context,
+            strict_context=True,
+            include_tracing_api_key=False,
+        )
+        if not isinstance(state_payload, dict):
+            raise ValueError("Interrupted OpenAI Agents run state is invalid")
+        schema_version = state_payload.get("$schemaVersion")
+        return AgentRuntimeResumeState(
+            provider="openai_agents",
+            serialized_state=json.dumps(
+                state_payload,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+            schema_version=str(schema_version) if schema_version is not None else None,
+            sdk_version=agents_sdk_version,
+        )
 
     def runtime_events(self, result: Any) -> list[AgentRuntimeEvent]:
         events: list[AgentRuntimeEvent] = []
@@ -78,27 +114,6 @@ class OpenAIAgentsResultMapper:
             payload["resume_input_error"] = type(exc).__name__
             sdk_continuation["resume_input_error"] = type(exc).__name__
 
-    def _capture_run_state(
-        self,
-        result: Any,
-        payload: dict[str, object],
-        sdk_continuation: dict[str, object],
-    ) -> None:
-        to_state = getattr(result, "to_state", None)
-        if not callable(to_state):
-            return
-        try:
-            state = to_state()
-            to_json = getattr(state, "to_json", None)
-            if callable(to_json):
-                run_state_json = str(to_json())
-                payload["run_state_json"] = run_state_json
-                sdk_continuation["run_state_json"] = run_state_json
-        except Exception as exc:  # pragma: no cover - SDK internals are best-effort.
-            payload["run_state_error"] = type(exc).__name__
-            sdk_continuation["run_state_error"] = type(exc).__name__
-
-
 def runtime_event_from_sdk_item(item: object) -> AgentRuntimeEvent | None:
     event_type = getattr(item, "type", None) or getattr(item, "event_type", None)
     if not isinstance(event_type, str) or not event_type:
@@ -126,3 +141,15 @@ def jsonable(value: Any) -> object:
         if isinstance(dumped, dict):
             return jsonable(dumped)
     return str(value)
+
+
+def _serialize_runtime_context(value: object) -> dict[str, object]:
+    return {
+        key: str(item) if key.endswith("_id") and item is not None else item
+        for key, item in {
+            "workspace_id": getattr(value, "workspace_id", None),
+            "task_id": getattr(value, "task_id", None),
+            "run_id": getattr(value, "run_id", None),
+            "allowed_tools": list(getattr(value, "allowed_tools", ())),
+        }.items()
+    }

@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.agent_runtime import openai_agents as openai_runtime
-from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult, AgentRuntimeEvent
+from backend.app.agent_runtime.contracts import (
+    AgentRunRequest,
+    AgentRunResult,
+    AgentRuntimeEvent,
+    AgentRuntimeResumeState,
+)
 from backend.app.agent_runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval
@@ -63,7 +68,7 @@ from backend.app.reviews.model_request import ModelRequestReview
 from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.activity import activity_phase
-from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.runs.models import AgentRun, AgentRunStateSnapshot, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_spaces.models import (
     RuntimeSpace,
@@ -197,6 +202,67 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
     assert events[2].event_metadata["allowed_tool_count"] == 0
     assert events[3].event_metadata["model"] == "gpt-4.1"
     assert events[5].event_metadata["runtime_event_count"] == 0
+
+
+def test_worker_persists_interrupted_sdk_state_for_resume() -> None:
+    class InterruptingRunner:
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            return AgentRunResult(
+                final_output="",
+                resume_state=AgentRuntimeResumeState(
+                    provider="openai_agents",
+                    serialized_state=(
+                        '{"$schemaVersion":"1.10","private":"state-secret"}'
+                    ),
+                    schema_version="1.10",
+                    sdk_version="0.17.2",
+                ),
+            )
+
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Approve a sensitive tool",
+        status=TaskStatus.QUEUED.value,
+    )
+    session.add(task)
+    session.flush()
+    run = RunOrchestrationService(session).create_queued_run_for_task(task)
+    session.commit()
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        requested_by_user_id=user.id,
+        idempotency_key="interrupt-state",
+    )
+
+    _run_agent_sync(
+        session,
+        job,
+        agent_runner=InterruptingRunner(),
+        settings=Settings(environment="test"),
+    )
+
+    session.refresh(run)
+    session.refresh(task)
+    snapshot = session.scalar(
+        select(AgentRunStateSnapshot).where(
+            AgentRunStateSnapshot.workspace_id == workspace.id,
+            AgentRunStateSnapshot.agent_run_id == run.id,
+        )
+    )
+    restored_request = _build_agent_request(session, run, job)
+
+    assert run.status == RunStatus.WAITING_APPROVAL.value
+    assert task.status == TaskStatus.WAITING_APPROVAL.value
+    assert snapshot is not None
+    assert snapshot.status == "paused"
+    assert "state-secret" not in snapshot.encrypted_state
+    assert restored_request.resume_state is not None
+    assert "state-secret" in restored_request.resume_state.serialized_state
 
 
 def test_worker_executes_openai_agents_runner_through_control_plane(

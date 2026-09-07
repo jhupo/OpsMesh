@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -69,3 +69,35 @@ class RunEvent(UUIDPrimaryKeyMixin, Base):
         default=dict,
     )
     created_at: Mapped[datetime] = mapped_column(nullable=False)
+
+
+class AgentRunStateSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "agent_run_state_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "agent_run_id",
+            name="uq_agent_run_state_snapshots_run",
+        ),
+        Index(
+            "ix_agent_run_state_snapshots_workspace_status",
+            "workspace_id",
+            "status",
+        ),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    agent_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(String(80), nullable=False)
+    sdk_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    schema_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    encrypted_state: Mapped[str] = mapped_column(Text, nullable=False)
+    state_fingerprint: Mapped[str] = mapped_column(String(80), nullable=False)
+    encryption_key_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="paused")

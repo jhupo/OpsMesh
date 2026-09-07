@@ -5,7 +5,9 @@ from urllib.parse import urlparse
 from agents import (
     Agent,
     RunConfig,
+    RunContextWrapper,
     Runner,
+    RunState,
 )
 from agents.models.interface import Model
 from agents.models.openai_provider import OpenAIProvider
@@ -45,11 +47,12 @@ class OpenAIAgentsRunner:
 
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
         agent = self._build_agent(request)
+        runner_input = await self._runner_input(request, agent)
         result = await async_retry_with_circuit(
             key=_model_provider_circuit_key(request),
             func=lambda: Runner.run(
                 agent,
-                self._input_for_request(request),
+                runner_input,
                 context=request.context,
                 max_turns=request.max_turns,
                 run_config=self._run_config(request),
@@ -62,9 +65,32 @@ class OpenAIAgentsRunner:
             should_retry=lambda exc: normalize_agent_error(exc).retryable,
         )
         return AgentRunResult(
-            final_output=str(result.final_output),
+            final_output=str(result.final_output) if result.final_output is not None else "",
             raw_output=self._result_mapper.safe_raw_output(result),
             events=tuple(self._result_mapper.runtime_events(result)),
+            resume_state=self._result_mapper.resume_state(result),
+        )
+
+    async def _runner_input(
+        self,
+        request: AgentRunRequest,
+        agent: Agent[Any],
+    ) -> str | list[Any] | RunState[Any]:
+        if request.resume_state is None:
+            return self._input_for_request(request)
+        if request.resume_state.provider != "openai_agents":
+            raise ValueError("OpenAI Agents runner cannot restore another provider's state")
+        try:
+            state_payload = json.loads(request.resume_state.serialized_state)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Stored OpenAI Agents run state is not valid JSON") from exc
+        if not isinstance(state_payload, dict):
+            raise ValueError("Stored OpenAI Agents run state must be a JSON object")
+        return await RunState.from_json(
+            initial_agent=agent,
+            state_json=state_payload,
+            context_override=RunContextWrapper(context=request.context),
+            strict_context=True,
         )
 
     def _build_agent(self, request: AgentRunRequest) -> Agent[Any]:

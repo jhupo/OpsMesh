@@ -76,6 +76,14 @@ class AgentRunTracing:
 
 
 @dataclass(frozen=True)
+class AgentRuntimeResumeState:
+    provider: str
+    serialized_state: str
+    schema_version: str | None = None
+    sdk_version: str | None = None
+
+
+@dataclass(frozen=True)
 class AgentRuntimeToolContinuation:
     tool_name: str
     status: str
@@ -112,6 +120,7 @@ class AgentRunRequest:
     previous_response_id: str | None = None
     conversation_id: str | None = None
     tracing: AgentRunTracing | None = None
+    resume_state: AgentRuntimeResumeState | None = None
 
 
 @dataclass(frozen=True)
@@ -126,6 +135,7 @@ class AgentRunResult:
     final_output: str
     raw_output: object | None = None
     events: tuple[AgentRuntimeEvent, ...] = ()
+    resume_state: AgentRuntimeResumeState | None = None
 
 
 class AgentRunner(Protocol):

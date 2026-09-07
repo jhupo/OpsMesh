@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunner
 from backend.app.agent_runtime.factory import build_agent_runner
+from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.core.config import Settings, get_settings
 from backend.app.model_providers.service_models import ModelProviderUnavailableError
 from backend.app.orchestration.model_run_gateway import ModelRunGateway
@@ -87,6 +88,15 @@ class RunExecutionService:
                 return run
 
             RunRuntimeEventMessageMapper(self.session).map(run, result)
+            if result.resume_state is not None:
+                self._state_store().save(
+                    workspace_id=run.workspace_id,
+                    run_id=run.id,
+                    state=result.resume_state,
+                )
+                self._lifecycle().mark_run_waiting_approval(run)
+                self._commit_and_refresh(run)
+                return run
             if self._agent_result_waiting_runtime(result) or self._run_has_waiting_runtime_event(
                 run
             ):
@@ -94,6 +104,11 @@ class RunExecutionService:
                 self._commit_and_refresh(run)
                 return run
 
+            if request.resume_state is not None:
+                self._state_store().mark_consumed(
+                    workspace_id=run.workspace_id,
+                    run_id=run.id,
+                )
             self._lifecycle().mark_run_completed(run, result, job.requested_by_user_id)
             self._commit_and_refresh(run)
             return run
@@ -176,6 +191,12 @@ class RunExecutionService:
 
     def _lifecycle(self) -> RunLifecycleService:
         return self.dependencies.lifecycle
+
+    def _state_store(self) -> AgentRunStateStore:
+        return AgentRunStateStore(
+            self.session,
+            self._request_builder().secret_service(),
+        )
 
     def _agent_result_waiting_runtime(self, result: object) -> bool:
         return self._lifecycle().agent_result_waiting_runtime(result)

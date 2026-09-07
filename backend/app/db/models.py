@@ -38,7 +38,7 @@ from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.notifications.models import WorkspaceNotification
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.planning.models import TaskPlanningAttempt
-from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.runs.models import AgentRun, AgentRunStateSnapshot, RunEvent
 from backend.app.runtime_spaces.models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
@@ -84,6 +84,7 @@ __all__ = [
     "AgentMessage",
     "AgentMessageThread",
     "AgentRun",
+    "AgentRunStateSnapshot",
     "AgentTeam",
     "AgentTeamMember",
     "Approval",

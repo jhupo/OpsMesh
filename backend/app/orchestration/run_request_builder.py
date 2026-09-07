@@ -12,6 +12,7 @@ from backend.app.agent_runtime.sessions import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
 )
+from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
@@ -188,6 +189,13 @@ class RunRequestBuilder:
             previous_response_id=provider_continuation["previous_response_id"],
             conversation_id=provider_continuation["conversation_id"],
             tracing=tracing,
+            resume_state=AgentRunStateStore(
+                self.session,
+                self.secret_service(),
+            ).load(
+                workspace_id=run.workspace_id,
+                run_id=run.id,
+            ),
         )
 
     def runtime_metadata(

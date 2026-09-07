@@ -13,6 +13,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
+    AgentRuntimeResumeState,
     AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
     AgentRuntimeToolResult,
@@ -891,10 +892,6 @@ def test_openai_agents_runner_raw_output_is_json_safe() -> None:
             assert mode == "json"
             return {"requests": 1}
 
-    class State:
-        def to_json(self) -> str:
-            return '{"schema_version":"1.10","api_key":"sk-state-secret"}'
-
     class Result:
         final_output = "done"
         last_response_id = "resp_123"
@@ -914,9 +911,6 @@ def test_openai_agents_runner_raw_output_is_json_safe() -> None:
                 }
             ]
 
-        def to_state(self) -> State:
-            return State()
-
     payload = OpenAIAgentsResultMapper().safe_raw_output(Result())
 
     assert payload == {
@@ -931,7 +925,6 @@ def test_openai_agents_runner_raw_output_is_json_safe() -> None:
                 "metadata": {"authorization": "[redacted]"},
             }
         ],
-        "run_state_json": "[redacted]",
         "usage": {"requests": 1},
         "sdk_continuation": {
             "provider": "openai_agents",
@@ -946,13 +939,91 @@ def test_openai_agents_runner_raw_output_is_json_safe() -> None:
                     "metadata": {"authorization": "[redacted]"},
                 }
             ],
-            "run_state_json": "[redacted]",
         },
     }
     serialized = json.dumps(payload)
     assert "sk-resume-secret" not in serialized
     assert "Bearer resume-token" not in serialized
-    assert "sk-state-secret" not in serialized
+
+
+def test_openai_agents_result_mapper_captures_interrupted_state_outside_raw_output() -> None:
+    class State:
+        def to_json(self, **kwargs: object) -> dict[str, object]:
+            assert kwargs["strict_context"] is True
+            assert kwargs["include_tracing_api_key"] is False
+            return {"$schemaVersion": "1.10", "current_turn": 1}
+
+    class Result:
+        interruptions = [object()]
+
+        def to_state(self) -> State:
+            return State()
+
+    state = OpenAIAgentsResultMapper().resume_state(Result())
+
+    assert state is not None
+    assert state.provider == "openai_agents"
+    assert state.schema_version == "1.10"
+    assert json.loads(state.serialized_state) == {
+        "$schemaVersion": "1.10",
+        "current_turn": 1,
+    }
+
+
+def test_openai_agents_runner_restores_sdk_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    restored_state = object()
+    captured: dict[str, object] = {}
+
+    async def fake_from_json(**kwargs: object) -> object:
+        captured["restore"] = kwargs
+        return restored_state
+
+    async def fake_runner_run(*args: object, **kwargs: object) -> object:
+        captured["run_args"] = args
+        captured["run_kwargs"] = kwargs
+
+        class Result:
+            final_output = "resumed"
+            interruptions: list[object] = []
+
+        return Result()
+
+    monkeypatch.setattr(openai_runtime.RunState, "from_json", fake_from_json)
+    monkeypatch.setattr(openai_runtime.Runner, "run", fake_runner_run)
+    profile = AgentProfile(
+        workspace_id=uuid4(),
+        name="Resumer",
+        role="worker",
+        instructions="Resume safely.",
+        model="gpt-4.1",
+        model_settings={},
+    )
+    context = AgentRuntimeContext(
+        workspace_id=profile.workspace_id,
+        task_id=None,
+        run_id=uuid4(),
+    )
+    request = AgentRunRequest(
+        agent_profile=profile,
+        input_text="This prompt must not replace the state.",
+        context=context,
+        api_key="sk-test",
+        resume_state=AgentRuntimeResumeState(
+            provider="openai_agents",
+            serialized_state='{"$schemaVersion":"1.10"}',
+            schema_version="1.10",
+            sdk_version="0.17.2",
+        ),
+    )
+
+    result = asyncio.run(OpenAIAgentsRunner().run(request))
+
+    assert result.final_output == "resumed"
+    assert captured["restore"]["state_json"] == {"$schemaVersion": "1.10"}
+    assert captured["restore"]["context_override"].context is context
+    assert captured["run_args"][1] is restored_state
 
 
 def test_openai_agents_runner_passes_persistent_session_to_sdk(

@@ -93,6 +93,19 @@ class RunLifecycleService:
             None,
         )
 
+    def mark_run_waiting_approval(self, run: AgentRun) -> None:
+        RunStateService().transition(run, RunStatus.WAITING_APPROVAL)
+        self.callbacks.append_event(
+            run,
+            "run.waiting.approval",
+            "Run is waiting for approval",
+            None,
+        )
+        if run.task_id is not None:
+            task = self.session.get(Task, run.task_id)
+            if task is not None and TaskStatus(task.status) == TaskStatus.RUNNING:
+                TaskStateService().transition(task, TaskStatus.WAITING_APPROVAL)
+
     def mark_run_completed(
         self,
         run: AgentRun,
