@@ -32,11 +32,11 @@ from backend.app.agent_runtime.tool_payloads import (
     memory_entry_payload,
     workspace_file_payload,
 )
+from backend.app.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
 from backend.app.approvals.service import ApprovalService
 from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_NAMES as PRODUCT_TOOL_NAMES
 from backend.app.core.config import Settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
-from backend.app.reviews.tool_execution import ToolExecutionReview, ToolExecutionReviewService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
@@ -97,14 +97,14 @@ class ProductToolExecutor:
         resource_grants: tuple[AgentRuntimeResourceGrant, ...],
         approval_granted: bool,
     ) -> AgentRuntimeToolResult:
-        if not approval_granted:
-            waiting = self._review_for_approval(
-                context=context,
-                tool_name=tool_name,
-                arguments=arguments,
-            )
-            if waiting is not None:
-                return waiting
+        policy_result = self._review_for_approval(
+            context=context,
+            tool_name=tool_name,
+            arguments=arguments,
+            approval_granted=approval_granted,
+        )
+        if policy_result is not None:
+            return policy_result
         product_context = ToolContext(
             workspace_id=context.workspace_id,
             agent_run_id=context.run_id,
@@ -151,22 +151,41 @@ class ProductToolExecutor:
         context: AgentRuntimeContext,
         tool_name: str,
         arguments: dict[str, object],
+        approval_granted: bool,
     ) -> AgentRuntimeToolResult | None:
-        execution_review = ToolExecutionReviewService(
+        policy_decision = ApprovalPolicyEngine(
             self._session,
             self._settings,
-        ).review_product_tool_call(
+        ).evaluate_product_tool(
             workspace_id=context.workspace_id,
             tool_name=tool_name,
             arguments=arguments,
             context=product_review_context(context),
         )
-        if execution_review.approved:
+        if policy_decision.blocked:
+            return AgentRuntimeToolResult(
+                status="failed",
+                error={
+                    "code": "product_tool_policy_denied",
+                    "message": "Product tool invocation was denied by policy",
+                },
+                metadata=tool_metadata(
+                    context=context,
+                    tool_name=tool_name,
+                    tool_kind="product",
+                    extra={
+                        "policy_decision": policy_decision.decision.value,
+                        "review_risk_level": policy_decision.risk_level,
+                        "review_reasons": policy_decision.reasons,
+                    },
+                ),
+            )
+        if policy_decision.approved or approval_granted:
             return None
         self._request_approval(
             context=context,
             tool_name=tool_name,
-            execution_review=execution_review,
+            execution_review=policy_decision,
         )
         return AgentRuntimeToolResult(
             status="waiting_approval",
@@ -176,8 +195,8 @@ class ProductToolExecutor:
                 tool_name=tool_name,
                 tool_kind="product",
                 extra={
-                    "review_risk_level": execution_review.risk_level,
-                    "review_reasons": execution_review.reasons,
+                    "review_risk_level": policy_decision.risk_level,
+                    "review_reasons": policy_decision.reasons,
                 },
             ),
         )
@@ -187,7 +206,7 @@ class ProductToolExecutor:
         *,
         context: AgentRuntimeContext,
         tool_name: str,
-        execution_review: ToolExecutionReview,
+        execution_review: ApprovalPolicyDecision,
     ) -> None:
         ApprovalService(self._session).create_approval(
             workspace_id=context.workspace_id,

@@ -16,6 +16,7 @@ from backend.app.agent_runtime.tool_gateway import (
 from backend.app.agent_runtime.tool_mcp_resolver import ContextualMcpAdapterResolver
 from backend.app.agent_runtime.tool_metadata import product_review_context, tool_metadata
 from backend.app.approvals.pending_tools import PendingToolInvocationService
+from backend.app.approvals.policy import ApprovalPolicyEngine
 from backend.app.capabilities.execution import McpToolExecutionService
 from backend.app.capabilities.mcp_execution_adapters import (
     McpToolAdapter,
@@ -24,7 +25,6 @@ from backend.app.capabilities.mcp_execution_adapters import (
 from backend.app.capabilities.mcp_execution_types import McpExecutionRequest
 from backend.app.capabilities.models import McpToolAllowlist
 from backend.app.core.config import Settings
-from backend.app.reviews.tool_execution import ToolExecutionReviewService
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.secrets.service import SecretEncryptionService
 
@@ -112,9 +112,9 @@ class BackendToolExecutor:
         except ToolGatewayDenied as exc:
             gateway.record_denial(context=context, tool_name=tool_name, denial=exc)
             raise
-        reviews = ToolExecutionReviewService(self._session, self._settings)
+        policies = ApprovalPolicyEngine(self._session, self._settings)
         if prepared.definition.source == "product":
-            review = reviews.review_product_tool_call(
+            decision = policies.evaluate_product_tool(
                 workspace_id=context.workspace_id,
                 tool_name=tool_name,
                 arguments=prepared.arguments,
@@ -122,7 +122,7 @@ class BackendToolExecutor:
             )
         elif prepared.definition.source == "mcp":
             allow = self._mcp_allowlist(prepared)
-            review = reviews.review_mcp_tool_call(
+            decision = policies.evaluate_mcp_tool(
                 workspace_id=context.workspace_id,
                 tool_name=tool_name,
                 arguments=prepared.arguments,
@@ -140,11 +140,7 @@ class BackendToolExecutor:
                 "tool_source_invalid",
                 "Tool source does not match an executable adapter",
             )
-        payload = review.approval_payload()
-        payload["decision"] = (
-            "deny" if review.blocked else "require_approval" if review.required else "allow"
-        )
-        return payload
+        return decision.approval_payload()
 
     def execute_sdk_tool(
         self,

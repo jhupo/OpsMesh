@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from backend.app.approvals.policy import ApprovalPolicyDecision
 from backend.app.approvals.service import ApprovalService
 from backend.app.capabilities.mcp_execution_context import (
     authorization_snapshot,
@@ -12,7 +13,6 @@ from backend.app.capabilities.mcp_execution_notifications import McpExecutionNot
 from backend.app.capabilities.mcp_execution_types import McpExecutionRequest, McpExecutionResult
 from backend.app.capabilities.mcp_payloads import payload_hash
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
-from backend.app.reviews.tool_execution import ToolExecutionReview
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
@@ -34,7 +34,7 @@ class McpToolApprovalRequester:
         server: McpServer,
         *,
         reason: str,
-        execution_review: ToolExecutionReview | None = None,
+        execution_review: ApprovalPolicyDecision | None = None,
     ) -> McpExecutionResult:
         snapshot = authorization_snapshot(run)
         log = McpToolCallLogService(self.session).record(
@@ -107,7 +107,7 @@ class McpToolApprovalRequester:
         allow: McpToolAllowlist,
         server: McpServer,
         reason: str,
-        execution_review: ToolExecutionReview | None,
+        execution_review: ApprovalPolicyDecision | None,
         snapshot: dict[str, object],
     ) -> None:
         notifier = McpExecutionNotifier(self.session)

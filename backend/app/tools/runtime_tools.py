@@ -4,10 +4,9 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.admin.policy_reader import PlatformPolicyService
+from backend.app.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
 from backend.app.approvals.service import ApprovalService
 from backend.app.core.config import Settings
-from backend.app.reviews.tool_execution import ToolExecutionReview, ToolExecutionReviewService
 from backend.app.runs.models import RunEvent
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
@@ -29,24 +28,15 @@ class RuntimeToolResult:
     reason: str | None = None
 
 
-class RuntimeToolPolicy:
-    risky_tokens = {"rm", "mkfs", "shutdown", "reboot", "dd"}
-
-    def requires_approval(self, command: list[str]) -> bool:
-        return any(token in self.risky_tokens for token in command)
-
-
 class RuntimeToolService:
     def __init__(
         self,
         session: Session,
         runtime_manager: RuntimeManager,
-        policy: RuntimeToolPolicy | None = None,
         settings: Settings | None = None,
     ) -> None:
         self._session = session
         self._runtime_manager = runtime_manager
-        self._policy = policy or RuntimeToolPolicy()
         self._settings = settings
 
     def execute_shell(
@@ -58,35 +48,22 @@ class RuntimeToolService:
     ) -> RuntimeToolResult:
         context.require_tool("runtime_shell")
         self._append_tool_event(context, "tool.called", "runtime_shell")
-        risky_policy = PlatformPolicyService(self._session).risky_execution_policy()
-        if not risky_policy.allow_runtime_commands:
-            self._append_tool_event(context, "tool.blocked", "runtime_shell")
-            self._session.flush()
-            return RuntimeToolResult(
-                status="blocked",
-                reason="Runtime commands are disabled by platform safety policy",
-            )
-        high_risk_command = self._policy.requires_approval(command)
-        if high_risk_command and risky_policy.high_risk_tool_mode == "block":
-            self._append_tool_event(context, "tool.blocked", "runtime_shell")
-            self._session.flush()
-            return RuntimeToolResult(
-                status="blocked",
-                reason="High-risk runtime commands are disabled by platform safety policy",
-            )
-        execution_review = ToolExecutionReviewService(
+        execution_review = ApprovalPolicyEngine(
             self._session,
             self._settings,
-        ).review_runtime_command(
+        ).evaluate_runtime_command(
             workspace_id=context.workspace_id,
             command=command,
             context=_runtime_review_context(context, runtime),
         )
-        if (
-            not execution_review.approved
-            or high_risk_command
-            and risky_policy.high_risk_tool_mode == "require_workspace_approval"
-        ):
+        if execution_review.blocked:
+            self._append_tool_event(context, "tool.blocked", "runtime_shell")
+            self._session.flush()
+            return RuntimeToolResult(
+                status="blocked",
+                reason=_runtime_denial_reason(execution_review),
+            )
+        if execution_review.required:
             self._request_runtime_command_approval(
                 context,
                 runtime=runtime,
@@ -114,7 +91,7 @@ class RuntimeToolService:
         *,
         runtime: WorkspaceRuntime,
         command: list[str],
-        execution_review: ToolExecutionReview,
+        execution_review: ApprovalPolicyDecision,
     ) -> None:
         ApprovalService(self._session).create_approval(
             workspace_id=context.workspace_id,
@@ -187,3 +164,11 @@ def _runtime_review_context(
         "runtime_id": str(runtime.id),
         "runtime_provider": runtime.runtime_provider,
     }
+
+
+def _runtime_denial_reason(decision: ApprovalPolicyDecision) -> str:
+    if "platform.runtime_command.disabled" in decision.reasons:
+        return "Runtime commands are disabled by platform safety policy"
+    if "policy.review.unavailable" in decision.reasons:
+        return "Runtime command review is unavailable"
+    return "High-risk runtime commands are disabled by platform safety policy"
