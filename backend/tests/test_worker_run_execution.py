@@ -27,6 +27,7 @@ from backend.app.approvals.agent_tool_interruptions import AgentToolInterruption
 from backend.app.approvals.decisions import ApprovalDecisionService
 from backend.app.approvals.models import Approval, PendingToolInvocation
 from backend.app.approvals.pending_tools import PendingToolInvocationService
+from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
 from backend.app.capabilities.models import (
     McpCredentialReference,
@@ -287,6 +288,163 @@ def test_worker_persists_interrupted_sdk_state_for_resume() -> None:
     assert approval.payload["pending_tool_invocation_id"] == str(invocation.id)
     assert invocation.status == "pending"
     assert "tool-argument-secret" not in invocation.encrypted_arguments
+
+
+def test_phase_one_approval_flow_survives_worker_restart_and_executes_once() -> None:
+    arguments: dict[str, object] = {
+        "filename": "phase-one.txt",
+        "content": "approved-once",
+    }
+
+    class InterruptingRunner:
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            assert request.resume_state is None
+            return AgentRunResult(
+                final_output="",
+                resume_state=AgentRuntimeResumeState(
+                    provider="openai_agents",
+                    serialized_state='{"$schemaVersion":"1.10","turn":"paused"}',
+                    schema_version="1.10",
+                    sdk_version="0.17.2",
+                ),
+                interruptions=(
+                    AgentRuntimeInterruption(
+                        tool_call_id="call-phase-one",
+                        tool_name="write_artifact",
+                        tool_kind="product",
+                        arguments=arguments,
+                        policy_decision={
+                            "decision": "require_approval",
+                            "risk_level": "high",
+                        },
+                    ),
+                ),
+            )
+
+    class ResumingRunner:
+        calls = 0
+
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            self.calls += 1
+            assert request.resume_state is not None
+            assert request.resume_state.provider == "openai_agents"
+            assert request.approval_decisions[0].tool_call_id == "call-phase-one"
+            assert request.approval_decisions[0].status == "approved"
+            assert request.tool_executor is not None
+            execute = request.tool_executor.execute_sdk_tool  # type: ignore[attr-defined]
+            first = execute(
+                context=request.context,
+                tool_name="write_artifact",
+                arguments=arguments,
+                tool_call_id="call-phase-one",
+            )
+            replay = execute(
+                context=request.context,
+                tool_name="write_artifact",
+                arguments=arguments,
+                tool_call_id="call-phase-one",
+            )
+            assert first.status == "completed"
+            assert replay.output == first.output
+            return AgentRunResult(final_output="approval flow completed")
+
+    settings = Settings(
+        environment="test",
+        credential_encryption_secret="change-me-credential-encryption-secret",
+        credential_encryption_key_id="local",
+    )
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Write an approved artifact",
+        status=TaskStatus.QUEUED.value,
+    )
+    profile = AgentProfile(
+        workspace_id=workspace.id,
+        name="Writer",
+        role="writer",
+        tool_policy={"allowed_tools": ["write_artifact"]},
+    )
+    session.add_all([task, profile])
+    session.flush()
+    snapshot = RunAuthorizationSnapshotService(
+        session,
+        RunRequestBuilder(session, settings),
+    ).build_authorization_snapshot(task, None, profile)
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=profile.id,
+        status=RunStatus.QUEUED.value,
+        input={"authorization_snapshot": snapshot},
+    )
+    session.add(run)
+    session.commit()
+    user_id = user.id
+    workspace_id = workspace.id
+    run_id = run.id
+    task_id = task.id
+    job = JobPayload(
+        workspace_id=workspace_id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run_id,
+        requested_by_user_id=user_id,
+        idempotency_key="phase-one-initial-run",
+    )
+
+    _run_agent_sync(
+        session,
+        job,
+        agent_runner=InterruptingRunner(),
+        settings=settings,
+    )
+
+    bind = session.get_bind()
+    session.close()
+    restarted = sessionmaker(bind=bind, expire_on_commit=False)()
+    queue = RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("opsmesh"),
+        queue_name="agent_runs",
+        blocking_timeout_seconds=0,
+    )
+    approval = restarted.scalars(select(Approval)).one()
+    ApprovalDecisionService(
+        restarted,
+        queue,
+        SecretEncryptionService(
+            secret=settings.credential_encryption_secret,
+            key_id=settings.credential_encryption_key_id,
+        ),
+    ).approve(approval, user_id, "approved after restart")
+    resuming_runner = ResumingRunner()
+
+    handled = consume_once(
+        queue,
+        WorkerJobHandler(
+            restarted,
+            queue,
+            agent_runner=resuming_runner,
+            settings=settings,
+        ).handle,
+    )
+
+    stored_run = restarted.get(AgentRun, run_id)
+    stored_task = restarted.get(Task, task_id)
+    invocation = restarted.scalars(select(PendingToolInvocation)).one()
+    state = restarted.scalars(select(AgentRunStateSnapshot)).one()
+    artifacts = restarted.scalars(select(Artifact)).all()
+    assert handled is True
+    assert resuming_runner.calls == 1
+    assert stored_run is not None and stored_run.status == RunStatus.COMPLETED.value
+    assert stored_task is not None and stored_task.status == TaskStatus.COMPLETED.value
+    assert invocation.status == "completed"
+    assert invocation.attempt_count == 1
+    assert state.status == "consumed"
+    assert len(artifacts) == 1
+    assert artifacts[0].filename == "phase-one.txt"
 
 
 def test_worker_executes_openai_agents_runner_through_control_plane(

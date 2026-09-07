@@ -48,6 +48,10 @@ Phase acceptance gate:
 works end to end. Rejection and timeout terminate or recover according to policy without replaying a
 side effect.
 
+Verification: `test_phase_one_approval_flow_survives_worker_restart_and_executes_once` exercises the
+complete durable path with a recreated database session and a duplicate execution attempt. Focused
+approval lifecycle tests cover rejection, timeout, cancellation, and unknown worker outcomes.
+
 ## Phase 2: OpenAI Agents SDK Adapter Closure
 
 Goal: expose the supported Agents SDK orchestration surface through vendor-neutral OpsMesh contracts.
