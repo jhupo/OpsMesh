@@ -2,6 +2,11 @@
 
 This table is the active execution checklist for the next backend phase. It keeps the work ordered, testable, and scoped to backend commercial-software reliability.
 
+The current Agent Runtime completion phase is tracked in
+[Agent Runtime Completion Plan](agent-runtime-completion-plan.md). Its code-inspection findings and
+acceptance gates supersede older `Done` labels in this document where a foundational implementation
+exists but its production execution or recovery loop is not closed.
+
 Frontend remains out of scope. Billing remains out of scope.
 
 ## Execution Rules

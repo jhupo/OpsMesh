@@ -114,6 +114,11 @@ The backend must provide:
 
    Production signal flow, deployment, verification, audit integrity, and model cost operations.
 
+23. [Agent Runtime Completion Plan](agent-runtime-completion-plan.md)
+
+   Active, acceptance-driven plan for SDK adaptation, approvals, workspace I/O, context and memory,
+   orchestration, and per-run isolation.
+
 ## Non-Negotiable Backend Rules
 
 - Workspace isolation is mandatory.
