@@ -15,7 +15,7 @@ from backend.app.auth.errors import (
     AuthenticationError,
     PermissionDeniedError,
 )
-from backend.app.auth.permissions import WorkspaceAction, role_allows
+from backend.app.auth.permissions import AccountAction, WorkspaceAction, role_allows
 from backend.app.core.config import Settings
 from backend.app.core.errors import ConflictError
 from backend.app.identity.models import User, UserAPIToken
@@ -94,14 +94,22 @@ class AuthorizationService:
         name: str,
         settings: Settings,
         expires_at: datetime | None = None,
+        scopes: dict[str, object] | None = None,
+        actor: AuthenticatedUser | None = None,
     ) -> CreatedUserAPIToken:
         self.authenticate_user(user_id)
+        normalized_scopes = self._validate_token_scopes(
+            user_id=user_id,
+            scopes=scopes,
+            actor=actor,
+        )
         token = f"ccut_{token_urlsafe(32)}"
         record = UserAPIToken(
             user_id=user_id,
             name=name,
             token_hash=self.hash_user_token(token, settings),
             fingerprint=self.fingerprint_user_token(token),
+            scopes=normalized_scopes,
             expires_at=expires_at,
         )
         self._session.add(record)
@@ -187,7 +195,12 @@ class AuthorizationService:
             raise AuthenticationError("Invalid or inactive user token")
         token.last_used_at = now
         self._session.flush()
-        return AuthenticatedUser.from_model(user)
+        scopes = dict(token.scopes) if isinstance(token.scopes, dict) else None
+        return AuthenticatedUser.from_model(
+            user,
+            token_id=token.id,
+            token_scopes=scopes,
+        )
 
     def require_workspace(
         self,
@@ -195,8 +208,13 @@ class AuthorizationService:
         user_id: UUID,
         workspace_id: UUID,
         action: WorkspaceAction,
+        authenticated_user: AuthenticatedUser | None = None,
     ) -> WorkspaceContext:
-        user = self.authenticate_user(user_id)
+        user = authenticated_user or self.authenticate_user(user_id)
+        if user.user_id != user_id:
+            raise PermissionDeniedError("Authenticated user does not match workspace subject")
+        if not user.allows_workspace_action(workspace_id, action):
+            raise PermissionDeniedError("API token scope does not allow this workspace action")
         statement = (
             select(Workspace, WorkspaceMember)
             .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
@@ -216,6 +234,68 @@ class AuthorizationService:
             raise PermissionDeniedError("Workspace role does not allow this action")
 
         return WorkspaceContext(user=user, workspace=workspace, membership=membership)
+
+    def _validate_token_scopes(
+        self,
+        *,
+        user_id: UUID,
+        scopes: dict[str, object] | None,
+        actor: AuthenticatedUser | None,
+    ) -> dict[str, object] | None:
+        if scopes is None:
+            if actor is not None and actor.uses_restricted_token:
+                raise PermissionDeniedError(
+                    "Restricted API tokens cannot create unrestricted tokens"
+                )
+            return None
+        raw_workspace_ids = scopes.get("workspace_ids", [])
+        raw_workspace_actions = scopes.get("workspace_actions", [])
+        raw_account_actions = scopes.get("account_actions", [])
+        if not isinstance(raw_workspace_ids, list):
+            raise PermissionDeniedError("Token workspace_ids scope is invalid")
+        if not isinstance(raw_workspace_actions, list):
+            raise PermissionDeniedError("Token workspace_actions scope is invalid")
+        if not isinstance(raw_account_actions, list):
+            raise PermissionDeniedError("Token account_actions scope is invalid")
+        try:
+            workspace_ids = [UUID(str(item)) for item in raw_workspace_ids]
+            workspace_actions = [WorkspaceAction(str(item)) for item in raw_workspace_actions]
+            account_actions = [AccountAction(str(item)) for item in raw_account_actions]
+        except (TypeError, ValueError) as exc:
+            raise PermissionDeniedError("Token scope contains an unsupported value") from exc
+        if bool(workspace_ids) != bool(workspace_actions):
+            raise PermissionDeniedError(
+                "Token workspace_ids and workspace_actions must be granted together"
+            )
+        for workspace_id in workspace_ids:
+            membership = self._session.scalar(
+                select(WorkspaceMember).where(
+                    WorkspaceMember.workspace_id == workspace_id,
+                    WorkspaceMember.user_id == user_id,
+                    WorkspaceMember.status == "active",
+                )
+            )
+            if membership is None:
+                raise PermissionDeniedError(
+                    "Token cannot be scoped to a workspace without active membership"
+                )
+            for action in workspace_actions:
+                if not role_allows(membership.role, action):
+                    raise PermissionDeniedError("Token scope exceeds the user's workspace role")
+                if actor is not None and not actor.allows_workspace_action(
+                    workspace_id,
+                    action,
+                ):
+                    raise PermissionDeniedError("Token scope exceeds the calling token scope")
+        if actor is not None:
+            for action in account_actions:
+                if not actor.allows_account_action(action):
+                    raise PermissionDeniedError("Token scope exceeds the calling token scope")
+        return {
+            "workspace_ids": sorted(str(item) for item in set(workspace_ids)),
+            "workspace_actions": sorted(item.value for item in set(workspace_actions)),
+            "account_actions": sorted(item.value for item in set(account_actions)),
+        }
 
     def ensure_resource_workspace(
         self,

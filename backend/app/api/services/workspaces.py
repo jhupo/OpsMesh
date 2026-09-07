@@ -34,13 +34,21 @@ class WorkspaceService:
         self._session = session
         self._settings = settings or get_settings()
 
-    def list_for_user(self, user_id: UUID, page: PageParams) -> tuple[list[Workspace], int]:
+    def list_for_user(
+        self,
+        user_id: UUID,
+        page: PageParams,
+        *,
+        allowed_workspace_ids: frozenset[UUID] | None = None,
+    ) -> tuple[list[Workspace], int]:
         statement = (
             select(Workspace)
             .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
             .where(WorkspaceMember.user_id == user_id, WorkspaceMember.status == "active")
             .order_by(Workspace.created_at.desc())
         )
+        if allowed_workspace_ids is not None:
+            statement = statement.where(Workspace.id.in_(allowed_workspace_ids))
         return self._page(statement, page)
 
     def create_for_owner(self, owner_user_id: UUID, data: WorkspaceCreateRequest) -> Workspace:

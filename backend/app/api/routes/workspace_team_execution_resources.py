@@ -108,6 +108,7 @@ def _require_command_center_runtime_permission(
             user_id=context.user.user_id,
             workspace_id=context.workspace.id,
             action=WorkspaceAction.MANAGE_RUNTIME,
+            authenticated_user=context.user,
         )
     except PermissionDeniedError as exc:
         raise HTTPException(
@@ -212,6 +213,7 @@ def _require_execution_loop_runtime_permission(
             user_id=context.user.user_id,
             workspace_id=context.workspace.id,
             action=WorkspaceAction.MANAGE_RUNTIME,
+            authenticated_user=context.user,
         )
     except PermissionDeniedError as exc:
         raise HTTPException(
@@ -271,5 +273,4 @@ async def apply_team_operator_action(
     if response is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     return AgentTeamOperatorActionResponse.model_validate(response)
-
 

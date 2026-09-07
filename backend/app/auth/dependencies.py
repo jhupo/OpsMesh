@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.auth.context import AuthenticatedUser, WorkspaceContext
 from backend.app.auth.errors import AuthenticationError, PermissionDeniedError
-from backend.app.auth.permissions import WorkspaceAction
+from backend.app.auth.permissions import AccountAction, WorkspaceAction
 from backend.app.auth.service import AuthorizationService
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.request_context import set_log_context
@@ -139,6 +139,7 @@ def workspace_dependency(action: WorkspaceAction) -> Callable[..., object]:
                 user_id=current_user.user_id,
                 workspace_id=workspace_id,
                 action=action,
+                authenticated_user=current_user,
             )
             set_log_context(
                 user_id=current_user.user_id,
@@ -160,6 +161,37 @@ def workspace_dependency(action: WorkspaceAction) -> Callable[..., object]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.message) from exc
 
     return require_workspace_context
+
+
+def account_action_dependency(action: AccountAction) -> Callable[..., object]:
+    async def require_account_action(
+        request: Request,
+        current_user: AuthenticatedUser = CURRENT_USER_DEPENDENCY,
+        session: Session = DB_SESSION_DEPENDENCY,
+    ) -> AuthenticatedUser:
+        if current_user.allows_account_action(action):
+            return current_user
+        SecurityAuditService(session).record_request_event(
+            request=request,
+            action="auth.account_scope.rejected",
+            outcome="denied",
+            severity="warning",
+            reason="API token scope does not allow this account action",
+            user_id=current_user.user_id,
+            metadata={
+                "required_action": action.value,
+                "token_id": (
+                    str(current_user.token_id) if current_user.token_id is not None else None
+                ),
+            },
+        )
+        session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API token scope does not allow this account action",
+        )
+
+    return require_account_action
 
 
 def _bearer_token(authorization: str | None) -> str:

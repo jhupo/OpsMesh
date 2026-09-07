@@ -17,8 +17,12 @@ from backend.app.api.schemas.workspaces import (
 )
 from backend.app.api.services.workspaces import WorkspaceService
 from backend.app.auth.context import AuthenticatedUser, WorkspaceContext
-from backend.app.auth.dependencies import get_current_user, workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
+from backend.app.auth.dependencies import (
+    account_action_dependency,
+    get_current_user,
+    workspace_dependency,
+)
+from backend.app.auth.permissions import AccountAction, WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
@@ -39,7 +43,11 @@ async def list_workspaces(
     current_user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[WorkspaceResponse]:
-    items, total = WorkspaceService(session).list_for_user(current_user.user_id, page)
+    items, total = WorkspaceService(session).list_for_user(
+        current_user.user_id,
+        page,
+        allowed_workspace_ids=current_user.allowed_workspace_ids,
+    )
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
@@ -47,7 +55,9 @@ async def list_workspaces(
 async def create_workspace(
     request: WorkspaceCreateRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser = Depends(
+        account_action_dependency(AccountAction.WORKSPACES_CREATE)
+    ),
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),

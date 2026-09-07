@@ -20,6 +20,14 @@ class WorkspaceAction(StrEnum):
     OWNER = "owner"
 
 
+class AccountAction(StrEnum):
+    PROFILE_READ = "profile:read"
+    PASSWORD_CHANGE = "password:change"
+    TOKENS_READ = "tokens:read"
+    TOKENS_MANAGE = "tokens:manage"
+    WORKSPACES_CREATE = "workspaces:create"
+
+
 ROLE_PERMISSIONS: dict[WorkspaceRole, set[WorkspaceAction]] = {
     WorkspaceRole.OWNER: {
         WorkspaceAction.READ,

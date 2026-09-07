@@ -15,6 +15,7 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User, UserAPIToken
 from backend.app.main import create_app
 from backend.app.security.models import SecurityEvent
+from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 INTERNAL_TOKEN = "test-internal-token"
 
@@ -264,6 +265,130 @@ def test_user_token_api_rejects_token_when_user_is_disabled() -> None:
     rejected = client.get("/api/v1/auth/tokens", headers=_user_token_headers(raw_token))
 
     assert rejected.status_code == 401
+
+
+def test_restricted_user_token_enforces_account_and_workspace_scopes() -> None:
+    client, session = _client()
+    user = User(email="scoped@example.com", display_name="Scoped User")
+    workspace = Workspace(owner=user, name="Allowed", slug="allowed", settings={})
+    other_workspace = Workspace(owner=user, name="Other", slug="other", settings={})
+    session.add_all(
+        [
+            user,
+            workspace,
+            other_workspace,
+            WorkspaceMember(workspace=workspace, user=user, role="owner"),
+            WorkspaceMember(workspace=other_workspace, user=user, role="owner"),
+        ]
+    )
+    session.commit()
+    created = client.post(
+        "/api/v1/auth/tokens",
+        headers=_internal_headers(user.id),
+        json={
+            "name": "read only automation",
+            "scopes": {
+                "workspace_ids": [str(workspace.id)],
+                "workspace_actions": ["read"],
+                "account_actions": ["profile:read"],
+            },
+        },
+    )
+
+    assert created.status_code == 201
+    raw_token = created.json()["token"]
+    headers = _user_token_headers(raw_token)
+    assert created.json()["scopes"] == {
+        "workspace_ids": [str(workspace.id)],
+        "workspace_actions": ["read"],
+        "account_actions": ["profile:read"],
+    }
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
+    assert client.get("/api/v1/auth/tokens", headers=headers).status_code == 403
+    listed = client.get("/api/v1/workspaces", headers=headers)
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["items"]] == [str(workspace.id)]
+    assert (
+        client.post(
+            "/api/v1/workspaces",
+            headers=headers,
+            json={"name": "Forbidden", "slug": "forbidden"},
+        ).status_code
+        == 403
+    )
+    assert (
+        client.get(f"/api/v1/workspaces/{workspace.id}", headers=headers).status_code == 200
+    )
+    assert (
+        client.get(f"/api/v1/workspaces/{other_workspace.id}", headers=headers).status_code == 403
+    )
+    assert (
+        client.post(
+            f"/api/v1/workspaces/{workspace.id}/tasks",
+            headers=headers,
+            json={"title": "Must be denied"},
+        ).status_code
+        == 403
+    )
+
+
+def test_restricted_token_cannot_delegate_broader_scope() -> None:
+    client, session = _client()
+    user = User(email="delegate@example.com", display_name="Delegate User")
+    workspace = Workspace(owner=user, name="Delegation", slug="delegation", settings={})
+    session.add_all(
+        [
+            user,
+            workspace,
+            WorkspaceMember(workspace=workspace, user=user, role="owner"),
+        ]
+    )
+    session.commit()
+    parent = client.post(
+        "/api/v1/auth/tokens",
+        headers=_internal_headers(user.id),
+        json={
+            "name": "delegating reader",
+            "scopes": {
+                "workspace_ids": [str(workspace.id)],
+                "workspace_actions": ["read"],
+                "account_actions": ["tokens:manage"],
+            },
+        },
+    )
+    parent_headers = _user_token_headers(parent.json()["token"])
+
+    unrestricted = client.post(
+        "/api/v1/auth/tokens",
+        headers=parent_headers,
+        json={"name": "unrestricted"},
+    )
+    elevated = client.post(
+        "/api/v1/auth/tokens",
+        headers=parent_headers,
+        json={
+            "name": "writer",
+            "scopes": {
+                "workspace_ids": [str(workspace.id)],
+                "workspace_actions": ["write"],
+            },
+        },
+    )
+    delegated_read = client.post(
+        "/api/v1/auth/tokens",
+        headers=parent_headers,
+        json={
+            "name": "reader",
+            "scopes": {
+                "workspace_ids": [str(workspace.id)],
+                "workspace_actions": ["read"],
+            },
+        },
+    )
+
+    assert unrestricted.status_code == 403
+    assert elevated.status_code == 403
+    assert delegated_read.status_code == 201
 
 
 def test_internal_token_with_x_user_id_authenticates_user() -> None:

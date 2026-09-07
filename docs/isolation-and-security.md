@@ -40,6 +40,14 @@ Every request must resolve:
 
 Access is allowed only when the user has active membership in the target workspace and the resource belongs to that workspace.
 
+User API tokens may additionally restrict the workspace IDs, workspace actions, and account actions
+available to the caller. Token scope is an upper bound on the user's current workspace role: it
+cannot grant membership, exceed that role, create an unrestricted child token, or delegate an
+action that the calling token does not hold. Password-login tokens and the internal service-token
+path are explicitly unrestricted; custom automation tokens should use the narrowest practical
+scope. Workspace listing is filtered to the token's workspace IDs, and every workspace dependency
+rechecks both token scope and current membership.
+
 ## Required Authorization Rule
 
 Application code must never authorize access by resource ID alone.

@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -44,6 +45,7 @@ class UserAPIToken(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     fingerprint: Mapped[str] = mapped_column(String(80), nullable=False)
+    scopes: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
