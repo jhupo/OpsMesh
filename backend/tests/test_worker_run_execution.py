@@ -3041,7 +3041,13 @@ def test_model_request_review_allows_low_risk_request_after_semantic_approval() 
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input={
+            "authorization_snapshot": _v2_authorization_snapshot(
+                workspace_id=str(workspace.id),
+                task_id=str(task.id),
+                agent_profile_id=str(agent.id),
+            )
+        },
     )
     session.add(run)
     session.commit()
@@ -3113,7 +3119,13 @@ def test_model_request_review_routes_sensitive_input_to_admin_approval(
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input={
+            "authorization_snapshot": _v2_authorization_snapshot(
+                workspace_id=str(workspace.id),
+                task_id=str(task.id),
+                agent_profile_id=str(agent.id),
+            )
+        },
     )
     session.add(run)
     session.commit()
@@ -3166,7 +3178,13 @@ def test_model_request_review_does_not_repeat_after_admin_approval() -> None:
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input={
+            "authorization_snapshot": _v2_authorization_snapshot(
+                workspace_id=str(workspace.id),
+                task_id=str(task.id),
+                agent_profile_id=str(agent.id),
+            )
+        },
     )
     session.add(run)
     session.flush()
