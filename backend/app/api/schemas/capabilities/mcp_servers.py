@@ -48,6 +48,8 @@ class McpServerResponse(TimestampedModel):
 
 class McpToolAllowRequest(BaseModel):
     tool_name: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=2_000)
+    input_schema: dict[str, object] = Field(default_factory=dict)
     capability_key: str | None = Field(default=None, max_length=120)
     requires_approval: bool = False
     risk_level: str = Field(default="low", max_length=32)
@@ -58,6 +60,8 @@ class McpToolAllowResponse(TimestampedModel):
     workspace_id: UUID
     mcp_server_id: UUID
     tool_name: str
+    description: str
+    input_schema: dict[str, object]
     capability_key: str | None
     requires_approval: bool
     risk_level: str

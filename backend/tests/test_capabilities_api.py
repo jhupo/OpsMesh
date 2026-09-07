@@ -173,6 +173,12 @@ def test_capability_skill_and_mcp_control_plane() -> None:
             "server_id": server.json()["id"],
             "server_name": "image-tools",
             "tool_name": "generate_image",
+            "description": "",
+            "input_schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
             "capability_key": "image.generate",
             "requires_approval": True,
             "risk_level": "medium",

@@ -12,6 +12,7 @@ from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent, AuditIntegrityCheck
 from backend.app.capabilities.models import (
     Capability,
+    CapabilityResource,
     McpCredentialReference,
     McpServer,
     McpToolAllowlist,
@@ -90,6 +91,7 @@ __all__ = [
     "AuditEvent",
     "AuditIntegrityCheck",
     "Capability",
+    "CapabilityResource",
     "DomainItem",
     "DomainProject",
     "FileAccessEvent",

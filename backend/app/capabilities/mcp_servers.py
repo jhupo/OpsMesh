@@ -21,7 +21,12 @@ from backend.app.capabilities.mcp_server_helpers import (
 )
 from backend.app.capabilities.mcp_server_rules import connection_summary
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
+from backend.app.capabilities.schema_validation import (
+    normalize_object_schema,
+    reject_embedded_secrets,
+)
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.errors import DomainError
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.reviews.constants import (
@@ -189,22 +194,33 @@ class McpServerService:
         commit: bool = True,
     ) -> McpToolAllowlist:
         server = require_mcp_server(self._session, workspace_id, mcp_server_id)
+        try:
+            normalized_schema = normalize_object_schema(data.input_schema)
+            reject_embedded_secrets(normalized_schema, path="input_schema")
+            reject_embedded_secrets(data.policy, path="policy")
+        except ValueError as exc:
+            raise DomainError(
+                str(exc),
+                code="mcp_tool_schema_invalid",
+                status_code=422,
+            ) from exc
+        normalized_data = data.model_copy(update={"input_schema": normalized_schema})
         review = ResourcePolicyReviewBuilder(
             self._session,
             self._settings,
         ).review_mcp_tool_allowlist(
             workspace_id=workspace_id,
             visibility=server.visibility,
-            tool_name=data.tool_name,
-            requires_approval=data.requires_approval,
-            risk_level=data.risk_level,
-            policy=data.policy,
+            tool_name=normalized_data.tool_name,
+            requires_approval=normalized_data.requires_approval,
+            risk_level=normalized_data.risk_level,
+            policy=normalized_data.policy,
         )
         allow = McpToolAllowlist(
             workspace_id=workspace_id,
             mcp_server_id=mcp_server_id,
             status=RESOURCE_STATUS_PENDING_APPROVAL if review.required else RESOURCE_STATUS_ACTIVE,
-            **data.model_dump(),
+            **normalized_data.model_dump(),
         )
         self._session.add(allow)
         flush_or_raise_conflict(self._session, "MCP tool is already allowed for this server")
@@ -221,6 +237,8 @@ class McpServerService:
                     "id": str(allow.id),
                     "mcp_server_id": str(allow.mcp_server_id),
                     "tool_name": allow.tool_name,
+                    "description": allow.description,
+                    "input_schema": dict(allow.input_schema),
                     "capability_key": allow.capability_key,
                     "requires_approval": allow.requires_approval,
                     "risk_level": allow.risk_level,

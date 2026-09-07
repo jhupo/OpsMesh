@@ -27,6 +27,7 @@ from backend.app.agent_runtime.tool_payloads import (
     workspace_file_payload,
 )
 from backend.app.approvals.service import ApprovalService
+from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_NAMES as PRODUCT_TOOL_NAMES
 from backend.app.core.config import Settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.reviews.tool_execution import ToolExecutionReview, ToolExecutionReviewService
@@ -41,21 +42,7 @@ from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
 from backend.app.tools.product_tools.service import ProductToolService
 
-PRODUCT_TOOL_NAMES = frozenset(
-    {
-        "archive_workspace_memory",
-        "get_agent_inbox",
-        "list_workspace_files",
-        "mark_agent_message_read",
-        "read_workspace_file",
-        "remember_workspace_memory",
-        "search_workspace_memory",
-        "send_agent_message",
-        "list_agent_thread_messages",
-        "write_artifact",
-    }
-)
-
+__all__ = ["PRODUCT_TOOL_NAMES", "ProductToolExecutor"]
 
 class ProductToolExecutor:
     def __init__(

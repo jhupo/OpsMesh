@@ -134,6 +134,14 @@ audit events remain an independent Postgres record.
 Histogram, Gauge, and collector primitives. Domain collectors stay under `backend/app/operations`,
 and route-template labels prevent request-ID path cardinality.
 
+### Adopted: jsonschema
+
+OpsMesh uses the maintained `jsonschema` package and its Draft 2020-12 validator for tool and
+resource parameter contracts. The library owns JSON Schema validation semantics. OpsMesh owns the
+allowed resource types, workspace reference checks, parameter default merging, secret rejection,
+and policy decisions. A custom schema parser was rejected because it would duplicate a standard,
+security-sensitive validation protocol and provide weaker keyword coverage.
+
 ### P1: pgvector-python
 
 **Candidate:** [pgvector/pgvector-python](https://github.com/pgvector/pgvector-python)

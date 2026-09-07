@@ -306,7 +306,19 @@ persistence.
 
 ## Tool Catalog
 
-The product should expose a catalog of tool groups rather than raw low-level tool names.
+The product exposes a workspace-scoped dynamic catalog for product tools, allowed MCP tools, and
+configured resources. Tool entries include their source, description, JSON Schema input contract,
+risk level, approval requirement, MCP provenance when applicable, and sanitized policy. Resource
+entries are versioned and use typed locators for file collections, memory collections, MCP
+resources, runtimes, and external services.
+
+Resource locators are validated against the current workspace when they reference files, MCP
+servers, credential references, runtime spaces, or workspace runtimes. Parameter defaults must
+validate against a Draft 2020-12 JSON Schema. Raw secrets and secret-shaped schema fields are
+rejected; external authority must be represented by a workspace-owned credential reference.
+
+The catalog endpoint returns concrete tool names because the Agent runtime needs an executable
+manifest. Tool groups remain a product-facing grouping layer over those concrete definitions.
 
 Example groups:
 

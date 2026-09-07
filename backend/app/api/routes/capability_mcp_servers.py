@@ -211,6 +211,8 @@ async def list_mapped_mcp_tools(
             server_id=server.id,
             server_name=server.name,
             tool_name=allow.tool_name,
+            description=allow.description,
+            input_schema=allow.input_schema,
             capability_key=allow.capability_key,
             requires_approval=allow.requires_approval,
             risk_level=allow.risk_level,
@@ -243,6 +245,8 @@ def _mcp_catalog_response(item: object) -> McpCatalogServerResponse:
             McpCatalogToolResponse(
                 id=tool.allowlist.id,
                 tool_name=tool.allowlist.tool_name,
+                description=tool.allowlist.description,
+                input_schema=tool.allowlist.input_schema,
                 capability_key=tool.allowlist.capability_key,
                 requires_approval=tool.allowlist.requires_approval,
                 risk_level=tool.allowlist.risk_level,

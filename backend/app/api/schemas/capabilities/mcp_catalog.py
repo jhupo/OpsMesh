@@ -10,6 +10,8 @@ class McpToolDescriptor(BaseModel):
     server_id: UUID
     server_name: str
     tool_name: str
+    description: str
+    input_schema: dict[str, object]
     capability_key: str | None
     requires_approval: bool
     risk_level: str
@@ -42,6 +44,8 @@ class McpCatalogToolPolicySummaryResponse(BaseModel):
 class McpCatalogToolResponse(BaseModel):
     id: UUID
     tool_name: str
+    description: str
+    input_schema: dict[str, object]
     capability_key: str | None
     requires_approval: bool
     risk_level: str
