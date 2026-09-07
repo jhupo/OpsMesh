@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalogService
 from backend.app.model_providers.metadata import budget_is_exhausted
 from backend.app.model_providers.model_api import (
     canonical_model_api,
@@ -11,6 +12,9 @@ from backend.app.model_providers.model_api import (
 )
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.model_providers.resolution import ModelProviderResolutionService
+from backend.app.orchestration.run_authorization_integrity import (
+    authorization_snapshot_fingerprint,
+)
 from backend.app.orchestration.run_request_builder import RunRequestBuilder
 from backend.app.orchestration.run_request_utils import dict_copy, string_list, uuid_or_none
 from backend.app.security.redaction import redact_sensitive_payload
@@ -30,10 +34,19 @@ class RunAuthorizationSnapshotService:
         *,
         agent_snapshot: dict[str, object] | None = None,
     ) -> dict[str, object]:
-        allowed_tools = (
-            self.request_builder.allowed_tools_for_profile(profile)
+        effective_catalog = (
+            EffectiveCapabilityCatalogService(self.session).build(
+                workspace_id=task.workspace_id,
+                agent_profile_id=profile.id,
+                team_id=task.agent_team_id,
+            )
             if profile is not None
-            else ()
+            else None
+        )
+        allowed_tools = (
+            [item.descriptor.name for item in effective_catalog.tools]
+            if effective_catalog is not None
+            else []
         )
         tool_policy = profile.tool_policy if profile is not None else {}
         runtime_policy = profile.runtime_policy if profile is not None else {}
@@ -44,8 +57,8 @@ class RunAuthorizationSnapshotService:
             profile,
             agent_snapshot=agent_snapshot,
         )
-        return {
-            "version": 1,
+        snapshot: dict[str, object] = {
+            "version": 2,
             "workspace_id": str(task.workspace_id),
             "task_id": str(task.id),
             "task_step_id": str(step.id),
@@ -55,7 +68,10 @@ class RunAuthorizationSnapshotService:
             "agent_profile_id": str(profile.id)
             if profile is not None and profile.id is not None
             else None,
-            "allowed_tools": list(allowed_tools),
+            "allowed_tools": allowed_tools,
+            "capability_catalog": effective_catalog.model_dump(mode="json")
+            if effective_catalog is not None
+            else None,
             "tool_policy": dict_copy(tool_policy),
             "installed_skills": self.request_builder.installed_skill_snapshots(
                 task.workspace_id,
@@ -80,6 +96,8 @@ class RunAuthorizationSnapshotService:
                 "task_step_id": str(step.id),
             },
         }
+        snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
+        return snapshot
 
     def model_provider_snapshot(
         self,

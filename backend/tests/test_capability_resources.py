@@ -176,15 +176,27 @@ def test_viewer_can_read_but_cannot_manage_capability_resources() -> None:
 def test_effective_catalog_applies_team_department_and_locked_parameters() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, "owner@example.com", "owner")
+    file = WorkspaceFile(
+        workspace_id=workspace.id,
+        uploaded_by_user_id=owner.id,
+        filename="project.md",
+        content_type="text/markdown",
+        size_bytes=7,
+        checksum_sha256="c" * 64,
+        storage_key=f"workspaces/{workspace.id}/project.md",
+        file_metadata={},
+    )
+    session.add(file)
+    session.commit()
     created_resource = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/resources",
         headers=_headers(owner.id),
         json={
-            "key": "project.memory",
-            "name": "Project memory",
-            "resource_type": "memory_collection",
+            "key": "project.files",
+            "name": "Project files",
+            "resource_type": "file_collection",
             "access_mode": "read",
-            "locator": {"tags": ["project-alpha"]},
+            "locator": {"file_ids": [str(file.id)]},
             "parameter_schema": {
                 "type": "object",
                 "properties": {"section": {"type": "string"}},

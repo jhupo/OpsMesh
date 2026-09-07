@@ -24,7 +24,10 @@ from backend.app.workers.jobs import JobPayload, JobType
 
 from .run_request_authorization import (
     RunAuthorizationService,
+    file_scope_ids_for_snapshot,
+    resource_grants_for_snapshot,
     tool_continuations_for_run,
+    tool_definitions_for_snapshot,
 )
 from .run_request_context import RunRequestContextProvider
 from .run_request_model_provider import RunRequestModelProviderService
@@ -87,6 +90,9 @@ class RunRequestBuilder:
         authorization_snapshot = self.authorization_snapshot_for_run(run)
         self.validate_authorization_snapshot(run, task, profile, authorization_snapshot)
         allowed_tools = self.allowed_tools_for_run(run, profile)
+        tool_definitions = tool_definitions_for_snapshot(authorization_snapshot)
+        resource_grants = resource_grants_for_snapshot(authorization_snapshot)
+        file_scope_ids = file_scope_ids_for_snapshot(authorization_snapshot)
         model_provider = self.model_provider_for_run(
             run,
             profile,
@@ -150,6 +156,9 @@ class RunRequestBuilder:
                 run_id=run.id,
                 user_id=job.requested_by_user_id,
                 allowed_tools=allowed_tools,
+                tool_definitions=tool_definitions,
+                resource_grants=resource_grants,
+                file_scope_ids=file_scope_ids,
                 metadata=metadata,
             ),
             model=model_provider["model"],
@@ -332,19 +341,6 @@ class RunRequestBuilder:
             task,
             allowed_tools=allowed_tools,
         )
-
-    def allowed_tools_for_profile(self, profile: AgentProfile) -> tuple[str, ...]:
-        return self.authorization.allowed_tools_for_profile(profile)
-
-    def allowed_tools_for_snapshot(self, snapshot: dict[str, object]) -> tuple[str, ...]:
-        return self.authorization.allowed_tools_for_snapshot(snapshot)
-
-    def allowed_tool_policy_for_run(
-        self,
-        snapshot: dict[str, object],
-        profile: AgentProfile,
-    ) -> tuple[str, ...]:
-        return self.authorization.allowed_tool_policy_for_run(snapshot, profile)
 
     def allowed_tools_for_run(
         self,

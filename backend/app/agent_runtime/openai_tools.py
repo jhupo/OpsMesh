@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from agents import (
-    RunContextWrapper,
+    FunctionTool,
     ToolGuardrailFunctionOutput,
     ToolInputGuardrail,
-    function_tool,
 )
+from agents.tool_context import ToolContext
 
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
+    AgentRuntimeToolDefinition,
     AgentRuntimeToolExecutor,
 )
 
@@ -20,27 +22,37 @@ class OpenAIToolBridge:
         if request.tool_executor is None:
             return []
         return [
-            self.mcp_function_tool(tool_name, request.tool_executor)
-            for tool_name in request.context.allowed_tools
+            self.function_tool(definition, request.tool_executor)
+            for definition in request.context.tool_definitions
         ]
 
-    def mcp_function_tool(
+    def function_tool(
         self,
-        tool_name: str,
+        definition: AgentRuntimeToolDefinition,
         executor: AgentRuntimeToolExecutor,
     ) -> Any:
-        def call_mcp_tool(
-            ctx: RunContextWrapper[Any],
-            arguments: dict[str, object],
-        ) -> dict[str, object]:
+        async def invoke_tool(ctx: ToolContext[Any], raw_arguments: str) -> dict[str, object]:
+            try:
+                parsed = json.loads(raw_arguments)
+            except json.JSONDecodeError:
+                parsed = None
+            if not isinstance(parsed, dict):
+                return {
+                    "error": {
+                        "code": "tool_arguments_invalid",
+                        "message": "Tool arguments must be a JSON object",
+                    },
+                    "tool_name": definition.name,
+                    "status": "failed",
+                }
             result = executor.execute_tool(
                 context=ctx.context,
-                tool_name=tool_name,
-                arguments=arguments,
+                tool_name=definition.name,
+                arguments=parsed,
             )
             if result.status == "completed":
                 return tool_response_with_metadata(
-                    tool_name=tool_name,
+                    tool_name=definition.name,
                     status=result.status,
                     payload=result.output or {},
                     metadata=result.metadata,
@@ -51,22 +63,18 @@ class OpenAIToolBridge:
                     "code": "mcp_tool_failed",
                     "message": "MCP tool failed",
                 },
-                "tool_name": tool_name,
+                "tool_name": definition.name,
                 "status": result.status,
                 "metadata": result.metadata,
             }
 
-        call_mcp_tool.__name__ = f"mcp_{safe_tool_function_name(tool_name)}"
-        call_mcp_tool.__doc__ = (
-            "Execute an approved MCP tool. "
-            "Pass a JSON object with the arguments required by the tool."
-        )
-        return function_tool(
-            call_mcp_tool,
-            name_override=tool_name,
-            description_override=f"Execute the approved MCP tool `{tool_name}`.",
-            strict_mode=False,
-            tool_input_guardrails=[tool_provenance_guardrail(tool_name)],
+        return FunctionTool(
+            name=definition.name,
+            description=definition.description,
+            params_json_schema=dict(definition.input_schema),
+            on_invoke_tool=invoke_tool,
+            strict_json_schema=False,
+            tool_input_guardrails=[tool_provenance_guardrail(definition.name)],
         )
 
 

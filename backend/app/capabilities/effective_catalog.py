@@ -166,6 +166,31 @@ class EffectiveCapabilityCatalogService:
                 )
             )
 
+        available_resource_access = {
+            (item.resource.resource_type, item.resource.access_mode)
+            for item in effective_resources
+        }
+        executable_tools: list[EffectiveCapabilityTool] = []
+        for item in effective_tools:
+            required_type = item.descriptor.required_resource_type
+            required_modes = set(item.descriptor.required_access_modes)
+            if required_type is not None and not any(
+                resource_type == required_type and access_mode in required_modes
+                for resource_type, access_mode in available_resource_access
+            ):
+                denied.append(
+                    EffectiveCapabilityDenial(
+                        kind="tool",
+                        key=item.descriptor.name,
+                        reason=(
+                            f"requires an authorized {required_type} resource with "
+                            f"one of these access modes: {', '.join(sorted(required_modes))}"
+                        ),
+                    )
+                )
+                continue
+            executable_tools.append(item)
+
         response = EffectiveCapabilityCatalogResponse(
             workspace_id=workspace_id,
             agent_profile_id=profile.id,
@@ -174,12 +199,12 @@ class EffectiveCapabilityCatalogService:
             team_policy_version=team.capability_policy_version if team is not None else None,
             team_member_id=member.id if member is not None else None,
             department=member.department if member is not None else None,
-            tools=effective_tools,
+            tools=executable_tools,
             resources=effective_resources,
             denied=denied,
             fingerprint="",
         )
-        response.fingerprint = _fingerprint(response)
+        response.fingerprint = effective_catalog_fingerprint(response)
         return response
 
     def _team_context(
@@ -374,7 +399,13 @@ def _uuid_set(
     return result
 
 
-def _fingerprint(response: EffectiveCapabilityCatalogResponse) -> str:
-    payload = response.model_dump(mode="json", exclude={"fingerprint"})
+def effective_catalog_fingerprint(
+    catalog: EffectiveCapabilityCatalogResponse | dict[str, object],
+) -> str:
+    payload = (
+        catalog.model_dump(mode="json", exclude={"fingerprint"})
+        if isinstance(catalog, EffectiveCapabilityCatalogResponse)
+        else {key: value for key, value in catalog.items() if key != "fingerprint"}
+    )
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return f"sha256:{sha256(serialized.encode('utf-8')).hexdigest()}"

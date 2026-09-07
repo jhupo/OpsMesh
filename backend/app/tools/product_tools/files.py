@@ -15,25 +15,39 @@ from backend.app.tools.product_tools.events import ProductToolEventRecorder
 
 
 class WorkspaceFileProductTools(ProductToolEventRecorder):
-    def list_workspace_files(self, context: ToolContext) -> list[WorkspaceFile]:
+    def list_workspace_files(
+        self,
+        context: ToolContext,
+        *,
+        allowed_file_ids: set[UUID] | None = None,
+    ) -> list[WorkspaceFile]:
         context.require_tool("list_workspace_files")
         self._append_tool_event(context, "tool.called", "list_workspace_files")
+        statement = select(WorkspaceFile).where(
+            WorkspaceFile.workspace_id == context.workspace_id
+        )
+        if allowed_file_ids is not None:
+            statement = statement.where(WorkspaceFile.id.in_(allowed_file_ids))
         files = list(
-            self._session.scalars(
-                select(WorkspaceFile)
-                .where(WorkspaceFile.workspace_id == context.workspace_id)
-                .order_by(WorkspaceFile.created_at.desc())
-            ).all()
+            self._session.scalars(statement.order_by(WorkspaceFile.created_at.desc())).all()
         )
         self._append_tool_event(context, "tool.completed", "list_workspace_files")
         return files
 
-    def read_workspace_file(self, context: ToolContext, file_id: UUID) -> WorkspaceFile:
+    def read_workspace_file(
+        self,
+        context: ToolContext,
+        file_id: UUID,
+        *,
+        allowed_file_ids: set[UUID] | None = None,
+    ) -> WorkspaceFile:
         context.require_tool("read_workspace_file")
         self._append_tool_event(context, "tool.called", "read_workspace_file")
         file = self._session.get(WorkspaceFile, file_id)
         if file is None or file.workspace_id != context.workspace_id:
             raise ToolResourceNotFoundError("Workspace file not found")
+        if allowed_file_ids is not None and file.id not in allowed_file_ids:
+            raise ToolResourceNotFoundError("Workspace file not found in authorized resource scope")
         self._append_tool_event(context, "tool.completed", "read_workspace_file")
         return file
 

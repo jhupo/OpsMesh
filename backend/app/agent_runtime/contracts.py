@@ -8,12 +8,41 @@ from backend.app.agents.models import AgentProfile
 
 
 @dataclass(frozen=True)
+class AgentRuntimeToolDefinition:
+    name: str
+    source: str
+    description: str
+    input_schema: dict[str, object]
+    parameters: dict[str, object] = field(default_factory=dict)
+    locked_parameters: tuple[str, ...] = ()
+    requires_approval: bool = False
+    risk_level: str = "low"
+    required_resource_type: str | None = None
+    required_access_modes: tuple[str, ...] = ()
+    mcp_server_id: UUID | None = None
+    mcp_tool_allowlist_id: UUID | None = None
+
+
+@dataclass(frozen=True)
+class AgentRuntimeResourceGrant:
+    resource_id: UUID
+    resource_type: str
+    access_mode: str
+    locator: dict[str, object]
+    parameters: dict[str, object]
+    version: int
+
+
+@dataclass(frozen=True)
 class AgentRuntimeContext:
     workspace_id: UUID
     task_id: UUID | None
     run_id: UUID
     user_id: UUID | None = None
     allowed_tools: tuple[str, ...] = ()
+    tool_definitions: tuple[AgentRuntimeToolDefinition, ...] = ()
+    resource_grants: tuple[AgentRuntimeResourceGrant, ...] = ()
+    file_scope_ids: tuple[UUID, ...] = ()
     metadata: dict[str, object] = field(default_factory=dict)
 
 

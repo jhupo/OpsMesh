@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRuntimeContext, AgentRuntimeToolResult
+from backend.app.agent_runtime.contracts import (
+    AgentRuntimeContext,
+    AgentRuntimeResourceGrant,
+    AgentRuntimeToolResult,
+)
 from backend.app.agent_runtime.tool_arguments import (
     bool_argument,
     bytes_argument,
@@ -44,6 +50,7 @@ from backend.app.tools.product_tools.service import ProductToolService
 
 __all__ = ["PRODUCT_TOOL_NAMES", "ProductToolExecutor"]
 
+
 class ProductToolExecutor:
     def __init__(
         self,
@@ -60,6 +67,7 @@ class ProductToolExecutor:
         context: AgentRuntimeContext,
         tool_name: str,
         arguments: dict[str, object],
+        resource_grants: tuple[AgentRuntimeResourceGrant, ...] = (),
     ) -> AgentRuntimeToolResult:
         with telemetry_span(
             "opsmesh.product.tool.execute",
@@ -75,6 +83,7 @@ class ProductToolExecutor:
                 context=context,
                 tool_name=tool_name,
                 arguments=arguments,
+                resource_grants=resource_grants,
             )
 
     def _execute(
@@ -83,6 +92,7 @@ class ProductToolExecutor:
         context: AgentRuntimeContext,
         tool_name: str,
         arguments: dict[str, object],
+        resource_grants: tuple[AgentRuntimeResourceGrant, ...],
     ) -> AgentRuntimeToolResult:
         execution_review = ToolExecutionReviewService(
             self._session,
@@ -125,6 +135,8 @@ class ProductToolExecutor:
                 context=product_context,
                 tool_name=tool_name,
                 arguments=arguments,
+                resource_grants=resource_grants,
+                file_scope_ids=context.file_scope_ids,
             )
         except (ToolResourceNotFoundError, ValueError) as exc:
             return AgentRuntimeToolResult(
@@ -193,6 +205,8 @@ def _execute_product_tool(
     context: ToolContext,
     tool_name: str,
     arguments: dict[str, object],
+    resource_grants: tuple[AgentRuntimeResourceGrant, ...],
+    file_scope_ids: tuple[UUID, ...],
 ) -> dict[str, object]:
     if tool_name == "send_agent_message":
         return service.send_agent_message(
@@ -231,6 +245,8 @@ def _execute_product_tool(
                 query=str_argument(arguments, "query", default=""),
                 limit=int_argument(arguments, "limit", default=10),
                 source_types=optional_str_set_argument(arguments, "source_types"),
+                allowed_source_types=_memory_source_types(resource_grants),
+                allowed_tags=_memory_tags(resource_grants),
             )
         }
     if tool_name == "remember_workspace_memory":
@@ -250,6 +266,8 @@ def _execute_product_tool(
                 ),
                 importance=int_argument(arguments, "importance", default=0),
                 metadata=dict_argument(arguments, "metadata"),
+                allowed_source_types=_memory_source_types(resource_grants),
+                allowed_tags=_memory_tags(resource_grants),
             )
         )
     if tool_name == "archive_workspace_memory":
@@ -257,12 +275,18 @@ def _execute_product_tool(
             service.archive_workspace_memory(
                 context,
                 memory_entry_id=uuid_argument(arguments, "memory_entry_id"),
+                allowed_source_types=_memory_source_types(resource_grants),
+                allowed_tags=_memory_tags(resource_grants),
             )
         )
     if tool_name == "list_workspace_files":
         return {
             "items": [
-                workspace_file_payload(file) for file in service.list_workspace_files(context)
+                workspace_file_payload(file)
+                for file in service.list_workspace_files(
+                    context,
+                    allowed_file_ids=_file_ids(resource_grants, file_scope_ids),
+                )
             ]
         }
     if tool_name == "read_workspace_file":
@@ -270,6 +294,7 @@ def _execute_product_tool(
             service.read_workspace_file(
                 context,
                 file_id=uuid_argument(arguments, "file_id"),
+                allowed_file_ids=_file_ids(resource_grants, file_scope_ids),
             )
         )
     if tool_name == "write_artifact":
@@ -283,3 +308,47 @@ def _execute_product_tool(
             )
         )
     raise ValueError(f"Unsupported product tool: {tool_name}")
+
+
+def _file_ids(
+    grants: tuple[AgentRuntimeResourceGrant, ...],
+    file_scope_ids: tuple[UUID, ...],
+) -> set[UUID]:
+    ids: set[UUID] = set()
+    for grant in grants:
+        for raw_id in _resource_locator_strings(grant, "file_ids"):
+            try:
+                ids.add(UUID(str(raw_id)))
+            except (TypeError, ValueError):
+                continue
+    return ids & set(file_scope_ids) if file_scope_ids else ids
+
+
+def _memory_source_types(
+    grants: tuple[AgentRuntimeResourceGrant, ...],
+) -> set[str] | None:
+    values = {
+        item
+        for grant in grants
+        for item in _resource_locator_strings(grant, "source_types")
+    }
+    return values or None
+
+
+def _memory_tags(grants: tuple[AgentRuntimeResourceGrant, ...]) -> set[str] | None:
+    values = {
+        item
+        for grant in grants
+        for item in _resource_locator_strings(grant, "tags")
+    }
+    return values or None
+
+
+def _resource_locator_strings(
+    grant: AgentRuntimeResourceGrant,
+    key: str,
+) -> tuple[str, ...]:
+    value = grant.locator.get(key)
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, str))

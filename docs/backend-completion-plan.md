@@ -146,9 +146,15 @@ Current state:
   storage mode, fingerprint, scope, and review metadata.
 - Workspace runtime APIs hide raw Docker container IDs and expose only whether a container handle
   exists; admin/operator APIs retain metadata needed for control-plane remediation.
-- The execution service now resolves an MCP server/tool from the run authorization snapshot, injects workspace-owned credential references into an adapter, enforces payload policy, and records call logs, run events, task messages, and security events.
-- MCP execution also re-checks the runtime context tool set, sends explicitly approval-required tools into workspace approval, and writes authorization snapshot metadata into tool audit records.
-- Worker-built agent requests now carry a backend tool executor, and the OpenAI Agents runner registers allowed MCP tools as SDK function tools that call back into the backend execution service.
+- Run authorization snapshot v2 freezes the effective Agent/team capability catalog, exact product
+  and MCP descriptors, schemas, defaults, locked parameters, resource grants, provenance IDs, and
+  canonical fingerprints.
+- The Agent execution gateway validates every product and MCP call against that manifest, intersects
+  file and memory scopes, rechecks live resource/MCP status, and records durable run/security denial
+  evidence before any side effect.
+- Worker-built Agent requests carry typed frozen definitions and grants. OpenAI Agents SDK
+  `FunctionTool` objects and Anthropic tool declarations both use the frozen names, descriptions,
+  and JSON Schemas.
 - Remote Streamable HTTP, SSE, and hosted MCP servers execute through the official MCP Python SDK `ClientSession` and transports behind the adapter resolver. Stdio MCP has a Docker-runtime-only adapter, but it is not selected by the default resolver; callers must explicitly bind it to a workspace runtime so the API host never executes stdio commands directly. Self-hosted runtimes now have an auditable MCP job queue plus an independent `opsmesh-self-hosted-worker` connector that heartbeats, polls, claims, executes through the official SDK, durably records results, and completes jobs with restart recovery. OpenAI tool calls can submit stdio jobs with an explicit `waiting_self_hosted` result. Completed self-hosted MCP jobs now move waiting runs back to queued, persist pending tool results, and resume through structured tool continuations rendered at the OpenAI runtime boundary.
 - A workspace MCP catalog API now summarizes each server's visibility, allowed tools, credential readiness, execution mode, connection summary, agent-scoped availability, and tool/server usage rollups.
 - Stale self-hosted MCP jobs expire through the worker cleanup path, mark waiting runs failed, and record retryable pending tool results.
@@ -180,6 +186,11 @@ Build:
 - [x] Persist `tool.called`, `tool.completed`, `tool.failed`, and `tool.blocked` run events and task messages.
 - [x] Normalize MCP errors without leaking secrets.
 - [x] Wire MCP execution into worker/OpenAI tool invocation through runtime tool executor and OpenAI function-tool bridge.
+- [x] Freeze the effective capability catalog into fingerprinted run authorization snapshot v2.
+- [x] Enforce frozen schemas, defaults, parameter locks, exact MCP server/allowlist provenance, and
+  product resource scopes through one Agent execution gateway.
+- [x] Emit only tools backed by the required file/memory resource access mode and preserve live
+  disablement as an emergency revocation path for existing runs.
 - [x] Add optional approval hooks for high-risk and explicitly approval-required MCP tools.
 - [x] Add workspace MCP credential management APIs for listing, filtering, and disabling credential references.
 - [x] Add explicit MCP credential metadata update and hosted/external credential rotation APIs with redacted audit evidence.

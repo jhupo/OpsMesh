@@ -124,14 +124,33 @@ draft -> queued -> planning -> running -> waiting_approval -> running -> complet
 Current durable workflow:
 
 1. User creates a task in a workspace.
-2. The API persists task and run intent, freezes the authorization snapshot, and enqueues an idempotent Redis job.
+2. The API computes the Agent/team effective capability catalog, freezes it into authorization
+   snapshot v2 with nested fingerprints, persists run intent, and enqueues an idempotent Redis job.
 3. A worker claims the job under a lease and loads workspace-scoped configuration from Postgres.
 4. Provider readiness, pricing, budget, capability, and approval policies fail closed before side effects.
 5. Manager and specialist agents execute through the agent runtime and durable handoff state.
-6. MCP calls and executable tools cross the governed tool boundary and use approved isolated runtimes.
+6. The model receives only frozen tool descriptors. Product and MCP calls cross the Agent execution
+   gateway for schema, locked-parameter, resource-scope, live-status, provenance, and approval checks.
 7. Human approvals persist a wait state; an approved run is requeued instead of resumed inside the API request.
 8. The worker stores output, artifacts, run events, audit hashes, and model usage costs before acknowledging the job.
 9. API and worker logs and traces share W3C trace context; Prometheus exposes application and governance metrics.
+
+```mermaid
+flowchart LR
+    A[Agent and team policy] --> B[Effective capability catalog]
+    R[Workspace resources] --> B
+    M[MCP allowlist] --> B
+    B --> S[Run authorization snapshot v2]
+    S --> D[SDK tool definitions]
+    D --> L[Model tool call]
+    L --> G[Agent execution gateway]
+    S --> G
+    G --> P[Product tool service]
+    G --> X[MCP execution service]
+    G --> E[Run and security evidence]
+    P --> E
+    X --> E
+```
 
 The orchestrator, not the model, owns durable state transitions. Models may propose plans and actions, but the service validates and persists them.
 
@@ -221,7 +240,8 @@ independent of tracing, are hash chained, and are WORM protected in Postgres.
 2. Postgres holds every state needed for restart recovery; Redis state is replaceable coordination data.
 3. Every worker, tool, file, memory, and runtime lookup carries workspace scope.
 4. Provider credentials are resolved and decrypted only at the narrow execution boundary.
-5. Tool policy, approval, runtime isolation, quota, and cost limits fail closed.
+5. Frozen tool manifests, schemas, parameter locks, resource scopes, live revocation, approval,
+   runtime isolation, quota, and cost limits fail closed.
 6. Run events, product audit evidence, model usage, artifacts, and failure state are durable.
 7. Logs, traces, and metrics are correlated but never replace product audit records.
 

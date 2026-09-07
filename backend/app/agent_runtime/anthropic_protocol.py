@@ -38,14 +38,11 @@ def tool_definitions(request: AgentRunRequest) -> list[dict[str, object]]:
         return []
     return [
         {
-            "name": tool_name,
-            "description": f"Execute the approved MCP tool `{tool_name}`.",
-            "input_schema": {
-                "type": "object",
-                "additionalProperties": True,
-            },
+            "name": definition.name,
+            "description": definition.description,
+            "input_schema": dict(definition.input_schema),
         }
-        for tool_name in request.context.allowed_tools
+        for definition in request.context.tool_definitions
     ]
 
 

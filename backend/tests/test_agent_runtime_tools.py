@@ -9,19 +9,29 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
-from backend.app.agent_runtime.contracts import AgentRuntimeContext
+from backend.app.agent_runtime.contracts import (
+    AgentRuntimeContext,
+    AgentRuntimeResourceGrant,
+    AgentRuntimeToolDefinition,
+)
 from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.models import AgentProfile
+from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
 from backend.app.capabilities.models import (
+    CapabilityResource,
     McpCredentialReference,
     McpServer,
     McpToolAllowlist,
     McpToolCallLog,
 )
+from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_CATALOG
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.orchestration.run_authorization_integrity import (
+    authorization_snapshot_fingerprint,
+)
 from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.models import AgentRun
@@ -75,6 +85,8 @@ def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
         },
     )
     session.add_all([allow, run])
+    session.flush()
+    _set_mcp_snapshot(run, workspace, server, allow)
     session.commit()
 
     result = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
@@ -83,6 +95,7 @@ def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
             task_id=task.id,
             run_id=run.id,
             allowed_tools=("generate_image",),
+            tool_definitions=(_mcp_definition(server, allow),),
         ),
         tool_name="generate_image",
         arguments={"prompt": "mountain"},
@@ -121,6 +134,8 @@ def test_backend_tool_executor_records_team_runtime_tool_provenance() -> None:
         },
     )
     session.add_all([allow, run])
+    session.flush()
+    _set_mcp_snapshot(run, workspace, server, allow)
     session.commit()
     team_id = uuid4()
     member_id = uuid4()
@@ -136,6 +151,7 @@ def test_backend_tool_executor_records_team_runtime_tool_provenance() -> None:
             task_id=task.id,
             run_id=run.id,
             allowed_tools=("generate_image",),
+            tool_definitions=(_mcp_definition(server, allow),),
             metadata={
                 "team_context": {
                     "team_id": str(team_id),
@@ -214,6 +230,8 @@ def test_backend_tool_executor_enforces_mcp_per_run_call_limit() -> None:
         },
     )
     session.add_all([allow, run])
+    session.flush()
+    _set_mcp_snapshot(run, workspace, server, allow)
     session.commit()
     executor = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter())
     context = AgentRuntimeContext(
@@ -221,6 +239,7 @@ def test_backend_tool_executor_enforces_mcp_per_run_call_limit() -> None:
         task_id=task.id,
         run_id=run.id,
         allowed_tools=("generate_image",),
+        tool_definitions=(_mcp_definition(server, allow),),
     )
 
     first = executor.execute_tool(
@@ -280,6 +299,9 @@ def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs() -> N
         },
     )
     session.add_all([allow, first_run, second_run])
+    session.flush()
+    _set_mcp_snapshot(first_run, workspace, server, allow)
+    _set_mcp_snapshot(second_run, workspace, server, allow)
     session.commit()
     executor = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter())
 
@@ -289,6 +311,7 @@ def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs() -> N
             task_id=task.id,
             run_id=first_run.id,
             allowed_tools=("generate_image",),
+            tool_definitions=(_mcp_definition(server, allow),),
         ),
         tool_name="generate_image",
         arguments={"prompt": "mountain"},
@@ -300,6 +323,7 @@ def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs() -> N
                 task_id=task.id,
                 run_id=second_run.id,
                 allowed_tools=("generate_image",),
+                tool_definitions=(_mcp_definition(server, allow),),
             ),
             tool_name="generate_image",
             arguments={"prompt": "forest"},
@@ -339,23 +363,25 @@ def test_backend_tool_executor_enforces_runtime_allowed_tools() -> None:
         },
     )
     session.add_all([allow, run])
+    session.flush()
+    _set_mcp_snapshot(run, workspace, server, allow)
     session.commit()
 
-    try:
-        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
-            context=AgentRuntimeContext(
-                workspace_id=workspace.id,
-                task_id=task.id,
-                run_id=run.id,
-                allowed_tools=(),
-            ),
-            tool_name="generate_image",
-            arguments={"prompt": "mountain"},
-        )
-    except ToolPermissionError as exc:
-        assert "mcp_tool_not_in_runtime_context" in str(exc)
-    else:
-        raise AssertionError("Expected backend tool executor to enforce runtime context")
+    result = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+        context=AgentRuntimeContext(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            run_id=run.id,
+            allowed_tools=(),
+            tool_definitions=(_mcp_definition(server, allow),),
+        ),
+        tool_name="generate_image",
+        arguments={"prompt": "mountain"},
+    )
+
+    assert result.status == "failed"
+    assert result.error is not None
+    assert result.error["code"] == "tool_not_in_run_manifest"
 
 
 def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
@@ -392,6 +418,10 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
         task_id=task.id,
         run_id=run.id,
         allowed_tools=("send_agent_message", "list_agent_thread_messages"),
+        tool_definitions=_product_definitions(
+            "send_agent_message",
+            "list_agent_thread_messages",
+        ),
     )
 
     sent = executor.execute_tool(
@@ -479,6 +509,7 @@ def test_backend_tool_executor_redacts_product_tool_failure_messages(
             task_id=task.id,
             run_id=run.id,
             allowed_tools=("send_agent_message",),
+            tool_definitions=_product_definitions("send_agent_message"),
         ),
         tool_name="send_agent_message",
         arguments={
@@ -536,6 +567,10 @@ def test_backend_tool_executor_dispatches_agent_inbox_product_tools() -> None:
         task_id=task.id,
         run_id=run.id,
         allowed_tools=("get_agent_inbox", "mark_agent_message_read"),
+        tool_definitions=_product_definitions(
+            "get_agent_inbox",
+            "mark_agent_message_read",
+        ),
     )
 
     inbox = executor.execute_tool(
@@ -620,6 +655,7 @@ def test_backend_tool_executor_scopes_agent_inbox_to_runtime_metadata() -> None:
             task_id=current_task.id,
             run_id=run.id,
             allowed_tools=("get_agent_inbox",),
+            tool_definitions=_product_definitions("get_agent_inbox"),
             metadata={"agent_mailbox": {"scope": {"task_id": str(current_task.id)}}},
         ),
         tool_name="get_agent_inbox",
@@ -687,6 +723,7 @@ def test_backend_tool_executor_scopes_mark_read_to_runtime_metadata() -> None:
             task_id=current_task.id,
             run_id=run.id,
             allowed_tools=("mark_agent_message_read",),
+            tool_definitions=_product_definitions("mark_agent_message_read"),
             metadata={"agent_mailbox": {"scope": {"task_id": str(current_task.id)}}},
         ),
         tool_name="mark_agent_message_read",
@@ -718,6 +755,7 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
     )
     session.add_all([task, agent, existing])
     session.flush()
+    memory_grant = _memory_resource_grant(session, workspace)
     run = AgentRun(
         workspace_id=workspace.id,
         task_id=task.id,
@@ -745,6 +783,12 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
             "remember_workspace_memory",
             "archive_workspace_memory",
         ),
+        tool_definitions=_product_definitions(
+            "search_workspace_memory",
+            "remember_workspace_memory",
+            "archive_workspace_memory",
+        ),
+        resource_grants=(memory_grant,),
     )
 
     searched = executor.execute_tool(
@@ -829,6 +873,8 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
         },
     )
     session.add_all([credential, allow, run])
+    session.flush()
+    _set_mcp_snapshot(run, workspace, server, allow)
     session.commit()
 
     result = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
@@ -837,6 +883,7 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
             task_id=task.id,
             run_id=run.id,
             allowed_tools=("generate_image",),
+            tool_definitions=(_mcp_definition(server, allow),),
         ),
         tool_name="generate_image",
         arguments={"prompt": "mountain"},
@@ -922,6 +969,8 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
         },
     )
     session.add_all([credential, allow, run])
+    session.flush()
+    _set_mcp_snapshot(run, workspace, server, allow)
     session.commit()
     docker = RecordingDockerClient(
         [
@@ -953,6 +1002,7 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
             task_id=task.id,
             run_id=run.id,
             allowed_tools=("generate_image",),
+            tool_definitions=(_mcp_definition(server, allow),),
         ),
         tool_name="generate_image",
         arguments={"prompt": "mountain"},
@@ -1040,6 +1090,114 @@ class RecordingDockerClient:
             }
         )
         return self._command_results.pop(0)
+
+
+def _product_definitions(*names: str) -> tuple[AgentRuntimeToolDefinition, ...]:
+    definitions = {item.name: item for item in PRODUCT_TOOL_CATALOG}
+    return tuple(
+        AgentRuntimeToolDefinition(
+            name=name,
+            source="product",
+            description=definitions[name].description,
+            input_schema=definitions[name].input_schema,
+            requires_approval=definitions[name].requires_approval,
+            risk_level=definitions[name].risk_level,
+            required_resource_type=definitions[name].required_resource_type,
+            required_access_modes=definitions[name].required_access_modes,
+        )
+        for name in names
+    )
+
+
+def _mcp_definition(
+    server: McpServer,
+    allow: McpToolAllowlist,
+) -> AgentRuntimeToolDefinition:
+    return AgentRuntimeToolDefinition(
+        name=allow.tool_name,
+        source="mcp",
+        description=allow.description,
+        input_schema=allow.input_schema,
+        requires_approval=allow.requires_approval,
+        risk_level=allow.risk_level,
+        mcp_server_id=server.id,
+        mcp_tool_allowlist_id=allow.id,
+    )
+
+
+def _set_mcp_snapshot(
+    run: AgentRun,
+    workspace: Workspace,
+    server: McpServer,
+    allow: McpToolAllowlist,
+) -> None:
+    catalog: dict[str, object] = {
+        "catalog_version": 1,
+        "workspace_id": str(workspace.id),
+        "agent_profile_id": str(run.agent_profile_id or uuid4()),
+        "agent_profile_version": 1,
+        "team_id": None,
+        "team_policy_version": None,
+        "team_member_id": None,
+        "department": None,
+        "tools": [
+            {
+                "descriptor": {
+                    "name": allow.tool_name,
+                    "source": "mcp",
+                    "description": allow.description,
+                    "input_schema": allow.input_schema,
+                    "requires_approval": allow.requires_approval,
+                    "risk_level": allow.risk_level,
+                    "capability_key": allow.capability_key,
+                    "mcp_server_id": str(server.id),
+                    "mcp_tool_allowlist_id": str(allow.id),
+                    "mcp_server_name": server.name,
+                    "policy": allow.policy,
+                    "required_resource_type": None,
+                    "required_access_modes": [],
+                },
+                "parameters": {},
+                "locked_parameters": [],
+                "provenance": [],
+            }
+        ],
+        "resources": [],
+        "denied": [],
+    }
+    catalog["fingerprint"] = effective_catalog_fingerprint(catalog)
+    snapshot: dict[str, object] = {
+        "version": 2,
+        "workspace_id": str(workspace.id),
+        "allowed_tools": [allow.tool_name],
+        "capability_catalog": catalog,
+    }
+    snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
+    run.input = {"authorization_snapshot": snapshot}
+
+
+def _memory_resource_grant(
+    session: Session,
+    workspace: Workspace,
+) -> AgentRuntimeResourceGrant:
+    resource = CapabilityResource(
+        workspace_id=workspace.id,
+        key=f"memory-{uuid4()}",
+        name="Workspace memory",
+        resource_type="memory_collection",
+        access_mode="read_write",
+        locator={},
+    )
+    session.add(resource)
+    session.flush()
+    return AgentRuntimeResourceGrant(
+        resource_id=resource.id,
+        resource_type=resource.resource_type,
+        access_mode=resource.access_mode,
+        locator={},
+        parameters={},
+        version=resource.version,
+    )
 
 
 def _session() -> Session:

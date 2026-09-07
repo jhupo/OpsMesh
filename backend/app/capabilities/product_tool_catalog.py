@@ -10,6 +10,8 @@ class ProductToolDefinition:
     input_schema: dict[str, object]
     requires_approval: bool = False
     risk_level: str = "low"
+    required_resource_type: str | None = None
+    required_access_modes: tuple[str, ...] = ()
 
 
 def _object_schema(
@@ -93,6 +95,8 @@ PRODUCT_TOOL_CATALOG = (
             },
             required=("query",),
         ),
+        required_resource_type="memory_collection",
+        required_access_modes=("read", "read_write"),
     ),
     ProductToolDefinition(
         name="remember_workspace_memory",
@@ -111,6 +115,8 @@ PRODUCT_TOOL_CATALOG = (
             },
             required=("content",),
         ),
+        required_resource_type="memory_collection",
+        required_access_modes=("write", "read_write"),
     ),
     ProductToolDefinition(
         name="archive_workspace_memory",
@@ -121,11 +127,15 @@ PRODUCT_TOOL_CATALOG = (
         ),
         requires_approval=True,
         risk_level="medium",
+        required_resource_type="memory_collection",
+        required_access_modes=("write", "read_write"),
     ),
     ProductToolDefinition(
         name="list_workspace_files",
         description="List files visible to the current run in its workspace.",
         input_schema=_object_schema(),
+        required_resource_type="file_collection",
+        required_access_modes=("read",),
     ),
     ProductToolDefinition(
         name="read_workspace_file",
@@ -134,6 +144,8 @@ PRODUCT_TOOL_CATALOG = (
             {"file_id": UUID_SCHEMA},
             required=("file_id",),
         ),
+        required_resource_type="file_collection",
+        required_access_modes=("read",),
     ),
     ProductToolDefinition(
         name="write_artifact",

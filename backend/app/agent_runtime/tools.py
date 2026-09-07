@@ -7,6 +7,7 @@ from backend.app.agent_runtime.product_tool_executor import (
     PRODUCT_TOOL_NAMES,
     ProductToolExecutor,
 )
+from backend.app.agent_runtime.tool_gateway import AgentToolGateway, ToolGatewayDenied
 from backend.app.agent_runtime.tool_mcp_resolver import ContextualMcpAdapterResolver
 from backend.app.agent_runtime.tool_metadata import tool_metadata
 from backend.app.capabilities.execution import McpToolExecutionService
@@ -61,14 +62,43 @@ class BackendToolExecutor:
         tool_name: str,
         arguments: dict[str, object],
     ) -> AgentRuntimeToolResult:
-        if tool_name in PRODUCT_TOOL_NAMES:
+        gateway = AgentToolGateway(self._session)
+        try:
+            prepared = gateway.prepare(
+                context=context,
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+        except ToolGatewayDenied as exc:
+            gateway.record_denial(context=context, tool_name=tool_name, denial=exc)
+            return AgentRuntimeToolResult(
+                status="failed",
+                error={"code": exc.code, "message": str(exc)},
+                metadata=tool_metadata(
+                    context=context,
+                    tool_name=tool_name,
+                    tool_kind="blocked",
+                ),
+            )
+        if prepared.definition.source == "product" and tool_name in PRODUCT_TOOL_NAMES:
             return ProductToolExecutor(
                 self._session,
                 settings=self._settings,
             ).execute(
                 context=context,
                 tool_name=tool_name,
-                arguments=arguments,
+                arguments=prepared.arguments,
+                resource_grants=prepared.resource_grants,
+            )
+        if prepared.definition.source != "mcp":
+            denial = ToolGatewayDenied(
+                "tool_source_invalid",
+                "Tool source does not match an executable adapter",
+            )
+            gateway.record_denial(context=context, tool_name=tool_name, denial=denial)
+            return AgentRuntimeToolResult(
+                status="failed",
+                error={"code": denial.code, "message": str(denial)},
             )
         resolver = ContextualMcpAdapterResolver(
             session=self._session,
@@ -87,7 +117,8 @@ class BackendToolExecutor:
                 workspace_id=context.workspace_id,
                 agent_run_id=context.run_id,
                 tool_name=tool_name,
-                arguments=arguments,
+                arguments=prepared.arguments,
+                mcp_server_id=prepared.definition.mcp_server_id,
                 runtime_allowed_tools=context.allowed_tools,
             )
         )

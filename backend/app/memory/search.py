@@ -40,6 +40,7 @@ class MemorySearchRequest:
     limit: int
     source_types: set[str] | None
     documents: list[MemorySearchDocument]
+    tags: set[str] | None = None
 
 
 class MemorySearchBackend(Protocol):
@@ -111,6 +112,8 @@ class PostgresFullTextMemorySearchBackend:
         )
         if request.source_types is not None:
             statement = statement.where(WorkspaceMemoryEntry.source_type.in_(request.source_types))
+        if request.tags is not None:
+            statement = statement.where(WorkspaceMemoryEntry.tags.op("?|")(list(request.tags)))
         hits: list[MemorySearchHit] = []
         terms = query_terms(request.query)
         for entry, score in self._session.execute(statement).all():

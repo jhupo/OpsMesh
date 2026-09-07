@@ -39,6 +39,9 @@ from backend.app.orchestration.model_request_reviewing import (
     model_request_review_fingerprint,
     model_request_review_input,
 )
+from backend.app.orchestration.run_authorization_integrity import (
+    authorization_snapshot_fingerprint,
+)
 from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
 from backend.app.orchestration.run_control import RunControlService
 from backend.app.orchestration.run_eligibility import RunEligibilityService
@@ -2261,7 +2264,12 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     assert snapshot["approval_policy"] == {"required_tools": ["write_artifact"]}
     assert request.context.allowed_tools == ("generate_image",)
     assert request.tool_executor is not None
-    assert request.context.metadata["authorization_snapshot_version"] == 1
+    assert request.context.metadata["authorization_snapshot_version"] == 2
+    assert request.context.metadata["authorization_snapshot_fingerprint"] == snapshot[
+        "fingerprint"
+    ]
+    assert request.context.tool_definitions[0].name == "generate_image"
+    assert request.context.tool_definitions[0].mcp_server_id == server.id
 
 
 def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
@@ -5196,11 +5204,11 @@ def test_agent_request_rejects_authorization_snapshot_scope_mismatch() -> None:
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": {
-                "workspace_id": str(uuid4()),
-                "task_id": str(task.id),
-                "agent_profile_id": str(agent.id),
-            }
+            "authorization_snapshot": _v2_authorization_snapshot(
+                workspace_id=str(uuid4()),
+                task_id=str(task.id),
+                agent_profile_id=str(agent.id),
+            )
         },
     )
     session.add(run)
@@ -5241,12 +5249,12 @@ def test_agent_request_rejects_authorization_snapshot_tool_escalation() -> None:
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": {
-                "workspace_id": str(workspace.id),
-                "task_id": str(task.id),
-                "agent_profile_id": str(agent.id),
-                "allowed_tools": ["write_artifact", "delete_workspace_file"],
-            }
+            "authorization_snapshot": _v2_authorization_snapshot(
+                workspace_id=str(workspace.id),
+                task_id=str(task.id),
+                agent_profile_id=str(agent.id),
+                allowed_tools=["write_artifact", "delete_workspace_file"],
+            )
         },
     )
     session.add(run)
@@ -5264,12 +5272,12 @@ def test_agent_request_rejects_authorization_snapshot_tool_escalation() -> None:
             ),
         )
     except ValueError as exc:
-        assert "outside agent policy" in str(exc)
+        assert "capability catalog is missing" in str(exc)
     else:
         raise AssertionError("Expected tool escalation snapshot to be rejected")
 
 
-def test_agent_request_rejects_authorization_snapshot_unavailable_skill() -> None:
+def test_agent_request_rejects_authorization_snapshot_installed_skill_tampering() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
@@ -5281,19 +5289,19 @@ def test_agent_request_rejects_authorization_snapshot_unavailable_skill() -> Non
     )
     session.add_all([task, agent])
     session.flush()
+    snapshot = _v2_authorization_snapshot(
+        workspace_id=str(workspace.id),
+        task_id=str(task.id),
+        agent_profile_id=str(agent.id),
+        installed_skills=[],
+    )
+    snapshot["installed_skills"] = [{"install_id": str(uuid4())}]
     run = AgentRun(
         workspace_id=workspace.id,
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={
-            "authorization_snapshot": {
-                "workspace_id": str(workspace.id),
-                "task_id": str(task.id),
-                "agent_profile_id": str(agent.id),
-                "installed_skills": [{"install_id": str(uuid4())}],
-            }
-        },
+        input={"authorization_snapshot": snapshot},
     )
     session.add(run)
     session.commit()
@@ -5310,9 +5318,9 @@ def test_agent_request_rejects_authorization_snapshot_unavailable_skill() -> Non
             ),
         )
     except ValueError as exc:
-        assert "unavailable workspace skill" in str(exc)
+        assert "fingerprint mismatch" in str(exc)
     else:
-        raise AssertionError("Expected unavailable skill snapshot to be rejected")
+        raise AssertionError("Expected installed skill snapshot tampering to be rejected")
 
 
 def test_agent_request_rejects_authorization_snapshot_skill_provenance_mismatch() -> None:
@@ -5351,30 +5359,33 @@ def test_agent_request_rejects_authorization_snapshot_skill_provenance_mismatch(
     session.add(install)
     session.flush()
     agent.skills = {"installed_skill_ids": [str(install.id)]}
+    snapshot = _v2_authorization_snapshot(
+        workspace_id=str(workspace.id),
+        task_id=str(task.id),
+        agent_profile_id=str(agent.id),
+        installed_skills=[
+            {
+                "install_id": str(install.id),
+                "source_skill_id": str(skill.id),
+                "installed_key": "writer-pro",
+                "installed_name": "Writer Pro",
+                "installed_version": "1.0.0",
+                "installed_capability_keys": ["writing"],
+                "source_checksum": "sha256:v1",
+                "source_visibility": "public",
+            }
+        ],
+    )
+    installed_skills = snapshot["installed_skills"]
+    assert isinstance(installed_skills, list)
+    assert isinstance(installed_skills[0], dict)
+    installed_skills[0]["source_checksum"] = "sha256:tampered"
     run = AgentRun(
         workspace_id=workspace.id,
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={
-            "authorization_snapshot": {
-                "workspace_id": str(workspace.id),
-                "task_id": str(task.id),
-                "agent_profile_id": str(agent.id),
-                "installed_skills": [
-                    {
-                        "install_id": str(install.id),
-                        "source_skill_id": str(skill.id),
-                        "installed_key": "writer-pro",
-                        "installed_name": "Writer Pro",
-                        "installed_version": "1.0.0",
-                        "installed_capability_keys": ["writing"],
-                        "source_checksum": "sha256:tampered",
-                        "source_visibility": "public",
-                    }
-                ],
-            }
-        },
+        input={"authorization_snapshot": snapshot},
     )
     session.add(run)
     session.commit()
@@ -5391,9 +5402,9 @@ def test_agent_request_rejects_authorization_snapshot_skill_provenance_mismatch(
             ),
         )
     except ValueError as exc:
-        assert "skill provenance mismatch" in str(exc)
+        assert "fingerprint mismatch" in str(exc)
     else:
-        raise AssertionError("Expected skill provenance mismatch to be rejected")
+        raise AssertionError("Expected skill provenance tampering to be rejected")
 
 
 def test_team_agent_runs_share_persistent_sdk_session_across_tasks() -> None:
@@ -5779,6 +5790,17 @@ def _build_agent_request(
         run,
         job,
     )
+
+
+def _v2_authorization_snapshot(**values: object) -> dict[str, object]:
+    snapshot: dict[str, object] = {
+        "version": 2,
+        "allowed_tools": [],
+        "capability_catalog": None,
+    }
+    snapshot.update(values)
+    snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
+    return snapshot
 
 
 def _run_agent_sync(

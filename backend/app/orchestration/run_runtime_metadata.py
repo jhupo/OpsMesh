@@ -40,9 +40,19 @@ class RunRuntimeMetadataBuilder:
             "authorized_task_id": str(task.id) if task is not None else None,
             "tool_policy_source": "agent_profile",
             "authorization_snapshot_version": authorization_snapshot.get("version"),
+            "authorization_snapshot_fingerprint": authorization_snapshot.get("fingerprint"),
+            "capability_catalog_fingerprint": _catalog_fingerprint(authorization_snapshot),
         }
         metadata.update(self._authorization.step_context_for_run(run))
         metadata.update(self._context_provider.mailbox_context_for_run(run, task, profile))
         metadata.update(self._context_provider.team_context_for_run(run, task, profile))
         metadata.update(current_trace_metadata())
         return metadata
+
+
+def _catalog_fingerprint(snapshot: dict[str, object]) -> str | None:
+    catalog = snapshot.get("capability_catalog")
+    if not isinstance(catalog, dict):
+        return None
+    fingerprint = catalog.get("fingerprint")
+    return fingerprint if isinstance(fingerprint, str) else None

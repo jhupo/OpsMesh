@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import NoReturn
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -27,7 +28,7 @@ class McpExecutionBlocker:
         reason: str,
         *,
         mcp_server_id: UUID | None = None,
-    ) -> None:
+    ) -> NoReturn:
         run = self.session.get(AgentRun, request.agent_run_id)
         resolved_server_id = mcp_server_id or request.mcp_server_id
         snapshot = (

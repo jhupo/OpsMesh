@@ -14,6 +14,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRunResult,
     AgentRuntimeContext,
     AgentRuntimeToolContinuation,
+    AgentRuntimeToolDefinition,
     AgentRuntimeToolResult,
     AgentRunTracing,
 )
@@ -296,6 +297,10 @@ def test_openai_agents_runner_registers_allowed_mcp_tools() -> None:
             task_id=None,
             run_id=uuid4(),
             allowed_tools=("generate_image", "search.web"),
+            tool_definitions=(
+                _runtime_tool("generate_image"),
+                _runtime_tool("search.web"),
+            ),
         ),
         tool_executor=RecordingToolExecutor(),
         api_key="sk-test",
@@ -655,6 +660,7 @@ def test_anthropic_messages_runner_executes_tool_use_loop() -> None:
             task_id=None,
             run_id=uuid4(),
             allowed_tools=("search_docs",),
+            tool_definitions=(_runtime_tool("search_docs"),),
         ),
         provider="anthropic",
         api_key="anthropic-key",
@@ -736,6 +742,7 @@ def test_anthropic_messages_runner_records_trace_and_tool_provenance() -> None:
             task_id=None,
             run_id=uuid4(),
             allowed_tools=("search_docs",),
+            tool_definitions=(_runtime_tool("search_docs"),),
         ),
         provider="anthropic",
         api_key="anthropic-key",
@@ -1160,6 +1167,7 @@ def test_openai_agents_runner_tools_include_provenance_guardrail() -> None:
             task_id=None,
             run_id=uuid4(),
             allowed_tools=("generate_image",),
+            tool_definitions=(_runtime_tool("generate_image"),),
         ),
         tool_executor=RecordingToolExecutor(),
         api_key="sk-test",
@@ -1167,8 +1175,8 @@ def test_openai_agents_runner_tools_include_provenance_guardrail() -> None:
 
     tool = OpenAIAgentsRunner()._build_agent(request).tools[0]
 
-    assert "ctx" not in tool.params_json_schema["properties"]
-    assert "arguments" in tool.params_json_schema["properties"]
+    assert tool.description == "Execute generate_image."
+    assert tool.params_json_schema == _runtime_tool("generate_image").input_schema
     assert tool.tool_input_guardrails is not None
     assert tool.tool_input_guardrails[0].name == (
         "generate_image:runtime_allowed_tool_provenance"
@@ -1205,6 +1213,7 @@ def test_openai_agents_runner_real_sdk_smoke_preserves_boundary_configuration() 
             task_id=None,
             run_id=uuid4(),
             allowed_tools=("opsmesh_echo",),
+            tool_definitions=(_runtime_tool("opsmesh_echo"),),
             metadata={"smoke": "openai_agents_runner"},
         ),
         api_key=os.environ["OPENAI_API_KEY"],
@@ -1289,6 +1298,7 @@ def test_openai_agents_runner_real_sdk_smoke_uses_tool_and_persistent_session() 
             task_id=None,
             run_id=run_id,
             allowed_tools=("opsmesh_echo",),
+            tool_definitions=(_runtime_tool("opsmesh_echo"),),
             metadata={"persistent_session_key": persistent_session.session_id},
         ),
         max_turns=4,
@@ -1378,6 +1388,19 @@ def test_agent_error_normalization_redacts_provider_secrets() -> None:
     assert "Bearer bearer-secret-token" not in serialized
     assert "base_url" not in serialized
     assert "https://provider.example.test/v1/private" not in serialized
+
+
+def _runtime_tool(name: str) -> AgentRuntimeToolDefinition:
+    return AgentRuntimeToolDefinition(
+        name=name,
+        source="mcp",
+        description=f"Execute {name}.",
+        input_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "additionalProperties": True,
+        },
+    )
 
 
 class RecordingToolExecutor:

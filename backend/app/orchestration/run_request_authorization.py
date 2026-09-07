@@ -4,13 +4,22 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRuntimeToolContinuation
+from backend.app.agent_runtime.contracts import (
+    AgentRuntimeResourceGrant,
+    AgentRuntimeToolContinuation,
+    AgentRuntimeToolDefinition,
+)
 from backend.app.agents.models import AgentProfile
+from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
 from backend.app.capabilities.models import (
+    CapabilityResource,
     McpCredentialReference,
     McpServer,
     McpToolAllowlist,
     WorkspaceSkillInstall,
+)
+from backend.app.orchestration.run_authorization_integrity import (
+    authorization_snapshot_fingerprint,
 )
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task, TaskStep
@@ -22,36 +31,19 @@ from .run_request_utils import dict_copy, expect_optional_uuid, string_list, uui
 class RunAuthorizationService:
     session: Session
 
-    def allowed_tools_for_profile(self, profile: AgentProfile) -> tuple[str, ...]:
-        tool_policy = profile.tool_policy if isinstance(profile.tool_policy, dict) else {}
-        return allowed_tools_from_policy(tool_policy)
-
-    def allowed_tools_for_snapshot(self, snapshot: dict[str, object]) -> tuple[str, ...]:
-        tool_policy = snapshot.get("tool_policy")
-        return allowed_tools_from_policy(tool_policy if isinstance(tool_policy, dict) else {})
-
-    def allowed_tool_policy_for_run(
-        self,
-        snapshot: dict[str, object],
-        profile: AgentProfile,
-    ) -> tuple[str, ...]:
-        snapshot_policy_tools = self.allowed_tools_for_snapshot(snapshot)
-        if snapshot_policy_tools:
-            return snapshot_policy_tools
-        return self.allowed_tools_for_profile(profile)
-
     def allowed_tools_for_run(
         self,
         run: AgentRun,
         profile: AgentProfile,
     ) -> tuple[str, ...]:
         snapshot = self.authorization_snapshot_for_run(run)
+        _ = profile
         raw_tools = snapshot.get("allowed_tools")
-        if isinstance(raw_tools, list):
-            profile_tools = set(self.allowed_tool_policy_for_run(snapshot, profile))
-            snapshot_tools = tuple(tool for tool in raw_tools if isinstance(tool, str))
-            return tuple(tool for tool in snapshot_tools if tool in profile_tools)
-        return self.allowed_tools_for_profile(profile)
+        if not isinstance(raw_tools, list) or not all(
+            isinstance(tool, str) for tool in raw_tools
+        ):
+            raise ValueError("Authorization snapshot allowed tools are invalid")
+        return tuple(raw_tools)
 
     def authorization_snapshot_for_run(self, run: AgentRun) -> dict[str, object]:
         run_input = run.input if isinstance(run.input, dict) else {}
@@ -66,7 +58,15 @@ class RunAuthorizationService:
         snapshot: dict[str, object],
     ) -> None:
         if not snapshot:
-            return
+            raise ValueError("Authorization snapshot is required")
+        if snapshot.get("version") != 2:
+            raise ValueError("Authorization snapshot version is unsupported")
+        fingerprint = snapshot.get("fingerprint")
+        if (
+            not isinstance(fingerprint, str)
+            or fingerprint != authorization_snapshot_fingerprint(snapshot)
+        ):
+            raise ValueError("Authorization snapshot fingerprint mismatch")
         expect_optional_uuid(snapshot, "workspace_id", run.workspace_id)
         expect_optional_uuid(snapshot, "task_id", run.task_id)
         expect_optional_uuid(snapshot, "task_step_id", run.task_step_id)
@@ -74,35 +74,50 @@ class RunAuthorizationService:
         expect_optional_uuid(snapshot, "runtime_space_id", run.runtime_space_id)
         if task is not None and task.workspace_id != run.workspace_id:
             raise ValueError("Authorization snapshot task workspace mismatch")
-        raw_tools = snapshot.get("allowed_tools")
-        if isinstance(raw_tools, list):
-            profile_tools = set(self.allowed_tool_policy_for_run(snapshot, profile))
-            snapshot_tools = {tool for tool in raw_tools if isinstance(tool, str)}
-            extra_tools = snapshot_tools - profile_tools
-            if extra_tools:
-                raise ValueError("Authorization snapshot grants tools outside agent policy")
-        installed_skills = snapshot.get("installed_skills")
-        if isinstance(installed_skills, list):
-            valid_install_snapshots = {
-                str(item["install_id"]): item
-                for item in self.installed_skill_snapshots(run.workspace_id, profile)
-                if isinstance(item.get("install_id"), str)
-            }
-            for item in installed_skills:
-                if not isinstance(item, dict):
-                    continue
-                install_id = item.get("install_id")
-                if not isinstance(install_id, str):
-                    continue
-                valid_snapshot = valid_install_snapshots.get(install_id)
-                if valid_snapshot is None:
-                    raise ValueError(
-                        "Authorization snapshot references unavailable workspace skill",
-                    )
-                if not skill_snapshot_matches(item, valid_snapshot):
-                    raise ValueError(
-                        "Authorization snapshot workspace skill provenance mismatch",
-                    )
+        catalog = capability_catalog_for_snapshot(snapshot)
+        if catalog is None:
+            if snapshot.get("allowed_tools") not in ([], None):
+                raise ValueError("Authorization snapshot capability catalog is missing")
+            return
+        catalog_fingerprint = catalog.get("fingerprint")
+        if (
+            not isinstance(catalog_fingerprint, str)
+            or catalog_fingerprint != effective_catalog_fingerprint(catalog)
+        ):
+            raise ValueError("Capability catalog fingerprint mismatch")
+        expect_optional_uuid(catalog, "workspace_id", run.workspace_id)
+        expect_optional_uuid(catalog, "agent_profile_id", run.agent_profile_id)
+        if task is not None:
+            expect_optional_uuid(catalog, "team_id", task.agent_team_id)
+        definitions = tool_definitions_for_snapshot(snapshot)
+        allowed_tools = snapshot.get("allowed_tools")
+        if not isinstance(allowed_tools, list) or allowed_tools != [
+            definition.name for definition in definitions
+        ]:
+            raise ValueError("Authorization snapshot tool manifest mismatch")
+        self._require_active_capability_resources(
+            run.workspace_id,
+            resource_grants_for_snapshot(snapshot),
+        )
+
+    def _require_active_capability_resources(
+        self,
+        workspace_id: UUID,
+        grants: tuple[AgentRuntimeResourceGrant, ...],
+    ) -> None:
+        if not grants:
+            return
+        active_ids = set(
+            self.session.scalars(
+                select(CapabilityResource.id).where(
+                    CapabilityResource.workspace_id == workspace_id,
+                    CapabilityResource.status == "active",
+                    CapabilityResource.id.in_([grant.resource_id for grant in grants]),
+                )
+            ).all()
+        )
+        if any(grant.resource_id not in active_ids for grant in grants):
+            raise ValueError("Authorization snapshot references a disabled capability resource")
 
     def step_context_for_run(self, run: AgentRun) -> dict[str, object]:
         if run.task_step_id is None:
@@ -247,13 +262,133 @@ class RunAuthorizationService:
         ]
 
 
-def allowed_tools_from_policy(tool_policy: dict[str, object]) -> tuple[str, ...]:
-    raw_tools = tool_policy.get("allowed_tools")
+def capability_catalog_for_snapshot(
+    snapshot: dict[str, object],
+) -> dict[str, object] | None:
+    catalog = snapshot.get("capability_catalog")
+    return catalog if isinstance(catalog, dict) else None
+
+
+def tool_definitions_for_snapshot(
+    snapshot: dict[str, object],
+) -> tuple[AgentRuntimeToolDefinition, ...]:
+    catalog = capability_catalog_for_snapshot(snapshot)
+    raw_tools = catalog.get("tools") if catalog is not None else None
     if raw_tools is None:
-        raw_tools = tool_policy.get("mcp_tools")
-    if not isinstance(raw_tools, list):
         return ()
-    return tuple(tool for tool in raw_tools if isinstance(tool, str))
+    if not isinstance(raw_tools, list):
+        raise ValueError("Capability catalog tools are invalid")
+    definitions: list[AgentRuntimeToolDefinition] = []
+    for item in raw_tools:
+        if not isinstance(item, dict):
+            raise ValueError("Capability catalog tool entry is invalid")
+        descriptor = item.get("descriptor")
+        if not isinstance(descriptor, dict):
+            raise ValueError("Capability catalog tool descriptor is invalid")
+        name = descriptor.get("name")
+        source = descriptor.get("source")
+        description = descriptor.get("description")
+        input_schema = descriptor.get("input_schema")
+        parameters = item.get("parameters")
+        locked_parameters = item.get("locked_parameters")
+        if (
+            not isinstance(name, str)
+            or not isinstance(source, str)
+            or not isinstance(description, str)
+            or not isinstance(input_schema, dict)
+            or not isinstance(parameters, dict)
+            or not isinstance(locked_parameters, list)
+            or not all(isinstance(field, str) for field in locked_parameters)
+        ):
+            raise ValueError("Capability catalog tool contract is invalid")
+        definitions.append(
+            AgentRuntimeToolDefinition(
+                name=name,
+                source=source,
+                description=description,
+                input_schema=dict(input_schema),
+                parameters=dict(parameters),
+                locked_parameters=tuple(locked_parameters),
+                requires_approval=descriptor.get("requires_approval") is True,
+                risk_level=str(descriptor.get("risk_level") or "low"),
+                required_resource_type=(
+                    str(descriptor["required_resource_type"])
+                    if descriptor.get("required_resource_type") is not None
+                    else None
+                ),
+                required_access_modes=tuple(
+                    item
+                    for item in descriptor.get("required_access_modes", [])
+                    if isinstance(item, str)
+                ),
+                mcp_server_id=uuid_or_none(descriptor.get("mcp_server_id")),
+                mcp_tool_allowlist_id=uuid_or_none(
+                    descriptor.get("mcp_tool_allowlist_id")
+                ),
+            )
+        )
+    if len({definition.name for definition in definitions}) != len(definitions):
+        raise ValueError("Capability catalog contains duplicate tool names")
+    return tuple(definitions)
+
+
+def resource_grants_for_snapshot(
+    snapshot: dict[str, object],
+) -> tuple[AgentRuntimeResourceGrant, ...]:
+    catalog = capability_catalog_for_snapshot(snapshot)
+    raw_resources = catalog.get("resources") if catalog is not None else None
+    if raw_resources is None:
+        return ()
+    if not isinstance(raw_resources, list):
+        raise ValueError("Capability catalog resources are invalid")
+    grants: list[AgentRuntimeResourceGrant] = []
+    for item in raw_resources:
+        if not isinstance(item, dict):
+            raise ValueError("Capability catalog resource entry is invalid")
+        resource = item.get("resource")
+        parameters = item.get("parameters")
+        if not isinstance(resource, dict) or not isinstance(parameters, dict):
+            raise ValueError("Capability catalog resource contract is invalid")
+        resource_id = uuid_or_none(resource.get("id"))
+        resource_type = resource.get("resource_type")
+        access_mode = resource.get("access_mode")
+        locator = resource.get("locator")
+        version = resource.get("version")
+        if (
+            resource_id is None
+            or not isinstance(resource_type, str)
+            or not isinstance(access_mode, str)
+            or not isinstance(locator, dict)
+            or not isinstance(version, int)
+        ):
+            raise ValueError("Capability catalog resource fields are invalid")
+        grants.append(
+            AgentRuntimeResourceGrant(
+                resource_id=resource_id,
+                resource_type=resource_type,
+                access_mode=access_mode,
+                locator=dict(locator),
+                parameters=dict(parameters),
+                version=version,
+            )
+        )
+    if len({grant.resource_id for grant in grants}) != len(grants):
+        raise ValueError("Capability catalog contains duplicate resource grants")
+    return tuple(grants)
+
+
+def file_scope_ids_for_snapshot(snapshot: dict[str, object]) -> tuple[UUID, ...]:
+    file_scope = snapshot.get("file_scope")
+    raw_ids = file_scope.get("allowed_file_ids") if isinstance(file_scope, dict) else None
+    if not isinstance(raw_ids, list):
+        return ()
+    ids: list[UUID] = []
+    for item in raw_ids:
+        file_id = uuid_or_none(item)
+        if file_id is None:
+            raise ValueError("Authorization snapshot file scope is invalid")
+        ids.append(file_id)
+    return tuple(ids)
 
 
 def tool_continuations_for_run(
@@ -287,39 +422,6 @@ def tool_continuations_for_run(
     return tuple(continuations)
 
 
-def skill_snapshot_matches(
-    snapshot_item: dict[str, object],
-    current_item: dict[str, object],
-) -> bool:
-    comparable_keys = (
-        "install_id",
-        "source_skill_id",
-        "installed_key",
-        "installed_name",
-        "installed_version",
-        "source_checksum",
-        "source_visibility",
-    )
-    for key in comparable_keys:
-        if snapshot_item.get(key) != current_item.get(key):
-            return False
-    snapshot_caps = snapshot_item.get("installed_capability_keys")
-    current_caps = current_item.get("installed_capability_keys")
-    if (isinstance(snapshot_caps, list) or isinstance(current_caps, list)) and (
-        snapshot_caps != current_caps
-    ):
-        return False
-    if not optional_list_matches(
-        snapshot_item.get("mcp_tools"),
-        current_item.get("mcp_tools"),
-    ):
-        return False
-    return optional_list_matches(
-        snapshot_item.get("mcp_credential_references"),
-        current_item.get("mcp_credential_references"),
-    )
-
-
 def skill_mcp_tool_matches(
     tool_snapshot: dict[str, object],
     installed_capability_keys: list[str],
@@ -350,9 +452,3 @@ def credential_refs_for_tool_snapshots(
             if isinstance(credential_ref_id, str):
                 refs_by_id.setdefault(credential_ref_id, credential_ref)
     return list(refs_by_id.values())
-
-
-def optional_list_matches(snapshot_value: object, current_value: object) -> bool:
-    if isinstance(snapshot_value, list):
-        return snapshot_value == current_value
-    return not isinstance(current_value, list) or current_value == []

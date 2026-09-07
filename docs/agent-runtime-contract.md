@@ -43,10 +43,11 @@ Fields:
 - `agent_run_id`
 - `agent_profile_id`
 - `runtime_id`
-- `allowed_tool_ids`
-- `allowed_file_ids`
-- `approval_policy`
-- `memory_policy`
+- `allowed_tools`
+- `tool_definitions`
+- `resource_grants`
+- `file_scope_ids`
+- authorization and capability-catalog fingerprints in runtime metadata
 
 All product tools receive runtime context.
 
@@ -70,9 +71,12 @@ AgentProfile.output_schema  -> Agent.output_type
 
 Rules:
 
-- only enabled tools are attached
+- only tools in the frozen effective catalog are attached
+- SDK tool names, descriptions, and JSON Schemas come from the frozen descriptor
 - only same-workspace handoff targets are attached
-- runtime-only tools are wrapped with product permission checks
+- every product and MCP tool crosses the Agent tool gateway before execution
+- frozen defaults are merged and locked parameters cannot be overridden
+- referenced resources and MCP allowlist provenance are rechecked as active at execution time
 - dangerous tools use approval-aware wrappers
 - skills may augment instructions or runtime files, but cannot bypass permissions
 - provider API keys are resolved by the worker from encrypted workspace credentials
@@ -123,10 +127,22 @@ Tools exposed by workspace-installed MCP servers.
 
 Rules:
 
-- tool names are namespaced
-- agent only sees allowed MCP tools
+- each frozen MCP definition includes its exact server and allowlist IDs
+- duplicate tool names are excluded from the effective catalog
+- the agent only sees MCP tools present in the run manifest
+- final arguments are validated against the frozen schema before credential resolution
 - write-capable tools follow approval policy
-- calls are logged as run events
+- calls and denials are logged as durable run and security events
+
+## Authorization Snapshot Contract
+
+Authorization snapshot version 2 is immutable for the lifetime of a run. It stores the effective
+capability catalog and a canonical fingerprint. The catalog has its own fingerprint so callers can
+verify the nested manifest independently.
+
+Configuration edits do not rewrite an existing run. Resource disablement is deliberately dynamic:
+the execution gateway checks current workspace-scoped active state immediately before a tool call.
+This gives reproducible configuration with an emergency revocation path.
 
 ## Run Event Mapping
 

@@ -55,6 +55,7 @@ class McpToolExecutionService:
 
     def _execute(self, request: McpExecutionRequest) -> McpExecutionResult:
         validated = McpExecutionValidator(self._session, self._settings).validate(request)
+        request = validated.request
         run = validated.run
         snapshot = validated.snapshot
         allow = validated.allow

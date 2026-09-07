@@ -29,6 +29,8 @@ class WorkspaceCapabilityCatalogService:
                 input_schema=definition.input_schema,
                 requires_approval=definition.requires_approval,
                 risk_level=definition.risk_level,
+                required_resource_type=definition.required_resource_type,
+                required_access_modes=list(definition.required_access_modes),
             )
             for definition in PRODUCT_TOOL_CATALOG
         ]
@@ -42,6 +44,7 @@ class WorkspaceCapabilityCatalogService:
                 risk_level=allow.risk_level,
                 capability_key=allow.capability_key,
                 mcp_server_id=server.id,
+                mcp_tool_allowlist_id=allow.id,
                 mcp_server_name=server.name,
                 policy=allow.policy,
             )

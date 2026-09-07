@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -12,6 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.admin.models import PlatformPolicy
 from backend.app.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.approvals.models import Approval
+from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
 from backend.app.capabilities.execution import McpToolExecutionService
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
 from backend.app.capabilities.mcp_execution_types import (
@@ -29,6 +32,9 @@ from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.orchestration.run_authorization_integrity import (
+    authorization_snapshot_fingerprint,
+)
 from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.models import AgentRun, RunEvent
@@ -108,7 +114,7 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
     assert logs[0].response_sha256 is not None
     assert logs[0].error_code is None
     assert logs[0].request["arguments_sha256"]
-    assert logs[0].request["authorization_snapshot_version"] == 1
+    assert logs[0].request["authorization_snapshot_version"] == 2
     assert logs[0].request["snapshot_workspace_id"] == str(workspace.id)
     assert logs[0].request["snapshot_allowed_tools"] == ["generate_image"]
     assert "prompt" not in str(logs[0].request)
@@ -117,7 +123,7 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
     assert logs[0].response["result"] == {"asset_id": "img_123", "status": "created"}
     assert [event.event_type for event in events] == ["tool.called", "tool.completed"]
     assert events[0].event_metadata["request_sha256"]
-    assert events[0].event_metadata["authorization_snapshot_version"] == 1
+    assert events[0].event_metadata["authorization_snapshot_version"] == 2
     assert "mountain" not in str(events[0].event_metadata)
     assert [message.message_type for message in messages] == ["tool.completed"]
     assert messages[0].payload["response_sha256"]
@@ -162,6 +168,61 @@ def test_mcp_execution_ignores_disabled_credentials() -> None:
     assert result.status == "completed"
     assert adapter.calls[0]["credential_names"] == ["active-workspace-secret"]
     assert adapter.calls[0]["credential_secret_payloads"] == ["active-secret"]
+
+
+def test_mcp_execution_enforces_frozen_schema_defaults_and_locked_parameters() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace, risk_level="low")
+    snapshot = deepcopy(run.input["authorization_snapshot"])
+    catalog = snapshot["capability_catalog"]
+    assert isinstance(catalog, dict)
+    tools = catalog["tools"]
+    assert isinstance(tools, list)
+    tool = tools[0]
+    assert isinstance(tool, dict)
+    descriptor = tool["descriptor"]
+    assert isinstance(descriptor, dict)
+    descriptor["input_schema"] = {
+        "type": "object",
+        "properties": {
+            "prompt": {"type": "string"},
+            "style": {"type": "string", "enum": ["safe", "creative"]},
+        },
+        "required": ["prompt", "style"],
+        "additionalProperties": False,
+    }
+    tool["parameters"] = {"style": "safe"}
+    tool["locked_parameters"] = ["style"]
+    catalog["fingerprint"] = effective_catalog_fingerprint(catalog)
+    snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
+    run.input = {"authorization_snapshot": snapshot}
+    session.commit()
+    adapter = RecordingAdapter({"ok": True})
+
+    with pytest.raises(ToolPermissionError, match="mcp_tool_parameter_locked"):
+        McpToolExecutionService(session, adapter).execute(
+            McpExecutionRequest(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                arguments={"prompt": "mountain", "style": "creative"},
+            )
+        )
+
+    result = McpToolExecutionService(session, adapter).execute(
+        McpExecutionRequest(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            mcp_server_id=server.id,
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+        )
+    )
+
+    assert result.status == "completed"
+    assert adapter.calls[0]["arguments"] == {"prompt": "mountain", "style": "safe"}
 
 
 def test_mcp_execution_rejects_disabled_server_or_tool_allowlist() -> None:
@@ -248,14 +309,14 @@ def test_mcp_execution_blocks_tool_not_in_run_snapshot_and_records_security_even
     assert log.agent_profile_id == run.agent_profile_id
     assert log.latency_ms == 0
     assert log.argument_sha256 == log.request["arguments_sha256"]
-    assert log.error_code == "mcp_tool_not_allowed"
+    assert log.error_code == "mcp_tool_not_in_run_snapshot"
     assert log.error == {
-        "code": "mcp_tool_not_allowed",
+        "code": "mcp_tool_not_in_run_snapshot",
         "message": "MCP tool invocation was blocked by policy",
     }
     assert security_event is not None
     assert security_event.action == "mcp_tool.blocked"
-    assert security_event.reason == "mcp_tool_not_allowed"
+    assert security_event.reason == "mcp_tool_not_in_run_snapshot"
     assert [event.event_type for event in run_events] == ["tool.blocked"]
     assert [message.message_type for message in task_messages] == ["tool.blocked"]
 
@@ -288,7 +349,7 @@ def test_mcp_execution_blocks_tool_not_in_runtime_context() -> None:
     assert log.status == "blocked"
     assert log.error is not None
     assert log.error["code"] == "mcp_tool_not_in_runtime_context"
-    assert log.request["authorization_snapshot_version"] == 1
+    assert log.request["authorization_snapshot_version"] == 2
     assert security_event is not None
     assert security_event.reason == "mcp_tool_not_in_runtime_context"
 
@@ -325,7 +386,7 @@ def test_mcp_execution_blocks_unhealthy_server_before_adapter_call() -> None:
     assert log.status == "blocked"
     assert log.error is not None
     assert log.error["code"] == "mcp_server_unhealthy"
-    assert log.request["authorization_snapshot_version"] == 1
+    assert log.request["authorization_snapshot_version"] == 2
     assert security_event is not None
     assert security_event.reason == "mcp_server_unhealthy"
 
@@ -362,7 +423,7 @@ def test_mcp_execution_blocks_stale_health_check_before_adapter_call() -> None:
     assert log.status == "blocked"
     assert log.error is not None
     assert log.error["code"] == "mcp_server_health_check_stale"
-    assert log.request["authorization_snapshot_version"] == 1
+    assert log.request["authorization_snapshot_version"] == 2
     assert security_event is not None
     assert security_event.reason == "mcp_server_health_check_stale"
 
@@ -448,7 +509,7 @@ def test_mcp_execution_rejects_foreign_mcp_server_for_same_tool_name() -> None:
             )
         )
     except ToolPermissionError as exc:
-        assert "mcp_tool_not_allowed" in str(exc)
+        assert "mcp_tool_not_in_run_snapshot" in str(exc)
     else:
         raise AssertionError("Expected foreign MCP server to be blocked")
 
@@ -461,10 +522,10 @@ def test_mcp_execution_rejects_foreign_mcp_server_for_same_tool_name() -> None:
     assert log.mcp_server_id == foreign_server.id
     assert log.status == "blocked"
     assert log.error is not None
-    assert log.error["code"] == "mcp_tool_not_allowed"
+    assert log.error["code"] == "mcp_tool_not_in_run_snapshot"
     assert security_event is not None
     assert security_event.workspace_id == workspace.id
-    assert security_event.reason == "mcp_tool_not_allowed"
+    assert security_event.reason == "mcp_tool_not_in_run_snapshot"
 
 
 def test_mcp_execution_rejects_oversized_payload_and_logs_failure() -> None:
@@ -592,7 +653,7 @@ def test_mcp_execution_sends_explicit_approval_tool_to_approval() -> None:
     assert approval is not None
     assert approval.payload["reason"] == "mcp_tool_requires_approval"
     assert approval.payload["requires_approval"] is True
-    assert approval.payload["authorization_snapshot_version"] == 1
+    assert approval.payload["authorization_snapshot_version"] == 2
     assert log is not None
     assert log.status == "waiting_approval"
     assert log.approval_id == approval.id
@@ -930,27 +991,68 @@ def _seed_run_with_mcp_tool(
         requires_approval=requires_approval,
         policy=allow_policy or {},
     )
+    session.add(allow)
+    session.flush()
+    requested_tools = snapshot_tools or ["generate_image"]
+    catalog: dict[str, object] = {
+        "catalog_version": 1,
+        "workspace_id": str(workspace.id),
+        "agent_profile_id": str(uuid4()),
+        "agent_profile_version": 1,
+        "team_id": None,
+        "team_policy_version": None,
+        "team_member_id": None,
+        "department": None,
+        "tools": [],
+        "resources": [],
+        "denied": [],
+    }
+    if "generate_image" in requested_tools:
+        catalog["tools"] = [
+            {
+                "descriptor": {
+                    "name": "generate_image",
+                    "source": "mcp",
+                    "description": allow.description,
+                    "input_schema": allow.input_schema,
+                    "requires_approval": allow.requires_approval,
+                    "risk_level": allow.risk_level,
+                    "capability_key": allow.capability_key,
+                    "mcp_server_id": str(server.id),
+                    "mcp_tool_allowlist_id": str(allow.id),
+                    "mcp_server_name": server.name,
+                    "policy": allow.policy,
+                    "required_resource_type": None,
+                    "required_access_modes": [],
+                },
+                "parameters": {},
+                "locked_parameters": [],
+                "provenance": [],
+            }
+        ]
+    catalog["fingerprint"] = effective_catalog_fingerprint(catalog)
+    snapshot: dict[str, object] = {
+        "version": 2,
+        "workspace_id": str(workspace.id),
+        "allowed_tools": requested_tools,
+        "capability_catalog": catalog,
+        "runtime_policy": {
+            "mcp": {
+                "timeout_seconds": 15,
+                "max_input_bytes": 64_000,
+                "max_output_bytes": 256_000,
+            }
+        },
+    }
+    snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
     run = AgentRun(
         workspace_id=workspace.id,
         task_id=task.id,
         task_step_id=step.id,
         status=RunStatus.RUNNING.value,
-        input={
-            "authorization_snapshot": {
-                "version": 1,
-                "workspace_id": str(workspace.id),
-                "allowed_tools": snapshot_tools or ["generate_image"],
-                "runtime_policy": {
-                    "mcp": {
-                        "timeout_seconds": 15,
-                        "max_input_bytes": 64_000,
-                        "max_output_bytes": 256_000,
-                    }
-                },
-            }
-        },
+        input={"authorization_snapshot": snapshot},
     )
-    session.add_all([allow, run])
+    session.add(run)
     session.commit()
     return run, server
 

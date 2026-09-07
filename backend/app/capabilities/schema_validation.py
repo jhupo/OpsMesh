@@ -40,7 +40,10 @@ def validate_parameters(
     except ValidationError as exc:
         path = ".".join(str(item) for item in exc.absolute_path)
         suffix = f" at {path}" if path else ""
-        raise ValueError(f"Invalid {label}{suffix}: {exc.message}") from exc
+        constraint = str(exc.validator or "schema")
+        raise ValueError(
+            f"Invalid {label}{suffix}: {constraint} constraint failed"
+        ) from exc
 
 
 def validate_partial_parameters(

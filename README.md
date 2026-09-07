@@ -49,7 +49,7 @@ The APIs and database model may change before the first stable release. See the
 | Web Portal and result views | Planned; frontend intentionally remains empty |
 | SSO, department identity, WAF, and load balancing | Planned; local API authentication and workspace RBAC exist |
 | API/Agent Gateway | Implemented at the application boundary: authentication, workspace roles, routing, rate limiting, security headers, and audit |
-| Session, configuration, and tool resolution | Implemented, including persistent sessions, authorization snapshots, Agent/team configuration, and contextual tool resolution |
+| Session, configuration, and tool resolution | Implemented, including persistent sessions, effective Agent/team catalogs, fingerprinted authorization snapshot v2, dynamic SDK tool schemas, and a fail-closed execution gateway |
 | Multi-Agent runtime | Implemented with the OpenAI Agents SDK, manager/specialist handoffs, approval waits, durable recovery, and worker restart E2E evidence |
 | Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, call audit, explicit MCP connection reconfiguration, and credential rotation; runtime/deployment validation remains in progress |
 | MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; the self-hosted connector now provides durable claim, execution, completion, and restart recovery |
@@ -297,8 +297,9 @@ recommended order, and boundaries that remain owned by OpsMesh.
 
 ### 3. Build a unified capability and knowledge plane
 
-- Present skills, MCP tools, product tools, and knowledge sources through one capability catalog.
-- Generate a stable per-run tool manifest from the authorization snapshot.
+- Extend the implemented unified product/MCP/resource catalog with knowledge-source ingestion and
+  citation contracts.
+- Extend the implemented stable per-run tool manifest into isolated sandbox tool definitions.
 - Add knowledge-source registration, ingestion jobs, citations, and permission-aware retrieval.
 - Add pgvector-backed vector search and hybrid ranking alongside existing Postgres full-text search.
 

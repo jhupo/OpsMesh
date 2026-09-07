@@ -332,6 +332,8 @@ for an active Agent profile, optionally in an active team context:
    parameters cannot be overridden.
 5. JSON Schema validation, active-state checks, workspace ownership, and unique tool-name checks
    remove invalid or ambiguous entries before execution.
+6. Product tools that require file or memory access are omitted unless an effective resource grant
+   provides the required access mode.
 
 The result contains only executable tool descriptors and resource grants, plus denials, policy
 provenance, Agent/team/member identifiers, configuration versions, and a canonical SHA-256
@@ -342,6 +344,28 @@ RBAC.
 Changing a team capability policy increments its policy version and writes a durable audit event.
 Workspace metadata import resets team capability policies because resource IDs belong to the source
 workspace and must be explicitly rebound in the target workspace.
+
+### Frozen Run Manifest And Execution Gateway
+
+Creating a run freezes the effective catalog into authorization snapshot version 2. The snapshot
+contains the exact product/MCP tool descriptors, input schemas, merged defaults, locked parameters,
+resource grants, file scope, MCP server and allowlist provenance, and canonical fingerprints. Later
+Agent or team configuration changes affect new runs only.
+
+Both OpenAI Agents SDK function tools and the Anthropic Messages adapter are generated from the
+frozen descriptors. Every backend tool call then crosses the Agent tool gateway, which:
+
+1. requires one exact tool definition from the run manifest;
+2. merges frozen defaults and rejects locked-parameter overrides;
+3. validates the final arguments against the frozen JSON Schema;
+4. intersects file and memory operations with frozen resource and step scopes;
+5. re-checks that referenced resources, MCP servers, and MCP allowlist entries are still active;
+6. routes the prepared call to the product or MCP executor; and
+7. records durable `tool.blocked` run evidence plus a security event for gateway denials.
+
+Disabling a capability resource or MCP entry is therefore an immediate emergency stop for existing
+runs. Ordinary policy edits remain frozen for reproducibility, while active-state checks fail closed
+at the side-effect boundary.
 
 Example groups:
 
