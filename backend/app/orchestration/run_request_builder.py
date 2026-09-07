@@ -36,6 +36,7 @@ from .run_request_prompt import (
 )
 from .run_request_sessions import RunRequestSessionService
 from .run_request_tracing import agent_run_tracing
+from .run_runtime_authorization import RunRuntimeAuthorizationService
 from .run_runtime_metadata import RunRuntimeMetadataBuilder
 
 
@@ -93,6 +94,11 @@ class RunRequestBuilder:
         tool_definitions = tool_definitions_for_snapshot(authorization_snapshot)
         resource_grants = resource_grants_for_snapshot(authorization_snapshot)
         file_scope_ids = file_scope_ids_for_snapshot(authorization_snapshot)
+        runtime_binding = RunRuntimeAuthorizationService(self.session).validate_for_run(
+            run=run,
+            task=task,
+            snapshot=authorization_snapshot,
+        )
         model_provider = self.model_provider_for_run(
             run,
             profile,
@@ -159,6 +165,7 @@ class RunRequestBuilder:
                 tool_definitions=tool_definitions,
                 resource_grants=resource_grants,
                 file_scope_ids=file_scope_ids,
+                runtime_binding=runtime_binding.as_runtime_context(),
                 metadata=metadata,
             ),
             model=model_provider["model"],

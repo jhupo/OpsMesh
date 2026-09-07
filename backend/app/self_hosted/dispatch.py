@@ -72,6 +72,7 @@ class SelfHostedDispatchService:
             or run.runtime_id != auth.runtime.id
         ):
             raise ValueError("Agent run not available for this worker")
+        self._eligibility.require_run_authorized(run, full=True)
         if not self._eligibility.runtime_space_allowed(auth, run):
             raise ValueError("Agent run runtime space is not allowed for this worker")
         policy_decision = self._eligibility.job_policy_decision(auth, run)

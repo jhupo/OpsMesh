@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -21,7 +22,13 @@ from backend.app.capabilities.models import (
 from backend.app.orchestration.run_authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
+from backend.app.orchestration.run_events import RunEventRecorder
+from backend.app.orchestration.run_runtime_authorization import (
+    RunRuntimeAuthorizationError,
+    RunRuntimeAuthorizationService,
+)
 from backend.app.runs.models import AgentRun
+from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task, TaskStep
 
 from .run_request_utils import dict_copy, expect_optional_uuid, string_list, uuid_or_none
@@ -39,9 +46,7 @@ class RunAuthorizationService:
         snapshot = self.authorization_snapshot_for_run(run)
         _ = profile
         raw_tools = snapshot.get("allowed_tools")
-        if not isinstance(raw_tools, list) or not all(
-            isinstance(tool, str) for tool in raw_tools
-        ):
+        if not isinstance(raw_tools, list) or not all(isinstance(tool, str) for tool in raw_tools):
             raise ValueError("Authorization snapshot allowed tools are invalid")
         return tuple(raw_tools)
 
@@ -54,17 +59,17 @@ class RunAuthorizationService:
         self,
         run: AgentRun,
         task: Task | None,
-        profile: AgentProfile,
+        profile: AgentProfile | None,
         snapshot: dict[str, object],
     ) -> None:
+        _ = profile
         if not snapshot:
             raise ValueError("Authorization snapshot is required")
         if snapshot.get("version") != 2:
             raise ValueError("Authorization snapshot version is unsupported")
         fingerprint = snapshot.get("fingerprint")
-        if (
-            not isinstance(fingerprint, str)
-            or fingerprint != authorization_snapshot_fingerprint(snapshot)
+        if not isinstance(fingerprint, str) or fingerprint != authorization_snapshot_fingerprint(
+            snapshot
         ):
             raise ValueError("Authorization snapshot fingerprint mismatch")
         expect_optional_uuid(snapshot, "workspace_id", run.workspace_id)
@@ -74,16 +79,24 @@ class RunAuthorizationService:
         expect_optional_uuid(snapshot, "runtime_space_id", run.runtime_space_id)
         if task is not None and task.workspace_id != run.workspace_id:
             raise ValueError("Authorization snapshot task workspace mismatch")
+        try:
+            RunRuntimeAuthorizationService(self.session).validate_for_run(
+                run=run,
+                task=task,
+                snapshot=snapshot,
+            )
+        except RunRuntimeAuthorizationError as exc:
+            self._record_runtime_denial(run, exc)
+            raise
         catalog = capability_catalog_for_snapshot(snapshot)
         if catalog is None:
             if snapshot.get("allowed_tools") not in ([], None):
                 raise ValueError("Authorization snapshot capability catalog is missing")
             return
         catalog_fingerprint = catalog.get("fingerprint")
-        if (
-            not isinstance(catalog_fingerprint, str)
-            or catalog_fingerprint != effective_catalog_fingerprint(catalog)
-        ):
+        if not isinstance(
+            catalog_fingerprint, str
+        ) or catalog_fingerprint != effective_catalog_fingerprint(catalog):
             raise ValueError("Capability catalog fingerprint mismatch")
         expect_optional_uuid(catalog, "workspace_id", run.workspace_id)
         expect_optional_uuid(catalog, "agent_profile_id", run.agent_profile_id)
@@ -99,6 +112,47 @@ class RunAuthorizationService:
             run.workspace_id,
             resource_grants_for_snapshot(snapshot),
         )
+
+    def _record_runtime_denial(
+        self,
+        run: AgentRun,
+        denial: RunRuntimeAuthorizationError,
+    ) -> None:
+        RunEventRecorder(self.session).append_event(
+            run,
+            "runtime.authorization_blocked",
+            str(denial),
+            {"reason": denial.code},
+        )
+        self.session.add(
+            SecurityEvent(
+                workspace_id=run.workspace_id,
+                user_id=None,
+                action="agent_runtime.authorization_blocked",
+                outcome="blocked",
+                severity="high",
+                source_ip=None,
+                user_agent=None,
+                request_id=None,
+                path="internal:agent_runtime_gateway",
+                method="WORKER",
+                reason=denial.code,
+                event_metadata={
+                    "agent_run_id": str(run.id),
+                    "workspace_runtime_id": str(run.runtime_id)
+                    if run.runtime_id is not None
+                    else None,
+                    "runtime_space_id": str(run.runtime_space_id)
+                    if run.runtime_space_id is not None
+                    else None,
+                    "authorization_snapshot_fingerprint": self.authorization_snapshot_for_run(
+                        run
+                    ).get("fingerprint"),
+                },
+                created_at=datetime.now(UTC),
+            )
+        )
+        self.session.flush()
 
     def _require_active_capability_resources(
         self,
@@ -322,9 +376,7 @@ def tool_definitions_for_snapshot(
                     if isinstance(item, str)
                 ),
                 mcp_server_id=uuid_or_none(descriptor.get("mcp_server_id")),
-                mcp_tool_allowlist_id=uuid_or_none(
-                    descriptor.get("mcp_tool_allowlist_id")
-                ),
+                mcp_tool_allowlist_id=uuid_or_none(descriptor.get("mcp_tool_allowlist_id")),
             )
         )
     if len({definition.name for definition in definitions}) != len(definitions):

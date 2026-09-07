@@ -67,6 +67,7 @@ from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_spaces.models import (
     RuntimeSpace,
+    RuntimeSpaceBinding,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
@@ -163,6 +164,7 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
     assert enqueued is True
     assert task.status == TaskStatus.QUEUED.value
     assert run.status == RunStatus.QUEUED.value
+    assert run.input["authorization_snapshot"]["runtime_binding"]["mode"] == "none"
 
     handled = consume_once(
         queue,
@@ -186,6 +188,7 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
         "run.started",
         "run.context_built",
         "model.request_started",
+        "cost.usage_recorded",
         "model.response_received",
         "model_provider.used",
         "run.completed",
@@ -193,7 +196,7 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
     assert events[0].event_metadata["job"]["priority"] == 0
     assert events[2].event_metadata["allowed_tool_count"] == 0
     assert events[3].event_metadata["model"] == "gpt-4.1"
-    assert events[4].event_metadata["runtime_event_count"] == 0
+    assert events[5].event_metadata["runtime_event_count"] == 0
 
 
 def test_worker_executes_openai_agents_runner_through_control_plane(
@@ -217,15 +220,22 @@ def test_worker_executes_openai_agents_runner_through_control_plane(
     )
     session.add_all([agent, task])
     session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=agent.id,
+        title="SDK-backed research",
+        status="queued",
+    )
+    session.add(step)
+    session.flush()
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
         keys=RedisKeyBuilder("opsmesh"),
         queue_name="agent_runs",
     )
     orchestration = RunOrchestrationService(session, queue)
-    run = orchestration.create_queued_run_for_task(task)
-    assert run is not None
-    run.agent_profile_id = agent.id
+    run = _run_step_launcher(session).create_run_for_step(task, step)
     orchestration.enqueue_run(run, requested_by_user_id=user.id)
     session.commit()
 
@@ -282,13 +292,17 @@ def test_worker_executes_openai_agents_runner_through_control_plane(
     assert captured["kwargs"]["context"].run_id == run.id
     assert captured["kwargs"]["max_turns"] == 10
     assert [event.event_type for event in events] == [
+        "model_provider.resolved",
         "run.claimed",
         "run.started",
+        "task_step.started",
         "run.context_built",
         "model.request_started",
+        "cost.usage_recorded",
         "model.response_received",
         "model_provider.used",
         "run.completed",
+        "task_step.completed",
     ]
 
 
@@ -738,6 +752,12 @@ def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> N
     session.flush()
     session.add_all(
         [
+            RuntimeSpaceBinding(
+                workspace_id=workspace.id,
+                runtime_space_id=runtime_space.id,
+                target_type="agent_team",
+                target_id=team.id,
+            ),
             AgentTeamMember(
                 workspace_id=workspace.id,
                 agent_team_id=team.id,
@@ -884,14 +904,22 @@ def test_runtime_space_reserves_multi_resource_capacity_for_team_steps() -> None
     )
     session.add_all([*quotas, team])
     session.flush()
-    session.add(
-        AgentTeamMember(
-            workspace_id=workspace.id,
-            agent_team_id=team.id,
-            agent_profile_id=developer.id,
-            team_role="Developer",
-            order_index=0,
-        )
+    session.add_all(
+        [
+            RuntimeSpaceBinding(
+                workspace_id=workspace.id,
+                runtime_space_id=runtime_space.id,
+                target_type="agent_team",
+                target_id=team.id,
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=developer.id,
+                team_role="Developer",
+                order_index=0,
+            ),
+        ]
     )
     task = Task(
         workspace_id=workspace.id,
@@ -1009,7 +1037,7 @@ def test_runtime_space_blocks_step_when_multi_resource_quota_exceeded() -> None:
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         name="Small Space",
-        scope="team",
+        scope="workspace",
         policy={"resource_requirements": {"memory_mb": 1024}},
     )
     agent = AgentProfile(
@@ -1437,7 +1465,7 @@ def test_team_scheduler_blocks_step_when_model_provider_unavailable() -> None:
     assert "provider.example.test/v1" not in str(step.dependencies)
 
 
-def test_team_scheduler_releases_reservations_when_model_provider_unavailable() -> None:
+def test_team_scheduler_does_not_reserve_when_model_provider_unavailable() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     workspace_quota = WorkspaceQuota(
@@ -1497,13 +1525,21 @@ def test_team_scheduler_releases_reservations_when_model_provider_unavailable() 
     )
     session.add(team)
     session.flush()
-    session.add(
-        AgentTeamMember(
-            workspace_id=workspace.id,
-            agent_team_id=team.id,
-            agent_profile_id=developer.id,
-            team_role="developer",
-        )
+    session.add_all(
+        [
+            RuntimeSpaceBinding(
+                workspace_id=workspace.id,
+                runtime_space_id=runtime_space.id,
+                target_type="agent_team",
+                target_id=team.id,
+            ),
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=developer.id,
+                team_role="developer",
+            ),
+        ]
     )
     task = Task(
         workspace_id=workspace.id,
@@ -1573,12 +1609,8 @@ def test_team_scheduler_releases_reservations_when_model_provider_unavailable() 
     assert "provider.example.test/v1" not in str(step.dependencies)
     assert workspace_quota.reserved_value == 0
     assert runtime_quota.reserved_value == 0
-    assert len(workspace_reservations) == 1
-    assert len(runtime_reservations) == 1
-    assert workspace_reservations[0].status == "released"
-    assert runtime_reservations[0].status == "released"
-    assert workspace_reservations[0].agent_run_id is None
-    assert runtime_reservations[0].agent_run_id is None
+    assert workspace_reservations == []
+    assert runtime_reservations == []
 
 
 def test_workspace_scheduler_starts_higher_priority_task_first() -> None:
@@ -2189,7 +2221,8 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     agent.tool_policy = {"allowed_tools": ["delete_workspace_file"]}
     session.commit()
 
-    request = _build_agent_request(session, 
+    request = _build_agent_request(
+        session,
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -2265,9 +2298,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     assert request.context.allowed_tools == ("generate_image",)
     assert request.tool_executor is not None
     assert request.context.metadata["authorization_snapshot_version"] == 2
-    assert request.context.metadata["authorization_snapshot_fingerprint"] == snapshot[
-        "fingerprint"
-    ]
+    assert request.context.metadata["authorization_snapshot_fingerprint"] == snapshot["fingerprint"]
     assert request.context.tool_definitions[0].name == "generate_image"
     assert request.context.tool_definitions[0].mcp_server_id == server.id
 
@@ -2455,7 +2486,8 @@ def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> Non
     }
     credential.budget_metadata = {"model_api": "responses"}
     session.flush([credential])
-    request = _build_agent_request(session,
+    request = _build_agent_request(
+        session,
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -2554,7 +2586,8 @@ def test_queued_team_run_uses_frozen_agent_model_provider_protocol() -> None:
 
     run = RunOrchestrationService(session).create_queued_run_for_task(task)
     snapshot = run.input["authorization_snapshot"]["model_provider"]
-    request = _build_agent_request(session,
+    request = _build_agent_request(
+        session,
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -3872,7 +3905,8 @@ def test_agent_request_mailbox_context_is_scoped_to_current_task() -> None:
     session.add_all([current_message, other_message, run])
     session.commit()
 
-    request = _build_agent_request(session, 
+    request = _build_agent_request(
+        session,
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -3973,7 +4007,8 @@ def test_team_agent_mailbox_context_is_scoped_to_runtime_thread() -> None:
     session.add_all([runtime_message, other_message, run])
     session.commit()
 
-    request = _build_agent_request(session, 
+    request = _build_agent_request(
+        session,
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -4111,7 +4146,8 @@ def test_agent_request_allows_snapshot_to_narrow_agent_tools() -> None:
     session.add(run)
     session.commit()
 
-    request = _build_agent_request(session, 
+    request = _build_agent_request(
+        session,
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -4177,7 +4213,8 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
     session.add(run)
     session.commit()
 
-    request = _build_agent_request(session, 
+    request = _build_agent_request(
+        session,
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -4261,7 +4298,8 @@ def test_agent_request_model_api_overrides_credential_default_protocol() -> None
     session.add(run)
     session.commit()
 
-    request = _build_agent_request(session, 
+    request = _build_agent_request(
+        session,
         run,
         JobPayload(
             workspace_id=workspace.id,
@@ -4348,7 +4386,8 @@ def test_agent_request_fails_closed_when_workspace_default_snapshot_becomes_unhe
     session.commit()
 
     with pytest.raises(ModelProviderUnavailableError):
-        _build_agent_request(session, 
+        _build_agent_request(
+            session,
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -4443,7 +4482,8 @@ def test_agent_request_does_not_fallback_explicit_inactive_provider_override() -
     session.commit()
 
     with pytest.raises(ValueError, match="not found or unavailable"):
-        _build_agent_request(session, 
+        _build_agent_request(
+            session,
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5090,7 +5130,8 @@ def test_agent_request_rejects_foreign_workspace_agent_profile() -> None:
     session.commit()
 
     try:
-        _build_agent_request(session, 
+        _build_agent_request(
+            session,
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5141,7 +5182,8 @@ def test_agent_request_rejects_task_step_from_another_task() -> None:
     session.commit()
 
     try:
-        _build_agent_request(session, 
+        _build_agent_request(
+            session,
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5175,7 +5217,8 @@ def test_agent_request_rejects_worker_job_scope_mismatch() -> None:
     session.commit()
 
     try:
-        _build_agent_request(session, 
+        _build_agent_request(
+            session,
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5215,7 +5258,8 @@ def test_agent_request_rejects_authorization_snapshot_scope_mismatch() -> None:
     session.commit()
 
     try:
-        _build_agent_request(session, 
+        _build_agent_request(
+            session,
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5261,7 +5305,8 @@ def test_agent_request_rejects_authorization_snapshot_tool_escalation() -> None:
     session.commit()
 
     try:
-        _build_agent_request(session, 
+        _build_agent_request(
+            session,
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5307,7 +5352,8 @@ def test_agent_request_rejects_authorization_snapshot_installed_skill_tampering(
     session.commit()
 
     try:
-        _build_agent_request(session, 
+        _build_agent_request(
+            session,
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5391,7 +5437,8 @@ def test_agent_request_rejects_authorization_snapshot_skill_provenance_mismatch(
     session.commit()
 
     try:
-        _build_agent_request(session, 
+        _build_agent_request(
+            session,
             run,
             JobPayload(
                 workspace_id=workspace.id,
@@ -5488,7 +5535,8 @@ def test_team_agent_runs_share_persistent_sdk_session_across_tasks() -> None:
     first_run = launcher.create_run_for_step(first_task, first_step)
     second_run = launcher.create_run_for_step(second_task, second_step)
 
-    first_request = _build_agent_request(session, 
+    first_request = _build_agent_request(
+        session,
         first_run,
         JobPayload(
             workspace_id=workspace.id,
@@ -5498,7 +5546,8 @@ def test_team_agent_runs_share_persistent_sdk_session_across_tasks() -> None:
             idempotency_key="first-persistent-session",
         ),
     )
-    second_request = _build_agent_request(session, 
+    second_request = _build_agent_request(
+        session,
         second_run,
         JobPayload(
             workspace_id=workspace.id,
@@ -5632,7 +5681,8 @@ def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
     builder_run = launcher.create_run_for_step(task, builder_step)
     session.commit()
 
-    planner_request = _build_agent_request(session, 
+    planner_request = _build_agent_request(
+        session,
         planner_run,
         JobPayload(
             workspace_id=workspace.id,
@@ -5668,7 +5718,8 @@ def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
     assert send_result.output["message"]["task_id"] is None
     assert send_result.output["message"]["agent_team_id"] == str(team.id)
 
-    builder_request = _build_agent_request(session, 
+    builder_request = _build_agent_request(
+        session,
         builder_run,
         JobPayload(
             workspace_id=workspace.id,
@@ -5830,15 +5881,13 @@ def _run_lifecycle(session: Session) -> RunLifecycleService:
         session,
         RunLifecycleCallbacks(
             append_event=RunEventRecorder(session).append_event,
-            release_reservations=lambda run, released_at: (
-                _run_reservations(session).release_for_run(run, released_at=released_at)
-            ),
+            release_reservations=lambda run, released_at: _run_reservations(
+                session
+            ).release_for_run(run, released_at=released_at),
             sync_provider_conversation_id=builder.sync_provider_conversation_id,
-            create_next_runs=lambda task, user_id: (
-                orchestration._create_and_enqueue_next_step_runs(
-                    task,
-                    requested_by_user_id=user_id,
-                )
+            create_next_runs=lambda task, user_id: orchestration._create_and_enqueue_next_step_runs(
+                task,
+                requested_by_user_id=user_id,
             ),
             schedule_workspace_steps=lambda workspace_id, user_id: (
                 orchestration.schedule_workspace_steps(

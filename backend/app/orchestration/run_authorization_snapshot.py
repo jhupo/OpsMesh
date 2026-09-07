@@ -16,7 +16,10 @@ from backend.app.orchestration.run_authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.orchestration.run_request_builder import RunRequestBuilder
-from backend.app.orchestration.run_request_utils import dict_copy, string_list, uuid_or_none
+from backend.app.orchestration.run_request_utils import dict_copy, uuid_or_none
+from backend.app.orchestration.run_runtime_authorization import (
+    RunRuntimeAuthorizationService,
+)
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task, TaskStep
 
@@ -29,7 +32,7 @@ class RunAuthorizationSnapshotService:
     def build_authorization_snapshot(
         self,
         task: Task,
-        step: TaskStep,
+        step: TaskStep | None,
         profile: AgentProfile | None,
         *,
         agent_snapshot: dict[str, object] | None = None,
@@ -42,6 +45,9 @@ class RunAuthorizationSnapshotService:
             )
             if profile is not None
             else None
+        )
+        catalog_snapshot = (
+            effective_catalog.model_dump(mode="json") if effective_catalog is not None else None
         )
         allowed_tools = (
             [item.descriptor.name for item in effective_catalog.tools]
@@ -57,44 +63,42 @@ class RunAuthorizationSnapshotService:
             profile,
             agent_snapshot=agent_snapshot,
         )
+        frozen_runtime_policy = runtime_policy_snapshot(runtime_policy)
+        runtime_binding = RunRuntimeAuthorizationService(self.session).resolve_for_snapshot(
+            task=task,
+            step=step,
+            capability_catalog=catalog_snapshot,
+            runtime_policy=frozen_runtime_policy,
+        )
         snapshot: dict[str, object] = {
             "version": 2,
             "workspace_id": str(task.workspace_id),
             "task_id": str(task.id),
-            "task_step_id": str(step.id),
-            "runtime_space_id": str(step.runtime_space_id or task.runtime_space_id)
-            if (step.runtime_space_id or task.runtime_space_id) is not None
+            "task_step_id": str(step.id) if step is not None else None,
+            "runtime_space_id": str(runtime_binding.runtime_space_id)
+            if runtime_binding.runtime_space_id is not None
             else None,
             "agent_profile_id": str(profile.id)
             if profile is not None and profile.id is not None
             else None,
             "allowed_tools": allowed_tools,
-            "capability_catalog": effective_catalog.model_dump(mode="json")
-            if effective_catalog is not None
-            else None,
+            "capability_catalog": catalog_snapshot,
             "tool_policy": dict_copy(tool_policy),
             "installed_skills": self.request_builder.installed_skill_snapshots(
                 task.workspace_id,
                 profile,
             ),
             "model_provider": model_provider,
-            "runtime_policy": runtime_policy_snapshot(runtime_policy),
+            "runtime_policy": frozen_runtime_policy,
             "memory_policy": dict_copy(memory_policy),
             "approval_policy": dict_copy(approval_policy),
             "file_scope": {
-                "mode": "task_step",
+                "mode": "authorized_file_resources",
                 "workspace_id": str(task.workspace_id),
                 "task_id": str(task.id),
-                "allowed_file_ids": string_list(step.dependencies.get("allowed_file_ids"))
-                if isinstance(step.dependencies, dict)
-                else [],
+                "allowed_file_ids": [str(file_id) for file_id in runtime_binding.allowed_file_ids],
             },
-            "runtime_scope": {
-                "mode": "workspace_runtime_policy",
-                "workspace_id": str(task.workspace_id),
-                "task_id": str(task.id),
-                "task_step_id": str(step.id),
-            },
+            "runtime_binding": runtime_binding.as_snapshot(),
         }
         snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
         return snapshot

@@ -51,9 +51,9 @@ The APIs and database model may change before the first stable release. See the
 | API/Agent Gateway | Implemented at the application boundary: authentication, workspace roles, routing, rate limiting, security headers, and audit |
 | Session, configuration, and tool resolution | Implemented, including persistent sessions, effective Agent/team catalogs, fingerprinted authorization snapshot v2, dynamic SDK tool schemas, and a fail-closed execution gateway |
 | Multi-Agent runtime | Implemented with the OpenAI Agents SDK, manager/specialist handoffs, approval waits, durable recovery, and worker restart E2E evidence |
-| Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, call audit, explicit MCP connection reconfiguration, and credential rotation; runtime/deployment validation remains in progress |
+| Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, call audit, runtime-resource placement, live revocation, explicit MCP connection reconfiguration, and credential rotation |
 | MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; the self-hosted connector now provides durable claim, execution, completion, and restart recovery |
-| Run isolation and workspace | Docker and self-hosted control-plane contracts are implemented; a dedicated `opsmesh-runtime` image provides the isolated MCP SDK helper and connector CLI |
+| Run isolation and workspace | Docker and self-hosted control-plane contracts, frozen runtime bindings, runtime-space reservations, and fail-closed stdio routing are implemented; a dedicated `opsmesh-runtime` image provides the isolated MCP SDK helper and connector CLI |
 | Knowledge service | Partial: workspace memory, lexical search, and Postgres full-text abstraction exist; source ingestion, citations, vector search, and hybrid ranking are planned |
 | Observability and operations | Implemented for the VPS topology: OTLP logs and traces, official Prometheus metrics, Loki, Tempo, Grafana correlation, alerts, WORM audit verification, cost ledger, budgets, queue/runtime diagnostics, and recovery actions |
 | Infrastructure and scaling | Postgres, Redis, storage, VPS/systemd, Docker runtime, and remote validation assets exist; Kubernetes, multi-region, and microVM backends are future work |
@@ -72,10 +72,13 @@ flowchart LR
         Access["FastAPI access boundary<br/>authentication / workspace RBAC<br/>rate limits / security headers"]
         Services["Product services<br/>workspaces / teams / tasks / files<br/>memory / approvals / operations"]
         Orchestration["Durable orchestration<br/>plans / runs / events / recovery"]
-        Capabilities["Capability governance<br/>skills / MCP / tools / marketplace<br/>credentials / authorization snapshots"]
+        Capabilities["Capability governance<br/>skills / MCP / tools / resources<br/>effective catalogs"]
+        RuntimeAuth["Run authorization<br/>snapshot v2 / runtime binding<br/>network / file scope"]
         Access --> Services
         Services --> Orchestration
         Services --> Capabilities
+        Capabilities --> RuntimeAuth
+        Orchestration --> RuntimeAuth
     end
 
     subgraph State["State and coordination"]
@@ -85,17 +88,19 @@ flowchart LR
     end
 
     subgraph Execution["Asynchronous execution plane"]
-        Workers["Worker fleet<br/>claim / retry / recovery / maintenance"]
+        Workers["Worker fleet<br/>claim / preflight / recovery / maintenance"]
         Agents["Agent runtime<br/>OpenAI Agents SDK<br/>provider adapters"]
-        ToolBoundary["Tool execution boundary<br/>policy / approval / limits<br/>secret injection / audit"]
-        MCP["Official MCP SDK<br/>HTTP / SSE / isolated stdio"]
+        ToolBoundary["Agent execution gateway<br/>schema / parameters / resources<br/>approval / live revocation / audit"]
+        RemoteMCP["Official MCP SDK<br/>HTTP / SSE"]
+        Stdio["stdio MCP router"]
         Docker["Managed Docker runtimes"]
         SelfHosted["Self-hosted connector runtimes"]
         Workers --> Agents
         Agents --> ToolBoundary
-        ToolBoundary --> MCP
-        ToolBoundary --> Docker
-        ToolBoundary --> SelfHosted
+        ToolBoundary --> RemoteMCP
+        ToolBoundary --> Stdio
+        Stdio --> Docker
+        Stdio --> SelfHosted
     end
 
     subgraph Evidence["Governance and observability"]
@@ -116,12 +121,13 @@ flowchart LR
     Clients --> Access
     Services --> Postgres
     Orchestration --> Postgres
+    RuntimeAuth --> Postgres
     Orchestration --> Redis
     Redis --> Workers
     Workers --> Postgres
-    Docker --> Storage
-    SelfHosted --> Storage
-    Capabilities --> ToolBoundary
+    Docker -.->|explicit artifact collection| Storage
+    SelfHosted -.->|authorized artifact upload| Storage
+    RuntimeAuth --> ToolBoundary
     Services --> Audit
     Workers --> Audit
     Agents --> Costs
@@ -146,20 +152,24 @@ sequenceDiagram
     participant API as FastAPI control plane
     participant DB as Postgres
     participant Queue as Redis queue
+    participant Catalog as Capability and runtime authorization
     participant Worker
     participant Agent as Agent runtime
-    participant Policy as Capability and approval boundary
+    participant Policy as Agent execution gateway
     participant Runtime as MCP / Docker / self-hosted
     participant Observe as OTel / Prometheus
 
     Client->>API: Create or resume workspace task
     API->>API: Authenticate and authorize workspace action
-    API->>DB: Persist task, run, policy snapshot, and event
+    API->>Catalog: Resolve effective catalog and runtime binding
+    Catalog->>DB: Validate workspace resources, runtime, space, and quota
+    API->>DB: Persist task, run, authorization snapshot, reservation, and event
     API->>Queue: Enqueue idempotent job
     API-->>Client: Return durable resource and status
 
     Worker->>Queue: Claim job and create lease
     Worker->>DB: Load workspace-scoped run and frozen configuration
+    Worker->>Catalog: Verify snapshot, bound runtime, space, files, and live status
     Worker->>DB: Check provider readiness and matching cost budget
     Worker->>Agent: Execute model turn with trace context
 
@@ -172,7 +182,7 @@ sequenceDiagram
             API->>DB: Persist decision
             API->>Queue: Requeue approved run
         else Tool request allowed
-            Policy->>Runtime: Execute through approved isolated boundary
+            Policy->>Runtime: Route remote call or bound stdio execution
             Runtime-->>Policy: Return redacted result and artifacts
             Policy-->>Agent: Return typed tool result
         end
@@ -219,7 +229,8 @@ sequenceDiagram
   probe.
 - Runtime spaces, quota reservations, leases, cleanup evidence, and operator controls.
 - Self-hosted runtime enrollment, trust state, heartbeat, job claim, progress, and artifact upload.
-- Workspace file staging and artifact collection without executing untrusted code on the API host.
+- Gateway-scoped workspace file access plus explicit low-level staging and artifact collection,
+  without exposing workspace storage to stdio runtimes or executing untrusted code on the API host.
 
 ### Governance and operations
 
@@ -238,7 +249,8 @@ sequenceDiagram
 3. Models may propose actions; application services validate and commit state transitions.
 4. Long-running work executes in workers, never inside an API request.
 5. Untrusted code and local tool processes execute only in an approved isolated runtime.
-6. Every run receives an immutable authorization snapshot for its agent, skills, tools, and provider.
+6. Every orchestrated run receives an immutable authorization snapshot for its Agent, skills,
+   tools, resources, runtime binding, file scope, and provider.
 7. Secrets are injected only at the execution boundary and must never enter logs or API responses.
 8. Audit records remain independent of model-provider tracing.
 9. Domain contracts stay product-owned; standard protocols and infrastructure use mature SDKs.
@@ -299,7 +311,8 @@ recommended order, and boundaries that remain owned by OpsMesh.
 
 - Extend the implemented unified product/MCP/resource catalog with knowledge-source ingestion and
   citation contracts.
-- Extend the implemented stable per-run tool manifest into isolated sandbox tool definitions.
+- Add policy-driven ephemeral sandbox creation, per-run file materialization, and selected artifact
+  harvesting on top of the implemented frozen runtime binding.
 - Add knowledge-source registration, ingestion jobs, citations, and permission-aware retrieval.
 - Add pgvector-backed vector search and hybrid ranking alongside existing Postgres full-text search.
 

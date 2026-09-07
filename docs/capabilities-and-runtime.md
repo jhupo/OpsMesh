@@ -349,8 +349,9 @@ workspace and must be explicitly rebound in the target workspace.
 
 Creating a run freezes the effective catalog into authorization snapshot version 2. The snapshot
 contains the exact product/MCP tool descriptors, input schemas, merged defaults, locked parameters,
-resource grants, file scope, MCP server and allowlist provenance, and canonical fingerprints. Later
-Agent or team configuration changes affect new runs only.
+resource grants, gateway-only file scope, MCP server and allowlist provenance, runtime placement,
+network requirements, and canonical fingerprints. Later Agent or team configuration changes affect
+new runs only.
 
 Both OpenAI Agents SDK function tools and the Anthropic Messages adapter are generated from the
 frozen descriptors. Every backend tool call then crosses the Agent tool gateway, which:
@@ -366,6 +367,12 @@ frozen descriptors. Every backend tool call then crosses the Agent tool gateway,
 Disabling a capability resource or MCP entry is therefore an immediate emergency stop for existing
 runs. Ordinary policy edits remain frozen for reproducibility, while active-state checks fail closed
 at the side-effect boundary.
+
+The frozen `runtime_binding` records the exact workspace runtime and runtime space, the runtime
+resources that authorized the placement, the effective network restriction, and allowed file IDs.
+Worker preflight and stdio MCP routing compare this binding with current workspace-scoped state.
+Removing the binding or changing/revoking its runtime, space, resource, or file scope blocks the run
+and records runtime/security evidence.
 
 Example groups:
 
@@ -383,42 +390,26 @@ Each group maps to concrete OpenAI Agents SDK tools, product tools, MCP tools, o
 
 ## Runtime Selection Policy
 
-The orchestrator chooses runtime based on:
+The current orchestrator resolves runtime placement from executable runtime resources, the team's
+bound workspace runtime, task/step runtime-space selection, and the concrete runtime's space. It
+rejects ambiguous or conflicting placement and requires scoped spaces to have a current active
+binding to the relevant team or task.
 
-- task type
-- agent runtime policy
-- selected tools
-- skill requirements
-- file access needs
-- approval policy
-- workspace policy
-- risk level
-
-Suggested default:
-
-```text
-If all required tools are hosted or MCP-only:
-  run without sandbox
-Else if shell/filesystem/code execution is required:
-  create per-run sandbox
-Else if task has multiple dependent filesystem steps:
-  create task-scoped sandbox
-Else:
-  run without sandbox
-```
+Remote MCP and product tools do not require a concrete runtime. stdio MCP does: scheduling fails if
+the effective catalog exposes a stdio tool without one active, online authorized runtime. The
+scheduler reserves the resolved runtime space before creating the run, and the worker revalidates
+the frozen binding before execution.
 
 ## Docker Strategy
 
 Docker is useful, but should be treated as an execution backend and security boundary. For stronger tenant isolation, evaluate microVMs or managed sandbox providers later.
 
-Recommended MVP approach:
+Current managed-runtime controls:
 
-- Use Docker only for runs that require isolated filesystem or command execution.
-- Mount only workspace-approved files.
-- Use a generated run workspace directory.
-- Persist artifacts back to workspace storage.
-- Destroy the container after the run or task.
-- Save snapshots only when explicitly requested by policy.
+- Use Docker only for explicitly bound runtime execution.
+- Use a dedicated Docker volume; do not mount workspace object storage into Agent stdio execution.
+- Keep workspace file reads behind the product tool gateway and frozen file-ID scope.
+- Collect artifacts only through explicit authorized workflows.
 - Run containers as non-root where possible.
 - Apply CPU, memory, disk, process, and timeout limits.
 - Use restricted network by default.
@@ -449,13 +440,8 @@ Recommended model:
 - Runtime state can be snapshotted into workspace-owned artifacts.
 - Admins can stop, reset, snapshot, or delete a runtime.
 
-Persistent runtime lifecycle:
-
-```text
-provisioning -> ready -> attached -> idle -> stopped
-                         -> unhealthy
-                         -> deleting
-```
+Persistent managed runtime lifecycle is recorded through queued/provisioning, created, running,
+stopped, failed/cleanup-failed, and deleted states. Connection status is tracked independently.
 
 Minimum controls:
 

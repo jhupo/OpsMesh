@@ -38,7 +38,13 @@ class RunResourceReservationService:
     mark_step_scheduling_blocked: MarkStepBlocked
     mark_step_scheduling_runnable: MarkStepRunnable
 
-    def reserve_for_step(self, task: Task, step: TaskStep) -> RunReservationBundle | None:
+    def reserve_for_step(
+        self,
+        task: Task,
+        step: TaskStep,
+        *,
+        runtime_space_id: UUID | None = None,
+    ) -> RunReservationBundle | None:
         workspace_reservation = self._reserve_workspace_quota(task, step)
         if workspace_reservation is None:
             return None
@@ -46,6 +52,7 @@ class RunResourceReservationService:
         reservation_available, runtime_space_reservation = self._reserve_runtime_space(
             task,
             step,
+            runtime_space_id=runtime_space_id,
         )
         if not reservation_available:
             WorkspaceQuotaService(self.session).release_reservation(
@@ -120,8 +127,10 @@ class RunResourceReservationService:
         self,
         task: Task,
         step: TaskStep,
+        *,
+        runtime_space_id: UUID | None,
     ) -> tuple[bool, RuntimeSpaceReservation | None]:
-        runtime_space_id = step.runtime_space_id or task.runtime_space_id
+        runtime_space_id = runtime_space_id or step.runtime_space_id or task.runtime_space_id
         if runtime_space_id is None:
             self.mark_step_scheduling_runnable(step)
             return True, None

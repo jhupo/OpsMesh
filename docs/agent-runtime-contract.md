@@ -140,6 +140,13 @@ Authorization snapshot version 2 is immutable for the lifetime of a run. It stor
 capability catalog and a canonical fingerprint. The catalog has its own fingerprint so callers can
 verify the nested manifest independently.
 
+The snapshot also freezes `runtime_binding`: workspace runtime, runtime space, authorizing runtime
+resource IDs, effective network restriction, and gateway-only file IDs. The typed
+`AgentRuntimeContext` carries the parsed binding. The worker validates it before constructing the
+provider request, and the stdio MCP resolver accepts only the exact active runtime in that binding.
+Product file tools use the file IDs as an authorization intersection; Agent stdio processes do not
+receive a workspace storage mount.
+
 Configuration edits do not rewrite an existing run. Resource disablement is deliberately dynamic:
 the execution gateway checks current workspace-scoped active state immediately before a tool call.
 This gives reproducible configuration with an emergency revocation path.

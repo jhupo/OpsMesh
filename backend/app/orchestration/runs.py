@@ -12,8 +12,8 @@ from backend.app.orchestration.run_job_routing import RunJobRoutingService
 from backend.app.orchestration.run_lifecycle import RunLifecycleCallbacks, RunLifecycleService
 from backend.app.orchestration.run_request_builder import RunRequestBuilder
 from backend.app.orchestration.run_resource_reservations import RunResourceReservationService
+from backend.app.orchestration.run_runtime_authorization import runtime_binding_for_snapshot
 from backend.app.orchestration.run_step_launcher import RunStepLauncher
-from backend.app.orchestration.run_team_runtime import RunTeamRuntimeResolver
 from backend.app.orchestration.scheduler import WorkspaceScheduler
 from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.orchestration.step_scheduling_state import (
@@ -61,13 +61,30 @@ class RunOrchestrationService:
         first_team_step = self._team_step_planner().create_team_step_plan(task)
         run: AgentRun | None
         if first_team_step is None:
+            authorization_snapshot = self._authorization_snapshots().build_authorization_snapshot(
+                task,
+                None,
+                None,
+            )
+            runtime_binding = runtime_binding_for_snapshot(
+                authorization_snapshot,
+                workspace_id=task.workspace_id,
+            )
             generic_run = AgentRun(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
-                runtime_id=self._run_team_runtime().runtime_id_for_task(task),
-                runtime_space_id=task.runtime_space_id,
+                runtime_id=(
+                    runtime_binding.workspace_runtime_id if runtime_binding is not None else None
+                ),
+                runtime_space_id=(
+                    runtime_binding.runtime_space_id if runtime_binding is not None else None
+                ),
                 status=RunStatus.QUEUED.value,
-                input={"task_id": str(task.id), "title": task.title},
+                input={
+                    "task_id": str(task.id),
+                    "title": task.title,
+                    "authorization_snapshot": authorization_snapshot,
+                },
             )
             self._session.add(generic_run)
             run = generic_run
@@ -222,9 +239,6 @@ class RunOrchestrationService:
 
     def _run_job_routing(self) -> RunJobRoutingService:
         return RunJobRoutingService(self._session)
-
-    def _run_team_runtime(self) -> RunTeamRuntimeResolver:
-        return RunTeamRuntimeResolver(self._session)
 
     def _run_reservations(self) -> RunResourceReservationService:
         return RunResourceReservationService(

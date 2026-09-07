@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.agent_runtime.contracts import (
     AgentRuntimeContext,
+    AgentRuntimeExecutionBinding,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolDefinition,
 )
@@ -839,6 +840,8 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
         runtime_provider="self_hosted",
         runtime_type="self_hosted",
         name="local-node",
+        status="active",
+        connection_status="online",
     )
     task = Task(workspace_id=workspace.id, title="Task")
     server = McpServer(
@@ -884,6 +887,11 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
             run_id=run.id,
             allowed_tools=("generate_image",),
             tool_definitions=(_mcp_definition(server, allow),),
+            runtime_binding=AgentRuntimeExecutionBinding(
+                mode="team_runtime",
+                workspace_runtime_id=runtime.id,
+                runtime_space_id=None,
+            ),
         ),
         tool_name="generate_image",
         arguments={"prompt": "mountain"},
@@ -899,9 +907,7 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
         "package": "mcp",
         "entrypoint": "mcp.client.stdio.stdio_client",
     }
-    assert job.request_payload["environment_refs"] == {
-        "MCP_IMAGE_API_KEY": "MCP_IMAGE_API_KEY"
-    }
+    assert job.request_payload["environment_refs"] == {"MCP_IMAGE_API_KEY": "MCP_IMAGE_API_KEY"}
     assert "runtime-secret" not in str(job.request_payload)
     assert job.request_payload["request"] == {
         "contract_version": 1,
@@ -928,6 +934,8 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
         name="team-runtime",
         docker_container_id="container-123",
         limits={"timeout_seconds": 11},
+        status="running",
+        connection_status="online",
     )
     task = Task(workspace_id=workspace.id, title="Task")
     server = McpServer(
@@ -939,9 +947,7 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
     session.add_all([runtime, task, server])
     session.flush()
     secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
-    encrypted = secret_service.encrypt_payload(
-        {"env": {"MCP_IMAGE_API_KEY": "runtime-secret"}}
-    )
+    encrypted = secret_service.encrypt_payload({"env": {"MCP_IMAGE_API_KEY": "runtime-secret"}})
     credential = McpCredentialReference(
         workspace_id=workspace.id,
         mcp_server_id=server.id,
@@ -1003,6 +1009,11 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
             run_id=run.id,
             allowed_tools=("generate_image",),
             tool_definitions=(_mcp_definition(server, allow),),
+            runtime_binding=AgentRuntimeExecutionBinding(
+                mode="team_runtime",
+                workspace_runtime_id=runtime.id,
+                runtime_space_id=None,
+            ),
         ),
         tool_name="generate_image",
         arguments={"prompt": "mountain"},
@@ -1153,6 +1164,7 @@ def _set_mcp_snapshot(
                     "mcp_server_id": str(server.id),
                     "mcp_tool_allowlist_id": str(allow.id),
                     "mcp_server_name": server.name,
+                    "mcp_server_type": server.server_type,
                     "policy": allow.policy,
                     "required_resource_type": None,
                     "required_access_modes": [],

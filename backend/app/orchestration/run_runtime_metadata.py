@@ -42,6 +42,7 @@ class RunRuntimeMetadataBuilder:
             "authorization_snapshot_version": authorization_snapshot.get("version"),
             "authorization_snapshot_fingerprint": authorization_snapshot.get("fingerprint"),
             "capability_catalog_fingerprint": _catalog_fingerprint(authorization_snapshot),
+            "runtime_binding": _runtime_binding_metadata(authorization_snapshot),
         }
         metadata.update(self._authorization.step_context_for_run(run))
         metadata.update(self._context_provider.mailbox_context_for_run(run, task, profile))
@@ -56,3 +57,20 @@ def _catalog_fingerprint(snapshot: dict[str, object]) -> str | None:
         return None
     fingerprint = catalog.get("fingerprint")
     return fingerprint if isinstance(fingerprint, str) else None
+
+
+def _runtime_binding_metadata(snapshot: dict[str, object]) -> dict[str, object]:
+    binding = snapshot.get("runtime_binding")
+    if not isinstance(binding, dict):
+        return {}
+    return {
+        key: binding.get(key)
+        for key in (
+            "mode",
+            "workspace_runtime_id",
+            "runtime_space_id",
+            "capability_resource_ids",
+            "network_disabled",
+            "file_access_scope",
+        )
+    }

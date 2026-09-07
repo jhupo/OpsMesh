@@ -34,6 +34,16 @@ class AgentRuntimeResourceGrant:
 
 
 @dataclass(frozen=True)
+class AgentRuntimeExecutionBinding:
+    mode: str
+    workspace_runtime_id: UUID | None
+    runtime_space_id: UUID | None
+    capability_resource_ids: tuple[UUID, ...] = ()
+    network_disabled: bool = False
+    allowed_file_ids: tuple[UUID, ...] = ()
+
+
+@dataclass(frozen=True)
 class AgentRuntimeContext:
     workspace_id: UUID
     task_id: UUID | None
@@ -43,6 +53,7 @@ class AgentRuntimeContext:
     tool_definitions: tuple[AgentRuntimeToolDefinition, ...] = ()
     resource_grants: tuple[AgentRuntimeResourceGrant, ...] = ()
     file_scope_ids: tuple[UUID, ...] = ()
+    runtime_binding: AgentRuntimeExecutionBinding | None = None
     metadata: dict[str, object] = field(default_factory=dict)
 
 

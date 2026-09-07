@@ -85,6 +85,7 @@ class CapabilityToolDescriptor(BaseModel):
     mcp_server_id: UUID | None = None
     mcp_tool_allowlist_id: UUID | None = None
     mcp_server_name: str | None = None
+    mcp_server_type: str | None = None
     policy: dict[str, object] = Field(default_factory=dict)
     required_resource_type: ResourceType | None = None
     required_access_modes: list[ResourceAccessMode] = Field(default_factory=list)

@@ -32,7 +32,12 @@ User and workspace isolation is mandatory. The product must enforce isolation ac
 
 6. Runtime Control Plane
 
-   API services persist runtime intent and enqueue runtime-control work. Workers execute Docker-backed isolated runtimes for executable agent work: they create containers, apply resource limits, control mounts and network policy, execute approved commands inside containers, collect artifacts, and clean up runtime resources. See [Backend Runtime Control Plane](backend-runtime-control-plane.md).
+   API services persist runtime intent and enqueue runtime-control work. Workers provision and
+   operate Docker-backed isolated runtimes, apply hardening and limits, enforce frozen placement
+   and network policy, route approved stdio MCP calls, and record lifecycle and cleanup evidence.
+   Workspace file bytes remain behind the product gateway unless an explicit staging workflow
+   copies them into a controlled runtime root. See
+   [Runtime Control Plane](backend-runtime-control-plane.md).
 
 7. Cloud Control Plane
 
@@ -124,32 +129,45 @@ draft -> queued -> planning -> running -> waiting_approval -> running -> complet
 Current durable workflow:
 
 1. User creates a task in a workspace.
-2. The API computes the Agent/team effective capability catalog, freezes it into authorization
-   snapshot v2 with nested fingerprints, persists run intent, and enqueues an idempotent Redis job.
-3. A worker claims the job under a lease and loads workspace-scoped configuration from Postgres.
-4. Provider readiness, pricing, budget, capability, and approval policies fail closed before side effects.
-5. Manager and specialist agents execute through the agent runtime and durable handoff state.
+2. The orchestrator computes the Agent/team effective capability catalog and resolves an exact
+   runtime binding covering concrete runtime, runtime space, network policy, resource provenance,
+   and gateway-only file scope.
+3. Authorization snapshot v2 freezes both contracts; the scheduler reserves capacity in the
+   selected runtime space before persisting and enqueueing the run.
+4. A worker claims the job under a lease, verifies snapshot integrity, and rechecks live runtime,
+   runtime-space, resource, provider, pricing, and budget state before side effects.
+5. Manager and specialist agents execute through the Agent runtime and durable handoff state.
 6. The model receives only frozen tool descriptors. Product and MCP calls cross the Agent execution
    gateway for schema, locked-parameter, resource-scope, live-status, provenance, and approval checks.
-7. Human approvals persist a wait state; an approved run is requeued instead of resumed inside the API request.
-8. The worker stores output, artifacts, run events, audit hashes, and model usage costs before acknowledging the job.
-9. API and worker logs and traces share W3C trace context; Prometheus exposes application and governance metrics.
+7. stdio MCP calls can run only on the concrete active runtime frozen into the run; remote MCP and
+   product tools stay on their dedicated routes.
+8. Human approvals persist a wait state; an approved run is requeued instead of resumed inside the API request.
+9. The worker stores output, artifacts, run events, audit hashes, and model usage costs before acknowledging the job and releasing reservations.
+10. API and worker logs and traces share W3C trace context; Prometheus exposes application and governance metrics.
 
 ```mermaid
 flowchart LR
-    A[Agent and team policy] --> B[Effective capability catalog]
-    R[Workspace resources] --> B
-    M[MCP allowlist] --> B
-    B --> S[Run authorization snapshot v2]
-    S --> D[SDK tool definitions]
-    D --> L[Model tool call]
-    L --> G[Agent execution gateway]
+    I[Identity and tokens] --> A[API access gateway]
+    A --> O[Task orchestration]
+    P[Agent and team policy] --> C[Effective capability catalog]
+    R[Workspace resources] --> C
+    M[MCP allowlist] --> C
+    O --> C
+    C --> B[Runtime authorization<br/>placement / network / file scope]
+    B --> S[Authorization snapshot v2]
+    S --> Q[Scheduler and quota reservation]
+    Q --> W[Worker preflight]
+    W --> D[Agent SDK tool definitions]
+    D --> G[Agent execution gateway]
     S --> G
-    G --> P[Product tool service]
-    G --> X[MCP execution service]
-    G --> E[Run and security evidence]
-    P --> E
-    X --> E
+    G --> T[Product tools]
+    G --> X[Remote MCP]
+    G --> Z[stdio MCP router]
+    Z --> K[Managed Docker runtime]
+    Z --> H[Self-hosted runtime]
+    G --> E[Run / security / audit evidence]
+    K --> E
+    H --> E
 ```
 
 The orchestrator, not the model, owns durable state transitions. Models may propose plans and actions, but the service validates and persists them.

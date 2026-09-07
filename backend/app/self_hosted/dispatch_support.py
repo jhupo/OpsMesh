@@ -7,6 +7,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import string_list
+from backend.app.orchestration.run_request_authorization import RunAuthorizationService
+from backend.app.orchestration.run_runtime_authorization import RunRuntimeAuthorizationService
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.models import RuntimeSpace
 from backend.app.runtime_spaces.reservation_attachment import (
@@ -20,8 +22,9 @@ from backend.app.self_hosted.models import (
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
-from backend.app.self_hosted.policy import evaluate_worker_job_policy
+from backend.app.self_hosted.policy import WorkerJobPolicyDecision, evaluate_worker_job_policy
 from backend.app.self_hosted.types import AuthenticatedWorker
+from backend.app.tasks.models import Task
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 
@@ -38,9 +41,35 @@ class SelfHostedWorkerEligibilityService:
             raise ValueError("Self-hosted runtime is degraded")
 
     def can_accept_run(self, auth: AuthenticatedWorker, run: AgentRun) -> bool:
+        try:
+            self.require_run_authorized(run)
+        except ValueError:
+            return False
         if not self.runtime_space_allowed(auth, run):
             return False
-        return self.job_policy_decision(auth, run).allowed
+        return bool(self.job_policy_decision(auth, run).allowed)
+
+    def require_run_authorized(self, run: AgentRun, *, full: bool = False) -> None:
+        run_input = run.input if isinstance(run.input, dict) else {}
+        snapshot = run_input.get("authorization_snapshot")
+        if not isinstance(snapshot, dict):
+            return
+        task = self._session.get(Task, run.task_id) if run.task_id is not None else None
+        if task is not None and task.workspace_id != run.workspace_id:
+            task = None
+        if full:
+            RunAuthorizationService(self._session).validate_authorization_snapshot(
+                run,
+                task,
+                None,
+                snapshot,
+            )
+            return
+        RunRuntimeAuthorizationService(self._session).validate_for_run(
+            run=run,
+            task=task,
+            snapshot=snapshot,
+        )
 
     def can_accept_mcp_job(self, auth: AuthenticatedWorker, job: SelfHostedMcpJob) -> bool:
         allowed_tools = string_list(auth.worker.capabilities.get("allowed_tools"))
@@ -57,7 +86,11 @@ class SelfHostedWorkerEligibilityService:
         allowed_ids = string_list(auth.worker.capabilities.get("allowed_runtime_space_ids"))
         return runtime_space_id in allowed_ids
 
-    def job_policy_decision(self, auth: AuthenticatedWorker, run: AgentRun):
+    def job_policy_decision(
+        self,
+        auth: AuthenticatedWorker,
+        run: AgentRun,
+    ) -> WorkerJobPolicyDecision:
         runtime_space = (
             self._session.get(RuntimeSpace, run.runtime_space_id)
             if run.runtime_space_id is not None

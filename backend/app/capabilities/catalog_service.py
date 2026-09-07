@@ -46,6 +46,7 @@ class WorkspaceCapabilityCatalogService:
                 mcp_server_id=server.id,
                 mcp_tool_allowlist_id=allow.id,
                 mcp_server_name=server.name,
+                mcp_server_type=server.server_type,
                 policy=allow.policy,
             )
             for allow, server in mcp_tools

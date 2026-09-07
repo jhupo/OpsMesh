@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_resource_reservations import RunResourceReservationService
-from backend.app.orchestration.run_team_runtime import RunTeamRuntimeResolver
+from backend.app.orchestration.run_runtime_authorization import (
+    RunRuntimeAuthorizationError,
+    runtime_binding_for_snapshot,
+)
 from backend.app.orchestration.scheduler import WorkspaceScheduler
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
@@ -39,7 +42,13 @@ class RunStepLauncher:
     step_has_active_run: StepHasActiveRun
     team_scheduler_policy: TeamSchedulerPolicy
 
-    def create_run_for_step(self, task: Task, step: TaskStep) -> AgentRun:
+    def create_run_for_step(
+        self,
+        task: Task,
+        step: TaskStep,
+        *,
+        authorization_snapshot: dict[str, object] | None = None,
+    ) -> AgentRun:
         profile = (
             self.session.get(AgentProfile, step.assigned_agent_profile_id)
             if step.assigned_agent_profile_id is not None
@@ -49,19 +58,28 @@ class RunStepLauncher:
             task.team_snapshot,
             step.assigned_agent_profile_id,
         )
-        authorization_snapshot = self.build_authorization_snapshot(
-            task,
-            step,
-            profile,
-            agent_snapshot,
+        if authorization_snapshot is None:
+            authorization_snapshot = self.build_authorization_snapshot(
+                task,
+                step,
+                profile,
+                agent_snapshot,
+            )
+        runtime_binding = runtime_binding_for_snapshot(
+            authorization_snapshot,
+            workspace_id=task.workspace_id,
         )
         run = AgentRun(
             workspace_id=task.workspace_id,
             task_id=task.id,
             task_step_id=step.id,
             agent_profile_id=step.assigned_agent_profile_id,
-            runtime_id=RunTeamRuntimeResolver(self.session).runtime_id_for_task(task),
-            runtime_space_id=step.runtime_space_id or task.runtime_space_id,
+            runtime_id=(
+                runtime_binding.workspace_runtime_id if runtime_binding is not None else None
+            ),
+            runtime_space_id=(
+                runtime_binding.runtime_space_id if runtime_binding is not None else None
+            ),
             status=RunStatus.QUEUED.value,
             input={
                 "task_id": str(task.id),
@@ -100,29 +118,96 @@ class RunStepLauncher:
         if step not in member_capacity_decision.runnable_steps:
             return None
 
+        try:
+            authorization_snapshot = self._authorization_snapshot(task, step)
+            runtime_binding = runtime_binding_for_snapshot(
+                authorization_snapshot,
+                workspace_id=task.workspace_id,
+            )
+        except RunRuntimeAuthorizationError as exc:
+            self.mark_step_scheduling_blocked(
+                step,
+                "runtime_authorization_blocked",
+                {
+                    "error_type": type(exc).__name__,
+                    "code": exc.code,
+                    "message": str(exc),
+                },
+            )
+            return None
+        except ValueError as exc:
+            self._mark_model_provider_blocked(task, step, exc)
+            return None
+
         reservation_service = self._reservations()
-        reservations = reservation_service.reserve_for_step(task, step)
+        reservations = reservation_service.reserve_for_step(
+            task,
+            step,
+            runtime_space_id=(
+                runtime_binding.runtime_space_id if runtime_binding is not None else None
+            ),
+        )
         if reservations is None:
             return None
         try:
-            run = self.create_run_for_step(task, step)
-        except ValueError as exc:
+            run = self.create_run_for_step(
+                task,
+                step,
+                authorization_snapshot=authorization_snapshot,
+            )
+        except RunRuntimeAuthorizationError as exc:
             reservation_service.release_bundle(reservations, released_at=exc_timestamp())
             self.mark_step_scheduling_blocked(
                 step,
-                "model_provider_unavailable",
+                "runtime_authorization_blocked",
                 {
                     "error_type": type(exc).__name__,
+                    "code": exc.code,
                     "message": str(exc),
-                    "model_provider": self.model_provider_blocked_details(
-                        task.workspace_id,
-                        step,
-                    ),
                 },
             )
             return None
         reservation_service.attach_to_run(reservations, run)
         return run
+
+    def _authorization_snapshot(
+        self,
+        task: Task,
+        step: TaskStep,
+    ) -> dict[str, object]:
+        profile = (
+            self.session.get(AgentProfile, step.assigned_agent_profile_id)
+            if step.assigned_agent_profile_id is not None
+            else None
+        )
+        return self.build_authorization_snapshot(
+            task,
+            step,
+            profile,
+            team_snapshot_agent_for_profile(
+                task.team_snapshot,
+                step.assigned_agent_profile_id,
+            ),
+        )
+
+    def _mark_model_provider_blocked(
+        self,
+        task: Task,
+        step: TaskStep,
+        exc: ValueError,
+    ) -> None:
+        self.mark_step_scheduling_blocked(
+            step,
+            "model_provider_unavailable",
+            {
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+                "model_provider": self.model_provider_blocked_details(
+                    task.workspace_id,
+                    step,
+                ),
+            },
+        )
 
     def lock_step_for_scheduling(self, task: Task, step: TaskStep) -> TaskStep | None:
         locked_step = self.session.scalar(
