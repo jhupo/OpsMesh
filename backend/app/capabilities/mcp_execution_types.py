@@ -29,6 +29,7 @@ class McpExecutionRequest:
     arguments: dict[str, object]
     mcp_server_id: UUID | None = None
     runtime_allowed_tools: tuple[str, ...] | None = None
+    approval_granted: bool = False
 
 
 @dataclass(frozen=True)

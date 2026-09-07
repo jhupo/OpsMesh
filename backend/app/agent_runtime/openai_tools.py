@@ -31,6 +31,38 @@ class OpenAIToolBridge:
         definition: AgentRuntimeToolDefinition,
         executor: AgentRuntimeToolExecutor,
     ) -> Any:
+        approval_reviews: dict[str, dict[str, object]] = {}
+
+        async def needs_approval(
+            ctx: Any,
+            arguments: dict[str, Any],
+            call_id: str,
+        ) -> bool:
+            reviewer = getattr(executor, "review_tool_call", None)
+            if callable(reviewer):
+                review = reviewer(
+                    context=ctx.context,
+                    tool_name=definition.name,
+                    arguments=arguments,
+                )
+            else:
+                review = {
+                    "decision": "require_approval"
+                    if definition.requires_approval
+                    else "allow",
+                    "risk_level": definition.risk_level,
+                    "reasons": ["tool.manifest.requires_approval"]
+                    if definition.requires_approval
+                    else ["tool.manifest.auto_allow"],
+                }
+            if not isinstance(review, dict):
+                raise ValueError("Tool approval review must return a mapping")
+            approval_reviews[call_id] = dict(review)
+            decision = review.get("decision")
+            if decision == "deny":
+                raise ValueError(f"Tool {definition.name} was denied by policy")
+            return decision == "require_approval"
+
         async def invoke_tool(ctx: ToolContext[Any], raw_arguments: str) -> dict[str, object]:
             try:
                 parsed = json.loads(raw_arguments)
@@ -45,11 +77,20 @@ class OpenAIToolBridge:
                     "tool_name": definition.name,
                     "status": "failed",
                 }
-            result = executor.execute_tool(
-                context=ctx.context,
-                tool_name=definition.name,
-                arguments=parsed,
-            )
+            sdk_executor = getattr(executor, "execute_sdk_tool", None)
+            if callable(sdk_executor):
+                result = sdk_executor(
+                    context=ctx.context,
+                    tool_name=definition.name,
+                    arguments=parsed,
+                    tool_call_id=ctx.tool_call_id,
+                )
+            else:
+                result = executor.execute_tool(
+                    context=ctx.context,
+                    tool_name=definition.name,
+                    arguments=parsed,
+                )
             if result.status == "completed":
                 return tool_response_with_metadata(
                     tool_name=definition.name,
@@ -68,14 +109,18 @@ class OpenAIToolBridge:
                 "metadata": result.metadata,
             }
 
-        return FunctionTool(
+        tool = FunctionTool(
             name=definition.name,
             description=definition.description,
             params_json_schema=dict(definition.input_schema),
             on_invoke_tool=invoke_tool,
             strict_json_schema=False,
             tool_input_guardrails=[tool_provenance_guardrail(definition.name)],
+            needs_approval=needs_approval,
         )
+        tool._opsmesh_tool_kind = definition.source
+        tool._opsmesh_approval_reviews = approval_reviews
+        return tool
 
 
 def safe_tool_function_name(tool_name: str) -> str:

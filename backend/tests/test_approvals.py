@@ -12,8 +12,16 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.agent_runtime.contracts import (
+    AgentRuntimeContext,
+    AgentRuntimeInterruption,
+    AgentRuntimeResumeState,
+)
+from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.api.pagination import PageParams
+from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
 from backend.app.approvals.decisions import ApprovalDecisionService
+from backend.app.approvals.models import Approval, PendingToolInvocation
 from backend.app.approvals.pending_tools import (
     PendingToolInvocationRequest,
     PendingToolInvocationService,
@@ -287,6 +295,89 @@ def test_pending_tool_invocation_rejects_idempotency_key_reuse() -> None:
 
     with pytest.raises(ValueError, match="another tool invocation"):
         service.create_or_get(replace(request, arguments={"filename": "different.txt"}))
+
+
+def test_approved_sdk_tool_invocation_is_resumable_and_executes_once() -> None:
+    session = _session()
+    user, workspace, task, run = _seed_run(session)
+    secrets = SecretEncryptionService(secret="pending-tool-secret", key_id="test-key")
+    AgentRunStateStore(session, secrets).save(
+        workspace_id=workspace.id,
+        run_id=run.id,
+        state=AgentRuntimeResumeState(
+            provider="openai_agents",
+            serialized_state='{"$schemaVersion":"1.10"}',
+        ),
+    )
+    context = AgentRuntimeContext(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        run_id=run.id,
+    )
+    AgentToolInterruptionService(session, secrets).persist(
+        context=context,
+        requested_by_agent_profile_id=None,
+        interruptions=(
+            AgentRuntimeInterruption(
+                tool_call_id="call-approved",
+                tool_name="write_artifact",
+                tool_kind="product",
+                arguments={"filename": "result.txt", "content": "private-value"},
+                policy_decision={
+                    "decision": "require_approval",
+                    "risk_level": "high",
+                    "token": "must-not-leak",
+                },
+            ),
+        ),
+    )
+    session.commit()
+    approval = session.query(Approval).one()
+    invocation = session.query(PendingToolInvocation).one()
+    queue = _queue()
+
+    ApprovalDecisionService(session, queue, secrets).approve(approval, user.id, "approved")
+    decisions = PendingToolInvocationService(session, secrets).decisions_for_run(
+        workspace_id=workspace.id,
+        run_id=run.id,
+    )
+    claimed, cached = PendingToolInvocationService(session, secrets).claim_execution(
+        workspace_id=workspace.id,
+        run_id=run.id,
+        tool_call_id="call-approved",
+        tool_name="write_artifact",
+        arguments={"filename": "result.txt", "content": "private-value"},
+    )
+
+    assert cached is None
+    assert decisions[0].tool_call_id == "call-approved"
+    assert decisions[0].status == "approved"
+    assert approval.payload["pending_tool_invocation_id"] == str(invocation.id)
+    assert approval.payload["policy_decision"]["token"] == "[redacted]"
+    assert "private-value" not in invocation.encrypted_arguments
+    assert claimed.attempt_count == 1
+    PendingToolInvocationService(session, secrets).complete_execution(
+        claimed,
+        {
+            "status": "completed",
+            "output": {"artifact_id": "artifact-1"},
+            "error": None,
+            "metadata": {},
+        },
+    )
+
+    replay, cached = PendingToolInvocationService(session, secrets).claim_execution(
+        workspace_id=workspace.id,
+        run_id=run.id,
+        tool_call_id="call-approved",
+        tool_name="write_artifact",
+        arguments={"filename": "result.txt", "content": "private-value"},
+    )
+
+    assert replay.attempt_count == 1
+    assert cached is not None
+    assert cached["output"] == {"artifact_id": "artifact-1"}
+    assert queue.dequeue() is not None
 
 
 def _seed_run(session: Session) -> tuple[User, Workspace, Task, AgentRun]:

@@ -16,11 +16,12 @@ from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeEvent,
+    AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
 from backend.app.agent_runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
 from backend.app.agents.models import AgentProfile
-from backend.app.approvals.models import Approval
+from backend.app.approvals.models import Approval, PendingToolInvocation
 from backend.app.audit.models import AuditEvent
 from backend.app.capabilities.models import (
     McpCredentialReference,
@@ -217,6 +218,18 @@ def test_worker_persists_interrupted_sdk_state_for_resume() -> None:
                     schema_version="1.10",
                     sdk_version="0.17.2",
                 ),
+                interruptions=(
+                    AgentRuntimeInterruption(
+                        tool_call_id="call-worker-persisted",
+                        tool_name="write_artifact",
+                        tool_kind="product",
+                        arguments={"content": "tool-argument-secret"},
+                        policy_decision={
+                            "decision": "require_approval",
+                            "risk_level": "high",
+                        },
+                    ),
+                ),
             )
 
     session = _session()
@@ -255,6 +268,8 @@ def test_worker_persists_interrupted_sdk_state_for_resume() -> None:
         )
     )
     restored_request = _build_agent_request(session, run, job)
+    approval = session.query(Approval).one()
+    invocation = session.query(PendingToolInvocation).one()
 
     assert run.status == RunStatus.WAITING_APPROVAL.value
     assert task.status == TaskStatus.WAITING_APPROVAL.value
@@ -263,6 +278,10 @@ def test_worker_persists_interrupted_sdk_state_for_resume() -> None:
     assert "state-secret" not in snapshot.encrypted_state
     assert restored_request.resume_state is not None
     assert "state-secret" in restored_request.resume_state.serialized_state
+    assert approval.payload["tool_call_id"] == "call-worker-persisted"
+    assert approval.payload["pending_tool_invocation_id"] == str(invocation.id)
+    assert invocation.status == "pending"
+    assert "tool-argument-secret" not in invocation.encrypted_arguments
 
 
 def test_worker_executes_openai_agents_runner_through_control_plane(

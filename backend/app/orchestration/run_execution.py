@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.agent_runtime.contracts import AgentRunner
 from backend.app.agent_runtime.factory import build_agent_runner
 from backend.app.agent_runtime.state_store import AgentRunStateStore
+from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
 from backend.app.core.config import Settings, get_settings
 from backend.app.model_providers.service_models import ModelProviderUnavailableError
 from backend.app.orchestration.model_run_gateway import ModelRunGateway
@@ -93,6 +94,14 @@ class RunExecutionService:
                     workspace_id=run.workspace_id,
                     run_id=run.id,
                     state=result.resume_state,
+                )
+                AgentToolInterruptionService(
+                    self.session,
+                    self._request_builder().secret_service(),
+                ).persist(
+                    context=request.context,
+                    requested_by_agent_profile_id=run.agent_profile_id,
+                    interruptions=result.interruptions,
                 )
                 self._lifecycle().mark_run_waiting_approval(run)
                 self._commit_and_refresh(run)

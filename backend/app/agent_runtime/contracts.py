@@ -84,6 +84,23 @@ class AgentRuntimeResumeState:
 
 
 @dataclass(frozen=True)
+class AgentRuntimeApprovalDecision:
+    tool_call_id: str
+    tool_name: str
+    status: str
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class AgentRuntimeInterruption:
+    tool_call_id: str
+    tool_name: str
+    tool_kind: str
+    arguments: dict[str, object]
+    policy_decision: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class AgentRuntimeToolContinuation:
     tool_name: str
     status: str
@@ -121,6 +138,7 @@ class AgentRunRequest:
     conversation_id: str | None = None
     tracing: AgentRunTracing | None = None
     resume_state: AgentRuntimeResumeState | None = None
+    approval_decisions: tuple[AgentRuntimeApprovalDecision, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -136,6 +154,7 @@ class AgentRunResult:
     raw_output: object | None = None
     events: tuple[AgentRuntimeEvent, ...] = ()
     resume_state: AgentRuntimeResumeState | None = None
+    interruptions: tuple[AgentRuntimeInterruption, ...] = ()
 
 
 class AgentRunner(Protocol):

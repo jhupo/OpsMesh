@@ -74,62 +74,65 @@ class McpToolExecutionService:
             max_calls_per_run=policy.max_calls_per_run,
             max_calls_per_hour=policy.max_calls_per_hour,
         )
-        execution_review = ToolExecutionReviewService(
-            self._session,
-            self._settings,
-        ).review_mcp_tool_call(
-            workspace_id=request.workspace_id,
-            tool_name=request.tool_name,
-            arguments=request.arguments,
-            allowlist_policy=allow.policy,
-            allowlist_risk_level=allow.risk_level,
-            requires_approval=allow.requires_approval,
-            context={
-                "agent_run_id": str(run.id),
-                "task_id": str(run.task_id) if run.task_id is not None else None,
-                "task_step_id": str(run.task_step_id) if run.task_step_id is not None else None,
-                "agent_profile_id": str(run.agent_profile_id)
-                if run.agent_profile_id is not None
-                else None,
-                "mcp_server_id": str(server.id),
-                **snapshot_audit_metadata(snapshot),
-            },
-        )
-        if not execution_review.approved:
-            review_reason = (
-                "mcp_tool_requires_approval"
-                if allow.requires_approval
-                else "mcp_tool_execution_review_requires_approval"
+        if not request.approval_granted:
+            execution_review = ToolExecutionReviewService(
+                self._session,
+                self._settings,
+            ).review_mcp_tool_call(
+                workspace_id=request.workspace_id,
+                tool_name=request.tool_name,
+                arguments=request.arguments,
+                allowlist_policy=allow.policy,
+                allowlist_risk_level=allow.risk_level,
+                requires_approval=allow.requires_approval,
+                context={
+                    "agent_run_id": str(run.id),
+                    "task_id": str(run.task_id) if run.task_id is not None else None,
+                    "task_step_id": str(run.task_step_id)
+                    if run.task_step_id is not None
+                    else None,
+                    "agent_profile_id": str(run.agent_profile_id)
+                    if run.agent_profile_id is not None
+                    else None,
+                    "mcp_server_id": str(server.id),
+                    **snapshot_audit_metadata(snapshot),
+                },
             )
-            return self._approval_requester().request(
-                request,
-                run,
-                allow,
-                server,
-                reason=review_reason,
-                execution_review=execution_review,
-            )
-        if allow.requires_approval:
-            return self._approval_requester().request(
-                request,
-                run,
-                allow,
-                server,
-                reason="mcp_tool_requires_approval",
-                execution_review=execution_review,
-            )
-        if (
-            _is_high_risk_tool(allow)
-            and policy_decision.high_risk_tool_mode == "require_workspace_approval"
-        ):
-            return self._approval_requester().request(
-                request,
-                run,
-                allow,
-                server,
-                reason="mcp_high_risk_tool_requires_approval",
-                execution_review=execution_review,
-            )
+            if not execution_review.approved:
+                review_reason = (
+                    "mcp_tool_requires_approval"
+                    if allow.requires_approval
+                    else "mcp_tool_execution_review_requires_approval"
+                )
+                return self._approval_requester().request(
+                    request,
+                    run,
+                    allow,
+                    server,
+                    reason=review_reason,
+                    execution_review=execution_review,
+                )
+            if allow.requires_approval:
+                return self._approval_requester().request(
+                    request,
+                    run,
+                    allow,
+                    server,
+                    reason="mcp_tool_requires_approval",
+                    execution_review=execution_review,
+                )
+            if (
+                _is_high_risk_tool(allow)
+                and policy_decision.high_risk_tool_mode == "require_workspace_approval"
+            ):
+                return self._approval_requester().request(
+                    request,
+                    run,
+                    allow,
+                    server,
+                    reason="mcp_high_risk_tool_requires_approval",
+                    execution_review=execution_review,
+                )
 
         return McpToolInvoker(self._session, self._adapter_or_resolver).invoke(
             request=request,

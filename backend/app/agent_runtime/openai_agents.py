@@ -69,6 +69,7 @@ class OpenAIAgentsRunner:
             raw_output=self._result_mapper.safe_raw_output(result),
             events=tuple(self._result_mapper.runtime_events(result)),
             resume_state=self._result_mapper.resume_state(result),
+            interruptions=tuple(self._result_mapper.interruptions(result)),
         )
 
     async def _runner_input(
@@ -86,12 +87,30 @@ class OpenAIAgentsRunner:
             raise ValueError("Stored OpenAI Agents run state is not valid JSON") from exc
         if not isinstance(state_payload, dict):
             raise ValueError("Stored OpenAI Agents run state must be a JSON object")
-        return await RunState.from_json(
+        state = await RunState.from_json(
             initial_agent=agent,
             state_json=state_payload,
             context_override=RunContextWrapper(context=request.context),
             strict_context=True,
         )
+        if not request.approval_decisions:
+            return state
+        interruptions = {
+            (item.call_id, item.name): item
+            for item in state.get_interruptions()
+            if item.call_id is not None and item.name is not None
+        }
+        for decision in request.approval_decisions:
+            interruption = interruptions.get((decision.tool_call_id, decision.tool_name))
+            if interruption is None:
+                raise ValueError("Stored approval decision does not match the SDK interruption")
+            if decision.status == "approved":
+                state.approve(interruption)
+            elif decision.status == "rejected":
+                state.reject(interruption, rejection_message=decision.reason)
+            else:
+                raise ValueError("Stored tool approval decision is invalid")
+        return state
 
     def _build_agent(self, request: AgentRunRequest) -> Agent[Any]:
         profile = request.agent_profile

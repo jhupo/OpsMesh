@@ -7,6 +7,7 @@ from agents import __version__ as agents_sdk_version
 
 from backend.app.agent_runtime.contracts import (
     AgentRuntimeEvent,
+    AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
 from backend.app.security.redaction import redact_sensitive_payload
@@ -68,6 +69,36 @@ class OpenAIAgentsResultMapper:
             schema_version=str(schema_version) if schema_version is not None else None,
             sdk_version=agents_sdk_version,
         )
+
+    def interruptions(self, result: Any) -> list[AgentRuntimeInterruption]:
+        mapped: list[AgentRuntimeInterruption] = []
+        for item in getattr(result, "interruptions", ()) or ():
+            call_id = getattr(item, "call_id", None)
+            tool_name = getattr(item, "name", None)
+            raw_arguments = getattr(item, "arguments", None)
+            if not isinstance(call_id, str) or not call_id:
+                raise ValueError("OpenAI Agents interruption is missing a tool call ID")
+            if not isinstance(tool_name, str) or not tool_name:
+                raise ValueError("OpenAI Agents interruption is missing a tool name")
+            try:
+                arguments = json.loads(raw_arguments or "{}")
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise ValueError("OpenAI Agents interruption arguments are invalid") from exc
+            if not isinstance(arguments, dict):
+                raise ValueError("OpenAI Agents interruption arguments must be an object")
+            tool = _interrupted_tool(item, tool_name)
+            reviews = getattr(tool, "_opsmesh_approval_reviews", {})
+            review = reviews.get(call_id, {}) if isinstance(reviews, dict) else {}
+            mapped.append(
+                AgentRuntimeInterruption(
+                    tool_call_id=call_id,
+                    tool_name=tool_name,
+                    tool_kind=str(getattr(tool, "_opsmesh_tool_kind", "unknown")),
+                    arguments=arguments,
+                    policy_decision=dict(review) if isinstance(review, dict) else {},
+                )
+            )
+        return mapped
 
     def runtime_events(self, result: Any) -> list[AgentRuntimeEvent]:
         events: list[AgentRuntimeEvent] = []
@@ -153,3 +184,11 @@ def _serialize_runtime_context(value: object) -> dict[str, object]:
             "allowed_tools": list(getattr(value, "allowed_tools", ())),
         }.items()
     }
+
+
+def _interrupted_tool(item: object, tool_name: str) -> object | None:
+    agent = getattr(item, "agent", None)
+    for tool in getattr(agent, "tools", ()) or ():
+        if getattr(tool, "name", None) == tool_name:
+            return tool
+    return None

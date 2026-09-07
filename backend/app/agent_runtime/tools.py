@@ -3,20 +3,28 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRuntimeContext, AgentRuntimeToolResult
+from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.product_tool_executor import (
     PRODUCT_TOOL_NAMES,
     ProductToolExecutor,
 )
-from backend.app.agent_runtime.tool_gateway import AgentToolGateway, ToolGatewayDenied
+from backend.app.agent_runtime.tool_gateway import (
+    AgentToolGateway,
+    PreparedToolCall,
+    ToolGatewayDenied,
+)
 from backend.app.agent_runtime.tool_mcp_resolver import ContextualMcpAdapterResolver
-from backend.app.agent_runtime.tool_metadata import tool_metadata
+from backend.app.agent_runtime.tool_metadata import product_review_context, tool_metadata
+from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.capabilities.execution import McpToolExecutionService
 from backend.app.capabilities.mcp_execution_adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
 from backend.app.capabilities.mcp_execution_types import McpExecutionRequest
+from backend.app.capabilities.models import McpToolAllowlist
 from backend.app.core.config import Settings
+from backend.app.reviews.tool_execution import ToolExecutionReviewService
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.secrets.service import SecretEncryptionService
 
@@ -80,6 +88,136 @@ class BackendToolExecutor:
                     tool_kind="blocked",
                 ),
             )
+        return self._execute_prepared(
+            context=context,
+            tool_name=tool_name,
+            prepared=prepared,
+            approval_granted=False,
+        )
+
+    def review_tool_call(
+        self,
+        *,
+        context: AgentRuntimeContext,
+        tool_name: str,
+        arguments: dict[str, object],
+    ) -> dict[str, object]:
+        gateway = AgentToolGateway(self._session)
+        try:
+            prepared = gateway.prepare(
+                context=context,
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+        except ToolGatewayDenied as exc:
+            gateway.record_denial(context=context, tool_name=tool_name, denial=exc)
+            raise
+        reviews = ToolExecutionReviewService(self._session, self._settings)
+        if prepared.definition.source == "product":
+            review = reviews.review_product_tool_call(
+                workspace_id=context.workspace_id,
+                tool_name=tool_name,
+                arguments=prepared.arguments,
+                context=product_review_context(context),
+            )
+        elif prepared.definition.source == "mcp":
+            allow = self._mcp_allowlist(prepared)
+            review = reviews.review_mcp_tool_call(
+                workspace_id=context.workspace_id,
+                tool_name=tool_name,
+                arguments=prepared.arguments,
+                allowlist_policy=allow.policy,
+                allowlist_risk_level=allow.risk_level,
+                requires_approval=allow.requires_approval,
+                context={
+                    "agent_run_id": str(context.run_id),
+                    "task_id": str(context.task_id) if context.task_id is not None else None,
+                    "mcp_server_id": str(allow.mcp_server_id),
+                },
+            )
+        else:
+            raise ToolGatewayDenied(
+                "tool_source_invalid",
+                "Tool source does not match an executable adapter",
+            )
+        payload = review.approval_payload()
+        payload["decision"] = (
+            "deny" if review.blocked else "require_approval" if review.required else "allow"
+        )
+        return payload
+
+    def execute_sdk_tool(
+        self,
+        *,
+        context: AgentRuntimeContext,
+        tool_name: str,
+        arguments: dict[str, object],
+        tool_call_id: str,
+    ) -> AgentRuntimeToolResult:
+        prepared = AgentToolGateway(self._session).prepare(
+            context=context,
+            tool_name=tool_name,
+            arguments=arguments,
+        )
+        if self._secret_service is None:
+            return self._execute_prepared(
+                context=context,
+                tool_name=tool_name,
+                prepared=prepared,
+                approval_granted=True,
+            )
+        pending = PendingToolInvocationService(self._session, self._secret_service)
+        invocation = pending.by_run_call(
+            workspace_id=context.workspace_id,
+            run_id=context.run_id,
+            tool_call_id=tool_call_id,
+        )
+        if invocation is None:
+            return self._execute_prepared(
+                context=context,
+                tool_name=tool_name,
+                prepared=prepared,
+                approval_granted=True,
+            )
+        try:
+            invocation, stored = pending.claim_execution(
+                workspace_id=context.workspace_id,
+                run_id=context.run_id,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+        except ValueError as exc:
+            return AgentRuntimeToolResult(
+                status="failed",
+                error={"code": "approved_tool_call_invalid", "message": str(exc)},
+            )
+        if stored is not None:
+            return _tool_result_from_payload(stored)
+        try:
+            result = self._execute_prepared(
+                context=context,
+                tool_name=tool_name,
+                prepared=prepared,
+                approval_granted=True,
+            )
+        except Exception as exc:
+            result = AgentRuntimeToolResult(
+                status="failed",
+                error=normalize_agent_error(exc).as_dict(),
+                metadata={"idempotency_key": invocation.idempotency_key},
+            )
+        pending.complete_execution(invocation, _tool_result_payload(result))
+        return result
+
+    def _execute_prepared(
+        self,
+        *,
+        context: AgentRuntimeContext,
+        tool_name: str,
+        prepared: PreparedToolCall,
+        approval_granted: bool,
+    ) -> AgentRuntimeToolResult:
         if prepared.definition.source == "product" and tool_name in PRODUCT_TOOL_NAMES:
             return ProductToolExecutor(
                 self._session,
@@ -89,13 +227,18 @@ class BackendToolExecutor:
                 tool_name=tool_name,
                 arguments=prepared.arguments,
                 resource_grants=prepared.resource_grants,
+                approval_granted=approval_granted,
             )
         if prepared.definition.source != "mcp":
             denial = ToolGatewayDenied(
                 "tool_source_invalid",
                 "Tool source does not match an executable adapter",
             )
-            gateway.record_denial(context=context, tool_name=tool_name, denial=denial)
+            AgentToolGateway(self._session).record_denial(
+                context=context,
+                tool_name=tool_name,
+                denial=denial,
+            )
             return AgentRuntimeToolResult(
                 status="failed",
                 error={"code": denial.code, "message": str(denial)},
@@ -120,6 +263,7 @@ class BackendToolExecutor:
                 arguments=prepared.arguments,
                 mcp_server_id=prepared.definition.mcp_server_id,
                 runtime_allowed_tools=context.allowed_tools,
+                approval_granted=approval_granted,
             )
         )
         return AgentRuntimeToolResult(
@@ -136,6 +280,16 @@ class BackendToolExecutor:
                 },
             ),
         )
+
+    def _mcp_allowlist(self, prepared: PreparedToolCall) -> McpToolAllowlist:
+        allowlist_id = prepared.definition.mcp_tool_allowlist_id
+        allow = self._session.get(McpToolAllowlist, allowlist_id) if allowlist_id else None
+        if allow is None:
+            raise ToolGatewayDenied(
+                "mcp_tool_allowlist_missing",
+                "MCP tool allowlist entry is unavailable",
+            )
+        return allow
 
 
 class DisabledToolExecutor:
@@ -158,6 +312,27 @@ class DisabledToolExecutor:
                 tool_kind="unavailable",
             ),
         )
+
+
+def _tool_result_payload(result: AgentRuntimeToolResult) -> dict[str, object]:
+    return {
+        "status": result.status,
+        "output": result.output,
+        "error": result.error,
+        "metadata": result.metadata,
+    }
+
+
+def _tool_result_from_payload(payload: dict[str, object]) -> AgentRuntimeToolResult:
+    output = payload.get("output")
+    error = payload.get("error")
+    metadata = payload.get("metadata")
+    return AgentRuntimeToolResult(
+        status=str(payload.get("status") or "failed"),
+        output=dict(output) if isinstance(output, dict) else None,
+        error=dict(error) if isinstance(error, dict) else None,
+        metadata=dict(metadata) if isinstance(metadata, dict) else {},
+    )
 
 
 __all__ = [

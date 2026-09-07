@@ -68,6 +68,7 @@ class ProductToolExecutor:
         tool_name: str,
         arguments: dict[str, object],
         resource_grants: tuple[AgentRuntimeResourceGrant, ...] = (),
+        approval_granted: bool = False,
     ) -> AgentRuntimeToolResult:
         with telemetry_span(
             "opsmesh.product.tool.execute",
@@ -84,6 +85,7 @@ class ProductToolExecutor:
                 tool_name=tool_name,
                 arguments=arguments,
                 resource_grants=resource_grants,
+                approval_granted=approval_granted,
             )
 
     def _execute(
@@ -93,35 +95,16 @@ class ProductToolExecutor:
         tool_name: str,
         arguments: dict[str, object],
         resource_grants: tuple[AgentRuntimeResourceGrant, ...],
+        approval_granted: bool,
     ) -> AgentRuntimeToolResult:
-        execution_review = ToolExecutionReviewService(
-            self._session,
-            self._settings,
-        ).review_product_tool_call(
-            workspace_id=context.workspace_id,
-            tool_name=tool_name,
-            arguments=arguments,
-            context=product_review_context(context),
-        )
-        if not execution_review.approved:
-            self._request_approval(
+        if not approval_granted:
+            waiting = self._review_for_approval(
                 context=context,
                 tool_name=tool_name,
-                execution_review=execution_review,
+                arguments=arguments,
             )
-            return AgentRuntimeToolResult(
-                status="waiting_approval",
-                error=None,
-                metadata=tool_metadata(
-                    context=context,
-                    tool_name=tool_name,
-                    tool_kind="product",
-                    extra={
-                        "review_risk_level": execution_review.risk_level,
-                        "review_reasons": execution_review.reasons,
-                    },
-                ),
-            )
+            if waiting is not None:
+                return waiting
         product_context = ToolContext(
             workspace_id=context.workspace_id,
             agent_run_id=context.run_id,
@@ -159,6 +142,43 @@ class ProductToolExecutor:
                 context=context,
                 tool_name=tool_name,
                 tool_kind="product",
+            ),
+        )
+
+    def _review_for_approval(
+        self,
+        *,
+        context: AgentRuntimeContext,
+        tool_name: str,
+        arguments: dict[str, object],
+    ) -> AgentRuntimeToolResult | None:
+        execution_review = ToolExecutionReviewService(
+            self._session,
+            self._settings,
+        ).review_product_tool_call(
+            workspace_id=context.workspace_id,
+            tool_name=tool_name,
+            arguments=arguments,
+            context=product_review_context(context),
+        )
+        if execution_review.approved:
+            return None
+        self._request_approval(
+            context=context,
+            tool_name=tool_name,
+            execution_review=execution_review,
+        )
+        return AgentRuntimeToolResult(
+            status="waiting_approval",
+            error=None,
+            metadata=tool_metadata(
+                context=context,
+                tool_name=tool_name,
+                tool_kind="product",
+                extra={
+                    "review_risk_level": execution_review.risk_level,
+                    "review_reasons": execution_review.reasons,
+                },
             ),
         )
 

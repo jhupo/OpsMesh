@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from agents import RunContextWrapper
 
 import backend.app.agent_runtime.anthropic_protocol as anthropic_protocol
 import backend.app.agent_runtime.openai_agents as openai_runtime
@@ -12,6 +13,7 @@ from backend.app.agent_runtime.anthropic import AnthropicMessagesRunner
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
+    AgentRuntimeApprovalDecision,
     AgentRuntimeContext,
     AgentRuntimeResumeState,
     AgentRuntimeToolContinuation,
@@ -27,7 +29,7 @@ from backend.app.agent_runtime.openai_results import (
     OpenAIAgentsResultMapper,
     runtime_event_from_sdk_item,
 )
-from backend.app.agent_runtime.openai_tools import runtime_allowed_tools
+from backend.app.agent_runtime.openai_tools import OpenAIToolBridge, runtime_allowed_tools
 from backend.app.agent_runtime.sessions import PersistentAgentSessionRef, SQLAlchemyAgentSession
 from backend.app.agents.models import AgentProfile
 from backend.app.core.config import Settings
@@ -1026,6 +1028,74 @@ def test_openai_agents_runner_restores_sdk_state(
     assert captured["run_args"][1] is restored_state
 
 
+def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    approved: list[object] = []
+
+    class Interruption:
+        call_id = "call-approved"
+        name = "write_artifact"
+
+    interruption = Interruption()
+
+    class State:
+        def get_interruptions(self) -> list[object]:
+            return [interruption]
+
+        def approve(self, item: object) -> None:
+            approved.append(item)
+
+    state = State()
+
+    async def fake_from_json(**_: object) -> State:
+        return state
+
+    async def fake_runner_run(*_: object, **__: object) -> object:
+        class Result:
+            final_output = "resumed"
+            interruptions: list[object] = []
+
+        return Result()
+
+    monkeypatch.setattr(openai_runtime.RunState, "from_json", fake_from_json)
+    monkeypatch.setattr(openai_runtime.Runner, "run", fake_runner_run)
+    profile = AgentProfile(
+        workspace_id=uuid4(),
+        name="Resumer",
+        role="worker",
+        instructions="Resume safely.",
+        model="gpt-4.1",
+        model_settings={},
+    )
+    request = AgentRunRequest(
+        agent_profile=profile,
+        input_text="ignored",
+        context=AgentRuntimeContext(
+            workspace_id=profile.workspace_id,
+            task_id=None,
+            run_id=uuid4(),
+        ),
+        api_key="sk-test",
+        resume_state=AgentRuntimeResumeState(
+            provider="openai_agents",
+            serialized_state='{"$schemaVersion":"1.10"}',
+        ),
+        approval_decisions=(
+            AgentRuntimeApprovalDecision(
+                tool_call_id="call-approved",
+                tool_name="write_artifact",
+                status="approved",
+            ),
+        ),
+    )
+
+    result = asyncio.run(OpenAIAgentsRunner().run(request))
+
+    assert result.final_output == "resumed"
+    assert approved == [interruption]
+
+
 def test_openai_agents_runner_passes_persistent_session_to_sdk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1252,6 +1322,88 @@ def test_openai_agents_runner_tools_include_provenance_guardrail() -> None:
     assert tool.tool_input_guardrails[0].name == (
         "generate_image:runtime_allowed_tool_provenance"
     )
+
+
+def test_openai_tool_bridge_maps_dynamic_sdk_approval_interruption() -> None:
+    calls: list[str] = []
+
+    class Executor:
+        def review_tool_call(self, **_: object) -> dict[str, object]:
+            return {
+                "decision": "require_approval",
+                "risk_level": "high",
+                "reasons": ["tool.arguments.sensitive"],
+            }
+
+        def execute_tool(self, **_: object) -> AgentRuntimeToolResult:
+            raise AssertionError("SDK execution method should be used")
+
+        def execute_sdk_tool(self, *, tool_call_id: str, **_: object) -> AgentRuntimeToolResult:
+            calls.append(tool_call_id)
+            return AgentRuntimeToolResult(status="completed", output={"ok": True})
+
+    profile = AgentProfile(
+        workspace_id=uuid4(),
+        name="Approver",
+        role="worker",
+        instructions="Use tools.",
+        model="gpt-4.1",
+    )
+    context = AgentRuntimeContext(
+        workspace_id=profile.workspace_id,
+        task_id=None,
+        run_id=uuid4(),
+        allowed_tools=("write_artifact",),
+        tool_definitions=(
+            AgentRuntimeToolDefinition(
+                name="write_artifact",
+                source="product",
+                description="Write an artifact.",
+                input_schema={"type": "object"},
+                requires_approval=True,
+                risk_level="high",
+            ),
+        ),
+    )
+    request = AgentRunRequest(
+        agent_profile=profile,
+        input_text="write",
+        context=context,
+        tool_executor=Executor(),
+    )
+    tool = OpenAIToolBridge().tools(request)[0]
+
+    assert callable(tool.needs_approval)
+    required = asyncio.run(
+        tool.needs_approval(
+            RunContextWrapper(context=context),
+            {"content": "private"},
+            "call-dynamic",
+        )
+    )
+
+    item = type("Item", (), {})()
+    item.call_id = "call-dynamic"
+    item.name = "write_artifact"
+    item.arguments = '{"content":"private"}'
+    item.agent = type("AgentStub", (), {"tools": [tool]})()
+    result = type("Result", (), {"interruptions": [item]})()
+
+    interruptions = OpenAIAgentsResultMapper().interruptions(result)
+    tool_context = type(
+        "ToolContextStub",
+        (),
+        {"context": context, "tool_call_id": "call-dynamic"},
+    )()
+    output = asyncio.run(tool.on_invoke_tool(tool_context, item.arguments))
+
+    assert required is True
+    assert interruptions[0].tool_call_id == "call-dynamic"
+    assert interruptions[0].tool_kind == "product"
+    assert interruptions[0].arguments == {"content": "private"}
+    assert interruptions[0].policy_decision["risk_level"] == "high"
+    assert output["ok"] is True
+    assert calls == ["call-dynamic"]
 
 
 def test_openai_agents_runner_tool_provenance_accepts_restored_mapping_context() -> None:

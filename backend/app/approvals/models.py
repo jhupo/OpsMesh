@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -94,3 +94,9 @@ class PendingToolInvocation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    encrypted_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_fingerprint: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    result_encryption_key_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    execution_started_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(nullable=True)

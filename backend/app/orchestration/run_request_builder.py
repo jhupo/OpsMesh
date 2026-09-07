@@ -15,6 +15,7 @@ from backend.app.agent_runtime.sessions import (
 from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.models import AgentProfile
+from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
 from backend.app.core.config import Settings
 from backend.app.runs.models import AgentRun
@@ -193,6 +194,13 @@ class RunRequestBuilder:
                 self.session,
                 self.secret_service(),
             ).load(
+                workspace_id=run.workspace_id,
+                run_id=run.id,
+            ),
+            approval_decisions=PendingToolInvocationService(
+                self.session,
+                self.secret_service(),
+            ).decisions_for_run(
                 workspace_id=run.workspace_id,
                 run_id=run.id,
             ),
