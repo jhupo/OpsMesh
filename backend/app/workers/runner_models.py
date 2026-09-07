@@ -26,6 +26,7 @@ class WorkerRunSummary:
     idle_polls: int
     recovered_runs: int
     expired_leases: int
+    expired_tool_approvals: int
     stale_runtimes: int
     deleted_runtime_records: int
     lifecycle_backup_jobs_enqueued: int

@@ -70,6 +70,36 @@ class AuditService:
         self._session.flush([event])
         return event
 
+    def record_system_action(
+        self,
+        *,
+        workspace_id: UUID,
+        action: str,
+        target_type: str,
+        target_id: UUID | str,
+        metadata: dict[str, object] | None = None,
+        actor_id: str = "opsmesh.worker",
+    ) -> AuditEvent:
+        created_at = datetime.now(UTC)
+        self._lock_workspace(workspace_id)
+        event = AuditEvent(
+            id=uuid4(),
+            workspace_id=workspace_id,
+            actor_type="system",
+            actor_id=actor_id,
+            user_id=None,
+            action=action,
+            target_type=target_type,
+            target_id=str(target_id),
+            audit_metadata=redact_sensitive_payload(metadata or {}),
+            previous_hash=self._latest_hash(workspace_id),
+            created_at=created_at,
+        )
+        event.current_hash = self.calculate_event_hash(event)
+        self._session.add(event)
+        self._session.flush([event])
+        return event
+
     def apply_retention_to_statement(
         self,
         statement: Select[tuple[AuditEvent]],

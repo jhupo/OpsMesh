@@ -2692,8 +2692,9 @@ def test_worker_runner_summary_rolls_up_all_maintenance_counts() -> None:
     runner.run_maintenance = lambda: WorkerMaintenanceSummary(  # type: ignore[method-assign]
         recovered_runs=1,
         expired_leases=2,
-        stale_runtimes=3,
-        deleted_runtime_records=4,
+        expired_tool_approvals=3,
+        stale_runtimes=4,
+        deleted_runtime_records=5,
         lifecycle_backup_jobs_enqueued=5,
         lifecycle_backup_jobs_skipped=6,
         lifecycle_retention_runs_applied=7,
@@ -2722,8 +2723,9 @@ def test_worker_runner_summary_rolls_up_all_maintenance_counts() -> None:
     assert summary.failed == 0
     assert summary.recovered_runs == 1
     assert summary.expired_leases == 2
-    assert summary.stale_runtimes == 3
-    assert summary.deleted_runtime_records == 4
+    assert summary.expired_tool_approvals == 3
+    assert summary.stale_runtimes == 4
+    assert summary.deleted_runtime_records == 5
     assert summary.lifecycle_backup_jobs_enqueued == 5
     assert summary.lifecycle_backup_jobs_skipped == 6
     assert summary.lifecycle_retention_runs_applied == 7
@@ -2751,8 +2753,9 @@ def test_worker_runner_summary_rolls_up_all_maintenance_counts() -> None:
         assert heartbeat is not None
         assert heartbeat.details["recovered_runs"] == 1
         assert heartbeat.details["expired_leases"] == 2
-        assert heartbeat.details["stale_runtimes"] == 3
-        assert heartbeat.details["deleted_runtime_records"] == 4
+        assert heartbeat.details["expired_tool_approvals"] == 3
+        assert heartbeat.details["stale_runtimes"] == 4
+        assert heartbeat.details["deleted_runtime_records"] == 5
         assert heartbeat.details["lifecycle_backup_jobs_enqueued"] == 5
         assert heartbeat.details["lifecycle_backup_jobs_skipped"] == 6
         assert heartbeat.details["lifecycle_retention_runs_applied"] == 7

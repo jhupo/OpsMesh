@@ -14,6 +14,7 @@ class RunStatus(StrEnum):
 ALLOWED_RUN_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
     RunStatus.QUEUED: {RunStatus.RUNNING, RunStatus.FAILED, RunStatus.CANCELLED},
     RunStatus.RUNNING: {
+        RunStatus.QUEUED,
         RunStatus.WAITING_APPROVAL,
         RunStatus.WAITING_RUNTIME,
         RunStatus.COMPLETED,

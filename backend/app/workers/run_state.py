@@ -15,6 +15,7 @@ class WorkerRunState:
     idle_polls: int = 0
     recovered_runs: int = 0
     expired_leases: int = 0
+    expired_tool_approvals: int = 0
     stale_runtimes: int = 0
     deleted_runtime_records: int = 0
     lifecycle_backup_jobs_enqueued: int = 0
@@ -47,6 +48,7 @@ class WorkerRunState:
     def record_maintenance(self, maintenance: WorkerMaintenanceSummary) -> None:
         self.recovered_runs += maintenance.recovered_runs
         self.expired_leases += maintenance.expired_leases
+        self.expired_tool_approvals += maintenance.expired_tool_approvals
         self.stale_runtimes += maintenance.stale_runtimes
         self.deleted_runtime_records += maintenance.deleted_runtime_records
         self.lifecycle_backup_jobs_enqueued += maintenance.lifecycle_backup_jobs_enqueued
@@ -95,6 +97,7 @@ class WorkerRunState:
             idle_polls=self.idle_polls,
             recovered_runs=self.recovered_runs,
             expired_leases=self.expired_leases,
+            expired_tool_approvals=self.expired_tool_approvals,
             stale_runtimes=self.stale_runtimes,
             deleted_runtime_records=self.deleted_runtime_records,
             lifecycle_backup_jobs_enqueued=self.lifecycle_backup_jobs_enqueued,
@@ -128,6 +131,7 @@ class WorkerRunState:
             idle_polls=self.idle_polls,
             recovered_runs=self.recovered_runs,
             expired_leases=self.expired_leases,
+            expired_tool_approvals=self.expired_tool_approvals,
             stale_runtimes=self.stale_runtimes,
             deleted_runtime_records=self.deleted_runtime_records,
             lifecycle_backup_jobs_enqueued=self.lifecycle_backup_jobs_enqueued,

@@ -45,13 +45,16 @@ async def approve(
     if approval is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
     _require_resource_review_admin(context, approval.payload)
-    return ApprovalResponse.model_validate(
-        ApprovalDecisionService(session, queue).approve(
-            approval,
-            context.user.user_id,
-            request.reason,
+    try:
+        return ApprovalResponse.model_validate(
+            ApprovalDecisionService(session, queue).approve(
+                approval,
+                context.user.user_id,
+                request.reason,
+            )
         )
-    )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.post("/{approval_id}/reject", response_model=ApprovalResponse)
@@ -60,14 +63,22 @@ async def reject(
     request: ApprovalDecisionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
     session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> ApprovalResponse:
     approval = ApprovalQueryService(session).get_scoped(context.workspace.id, approval_id)
     if approval is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
     _require_resource_review_admin(context, approval.payload)
-    return ApprovalResponse.model_validate(
-        ApprovalDecisionService(session).reject(approval, context.user.user_id, request.reason)
-    )
+    try:
+        return ApprovalResponse.model_validate(
+            ApprovalDecisionService(session, queue).reject(
+                approval,
+                context.user.user_id,
+                request.reason,
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 def _require_resource_review_admin(context: WorkspaceContext, payload: object) -> None:

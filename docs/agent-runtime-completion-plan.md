@@ -39,7 +39,7 @@ Goal: make every approval path durable, idempotent, and recoverable from the exa
 | 1.2 | P0 | Persist pending tool invocation state, including call ID, tool, arguments, policy decision, and idempotency key | Done | `add-pending-tool-invocation-state` | Encrypted arguments survive restart; workspace scope and unique idempotency binding are enforced |
 | 1.3 | P0 | Persist and restore SDK interruption and `RunState` through the adapter | Done | `add-sdk-run-state-resume` | Encrypted SDK state is stored outside public output and restored through `RunState.from_json()` with current authorization context |
 | 1.4 | P0 | Resume the approved tool invocation exactly once and continue the original agent run | Done | `complete-approved-tool-resume` | Approve executes the original call once, supplies its result to the SDK run, and reaches a valid terminal state |
-| 1.5 | P0 | Complete reject, timeout, cancellation, duplicate decision, and worker-restart behavior | Pending | `complete-approval-failure-lifecycle` | Every branch has a valid run/task transition and durable audit evidence |
+| 1.5 | P0 | Complete reject, timeout, cancellation, duplicate decision, and worker-restart behavior | Done | `complete-approval-failure-lifecycle` | Every branch has a valid run/task transition and durable audit evidence |
 | 1.6 | P0 | Unify automatic allow, human approval, and deny policy across product, MCP, model, and runtime actions | Pending | `complete-approval-policy-engine` | Identical policy inputs produce the same decision and high-risk actions fail closed |
 
 Phase acceptance gate:

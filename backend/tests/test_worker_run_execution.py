@@ -15,13 +15,18 @@ from backend.app.agent_runtime import openai_agents as openai_runtime
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
+    AgentRuntimeContext,
     AgentRuntimeEvent,
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
 from backend.app.agent_runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
+from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.agents.models import AgentProfile
+from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
+from backend.app.approvals.decisions import ApprovalDecisionService
 from backend.app.approvals.models import Approval, PendingToolInvocation
+from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.audit.models import AuditEvent
 from backend.app.capabilities.models import (
     McpCredentialReference,
@@ -5878,6 +5883,91 @@ def test_stale_running_runs_are_recovered_as_failed() -> None:
     }
     assert task.status == TaskStatus.FAILED.value
     assert event is not None
+
+
+def test_stale_run_with_completed_approved_tool_is_requeued_without_replay() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Resume approved tool",
+        status=TaskStatus.RUNNING.value,
+    )
+    session.add(task)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        status=RunStatus.RUNNING.value,
+        input={},
+        started_at=datetime.now(UTC) - timedelta(hours=1),
+    )
+    session.add(run)
+    session.flush()
+    secrets = SecretEncryptionService(secret="restart-secret", key_id="test-key")
+    AgentRunStateStore(session, secrets).save(
+        workspace_id=workspace.id,
+        run_id=run.id,
+        state=AgentRuntimeResumeState(
+            provider="openai_agents",
+            serialized_state='{"$schemaVersion":"1.10"}',
+        ),
+    )
+    AgentToolInterruptionService(session, secrets).persist(
+        context=AgentRuntimeContext(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            run_id=run.id,
+        ),
+        requested_by_agent_profile_id=None,
+        interruptions=(
+            AgentRuntimeInterruption(
+                tool_call_id="call-restart",
+                tool_name="write_artifact",
+                tool_kind="product",
+                arguments={"content": "once"},
+                policy_decision={
+                    "decision": "require_approval",
+                    "risk_level": "high",
+                },
+            ),
+        ),
+    )
+    approval = session.query(Approval).one()
+    ApprovalDecisionService(session, secrets=secrets).approve(approval, user.id)
+    pending = PendingToolInvocationService(session, secrets)
+    invocation, cached = pending.claim_execution(
+        workspace_id=workspace.id,
+        run_id=run.id,
+        tool_call_id="call-restart",
+        tool_name="write_artifact",
+        arguments={"content": "once"},
+    )
+    assert cached is None
+    pending.complete_execution(
+        invocation,
+        {"status": "completed", "output": {"artifact_id": "artifact-1"}},
+    )
+
+    summary = RunControlService(
+        session=session,
+        enqueue_run=lambda _run, _user_id: True,
+    ).recover_stale_worker_runs(stale_after_seconds=900)
+    decisions = pending.decisions_for_run(workspace_id=workspace.id, run_id=run.id)
+    replay, cached = pending.claim_execution(
+        workspace_id=workspace.id,
+        run_id=run.id,
+        tool_call_id="call-restart",
+        tool_name="write_artifact",
+        arguments={"content": "once"},
+    )
+
+    assert summary.requeued_runs == 1
+    assert run.status == RunStatus.QUEUED.value
+    assert decisions[0].status == "approved"
+    assert replay.attempt_count == 1
+    assert cached is not None and cached["output"] == {"artifact_id": "artifact-1"}
 
 
 def _session() -> Session:

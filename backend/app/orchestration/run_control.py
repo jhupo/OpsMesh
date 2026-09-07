@@ -6,6 +6,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.approvals.lifecycle import AgentToolApprovalLifecycleService
+from backend.app.approvals.models import PendingToolInvocation
 from backend.app.audit.service import AuditService
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_terminal_state import RunTerminalStateService
@@ -14,6 +16,7 @@ from backend.app.orchestration.statuses import (
     STALE_RECOVERABLE_RUN_STATUS_VALUES,
 )
 from backend.app.runs.models import AgentRun
+from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.tasks.models import Task
@@ -61,10 +64,18 @@ class RunControlService:
             )
         ).all()
         worker_cancel_requests = 0
+        cancelled_approvals = 0
         for run in active_runs:
             worker_cancel_requests += self.terminal_states().mark_run_cancelled(
                 run,
                 completed_at=completed_at,
+            )
+            cancelled_approvals += AgentToolApprovalLifecycleService(
+                self.session
+            ).cancel_for_run(
+                workspace_id=workspace_id,
+                run_id=run.id,
+                actor_user_id=actor_user_id,
             )
 
         AuditService(self.session).record_user_action(
@@ -77,6 +88,7 @@ class RunControlService:
                 "title": task.title,
                 "cancelled_runs": len(active_runs),
                 "worker_cancel_requests": worker_cancel_requests,
+                "cancelled_approvals": cancelled_approvals,
             },
         )
         self.session.commit()
@@ -101,6 +113,13 @@ class RunControlService:
             run,
             completed_at=completed_at,
         )
+        cancelled_approvals = AgentToolApprovalLifecycleService(
+            self.session
+        ).cancel_for_run(
+            workspace_id=workspace_id,
+            run_id=run.id,
+            actor_user_id=actor_user_id,
+        )
         if run.task_id is not None:
             task = self.session.get(Task, run.task_id)
             if task is not None and TaskStatus(task.status) not in TERMINAL_TASK_STATUSES:
@@ -119,6 +138,7 @@ class RunControlService:
             metadata={
                 "task_id": str(run.task_id) if run.task_id is not None else None,
                 "worker_cancel_requests": worker_cancel_requests,
+                "cancelled_approvals": cancelled_approvals,
             },
         )
         self.session.commit()
@@ -241,6 +261,14 @@ class RunControlService:
                 )
                 requeued += 1
                 continue
+            if run.status == RunStatus.RUNNING.value and self._has_resumable_tool_state(run):
+                self.requeue_interrupted_tool_run(
+                    run,
+                    requested_by_user_id=requested_by_user_id,
+                    reason=reason or "worker_maintenance_interrupted_tool_run",
+                )
+                requeued += 1
+                continue
             self.fail_recovered_run(
                 run,
                 code="stale_worker_run",
@@ -277,6 +305,57 @@ class RunControlService:
             },
         )
         return enqueued
+
+    def requeue_interrupted_tool_run(
+        self,
+        run: AgentRun,
+        *,
+        requested_by_user_id: UUID | None,
+        reason: str,
+    ) -> bool:
+        invocations = self.session.scalars(
+            select(PendingToolInvocation).where(
+                PendingToolInvocation.workspace_id == run.workspace_id,
+                PendingToolInvocation.agent_run_id == run.id,
+                PendingToolInvocation.status.in_(
+                    ("approved", "rejected", "executing", "completed", "failed")
+                ),
+            )
+        ).all()
+        outcome_unknown = 0
+        for invocation in invocations:
+            if invocation.status == "executing":
+                invocation.status = "outcome_unknown"
+                outcome_unknown += 1
+        RunStateService().transition(run, RunStatus.QUEUED)
+        run.error = None
+        enqueued = self.enqueue_run(run, requested_by_user_id)
+        RunEventRecorder(self.session).append_event(
+            run,
+            "run.requeued_after_tool_interruption",
+            "Requeued without replaying an already claimed tool call",
+            {
+                "reason": reason,
+                "enqueued": enqueued,
+                "tool_invocation_count": len(invocations),
+                "outcome_unknown_count": outcome_unknown,
+            },
+        )
+        return enqueued
+
+    def _has_resumable_tool_state(self, run: AgentRun) -> bool:
+        return (
+            self.session.scalar(
+                select(PendingToolInvocation.id).where(
+                    PendingToolInvocation.workspace_id == run.workspace_id,
+                    PendingToolInvocation.agent_run_id == run.id,
+                    PendingToolInvocation.status.in_(
+                        ("approved", "rejected", "executing", "completed", "failed")
+                    ),
+                )
+            )
+            is not None
+        )
 
     def fail_recovered_run(
         self,

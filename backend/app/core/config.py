@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     audit_event_worm_enabled: bool = Field(default=True)
     audit_integrity_check_interval_seconds: int = Field(default=3_600, ge=60)
     audit_integrity_stale_after_seconds: int = Field(default=7_200, ge=60)
+    agent_tool_approval_timeout_seconds: int = Field(default=86_400, ge=60)
     storage_backend: StorageBackend = Field(default="local")
     storage_root: str = Field(default=".opsmesh-storage")
     s3_bucket: str = Field(default="")

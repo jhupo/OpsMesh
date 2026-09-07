@@ -45,6 +45,8 @@ class ApprovalDecisionService:
         status: str,
         reason: str | None,
     ) -> Approval:
+        if approval.status == status:
+            return approval
         if approval.status != "pending":
             raise ValueError("Approval is not pending")
         approval.status = status
@@ -74,21 +76,30 @@ class ApprovalDecisionService:
             user_id=user_id,
             status=status,
         )
-        if status == "rejected":
+        if status == "rejected" and invocation is None:
             ApprovalRunGateService(self._session).fail_rejected_run(approval)
-        if status == "approved" and approval.agent_run_id is not None and self._queue is not None:
-            self._queue.enqueue(
-                JobPayload(
-                    workspace_id=approval.workspace_id,
-                    job_type=JobType.AGENT_RUN,
-                    resource_id=approval.agent_run_id,
-                    requested_by_user_id=user_id,
-                    idempotency_key=f"approval.resume:{approval.workspace_id}:{approval.id}",
-                )
-            )
+        if (
+            status == "approved" or invocation is not None
+        ) and approval.agent_run_id is not None and self._queue is not None:
+            self._enqueue_resume(approval, user_id, status)
         self._session.commit()
         self._session.refresh(approval)
         return approval
+
+    def _enqueue_resume(self, approval: Approval, user_id: UUID, status: str) -> None:
+        if self._queue is None or approval.agent_run_id is None:
+            return
+        self._queue.enqueue(
+            JobPayload(
+                workspace_id=approval.workspace_id,
+                job_type=JobType.AGENT_RUN,
+                resource_id=approval.agent_run_id,
+                requested_by_user_id=user_id,
+                idempotency_key=(
+                    f"approval.resume:{status}:{approval.workspace_id}:{approval.id}"
+                ),
+            )
+        )
 
     def _append_audit_event(self, approval: Approval, user_id: UUID, action: str) -> None:
         AuditService(self._session).record_user_action(

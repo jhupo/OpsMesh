@@ -11,6 +11,7 @@ from backend.app.agent_runtime.contracts import AgentRunner
 from backend.app.agent_runtime.factory import build_agent_runner
 from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
+from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.core.config import Settings, get_settings
 from backend.app.model_providers.service_models import ModelProviderUnavailableError
 from backend.app.orchestration.model_run_gateway import ModelRunGateway
@@ -88,6 +89,14 @@ class RunExecutionService:
                 self._commit_and_refresh(run)
                 return run
 
+            if request.approval_decisions:
+                PendingToolInvocationService(
+                    self.session,
+                    self._request_builder().secret_service(),
+                ).mark_rejections_consumed(
+                    workspace_id=run.workspace_id,
+                    run_id=run.id,
+                )
             RunRuntimeEventMessageMapper(self.session).map(run, result)
             if result.resume_state is not None:
                 self._state_store().save(

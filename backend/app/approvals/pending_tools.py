@@ -153,7 +153,15 @@ class PendingToolInvocationService:
             .where(
                 PendingToolInvocation.workspace_id == workspace_id,
                 PendingToolInvocation.agent_run_id == run_id,
-                PendingToolInvocation.status.in_(("approved", "rejected")),
+                PendingToolInvocation.status.in_(
+                    (
+                        "approved",
+                        "rejected",
+                        "completed",
+                        "failed",
+                        "outcome_unknown",
+                    )
+                ),
             )
             .order_by(PendingToolInvocation.created_at, PendingToolInvocation.id)
         ).all()
@@ -161,7 +169,7 @@ class PendingToolInvocationService:
             AgentRuntimeApprovalDecision(
                 tool_call_id=invocation.tool_call_id,
                 tool_name=invocation.tool_name,
-                status=invocation.status,
+                status="rejected" if invocation.status == "rejected" else "approved",
                 reason=approval.decision_reason,
             )
             for invocation, approval in rows
@@ -195,7 +203,7 @@ class PendingToolInvocationService:
             raise ValueError("Approved tool invocation does not match the SDK tool call")
         if invocation.status in {"completed", "failed"}:
             return invocation, self._stored_result(invocation)
-        if invocation.status == "executing":
+        if invocation.status in {"executing", "outcome_unknown"}:
             return invocation, {
                 "status": "failed",
                 "error": {
@@ -213,6 +221,43 @@ class PendingToolInvocationService:
         invocation.execution_started_at = datetime.now(UTC)
         self._session.commit()
         return invocation, None
+
+    def mark_rejections_consumed(
+        self,
+        *,
+        workspace_id: UUID,
+        run_id: UUID,
+    ) -> None:
+        invocations = self._session.scalars(
+            select(PendingToolInvocation).where(
+                PendingToolInvocation.workspace_id == workspace_id,
+                PendingToolInvocation.agent_run_id == run_id,
+                PendingToolInvocation.status == "rejected",
+            )
+        ).all()
+        completed_at = datetime.now(UTC)
+        for invocation in invocations:
+            invocation.status = "rejection_consumed"
+            invocation.completed_at = completed_at
+        self._session.flush(invocations)
+
+    def mark_stale_execution_outcome_unknown(
+        self,
+        *,
+        workspace_id: UUID,
+        run_id: UUID,
+    ) -> int:
+        invocations = self._session.scalars(
+            select(PendingToolInvocation).where(
+                PendingToolInvocation.workspace_id == workspace_id,
+                PendingToolInvocation.agent_run_id == run_id,
+                PendingToolInvocation.status == "executing",
+            )
+        ).all()
+        for invocation in invocations:
+            invocation.status = "outcome_unknown"
+        self._session.flush(invocations)
+        return len(invocations)
 
     def complete_execution(
         self,

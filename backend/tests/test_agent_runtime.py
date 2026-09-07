@@ -1032,6 +1032,7 @@ def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     approved: list[object] = []
+    rejected: list[tuple[object, str | None]] = []
 
     class Interruption:
         call_id = "call-approved"
@@ -1039,12 +1040,21 @@ def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
 
     interruption = Interruption()
 
+    class RejectedInterruption:
+        call_id = "call-rejected"
+        name = "send_agent_message"
+
+    rejected_interruption = RejectedInterruption()
+
     class State:
         def get_interruptions(self) -> list[object]:
-            return [interruption]
+            return [interruption, rejected_interruption]
 
         def approve(self, item: object) -> None:
             approved.append(item)
+
+        def reject(self, item: object, *, rejection_message: str | None = None) -> None:
+            rejected.append((item, rejection_message))
 
     state = State()
 
@@ -1087,6 +1097,12 @@ def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
                 tool_name="write_artifact",
                 status="approved",
             ),
+            AgentRuntimeApprovalDecision(
+                tool_call_id="call-rejected",
+                tool_name="send_agent_message",
+                status="rejected",
+                reason="operator denied",
+            ),
         ),
     )
 
@@ -1094,6 +1110,7 @@ def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
 
     assert result.final_output == "resumed"
     assert approved == [interruption]
+    assert rejected == [(rejected_interruption, "operator denied")]
 
 
 def test_openai_agents_runner_passes_persistent_session_to_sdk(

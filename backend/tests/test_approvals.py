@@ -1,6 +1,7 @@
 from collections.abc import Generator
 from dataclasses import replace
-from uuid import uuid4
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import fakeredis
 import pytest
@@ -21,6 +22,7 @@ from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.api.pagination import PageParams
 from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
 from backend.app.approvals.decisions import ApprovalDecisionService
+from backend.app.approvals.lifecycle import AgentToolApprovalLifecycleService
 from backend.app.approvals.models import Approval, PendingToolInvocation
 from backend.app.approvals.pending_tools import (
     PendingToolInvocationRequest,
@@ -28,6 +30,7 @@ from backend.app.approvals.pending_tools import (
 )
 from backend.app.approvals.queries import ApprovalQueryService
 from backend.app.approvals.service import ApprovalService
+from backend.app.audit.models import AuditEvent
 from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
@@ -80,6 +83,13 @@ def test_approval_approve_enqueues_resume_job() -> None:
     assert job is not None
     assert job.job_type == JobType.AGENT_RUN
     assert job.resource_id == run.id
+
+    repeated = ApprovalDecisionService(session, queue).approve(approval, user.id, "retry")
+
+    assert repeated.status == "approved"
+    assert queue.dequeue() is None
+    with pytest.raises(ValueError, match="not pending"):
+        ApprovalDecisionService(session, queue).reject(approval, user.id, "conflict")
 
 
 def test_approval_approve_api_enqueues_resume_job() -> None:
@@ -380,6 +390,125 @@ def test_approved_sdk_tool_invocation_is_resumable_and_executes_once() -> None:
     assert queue.dequeue() is not None
 
 
+def test_rejected_sdk_tool_invocation_queues_state_resume_without_failing_run() -> None:
+    session = _session()
+    user, workspace, task, run = _seed_run(session)
+    secrets = SecretEncryptionService(secret="pending-tool-secret", key_id="test-key")
+    approval, invocation = _persist_sdk_interruption(
+        session, workspace.id, task.id, run.id, secrets
+    )
+    queue = _queue()
+
+    ApprovalDecisionService(session, queue, secrets).reject(approval, user.id, "not allowed")
+    decisions = PendingToolInvocationService(session, secrets).decisions_for_run(
+        workspace_id=workspace.id,
+        run_id=run.id,
+    )
+
+    assert approval.status == "rejected"
+    assert invocation.status == "rejected"
+    assert run.status == RunStatus.WAITING_APPROVAL.value
+    assert task.status == TaskStatus.WAITING_APPROVAL.value
+    assert decisions[0].status == "rejected"
+    assert decisions[0].reason == "not allowed"
+    assert queue.dequeue() is not None
+    PendingToolInvocationService(session, secrets).mark_rejections_consumed(
+        workspace_id=workspace.id,
+        run_id=run.id,
+    )
+    assert invocation.status == "rejection_consumed"
+    assert not PendingToolInvocationService(session, secrets).decisions_for_run(
+        workspace_id=workspace.id,
+        run_id=run.id,
+    )
+
+
+def test_pending_sdk_tool_timeout_fails_closed_with_audit_evidence() -> None:
+    session = _session()
+    _, workspace, task, run = _seed_run(session)
+    secrets = SecretEncryptionService(secret="pending-tool-secret", key_id="test-key")
+    approval, invocation = _persist_sdk_interruption(
+        session, workspace.id, task.id, run.id, secrets
+    )
+    approval.created_at = datetime.now(UTC) - timedelta(hours=2)
+    session.commit()
+
+    summary = AgentToolApprovalLifecycleService(session).expire_pending(
+        timeout_seconds=3_600,
+        now=datetime.now(UTC),
+    )
+    audit = session.query(AuditEvent).one()
+
+    assert summary.expired == 1
+    assert approval.status == "timed_out"
+    assert invocation.status == "timed_out"
+    assert run.status == RunStatus.FAILED.value
+    assert run.error is not None and run.error["code"] == "approval_timeout"
+    assert task.status == TaskStatus.FAILED.value
+    assert audit.action == "approval.timed_out"
+
+
+def test_run_cancellation_closes_pending_sdk_tool_state() -> None:
+    session = _session()
+    user, workspace, task, run = _seed_run(session)
+    secrets = SecretEncryptionService(secret="pending-tool-secret", key_id="test-key")
+    approval, invocation = _persist_sdk_interruption(
+        session, workspace.id, task.id, run.id, secrets
+    )
+
+    cancelled = AgentToolApprovalLifecycleService(session).cancel_for_run(
+        workspace_id=workspace.id,
+        run_id=run.id,
+        actor_user_id=user.id,
+    )
+    restored = AgentRunStateStore(session, secrets).load(
+        workspace_id=workspace.id,
+        run_id=run.id,
+    )
+
+    assert cancelled == 1
+    assert approval.status == "cancelled"
+    assert invocation.status == "cancelled"
+    assert restored is None
+
+
+def test_claimed_tool_after_worker_loss_returns_unknown_without_replay() -> None:
+    session = _session()
+    user, workspace, task, run = _seed_run(session)
+    secrets = SecretEncryptionService(secret="pending-tool-secret", key_id="test-key")
+    approval, _ = _persist_sdk_interruption(
+        session, workspace.id, task.id, run.id, secrets
+    )
+    ApprovalDecisionService(session, secrets=secrets).approve(approval, user.id)
+    pending = PendingToolInvocationService(session, secrets)
+    invocation, cached = pending.claim_execution(
+        workspace_id=workspace.id,
+        run_id=run.id,
+        tool_call_id="call-lifecycle",
+        tool_name="write_artifact",
+        arguments={"content": "private"},
+    )
+    assert cached is None
+
+    changed = pending.mark_stale_execution_outcome_unknown(
+        workspace_id=workspace.id,
+        run_id=run.id,
+    )
+    replay, cached = pending.claim_execution(
+        workspace_id=workspace.id,
+        run_id=run.id,
+        tool_call_id="call-lifecycle",
+        tool_name="write_artifact",
+        arguments={"content": "private"},
+    )
+
+    assert changed == 1
+    assert replay.status == "outcome_unknown"
+    assert replay.attempt_count == 1
+    assert cached is not None
+    assert cached["error"]["code"] == "tool_execution_outcome_unknown"
+
+
 def _seed_run(session: Session) -> tuple[User, Workspace, Task, AgentRun]:
     user = User(email=f"{uuid4()}@example.com", display_name="Owner")
     workspace = Workspace(owner=user, name="Acme", slug=str(uuid4()), settings={})
@@ -398,6 +527,45 @@ def _seed_run(session: Session) -> tuple[User, Workspace, Task, AgentRun]:
     session.add(run)
     session.commit()
     return user, workspace, task, run
+
+
+def _persist_sdk_interruption(
+    session: Session,
+    workspace_id: UUID,
+    task_id: UUID,
+    run_id: UUID,
+    secrets: SecretEncryptionService,
+) -> tuple[Approval, PendingToolInvocation]:
+    AgentRunStateStore(session, secrets).save(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        state=AgentRuntimeResumeState(
+            provider="openai_agents",
+            serialized_state='{"$schemaVersion":"1.10"}',
+        ),
+    )
+    AgentToolInterruptionService(session, secrets).persist(
+        context=AgentRuntimeContext(
+            workspace_id=workspace_id,
+            task_id=task_id,
+            run_id=run_id,
+        ),
+        requested_by_agent_profile_id=None,
+        interruptions=(
+            AgentRuntimeInterruption(
+                tool_call_id="call-lifecycle",
+                tool_name="write_artifact",
+                tool_kind="product",
+                arguments={"content": "private"},
+                policy_decision={
+                    "decision": "require_approval",
+                    "risk_level": "high",
+                },
+            ),
+        ),
+    )
+    session.commit()
+    return session.query(Approval).one(), session.query(PendingToolInvocation).one()
 
 
 def _session() -> Session:
