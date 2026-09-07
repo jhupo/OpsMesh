@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, field_serializer
@@ -167,6 +168,16 @@ class AdminSecurityEventResponse(ORMModel):
     @field_serializer("event_metadata")
     def _serialize_event_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+
+class AdminUserResponse(TimestampedModel):
+    email: str
+    display_name: str
+    status: str
+
+
+class AdminUserStatusUpdateRequest(BaseModel):
+    status: Literal["active", "disabled"]
 
 
 class AdminQuarantineRuntimeSpaceRequest(BaseModel):

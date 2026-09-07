@@ -223,7 +223,7 @@ def test_change_password_and_revoke_all_user_api_tokens() -> None:
     )
     revoked = service.revoke_all_user_api_tokens(user_id=user.id)
 
-    assert len(revoked) == 2
+    assert len(revoked) == 0
     with pytest.raises(AuthenticationError, match="Invalid email or password"):
         service.login_with_password(
             email=user.email,

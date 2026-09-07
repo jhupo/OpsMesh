@@ -98,6 +98,7 @@ class AuthorizationService:
         actor: AuthenticatedUser | None = None,
     ) -> CreatedUserAPIToken:
         self.authenticate_user(user_id)
+        normalized_expiry = self._validate_token_expiry(expires_at)
         normalized_scopes = self._validate_token_scopes(
             user_id=user_id,
             scopes=scopes,
@@ -110,12 +111,57 @@ class AuthorizationService:
             token_hash=self.hash_user_token(token, settings),
             fingerprint=self.fingerprint_user_token(token),
             scopes=normalized_scopes,
-            expires_at=expires_at,
+            expires_at=normalized_expiry,
         )
         self._session.add(record)
         self._session.commit()
         self._session.refresh(record)
         return CreatedUserAPIToken(record=record, token=token)
+
+    def rotate_user_api_token(
+        self,
+        *,
+        user_id: UUID,
+        token_id: UUID,
+        settings: Settings,
+        actor: AuthenticatedUser,
+        name: str | None = None,
+        expires_at: datetime | None = None,
+    ) -> CreatedUserAPIToken | None:
+        self.authenticate_user(user_id)
+        token = self._session.scalar(
+            select(UserAPIToken)
+            .where(
+                UserAPIToken.id == token_id,
+                UserAPIToken.user_id == user_id,
+            )
+            .with_for_update()
+        )
+        if token is None or token.status != "active" or token.revoked_at is not None:
+            return None
+        normalized_scopes = self._validate_token_scopes(
+            user_id=user_id,
+            scopes=dict(token.scopes) if isinstance(token.scopes, dict) else None,
+            actor=actor,
+        )
+        normalized_expiry = self._validate_token_expiry(
+            expires_at if expires_at is not None else token.expires_at
+        )
+        raw_token = f"ccut_{token_urlsafe(32)}"
+        replacement = UserAPIToken(
+            user_id=user_id,
+            name=name.strip() if name is not None else token.name,
+            token_hash=self.hash_user_token(raw_token, settings),
+            fingerprint=self.fingerprint_user_token(raw_token),
+            scopes=normalized_scopes,
+            expires_at=normalized_expiry,
+        )
+        token.status = "revoked"
+        token.revoked_at = datetime.now(UTC)
+        self._session.add(replacement)
+        self._session.commit()
+        self._session.refresh(replacement)
+        return CreatedUserAPIToken(record=replacement, token=raw_token)
 
     def list_user_api_tokens(self, user_id: UUID) -> list[UserAPIToken]:
         self.authenticate_user(user_id)
@@ -172,6 +218,25 @@ class AuthorizationService:
         ):
             raise AuthenticationError("Invalid current password")
         user.password_hash = self.hash_password(new_password)
+        now = datetime.now(UTC)
+        tokens = self._session.scalars(
+            select(UserAPIToken).where(
+                UserAPIToken.user_id == user_id,
+                UserAPIToken.status == "active",
+            )
+        ).all()
+        for token in tokens:
+            token.status = "revoked"
+            token.revoked_at = now
+        self._session.commit()
+        self._session.refresh(user)
+        return user
+
+    def update_profile(self, *, user_id: UUID, display_name: str) -> User:
+        user = self._session.get(User, user_id)
+        if user is None or user.status != "active":
+            raise AuthenticationError("Authenticated user was not found or is inactive")
+        user.display_name = display_name.strip()
         self._session.commit()
         self._session.refresh(user)
         return user
@@ -288,14 +353,21 @@ class AuthorizationService:
                 ):
                     raise PermissionDeniedError("Token scope exceeds the calling token scope")
         if actor is not None:
-            for action in account_actions:
-                if not actor.allows_account_action(action):
+            for account_action in account_actions:
+                if not actor.allows_account_action(account_action):
                     raise PermissionDeniedError("Token scope exceeds the calling token scope")
         return {
             "workspace_ids": sorted(str(item) for item in set(workspace_ids)),
             "workspace_actions": sorted(item.value for item in set(workspace_actions)),
             "account_actions": sorted(item.value for item in set(account_actions)),
         }
+
+    @staticmethod
+    def _validate_token_expiry(expires_at: datetime | None) -> datetime | None:
+        normalized = _as_utc(expires_at)
+        if normalized is not None and normalized <= datetime.now(UTC):
+            raise PermissionDeniedError("API token expiry must be in the future")
+        return normalized
 
     def ensure_resource_workspace(
         self,

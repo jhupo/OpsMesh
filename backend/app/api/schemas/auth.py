@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -11,6 +11,18 @@ class CurrentUserResponse(ORMModel):
     user_id: UUID
     email: str
     display_name: str
+
+
+class CurrentUserUpdateRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, value: str) -> str:
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("Display name is required")
+        return candidate
 
 
 class UserRegisterRequest(BaseModel):
@@ -71,12 +83,13 @@ class UserAPITokenScopes(BaseModel):
     account_actions: list[
         Literal[
             "profile:read",
+            "profile:write",
             "password:change",
             "tokens:read",
             "tokens:manage",
             "workspaces:create",
         ]
-    ] = Field(default_factory=list, max_length=5)
+    ] = Field(default_factory=list, max_length=6)
 
     @model_validator(mode="after")
     def _validate_workspace_scope(self) -> "UserAPITokenScopes":
@@ -96,6 +109,43 @@ class UserAPITokenCreateRequest(BaseModel):
     expires_at: datetime | None = None
     scopes: UserAPITokenScopes | None = None
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("Token name is required")
+        return candidate
+
+    @field_validator("expires_at")
+    @classmethod
+    def validate_expiry(cls, value: datetime | None) -> datetime | None:
+        if value is not None and _as_utc(value) <= datetime.now(UTC):
+            raise ValueError("expires_at must be in the future")
+        return value
+
+
+class UserAPITokenRotateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    expires_at: datetime | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("Token name is required")
+        return candidate
+
+    @field_validator("expires_at")
+    @classmethod
+    def validate_expiry(cls, value: datetime | None) -> datetime | None:
+        if value is not None and _as_utc(value) <= datetime.now(UTC):
+            raise ValueError("expires_at must be in the future")
+        return value
+
 
 class UserAPITokenResponse(TimestampedModel):
     user_id: UUID
@@ -114,3 +164,9 @@ class UserAPITokenCreateResponse(UserAPITokenResponse):
 
 class UserAPITokenRevokeAllResponse(BaseModel):
     revoked: int
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

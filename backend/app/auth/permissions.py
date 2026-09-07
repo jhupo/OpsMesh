@@ -22,6 +22,7 @@ class WorkspaceAction(StrEnum):
 
 class AccountAction(StrEnum):
     PROFILE_READ = "profile:read"
+    PROFILE_WRITE = "profile:write"
     PASSWORD_CHANGE = "password:change"
     TOKENS_READ = "tokens:read"
     TOKENS_MANAGE = "tokens:manage"

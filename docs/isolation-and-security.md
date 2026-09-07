@@ -48,6 +48,12 @@ path are explicitly unrestricted; custom automation tokens should use the narrow
 scope. Workspace listing is filtered to the token's workspace IDs, and every workspace dependency
 rechecks both token scope and current membership.
 
+Users can update their own display name, rotate an active token, and revoke one or all of their
+tokens. Rotation preserves the old token's scope ceiling and atomically revokes the old secret.
+Changing a password immediately revokes every active user token. Platform administrators can list,
+disable, and reactivate users through the separately authenticated admin API; disabling a user also
+revokes every active token, and reactivation never restores revoked credentials.
+
 ## Required Authorization Rule
 
 Application code must never authorize access by resource ID alone.

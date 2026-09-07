@@ -151,6 +151,11 @@ def test_current_user_can_change_password_and_revoke_all_tokens() -> None:
     )
 
     assert changed.status_code == 200
+    expired_session = client.get(
+        "/api/v1/auth/me",
+        headers=_user_token_headers(first_token),
+    )
+    assert expired_session.status_code == 401
     old_password = client.post(
         "/api/v1/auth/login",
         json={"email": "rotate@example.com", "password": "old password value"},
@@ -166,12 +171,76 @@ def test_current_user_can_change_password_and_revoke_all_tokens() -> None:
     revoked = client.delete("/api/v1/auth/tokens", headers=_user_token_headers(second_token))
 
     assert revoked.status_code == 200
-    assert revoked.json()["revoked"] == 2
+    assert revoked.json()["revoked"] == 1
     first_token_me = client.get("/api/v1/auth/me", headers=_user_token_headers(first_token))
     second_token_me = client.get("/api/v1/auth/me", headers=_user_token_headers(second_token))
 
     assert first_token_me.status_code == 401
     assert second_token_me.status_code == 401
+
+
+def test_profile_update_and_token_rotation_invalidate_the_old_token() -> None:
+    client, session = _client()
+    user = User(email="profile@example.com", display_name="Before")
+    session.add(user)
+    session.commit()
+    created = client.post(
+        "/api/v1/auth/tokens",
+        headers=_internal_headers(user.id),
+        json={"name": "rotating token"},
+    )
+    old_token = created.json()["token"]
+    token_id = created.json()["id"]
+
+    updated = client.patch(
+        "/api/v1/auth/me",
+        headers=_user_token_headers(old_token),
+        json={"display_name": "After"},
+    )
+    rotated = client.post(
+        f"/api/v1/auth/tokens/{token_id}/rotate",
+        headers=_user_token_headers(old_token),
+        json={"name": "replacement token"},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["display_name"] == "After"
+    assert rotated.status_code == 200
+    new_token = rotated.json()["token"]
+    assert rotated.json()["name"] == "replacement token"
+    assert client.get("/api/v1/auth/me", headers=_user_token_headers(old_token)).status_code == 401
+    assert client.get("/api/v1/auth/me", headers=_user_token_headers(new_token)).status_code == 200
+
+
+def test_platform_admin_disables_user_and_revokes_active_tokens() -> None:
+    client, session = _client()
+    user = User(email="managed@example.com", display_name="Managed")
+    session.add(user)
+    session.commit()
+    created = client.post(
+        "/api/v1/auth/tokens",
+        headers=_internal_headers(user.id),
+        json={"name": "managed token"},
+    )
+    raw_token = created.json()["token"]
+
+    disabled = client.put(
+        f"/api/v1/admin/users/{user.id}/status",
+        headers={"Authorization": "Bearer platform-admin"},
+        json={"status": "disabled"},
+    )
+    rejected = client.get("/api/v1/auth/me", headers=_user_token_headers(raw_token))
+    reenabled = client.put(
+        f"/api/v1/admin/users/{user.id}/status",
+        headers={"Authorization": "Bearer platform-admin"},
+        json={"status": "active"},
+    )
+
+    assert disabled.status_code == 200
+    assert disabled.json()["status"] == "disabled"
+    assert rejected.status_code == 401
+    assert reenabled.status_code == 200
+    assert client.get("/api/v1/auth/me", headers=_user_token_headers(raw_token)).status_code == 401
 
 
 def test_user_token_api_creates_lists_and_revokes_bearer_tokens() -> None:
@@ -420,6 +489,7 @@ def _client() -> tuple[TestClient, Session]:
             environment="test",
             log_format="text",
             internal_api_token=INTERNAL_TOKEN,
+            platform_admin_token="platform-admin",
             token_hash_pepper="api-test-pepper",
             database_url="sqlite+pysqlite:///:memory:",
         )
