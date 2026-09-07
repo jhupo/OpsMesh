@@ -9,13 +9,16 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.agents.models import AgentProfile
 from backend.app.audit.models import AuditEvent
+from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "capability-resource-test-token"
@@ -168,6 +171,195 @@ def test_viewer_can_read_but_cannot_manage_capability_resources() -> None:
     assert owner.id
     assert listed.status_code == 200
     assert denied.status_code == 403
+
+
+def test_effective_catalog_applies_team_department_and_locked_parameters() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, "owner@example.com", "owner")
+    created_resource = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/resources",
+        headers=_headers(owner.id),
+        json={
+            "key": "project.memory",
+            "name": "Project memory",
+            "resource_type": "memory_collection",
+            "access_mode": "read",
+            "locator": {"tags": ["project-alpha"]},
+            "parameter_schema": {
+                "type": "object",
+                "properties": {"section": {"type": "string"}},
+            },
+            "default_parameters": {"section": "overview"},
+        },
+    )
+    resource_id = created_resource.json()["id"]
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Developer",
+        role="developer",
+        tool_policy={
+            "allowed_tools": ["read_workspace_file", "write_artifact"],
+        },
+        capabilities={
+            "resource_ids": [resource_id],
+            "resource_parameters": {resource_id: {"section": "approved"}},
+        },
+    )
+    team = AgentTeam(workspace_id=workspace.id, name="Delivery", team_type="delivery")
+    session.add_all([agent, team])
+    session.flush()
+    member = AgentTeamMember(
+        workspace_id=workspace.id,
+        agent_team_id=team.id,
+        agent_profile_id=agent.id,
+        team_role="developer",
+        department="Engineering",
+    )
+    session.add(member)
+    session.commit()
+
+    policy = client.put(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/teams/{team.id}/policy",
+        headers=_headers(owner.id),
+        json={
+            "capability_policy": {
+                "allowed_tools": ["read_workspace_file", "write_artifact"],
+                "allowed_resource_ids": [resource_id],
+                "departments": {
+                    "Engineering": {
+                        "allowed_tools": ["read_workspace_file"],
+                        "allowed_resource_ids": [resource_id],
+                        "resource_parameters": {
+                            resource_id: {
+                                "defaults": {"section": "approved"},
+                                "locked": ["section"],
+                            }
+                        },
+                    }
+                },
+            }
+        },
+    )
+    effective = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/agents/{agent.id}/effective-catalog",
+        headers=_headers(owner.id),
+        params={"team_id": str(team.id)},
+    )
+    repeated = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/agents/{agent.id}/effective-catalog",
+        headers=_headers(owner.id),
+        params={"team_id": str(team.id)},
+    )
+
+    assert policy.status_code == 200
+    assert policy.json()["capability_policy_version"] == 2
+    assert effective.status_code == 200
+    body = effective.json()
+    assert [item["descriptor"]["name"] for item in body["tools"]] == [
+        "read_workspace_file"
+    ]
+    assert body["resources"][0]["parameters"] == {"section": "approved"}
+    assert body["resources"][0]["locked_parameters"] == ["section"]
+    assert body["department"] == "Engineering"
+    assert any(
+        item["key"] == "write_artifact" and "department" in item["reason"]
+        for item in body["denied"]
+    )
+    assert body["fingerprint"].startswith("sha256:")
+    assert repeated.json()["fingerprint"] == body["fingerprint"]
+    audit = session.query(AuditEvent).filter_by(
+        workspace_id=workspace.id,
+        action="team.capability_policy_updated",
+    ).one()
+    assert audit.audit_metadata["capability_policy_version"] == 2
+
+
+def test_effective_catalog_requires_active_team_membership_and_workspace_scope() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, "owner@example.com", "owner")
+    other_owner, other_workspace = _seed_workspace(session, "other@example.com", "other")
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Unassigned",
+        role="developer",
+        tool_policy={"allowed_tools": ["read_workspace_file"]},
+    )
+    team = AgentTeam(workspace_id=workspace.id, name="Restricted", team_type="delivery")
+    foreign_agent = AgentProfile(
+        workspace_id=other_workspace.id,
+        name="Foreign",
+        role="developer",
+    )
+    session.add_all([agent, team, foreign_agent])
+    session.commit()
+
+    not_member = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/agents/{agent.id}/effective-catalog",
+        headers=_headers(owner.id),
+        params={"team_id": str(team.id)},
+    )
+    foreign = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/agents/"
+        f"{foreign_agent.id}/effective-catalog",
+        headers=_headers(owner.id),
+    )
+
+    assert other_owner.id
+    assert not_member.status_code == 403
+    assert not_member.json()["error"]["code"] == "agent_team_membership_required"
+    assert foreign.status_code == 404
+    assert foreign.json()["error"]["code"] == "agent_profile_not_found"
+
+
+def test_effective_catalog_denies_ambiguous_mcp_tool_names() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, "owner@example.com", "owner")
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Researcher",
+        role="researcher",
+        tool_policy={"allowed_tools": ["search_docs"]},
+    )
+    servers = [
+        McpServer(
+            workspace_id=workspace.id,
+            name=name,
+            server_type="streamable_http",
+            connection={"url": f"https://{name}.example.test/mcp"},
+        )
+        for name in ("primary", "secondary")
+    ]
+    session.add_all([agent, *servers])
+    session.flush()
+    session.add_all(
+        [
+            McpToolAllowlist(
+                workspace_id=workspace.id,
+                mcp_server_id=server.id,
+                tool_name="search_docs",
+                description="Search documentation",
+                input_schema={
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                    "additionalProperties": False,
+                },
+            )
+            for server in servers
+        ]
+    )
+    session.commit()
+
+    response = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/agents/{agent.id}/effective-catalog",
+        headers=_headers(owner.id),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["tools"] == []
+    assert response.json()["denied"] == [
+        {"kind": "tool", "key": "search_docs", "reason": "tool name is ambiguous"}
+    ]
 
 
 def _client() -> tuple[TestClient, Session]:

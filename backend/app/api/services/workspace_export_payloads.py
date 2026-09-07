@@ -59,6 +59,8 @@ def _team_payload(team: AgentTeam) -> dict[str, object]:
         "runtime_space_id": _str_or_none(team.runtime_space_id),
         "coordination_rules": team.coordination_rules,
         "default_task_policy": team.default_task_policy,
+        "capability_policy": team.capability_policy,
+        "capability_policy_version": team.capability_policy_version,
         "status": team.status,
         "created_at": _dt(team.created_at),
         "updated_at": _dt(team.updated_at),
@@ -305,5 +307,4 @@ def _dt_or_none(value: datetime | None) -> str | None:
 
 def _str_or_none(value: object | None) -> str | None:
     return str(value) if value is not None else None
-
 

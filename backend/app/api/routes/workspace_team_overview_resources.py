@@ -24,12 +24,14 @@ from backend.app.api.schemas.teams import (
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
+from backend.app.capabilities.policy_service import TeamCapabilityPolicyService
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.execution_overview import TeamExecutionOverviewService
+from backend.app.teams.models import AgentTeam
 from backend.app.teams.operations_console import TeamOperationsConsoleService
 from backend.app.teams.project_space import TeamProjectSpaceService
 from backend.app.teams.workspace_command_center import WorkspaceCommandCenterService
@@ -46,6 +48,7 @@ else:
     RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
+
 
 @router.get("/teams", response_model=PageResponse[AgentTeamResponse])
 async def list_teams(
@@ -75,10 +78,12 @@ async def create_team(
             operation="teams.create",
             idempotency_key=idempotency_key,
             get_existing=lambda team_id: team_service.get_team(context.workspace.id, team_id),
-            create=lambda: team_service.create_team(
-                context.workspace.id,
-                _team_create_command(request),
-                context.user.user_id,
+            create=lambda: _create_validated_team(
+                team_service=team_service,
+                policy_service=TeamCapabilityPolicyService(session),
+                workspace_id=context.workspace.id,
+                request=request,
+                actor_user_id=context.user.user_id,
             ),
             resource_id=lambda created_team: created_team.id,
         )
@@ -230,6 +235,21 @@ def _team_create_command(request: AgentTeamCreateRequest) -> TeamCreateCommand:
         runtime_space_id=request.runtime_space_id,
         coordination_rules=request.coordination_rules,
         default_task_policy=request.default_task_policy,
+        capability_policy=request.capability_policy.model_dump(mode="json"),
     )
 
 
+def _create_validated_team(
+    *,
+    team_service: WorkspaceTeamService,
+    policy_service: TeamCapabilityPolicyService,
+    workspace_id: UUID,
+    request: AgentTeamCreateRequest,
+    actor_user_id: UUID,
+) -> AgentTeam:
+    policy_service.validate_policy(workspace_id, request.capability_policy)
+    return team_service.create_team(
+        workspace_id,
+        _team_create_command(request),
+        actor_user_id,
+    )

@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from backend.app.api.schemas.capabilities.catalog import CapabilityTeamPolicy
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
 
 
@@ -15,6 +16,7 @@ class AgentTeamCreateRequest(BaseModel):
     runtime_space_id: UUID | None = None
     coordination_rules: dict[str, object] = Field(default_factory=dict)
     default_task_policy: dict[str, object] = Field(default_factory=dict)
+    capability_policy: CapabilityTeamPolicy = Field(default_factory=CapabilityTeamPolicy)
 
 
 class AgentTeamResponse(TimestampedModel):
@@ -26,6 +28,8 @@ class AgentTeamResponse(TimestampedModel):
     runtime_space_id: UUID | None
     coordination_rules: dict[str, object]
     default_task_policy: dict[str, object]
+    capability_policy: CapabilityTeamPolicy
+    capability_policy_version: int
     status: str
 
 
@@ -116,6 +120,8 @@ class AgentTeamOrgChartResponse(BaseModel):
     runtime_space_id: UUID | None
     coordination_rules: dict[str, object]
     default_task_policy: dict[str, object]
+    capability_policy: CapabilityTeamPolicy
+    capability_policy_version: int
     roots: list[AgentTeamOrgMemberNode]
     members: list[AgentTeamOrgMemberNode]
     orphan_member_ids: list[UUID]

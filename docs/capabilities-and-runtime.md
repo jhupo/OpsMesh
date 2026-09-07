@@ -320,6 +320,29 @@ rejected; external authority must be represented by a workspace-owned credential
 The catalog endpoint returns concrete tool names because the Agent runtime needs an executable
 manifest. Tool groups remain a product-facing grouping layer over those concrete definitions.
 
+### Effective Agent Catalog
+
+The raw workspace catalog is not an execution grant. OpsMesh computes a separate effective catalog
+for an active Agent profile, optionally in an active team context:
+
+1. The Agent profile selects concrete tool names and resource IDs.
+2. The team's versioned capability policy limits those selections.
+3. A policy keyed by the member's existing `department` label may narrow them further.
+4. Team, department, and Agent parameter values are merged in that order; locked upper-level
+   parameters cannot be overridden.
+5. JSON Schema validation, active-state checks, workspace ownership, and unique tool-name checks
+   remove invalid or ambiguous entries before execution.
+
+The result contains only executable tool descriptors and resource grants, plus denials, policy
+provenance, Agent/team/member identifiers, configuration versions, and a canonical SHA-256
+fingerprint. The department label is an Agent-team policy selector only. It does not create users,
+human organizational units, or a second authorization hierarchy alongside workspace membership
+RBAC.
+
+Changing a team capability policy increments its policy version and writes a durable audit event.
+Workspace metadata import resets team capability policies because resource IDs belong to the source
+workspace and must be explicitly rebound in the target workspace.
+
 Example groups:
 
 - Workspace Files

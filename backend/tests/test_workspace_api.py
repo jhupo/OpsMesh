@@ -6102,7 +6102,8 @@ def test_create_task_with_team_captures_workspace_team_snapshot() -> None:
     assert created_task.status_code == 201
     snapshot = created_task.json()["team_snapshot"]
     project_plan = created_task.json()["project_plan"]
-    assert snapshot["snapshot_version"] == 1
+    assert snapshot["snapshot_version"] == 2
+    assert snapshot["team"]["capability_policy_version"] == 1
     assert snapshot["team"]["id"] == team.json()["id"]
     assert snapshot["team"]["manager_agent_profile_id"] == manager.json()["id"]
     assert snapshot["members"][0]["agent_profile_id"] == developer.json()["id"]

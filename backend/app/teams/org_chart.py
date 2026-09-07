@@ -33,6 +33,8 @@ class TeamOrgChartBuilder:
             "runtime_space_id": team.runtime_space_id,
             "coordination_rules": team.coordination_rules,
             "default_task_policy": team.default_task_policy,
+            "capability_policy": team.capability_policy,
+            "capability_policy_version": team.capability_policy_version,
             "roots": roots,
             "members": member_nodes,
             "orphan_member_ids": orphan_member_ids,
@@ -90,9 +92,7 @@ def _link_member_nodes(
     for node in member_nodes:
         reports_to_member_id = node["reports_to_member_id"]
         parent = (
-            node_by_id.get(str(reports_to_member_id))
-            if reports_to_member_id is not None
-            else None
+            node_by_id.get(str(reports_to_member_id)) if reports_to_member_id is not None else None
         )
         if reports_to_member_id is not None and has_reporting_cycle(
             str(node["id"]),

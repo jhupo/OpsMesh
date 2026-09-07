@@ -23,6 +23,7 @@ class TeamCreateCommand:
     runtime_space_id: UUID | None = None
     coordination_rules: dict[str, object] = field(default_factory=dict)
     default_task_policy: dict[str, object] = field(default_factory=dict)
+    capability_policy: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,6 +289,7 @@ def _team_payload(command: TeamCreateCommand) -> dict[str, object]:
         "runtime_space_id": command.runtime_space_id,
         "coordination_rules": command.coordination_rules,
         "default_task_policy": command.default_task_policy,
+        "capability_policy": command.capability_policy,
     }
 
 
@@ -328,4 +330,3 @@ def _uuid_or_none(value: object) -> UUID | None:
     if isinstance(value, UUID):
         return value
     return UUID(str(value))
-

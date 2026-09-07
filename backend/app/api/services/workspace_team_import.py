@@ -62,6 +62,12 @@ class TeamMetadataImporter:
                 runtime_space_id = ctx.id_map["runtime_spaces"].get(
                     _string_field(item, "runtime_space_id")
                 )
+                source_capability_policy = _dict_field(item, "capability_policy")
+                if source_capability_policy:
+                    ctx.warnings.append(
+                        f"Reset capability policy for imported team {imported_name!r}; "
+                        "resource grants must be rebound in the target workspace"
+                    )
                 team = AgentTeam(
                     workspace_id=ctx.workspace.id,
                     name=imported_name,
@@ -71,6 +77,8 @@ class TeamMetadataImporter:
                     runtime_space_id=_uuid_or_none(runtime_space_id),
                     coordination_rules=_dict_field(item, "coordination_rules"),
                     default_task_policy=_dict_field(item, "default_task_policy"),
+                    capability_policy={},
+                    capability_policy_version=1,
                     status="active",
                 )
                 self._session.add(team)

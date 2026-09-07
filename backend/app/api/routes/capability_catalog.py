@@ -8,14 +8,17 @@ from backend.app.api.schemas.capabilities.catalog import (
     CapabilityResourceCreateRequest,
     CapabilityResourceResponse,
     CapabilityResourceUpdateRequest,
-    CapabilityToolDescriptor,
+    EffectiveCapabilityCatalogResponse,
+    TeamCapabilityPolicyResponse,
+    TeamCapabilityPolicyUpdateRequest,
     WorkspaceCapabilityCatalogResponse,
 )
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
-from backend.app.capabilities.mcp_servers import McpServerService
-from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_CATALOG
+from backend.app.capabilities.catalog_service import WorkspaceCapabilityCatalogService
+from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalogService
+from backend.app.capabilities.policy_service import TeamCapabilityPolicyService
 from backend.app.capabilities.resource_service import CapabilityResourceService
 from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
@@ -28,38 +31,47 @@ async def get_workspace_capability_catalog(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceCapabilityCatalogResponse:
-    resources = CapabilityResourceService(session).list_active_resources(context.workspace.id)
-    mcp_tools = McpServerService(session).list_allowed_mcp_tools(context.workspace.id)
-    product_descriptors = [
-        CapabilityToolDescriptor(
-            name=definition.name,
-            source="product",
-            description=definition.description,
-            input_schema=definition.input_schema,
-            requires_approval=definition.requires_approval,
-            risk_level=definition.risk_level,
-        )
-        for definition in PRODUCT_TOOL_CATALOG
-    ]
-    mcp_descriptors = [
-        CapabilityToolDescriptor(
-            name=allow.tool_name,
-            source="mcp",
-            description=allow.description,
-            input_schema=allow.input_schema,
-            requires_approval=allow.requires_approval,
-            risk_level=allow.risk_level,
-            capability_key=allow.capability_key,
-            mcp_server_id=server.id,
-            mcp_server_name=server.name,
-            policy=allow.policy,
-        )
-        for allow, server in mcp_tools
-    ]
-    return WorkspaceCapabilityCatalogResponse(
+    return WorkspaceCapabilityCatalogService(session).build(context.workspace.id)
+
+
+@router.put(
+    "/teams/{team_id}/policy",
+    response_model=TeamCapabilityPolicyResponse,
+)
+async def update_team_capability_policy(
+    team_id: UUID,
+    request: TeamCapabilityPolicyUpdateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> TeamCapabilityPolicyResponse:
+    team = TeamCapabilityPolicyService(session).update_policy(
         workspace_id=context.workspace.id,
-        tools=sorted(product_descriptors + mcp_descriptors, key=lambda item: item.name),
-        resources=[CapabilityResourceResponse.model_validate(item) for item in resources],
+        team_id=team_id,
+        policy=request.capability_policy,
+        actor_user_id=context.user.user_id,
+    )
+    return TeamCapabilityPolicyResponse(
+        workspace_id=context.workspace.id,
+        team_id=team.id,
+        capability_policy=team.capability_policy,
+        capability_policy_version=team.capability_policy_version,
+    )
+
+
+@router.get(
+    "/agents/{agent_profile_id}/effective-catalog",
+    response_model=EffectiveCapabilityCatalogResponse,
+)
+async def get_effective_agent_capability_catalog(
+    agent_profile_id: UUID,
+    team_id: UUID | None = Query(default=None),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> EffectiveCapabilityCatalogResponse:
+    return EffectiveCapabilityCatalogService(session).build(
+        workspace_id=context.workspace.id,
+        agent_profile_id=agent_profile_id,
+        team_id=team_id,
     )
 
 

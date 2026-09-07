@@ -43,6 +43,17 @@ def validate_parameters(
         raise ValueError(f"Invalid {label}{suffix}: {exc.message}") from exc
 
 
+def validate_partial_parameters(
+    parameters: dict[str, object],
+    schema: dict[str, object],
+    *,
+    label: str,
+) -> None:
+    partial_schema = dict(schema)
+    partial_schema.pop("required", None)
+    validate_parameters(parameters, partial_schema, label=label)
+
+
 def reject_embedded_secrets(value: object, *, path: str = "configuration") -> None:
     if isinstance(value, dict):
         for raw_key, item in value.items():

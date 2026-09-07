@@ -52,7 +52,7 @@ def build_team_snapshot(
     }
 
     snapshot = {
-        "snapshot_version": 1,
+        "snapshot_version": 2,
         "captured_at": datetime.now(UTC).isoformat(),
         "team": {
             "id": str(team.id),
@@ -62,6 +62,8 @@ def build_team_snapshot(
             "manager_agent_profile_id": _str_or_none(team.manager_agent_profile_id),
             "coordination_rules": team.coordination_rules,
             "default_task_policy": team.default_task_policy,
+            "capability_policy": team.capability_policy,
+            "capability_policy_version": team.capability_policy_version,
             "status": team.status,
         },
         "members": [
