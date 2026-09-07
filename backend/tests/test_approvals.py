@@ -1,7 +1,9 @@
 from collections.abc import Generator
+from dataclasses import replace
 from uuid import uuid4
 
 import fakeredis
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
@@ -12,6 +14,10 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.api.pagination import PageParams
 from backend.app.approvals.decisions import ApprovalDecisionService
+from backend.app.approvals.pending_tools import (
+    PendingToolInvocationRequest,
+    PendingToolInvocationService,
+)
 from backend.app.approvals.queries import ApprovalQueryService
 from backend.app.approvals.service import ApprovalService
 from backend.app.capabilities.models import McpServer
@@ -30,6 +36,7 @@ from backend.app.reviews.constants import (
 )
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
+from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
 from backend.app.workers.dependencies import get_worker_queue
@@ -204,6 +211,82 @@ def test_approval_reject_marks_pending_resource_review_target_rejected() -> None
     ApprovalDecisionService(session).reject(approval, user.id, "too broad")
 
     assert server.status == RESOURCE_STATUS_REJECTED
+
+
+def test_pending_tool_invocation_encrypts_arguments_and_is_idempotent() -> None:
+    session = _session()
+    _, workspace, task, run = _seed_run(session)
+    approval = ApprovalService(session).create_approval(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        requested_by_agent_profile_id=None,
+        approval_type="product.tool",
+        risk_level="high",
+        payload={"tool_name": "write_artifact"},
+    )
+    secrets = SecretEncryptionService(secret="pending-tool-secret", key_id="test-key")
+    service = PendingToolInvocationService(session, secrets)
+    request = PendingToolInvocationRequest(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        approval_id=approval.id,
+        tool_call_id="call-123",
+        tool_name="write_artifact",
+        tool_kind="product",
+        arguments={"content": "private-token-value", "filename": "result.txt"},
+        policy_decision={"risk_level": "high", "token": "must-not-persist"},
+        idempotency_key=f"tool-approval:{run.id}:call-123",
+    )
+
+    first = service.create_or_get(request)
+    second = service.create_or_get(request)
+    session.commit()
+
+    assert first.id == second.id
+    assert "private-token-value" not in first.encrypted_arguments
+    assert first.policy_decision["token"] == "[redacted]"
+    assert service.arguments(workspace_id=workspace.id, invocation_id=first.id) == {
+        "content": "private-token-value",
+        "filename": "result.txt",
+    }
+    with pytest.raises(ValueError, match="not found"):
+        service.arguments(workspace_id=uuid4(), invocation_id=first.id)
+
+
+def test_pending_tool_invocation_rejects_idempotency_key_reuse() -> None:
+    session = _session()
+    _, workspace, task, run = _seed_run(session)
+    approval = ApprovalService(session).create_approval(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        requested_by_agent_profile_id=None,
+        approval_type="product.tool",
+        risk_level="high",
+        payload={},
+    )
+    service = PendingToolInvocationService(
+        session,
+        SecretEncryptionService(secret="pending-tool-secret", key_id="test-key"),
+    )
+    request = PendingToolInvocationRequest(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_run_id=run.id,
+        approval_id=approval.id,
+        tool_call_id="call-123",
+        tool_name="write_artifact",
+        tool_kind="product",
+        arguments={"filename": "first.txt"},
+        policy_decision={"risk_level": "high"},
+        idempotency_key="same-key",
+    )
+    service.create_or_get(request)
+
+    with pytest.raises(ValueError, match="another tool invocation"):
+        service.create_or_get(replace(request, arguments={"filename": "different.txt"}))
 
 
 def _seed_run(session: Session) -> tuple[User, Workspace, Task, AgentRun]:

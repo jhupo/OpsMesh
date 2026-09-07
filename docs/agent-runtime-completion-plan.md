@@ -36,7 +36,7 @@ Goal: make every approval path durable, idempotent, and recoverable from the exa
 | Order | Priority | Functional point | Status | Commit | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- |
 | 1.1 | P0 | Inject the worker queue into approval decisions and reliably schedule approved runs | Done | `fix-approval-run-rescheduling` | Public approve API queues one eligible resume job and the queue idempotency key prevents duplicate jobs |
-| 1.2 | P0 | Persist pending tool invocation state, including call ID, tool, arguments, policy decision, and idempotency key | Pending | `add-pending-tool-invocation-state` | Worker restart preserves the exact pending invocation without persisting secrets |
+| 1.2 | P0 | Persist pending tool invocation state, including call ID, tool, arguments, policy decision, and idempotency key | Done | `add-pending-tool-invocation-state` | Encrypted arguments survive restart; workspace scope and unique idempotency binding are enforced |
 | 1.3 | P0 | Persist and restore SDK interruption and `RunState` through the adapter | Pending | `add-sdk-run-state-resume` | A paused SDK run is reconstructed from durable state rather than a prompt replay |
 | 1.4 | P0 | Resume the approved tool invocation exactly once and continue the original agent run | Pending | `complete-approved-tool-resume` | Approve executes the original call once, supplies its result to the SDK run, and reaches a valid terminal state |
 | 1.5 | P0 | Complete reject, timeout, cancellation, duplicate decision, and worker-restart behavior | Pending | `complete-approval-failure-lifecycle` | Every branch has a valid run/task transition and durable audit evidence |

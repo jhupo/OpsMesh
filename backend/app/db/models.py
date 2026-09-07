@@ -7,7 +7,7 @@ from backend.app.agent_runtime.sessions import (
     PersistentAgentSessionItem,
 )
 from backend.app.agents.models import AgentProfile, AgentProfileVersion
-from backend.app.approvals.models import Approval
+from backend.app.approvals.models import Approval, PendingToolInvocation
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent, AuditIntegrityCheck
 from backend.app.capabilities.models import (
@@ -87,6 +87,7 @@ __all__ = [
     "AgentTeam",
     "AgentTeamMember",
     "Approval",
+    "PendingToolInvocation",
     "Artifact",
     "AuditEvent",
     "AuditIntegrityCheck",
