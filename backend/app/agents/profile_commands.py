@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.agent_runtime.guardrails import runtime_controls_snapshot
 from backend.app.agents.model_validation import AgentModelValidator
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.payloads import (
@@ -53,6 +54,10 @@ class AgentProfileCommandService:
             workspace_id,
             values["model_provider_credential_id"],
             values["model_settings"],
+        )
+        runtime_controls_snapshot(
+            model_settings=values["model_settings"],
+            runtime_policy=values["runtime_policy"],
         )
 
         now = datetime.now(UTC)
@@ -120,6 +125,10 @@ class AgentProfileCommandService:
             profile.workspace_id,
             values.get("model_provider_credential_id", profile.model_provider_credential_id),
             values.get("model_settings", profile.model_settings),
+        )
+        runtime_controls_snapshot(
+            model_settings=values.get("model_settings", profile.model_settings),
+            runtime_policy=values.get("runtime_policy", profile.runtime_policy),
         )
 
         for field, value in values.items():

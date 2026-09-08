@@ -55,17 +55,18 @@ credential policy, audit events, artifact ownership, and recovery evidence.
 `tool()` own the in-process MCP bridge; `SessionStore` mirrors the transcript into the existing
 Postgres-backed session; `output_format` and `ResultMessage.structured_output` own structured output;
 `PreToolUse`/`deferred_tool_use` own provider-side approval pause state. The adapter retains product
-authorization, approval records, redaction, retry/circuit state, audit events, and workspace scope.
+authorization, input/output guardrail policy, approval records, redaction, retry/circuit state,
+audit events, and workspace scope.
 
 The Claude wheel bundles the Claude Code CLI and is materially larger than a protocol-only client
 (about 99 MB on Windows for the currently pinned release). That footprint is accepted because the
 user explicitly requested the official SDK; no additional general agent framework is added.
 
 **Support matrix:** contract tests cover tool registration, policy review, structured output,
-stream events, session mirroring, deferred approval state, rejection without resume, provider
-selection, and secret-safe raw output. Unsupported semantics are rejected explicitly: OpenAI-style
-handoff descriptors, provider guardrails, and interactive cancellation through the buffered
-`query()` entry point.
+product guardrails, stream events, session mirroring, deferred approval state, rejection without
+resume, provider selection, and secret-safe raw output. Unsupported semantics are rejected
+explicitly: OpenAI-style handoff descriptors, per-subagent MCP execution contexts, and interactive
+cancellation through the buffered `query()` entry point.
 
 Other model providers remain deferred. A future provider must implement the OpsMesh-owned provider
 contract and pass the same runtime contract tests; it must not add a third orchestration framework.

@@ -8,6 +8,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
 )
+from backend.app.agent_runtime.guardrails import runtime_controls_from_snapshot
 from backend.app.agent_runtime.sessions import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
@@ -163,6 +164,7 @@ class RunRequestBuilder:
             root_context=runtime_context,
             resolve_model_provider=self.resolve_model_provider,
         )
+        output_schema, guardrails = runtime_controls_from_snapshot(authorization_snapshot)
         tracing = agent_run_tracing(
             run=run,
             task=task,
@@ -213,6 +215,8 @@ class RunRequestBuilder:
                 run_id=run.id,
             ),
             agent_tools=agent_tools,
+            output_schema=output_schema,
+            guardrails=guardrails,
         )
 
     def runtime_metadata(

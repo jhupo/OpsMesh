@@ -77,3 +77,22 @@ def test_retry_with_circuit_opens_and_recovers_after_reset_window() -> None:
         registry=registry,
     ) == "recovered"
     assert breaker.state == "closed"
+
+
+def test_non_retryable_failure_does_not_penalize_circuit() -> None:
+    registry = CircuitBreakerRegistry()
+    config = CircuitBreakerConfig(failure_threshold=1, reset_after_seconds=60)
+
+    with pytest.raises(ValueError, match="policy rejected"):
+        retry_with_circuit(
+            key="provider:policy",
+            func=lambda: (_ for _ in ()).throw(ValueError("policy rejected")),
+            max_attempts=3,
+            circuit_config=config,
+            should_retry=lambda exc: False,
+            registry=registry,
+        )
+
+    breaker = registry.get("provider:policy", config)
+    assert breaker.failures == 0
+    assert breaker.state == "closed"

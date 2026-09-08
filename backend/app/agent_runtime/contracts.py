@@ -129,6 +129,16 @@ class AgentRuntimeGuardrails:
     output: tuple[AgentRuntimeGuardrail, ...] = ()
 
 
+@dataclass(frozen=True)
+class AgentRuntimeGuardrailResult:
+    stage: str
+    name: str
+    kind: str
+    status: str
+    blocking: bool
+    evidence: dict[str, object] = field(default_factory=dict)
+
+
 class AgentRuntimeStreamEventKind(StrEnum):
     RUN_STARTED = "run.started"
     AGENT_UPDATED = "agent.updated"
@@ -344,6 +354,7 @@ class AgentRunResult:
     stream_events: tuple[AgentRuntimeStreamEvent, ...] = ()
     handoffs: tuple[AgentRuntimeHandoffResult, ...] = ()
     agent_tool_calls: tuple[AgentRuntimeAgentToolResult, ...] = ()
+    guardrail_results: tuple[AgentRuntimeGuardrailResult, ...] = ()
     capabilities: AgentRuntimeCapabilities | None = None
 
 

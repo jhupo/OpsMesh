@@ -26,6 +26,10 @@ def run_output_payload(result: AgentRunResult) -> dict[str, object]:
         payload["agent_tool_calls"] = json_safe_object(
             [asdict(item) for item in result.agent_tool_calls]
         )
+    if result.guardrail_results:
+        payload["guardrail_results"] = json_safe_object(
+            [asdict(item) for item in result.guardrail_results]
+        )
     return payload
 
 

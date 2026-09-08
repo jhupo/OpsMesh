@@ -114,8 +114,10 @@ def retry_with_circuit(
         try:
             result = func()
         except Exception as exc:
-            breaker.record_failure()
-            if attempt + 1 >= attempts or not _should_retry(exc, should_retry):
+            retryable = _should_retry(exc, should_retry)
+            if retryable:
+                breaker.record_failure()
+            if attempt + 1 >= attempts or not retryable:
                 raise
             continue
         breaker.record_success()
@@ -139,8 +141,10 @@ async def async_retry_with_circuit(
         try:
             result = await func()
         except Exception as exc:
-            breaker.record_failure()
-            if attempt + 1 >= attempts or not _should_retry(exc, should_retry):
+            retryable = _should_retry(exc, should_retry)
+            if retryable:
+                breaker.record_failure()
+            if attempt + 1 >= attempts or not retryable:
                 raise
             await asyncio.sleep(0)
             continue

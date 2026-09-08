@@ -61,7 +61,10 @@ class ModelProviderRoutingService:
         policy = model_provider_fallback_policy(self.workspace_settings(run.workspace_id))
         if policy is None:
             return None
-        error_code = normalize_agent_error(exc).code
+        normalized_error = normalize_agent_error(exc)
+        if not normalized_error.retryable:
+            return None
+        error_code = normalized_error.code
         retry_error_codes = policy.get("retry_error_codes")
         if isinstance(retry_error_codes, list) and retry_error_codes:
             allowed_codes = {item for item in retry_error_codes if isinstance(item, str)}

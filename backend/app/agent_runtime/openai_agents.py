@@ -10,6 +10,10 @@ from agents import (
     Runner,
     RunState,
 )
+from agents.exceptions import (
+    InputGuardrailTripwireTriggered,
+    OutputGuardrailTripwireTriggered,
+)
 from agents.handoffs import HandoffInputData
 from agents.handoffs import handoff as sdk_handoff
 from agents.models.interface import Model
@@ -25,8 +29,24 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeCapabilities,
     AgentRuntimeCapability,
     AgentRuntimeEvent,
+    AgentRuntimeGuardrailResult,
 )
-from backend.app.agent_runtime.errors import normalize_agent_error
+from backend.app.agent_runtime.errors import (
+    AgentRuntimeGuardrailBlockedError,
+    AgentRuntimePolicyError,
+    normalize_agent_error,
+)
+from backend.app.agent_runtime.guardrails import (
+    guardrail_events,
+    validated_structured_output,
+)
+from backend.app.agent_runtime.openai_guardrails import (
+    OpenAIRuntimeOutputSchema,
+    OpenAIRuntimeOutputSchemaError,
+    merged_openai_guardrail_results,
+    openai_input_guardrails,
+    openai_output_guardrails,
+)
 from backend.app.agent_runtime.openai_results import OpenAIAgentsResultMapper, jsonable
 from backend.app.agent_runtime.openai_settings import OpenAIModelSettingsMapper
 from backend.app.agent_runtime.openai_tools import OpenAIToolBridge
@@ -53,15 +73,15 @@ class OpenAIAgentsRunner:
             {
                 AgentRuntimeCapability.HANDOFFS,
                 AgentRuntimeCapability.AGENTS_AS_TOOLS,
+                AgentRuntimeCapability.STRUCTURED_OUTPUT,
                 AgentRuntimeCapability.RESUMABLE_STATE,
+                AgentRuntimeCapability.GUARDRAILS,
                 AgentRuntimeCapability.SESSIONS,
             }
         ),
         limits={"max_agent_tool_depth": 3, "max_agent_tool_turns": 20},
         unsupported_reasons={
-            AgentRuntimeCapability.STRUCTURED_OUTPUT.value: "Adapter mapping is not enabled yet.",
             AgentRuntimeCapability.STREAMING.value: "Adapter streaming is not enabled yet.",
-            AgentRuntimeCapability.GUARDRAILS.value: "Adapter guardrails are not enabled yet.",
             AgentRuntimeCapability.CANCELLATION.value: (
                 "Cancellation propagation is not enabled yet."
             ),
@@ -84,29 +104,55 @@ class OpenAIAgentsRunner:
         self._validate_contract_requests(request)
         handoff_audits: dict[str, dict[str, object]] = {}
         agent_tool_calls: list[AgentRuntimeAgentToolResult] = []
+        guardrail_results: list[AgentRuntimeGuardrailResult] = []
         agent = self._build_agent(
             request,
             handoff_audits=handoff_audits,
             agent_tool_calls=agent_tool_calls,
+            guardrail_results=guardrail_results,
         )
         runner_input = await self._runner_input(request, agent)
+
+        async def invoke_sdk() -> Any:
+            try:
+                return await Runner.run(
+                    agent,
+                    runner_input,
+                    context=request.context,
+                    max_turns=request.max_turns,
+                    run_config=self._run_config(request),
+                    previous_response_id=request.previous_response_id,
+                    conversation_id=request.conversation_id,
+                    session=request.session,
+                )
+            except OpenAIRuntimeOutputSchemaError as exc:
+                raise exc.policy_error from exc
+            except (
+                InputGuardrailTripwireTriggered,
+                OutputGuardrailTripwireTriggered,
+            ) as exc:
+                raise _guardrail_blocked_error(exc, guardrail_results) from exc
+
         result = await async_retry_with_circuit(
             key=_model_provider_circuit_key(request),
-            func=lambda: Runner.run(
-                agent,
-                runner_input,
-                context=request.context,
-                max_turns=request.max_turns,
-                run_config=self._run_config(request),
-                previous_response_id=request.previous_response_id,
-                conversation_id=request.conversation_id,
-                session=request.session,
-            ),
+            func=invoke_sdk,
             max_attempts=self._max_attempts,
             circuit_config=self._circuit_config,
             should_retry=lambda exc: normalize_agent_error(exc).retryable,
         )
+        guardrail_results = merged_openai_guardrail_results(result, guardrail_results)
+        interruptions = self._result_mapper.interruptions(result)
         final_output, structured_output = self._result_mapper.final_output(result)
+        if request.output_schema is not None and not interruptions:
+            structured_output = validated_structured_output(
+                request.output_schema,
+                getattr(result, "final_output", None),
+            )
+            final_output = json.dumps(
+                structured_output.value,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
         handoffs = self._result_mapper.handoffs(result, handoff_audits)
         runtime_events = self._result_mapper.runtime_events(result)
         runtime_events.extend(
@@ -124,25 +170,23 @@ class OpenAIAgentsRunner:
             for handoff in handoffs
         )
         runtime_events.extend(_agent_tool_events(agent_tool_calls))
+        runtime_events.extend(guardrail_events(guardrail_results))
         return AgentRunResult(
             final_output=final_output,
             raw_output=self._result_mapper.safe_raw_output(result),
             events=tuple(runtime_events),
             resume_state=self._result_mapper.resume_state(result),
-            interruptions=tuple(self._result_mapper.interruptions(result)),
+            interruptions=tuple(interruptions),
             structured_output=structured_output,
             stream_events=tuple(self._result_mapper.stream_events(result)),
             handoffs=tuple(handoffs),
             agent_tool_calls=tuple(agent_tool_calls),
+            guardrail_results=tuple(guardrail_results),
             capabilities=self.capabilities,
         )
 
     def _validate_contract_requests(self, request: AgentRunRequest) -> None:
         unsupported: list[str] = []
-        if request.output_schema is not None:
-            unsupported.append("structured output")
-        if request.guardrails is not None:
-            unsupported.append("guardrails")
         if request.stream:
             unsupported.append("streaming")
         if unsupported:
@@ -198,6 +242,7 @@ class OpenAIAgentsRunner:
         *,
         handoff_audits: dict[str, dict[str, object]] | None = None,
         agent_tool_calls: list[AgentRuntimeAgentToolResult] | None = None,
+        guardrail_results: list[AgentRuntimeGuardrailResult] | None = None,
     ) -> Agent[Any]:
         profile = request.agent_profile
         model_name = request.model or profile.model
@@ -209,6 +254,9 @@ class OpenAIAgentsRunner:
             use_responses=_use_responses_api(request.model_api),
         ).get_model(model_name)
         nested_calls = agent_tool_calls if agent_tool_calls is not None else []
+        runtime_guardrail_results = (
+            guardrail_results if guardrail_results is not None else []
+        )
         tools = self._tool_bridge.tools(request)
         tools.extend(
             self._build_agent_tools(
@@ -220,7 +268,12 @@ class OpenAIAgentsRunner:
                     role=profile.role,
                 ),
                 calls=nested_calls,
+                guardrail_results=runtime_guardrail_results,
             )
+        )
+        input_guardrails, output_guardrails = _openai_guardrails(
+            request,
+            runtime_guardrail_results,
         )
         return Agent(
             name=profile.name,
@@ -231,7 +284,15 @@ class OpenAIAgentsRunner:
             handoffs=self._build_handoffs(
                 request,
                 handoff_audits if handoff_audits is not None else {},
+                guardrail_results=runtime_guardrail_results,
             ),
+            output_type=(
+                OpenAIRuntimeOutputSchema(request.output_schema)
+                if request.output_schema is not None
+                else None
+            ),
+            input_guardrails=input_guardrails,
+            output_guardrails=output_guardrails,
         )
 
     def _build_agent_tools(
@@ -241,10 +302,16 @@ class OpenAIAgentsRunner:
         *,
         source: AgentRuntimeAgentRef,
         calls: list[AgentRuntimeAgentToolResult],
+        guardrail_results: list[AgentRuntimeGuardrailResult],
     ) -> list[Any]:
         tools: list[Any] = []
         for definition in definitions:
-            target = self._build_agent_tool_target(request, definition, calls=calls)
+            target = self._build_agent_tool_target(
+                request,
+                definition,
+                calls=calls,
+                guardrail_results=guardrail_results,
+            )
 
             async def extract_output(
                 result: Any,
@@ -277,6 +344,13 @@ class OpenAIAgentsRunner:
                 item: AgentRuntimeAgentTool = definition,
                 source_ref: AgentRuntimeAgentRef = source,
             ) -> str:
+                if isinstance(exc, AgentRuntimePolicyError):
+                    raise exc
+                if isinstance(
+                    exc,
+                    InputGuardrailTripwireTriggered | OutputGuardrailTripwireTriggered,
+                ):
+                    raise _guardrail_blocked_error(exc, guardrail_results) from exc
                 error = normalize_agent_error(exc)
                 calls.append(
                     _agent_tool_result(
@@ -306,6 +380,7 @@ class OpenAIAgentsRunner:
         definition: AgentRuntimeAgentTool,
         *,
         calls: list[AgentRuntimeAgentToolResult],
+        guardrail_results: list[AgentRuntimeGuardrailResult],
     ) -> Agent[Any]:
         if not is_openai_compatible_provider(definition.provider):
             raise ValueError("OpenAI agent tools require an OpenAI-compatible target provider")
@@ -336,7 +411,12 @@ class OpenAIAgentsRunner:
                 definition.nested_tools,
                 source=definition.target.ref,
                 calls=calls,
+                guardrail_results=guardrail_results,
             )
+        )
+        input_guardrails, output_guardrails = _openai_guardrails(
+            scoped_request,
+            guardrail_results,
         )
         return Agent(
             name=definition.target.ref.name,
@@ -347,6 +427,8 @@ class OpenAIAgentsRunner:
                 definition.target.model_settings
             ),
             tools=tools,
+            input_guardrails=input_guardrails,
+            output_guardrails=output_guardrails,
         )
 
     def _validate_agent_tools(self, request: AgentRunRequest) -> None:
@@ -409,6 +491,8 @@ class OpenAIAgentsRunner:
         self,
         request: AgentRunRequest,
         handoff_audits: dict[str, dict[str, object]],
+        *,
+        guardrail_results: list[AgentRuntimeGuardrailResult],
     ) -> list[Any]:
         if not request.handoffs:
             return []
@@ -435,7 +519,11 @@ class OpenAIAgentsRunner:
                 )
             if definition.workspace_id != request.context.workspace_id:
                 raise ValueError("Handoff target belongs to another workspace")
-            target = self._build_handoff_agent(request, definition)
+            target = self._build_handoff_agent(
+                request,
+                definition,
+                guardrail_results=guardrail_results,
+            )
             audit = handoff_audits.setdefault(target.name, {})
             source_profile_id = getattr(request.agent_profile, "id", None)
             if source_profile_id is not None:
@@ -456,6 +544,8 @@ class OpenAIAgentsRunner:
         self,
         request: AgentRunRequest,
         definition: AgentRuntimeAgentDefinition,
+        *,
+        guardrail_results: list[AgentRuntimeGuardrailResult],
     ) -> Agent[Any]:
         model_name = definition.model or request.model or request.agent_profile.model
         if request.api_key is None:
@@ -465,6 +555,10 @@ class OpenAIAgentsRunner:
             base_url=normalize_openai_compatible_base_url(request.base_url),
             use_responses=_use_responses_api(request.model_api),
         ).get_model(model_name)
+        input_guardrails, output_guardrails = _openai_guardrails(
+            request,
+            guardrail_results,
+        )
         return Agent(
             name=definition.ref.name,
             handoff_description=definition.handoff_description,
@@ -472,6 +566,13 @@ class OpenAIAgentsRunner:
             model=model,
             model_settings=self._settings_mapper.map_settings(definition.model_settings),
             tools=self._tool_bridge.tools(request),
+            output_type=(
+                OpenAIRuntimeOutputSchema(request.output_schema)
+                if request.output_schema is not None
+                else None
+            ),
+            input_guardrails=input_guardrails,
+            output_guardrails=output_guardrails,
         )
 
     def _input_for_request(self, request: AgentRunRequest) -> str:
@@ -509,6 +610,28 @@ class OpenAIAgentsRunner:
             tracing_disabled=request.tracing.disabled,
             trace_include_sensitive_data=request.tracing.include_sensitive_data,
         )
+
+
+def _openai_guardrails(
+    request: AgentRunRequest,
+    results: list[AgentRuntimeGuardrailResult],
+) -> tuple[list[Any], list[Any]]:
+    if request.guardrails is None:
+        return [], []
+    return (
+        openai_input_guardrails(request.guardrails.input, results),
+        openai_output_guardrails(request.guardrails.output, results),
+    )
+
+
+def _guardrail_blocked_error(
+    exc: InputGuardrailTripwireTriggered | OutputGuardrailTripwireTriggered,
+    results: list[AgentRuntimeGuardrailResult],
+) -> AgentRuntimeGuardrailBlockedError:
+    result = next((item for item in reversed(results) if item.status == "blocked"), None)
+    if result is None:
+        raise RuntimeError("OpenAI SDK guardrail result lost its OpsMesh provenance") from exc
+    return AgentRuntimeGuardrailBlockedError(result)
 
 
 def _agent_tool_result(

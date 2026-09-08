@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_messages.models import AgentMessage
 from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
-from backend.app.agent_runtime.errors import normalize_agent_error
+from backend.app.agent_runtime.errors import AgentRuntimePolicyError, normalize_agent_error
 from backend.app.core.trace_context import with_current_trace_metadata
 from backend.app.orchestration.model_request_reviewing import model_provider_request_snapshot
 from backend.app.orchestration.run_request_utils import dict_copy, json_safe
@@ -143,6 +143,8 @@ class RunEventRecorder:
                 if request.model_provider_credential_id is not None
                 else None,
                 "runtime_event_count": len(result.events),
+                "guardrail_result_count": len(result.guardrail_results),
+                "has_structured_output": result.structured_output is not None,
                 "has_raw_output": result.raw_output is not None,
                 "final_output_length": len(result.final_output),
             },
@@ -155,6 +157,13 @@ class RunEventRecorder:
         exc: Exception,
     ) -> None:
         error = normalize_agent_error(exc)
+        if isinstance(exc, AgentRuntimePolicyError):
+            self.append_event(
+                run,
+                exc.event_type,
+                exc.message,
+                exc.metadata,
+            )
         self.append_event(
             run,
             "model.request_failed",

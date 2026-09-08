@@ -5,6 +5,7 @@ from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunner, AgentRunRequest, AgentRunResult
+from backend.app.agent_runtime.errors import AgentRuntimePolicyError
 from backend.app.core.config import Settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.costs.service import CostAccountingService, CostBudgetExceededError
@@ -164,11 +165,12 @@ class ModelRunGateway:
         except Exception as exc:
             self.events.append_model_request_failed_event(run, request, exc)
             audit.record_request_failed(run, request, job, exc)
-            routing.record_failure(
-                run,
-                request.model_provider_credential_id,
-                exc,
-            )
+            if not isinstance(exc, AgentRuntimePolicyError):
+                routing.record_failure(
+                    run,
+                    request.model_provider_credential_id,
+                    exc,
+                )
             raise
         routing.record_success(run, request.model_provider_credential_id)
         if not fallback_selected:

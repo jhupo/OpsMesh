@@ -27,7 +27,6 @@ from claude_agent_sdk.types import (
     SessionKey,
     SessionStoreEntry,
 )
-from jsonschema import ValidationError, validate
 
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
@@ -35,6 +34,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeCapabilities,
     AgentRuntimeCapability,
     AgentRuntimeEvent,
+    AgentRuntimeGuardrailResult,
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
     AgentRuntimeStreamEvent,
@@ -42,6 +42,11 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolDefinition,
 )
 from backend.app.agent_runtime.errors import normalize_agent_error
+from backend.app.agent_runtime.guardrails import (
+    evaluate_guardrail_stage,
+    guardrail_events,
+    validated_structured_output,
+)
 from backend.app.core.resilience import CircuitBreakerConfig, async_retry_with_circuit
 from backend.app.model_providers.model_api import ANTHROPIC_MESSAGES_API
 from backend.app.model_providers.provider_keys import canonical_model_provider
@@ -111,6 +116,7 @@ class ClaudeAgentSDKRunner:
                 AgentRuntimeCapability.STRUCTURED_OUTPUT,
                 AgentRuntimeCapability.STREAMING,
                 AgentRuntimeCapability.RESUMABLE_STATE,
+                AgentRuntimeCapability.GUARDRAILS,
                 AgentRuntimeCapability.SESSIONS,
             }
         ),
@@ -119,10 +125,6 @@ class ClaudeAgentSDKRunner:
             AgentRuntimeCapability.HANDOFFS.value: (
                 "Claude SDK agents are exposed as tools; OpenAI-style handoff "
                 "descriptors are not equivalent."
-            ),
-            AgentRuntimeCapability.GUARDRAILS.value: (
-                "OpsMesh guardrails are applied by the runtime lifecycle, not "
-                "by the provider SDK."
             ),
             AgentRuntimeCapability.CANCELLATION.value: (
                 "The query entry point is buffered; use ClaudeSDKClient for "
@@ -170,10 +172,6 @@ class ClaudeAgentSDKRunner:
                 "Claude Agent SDK subagents are not enabled until their per-agent "
                 "MCP execution contexts can be enforced"
             )
-        if request.guardrails is not None:
-            raise NotImplementedError(
-                "Claude Agent SDK guardrails must be applied by the OpsMesh runtime lifecycle"
-            )
         if request.resume_state is not None and request.resume_state.provider != "claude_agent_sdk":
             raise ValueError("Claude Agent SDK runner cannot restore another provider's state")
 
@@ -198,6 +196,14 @@ class ClaudeAgentSDKRunner:
             approval_state.active_calls[state_payload["tool_name"]] = state_payload["tool_call_id"]
         options = self._options(request, session_id, store, approval_state, resume_existing)
         prompt = self._input_for_request(request)
+        guardrail_results: list[AgentRuntimeGuardrailResult] = []
+        if request.guardrails is not None and request.resume_state is None:
+            evaluate_guardrail_stage(
+                request.guardrails.input,
+                prompt,
+                stage="input",
+                results=guardrail_results,
+            )
         messages: list[object] = []
         async for message in self._query(prompt=prompt, options=options):
             messages.append(message)
@@ -214,8 +220,21 @@ class ClaudeAgentSDKRunner:
 
         interruptions = self._interruptions(request, result_message, approval_state)
         resume = self._resume_state(result_message, interruptions)
-        final_output, structured = self._final_output(request, result_message, messages)
+        final_output, structured = self._final_output(
+            request,
+            result_message,
+            messages,
+            validate_output=not interruptions,
+        )
+        if request.guardrails is not None and not interruptions:
+            evaluate_guardrail_stage(
+                request.guardrails.output,
+                structured.value if structured is not None else final_output,
+                stage="output",
+                results=guardrail_results,
+            )
         events = self._events(request, result_message, messages, approval_state)
+        events.extend(guardrail_events(guardrail_results))
         return AgentRunResult(
             final_output=final_output,
             raw_output=self._safe_raw_output(request, result_message),
@@ -224,6 +243,7 @@ class ClaudeAgentSDKRunner:
             interruptions=tuple(interruptions),
             structured_output=structured,
             stream_events=tuple(self._stream_events(messages, result_message)),
+            guardrail_results=tuple(guardrail_results),
             capabilities=self.capabilities,
         )
 
@@ -371,26 +391,19 @@ class ClaudeAgentSDKRunner:
         request: AgentRunRequest,
         result: ResultMessage,
         messages: list[object],
+        *,
+        validate_output: bool = True,
     ) -> tuple[str, AgentRuntimeStructuredOutput | None]:
-        if request.output_schema is not None and result.structured_output is not None:
-            try:
-                validate(
-                    instance=result.structured_output,
-                    schema=request.output_schema.schema,
-                )
-            except ValidationError as exc:
-                raise ValueError(
-                    "Claude structured output failed schema validation: "
-                    f"{exc.message}"
-                ) from exc
+        if request.output_schema is not None and validate_output:
+            structured = validated_structured_output(
+                request.output_schema,
+                result.structured_output
+                if result.structured_output is not None
+                else result.result,
+            )
             return (
-                json.dumps(result.structured_output, ensure_ascii=False, sort_keys=True),
-                AgentRuntimeStructuredOutput(
-                    value=result.structured_output,
-                    schema_name=request.output_schema.name,
-                    schema_version=request.output_schema.version,
-                    validated=True,
-                ),
+                json.dumps(structured.value, ensure_ascii=False, sort_keys=True),
+                structured,
             )
         if isinstance(result.result, str):
             return result.result, None

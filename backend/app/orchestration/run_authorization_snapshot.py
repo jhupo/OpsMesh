@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.agent_runtime.guardrails import runtime_controls_snapshot
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalogService
 from backend.app.model_providers.metadata import budget_is_exhausted
@@ -67,6 +68,10 @@ class RunAuthorizationSnapshotService:
             agent_snapshot=agent_snapshot,
         )
         frozen_runtime_policy = runtime_policy_snapshot(runtime_policy)
+        runtime_controls = runtime_controls_snapshot(
+            model_settings=profile.model_settings if profile is not None else {},
+            runtime_policy=frozen_runtime_policy,
+        )
         runtime_binding = RunRuntimeAuthorizationService(self.session).resolve_for_snapshot(
             task=task,
             step=step,
@@ -106,6 +111,8 @@ class RunAuthorizationSnapshotService:
             "runtime_policy": frozen_runtime_policy,
             "memory_policy": dict_copy(memory_policy),
             "approval_policy": dict_copy(approval_policy),
+            "output_schema": runtime_controls["output_schema"],
+            "guardrails": runtime_controls["guardrails"],
             "agent_tools": agent_tools,
             "file_scope": {
                 "mode": "authorized_file_resources",

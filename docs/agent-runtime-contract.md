@@ -7,7 +7,7 @@ runtime adapters. OpenAI Agents SDK and Anthropic Claude Agent SDK are the two s
 orchestration cores. Both implement the same OpsMesh-owned runtime contract; neither provider SDK
 crosses into product authorization, durable state, audit, quotas, or isolation.
 
-The product layer owns users, workspaces, tasks, permissions, runtimes, approvals, files, artifacts, and audit logs. The OpenAI adapter delegates agent turns, tools, handoffs, sessions, run state, and tracing to `openai-agents`; the Claude adapter delegates turns, MCP tools, streaming, structured output, session transcript mirroring, and deferred tool state to `claude-agent-sdk`.
+The product layer owns users, workspaces, tasks, permissions, runtimes, approvals, files, artifacts, and audit logs. The OpenAI adapter delegates agent turns, tools, handoffs, sessions, run state, guardrail execution, structured output, and tracing to `openai-agents`; the Claude adapter delegates turns, MCP tools, streaming, structured output, session transcript mirroring, and deferred tool state to `claude-agent-sdk`.
 
 ## Product-Owned Runtime Contracts
 
@@ -127,6 +127,29 @@ Claude's `AgentDefinition` is also an agents-as-tools primitive, but its in-proc
 shared by subagents and cannot enforce a distinct product execution context for each nested agent.
 The Claude adapter therefore does not advertise this capability and rejects nested-agent requests
 instead of weakening tool or resource scope.
+
+### Structured Output And Guardrails
+
+An agent profile declares its optional output contract at `model_settings.output_schema` with a
+stable `name`, Draft 2020-12 `schema`, `strict` flag, and optional `version`. Input and output policy
+is declared at `runtime_policy.guardrails`. Each stage is a bounded list of named rules using one of
+the supported deterministic kinds: `blocked_terms`, `max_characters`, or `json_schema`. Rules are
+blocking by default; a non-blocking failure is recorded as `flagged` and execution continues.
+
+Profile writes reject malformed schemas, duplicate names, unknown policy types, and unbounded rule
+configuration. The run authorization snapshot freezes both controls, and the worker reconstructs
+only the frozen contract. OpenAI maps the schema to the SDK's public `AgentOutputSchemaBase` and the
+rules to SDK `InputGuardrail` and `OutputGuardrail` objects. Claude maps structured output to
+`ClaudeAgentOptions.output_format`; because the Claude SDK has no equivalent agent output-guardrail
+contract, the Claude adapter evaluates the same product policy immediately before and after its SDK
+query.
+
+Successful and non-blocking evaluations are persisted in `AgentRunResult.guardrail_results` and as
+redacted `agent.guardrail.*` events. A blocking rule or invalid output raises a non-retryable product
+policy error, produces a durable `agent.guardrail.blocked` or `agent.output.invalid` event, does not
+activate provider fallback, and does not penalize provider health or the circuit breaker. Evidence
+contains only rule identifiers, counts, limits, and failed validator names, never the evaluated
+input, output, or matched term.
 
 ## Tool Mapping
 
