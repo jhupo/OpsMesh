@@ -112,7 +112,6 @@ class ClaudeAgentSDKRunner:
                 AgentRuntimeCapability.STREAMING,
                 AgentRuntimeCapability.RESUMABLE_STATE,
                 AgentRuntimeCapability.SESSIONS,
-                AgentRuntimeCapability.AGENTS_AS_TOOLS,
             }
         ),
         limits={"builtin_tools": "disabled", "mcp_server": "opsmesh"},
@@ -161,6 +160,11 @@ class ClaudeAgentSDKRunner:
             raise NotImplementedError(
                 "Claude Agent SDK supports agents-as-tools, not OpenAI-style handoff descriptors"
             )
+        if request.handoff_agents:
+            raise NotImplementedError(
+                "Claude Agent SDK agent definitions are not enabled until "
+                "their MCP tool scope is explicit"
+            )
         if request.guardrails is not None:
             raise NotImplementedError(
                 "Claude Agent SDK guardrails must be applied by the OpsMesh runtime lifecycle"
@@ -184,6 +188,9 @@ class ClaudeAgentSDKRunner:
             return _rejected_result(request)
 
         approval_state = _ApprovalState(reviews={}, deferred={}, active_calls={})
+        if request.approval_decisions:
+            state_payload = json.loads(request.resume_state.serialized_state)
+            approval_state.active_calls[state_payload["tool_name"]] = state_payload["tool_call_id"]
         options = self._options(request, session_id, store, approval_state, resume_existing)
         prompt = self._input_for_request(request)
         messages: list[object] = []

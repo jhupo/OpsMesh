@@ -109,8 +109,9 @@ history remains available to the SDK session. The adapter records source, target
 and filtered item types in `AgentRuntimeHandoffResult` and emits a redacted `agent.handoff` event.
 
 Claude's `AgentDefinition` is an agents-as-tools primitive, not an OpenAI-style handoff. The Claude
-adapter advertises this distinction in `AgentRuntimeCapabilities` and rejects an OpenAI handoff
-descriptor instead of silently changing its semantics.
+adapter does not enable it yet because the product tool/resource scope for nested agents must be
+explicit; it rejects both an OpenAI handoff descriptor and an unscoped nested-agent definition
+instead of silently changing their semantics.
 
 ## Tool Mapping
 
