@@ -4,6 +4,7 @@ from hashlib import sha256
 from pathlib import Path
 from uuid import UUID
 
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -604,7 +605,7 @@ def test_agent_mailbox_tools_require_task_team_membership() -> None:
     assert sent["message"]["recipient_agent_profile_id"] == str(recipient.id)
 
 
-def test_write_artifact_versions_are_bound_to_work_package() -> None:
+def test_write_artifact_versions_are_bound_to_work_package(tmp_path: Path) -> None:
     session = _session()
     user, workspace = _seed_workspace(session, slug="acme")
     task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Task")
@@ -631,7 +632,8 @@ def test_write_artifact_versions_are_bound_to_work_package() -> None:
         agent_run_id=run.id,
         allowed_tools=frozenset({"write_artifact"}),
     )
-    service = ProductToolService(session)
+    storage = LocalStorage(str(tmp_path / "storage"))
+    service = ProductToolService(session, storage=storage)
 
     first = service.write_artifact(
         context,
@@ -655,6 +657,70 @@ def test_write_artifact_versions_are_bound_to_work_package() -> None:
     assert second.work_package_id == "research-1"
     assert second.version == 2
     assert second.supersedes_artifact_id == first.id
+    assert storage.read(first.storage_key) == b"v1"
+    assert storage.read(second.storage_key) == b"v2"
+
+
+def test_write_artifact_compensates_storage_when_database_commit_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session, slug="artifact-compensation")
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=None,
+        agent_run_id=None,
+        allowed_tools=frozenset({"write_artifact"}),
+    )
+    storage_root = tmp_path / "storage"
+    storage = LocalStorage(str(storage_root))
+    service = ProductToolService(session, storage=storage)
+
+    def fail_commit() -> None:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(session, "commit", fail_commit)
+
+    with pytest.raises(ValueError) as error:
+        service.write_artifact(
+            context,
+            filename="report.txt",
+            content=b"not committed",
+            content_type="text/plain",
+        )
+
+    assert getattr(error.value, "code", None) == "artifact_database_write_failed"
+    assert session.query(Artifact).count() == 0
+    assert not any(path.is_file() for path in storage_root.rglob("*"))
+
+
+def test_write_artifact_rolls_back_partial_storage_write(tmp_path: Path) -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session, slug="artifact-storage-failure")
+    context = ToolContext(
+        workspace_id=workspace.id,
+        task_id=None,
+        agent_run_id=None,
+        allowed_tools=frozenset({"write_artifact"}),
+    )
+    storage_root = tmp_path / "storage"
+    service = ProductToolService(
+        session,
+        storage=_PartialWriteFailureStorage(str(storage_root)),
+    )
+
+    with pytest.raises(ValueError) as error:
+        service.write_artifact(
+            context,
+            filename="report.txt",
+            content=b"partial",
+            content_type="text/plain",
+        )
+
+    assert getattr(error.value, "code", None) == "artifact_storage_write_failed"
+    assert session.query(Artifact).count() == 0
+    assert not any(path.is_file() for path in storage_root.rglob("*"))
 
 
 def test_product_tool_permission_denied() -> None:
@@ -721,6 +787,12 @@ class _EmptyMemoryBackend:
 
     def search(self, request: MemorySearchRequest) -> list[MemorySearchHit]:
         return []
+
+
+class _PartialWriteFailureStorage(LocalStorage):
+    def write(self, storage_key: str, content: bytes) -> None:
+        super().write(storage_key, content[:1])
+        raise OSError("storage write failed")
 
 
 def _patch_portable_types_for_sqlite() -> None:

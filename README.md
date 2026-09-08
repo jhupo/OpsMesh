@@ -232,6 +232,8 @@ sequenceDiagram
 - Gateway-scoped workspace file content access with frozen grants, MIME/size limits, bounded Local
   or S3 reads, and integrity verification, plus explicit low-level staging and artifact collection,
   without exposing workspace storage to stdio runtimes or executing untrusted code on the API host.
+- Downloadable artifact bytes use workspace/artifact-ID object keys and compensated persistence, so
+  failed storage or database writes cannot leave a committed metadata-only artifact.
 
 ### Governance and operations
 

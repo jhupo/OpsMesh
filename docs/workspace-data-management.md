@@ -358,6 +358,12 @@ read limit, bounded object-store reads, storage-prefix validation, and size/chec
 results label file text as untrusted workspace input. Binary content is not passed through this text
 tool.
 
+The implemented artifact write path assigns the artifact UUID before persistence and uses it in the
+workspace-scoped storage key. Model tools and runtime collection write the object before committing
+the artifact row. If storage or database persistence fails, the database transaction is rolled back
+and newly created or partially written objects are removed. Archive restore uses the same
+compensating write batch across its file, artifact, metadata, and audit transaction.
+
 ## MVP Scope
 
 For the first backend implementation:

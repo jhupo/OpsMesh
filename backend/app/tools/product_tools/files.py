@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
 from hashlib import sha256
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
 from backend.app.artifacts.models import Artifact
+from backend.app.artifacts.persistence import ArtifactPersistenceError
 from backend.app.files.content import WorkspaceFileContent, WorkspaceFileReadError
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.security import safe_filename
@@ -88,11 +89,19 @@ class WorkspaceFileProductTools(ProductToolEventRecorder):
         artifact_type: str = "file",
     ) -> Artifact:
         context.require_tool("write_artifact")
+        persistence = self._artifact_persistence
+        if persistence is None:
+            raise ArtifactPersistenceError(
+                "artifact_storage_unavailable",
+                "Artifact storage is not configured",
+            )
         self._append_tool_event(context, "tool.called", "write_artifact")
         checksum = sha256(content).hexdigest()
         sanitized_filename = safe_filename(filename, default="artifact.bin")
         binding = self._artifact_binding(context)
+        artifact_id = uuid4()
         artifact = Artifact(
+            id=artifact_id,
             workspace_id=context.workspace_id,
             task_id=context.task_id,
             agent_run_id=context.agent_run_id,
@@ -107,13 +116,14 @@ class WorkspaceFileProductTools(ProductToolEventRecorder):
             content_type=content_type,
             size_bytes=len(content),
             checksum_sha256=checksum,
-            storage_key=f"workspaces/{context.workspace_id}/artifacts/{checksum}/{sanitized_filename}",
+            storage_key=(
+                f"workspaces/{context.workspace_id}/artifacts/{artifact_id}/"
+                f"{sanitized_filename}"
+            ),
             created_at=datetime.now(UTC),
         )
-        self._session.add(artifact)
         self._append_tool_event(context, "tool.completed", "write_artifact")
-        self._session.flush()
-        return artifact
+        return persistence.persist_new(artifact, content)
 
     def _artifact_binding(self, context: ToolContext) -> dict[str, object]:
         run = (

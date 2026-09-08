@@ -37,14 +37,12 @@ class RuntimeFileService:
         content: bytes,
         content_type: str,
     ) -> Artifact:
-        artifact = ProductToolService(self._session).write_artifact(
+        return ProductToolService(self._session, storage=self._storage).write_artifact(
             context,
             filename=filename,
             content=content,
             content_type=content_type,
         )
-        self._session.commit()
-        return artifact
 
     def _safe_runtime_path(self, relative_path: str) -> Path:
         path = (self._runtime_root / validate_runtime_relative_path(relative_path)).resolve()

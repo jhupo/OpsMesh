@@ -19,6 +19,10 @@ from backend.app.api.services.workspace_import_preview import _populate_import_p
 from backend.app.api.services.workspace_metadata_import import WorkspaceMetadataImportService
 from backend.app.audit.service import AuditService
 from backend.app.files.storage import ObjectStorage
+from backend.app.files.storage_transactions import (
+    CompensatingObjectStorageWrites,
+    ObjectStorageCompensationError,
+)
 from backend.app.workspaces.models import Workspace
 
 
@@ -39,38 +43,51 @@ class WorkspaceArchiveImportService:
             archive = ZipFile(BytesIO(archive_bytes))
         except BadZipFile as exc:
             raise ValueError("Archive is not a valid zip file") from exc
-        with archive:
-            metadata = self._read_metadata(archive)
-            metadata_importer = WorkspaceMetadataImportService(self._session)
-            response = self._import_metadata(
-                workspace=workspace,
-                user_id=user_id,
-                request=request,
-                metadata=metadata,
-                metadata_importer=metadata_importer,
-            )
-            self._import_blobs(
-                workspace=workspace,
-                user_id=user_id,
-                archive=archive,
-                metadata=metadata,
-                request=request,
-                response=response,
-                storage=storage,
-            )
-            _populate_import_preview(response, metadata)
-            if request.dry_run:
-                self._session.rollback()
-                metadata_importer.record_import_preview(
-                    workspace_id=workspace.id,
+        storage_writes = CompensatingObjectStorageWrites(storage)
+        try:
+            with archive:
+                metadata = self._read_metadata(archive)
+                metadata_importer = WorkspaceMetadataImportService(self._session)
+                response = self._import_metadata(
+                    workspace=workspace,
                     user_id=user_id,
-                    action="workspace.archive_import.previewed",
-                    response=response,
+                    request=request,
+                    metadata=metadata,
+                    metadata_importer=metadata_importer,
                 )
-                return response
-            self._record_archive_import(workspace, user_id, metadata, response)
-            self._session.commit()
-            return response
+                self._import_blobs(
+                    workspace=workspace,
+                    user_id=user_id,
+                    archive=archive,
+                    metadata=metadata,
+                    request=request,
+                    response=response,
+                    storage_writes=storage_writes,
+                )
+                _populate_import_preview(response, metadata)
+                if request.dry_run:
+                    self._session.rollback()
+                    metadata_importer.record_import_preview(
+                        workspace_id=workspace.id,
+                        user_id=user_id,
+                        action="workspace.archive_import.previewed",
+                        response=response,
+                    )
+                    storage_writes.complete()
+                    return response
+                self._record_archive_import(workspace, user_id, metadata, response)
+                self._session.commit()
+        except Exception:
+            self._session.rollback()
+            try:
+                storage_writes.compensate()
+            except ObjectStorageCompensationError as compensation_exc:
+                raise RuntimeError(
+                    "Workspace archive import failed and storage cleanup was incomplete"
+                ) from compensation_exc
+            raise
+        storage_writes.complete()
+        return response
 
     def _read_metadata(self, archive: ZipFile) -> WorkspaceExportResponse:
         if "metadata.json" not in archive.namelist():
@@ -101,6 +118,7 @@ class WorkspaceArchiveImportService:
                 max_items_per_collection=request.max_items_per_collection,
             ),
             record_preview=False,
+            commit=False,
         )
         response.created_counts.setdefault("files", 0)
         response.skipped_counts.setdefault("files", 0)
@@ -119,18 +137,18 @@ class WorkspaceArchiveImportService:
         metadata: WorkspaceExportResponse,
         request: WorkspaceArchiveImportRequest,
         response: WorkspaceImportResponse,
-        storage: ObjectStorage,
+        storage_writes: CompensatingObjectStorageWrites,
     ) -> None:
         blob_reader = WorkspaceArchiveBlobReader(archive, set(archive.namelist()))
         file_importer = WorkspaceArchiveFileImporter(
             session=self._session,
             blob_reader=blob_reader,
-            storage=storage,
+            storage_writes=storage_writes,
         )
         artifact_importer = WorkspaceArchiveArtifactImporter(
             session=self._session,
             blob_reader=blob_reader,
-            storage=storage,
+            storage_writes=storage_writes,
         )
         total_bytes = 0
         if request.import_file_bytes:

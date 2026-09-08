@@ -39,6 +39,7 @@ class WorkspaceMetadataImportService:
         user_id: UUID,
         request: WorkspaceImportRequest,
         record_preview: bool = True,
+        commit: bool = True,
     ) -> WorkspaceImportResponse:
         id_map: dict[str, dict[str, str]] = {
             "agents": {},
@@ -165,7 +166,10 @@ class WorkspaceMetadataImportService:
                 "skipped_counts": skipped_counts,
             },
         )
-        self._session.commit()
+        if commit:
+            self._session.commit()
+        else:
+            self._session.flush()
         return response
 
     def record_import_preview(

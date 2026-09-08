@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.artifacts.persistence import ArtifactPersistenceService
 from backend.app.files.content import (
     DEFAULT_AGENT_FILE_READ_MAX_BYTES,
     DEFAULT_AGENT_READABLE_CONTENT_TYPES,
@@ -30,6 +31,9 @@ class ProductToolService(
         readable_content_types: frozenset[str] = DEFAULT_AGENT_READABLE_CONTENT_TYPES,
     ) -> None:
         self._session = session
+        self._artifact_persistence = (
+            ArtifactPersistenceService(session, storage) if storage is not None else None
+        )
         self._workspace_file_content_reader = (
             WorkspaceFileContentReader(
                 storage,

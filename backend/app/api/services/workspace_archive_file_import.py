@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,7 @@ from backend.app.api.services.workspace_import_fields import _dict_field, _strin
 from backend.app.api.services.workspace_import_resolution import _archive_resolution_action
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.security import safe_filename
-from backend.app.files.storage import ObjectStorage
+from backend.app.files.storage_transactions import CompensatingObjectStorageWrites
 from backend.app.workspaces.models import Workspace
 
 
@@ -22,11 +22,11 @@ class WorkspaceArchiveFileImporter:
         *,
         session: Session,
         blob_reader: WorkspaceArchiveBlobReader,
-        storage: ObjectStorage,
+        storage_writes: CompensatingObjectStorageWrites,
     ) -> None:
         self._session = session
         self._blob_reader = blob_reader
-        self._storage = storage
+        self._storage_writes = storage_writes
 
     def import_blob(
         self,
@@ -74,14 +74,16 @@ class WorkspaceArchiveFileImporter:
         if request.dry_run:
             return total_bytes
         imported_filename = safe_filename(f"{request.name_prefix}{filename}")
+        file_id = uuid4()
         file = WorkspaceFile(
+            id=file_id,
             workspace_id=workspace.id,
             uploaded_by_user_id=user_id,
             filename=imported_filename,
             content_type=_string_field(item, "content_type", "application/octet-stream"),
             size_bytes=len(content),
             checksum_sha256=checksum_result.checksum_sha256,
-            storage_key=f"workspaces/{workspace.id}/files/imported/{source_id}/{imported_filename}",
+            storage_key=f"workspaces/{workspace.id}/files/{file_id}/{imported_filename}",
             status="active",
             file_metadata={
                 **_dict_field(item, "metadata"),
@@ -91,6 +93,6 @@ class WorkspaceArchiveFileImporter:
         )
         self._session.add(file)
         self._session.flush()
-        self._storage.write(file.storage_key, content)
+        self._storage_writes.write_new(file.storage_key, content)
         response.id_map["files"][source_id] = str(file.id)
         return total_bytes

@@ -57,6 +57,7 @@ def test_runtime_file_staging_and_artifact_collection(tmp_path: Path) -> None:
     assert staged.read_bytes() == b"hello"
     assert artifact.workspace_id == workspace.id
     assert artifact.size_bytes == 4
+    assert storage.read(artifact.storage_key) == b"done"
 
 
 def test_runtime_staging_rejects_path_escape(tmp_path: Path) -> None:

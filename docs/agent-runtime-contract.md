@@ -221,6 +221,13 @@ Binary files are not decoded into model tool results. They remain available to l
 runtime staging and provider-native multimodal paths with their own contracts. File read denials
 produce stable tool errors plus run/security evidence without exposing content or storage keys.
 
+`write_artifact` persists content and metadata as one compensated operation. Every new object uses
+`workspaces/{workspace_id}/artifacts/{artifact_id}/{safe_filename}` so it is never shared by two
+artifact rows. The object is written before the database commit. A storage failure rolls back the
+artifact and tool events and removes any partial object; a database commit failure removes the new
+object. The same object-write compensation primitive covers archive restore, while runtime artifact
+collection delegates to this product service rather than creating metadata-only artifacts.
+
 ### Runtime Tools
 
 Tools that require Docker or self-hosted runtime.

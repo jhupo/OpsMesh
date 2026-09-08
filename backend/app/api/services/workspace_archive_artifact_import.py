@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -18,7 +19,7 @@ from backend.app.api.services.workspace_import_fields import (
 from backend.app.api.services.workspace_import_resolution import _archive_resolution_action
 from backend.app.artifacts.models import Artifact
 from backend.app.files.security import safe_filename
-from backend.app.files.storage import ObjectStorage
+from backend.app.files.storage_transactions import CompensatingObjectStorageWrites
 from backend.app.workspaces.models import Workspace
 
 
@@ -28,11 +29,11 @@ class WorkspaceArchiveArtifactImporter:
         *,
         session: Session,
         blob_reader: WorkspaceArchiveBlobReader,
-        storage: ObjectStorage,
+        storage_writes: CompensatingObjectStorageWrites,
     ) -> None:
         self._session = session
         self._blob_reader = blob_reader
-        self._storage = storage
+        self._storage_writes = storage_writes
 
     def import_blob(
         self,
@@ -119,7 +120,9 @@ class WorkspaceArchiveArtifactImporter:
         if source_run_id and imported_run_id is None:
             response.warnings.append(f"Imported artifact {source_id} without a mapped run")
         imported_filename = safe_filename(f"{request.name_prefix}{filename}")
+        artifact_id = uuid4()
         artifact = Artifact(
+            id=artifact_id,
             workspace_id=workspace.id,
             task_id=_uuid_or_none(imported_task_id),
             agent_run_id=None,
@@ -134,10 +137,7 @@ class WorkspaceArchiveArtifactImporter:
             content_type=_string_field(item, "content_type", "application/octet-stream"),
             size_bytes=len(content),
             checksum_sha256=checksum_sha256,
-            storage_key=(
-                f"workspaces/{workspace.id}/artifacts/imported/{source_id}/"
-                f"{imported_filename}"
-            ),
+            storage_key=f"workspaces/{workspace.id}/artifacts/{artifact_id}/{imported_filename}",
             artifact_metadata={
                 **_dict_field(item, "metadata"),
                 "imported_from_artifact_id": source_id,
@@ -157,5 +157,5 @@ class WorkspaceArchiveArtifactImporter:
         )
         self._session.add(artifact)
         self._session.flush()
-        self._storage.write(artifact.storage_key, content)
+        self._storage_writes.write_new(artifact.storage_key, content)
         response.id_map["artifacts"][source_id] = str(artifact.id)
