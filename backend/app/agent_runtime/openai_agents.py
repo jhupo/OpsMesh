@@ -9,12 +9,16 @@ from agents import (
     Runner,
     RunState,
 )
+from agents.handoffs import HandoffInputData
+from agents.handoffs import handoff as sdk_handoff
 from agents.models.interface import Model
 from agents.models.openai_provider import OpenAIProvider
 
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
+    AgentRuntimeAgentDefinition,
+    AgentRuntimeEvent,
 )
 from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.openai_results import OpenAIAgentsResultMapper
@@ -47,7 +51,8 @@ class OpenAIAgentsRunner:
 
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
         self._validate_contract_requests(request)
-        agent = self._build_agent(request)
+        handoff_audits: dict[str, dict[str, object]] = {}
+        agent = self._build_agent(request, handoff_audits=handoff_audits)
         runner_input = await self._runner_input(request, agent)
         result = await async_retry_with_circuit(
             key=_model_provider_circuit_key(request),
@@ -66,20 +71,35 @@ class OpenAIAgentsRunner:
             should_retry=lambda exc: normalize_agent_error(exc).retryable,
         )
         final_output, structured_output = self._result_mapper.final_output(result)
+        handoffs = self._result_mapper.handoffs(result, handoff_audits)
+        runtime_events = self._result_mapper.runtime_events(result)
+        runtime_events.extend(
+            AgentRuntimeEvent(
+                event_type="agent.handoff",
+                message="Agent handoff completed.",
+                payload={
+                    "source_agent": handoff.source.name,
+                    "target_agent": handoff.target.name,
+                    "status": handoff.status,
+                    "filtered_context_keys": list(handoff.filtered_context_keys),
+                    "metadata": handoff.metadata,
+                },
+            )
+            for handoff in handoffs
+        )
         return AgentRunResult(
             final_output=final_output,
             raw_output=self._result_mapper.safe_raw_output(result),
-            events=tuple(self._result_mapper.runtime_events(result)),
+            events=tuple(runtime_events),
             resume_state=self._result_mapper.resume_state(result),
             interruptions=tuple(self._result_mapper.interruptions(result)),
             structured_output=structured_output,
             stream_events=tuple(self._result_mapper.stream_events(result)),
+            handoffs=tuple(handoffs),
         )
 
     def _validate_contract_requests(self, request: AgentRunRequest) -> None:
         unsupported: list[str] = []
-        if request.handoffs:
-            unsupported.append("handoffs")
         if request.output_schema is not None:
             unsupported.append("structured output")
         if request.guardrails is not None:
@@ -132,7 +152,12 @@ class OpenAIAgentsRunner:
                 raise ValueError("Stored tool approval decision is invalid")
         return state
 
-    def _build_agent(self, request: AgentRunRequest) -> Agent[Any]:
+    def _build_agent(
+        self,
+        request: AgentRunRequest,
+        *,
+        handoff_audits: dict[str, dict[str, object]] | None = None,
+    ) -> Agent[Any]:
         profile = request.agent_profile
         model_name = request.model or profile.model
         if request.api_key is None:
@@ -147,6 +172,79 @@ class OpenAIAgentsRunner:
             instructions=profile.instructions,
             model=model,
             model_settings=self._settings_mapper.map_settings(profile.model_settings),
+            tools=self._tool_bridge.tools(request),
+            handoffs=self._build_handoffs(
+                request,
+                handoff_audits if handoff_audits is not None else {},
+            ),
+        )
+
+    def _build_handoffs(
+        self,
+        request: AgentRunRequest,
+        handoff_audits: dict[str, dict[str, object]],
+    ) -> list[Any]:
+        if not request.handoffs:
+            return []
+        definitions: dict[tuple[str, str], AgentRuntimeAgentDefinition] = {}
+        for definition in request.handoff_agents:
+            for key in {
+                _agent_definition_key(definition),
+                ("name", definition.ref.name),
+            }:
+                if key in definitions and definitions[key] != definition:
+                    raise ValueError("OpenAI Agents handoff targets must be unique")
+                definitions[key] = definition
+        handoffs: list[Any] = []
+        seen_targets: set[tuple[str, str]] = set()
+        for descriptor in request.handoffs:
+            target_key = _handoff_target_key(descriptor.target)
+            if target_key in seen_targets:
+                raise ValueError("OpenAI Agents handoff targets must be unique")
+            seen_targets.add(target_key)
+            definition = definitions.get(target_key)
+            if definition is None:
+                raise ValueError(
+                    f"Handoff target {descriptor.target.name} is not in the authorized target set"
+                )
+            if definition.workspace_id != request.context.workspace_id:
+                raise ValueError("Handoff target belongs to another workspace")
+            target = self._build_handoff_agent(request, definition)
+            audit = handoff_audits.setdefault(target.name, {})
+            source_profile_id = getattr(request.agent_profile, "id", None)
+            if source_profile_id is not None:
+                audit["source_agent_profile_id"] = str(source_profile_id)
+            if definition.ref.profile_id is not None:
+                audit["target_agent_profile_id"] = str(definition.ref.profile_id)
+            handoffs.append(
+                sdk_handoff(
+                    target,
+                    tool_description_override=descriptor.reason
+                    or f"Transfer the request to {target.name}.",
+                    input_filter=_handoff_input_filter(descriptor.input_filter, audit),
+                )
+            )
+        return handoffs
+
+    def _build_handoff_agent(
+        self,
+        request: AgentRunRequest,
+        definition: AgentRuntimeAgentDefinition,
+    ) -> Agent[Any]:
+        model_name = definition.model or request.model or request.agent_profile.model
+        if request.api_key is None:
+            raise ValueError("OpenAI-compatible runtime requires an explicit provider API key")
+        model: str | Model = OpenAIProvider(
+            api_key=request.api_key,
+            base_url=normalize_openai_compatible_base_url(request.base_url),
+            use_responses=_use_responses_api(request.model_api),
+        ).get_model(model_name)
+        return Agent(
+            name=definition.ref.name,
+            handoff_description=definition.handoff_description,
+            instructions=definition.instructions,
+            model=model,
+            model_settings=self._settings_mapper.map_settings(definition.model_settings),
             tools=self._tool_bridge.tools(request),
         )
 
@@ -216,3 +314,56 @@ def _use_responses_api(model_api: str | None) -> bool | None:
     if normalized == OPENAI_RESPONSES_API:
         return True
     return None
+
+
+def _handoff_target_key(ref: object) -> tuple[str, str]:
+    profile_id = getattr(ref, "profile_id", None)
+    if profile_id is not None:
+        return ("profile_id", str(profile_id))
+    return ("name", str(getattr(ref, "name", "")))
+
+
+def _agent_definition_key(definition: AgentRuntimeAgentDefinition) -> tuple[str, str]:
+    return _handoff_target_key(definition.ref)
+
+
+def _handoff_input_filter(
+    allowed_item_types: tuple[str, ...],
+    audit: dict[str, object],
+) -> Any:
+    if not allowed_item_types:
+        return None
+    allowed = frozenset(allowed_item_types)
+
+    def _filter(data: HandoffInputData) -> HandoffInputData:
+        source = data.input_items if data.input_items is not None else data.new_items
+        retained = []
+        removed: set[str] = set()
+        for item in source:
+            item_type = _handoff_item_type(item)
+            if item_type in allowed:
+                retained.append(item)
+            else:
+                removed.add(item_type)
+        audit["input_items_before"] = len(source)
+        audit["input_items_after"] = len(retained)
+        audit["filtered_context_keys"] = tuple(sorted(removed))
+        return data.clone(input_items=tuple(retained))
+
+    return _filter
+
+
+def _handoff_item_type(item: object) -> str:
+    item_type = getattr(item, "type", None)
+    if isinstance(item_type, str) and item_type:
+        return item_type
+    raw_item = getattr(item, "raw_item", None)
+    if isinstance(raw_item, dict):
+        raw_type = raw_item.get("type") or raw_item.get("role")
+        if isinstance(raw_type, str) and raw_type:
+            return raw_type
+    if isinstance(item, dict):
+        raw_type = item.get("type") or item.get("role")
+        if isinstance(raw_type, str) and raw_type:
+            return raw_type
+    return type(item).__name__

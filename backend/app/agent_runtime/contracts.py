@@ -78,6 +78,18 @@ class AgentRuntimeAgentRef:
 
 
 @dataclass(frozen=True)
+class AgentRuntimeAgentDefinition:
+    """Authorized, immutable definition used when an agent is a handoff target."""
+
+    ref: AgentRuntimeAgentRef
+    workspace_id: UUID
+    instructions: str
+    model: str | None = None
+    model_settings: dict[str, object] = field(default_factory=dict)
+    handoff_description: str | None = None
+
+
+@dataclass(frozen=True)
 class AgentRuntimeHandoff:
     target: AgentRuntimeAgentRef
     reason: str = ""
@@ -274,6 +286,7 @@ class AgentRunRequest:
     resume_state: AgentRuntimeResumeState | None = None
     approval_decisions: tuple[AgentRuntimeApprovalDecision, ...] = ()
     handoffs: tuple[AgentRuntimeHandoff, ...] = ()
+    handoff_agents: tuple[AgentRuntimeAgentDefinition, ...] = ()
     output_schema: AgentRuntimeOutputSchema | None = None
     guardrails: AgentRuntimeGuardrails | None = None
     stream: bool = False

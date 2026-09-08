@@ -6,7 +6,9 @@ from typing import Any
 from agents import __version__ as agents_sdk_version
 
 from backend.app.agent_runtime.contracts import (
+    AgentRuntimeAgentRef,
     AgentRuntimeEvent,
+    AgentRuntimeHandoffResult,
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
     AgentRuntimeStreamEvent,
@@ -129,7 +131,11 @@ class OpenAIAgentsResultMapper:
     def runtime_events(self, result: Any) -> list[AgentRuntimeEvent]:
         events: list[AgentRuntimeEvent] = []
         last_agent = getattr(result, "last_agent", None)
-        if last_agent is not None:
+        new_items = getattr(result, "new_items", ()) or ()
+        has_handoff_item = any(
+            getattr(item, "type", None) == "handoff_output_item" for item in new_items
+        )
+        if last_agent is not None and not has_handoff_item:
             events.append(
                 AgentRuntimeEvent(
                     event_type="agent.handoff",
@@ -167,6 +173,36 @@ class OpenAIAgentsResultMapper:
             event = runtime_stream_event_from_sdk_item(item, sequence=sequence)
             if event is not None:
                 mapped.append(event)
+        return mapped
+
+    def handoffs(
+        self,
+        result: Any,
+        audits: dict[str, dict[str, object]] | None = None,
+    ) -> list[AgentRuntimeHandoffResult]:
+        mapped: list[AgentRuntimeHandoffResult] = []
+        for item in getattr(result, "new_items", ()) or ():
+            if getattr(item, "type", None) != "handoff_output_item":
+                continue
+            source_agent = getattr(item, "source_agent", None)
+            target_agent = getattr(item, "target_agent", None)
+            source_name = str(getattr(source_agent, "name", source_agent or ""))
+            target_name = str(getattr(target_agent, "name", target_agent or ""))
+            audit = dict((audits or {}).get(target_name, {}))
+            filtered_keys = audit.pop("filtered_context_keys", ())
+            mapped.append(
+                AgentRuntimeHandoffResult(
+                    source=AgentRuntimeAgentRef(name=source_name),
+                    target=AgentRuntimeAgentRef(name=target_name),
+                    status="completed",
+                    filtered_context_keys=(
+                        tuple(str(item) for item in filtered_keys)
+                        if isinstance(filtered_keys, tuple | list)
+                        else ()
+                    ),
+                    metadata=redact_sensitive_payload(audit),
+                )
+            )
         return mapped
 
     def _capture_resume_input(

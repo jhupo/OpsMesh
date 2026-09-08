@@ -97,6 +97,17 @@ Rules:
 - provider API keys are resolved by the worker from encrypted workspace credentials
 - provider secrets are not placed in prompts, run events, or API responses
 
+### Handoff Authorization
+
+`AgentRunRequest.handoffs` contains only product-owned target references. Each reference must resolve
+to one `handoff_agents` definition whose `workspace_id` matches the current runtime context. Missing,
+duplicate, or cross-workspace targets fail before `Runner.run()` is called.
+
+The adapter converts an authorized target to an SDK `handoff()` object. `input_filter` is an allowlist
+of SDK input item `type` or `role` values; the filter is applied to the handoff input while the full
+history remains available to the SDK session. The adapter records source, target, retained counts,
+and filtered item types in `AgentRuntimeHandoffResult` and emits a redacted `agent.handoff` event.
+
 ## Tool Mapping
 
 Product tools map to SDK tools in several ways:

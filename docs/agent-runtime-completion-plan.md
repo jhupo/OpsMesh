@@ -59,7 +59,7 @@ Goal: expose the supported Agents SDK orchestration surface through vendor-neutr
 | Order | Priority | Functional point | Status | Commit | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- |
 | 2.1 | P0 | Expand typed contracts for agents, handoffs, interruptions, streaming, structured results, and capabilities | Done | `expand-agent-runtime-contracts` | Product-owned session, handoff, interruption, stream, structured-output, and capability contracts are mapped at the adapter boundary; orchestration has no SDK result/state imports; unsupported request features fail explicitly |
-| 2.2 | P0 | Implement SDK handoffs and handoff input filtering | Pending | `add-openai-agent-handoffs` | Control transfers to an authorized target agent and records source, target, and filtered context |
+| 2.2 | P0 | Implement SDK handoffs and handoff input filtering | Done | `add-openai-agent-handoffs` | SDK handoff objects are created only for unique same-workspace authorized targets; filtered context and source/target metadata are returned, persisted, and emitted as redacted runtime events |
 | 2.3 | P0 | Implement agents-as-tools with nested run provenance and limits | Pending | `add-openai-agents-as-tools` | Manager invokes a specialist as a tool without bypassing tool, resource, or depth policy |
 | 2.4 | P0 | Add structured output plus agent input/output guardrails | Pending | `add-agent-output-and-guardrails` | Invalid output fails validation; blocked input/output produces redacted evidence |
 | 2.5 | P1 | Add lifecycle hooks, streaming events, cancellation propagation, and usage capture | Pending | `add-agent-runtime-streaming-hooks` | Stream ordering is stable and cancellation reaches the active SDK run and tools |
