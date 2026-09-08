@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import NoReturn
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRuntimeContext
@@ -13,6 +14,7 @@ from backend.app.capabilities.mcp_execution_adapters import (
 from backend.app.capabilities.mcp_execution_types import McpExecutionError
 from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings
+from backend.app.projects.models import AgentRunProjectIOState
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_manager.backends import build_runtime_backend_registry
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
@@ -51,7 +53,11 @@ class ContextualMcpAdapterResolver:
             self._secret_service,
         ).resolve(runtime.runtime_provider)
         if backend is not None and backend.capabilities.mcp_stdio:
-            return backend.mcp_adapter(runtime, run.id)
+            return backend.mcp_adapter(
+                runtime,
+                run.id,
+                working_dir=self._project_working_directory(run),
+            )
         self._deny_stdio(
             "stdio_runtime_provider_unsupported",
             "Authorized runtime provider does not support MCP stdio execution",
@@ -104,6 +110,15 @@ class ContextualMcpAdapterResolver:
                 "MCP stdio runtime does not enforce the frozen network policy",
             )
         return runtime
+
+    def _project_working_directory(self, run: AgentRun) -> str | None:
+        return self._session.scalar(
+            select(AgentRunProjectIOState.root_path).where(
+                AgentRunProjectIOState.workspace_id == run.workspace_id,
+                AgentRunProjectIOState.agent_run_id == run.id,
+                AgentRunProjectIOState.status.in_(("staged", "harvesting", "harvested")),
+            )
+        )
 
     def _deny_stdio(self, code: str, message: str) -> NoReturn:
         self._session.add(

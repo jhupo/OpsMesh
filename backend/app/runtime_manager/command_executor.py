@@ -10,7 +10,11 @@ from backend.app.runtime_manager.command_output import (
     command_failure_metadata,
     positive_int_limit,
 )
-from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeCommandResult
+from backend.app.runtime_manager.contracts import (
+    DockerRuntimeClient,
+    RuntimeCommandInputFile,
+    RuntimeCommandResult,
+)
 from backend.app.runtime_manager.events import RuntimeEventLog
 from backend.app.runtime_manager.runtime_guards import require_container
 from backend.app.runtime_manager.security_events import RuntimeSecurityEventRecorder
@@ -36,7 +40,8 @@ class RuntimeCommandExecutor:
         workspace_id: UUID,
         runtime: WorkspaceRuntime,
         command: list[str],
-        stdin_data: str | None = None,
+        input_file: RuntimeCommandInputFile | None = None,
+        working_dir: str | None = None,
     ) -> RuntimeCommand:
         if runtime.workspace_id != workspace_id:
             raise PermissionError("Runtime does not belong to workspace")
@@ -56,7 +61,8 @@ class RuntimeCommandExecutor:
             runtime=runtime,
             record=record,
             command=command,
-            stdin_data=stdin_data,
+            input_file=input_file,
+            working_dir=working_dir,
         )
 
     def execute_existing_command(
@@ -66,7 +72,8 @@ class RuntimeCommandExecutor:
         runtime: WorkspaceRuntime,
         record: RuntimeCommand,
         command: list[str],
-        stdin_data: str | None = None,
+        input_file: RuntimeCommandInputFile | None = None,
+        working_dir: str | None = None,
     ) -> RuntimeCommand:
         if runtime.workspace_id != workspace_id:
             raise PermissionError("Runtime does not belong to workspace")
@@ -79,11 +86,16 @@ class RuntimeCommandExecutor:
         self._session.flush()
 
         try:
+            arguments: dict[str, object] = {}
+            if input_file is not None:
+                arguments["input_file"] = input_file
+            if working_dir is not None:
+                arguments["working_dir"] = working_dir
             result = self._docker.exec_command(
                 runtime.docker_container_id or "",
                 command,
                 timeout_seconds,
-                stdin_data=stdin_data,
+                **arguments,
             )
         except TimeoutExpired as exc:
             self._fail_command(

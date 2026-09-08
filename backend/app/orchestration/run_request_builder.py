@@ -19,6 +19,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
 from backend.app.core.config import Settings
+from backend.app.projects.runtime_context import project_runtime_context
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.secrets.service import SecretEncryptionService
@@ -116,6 +117,9 @@ class RunRequestBuilder:
             model_provider=model_provider,
             authorization_snapshot=authorization_snapshot,
         )
+        project_workspace = project_runtime_context(self.session, run)
+        if project_workspace is not None:
+            metadata["project_workspace"] = project_workspace
         persistent_session_ref = self.persistent_session_ref_for_run(run, task, profile)
         persistent_session = self.persistent_session_for_run(
             run,

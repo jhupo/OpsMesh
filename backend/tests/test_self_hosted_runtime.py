@@ -1804,7 +1804,7 @@ def test_self_hosted_connector_manifest_exposes_bootstrap_contract_without_secre
     assert payload["api_prefix"] == "/api/v1"
     assert payload["connector"] == {
         "name": "opsmesh-self-hosted-worker",
-        "protocol_version": 1,
+        "protocol_version": 2,
         "recommended_version": "0.4.0",
         "min_version": "0.3.0",
         "upgrade_url": "https://downloads.example.test/connector",
@@ -1813,7 +1813,20 @@ def test_self_hosted_connector_manifest_exposes_bootstrap_contract_without_secre
     assert payload["endpoints"]["claim_job"].endswith(
         "/self-hosted/jobs/{agent_run_id}/claim"
     )
+    assert payload["endpoints"]["project_archive"].endswith(
+        "/self-hosted/jobs/{agent_run_id}/project/archive"
+    )
+    assert payload["endpoints"]["project_output"].endswith(
+        "/self-hosted/jobs/{agent_run_id}/project/outputs/{project_output_id}"
+    )
     assert "allowed_tools" in payload["capability_contract"]["optional_capabilities"]
+    assert payload["capability_contract"]["project_files"] == {
+        "archive_format": "tar",
+        "manifest_path": ".opsmesh/project.json",
+        "download_after_claim": True,
+        "declared_outputs_only": True,
+        "completion_requires_required_outputs": True,
+    }
     assert payload["security"]["workspace_scoped"] is True
     assert payload["security"]["returns_credentials"] is False
     assert payload["version_policy"] == {

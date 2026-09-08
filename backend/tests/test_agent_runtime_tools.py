@@ -37,7 +37,10 @@ from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.contracts import RuntimeCommandResult
+from backend.app.runtime_manager.contracts import (
+    RuntimeCommandInputFile,
+    RuntimeCommandResult,
+)
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.self_hosted.models import SelfHostedMcpJob
@@ -67,7 +70,7 @@ def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
     task = Task(workspace_id=workspace.id, title="Task")
-    server = McpServer(workspace_id=workspace.id, name="image-tools")
+    server = McpServer(workspace_id=workspace.id, name="image-tools", server_type="hosted")
     session.add_all([task, server])
     session.flush()
     allow = McpToolAllowlist(
@@ -116,7 +119,7 @@ def test_backend_tool_executor_records_team_runtime_tool_provenance() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
     task = Task(workspace_id=workspace.id, title="Team task")
-    server = McpServer(workspace_id=workspace.id, name="team-tools")
+    server = McpServer(workspace_id=workspace.id, name="team-tools", server_type="hosted")
     session.add_all([task, server])
     session.flush()
     allow = McpToolAllowlist(
@@ -211,7 +214,7 @@ def test_backend_tool_executor_enforces_mcp_per_run_call_limit() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
     task = Task(workspace_id=workspace.id, title="Task")
-    server = McpServer(workspace_id=workspace.id, name="image-tools")
+    server = McpServer(workspace_id=workspace.id, name="image-tools", server_type="hosted")
     session.add_all([task, server])
     session.flush()
     allow = McpToolAllowlist(
@@ -270,7 +273,7 @@ def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs() -> N
     session = _session()
     _, workspace = _seed_workspace(session)
     task = Task(workspace_id=workspace.id, title="Task")
-    server = McpServer(workspace_id=workspace.id, name="image-tools")
+    server = McpServer(workspace_id=workspace.id, name="image-tools", server_type="hosted")
     session.add_all([task, server])
     session.flush()
     allow = McpToolAllowlist(
@@ -1034,12 +1037,12 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
         "python",
         "-m",
         "opsmesh_runtime.mcp_stdio_client",
-        "--request-stdin",
     ]
     assert "runtime-secret" not in str(command)
-    stdin_data = docker.exec_calls[1]["stdin_data"]
-    assert isinstance(stdin_data, str)
-    request = json.loads(stdin_data)
+    input_file = docker.exec_calls[1]["input_file"]
+    assert isinstance(input_file, RuntimeCommandInputFile)
+    assert input_file.argument_name == "--request-file"
+    request = json.loads(input_file.content)
     assert request["tool"]["name"] == "generate_image"
     assert request["server"]["env"] == {"MCP_IMAGE_API_KEY": "runtime-secret"}
 
@@ -1090,14 +1093,16 @@ class RecordingDockerClient:
         command: list[str],
         timeout_seconds: int,
         *,
-        stdin_data: str | None = None,
+        input_file: RuntimeCommandInputFile | None = None,
+        working_dir: str | None = None,
     ) -> RuntimeCommandResult:
         self.exec_calls.append(
             {
                 "container_id": container_id,
                 "command": command,
                 "timeout_seconds": timeout_seconds,
-                "stdin_data": stdin_data,
+                "input_file": input_file,
+                "working_dir": working_dir,
             }
         )
         return self._command_results.pop(0)

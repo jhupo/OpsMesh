@@ -230,15 +230,24 @@ Preview access still requires workspace permission and should avoid loading very
 
 ## Runtime Staging Flow
 
-Agents and tools should not mount all workspace files.
+Agents and tools do not mount all workspace files. The implemented lifecycle is:
 
-1. Worker determines which files are required by a task or tool call.
-2. Orchestration validates the agent can access those files.
-3. Runtime Manager copies or mounts only approved files into the runtime directory.
-4. Runtime command executes inside Docker.
-5. Runtime Manager collects selected outputs.
-6. Outputs become artifacts.
-7. Artifacts are stored under workspace-scoped storage keys.
+1. Run creation freezes the project's exact configuration version, input versions, checksums,
+   access modes, and output declarations.
+2. At execution start, the worker verifies the snapshot fingerprint, storage scope, object size,
+   and SHA-256 for every input before building the archive.
+3. Managed Docker receives the archive under `/workspace/runs/{run_id}`. The Docker SDK assigns
+   archive ownership to the runtime user; read-only inputs remain immutable and copy-on-write input
+   directories remain writable. Self-hosted workers download the equivalent relative `runs/{run_id}`
+   archive after claiming the run.
+4. `.opsmesh/project.json` exposes the frozen configuration and public manifest inside the runtime
+   without object-storage keys.
+5. Completion reads or accepts only the snapshotted output declarations, applies each byte limit,
+   and refuses completion if a required output is absent.
+6. Collected bytes become checksum-recorded, workspace-scoped, versioned artifacts. A repeated
+   collection returns the same artifact only when its bytes and declaration match.
+7. Durable project-I/O state, file-access events, run events, and audit events record staging,
+   collection, and failures.
 
 Runtime paths should be internal details, not permanent file identifiers.
 
@@ -246,9 +255,15 @@ The immutable run project snapshot is the only source of project inputs for stag
 must not reconstruct a historical run from the project's current configuration or active file
 bindings.
 
+Runtime I/O endpoints:
+
+- `GET /api/v1/workspaces/{workspace_id}/runs/{run_id}/project-io`
+- `GET /api/v1/self-hosted/jobs/{run_id}/project/archive`
+- `PUT /api/v1/self-hosted/jobs/{run_id}/project/outputs/{project_output_id}`
+
 ## Artifact Collection
 
-Artifact collection should be explicit.
+Artifact collection is driven by the run's explicit output declarations.
 
 Rules:
 

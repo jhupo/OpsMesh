@@ -190,3 +190,43 @@ class AgentRunProjectSnapshot(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class AgentRunProjectIOState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "agent_run_project_io_states"
+    __table_args__ = (
+        UniqueConstraint("agent_run_id", name="uq_agent_run_project_io_states_run"),
+        UniqueConstraint("project_snapshot_id", name="uq_agent_run_project_io_states_snapshot"),
+        CheckConstraint(
+            "status in ('pending', 'staged', 'harvesting', 'harvested', 'failed')",
+            name="status_valid",
+        ),
+        CheckConstraint(
+            "staged_file_count >= 0 and staged_bytes >= 0 and "
+            "harvested_output_count >= 0 and harvested_bytes >= 0",
+            name="counts_non_negative",
+        ),
+        Index("ix_agent_run_project_io_states_workspace_status", "workspace_id", "status"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    agent_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    project_snapshot_id: Mapped[UUID] = mapped_column(
+        ForeignKey("agent_run_project_snapshots.id", ondelete="CASCADE"), nullable=False
+    )
+    workspace_runtime_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspace_runtimes.id", ondelete="RESTRICT"), nullable=False
+    )
+    root_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    staged_file_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    staged_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    harvested_output_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    harvested_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    error: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    staged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    harvested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

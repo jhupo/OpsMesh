@@ -21,6 +21,7 @@ from backend.app.capabilities.mcp_stdio_credentials import (
     self_hosted_stdio_environment_refs,
 )
 from backend.app.capabilities.models import McpCredentialReference, McpServer
+from backend.app.runtime_manager.contracts import RuntimeCommandInputFile
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
@@ -34,10 +35,12 @@ class DockerRuntimeStdioMcpToolAdapter:
         runtime_manager: RuntimeManager,
         runtime: WorkspaceRuntime,
         secret_service: SecretEncryptionService | None = None,
+        working_dir: str | None = None,
     ) -> None:
         self._runtime_manager = runtime_manager
         self._runtime = runtime
         self._secret_service = secret_service
+        self._working_dir = working_dir
 
     def call(
         self,
@@ -67,9 +70,16 @@ class DockerRuntimeStdioMcpToolAdapter:
                 "python",
                 "-m",
                 "opsmesh_runtime.mcp_stdio_client",
-                "--request-stdin",
             ],
-            stdin_data=json.dumps(request, ensure_ascii=False, separators=(",", ":")),
+            input_file=RuntimeCommandInputFile(
+                content=json.dumps(
+                    request,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode("utf-8"),
+                argument_name="--request-file",
+            ),
+            working_dir=self._working_dir,
         )
         if record.status != "completed" or record.exit_code != 0:
             raise McpExecutionError(
@@ -91,6 +101,7 @@ class DockerRuntimeStdioMcpToolAdapter:
                 "opsmesh_runtime.mcp_stdio_client",
                 "--check",
             ],
+            working_dir=self._working_dir,
         )
         if record.status != "completed" or record.exit_code != 0:
             raise McpExecutionError(

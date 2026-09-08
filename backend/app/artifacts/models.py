@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Integer, String
+from sqlalchemy import BigInteger, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,6 +14,16 @@ class Artifact(UUIDPrimaryKeyMixin, Base):
         Index("ix_artifacts_workspace_task", "workspace_id", "task_id"),
         Index("ix_artifacts_workspace_run", "workspace_id", "agent_run_id"),
         Index("ix_artifacts_workspace_work_package", "workspace_id", "work_package_id"),
+        Index(
+            "ix_artifacts_workspace_project_output",
+            "workspace_id",
+            "workspace_project_output_id",
+        ),
+        UniqueConstraint(
+            "agent_run_id",
+            "workspace_project_output_id",
+            name="uq_artifacts_run_project_output",
+        ),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -29,6 +39,12 @@ class Artifact(UUIDPrimaryKeyMixin, Base):
         ForeignKey("task_steps.id", ondelete="SET NULL"),
         nullable=True,
     )
+    workspace_project_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("workspace_projects.id", ondelete="SET NULL"), nullable=True
+    )
+    workspace_project_output_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("workspace_project_outputs.id", ondelete="SET NULL"), nullable=True
+    )
     agent_profile_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("agent_profiles.id", ondelete="SET NULL"),
         nullable=True,
@@ -38,6 +54,7 @@ class Artifact(UUIDPrimaryKeyMixin, Base):
         nullable=True,
     )
     work_package_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    project_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     review_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     artifact_type: Mapped[str] = mapped_column(String(80), nullable=False)

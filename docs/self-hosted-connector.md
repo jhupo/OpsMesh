@@ -4,6 +4,10 @@
 OpsMesh API remains the durable control plane; the connector owns only local process execution and
 crash recovery.
 
+The bundled connector is intentionally an MCP worker, not a general agent executor. A self-hosted
+agent executor uses the same runtime credential and job claim boundary, plus the project-file
+contract below; it must not infer access from a workspace ID or read object-storage locators.
+
 ## Install And Check
 
 Install the independent runtime package on Python 3.11 or newer:
@@ -54,6 +58,28 @@ prevent two processes from sharing one recovery ledger.
 The optional `--capabilities-file` must contain the complete capability object. Omitting it sends an
 empty heartbeat object, which tells the control plane to preserve the capabilities established at
 registration.
+
+## Agent Project File Contract
+
+Connector protocol version 2 adds a `project` object to the agent job claim response when the run
+has a frozen project snapshot. The object contains the relative run root, snapshot ID, fingerprint,
+storage-key-redacted manifest, archive path, and declared-output upload path template.
+
+After claiming that run, the same authenticated worker:
+
+1. downloads `GET /self-hosted/jobs/{run_id}/project/archive`;
+2. verifies the fingerprint response header and extracts it only beneath the returned run root;
+3. executes without changing undeclared host paths;
+4. uploads each produced declaration to
+   `PUT /self-hosted/jobs/{run_id}/project/outputs/{project_output_id}` with its declared content
+   type and bounded request body; and
+5. calls the normal completion endpoint only after all required outputs are accepted.
+
+The API joins workspace, runtime, worker, claim, and run on every project-file operation. Another
+worker cannot download or upload for the claim. Undeclared IDs, oversized bodies, content-type
+mismatches, invalid snapshots, and completion with missing required outputs fail closed. Upload
+retries are idempotent only for identical bytes; successful outputs become versioned artifacts and
+the completed harvest is recorded durably.
 
 ## Stdio MCP Credentials
 

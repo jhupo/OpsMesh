@@ -9,6 +9,7 @@ from backend.app.self_hosted.job_completion import SelfHostedRunCompletionServic
 from backend.app.self_hosted.jobs import SelfHostedJobFinalizer
 from backend.app.self_hosted.mcp_jobs import SelfHostedMcpJobService
 from backend.app.self_hosted.progress import SelfHostedProgressService
+from backend.app.self_hosted.project_files import SelfHostedProjectFileService
 from backend.app.self_hosted.service import SelfHostedRuntimeService
 
 
@@ -28,8 +29,16 @@ def self_hosted_dispatch_service(
 
 def self_hosted_run_completion_service(
     session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
 ) -> SelfHostedRunCompletionService:
-    return SelfHostedRunCompletionService(session)
+    return SelfHostedRunCompletionService(session, settings)
+
+
+def self_hosted_project_file_service(
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> SelfHostedProjectFileService:
+    return SelfHostedProjectFileService(session, settings)
 
 
 def self_hosted_mcp_job_service(

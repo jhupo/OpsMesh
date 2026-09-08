@@ -53,7 +53,7 @@ The APIs and database model may change before the first stable release. See the
 | Multi-Agent runtime | Implemented with the OpenAI Agents SDK, manager/specialist handoffs, approval waits, durable recovery, and worker restart E2E evidence |
 | Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, call audit, runtime-resource placement, live revocation, explicit MCP connection reconfiguration, and credential rotation |
 | MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; the self-hosted connector now provides durable claim, execution, completion, and restart recovery |
-| Run isolation and workspace | Docker and self-hosted control-plane contracts, frozen runtime bindings, runtime-space reservations, and fail-closed stdio routing are implemented; a dedicated `opsmesh-runtime` image provides the isolated MCP SDK helper and connector CLI |
+| Run isolation and workspace | Official Docker SDK and self-hosted control-plane contracts, frozen runtime bindings, runtime-space reservations, exact project snapshot staging, declared-output harvesting, and fail-closed stdio routing are implemented; a dedicated `opsmesh-runtime` image provides the isolated MCP SDK helper and connector CLI |
 | Knowledge service | Partial: workspace memory, lexical search, and Postgres full-text abstraction exist; source ingestion, citations, vector search, and hybrid ranking are planned |
 | Observability and operations | Implemented for the VPS topology: OTLP logs and traces, official Prometheus metrics, Loki, Tempo, Grafana correlation, alerts, WORM audit verification, cost ledger, budgets, queue/runtime diagnostics, and recovery actions |
 | Infrastructure and scaling | Postgres, Redis, storage, VPS/systemd, Docker runtime, and remote validation assets exist; Kubernetes, multi-region, and microVM backends are future work |
@@ -93,7 +93,7 @@ flowchart LR
         ToolBoundary["Agent execution gateway<br/>schema / parameters / resources<br/>approval / live revocation / audit"]
         RemoteMCP["Official MCP SDK<br/>HTTP / SSE"]
         Stdio["stdio MCP router"]
-        Docker["Managed Docker runtimes"]
+        Docker["Managed Docker runtimes<br/>official Docker SDK"]
         SelfHosted["Self-hosted connector runtimes"]
         Workers --> Agents
         Agents --> ToolBoundary
@@ -230,8 +230,8 @@ sequenceDiagram
 - Runtime spaces, quota reservations, leases, cleanup evidence, and operator controls.
 - Self-hosted runtime enrollment, trust state, heartbeat, job claim, progress, and artifact upload.
 - Gateway-scoped workspace file content access with frozen grants, MIME/size limits, bounded Local
-  or S3 reads, and integrity verification, plus explicit low-level staging and artifact collection,
-  without exposing workspace storage to stdio runtimes or executing untrusted code on the API host.
+  or S3 reads, and integrity verification. Managed Docker and self-hosted agent runs stage their exact
+  project snapshot and harvest only declared outputs without exposing storage keys to runtimes.
 - Downloadable artifact bytes use workspace/artifact-ID object keys and compensated persistence, so
   failed storage or database writes cannot leave a committed metadata-only artifact.
 
@@ -273,7 +273,7 @@ audit, and capability negotiation remain in the OpsMesh control plane.
 | --- | --- | --- |
 | Agent turns, tools, sessions, HITL | Python OpenAI Agents SDK and Claude Agent SDK | Provider execution cores behind one OpsMesh contract; provider-specific capabilities are explicit |
 | MCP protocol and transports | [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | Current for remote Streamable HTTP/SSE and isolated stdio; keep the SDK client inside Docker/self-hosted runtimes |
-| Docker Engine access | [Docker SDK for Python](https://docs.docker.com/reference/api/engine/sdk/) | Replace CLI construction behind the existing runtime client contract |
+| Docker Engine access | [Docker SDK for Python](https://docs.docker.com/reference/api/engine/sdk/) | Current managed-runtime implementation behind the OpsMesh runtime client contract; no CLI fallback |
 | Logs, traces, and instrumentation | [OpenTelemetry Python](https://github.com/open-telemetry/opentelemetry-python) | Current for API/worker OTLP logs and FastAPI, database, Redis, HTTP, queue, model, and tool traces |
 | Prometheus exposition | [Prometheus Python client](https://github.com/prometheus/client_python) | Current; domain collectors publish through official Counter, Histogram, and Gauge primitives |
 | Vector and hybrid retrieval | [pgvector-python](https://github.com/pgvector/pgvector-python) | Extend the current Postgres full-text memory path before adding another database |
@@ -305,7 +305,8 @@ recommended order, and boundaries that remain owned by OpsMesh.
 - Keep the SDK-backed stdio entrypoint and self-hosted request contract versioned, then evaluate MCP
   Python SDK v2 when the OpenAI Agents SDK supports it; keep authorization and audit at the OpsMesh
   boundary.
-- Migrate Docker operations to the Docker SDK without weakening hardening, leases, or cleanup proof.
+- Keep Docker SDK daemon access isolated behind the runtime client while extending per-run
+  hardening, termination, and cleanup proof.
 - Operate and extend the OpenTelemetry and official Prometheus paths without introducing custom
   telemetry protocols.
 - Review native Agents SDK HITL, run-state, sandbox, and durable-execution integrations.

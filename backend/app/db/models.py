@@ -39,6 +39,7 @@ from backend.app.notifications.models import WorkspaceNotification
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.projects.models import (
+    AgentRunProjectIOState,
     AgentRunProjectSnapshot,
     WorkspaceProject,
     WorkspaceProjectConfigurationVersion,
@@ -91,6 +92,7 @@ __all__ = [
     "AgentMessage",
     "AgentMessageThread",
     "AgentRun",
+    "AgentRunProjectIOState",
     "AgentRunProjectSnapshot",
     "AgentRunStateSnapshot",
     "AgentTeam",

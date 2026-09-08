@@ -19,6 +19,7 @@ RUNTIME_CONTRACT_VERSION = 1
 _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _MAX_ENVIRONMENT_VARIABLES = 128
 _MAX_ENVIRONMENT_BYTES = 65_536
+_MAX_REQUEST_BYTES = 1_048_576
 
 
 async def execute_request(request: dict[str, object]) -> dict[str, object]:
@@ -85,12 +86,11 @@ def main(argv: list[str] | None = None) -> int:
     if arguments == ["--check"]:
         print(json.dumps(capability_report(), ensure_ascii=False, separators=(",", ":")))
         return 0
-    if arguments == ["--request-stdin"]:
-        raw_request = sys.stdin.read()
-    else:
-        print("MCP stdio SDK client requires --request-stdin", file=sys.stderr)
+    if len(arguments) != 2 or arguments[0] != "--request-file":
+        print("MCP stdio SDK client requires --request-file PATH", file=sys.stderr)
         return 2
     try:
+        raw_request = _read_request_file(arguments[1])
         request = json.loads(raw_request)
         if not isinstance(request, dict):
             raise ValueError("request must be an object")
@@ -100,6 +100,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
     return 0
+
+
+def _read_request_file(path: str) -> str:
+    with open(path, "rb") as stream:
+        content = stream.read(_MAX_REQUEST_BYTES + 1)
+    if len(content) > _MAX_REQUEST_BYTES:
+        raise ValueError("request file exceeds the runtime limit")
+    return content.decode("utf-8")
 
 
 def _mapping(payload: dict[str, object], key: str) -> dict[str, object]:

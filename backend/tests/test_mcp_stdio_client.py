@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import subprocess
 import sys
@@ -59,7 +58,7 @@ def test_stdio_sdk_client_calls_real_official_mcp_server() -> None:
     assert result["structuredContent"] == {"message": "runtime-ready"}
 
 
-def test_stdio_sdk_client_cli_streams_credentials_to_real_server_via_stdin() -> None:
+def test_stdio_sdk_client_cli_reads_credentials_from_transient_file(tmp_path: Path) -> None:
     server_path = Path(__file__).parent / "fixtures" / "mcp_stdio_server.py"
     request = stdio_sdk_request(
         command=[sys.executable, str(server_path)],
@@ -68,17 +67,19 @@ def test_stdio_sdk_client_cli_streams_credentials_to_real_server_via_stdin() -> 
         timeout_seconds=5,
         environment={"MCP_API_KEY": "runtime-secret"},
     )
+    request_path = tmp_path / "request.json"
+    request_path.write_text(json.dumps(request), encoding="utf-8")
 
     completed = subprocess.run(
         [
             sys.executable,
             "-m",
             "runtime.opsmesh_runtime.mcp_stdio_client",
-            "--request-stdin",
+            "--request-file",
+            str(request_path),
         ],
         capture_output=True,
         check=False,
-        input=json.dumps(request),
         text=True,
         timeout=10,
     )
@@ -101,7 +102,7 @@ def test_stdio_sdk_client_reports_runtime_capability() -> None:
     assert isinstance(report["sdk_version"], str)
 
 
-def test_stdio_sdk_client_cli_reads_request_from_stdin(monkeypatch, capsys) -> None:
+def test_stdio_sdk_client_cli_reads_request_file(monkeypatch, capsys, tmp_path: Path) -> None:
     request = stdio_sdk_request(
         command=["mcp-server"],
         tool_name="echo",
@@ -116,9 +117,10 @@ def test_stdio_sdk_client_cli_reads_request_from_stdin(monkeypatch, capsys) -> N
         return {"structuredContent": {"ok": True}}
 
     monkeypatch.setattr(mcp_stdio_client, "execute_request", execute_request)
-    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(request)))
+    request_path = tmp_path / "request.json"
+    request_path.write_text(json.dumps(request), encoding="utf-8")
 
-    exit_code = mcp_stdio_client.main(["--request-stdin"])
+    exit_code = mcp_stdio_client.main(["--request-file", str(request_path)])
 
     output = json.loads(capsys.readouterr().out)
     assert exit_code == 0

@@ -134,6 +134,19 @@ class SelfHostedJobResponse(BaseModel):
     created_at: datetime
 
 
+class SelfHostedProjectContractResponse(BaseModel):
+    root_path: str
+    snapshot_id: UUID
+    fingerprint_sha256: str
+    manifest: dict[str, object]
+    archive_path: str
+    output_upload_path_template: str
+
+    @field_serializer("manifest")
+    def _serialize_manifest(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
 class SelfHostedMcpJobResponse(BaseModel):
     id: UUID
     agent_run_id: UUID
@@ -148,6 +161,7 @@ class JobClaimResponse(BaseModel):
     agent_run_id: UUID
     status: str
     claimed_at: datetime
+    project: SelfHostedProjectContractResponse | None
 
 
 class JobCompleteRequest(BaseModel):

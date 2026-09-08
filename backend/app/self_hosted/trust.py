@@ -73,7 +73,7 @@ class SelfHostedTrustService:
             "api_prefix": self._settings.api_prefix,
             "connector": {
                 "name": "opsmesh-self-hosted-worker",
-                "protocol_version": 1,
+                "protocol_version": 2,
                 "recommended_version": _version_string(
                     version_policy.get("recommended_version")
                 ),
@@ -87,6 +87,14 @@ class SelfHostedTrustService:
                 "claim_job": f"{self._settings.api_prefix}/self-hosted/jobs/{{agent_run_id}}/claim",
                 "complete_job": (
                     f"{self._settings.api_prefix}/self-hosted/jobs/{{agent_run_id}}/complete"
+                ),
+                "project_archive": (
+                    f"{self._settings.api_prefix}/self-hosted/jobs/{{agent_run_id}}/"
+                    "project/archive"
+                ),
+                "project_output": (
+                    f"{self._settings.api_prefix}/self-hosted/jobs/{{agent_run_id}}/project/"
+                    "outputs/{project_output_id}"
                 ),
                 "next_mcp_job": f"{self._settings.api_prefix}/self-hosted/mcp-jobs/next",
                 "claim_mcp_job": (
@@ -119,6 +127,13 @@ class SelfHostedTrustService:
                     "sdk_version": "1.27.1",
                     "sdk_entrypoint": MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
                     "request_field": "request",
+                },
+                "project_files": {
+                    "archive_format": "tar",
+                    "manifest_path": ".opsmesh/project.json",
+                    "download_after_claim": True,
+                    "declared_outputs_only": True,
+                    "completion_requires_required_outputs": True,
                 },
             },
             "security": {

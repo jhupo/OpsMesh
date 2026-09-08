@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import TracebackType
 
@@ -14,12 +14,15 @@ from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
 from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.core.config import Settings, get_settings
+from backend.app.files.storage import ObjectStorage
 from backend.app.model_providers.service_models import ModelProviderUnavailableError
 from backend.app.orchestration.model_run_gateway import ModelRunGateway
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_lifecycle import RunLifecycleService
 from backend.app.orchestration.run_request_builder import RunRequestBuilder
 from backend.app.orchestration.run_runtime_event_messages import RunRuntimeEventMessageMapper
+from backend.app.projects.runtime_io import RunProjectIOService
+from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
@@ -48,6 +51,12 @@ class RunExecutionService:
     agent_runner: AgentRuntimeExecutor | None = None
     settings: Settings | None = None
     docker_client: DockerRuntimeClient | None = None
+    storage: ObjectStorage | None = None
+    _project_io_service: RunProjectIOService | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         self.settings = self.settings or get_settings()
@@ -71,6 +80,16 @@ class RunExecutionService:
             self._events().append_run_claimed_event(run, job)
             self._lifecycle().mark_run_started(run)
             self.session.commit()
+
+            try:
+                self._project_io().stage_inputs(
+                    run,
+                    actor_user_id=job.requested_by_user_id,
+                )
+            except ProjectRunIOError as exc:
+                self._lifecycle().mark_run_failed(run, exc)
+                self._commit_and_refresh(run)
+                return run
 
             try:
                 request = self._request_builder().build_agent_request(run, job)
@@ -144,6 +163,15 @@ class RunExecutionService:
                     workspace_id=run.workspace_id,
                     run_id=run.id,
                 )
+            try:
+                self._project_io().harvest_outputs(
+                    run,
+                    actor_user_id=job.requested_by_user_id,
+                )
+            except ProjectRunIOError as exc:
+                self._lifecycle().mark_run_failed(run, exc)
+                self._commit_and_refresh(run)
+                return run
             self._lifecycle().mark_run_completed(run, result, job.requested_by_user_id)
             self._commit_and_refresh(run)
             return run
@@ -232,6 +260,16 @@ class RunExecutionService:
             self.session,
             self._request_builder().secret_service(),
         )
+
+    def _project_io(self) -> RunProjectIOService:
+        if self._project_io_service is None:
+            self._project_io_service = RunProjectIOService(
+                self.session,
+                self.storage,
+                self.docker_client,
+                self._settings(),
+            )
+        return self._project_io_service
 
     def _agent_result_waiting_runtime(self, result: object) -> bool:
         return self._lifecycle().agent_result_waiting_runtime(result)

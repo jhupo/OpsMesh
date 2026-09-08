@@ -34,9 +34,12 @@ class ArtifactResponse(ORMModel):
     task_id: UUID | None
     agent_run_id: UUID | None
     task_step_id: UUID | None
+    workspace_project_id: UUID | None
+    workspace_project_output_id: UUID | None
     agent_profile_id: UUID | None
     supersedes_artifact_id: UUID | None
     work_package_id: str | None
+    project_path: str | None
     version: int
     review_status: str
     artifact_type: str

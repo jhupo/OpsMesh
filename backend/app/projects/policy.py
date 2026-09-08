@@ -11,6 +11,7 @@ from backend.app.security.redaction import (
 
 MAX_PROJECT_CONFIGURATION_BYTES = 65_536
 _PROJECT_SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+_RESERVED_PROJECT_PATH_ROOTS = frozenset({".opsmesh"})
 
 
 def normalize_project_name(value: str) -> str:
@@ -76,6 +77,8 @@ def validate_project_layout(
     *, input_path: str, work_path: str, output_path: str
 ) -> tuple[str, str, str]:
     paths = tuple(normalize_project_path(item) for item in (input_path, work_path, output_path))
+    if any(PurePosixPath(path).parts[0] in _RESERVED_PROJECT_PATH_ROOTS for path in paths):
+        raise ValueError("Project layout uses a reserved internal path")
     for index, left in enumerate(paths):
         for right in paths[index + 1 :]:
             if _is_same_or_descendant(left, right) or _is_same_or_descendant(right, left):

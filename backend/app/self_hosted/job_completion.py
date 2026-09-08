@@ -7,20 +7,23 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.self_hosted import JobCompleteRequest
+from backend.app.core.config import Settings
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
 from backend.app.self_hosted.events import SelfHostedEventRecorder
 from backend.app.self_hosted.jobs import SelfHostedJobFinalizer
 from backend.app.self_hosted.models import SelfHostedJobClaim
+from backend.app.self_hosted.project_files import SelfHostedProjectFileService
 from backend.app.self_hosted.types import AuthenticatedWorker
 
 
 class SelfHostedRunCompletionService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, settings: Settings) -> None:
         self._session = session
         self._events = SelfHostedEventRecorder(session)
         self._jobs = SelfHostedJobFinalizer(session, self._events)
+        self._project_files = SelfHostedProjectFileService(session, settings)
 
     def complete_job(
         self,
@@ -38,6 +41,8 @@ class SelfHostedRunCompletionService:
             return claim
         if claim.status != "claimed":
             raise ValueError("Self-hosted job is not active")
+        if data.status == "completed":
+            self._project_files.finalize_outputs(run)
         self._apply_completion(auth, run, claim, data)
         self._session.commit()
         self._session.refresh(claim)

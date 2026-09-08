@@ -186,11 +186,57 @@ def runtime_context_text(
             "- For complete handoff threads, call get_agent_inbox or "
             "list_agent_thread_messages before claiming missing team context."
         )
+    project_workspace = metadata.get("project_workspace")
+    if isinstance(project_workspace, dict):
+        lines.extend(project_workspace_lines(project_workspace))
     lines.append(
         "- Treat this section as platform evidence. Do not claim missing platform "
         "context unless it is absent here and unavailable through listed tools."
     )
     return "\n".join(lines)
+
+
+def project_workspace_lines(value: dict[str, object]) -> list[str]:
+    lines = ["- Project workspace:"]
+    root_path = value.get("root_path")
+    if isinstance(root_path, str):
+        lines.append(f"  - Root: {redact_sensitive_text(root_path)}")
+    project = value.get("project")
+    if isinstance(project, dict):
+        lines.append(
+            "  - Paths: input={input_path}, work={work_path}, output={output_path}".format(
+                input_path=redact_sensitive_text(str(project.get("input_path") or "")),
+                work_path=redact_sensitive_text(str(project.get("work_path") or "")),
+                output_path=redact_sensitive_text(str(project.get("output_path") or "")),
+            )
+        )
+    configuration = value.get("configuration")
+    if isinstance(configuration, dict):
+        safe_configuration = redact_sensitive_payload(configuration)
+        lines.append(
+            "  - Configuration data: "
+            + json.dumps(safe_configuration, sort_keys=True, ensure_ascii=False)
+        )
+    files = value.get("files")
+    if isinstance(files, list):
+        paths = [
+            str(item.get("project_path"))
+            for item in files
+            if isinstance(item, dict) and isinstance(item.get("project_path"), str)
+        ]
+        lines.append("  - Staged inputs: " + (", ".join(paths) if paths else "none"))
+    outputs = value.get("outputs")
+    if isinstance(outputs, list):
+        declarations = [
+            f"{item.get('project_path')} ({'required' if item.get('required') else 'optional'})"
+            for item in outputs
+            if isinstance(item, dict) and isinstance(item.get("project_path"), str)
+        ]
+        lines.append(
+            "  - Declared outputs: " + (", ".join(declarations) if declarations else "none")
+        )
+    lines.append("  - Write only declared outputs; undeclared runtime files are not collected.")
+    return lines
 
 
 def mailbox_tool_names(allowed_tools: tuple[str, ...]) -> list[str]:

@@ -91,7 +91,7 @@ or cancellation.
 | Provider health probes | Direct HTTP health checks | Keep; SDKs do not expose a stable account/model readiness probe |
 | Generic agent frameworks | LangChain, LlamaIndex, LiteLLM | Reject for now; they would duplicate the two SDK cores and add weight |
 | Durable workflow engines | Temporal | Evaluate with a representative workflow before replacing current task/worker state |
-| Runtime execution | Docker boundary and self-hosted connector | Keep product isolation; evaluate Docker SDK behind the existing client |
+| Runtime execution | Official Docker SDK behind the product runtime boundary and self-hosted connector contracts | Adopted for daemon access; keep product isolation, policy, leases, and evidence |
 
 ### P0: MCP Python SDK
 
@@ -128,10 +128,12 @@ SSE transport.
 
 ### P0: Docker SDK for Python
 
-**Candidate:** [Docker SDK for Python](https://docs.docker.com/reference/api/engine/sdk/)
+**Adopted:** [Docker SDK for Python](https://docs.docker.com/reference/api/engine/sdk/), constrained
+to `docker>=7.2.0,<8.0.0`.
 
-The current Docker client constructs CLI commands. The official SDK provides a typed client for
-images, containers, exec, logs, and API-version negotiation.
+`DockerSdkRuntimeClient` is the only managed Docker implementation. It uses the official SDK for
+container and volume lifecycle, command execution, and archive transfer. The former subprocess and
+Docker CLI command construction path was removed; there is no dual-client or compatibility branch.
 
 **Adopt:** Docker daemon communication, image/container operations, exec lifecycle, log streams,
 and structured daemon errors.
@@ -140,9 +142,13 @@ and structured daemon errors.
 mount validation, capability dropping, read-only root filesystems, network restrictions, leases,
 workspace labels, cleanup verification, and security evidence.
 
-**Migration shape:** add an SDK implementation behind the existing protocol, replay all runtime
-manager tests against both clients, then switch the composition root. Do not expose Docker SDK
-objects outside `runtime_manager`.
+Docker SDK objects do not cross `runtime_manager`. Command input bytes use the product-owned
+`RuntimeCommandInputFile` contract: the Docker adapter creates an owner-scoped, read-only temporary
+file in the runtime, appends only its generated path to the command, and removes it after execution.
+Project archives are re-owned to the container identity before extraction so a non-root runtime can
+write its declared work and output directories. Archive reads are bounded before buffering and
+accept exactly one regular file; symbolic links, hard links, malformed archives, and oversized
+transfers fail closed.
 
 ### Adopted: OpenTelemetry Python
 

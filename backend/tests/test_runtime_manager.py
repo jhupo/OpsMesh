@@ -1,6 +1,9 @@
+import io
+import tarfile
 from datetime import UTC, datetime
 from pathlib import Path
 from subprocess import TimeoutExpired
+from types import SimpleNamespace
 from uuid import uuid4
 
 from sqlalchemy import create_engine, select
@@ -14,6 +17,7 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.runtime_manager.contracts import (
     DockerRuntimeClient,
+    RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
     RuntimeLimits,
@@ -73,9 +77,9 @@ class FakeDockerClient(DockerRuntimeClient):
         command: list[str],
         timeout_seconds: int,
         *,
-        stdin_data: str | None = None,
+        input_file: RuntimeCommandInputFile | None = None,
     ) -> RuntimeCommandResult:
-        _ = stdin_data
+        _ = input_file
         self.executed.append((container_id, command, timeout_seconds))
         return RuntimeCommandResult(exit_code=0, stdout="ok\n", stderr="")
 
@@ -225,9 +229,9 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     ]
 
 
-def test_runtime_manager_passes_stdin_without_persisting_it() -> None:
-    class StdinDockerClient(FakeDockerClient):
-        stdin_values: list[str | None] = []
+def test_runtime_manager_passes_input_file_without_persisting_it() -> None:
+    class InputFileDockerClient(FakeDockerClient):
+        input_files: list[RuntimeCommandInputFile | None] = []
 
         def exec_command(
             self,
@@ -235,14 +239,14 @@ def test_runtime_manager_passes_stdin_without_persisting_it() -> None:
             command: list[str],
             timeout_seconds: int,
             *,
-            stdin_data: str | None = None,
+            input_file: RuntimeCommandInputFile | None = None,
         ) -> RuntimeCommandResult:
-            self.stdin_values.append(stdin_data)
+            self.input_files.append(input_file)
             return super().exec_command(
                 container_id,
                 command,
                 timeout_seconds,
-                stdin_data=stdin_data,
+                input_file=input_file,
             )
 
     session = _session()
@@ -261,7 +265,7 @@ def test_runtime_manager_passes_stdin_without_persisting_it() -> None:
     )
     session.add_all([workspace, template])
     session.commit()
-    docker = StdinDockerClient()
+    docker = InputFileDockerClient()
     manager = RuntimeManager(session, docker)
     runtime = manager.create_runtime(
         workspace_id=workspace.id,
@@ -278,11 +282,19 @@ def test_runtime_manager_passes_stdin_without_persisting_it() -> None:
     record = manager.execute_command(
         workspace_id=workspace.id,
         runtime=runtime,
-        command=["python", "-m", "worker", "--request-stdin"],
-        stdin_data='{"env":{"MCP_API_KEY":"runtime-secret"}}',
+        command=["python", "-m", "worker"],
+        input_file=RuntimeCommandInputFile(
+            content=b'{"env":{"MCP_API_KEY":"runtime-secret"}}',
+            argument_name="--request-file",
+        ),
     )
 
-    assert docker.stdin_values == ['{"env":{"MCP_API_KEY":"runtime-secret"}}']
+    assert docker.input_files == [
+        RuntimeCommandInputFile(
+            content=b'{"env":{"MCP_API_KEY":"runtime-secret"}}',
+            argument_name="--request-file",
+        )
+    ]
     assert "runtime-secret" not in str(record.command)
     assert "runtime-secret" not in str(record.stderr)
 
@@ -517,9 +529,9 @@ def test_runtime_manager_records_command_timeout_without_leaving_running_command
             command: list[str],
             timeout_seconds: int,
             *,
-            stdin_data: str | None = None,
+            input_file: RuntimeCommandInputFile | None = None,
         ) -> RuntimeCommandResult:
-            _ = stdin_data
+            _ = input_file
             self.executed.append((container_id, command, timeout_seconds))
             raise TimeoutExpired(cmd=command, timeout=timeout_seconds)
 
@@ -571,9 +583,9 @@ def test_runtime_manager_records_docker_exec_failure_without_raising() -> None:
             command: list[str],
             timeout_seconds: int,
             *,
-            stdin_data: str | None = None,
+            input_file: RuntimeCommandInputFile | None = None,
         ) -> RuntimeCommandResult:
-            _ = stdin_data
+            _ = input_file
             self.executed.append((container_id, command, timeout_seconds))
             raise RuntimeError("docker exec unavailable")
 
@@ -623,9 +635,9 @@ def test_runtime_manager_limits_command_output_and_records_policy_event() -> Non
             command: list[str],
             timeout_seconds: int,
             *,
-            stdin_data: str | None = None,
+            input_file: RuntimeCommandInputFile | None = None,
         ) -> RuntimeCommandResult:
-            _ = stdin_data
+            _ = input_file
             self.executed.append((container_id, command, timeout_seconds))
             return RuntimeCommandResult(exit_code=0, stdout="abcdef", stderr="xyz")
 
@@ -1049,32 +1061,23 @@ def test_runtime_manager_rejects_process_limit_over_workspace_quota() -> None:
     assert docker.created_requests == []
 
 
-def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch) -> None:
-    from backend.app.runtime_manager.docker_client import DockerCliRuntimeClient
+def test_docker_sdk_create_container_applies_limits_and_hardening() -> None:
+    from backend.app.runtime_manager.docker_client import DockerSdkRuntimeClient
 
-    captured: list[list[str]] = []
+    captured: dict[str, object] = {}
 
-    def fake_run(
-        command: list[str],
-        *,
-        capture_output: bool,
-        check: bool,
-        text: bool,
-        timeout: int,
-    ):
-        _ = capture_output, check, text, timeout
-        captured.append(command)
+    class Containers:
+        def create(self, **options: object) -> SimpleNamespace:
+            captured.update(options)
+            return SimpleNamespace(id="container-abc")
 
-        class Completed:
-            returncode = 0
-            stdout = "container-abc\n"
-            stderr = ""
+    class Client:
+        containers = Containers()
 
-        return Completed()
+        def close(self) -> None:
+            captured["closed"] = True
 
-    monkeypatch.setattr("subprocess.run", fake_run)
-
-    container_id = DockerCliRuntimeClient().create_container(
+    container_id = DockerSdkRuntimeClient(lambda timeout: Client()).create_container(
         RuntimeCreateRequest(
             image="python:3.12-slim",
             name="opsmesh-test",
@@ -1097,74 +1100,149 @@ def test_docker_cli_create_container_applies_disk_and_process_limits(monkeypatch
         )
     )
 
-    command = captured[0]
     assert container_id == "container-abc"
-    assert command[command.index("--pids-limit") + 1] == "96"
-    assert command[command.index("--storage-opt") + 1] == "size=2048m"
-    assert command[command.index("--cap-drop") + 1] == "ALL"
-    assert command[command.index("--security-opt") + 1] == "no-new-privileges:true"
-    assert "--read-only" in command
-    tmpfs_values = [
-        value
-        for index, value in enumerate(command)
-        if index > 0 and command[index - 1] == "--tmpfs"
-    ]
-    assert tmpfs_values == [
-        "/tmp:rw,noexec,nosuid,nodev,size=64m",
-        "/var/tmp:rw,noexec,nosuid,nodev,size=16m",
-    ]
-    assert "--mount" in command
-    assert command[command.index("--workdir") + 1] == "/workspace"
-    assert "opsmesh.runtime_id=runtime-1" in command
+    assert captured["pids_limit"] == 96
+    assert captured["storage_opt"] == {"size": "2048m"}
+    assert captured["cap_drop"] == ["ALL"]
+    assert captured["security_opt"] == ["no-new-privileges:true"]
+    assert captured["read_only"] is True
+    assert captured["tmpfs"] == {
+        "/tmp": "rw,noexec,nosuid,nodev,size=64m",
+        "/var/tmp": "rw,noexec,nosuid,nodev,size=16m",
+    }
+    mounts = captured["mounts"]
+    assert isinstance(mounts, list)
+    assert mounts[0]["Source"] == "opsmesh-ws-workspace-runtime"
+    assert mounts[0]["Target"] == "/workspace"
+    assert captured["working_dir"] == "/workspace"
+    labels = captured["labels"]
+    assert isinstance(labels, dict)
+    assert labels["opsmesh.runtime_id"] == "runtime-1"
+    assert captured["closed"] is True
 
 
-def test_docker_cli_exec_streams_transient_stdin_without_argv_secret(monkeypatch) -> None:
-    from backend.app.runtime_manager.docker_client import DockerCliRuntimeClient
+def test_docker_sdk_exec_uses_transient_file_without_argv_secret() -> None:
+    from backend.app.runtime_manager.docker_client import DockerSdkRuntimeClient
 
-    captured: dict[str, object] = {}
+    calls: list[tuple[list[str], str | None]] = []
+    archives: list[bytes] = []
 
-    def fake_run(
-        command: list[str],
-        *,
-        capture_output: bool,
-        check: bool,
-        input: str,
-        text: bool,
-        timeout: int,
-    ):
-        _ = capture_output, check, text, timeout
-        captured["command"] = command
-        captured["input"] = input
+    class Container:
+        def exec_run(
+            self,
+            command: list[str],
+            *,
+            workdir: str | None,
+            demux: bool,
+        ) -> SimpleNamespace:
+            assert demux is True
+            calls.append((command, workdir))
+            if command == ["id", "-u"] or command == ["id", "-g"]:
+                return SimpleNamespace(exit_code=0, output=(b"1000\n", None))
+            if command[0] in {"rm", "rmdir"}:
+                return SimpleNamespace(exit_code=0, output=(b"", b""))
+            return SimpleNamespace(exit_code=0, output=(b"ok", b""))
 
-        class Completed:
-            returncode = 0
-            stdout = "ok"
-            stderr = ""
+        def put_archive(self, path: str, archive: bytes) -> bool:
+            assert path == "/tmp"
+            archives.append(archive)
+            return True
 
-        return Completed()
+    container = Container()
 
-    monkeypatch.setattr("subprocess.run", fake_run)
+    class Containers:
+        def get(self, container_id: str) -> Container:
+            assert container_id == "container-123"
+            return container
 
-    result = DockerCliRuntimeClient().exec_command(
+    class Client:
+        containers = Containers()
+
+        def close(self) -> None:
+            return None
+
+    result = DockerSdkRuntimeClient(lambda timeout: Client()).exec_command(
         "container-123",
-        ["python", "-m", "worker", "--request-stdin"],
+        ["python", "-m", "worker"],
         10,
-        stdin_data="runtime-secret",
+        input_file=RuntimeCommandInputFile(
+            content=b"runtime-secret",
+            argument_name="--request-file",
+        ),
     )
 
     assert result.exit_code == 0
-    assert captured["command"] == [
-        "docker",
-        "exec",
-        "-i",
+    executed_command = calls[2][0]
+    assert executed_command[:3] == ["python", "-m", "worker"]
+    assert executed_command[3] == "--request-file"
+    assert executed_command[4].startswith("/tmp/opsmesh-command-input-")
+    assert "runtime-secret" not in str(executed_command)
+    assert calls[-2][0] == ["rm", "-f", executed_command[4]]
+    assert calls[-1][0] == ["rmdir", executed_command[4].removesuffix("/request.json")]
+    with tarfile.open(fileobj=io.BytesIO(archives[0]), mode="r:") as archive:
+        member = next(item for item in archive.getmembers() if item.isfile())
+        stream = archive.extractfile(member)
+        assert stream is not None
+        assert stream.read() == b"runtime-secret"
+        assert member.mode == 0o400
+        assert member.uid == 1000
+        assert member.gid == 1000
+
+
+def test_docker_sdk_archive_transfer_uses_runtime_identity() -> None:
+    from backend.app.runtime_manager.docker_client import DockerSdkRuntimeClient
+
+    captured: list[bytes] = []
+
+    class Container:
+        def exec_run(
+            self,
+            command: list[str],
+            *,
+            workdir: str | None,
+            demux: bool,
+        ) -> SimpleNamespace:
+            _ = workdir, demux
+            value = b"1001\n" if command == ["id", "-u"] else b"1002\n"
+            return SimpleNamespace(exit_code=0, output=(value, None))
+
+        def put_archive(self, path: str, archive: bytes) -> bool:
+            assert path == "/workspace"
+            captured.append(archive)
+            return True
+
+    container = Container()
+
+    class Containers:
+        def get(self, container_id: str) -> Container:
+            assert container_id == "container-123"
+            return container
+
+    class Client:
+        containers = Containers()
+
+        def close(self) -> None:
+            return None
+
+    source = io.BytesIO()
+    with tarfile.open(fileobj=source, mode="w") as archive:
+        member = tarfile.TarInfo("runs/run-1/work/output.txt")
+        member.size = 2
+        member.mode = 0o644
+        archive.addfile(member, io.BytesIO(b"ok"))
+
+    DockerSdkRuntimeClient(lambda timeout: Client()).copy_archive_to_container(
         "container-123",
-        "python",
-        "-m",
-        "worker",
-        "--request-stdin",
-    ]
-    assert "runtime-secret" not in str(captured["command"])
-    assert captured["input"] == "runtime-secret"
+        "/workspace",
+        source.getvalue(),
+        15,
+    )
+
+    with tarfile.open(fileobj=io.BytesIO(captured[0]), mode="r:") as archive:
+        member = archive.getmembers()[0]
+        assert member.uid == 1001
+        assert member.gid == 1002
+        assert member.mode == 0o644
 
 
 def test_runtime_control_service_applies_team_runtime_space_policy() -> None:

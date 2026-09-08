@@ -19,7 +19,10 @@ from backend.app.capabilities.mcp_stdio_credentials import (
 from backend.app.capabilities.mcp_unsupported_adapter import UnsupportedMcpToolAdapter
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.runtime_manager.contracts import RuntimeCommandResult
+from backend.app.runtime_manager.contracts import (
+    RuntimeCommandInputFile,
+    RuntimeCommandResult,
+)
 from backend.app.runtimes.models import RuntimeCommand, WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import EgressUrlPolicy
@@ -341,10 +344,11 @@ def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> N
         "-m",
         "opsmesh_runtime.mcp_stdio_client",
     ]
-    assert command[3] == "--request-stdin"
-    stdin_data = runtime_manager.calls[1]["stdin_data"]
-    assert isinstance(stdin_data, str)
-    payload = json.loads(stdin_data)
+    assert len(command) == 3
+    input_file = runtime_manager.calls[1]["input_file"]
+    assert isinstance(input_file, RuntimeCommandInputFile)
+    assert input_file.argument_name == "--request-file"
+    payload = json.loads(input_file.content)
     assert payload["contract_version"] == 1
     assert payload["client"] == {
         "package": "mcp",
@@ -472,12 +476,12 @@ def test_docker_runtime_stdio_mcp_adapter_injects_hosted_credentials_via_stdin()
         "python",
         "-m",
         "opsmesh_runtime.mcp_stdio_client",
-        "--request-stdin",
     ]
     assert "runtime-secret" not in str(call["command"])
-    stdin_data = call["stdin_data"]
-    assert isinstance(stdin_data, str)
-    request = json.loads(stdin_data)
+    input_file = call["input_file"]
+    assert isinstance(input_file, RuntimeCommandInputFile)
+    assert input_file.argument_name == "--request-file"
+    request = json.loads(input_file.content)
     assert request["server"]["env"] == {"MCP_API_KEY": "runtime-secret"}
 
 
@@ -735,14 +739,16 @@ class RecordingRuntimeManager:
         workspace_id: object,
         runtime: WorkspaceRuntime,
         command: list[str],
-        stdin_data: str | None = None,
+        input_file: RuntimeCommandInputFile | None = None,
+        working_dir: str | None = None,
     ) -> RuntimeCommand:
         self.calls.append(
             {
                 "workspace_id": workspace_id,
                 "runtime": runtime,
                 "command": command,
-                "stdin_data": stdin_data,
+                "input_file": input_file,
+                "working_dir": working_dir,
             }
         )
         result = self._results.pop(0)

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Literal, Protocol
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,7 @@ class RuntimeCreateRequest:
 class RuntimeMount:
     source: str
     target: str
-    mount_type: str = "volume"
+    mount_type: Literal["bind", "volume", "tmpfs", "npipe"] = "volume"
     read_only: bool = False
 
 
@@ -63,6 +63,21 @@ class RuntimeCommandResult:
     stderr: str
 
 
+@dataclass(frozen=True)
+class RuntimeCommandInputFile:
+    content: bytes
+    argument_name: str
+
+
+class RuntimeProjectFilesystem(Protocol):
+    @property
+    def root_path(self) -> str: ...
+
+    def stage_archive(self, archive: bytes) -> None: ...
+
+    def read_file(self, relative_path: str, *, max_bytes: int) -> bytes | None: ...
+
+
 class DockerRuntimeClient(Protocol):
     def create_container(self, request: RuntimeCreateRequest) -> str: ...
 
@@ -80,5 +95,22 @@ class DockerRuntimeClient(Protocol):
         command: list[str],
         timeout_seconds: int,
         *,
-        stdin_data: str | None = None,
+        input_file: RuntimeCommandInputFile | None = None,
+        working_dir: str | None = None,
     ) -> RuntimeCommandResult: ...
+
+    def copy_archive_to_container(
+        self,
+        container_id: str,
+        destination_path: str,
+        archive: bytes,
+        timeout_seconds: int,
+    ) -> None: ...
+
+    def copy_file_from_container(
+        self,
+        container_id: str,
+        source_path: str,
+        max_bytes: int,
+        timeout_seconds: int,
+    ) -> bytes | None: ...

@@ -41,12 +41,14 @@ class AgentRuntimePolicyError(Exception):
         message: str,
         event_type: str,
         metadata: dict[str, object],
+        retryable: bool = False,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.event_type = event_type
         self.metadata = redact_sensitive_payload(metadata)
+        self.retryable = retryable
 
 
 class AgentRuntimeGuardrailBlockedError(AgentRuntimePolicyError):
@@ -129,7 +131,7 @@ def normalize_agent_error(exc: Exception) -> NormalizedAgentError:
         return NormalizedAgentError(
             code=exc.code,
             message=exc.message,
-            retryable=False,
+            retryable=exc.retryable,
         )
     message = str(exc) or "Agent runtime failed"
     message = _SENSITIVE_PROVIDER_CONFIG_PATTERN.sub("[redacted]", message)

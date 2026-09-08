@@ -19,6 +19,7 @@ from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import (
     DockerRuntimeClient,
+    RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
     RuntimeLimits,
@@ -75,9 +76,9 @@ class FakeDockerClient(DockerRuntimeClient):
         command: list[str],
         timeout_seconds: int,
         *,
-        stdin_data: str | None = None,
+        input_file: RuntimeCommandInputFile | None = None,
     ) -> RuntimeCommandResult:
-        _ = stdin_data
+        _ = input_file
         self.executed.append(command)
         return self.result
 

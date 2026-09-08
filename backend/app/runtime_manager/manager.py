@@ -13,6 +13,7 @@ from backend.app.runtime_manager.command_executor import RuntimeCommandExecutor
 from backend.app.runtime_manager.command_output import lease_metadata
 from backend.app.runtime_manager.contracts import (
     DockerRuntimeClient,
+    RuntimeCommandInputFile,
     RuntimeLimits,
 )
 from backend.app.runtime_manager.events import RuntimeEventLog
@@ -237,13 +238,15 @@ class RuntimeManager:
         workspace_id: UUID,
         runtime: WorkspaceRuntime,
         command: list[str],
-        stdin_data: str | None = None,
+        input_file: RuntimeCommandInputFile | None = None,
+        working_dir: str | None = None,
     ) -> RuntimeCommand:
         return self._commands.execute_command(
             workspace_id=workspace_id,
             runtime=runtime,
             command=command,
-            stdin_data=stdin_data,
+            input_file=input_file,
+            working_dir=working_dir,
         )
 
     def execute_existing_command(
@@ -253,12 +256,14 @@ class RuntimeManager:
         runtime: WorkspaceRuntime,
         record: RuntimeCommand,
         command: list[str],
-        stdin_data: str | None = None,
+        input_file: RuntimeCommandInputFile | None = None,
+        working_dir: str | None = None,
     ) -> RuntimeCommand:
         return self._commands.execute_existing_command(
             workspace_id=workspace_id,
             runtime=runtime,
             record=record,
             command=command,
-            stdin_data=stdin_data,
+            input_file=input_file,
+            working_dir=working_dir,
         )

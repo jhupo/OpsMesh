@@ -64,3 +64,23 @@ class AgentRunProjectSnapshotResponse(ORMModel):
     @field_serializer("manifest")
     def _serialize_manifest(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+
+class AgentRunProjectIOStateResponse(TimestampedModel):
+    workspace_id: UUID
+    agent_run_id: UUID
+    project_snapshot_id: UUID
+    workspace_runtime_id: UUID
+    root_path: str
+    status: str
+    staged_file_count: int
+    staged_bytes: int
+    harvested_output_count: int
+    harvested_bytes: int
+    error: dict[str, object] | None
+    staged_at: datetime | None
+    harvested_at: datetime | None
+
+    @field_serializer("error")
+    def _serialize_error(self, value: dict[str, object] | None) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None

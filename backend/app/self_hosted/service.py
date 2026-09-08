@@ -106,7 +106,7 @@ class SelfHostedRuntimeService:
         agent_run_id: UUID,
         data: JobCompleteRequest,
     ) -> SelfHostedJobClaim:
-        return SelfHostedRunCompletionService(self._session).complete_job(
+        return SelfHostedRunCompletionService(self._session, self._settings).complete_job(
             auth,
             agent_run_id,
             data,
