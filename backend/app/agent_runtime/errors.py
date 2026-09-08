@@ -81,6 +81,16 @@ class AgentRuntimeOutputValidationError(AgentRuntimePolicyError):
         )
 
 
+class AgentRuntimeCancelledError(AgentRuntimePolicyError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="agent_runtime_cancelled",
+            message="Agent runtime execution was cancelled",
+            event_type="agent.run.cancelled",
+            metadata={"propagated": True},
+        )
+
+
 def normalize_agent_error(exc: Exception) -> NormalizedAgentError:
     if isinstance(exc, AgentRuntimePolicyError):
         return NormalizedAgentError(

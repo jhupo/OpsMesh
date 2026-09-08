@@ -1,21 +1,23 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
+from typing import Protocol
 from urllib.parse import urlparse
 from uuid import UUID, uuid5
 
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
+    ClaudeSDKClient,
     ResultMessage,
     StreamEvent,
     TextBlock,
     ToolResultBlock,
     ToolUseBlock,
     create_sdk_mcp_server,
-    query,
     tool,
 )
 from claude_agent_sdk import __version__ as claude_sdk_version
@@ -28,6 +30,12 @@ from claude_agent_sdk.types import (
     SessionStoreEntry,
 )
 
+from backend.app.agent_runtime.base import BaseSDKAgentRuntimeAdapter
+from backend.app.agent_runtime.cancellation import (
+    cancel_active_tools,
+    raise_if_cancelled,
+    stop_cancellation_watcher,
+)
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -41,13 +49,15 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeStructuredOutput,
     AgentRuntimeToolDefinition,
 )
-from backend.app.agent_runtime.errors import normalize_agent_error
+from backend.app.agent_runtime.errors import AgentRuntimeCancelledError
+from backend.app.agent_runtime.execution_observer import AgentRuntimeExecutionObserver
 from backend.app.agent_runtime.guardrails import (
     evaluate_guardrail_stage,
     guardrail_events,
     validated_structured_output,
 )
-from backend.app.core.resilience import CircuitBreakerConfig, async_retry_with_circuit
+from backend.app.agent_runtime.usage import runtime_usage
+from backend.app.core.resilience import CircuitBreakerConfig
 from backend.app.model_providers.model_api import ANTHROPIC_MESSAGES_API
 from backend.app.model_providers.provider_keys import canonical_model_provider
 from backend.app.security.redaction import redact_sensitive_payload
@@ -105,7 +115,19 @@ class _ApprovalState:
     active_calls: dict[str, str]
 
 
-class ClaudeAgentSDKRunner:
+class _ClaudeClient(Protocol):
+    async def __aenter__(self) -> _ClaudeClient: ...
+
+    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> bool: ...
+
+    async def query(self, prompt: str, session_id: str = "default") -> None: ...
+
+    def receive_response(self) -> AsyncIterator[object]: ...
+
+    async def interrupt(self) -> None: ...
+
+
+class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
     """Claude Agent SDK adapter behind OpsMesh's vendor-neutral runtime contract."""
 
     capabilities = AgentRuntimeCapabilities(
@@ -118,6 +140,7 @@ class ClaudeAgentSDKRunner:
                 AgentRuntimeCapability.RESUMABLE_STATE,
                 AgentRuntimeCapability.GUARDRAILS,
                 AgentRuntimeCapability.SESSIONS,
+                AgentRuntimeCapability.CANCELLATION,
             }
         ),
         limits={"builtin_tools": "disabled", "mcp_server": "opsmesh"},
@@ -125,10 +148,6 @@ class ClaudeAgentSDKRunner:
             AgentRuntimeCapability.HANDOFFS.value: (
                 "Claude SDK agents are exposed as tools; OpenAI-style handoff "
                 "descriptors are not equivalent."
-            ),
-            AgentRuntimeCapability.CANCELLATION.value: (
-                "The query entry point is buffered; use ClaudeSDKClient for "
-                "interactive cancellation."
             ),
         },
     )
@@ -138,26 +157,14 @@ class ClaudeAgentSDKRunner:
         *,
         max_attempts: int = 1,
         circuit_config: CircuitBreakerConfig = DEFAULT_MODEL_PROVIDER_CIRCUIT_CONFIG,
-        query_fn: Callable[..., AsyncIterator[object]] = query,
+        client_factory: Callable[[ClaudeAgentOptions], _ClaudeClient] = ClaudeSDKClient,
     ) -> None:
-        self._max_attempts = max(1, max_attempts)
-        self._circuit_config = circuit_config
-        self._query = query_fn
+        super().__init__(max_attempts=max_attempts, circuit_config=circuit_config)
+        self._client_factory = client_factory
 
-    async def run(self, request: AgentRunRequest) -> AgentRunResult:
-        self._validate_contract_requests(request)
+    def _validate_request(self, request: AgentRunRequest) -> None:
         if not request.api_key:
             raise ValueError("Anthropic provider requires an explicit provider API key")
-        result = await async_retry_with_circuit(
-            key=_model_provider_circuit_key(request),
-            func=lambda: self._run_once(request),
-            max_attempts=self._max_attempts,
-            circuit_config=self._circuit_config,
-            should_retry=lambda exc: normalize_agent_error(exc).retryable,
-        )
-        return result
-
-    def _validate_contract_requests(self, request: AgentRunRequest) -> None:
         if request.handoffs:
             raise NotImplementedError(
                 "Claude Agent SDK supports agents-as-tools, not OpenAI-style handoff descriptors"
@@ -175,7 +182,14 @@ class ClaudeAgentSDKRunner:
         if request.resume_state is not None and request.resume_state.provider != "claude_agent_sdk":
             raise ValueError("Claude Agent SDK runner cannot restore another provider's state")
 
-    async def _run_once(self, request: AgentRunRequest) -> AgentRunResult:
+    def _provider_circuit_key(self, request: AgentRunRequest) -> str:
+        return _model_provider_circuit_key(request)
+
+    async def _run_once(
+        self,
+        request: AgentRunRequest,
+        observer: AgentRuntimeExecutionObserver,
+    ) -> AgentRunResult:
         session_id = _session_id(request)
         store = (
             ClaudeAgentSessionStore(request.session, session_id=session_id)
@@ -194,7 +208,19 @@ class ClaudeAgentSDKRunner:
         if request.approval_decisions:
             state_payload = json.loads(request.resume_state.serialized_state)
             approval_state.active_calls[state_payload["tool_name"]] = state_payload["tool_call_id"]
-        options = self._options(request, session_id, store, approval_state, resume_existing)
+        observer.lifecycle(
+            "agent.started",
+            "Claude agent started.",
+            {"agent": request.agent_profile.name},
+        )
+        options = self._options(
+            request,
+            session_id,
+            store,
+            approval_state,
+            observer,
+            resume_existing,
+        )
         prompt = self._input_for_request(request)
         guardrail_results: list[AgentRuntimeGuardrailResult] = []
         if request.guardrails is not None and request.resume_state is None:
@@ -205,8 +231,41 @@ class ClaudeAgentSDKRunner:
                 results=guardrail_results,
             )
         messages: list[object] = []
-        async for message in self._query(prompt=prompt, options=options):
-            messages.append(message)
+        cancelled = asyncio.Event()
+        await raise_if_cancelled(request.cancellation)
+        client = self._client_factory(options)
+        async with client:
+            await client.query(prompt)
+
+            async def watch_cancellation() -> None:
+                cancellation = request.cancellation
+                if cancellation is None:
+                    return
+                await cancellation.wait_cancelled()
+                cancelled.set()
+                await client.interrupt()
+                await cancel_active_tools(request)
+
+            watcher: asyncio.Task[object] | None = None
+            if request.cancellation is not None:
+                watcher = asyncio.create_task(watch_cancellation())
+            try:
+                async for message in client.receive_response():
+                    messages.append(message)
+                    if request.stream and isinstance(message, StreamEvent):
+                        mapped = self._stream_event(
+                            message,
+                            sequence=len(observer.stream_events) + 1,
+                        )
+                        observer.stream(
+                            mapped.event_type,
+                            payload=mapped.payload,
+                            delta=mapped.delta,
+                        )
+            finally:
+                await stop_cancellation_watcher(watcher)
+        if cancelled.is_set():
+            raise AgentRuntimeCancelledError
 
         result_message = next(
             (message for message in reversed(messages) if isinstance(message, ResultMessage)),
@@ -217,6 +276,8 @@ class ClaudeAgentSDKRunner:
         if result_message.is_error and result_message.deferred_tool_use is None:
             details = "; ".join(result_message.errors or []) or "Claude Agent SDK run failed"
             raise RuntimeError(details)
+        if result_message.terminal_reason in {"aborted_streaming", "aborted_tools"}:
+            raise AgentRuntimeCancelledError
 
         interruptions = self._interruptions(request, result_message, approval_state)
         resume = self._resume_state(result_message, interruptions)
@@ -234,6 +295,11 @@ class ClaudeAgentSDKRunner:
                 results=guardrail_results,
             )
         events = self._events(request, result_message, messages, approval_state)
+        observer.lifecycle(
+            "agent.completed",
+            "Claude agent completed.",
+            {"agent": request.agent_profile.name},
+        )
         events.extend(guardrail_events(guardrail_results))
         return AgentRunResult(
             final_output=final_output,
@@ -242,9 +308,13 @@ class ClaudeAgentSDKRunner:
             resume_state=resume,
             interruptions=tuple(interruptions),
             structured_output=structured,
-            stream_events=tuple(self._stream_events(messages, result_message)),
             guardrail_results=tuple(guardrail_results),
-            capabilities=self.capabilities,
+            usage=runtime_usage(
+                result_message.usage,
+                model_usage=result_message.model_usage,
+                total_cost_usd=result_message.total_cost_usd,
+                request_count=result_message.num_turns,
+            ),
         )
 
     def _options(
@@ -253,6 +323,7 @@ class ClaudeAgentSDKRunner:
         session_id: str,
         store: ClaudeAgentSessionStore | None,
         approval_state: _ApprovalState,
+        observer: AgentRuntimeExecutionObserver,
         resume_existing: bool = False,
     ) -> ClaudeAgentOptions:
         tool_defs = tuple(request.context.tool_definitions)
@@ -293,16 +364,7 @@ class ClaudeAgentSDKRunner:
                 else None
             ),
             include_partial_messages=request.stream,
-            hooks={
-                "PreToolUse": [
-                    HookMatcher(
-                        matcher=f"{_SDK_TOOL_PREFIX}.*",
-                        hooks=[_approval_hook(request, approval_state)],
-                    )
-                ]
-            }
-            if sdk_tools
-            else None,
+            hooks=_claude_hooks(request, approval_state, observer, bool(sdk_tools)),
             setting_sources=[],
             skills=[],
             session_store=store,
@@ -501,35 +563,20 @@ class ClaudeAgentSDKRunner:
         )
         return events
 
-    def _stream_events(
+    def _stream_event(
         self,
-        messages: list[object],
-        result: ResultMessage,
-    ) -> list[AgentRuntimeStreamEvent]:
-        events: list[AgentRuntimeStreamEvent] = []
-        sequence = 1
-        for message in messages:
-            if isinstance(message, StreamEvent):
-                event = dict(message.event)
-                delta = _stream_delta(event)
-                events.append(
-                    AgentRuntimeStreamEvent(
-                        sequence=sequence,
-                        event_type="output.text.delta" if delta else "model.stream",
-                        payload=redact_sensitive_payload(event),
-                        delta=delta,
-                    )
-                )
-                sequence += 1
-        events.append(
-            AgentRuntimeStreamEvent(
-                sequence=sequence,
-                event_type="run.completed" if not result.is_error else "run.failed",
-                payload={"session_id": result.session_id},
-                is_terminal=True,
-            )
+        message: StreamEvent,
+        *,
+        sequence: int,
+    ) -> AgentRuntimeStreamEvent:
+        event = dict(message.event)
+        delta = _stream_delta(event)
+        return AgentRuntimeStreamEvent(
+            sequence=sequence,
+            event_type="output.text.delta" if delta else "model.stream",
+            payload=redact_sensitive_payload(event),
+            delta=delta,
         )
-        return events
 
     def _safe_raw_output(
         self,
@@ -562,6 +609,7 @@ def _sdk_tool(
 
     @tool(sdk_name, definition.description, dict(definition.input_schema))
     async def invoke(arguments: dict[str, object]) -> dict[str, object]:
+        await raise_if_cancelled(request.cancellation)
         executor = request.tool_executor
         if executor is None:
             return _tool_error("No runtime tool executor is configured")
@@ -583,6 +631,7 @@ def _sdk_tool(
                     tool_name=definition.name,
                     arguments=arguments,
                 )
+            await raise_if_cancelled(request.cancellation)
             if result.status == "completed":
                 payload = result.output or {}
                 return {
@@ -596,10 +645,81 @@ def _sdk_tool(
             return _tool_error(
                 json.dumps(result.error or {"code": "tool_failed"}, ensure_ascii=False)
             )
+        except AgentRuntimeCancelledError:
+            raise
         except Exception as exc:
             return _tool_error(str(exc))
 
     return invoke
+
+
+def _claude_hooks(
+    request: AgentRunRequest,
+    approval_state: _ApprovalState,
+    observer: AgentRuntimeExecutionObserver,
+    has_tools: bool,
+) -> dict[str, list[HookMatcher]]:
+    hooks: dict[str, list[HookMatcher]] = {
+        "Stop": [
+            HookMatcher(
+                hooks=[_claude_lifecycle_hook("agent.stop", request, observer)]
+            )
+        ]
+    }
+    if not has_tools:
+        return hooks
+    hooks["PreToolUse"] = [
+        HookMatcher(
+            matcher=f"{_SDK_TOOL_PREFIX}.*",
+            hooks=[
+                _approval_hook(request, approval_state),
+                _claude_lifecycle_hook("agent.tool.started", request, observer),
+            ],
+        )
+    ]
+    hooks["PostToolUse"] = [
+        HookMatcher(
+            matcher=f"{_SDK_TOOL_PREFIX}.*",
+            hooks=[
+                _claude_lifecycle_hook("agent.tool.completed", request, observer)
+            ],
+        )
+    ]
+    hooks["PostToolUseFailure"] = [
+        HookMatcher(
+            matcher=f"{_SDK_TOOL_PREFIX}.*",
+            hooks=[_claude_lifecycle_hook("agent.tool.failed", request, observer)],
+        )
+    ]
+    return hooks
+
+
+def _claude_lifecycle_hook(
+    event_type: str,
+    request: AgentRunRequest,
+    observer: AgentRuntimeExecutionObserver,
+) -> Callable[[HookInput, str | None, HookContext], object]:
+    async def record(
+        input_data: HookInput,
+        tool_use_id: str | None,
+        context: HookContext,
+    ) -> HookJSONOutput:
+        if event_type == "agent.tool.started":
+            await raise_if_cancelled(request.cancellation)
+        tool_name = input_data.get("tool_name")
+        payload: dict[str, object] = {"agent": request.agent_profile.name}
+        if isinstance(tool_name, str) and tool_name:
+            payload["tool_name"] = _product_tool_name(tool_name)
+        if tool_use_id:
+            payload["tool_call_id"] = tool_use_id
+        observer.lifecycle(
+            event_type,
+            event_type.replace(".", " ").capitalize() + ".",
+            payload,
+        )
+        return {}
+
+    return record
 
 
 def _approval_hook(

@@ -10,8 +10,10 @@ from agents import (
 )
 from agents.tool_context import ToolContext
 
+from backend.app.agent_runtime.cancellation import raise_if_cancelled
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
+    AgentRuntimeCancellation,
     AgentRuntimeContext,
     AgentRuntimeToolDefinition,
     AgentRuntimeToolExecutor,
@@ -27,6 +29,7 @@ class OpenAIToolBridge:
                 definition,
                 request.tool_executor,
                 runtime_context=request.context,
+                cancellation=request.cancellation,
             )
             for definition in request.context.tool_definitions
         ]
@@ -37,6 +40,7 @@ class OpenAIToolBridge:
         executor: AgentRuntimeToolExecutor,
         *,
         runtime_context: AgentRuntimeContext,
+        cancellation: AgentRuntimeCancellation | None = None,
     ) -> Any:
         approval_reviews: dict[str, dict[str, object]] = {}
 
@@ -71,6 +75,7 @@ class OpenAIToolBridge:
             return decision == "require_approval"
 
         async def invoke_tool(ctx: ToolContext[Any], raw_arguments: str) -> dict[str, object]:
+            await raise_if_cancelled(cancellation)
             try:
                 parsed = json.loads(raw_arguments)
             except json.JSONDecodeError:
@@ -98,6 +103,7 @@ class OpenAIToolBridge:
                     tool_name=definition.name,
                     arguments=parsed,
                 )
+            await raise_if_cancelled(cancellation)
             if result.status == "completed":
                 return tool_response_with_metadata(
                     tool_name=definition.name,

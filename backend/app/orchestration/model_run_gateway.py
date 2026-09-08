@@ -4,8 +4,15 @@ from dataclasses import dataclass
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRunner, AgentRunRequest, AgentRunResult
-from backend.app.agent_runtime.errors import AgentRuntimePolicyError
+from backend.app.agent_runtime.contracts import (
+    AgentRunRequest,
+    AgentRunResult,
+    AgentRuntimeExecutor,
+)
+from backend.app.agent_runtime.errors import (
+    AgentRuntimeCancelledError,
+    AgentRuntimePolicyError,
+)
 from backend.app.core.config import Settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.costs.service import CostAccountingService, CostBudgetExceededError
@@ -24,7 +31,7 @@ MarkRunFailed = Callable[[AgentRun, Exception], None]
 class ModelRunGateway:
     session: Session
     settings: Settings | None
-    agent_runner: AgentRunner
+    agent_runner: AgentRuntimeExecutor
     request_builder: RunRequestBuilder
     events: RunEventRecorder
     mark_run_failed: MarkRunFailed
@@ -51,6 +58,8 @@ class ModelRunGateway:
             self.mark_run_failed(run, exc)
             self.session.commit()
             return None
+        except AgentRuntimeCancelledError:
+            raise
         except Exception as exc:
             fallback_request = routing.fallback_request(
                 run=run,
@@ -76,6 +85,8 @@ class ModelRunGateway:
             self.mark_run_failed(run, exc)
             self.session.commit()
             return None
+        except AgentRuntimeCancelledError:
+            raise
         except Exception as fallback_exc:
             self.events.append_model_request_failed_event(run, fallback_request, fallback_exc)
             audit.record_request_failed(run, fallback_request, job, fallback_exc)
@@ -127,6 +138,7 @@ class ModelRunGateway:
                 request,
                 fallback_selected=fallback_selected,
             )
+            self.session.commit()
             with telemetry_span(
                 "opsmesh.model.request",
                 parent=current_trace_context(),
@@ -162,6 +174,18 @@ class ModelRunGateway:
                 },
             )
             self.events.append_model_response_received_event(run, request, result)
+        except AgentRuntimeCancelledError:
+            self.events.append_event(
+                run,
+                "model.request_cancelled",
+                "Cancellation reached the active agent SDK run",
+                {
+                    "model": request.model,
+                    "provider": request.provider,
+                    "propagated": True,
+                },
+            )
+            raise
         except Exception as exc:
             self.events.append_model_request_failed_event(run, request, exc)
             audit.record_request_failed(run, request, job, exc)

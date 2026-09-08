@@ -24,6 +24,21 @@ accept SDK result, state, session, or stream-event objects. The contract include
 SDK objects are created, restored, and mapped only inside the provider adapter. A request that asks
 for an adapter feature which is not implemented is rejected explicitly; it is never silently ignored.
 
+The Python boundary deliberately uses a hybrid object model:
+
+- `AgentRuntimeExecutor` is the minimal structural protocol consumed by orchestration and workers.
+- `AgentRuntimeAdapter` adds the capability contract required from provider implementations.
+- `BaseSDKAgentRuntimeAdapter` is the template base for SDK-backed adapters and owns validation,
+  cancellation checkpoints, retry/circuit behavior, lifecycle observation, stream finalization, and
+  result capability attachment.
+- `OpenAIAgentsRunner` and `ClaudeAgentSDKRunner` implement only provider SDK construction,
+  invocation, and result mapping.
+- `ProviderAgentRuntimeRegistry` selects an adapter by canonical provider family and publishes its
+  product-owned capabilities without exposing SDK classes to domain services.
+
+The protocol keeps test doubles and alternate composition lightweight. The base class is used only
+where common execution invariants must not drift between SDKs; domain services do not inherit it.
+
 ## Runtime Inputs
 
 The orchestration layer provides an `AgentRunRequest`.
@@ -329,16 +344,25 @@ Cancellation can come from user, policy, timeout, worker shutdown, or runtime he
 Runtime layer should:
 
 - stop accepting new tool calls
-- cancel in-flight runtime command if possible
+- observe the durable workspace-scoped run state from an independent database session
+- call the active SDK cancellation primitive (`RunResultStreaming.cancel()` for OpenAI or
+  `ClaudeSDKClient.interrupt()` for Claude)
+- cancel in-flight product tool execution when its executor exposes cancellation
 - update run status
 - write `run.cancelled` or `run.failed`
 - cleanup runtime according to policy
 
+Cancellation is classified as non-retryable and never triggers cross-provider fallback. The model
+request-start event is committed before the external SDK call so another control-plane request can
+cancel the run and so crash evidence remains durable.
+
 ## Tracing Contract
 
-OpenAI tracing can be enabled for debugging. Claude usage/cost/session metadata is mapped into the
-same product events; provider tracing is optional. Product run events remain the durable source of
-user-visible truth.
+OpenAI tracing can be enabled for debugging. Both adapters map provider usage into
+`AgentRuntimeUsage`; cost accounting consumes that typed result instead of scraping raw SDK payloads
+or runtime events. Claude cost/session metadata is mapped into the same product evidence, while
+provider tracing remains optional. Product run events remain the durable source of user-visible
+truth.
 
 Rules:
 

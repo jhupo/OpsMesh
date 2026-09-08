@@ -217,7 +217,11 @@ def test_claude_guardrail_blocks_before_provider_query() -> None:
         yield
 
     with pytest.raises(AgentRuntimeGuardrailBlockedError):
-        asyncio.run(ClaudeAgentSDKRunner(query_fn=unexpected_query).run(request))
+        class UnexpectedClient:
+            def __init__(self, options: object) -> None:
+                raise AssertionError("blocked input must not create a Claude client")
+
+        asyncio.run(ClaudeAgentSDKRunner(client_factory=UnexpectedClient).run(request))
 
 
 def test_runtime_controls_are_frozen_and_hydrated_for_worker() -> None:

@@ -241,16 +241,28 @@ def runtime_stream_event_from_sdk_item(
     *,
     sequence: int,
 ) -> AgentRuntimeStreamEvent | None:
-    event_type = getattr(item, "type", None) or getattr(item, "event_type", None)
+    sdk_type = getattr(item, "type", None) or getattr(item, "event_type", None)
+    event_type = sdk_type
+    payload_source = item
+    delta: object = getattr(item, "delta", None)
+    if sdk_type == "raw_response_event":
+        payload_source = getattr(item, "data", item)
+        raw_type = getattr(payload_source, "type", None)
+        event_type = _openai_raw_stream_event_type(raw_type)
+        delta = getattr(payload_source, "delta", None)
+    elif sdk_type == "run_item_stream_event":
+        name = getattr(item, "name", None)
+        event_type = _openai_run_item_event_type(name)
+    elif sdk_type == "agent_updated_stream_event":
+        event_type = "agent.updated"
     if not isinstance(event_type, str) or not event_type:
         return None
-    payload = jsonable(item)
+    payload = jsonable(payload_source)
     normalized_payload = redact_sensitive_payload(
         payload if isinstance(payload, dict) else {"value": payload}
     )
-    delta = getattr(item, "delta", None)
     if not isinstance(delta, str):
-        delta = getattr(item, "text", None)
+        delta = getattr(payload_source, "text", None)
     if not isinstance(delta, str):
         delta = None
     if delta is not None:
@@ -263,6 +275,26 @@ def runtime_stream_event_from_sdk_item(
         delta=delta,
         is_terminal=event_type in {"run.completed", "run.failed", "error"},
     )
+
+
+def _openai_raw_stream_event_type(value: object) -> str:
+    if value == "response.output_text.delta":
+        return "output.text.delta"
+    if isinstance(value, str) and value:
+        return f"model.{value}"
+    return "model.stream"
+
+
+def _openai_run_item_event_type(value: object) -> str:
+    return {
+        "handoff_requested": "agent.handoff.requested",
+        "handoff_occured": "agent.handoff",
+        "tool_called": "tool.call",
+        "tool_output": "tool.result",
+        "mcp_approval_requested": "tool.approval_required",
+        "mcp_approval_response": "tool.approval_response",
+        "message_output_created": "output.message.created",
+    }.get(str(value), f"agent.item.{value or 'created'}")
 
 
 def jsonable(value: Any) -> object:

@@ -76,6 +76,34 @@ class RecordingExecutor:
         return AgentRuntimeToolResult(status="completed", output={"answer": "found"})
 
 
+class FakeClaudeClient:
+    def __init__(self, options: object, query_fn: object) -> None:
+        self.options = options
+        self.query_fn = query_fn
+        self.prompt = ""
+        self.interrupted = False
+
+    async def __aenter__(self) -> "FakeClaudeClient":
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> bool:
+        return False
+
+    async def query(self, prompt: str, session_id: str = "default") -> None:
+        self.prompt = prompt
+
+    async def receive_response(self):
+        async for message in self.query_fn(prompt=self.prompt, options=self.options):
+            yield message
+
+    async def interrupt(self) -> None:
+        self.interrupted = True
+
+
+def _client_factory(query_fn: object):
+    return lambda options: FakeClaudeClient(options, query_fn)
+
+
 def test_claude_agent_sdk_runner_maps_result_usage_and_structured_output() -> None:
     captured: dict[str, object] = {}
 
@@ -110,7 +138,9 @@ def test_claude_agent_sdk_runner_maps_result_usage_and_structured_output() -> No
             },
         )
     )
-    result = asyncio.run(ClaudeAgentSDKRunner(query_fn=fake_query).run(request))
+    result = asyncio.run(
+        ClaudeAgentSDKRunner(client_factory=_client_factory(fake_query)).run(request)
+    )
 
     assert result.final_output == '{"answer": "done"}'
     assert result.structured_output is not None
@@ -153,7 +183,9 @@ def test_claude_agent_sdk_runner_uses_mcp_tool_bridge_and_policy_review() -> Non
         )
 
     request = _request(tool_executor=Executor())
-    result = asyncio.run(ClaudeAgentSDKRunner(query_fn=fake_query).run(request))
+    result = asyncio.run(
+        ClaudeAgentSDKRunner(client_factory=_client_factory(fake_query)).run(request)
+    )
 
     assert result.final_output == "found"
     assert result.capabilities is not None
@@ -183,7 +215,9 @@ def test_claude_agent_sdk_runner_maps_deferred_tool_to_resume_state() -> None:
         )
 
     request = _request()
-    result = asyncio.run(ClaudeAgentSDKRunner(query_fn=fake_query).run(request))
+    result = asyncio.run(
+        ClaudeAgentSDKRunner(client_factory=_client_factory(fake_query)).run(request)
+    )
 
     assert len(result.interruptions) == 1
     interruption = result.interruptions[0]
@@ -217,7 +251,9 @@ def test_claude_agent_sdk_runner_rejects_approval_without_resuming_session() -> 
             ),
         ),
     )
-    result = asyncio.run(ClaudeAgentSDKRunner(query_fn=_unexpected_query).run(request))
+    result = asyncio.run(
+        ClaudeAgentSDKRunner(client_factory=_client_factory(_unexpected_query)).run(request)
+    )
 
     assert result.final_output == "operator denied"
     assert result.events[0].event_type == "tool.rejected"

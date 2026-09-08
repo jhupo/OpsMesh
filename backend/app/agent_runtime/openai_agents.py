@@ -19,6 +19,7 @@ from agents.handoffs import handoff as sdk_handoff
 from agents.models.interface import Model
 from agents.models.openai_provider import OpenAIProvider
 
+from backend.app.agent_runtime.base import BaseSDKAgentRuntimeAdapter
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -36,6 +37,7 @@ from backend.app.agent_runtime.errors import (
     AgentRuntimePolicyError,
     normalize_agent_error,
 )
+from backend.app.agent_runtime.execution_observer import AgentRuntimeExecutionObserver
 from backend.app.agent_runtime.guardrails import (
     guardrail_events,
     validated_structured_output,
@@ -47,10 +49,13 @@ from backend.app.agent_runtime.openai_guardrails import (
     openai_input_guardrails,
     openai_output_guardrails,
 )
+from backend.app.agent_runtime.openai_lifecycle import OpenAIRuntimeHooks
 from backend.app.agent_runtime.openai_results import OpenAIAgentsResultMapper, jsonable
 from backend.app.agent_runtime.openai_settings import OpenAIModelSettingsMapper
+from backend.app.agent_runtime.openai_streaming import run_openai_streamed
 from backend.app.agent_runtime.openai_tools import OpenAIToolBridge
-from backend.app.core.resilience import CircuitBreakerConfig, async_retry_with_circuit
+from backend.app.agent_runtime.usage import runtime_usage
+from backend.app.core.resilience import CircuitBreakerConfig
 from backend.app.model_providers.base_url import normalize_openai_compatible_base_url
 from backend.app.model_providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
@@ -65,7 +70,7 @@ from backend.app.model_providers.provider_keys import (
 DEFAULT_MODEL_PROVIDER_CIRCUIT_CONFIG = CircuitBreakerConfig()
 
 
-class OpenAIAgentsRunner:
+class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
     capabilities = AgentRuntimeCapabilities(
         provider="openai-compatible",
         adapter="openai_agents",
@@ -74,18 +79,15 @@ class OpenAIAgentsRunner:
                 AgentRuntimeCapability.HANDOFFS,
                 AgentRuntimeCapability.AGENTS_AS_TOOLS,
                 AgentRuntimeCapability.STRUCTURED_OUTPUT,
+                AgentRuntimeCapability.STREAMING,
                 AgentRuntimeCapability.RESUMABLE_STATE,
                 AgentRuntimeCapability.GUARDRAILS,
                 AgentRuntimeCapability.SESSIONS,
+                AgentRuntimeCapability.CANCELLATION,
             }
         ),
         limits={"max_agent_tool_depth": 3, "max_agent_tool_turns": 20},
-        unsupported_reasons={
-            AgentRuntimeCapability.STREAMING.value: "Adapter streaming is not enabled yet.",
-            AgentRuntimeCapability.CANCELLATION.value: (
-                "Cancellation propagation is not enabled yet."
-            ),
-        },
+        unsupported_reasons={},
     )
 
     def __init__(
@@ -94,14 +96,16 @@ class OpenAIAgentsRunner:
         max_attempts: int = 1,
         circuit_config: CircuitBreakerConfig = DEFAULT_MODEL_PROVIDER_CIRCUIT_CONFIG,
     ) -> None:
-        self._max_attempts = max(1, max_attempts)
-        self._circuit_config = circuit_config
+        super().__init__(max_attempts=max_attempts, circuit_config=circuit_config)
         self._settings_mapper = OpenAIModelSettingsMapper()
         self._tool_bridge = OpenAIToolBridge()
         self._result_mapper = OpenAIAgentsResultMapper()
 
-    async def run(self, request: AgentRunRequest) -> AgentRunResult:
-        self._validate_contract_requests(request)
+    async def _run_once(
+        self,
+        request: AgentRunRequest,
+        observer: AgentRuntimeExecutionObserver,
+    ) -> AgentRunResult:
         handoff_audits: dict[str, dict[str, object]] = {}
         agent_tool_calls: list[AgentRuntimeAgentToolResult] = []
         guardrail_results: list[AgentRuntimeGuardrailResult] = []
@@ -113,13 +117,25 @@ class OpenAIAgentsRunner:
         )
         runner_input = await self._runner_input(request, agent)
 
+        hooks = OpenAIRuntimeHooks(observer, request.cancellation)
+
         async def invoke_sdk() -> Any:
             try:
+                if request.stream or request.cancellation is not None:
+                    return await run_openai_streamed(
+                        request=request,
+                        agent=agent,
+                        runner_input=runner_input,
+                        hooks=hooks,
+                        run_config=self._run_config(request),
+                        observer=observer,
+                    )
                 return await Runner.run(
                     agent,
                     runner_input,
                     context=request.context,
                     max_turns=request.max_turns,
+                    hooks=hooks,
                     run_config=self._run_config(request),
                     previous_response_id=request.previous_response_id,
                     conversation_id=request.conversation_id,
@@ -133,13 +149,7 @@ class OpenAIAgentsRunner:
             ) as exc:
                 raise _guardrail_blocked_error(exc, guardrail_results) from exc
 
-        result = await async_retry_with_circuit(
-            key=_model_provider_circuit_key(request),
-            func=invoke_sdk,
-            max_attempts=self._max_attempts,
-            circuit_config=self._circuit_config,
-            should_retry=lambda exc: normalize_agent_error(exc).retryable,
-        )
+        result = await invoke_sdk()
         guardrail_results = merged_openai_guardrail_results(result, guardrail_results)
         interruptions = self._result_mapper.interruptions(result)
         final_output, structured_output = self._result_mapper.final_output(result)
@@ -178,23 +188,18 @@ class OpenAIAgentsRunner:
             resume_state=self._result_mapper.resume_state(result),
             interruptions=tuple(interruptions),
             structured_output=structured_output,
-            stream_events=tuple(self._result_mapper.stream_events(result)),
+            stream_events=(),
             handoffs=tuple(handoffs),
             agent_tool_calls=tuple(agent_tool_calls),
             guardrail_results=tuple(guardrail_results),
-            capabilities=self.capabilities,
+            usage=runtime_usage(getattr(result, "usage", None)),
         )
 
-    def _validate_contract_requests(self, request: AgentRunRequest) -> None:
-        unsupported: list[str] = []
-        if request.stream:
-            unsupported.append("streaming")
-        if unsupported:
-            raise NotImplementedError(
-                "OpenAI Agents runtime contract features are not enabled yet: "
-                + ", ".join(unsupported)
-            )
+    def _validate_request(self, request: AgentRunRequest) -> None:
         self._validate_agent_tools(request)
+
+    def _provider_circuit_key(self, request: AgentRunRequest) -> str:
+        return _model_provider_circuit_key(request)
 
     async def _runner_input(
         self,

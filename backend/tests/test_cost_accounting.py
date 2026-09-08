@@ -13,8 +13,9 @@ from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
-    AgentRuntimeEvent,
+    AgentRuntimeUsage,
 )
+from backend.app.agent_runtime.usage import runtime_usage
 from backend.app.agents.models import AgentProfile
 from backend.app.costs.service import CostAccountingService, CostBudgetExceededError
 from backend.app.costs.usage import normalize_model_usage
@@ -28,20 +29,15 @@ from backend.app.workspaces.models import Workspace, WorkspaceMember
 def test_usage_normalization_handles_provider_aliases_and_redacts_raw_payload() -> None:
     result = AgentRunResult(
         final_output="done",
-        events=(
-            AgentRuntimeEvent(
-                event_type="model.usage",
-                payload={
-                    "usage": {
-                        "prompt_tokens": 1_000,
-                        "completion_tokens": 500,
-                        "total_tokens": 1_500,
-                        "input_tokens_details": {"cached_tokens": 200},
-                        "output_tokens_details": {"reasoning_tokens": 100},
-                        "api_key": "sk-cost-secret",
-                    }
-                },
-            ),
+        usage=runtime_usage(
+            {
+                "prompt_tokens": 1_000,
+                "completion_tokens": 500,
+                "total_tokens": 1_500,
+                "input_tokens_details": {"cached_tokens": 200},
+                "output_tokens_details": {"reasoning_tokens": 100},
+                "api_key": "sk-cost-secret",
+            }
         ),
     )
 
@@ -61,27 +57,20 @@ def test_usage_normalization_handles_provider_aliases_and_redacts_raw_payload() 
 def test_usage_normalization_aggregates_multiple_model_calls() -> None:
     result = AgentRunResult(
         final_output="done",
-        events=(
-            AgentRuntimeEvent(
-                event_type="model.usage",
-                payload={
-                    "usage": {
-                        "input_tokens": 100,
-                        "output_tokens": 20,
-                        "cache_read_input_tokens": 10,
-                    }
+        usage=runtime_usage(
+            None,
+            model_usage={
+                "model-a": {
+                    "inputTokens": 100,
+                    "outputTokens": 20,
+                    "cacheReadInputTokens": 10,
                 },
-            ),
-            AgentRuntimeEvent(
-                event_type="model.usage",
-                payload={
-                    "usage": {
-                        "input_tokens": 50,
-                        "output_tokens": 30,
-                        "reasoning_tokens": 5,
-                    }
+                "model-b": {
+                    "inputTokens": 50,
+                    "outputTokens": 30,
+                    "reasoning_tokens": 5,
                 },
-            ),
+            },
         ),
     )
 
@@ -97,11 +86,11 @@ def test_usage_normalization_aggregates_multiple_model_calls() -> None:
     assert usage.raw_usage == {
         "calls": [
             {
-                "input_tokens": 100,
-                "output_tokens": 20,
-                "cache_read_input_tokens": 10,
+                "inputTokens": 100,
+                "outputTokens": 20,
+                "cacheReadInputTokens": 10,
             },
-            {"input_tokens": 50, "output_tokens": 30, "reasoning_tokens": 5},
+            {"inputTokens": 50, "outputTokens": 30, "reasoning_tokens": 5},
         ]
     }
 
@@ -422,19 +411,20 @@ def test_cost_configuration_rejects_invalid_service_inputs() -> None:
 def _usage_result() -> AgentRunResult:
     return AgentRunResult(
         final_output="done",
-        events=(
-            AgentRuntimeEvent(
-                event_type="model.usage",
-                payload={
-                    "usage": {
-                        "input_tokens": 1_000,
-                        "output_tokens": 500,
-                        "total_tokens": 1_500,
-                        "input_tokens_details": {"cached_tokens": 200},
-                        "output_tokens_details": {"reasoning_tokens": 100},
-                    }
-                },
-            ),
+        usage=AgentRuntimeUsage(
+            request_count=1,
+            input_tokens=1_000,
+            output_tokens=500,
+            cached_input_tokens=200,
+            reasoning_tokens=100,
+            total_tokens=1_500,
+            raw_usage={
+                "input_tokens": 1_000,
+                "output_tokens": 500,
+                "total_tokens": 1_500,
+                "input_tokens_details": {"cached_tokens": 200},
+                "output_tokens_details": {"reasoning_tokens": 100},
+            },
         ),
     )
 

@@ -30,6 +30,8 @@ def run_output_payload(result: AgentRunResult) -> dict[str, object]:
         payload["guardrail_results"] = json_safe_object(
             [asdict(item) for item in result.guardrail_results]
         )
+    if result.usage is not None:
+        payload["usage"] = json_safe_object(asdict(result.usage))
     return payload
 
 

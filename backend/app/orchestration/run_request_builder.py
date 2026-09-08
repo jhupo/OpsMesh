@@ -26,6 +26,7 @@ from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType
 
 from .run_agent_tool_authorization import hydrate_agent_tools
+from .run_cancellation import DatabaseRunCancellation
 from .run_request_authorization import (
     RunAuthorizationService,
     file_scope_ids_for_snapshot,
@@ -217,6 +218,12 @@ class RunRequestBuilder:
             agent_tools=agent_tools,
             output_schema=output_schema,
             guardrails=guardrails,
+            stream=True,
+            cancellation=DatabaseRunCancellation.for_session(
+                self.session,
+                workspace_id=run.workspace_id,
+                run_id=run.id,
+            ),
         )
 
     def runtime_metadata(

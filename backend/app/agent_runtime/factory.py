@@ -1,13 +1,13 @@
 from backend.app.agent_runtime.claude_agent import ClaudeAgentSDKRunner
-from backend.app.agent_runtime.contracts import AgentRunner
-from backend.app.agent_runtime.multi_provider import ProviderDispatchingAgentRunner
+from backend.app.agent_runtime.contracts import AgentRuntimeExecutor
+from backend.app.agent_runtime.multi_provider import ProviderAgentRuntimeRegistry
 from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
 from backend.app.core.config import Settings
 from backend.app.core.resilience import CircuitBreakerConfig
 
 
-def build_agent_runner(settings: Settings | None = None) -> AgentRunner:
-    circuit_config = None
+def build_agent_runner(settings: Settings | None = None) -> AgentRuntimeExecutor:
+    circuit_config = CircuitBreakerConfig()
     max_attempts = 2
     if settings is not None:
         max_attempts = settings.external_call_max_attempts
@@ -23,7 +23,9 @@ def build_agent_runner(settings: Settings | None = None) -> AgentRunner:
         max_attempts=max_attempts,
         circuit_config=circuit_config,
     )
-    return ProviderDispatchingAgentRunner(
-        openai_runner=openai_runner,
-        anthropic_runner=anthropic_runner,
+    return ProviderAgentRuntimeRegistry(
+        adapters={
+            "openai-compatible": openai_runner,
+            "anthropic": anthropic_runner,
+        },
     )

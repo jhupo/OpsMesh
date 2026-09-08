@@ -7,7 +7,8 @@ from types import TracebackType
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRunner
+from backend.app.agent_runtime.contracts import AgentRuntimeExecutor
+from backend.app.agent_runtime.errors import AgentRuntimeCancelledError
 from backend.app.agent_runtime.factory import build_agent_runner
 from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
@@ -44,7 +45,7 @@ class RunExecutionService:
     session: Session
     dependencies: RunExecutionDependencies
     queue: RedisQueue | None = None
-    agent_runner: AgentRunner | None = None
+    agent_runner: AgentRuntimeExecutor | None = None
     settings: Settings | None = None
     docker_client: DockerRuntimeClient | None = None
 
@@ -80,7 +81,23 @@ class RunExecutionService:
                 return run
 
             self._events().append_context_built_event(run, request)
-            result = await self._model_gateway().run_with_provider_fallback(run, request, job)
+            try:
+                result = await self._model_gateway().run_with_provider_fallback(run, request, job)
+            except AgentRuntimeCancelledError:
+                self.session.refresh(run)
+                if RunStatus(run.status) not in TERMINAL_RUN_STATUSES:
+                    self._lifecycle().mark_run_cancelled(
+                        run,
+                        completed_at=datetime.now(UTC),
+                    )
+                self._events().append_event(
+                    run,
+                    "run.cancellation_propagated",
+                    "Cancellation stopped the active agent SDK run",
+                    {"provider": request.provider},
+                )
+                self._commit_and_refresh(run)
+                return run
             if result is None:
                 self._commit_and_refresh(run)
                 return run
@@ -233,7 +250,7 @@ class RunExecutionService:
             raise ValueError("Run execution settings are not configured")
         return self.settings
 
-    def _agent_runner(self) -> AgentRunner:
+    def _agent_runner(self) -> AgentRuntimeExecutor:
         if self.agent_runner is None:
             raise ValueError("Run execution agent runner is not configured")
         return self.agent_runner

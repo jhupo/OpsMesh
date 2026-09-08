@@ -15,10 +15,10 @@ class RunRuntimeEventMessageMapper:
     session: Session
 
     def map(self, run: AgentRun, result: AgentRunResult) -> None:
-        if run.task_id is None or not result.events:
+        if not result.events and not result.stream_events:
             return
 
-        step = self._step_for_run(run)
+        step = self._step_for_run(run) if run.task_id is not None else None
         events = RunEventRecorder(self.session)
         messages = TaskMessageAppendService(self.session)
         mapper = RuntimeEventTaskMessageMapper()
@@ -30,7 +30,11 @@ class RunRuntimeEventMessageMapper:
                 event.message,
                 {"runtime_event": event.payload},
             )
-            draft = mapper.map_event(event=event, run=run, step=step)
+            draft = (
+                mapper.map_event(event=event, run=run, step=step)
+                if run.task_id is not None
+                else None
+            )
             if draft is None:
                 continue
             messages.append(
@@ -42,6 +46,21 @@ class RunRuntimeEventMessageMapper:
                 agent_run_id=run.id,
                 agent_profile_id=run.agent_profile_id,
                 payload=draft.payload,
+            )
+        for stream_event in result.stream_events:
+            events.append_event(
+                run,
+                f"agent.stream.{stream_event.event_type}",
+                "Agent SDK stream event",
+                {
+                    "runtime_stream_event": {
+                        "event_type": stream_event.event_type,
+                        "provider_sequence": stream_event.sequence,
+                        "payload": stream_event.payload,
+                        "delta": stream_event.delta,
+                        "is_terminal": stream_event.is_terminal,
+                    }
+                },
             )
 
     def _step_for_run(self, run: AgentRun) -> TaskStep | None:

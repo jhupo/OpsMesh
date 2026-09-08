@@ -1,7 +1,10 @@
+from collections.abc import Mapping
+
 from backend.app.agent_runtime.contracts import (
-    AgentRunner,
     AgentRunRequest,
     AgentRunResult,
+    AgentRuntimeAdapter,
+    AgentRuntimeCapabilities,
 )
 from backend.app.model_providers.provider_keys import (
     is_anthropic_provider,
@@ -10,22 +13,34 @@ from backend.app.model_providers.provider_keys import (
 )
 
 
-class ProviderDispatchingAgentRunner:
+class ProviderAgentRuntimeRegistry:
+    """Selects a provider SDK adapter without leaking vendor types to callers."""
+
     def __init__(
         self,
         *,
-        openai_runner: AgentRunner,
-        anthropic_runner: AgentRunner,
+        adapters: Mapping[str, AgentRuntimeAdapter],
     ) -> None:
-        self._openai_runner = openai_runner
-        self._anthropic_runner = anthropic_runner
+        self._adapters = dict(adapters)
+        missing = {"openai-compatible", "anthropic"} - self._adapters.keys()
+        if missing:
+            raise ValueError(
+                "Agent runtime adapters are missing provider families: "
+                + ", ".join(sorted(missing))
+            )
 
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
-        return await self._runner_for(request).run(request)
+        return await self.adapter_for(request.provider).run(request)
 
-    def _runner_for(self, request: AgentRunRequest) -> AgentRunner:
-        if is_openai_compatible_provider(request.provider):
-            return self._openai_runner
-        if is_anthropic_provider(request.provider):
-            return self._anthropic_runner
-        raise ValueError(f"Unsupported model provider: {model_provider_key(request.provider)}")
+    def adapter_for(self, provider: str | None) -> AgentRuntimeAdapter:
+        if is_openai_compatible_provider(provider):
+            return self._adapters["openai-compatible"]
+        if is_anthropic_provider(provider):
+            return self._adapters["anthropic"]
+        raise ValueError(f"Unsupported model provider: {model_provider_key(provider)}")
+
+    def capability_matrix(self) -> dict[str, AgentRuntimeCapabilities]:
+        return {
+            provider: adapter.capabilities
+            for provider, adapter in sorted(self._adapters.items())
+        }

@@ -10,7 +10,7 @@ from typing import Protocol
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRunner
+from backend.app.agent_runtime.contracts import AgentRuntimeExecutor
 from backend.app.capabilities.mcp_execution_adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
@@ -52,7 +52,7 @@ class WorkerRunner:
         queue: RedisQueue,
         session_factory: SessionFactory,
         config: WorkerRunnerConfig,
-        agent_runner: AgentRunner | None = None,
+        agent_runner: AgentRuntimeExecutor | None = None,
         mcp_adapter: McpToolAdapter | McpToolAdapterResolver | None = None,
         settings: Settings | None = None,
         monotonic: Callable[[], float] = time.monotonic,

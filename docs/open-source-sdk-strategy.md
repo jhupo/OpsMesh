@@ -42,8 +42,10 @@ successful proof must include failure and security cases, not only a happy-path 
 **Current position:** OpsMesh supports two vendor SDKs behind one product-owned runtime contract.
 `openai-agents` is the OpenAI execution core and `claude-agent-sdk` is the Anthropic execution core.
 The upstream projects are `openai/openai-agents-python` and
-`anthropics/claude-agent-sdk-python`. `ProviderDispatchingAgentRunner` selects a concrete adapter,
-while `AgentRunRequest` and `AgentRunResult` remain vendor-neutral.
+`anthropics/claude-agent-sdk-python`. `ProviderAgentRuntimeRegistry` selects a concrete adapter;
+`AgentRuntimeExecutor`, `AgentRunRequest`, and `AgentRunResult` remain vendor-neutral. SDK-backed
+adapters share `BaseSDKAgentRuntimeAdapter` for product execution invariants and implement
+provider-specific construction, invocation, and result mapping as subclasses.
 
 **Use upstream for:** agent turns, tools, handoffs, sessions, serializable run state, human approval
 interruptions, MCP integration, and sandbox client contracts when those APIs are stable.
@@ -51,22 +53,23 @@ interruptions, MCP integration, and sandbox client contracts when those APIs are
 **Keep in OpsMesh:** workspace authorization, durable task/run models, scheduling, quotas, provider
 credential policy, audit events, artifact ownership, and recovery evidence.
 
-**Claude SDK use:** `query()`/`ClaudeAgentOptions` own the model turn; `create_sdk_mcp_server()` and
-`tool()` own the in-process MCP bridge; `SessionStore` mirrors the transcript into the existing
-Postgres-backed session; `output_format` and `ResultMessage.structured_output` own structured output;
-`PreToolUse`/`deferred_tool_use` own provider-side approval pause state. The adapter retains product
+**Claude SDK use:** `ClaudeSDKClient`/`ClaudeAgentOptions` own the interactive model turn and expose
+stream consumption plus `interrupt()`; `create_sdk_mcp_server()` and `tool()` own the in-process MCP
+bridge; `SessionStore` mirrors the transcript into the existing Postgres-backed session;
+`output_format` and `ResultMessage.structured_output` own structured output; SDK hooks plus
+`deferred_tool_use` own provider-side lifecycle and approval pause state. The adapter retains product
 authorization, input/output guardrail policy, approval records, redaction, retry/circuit state,
-audit events, and workspace scope.
+audit events, usage normalization, and workspace scope.
 
 The Claude wheel bundles the Claude Code CLI and is materially larger than a protocol-only client
 (about 99 MB on Windows for the currently pinned release). That footprint is accepted because the
 user explicitly requested the official SDK; no additional general agent framework is added.
 
 **Support matrix:** contract tests cover tool registration, policy review, structured output,
-product guardrails, stream events, session mirroring, deferred approval state, rejection without
-resume, provider selection, and secret-safe raw output. Unsupported semantics are rejected
-explicitly: OpenAI-style handoff descriptors, per-subagent MCP execution contexts, and interactive
-cancellation through the buffered `query()` entry point.
+product guardrails, ordered stream events, lifecycle hooks, session mirroring, deferred approval
+state, rejection without resume, provider selection, SDK cancellation, usage normalization, and
+secret-safe raw output. Unsupported semantics are rejected explicitly: OpenAI-style handoff
+descriptors and per-subagent MCP execution contexts.
 
 Other model providers remain deferred. A future provider must implement the OpsMesh-owned provider
 contract and pass the same runtime contract tests; it must not add a third orchestration framework.

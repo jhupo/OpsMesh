@@ -496,13 +496,20 @@ def test_worker_executes_openai_agents_runner_through_control_plane(
         usage = None
         events: list[object] = []
 
-    async def fake_runner_run(agent: object, input_text: str, **kwargs: object) -> FakeSdkResult:
+        async def stream_events(self):
+            if False:
+                yield None
+
+        def cancel(self) -> None:
+            return None
+
+    def fake_runner_run(agent: object, input_text: str, **kwargs: object) -> FakeSdkResult:
         captured["agent"] = agent
         captured["input_text"] = input_text
         captured["kwargs"] = kwargs
         return FakeSdkResult()
 
-    monkeypatch.setattr(openai_runtime.Runner, "run", fake_runner_run)
+    monkeypatch.setattr(openai_runtime.Runner, "run_streamed", fake_runner_run)
     settings = Settings(environment="test")
     handled = consume_once(
         queue,
@@ -549,6 +556,8 @@ def test_worker_executes_openai_agents_runner_through_control_plane(
         "cost.usage_recorded",
         "model.response_received",
         "model_provider.used",
+        "agent.stream.run.started",
+        "agent.stream.run.completed",
         "run.completed",
         "task_step.completed",
     ]

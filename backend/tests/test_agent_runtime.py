@@ -13,6 +13,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeApprovalDecision,
+    AgentRuntimeCapabilities,
     AgentRuntimeContext,
     AgentRuntimeResumeState,
     AgentRuntimeToolContinuation,
@@ -22,7 +23,7 @@ from backend.app.agent_runtime.contracts import (
 )
 from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.factory import build_agent_runner
-from backend.app.agent_runtime.multi_provider import ProviderDispatchingAgentRunner
+from backend.app.agent_runtime.multi_provider import ProviderAgentRuntimeRegistry
 from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
 from backend.app.agent_runtime.openai_results import (
     OpenAIAgentsResultMapper,
@@ -375,18 +376,19 @@ def test_deterministic_test_runner_returns_deterministic_output() -> None:
     assert result.final_output == "deterministic_test_run_completed"
 
 
-def test_agent_runner_factory_builds_real_provider_dispatching_runner() -> None:
+def test_agent_runner_factory_builds_provider_adapter_registry() -> None:
     assert isinstance(
         build_agent_runner(Settings(environment="test")),
-        ProviderDispatchingAgentRunner,
+        ProviderAgentRuntimeRegistry,
     )
 
 
-def test_provider_dispatching_runner_routes_by_request_provider() -> None:
+def test_provider_adapter_registry_routes_by_request_provider() -> None:
     class RecordingRunner:
         def __init__(self, name: str) -> None:
             self.name = name
             self.requests: list[AgentRunRequest] = []
+            self.capabilities = AgentRuntimeCapabilities(provider=name, adapter=name)
 
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
             self.requests.append(request)
@@ -394,9 +396,11 @@ def test_provider_dispatching_runner_routes_by_request_provider() -> None:
 
     openai_runner = RecordingRunner("openai")
     anthropic_runner = RecordingRunner("anthropic")
-    dispatcher = ProviderDispatchingAgentRunner(
-        openai_runner=openai_runner,
-        anthropic_runner=anthropic_runner,
+    dispatcher = ProviderAgentRuntimeRegistry(
+        adapters={
+            "openai-compatible": openai_runner,
+            "anthropic": anthropic_runner,
+        },
     )
     profile = AgentProfile(
         workspace_id=uuid4(),
@@ -423,11 +427,12 @@ def test_provider_dispatching_runner_routes_by_request_provider() -> None:
     assert openai_runner.requests == []
 
 
-def test_provider_dispatching_runner_accepts_formal_provider_keys() -> None:
+def test_provider_adapter_registry_accepts_formal_provider_keys() -> None:
     class RecordingRunner:
         def __init__(self, name: str) -> None:
             self.name = name
             self.requests: list[AgentRunRequest] = []
+            self.capabilities = AgentRuntimeCapabilities(provider=name, adapter=name)
 
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
             self.requests.append(request)
@@ -435,9 +440,11 @@ def test_provider_dispatching_runner_accepts_formal_provider_keys() -> None:
 
     openai_runner = RecordingRunner("openai")
     anthropic_runner = RecordingRunner("anthropic")
-    dispatcher = ProviderDispatchingAgentRunner(
-        openai_runner=openai_runner,
-        anthropic_runner=anthropic_runner,
+    dispatcher = ProviderAgentRuntimeRegistry(
+        adapters={
+            "openai-compatible": openai_runner,
+            "anthropic": anthropic_runner,
+        },
     )
     profile = AgentProfile(
         workspace_id=uuid4(),
@@ -1188,6 +1195,8 @@ def test_openai_agents_runner_passes_persistent_session_to_sdk(
     result = asyncio.run(OpenAIAgentsRunner().run(request))
 
     assert result.final_output == "done"
+    hooks = captured["kwargs"].pop("hooks")
+    assert hooks.__class__.__name__ == "OpenAIRuntimeHooks"
     assert captured["kwargs"] == {
         "context": request.context,
         "max_turns": 10,

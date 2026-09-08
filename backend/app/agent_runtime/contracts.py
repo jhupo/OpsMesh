@@ -147,8 +147,18 @@ class AgentRuntimeStreamEventKind(StrEnum):
     TOOL_RESULT = "tool.result"
     HANDOFF = "agent.handoff"
     USAGE = "model.usage"
+    RUN_PAUSED = "run.paused"
     RUN_COMPLETED = "run.completed"
     RUN_FAILED = "run.failed"
+
+
+@runtime_checkable
+class AgentRuntimeCancellation(Protocol):
+    """Cooperative cancellation owned by the OpsMesh execution layer."""
+
+    async def is_cancelled(self) -> bool: ...
+
+    async def wait_cancelled(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -334,6 +344,7 @@ class AgentRunRequest:
     output_schema: AgentRuntimeOutputSchema | None = None
     guardrails: AgentRuntimeGuardrails | None = None
     stream: bool = False
+    cancellation: AgentRuntimeCancellation | None = None
 
 
 @dataclass(frozen=True)
@@ -341,6 +352,18 @@ class AgentRuntimeEvent:
     event_type: str
     message: str = ""
     payload: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class AgentRuntimeUsage:
+    request_count: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_input_tokens: int = 0
+    reasoning_tokens: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float | None = None
+    raw_usage: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -355,6 +378,7 @@ class AgentRunResult:
     handoffs: tuple[AgentRuntimeHandoffResult, ...] = ()
     agent_tool_calls: tuple[AgentRuntimeAgentToolResult, ...] = ()
     guardrail_results: tuple[AgentRuntimeGuardrailResult, ...] = ()
+    usage: AgentRuntimeUsage | None = None
     capabilities: AgentRuntimeCapabilities | None = None
 
 
@@ -366,12 +390,10 @@ class AgentRuntimeStructuredOutput:
     validated: bool = False
 
 
-class AgentRuntimeAdapter(Protocol):
+class AgentRuntimeExecutor(Protocol):
+    async def run(self, request: AgentRunRequest) -> AgentRunResult: ...
+
+
+class AgentRuntimeAdapter(AgentRuntimeExecutor, Protocol):
     @property
     def capabilities(self) -> AgentRuntimeCapabilities: ...
-
-    async def run(self, request: AgentRunRequest) -> AgentRunResult: ...
-
-
-class AgentRunner(Protocol):
-    async def run(self, request: AgentRunRequest) -> AgentRunResult: ...
