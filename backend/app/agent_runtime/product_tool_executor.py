@@ -22,6 +22,7 @@ from backend.app.agent_runtime.tool_arguments import (
     str_list_argument,
     uuid_argument,
 )
+from backend.app.agent_runtime.tool_gateway import AgentToolGateway, ToolGatewayDenied
 from backend.app.agent_runtime.tool_metadata import (
     agent_profile_id_for_context,
     product_review_context,
@@ -30,6 +31,7 @@ from backend.app.agent_runtime.tool_metadata import (
 from backend.app.agent_runtime.tool_payloads import (
     artifact_payload,
     memory_entry_payload,
+    workspace_file_content_payload,
     workspace_file_payload,
 )
 from backend.app.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
@@ -37,6 +39,7 @@ from backend.app.approvals.service import ApprovalService
 from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_NAMES as PRODUCT_TOOL_NAMES
 from backend.app.core.config import Settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
+from backend.app.files.storage import ObjectStorage, create_storage
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
@@ -57,9 +60,11 @@ class ProductToolExecutor:
         session: Session,
         *,
         settings: Settings | None = None,
+        storage: ObjectStorage | None = None,
     ) -> None:
         self._session = session
         self._settings = settings
+        self._storage = storage or (create_storage(settings) if settings is not None else None)
 
     def execute(
         self,
@@ -114,7 +119,7 @@ class ProductToolExecutor:
         )
         try:
             output = _execute_product_tool(
-                service=ProductToolService(self._session),
+                service=self._product_tool_service(),
                 context=product_context,
                 tool_name=tool_name,
                 arguments=arguments,
@@ -122,10 +127,19 @@ class ProductToolExecutor:
                 file_scope_ids=context.file_scope_ids,
             )
         except (ToolResourceNotFoundError, ValueError) as exc:
+            error_code = getattr(exc, "code", "product_tool_failed")
+            if tool_name == "read_workspace_file":
+                if error_code == "product_tool_failed":
+                    error_code = "workspace_file_not_found"
+                AgentToolGateway(self._session).record_denial(
+                    context=context,
+                    tool_name=tool_name,
+                    denial=ToolGatewayDenied(error_code, str(exc)),
+                )
             return AgentRuntimeToolResult(
                 status="failed",
                 error={
-                    "code": "product_tool_failed",
+                    "code": error_code,
                     "message": redact_sensitive_text(str(exc)),
                 },
                 metadata=tool_metadata(
@@ -142,6 +156,18 @@ class ProductToolExecutor:
                 context=context,
                 tool_name=tool_name,
                 tool_kind="product",
+            ),
+        )
+
+    def _product_tool_service(self) -> ProductToolService:
+        if self._settings is None:
+            return ProductToolService(self._session, storage=self._storage)
+        return ProductToolService(
+            self._session,
+            storage=self._storage,
+            max_file_read_bytes=self._settings.agent_file_read_max_bytes,
+            readable_content_types=frozenset(
+                self._settings.agent_file_read_content_types
             ),
         )
 
@@ -329,7 +355,7 @@ def _execute_product_tool(
             ]
         }
     if tool_name == "read_workspace_file":
-        return workspace_file_payload(
+        return workspace_file_content_payload(
             service.read_workspace_file(
                 context,
                 file_id=uuid_argument(arguments, "file_id"),

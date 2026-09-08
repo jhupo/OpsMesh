@@ -23,7 +23,7 @@ class RuntimeFileService:
         file_id: UUID,
         relative_path: str,
     ) -> Path:
-        file = ProductToolService(self._session).read_workspace_file(context, file_id)
+        file = ProductToolService(self._session).resolve_workspace_file(context, file_id)
         target = self._safe_runtime_path(relative_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(self._storage.read(file.storage_key))

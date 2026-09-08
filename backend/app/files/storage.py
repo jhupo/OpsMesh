@@ -24,6 +24,12 @@ class ObjectStorage(Protocol):
 
     def read(self, storage_key: str) -> bytes: ...
 
+    def read_limited(self, storage_key: str, max_bytes: int) -> bytes: ...
+
+
+class StorageObjectTooLargeError(ValueError):
+    pass
+
 
 class LocalStorage:
     def __init__(self, root: str) -> None:
@@ -48,6 +54,15 @@ class LocalStorage:
 
     def read(self, storage_key: str) -> bytes:
         return _io_path(self._path_for_key(storage_key)).read_bytes()
+
+    def read_limited(self, storage_key: str, max_bytes: int) -> bytes:
+        if max_bytes < 0:
+            raise ValueError("Object read limit must not be negative")
+        with self.open(storage_key) as stream:
+            content = stream.read(max_bytes + 1)
+        if len(content) > max_bytes:
+            raise StorageObjectTooLargeError("Storage object exceeds the read limit")
+        return content
 
     def exists(self, storage_key: str) -> bool:
         return _io_path(self._path_for_key(storage_key)).exists()
@@ -134,6 +149,30 @@ class S3Storage:
 
     def read(self, storage_key: str) -> bytes:
         return self.get(storage_key)
+
+    def read_limited(self, storage_key: str, max_bytes: int) -> bytes:
+        if max_bytes < 0:
+            raise ValueError("Object read limit must not be negative")
+        try:
+            response = self._client.get_object(
+                Bucket=self._bucket,
+                Key=self._object_key(storage_key),
+                Range=f"bytes=0-{max_bytes}",
+            )
+        except Exception as exc:
+            if _is_not_found_error(exc):
+                raise FileNotFoundError("Storage object not found") from exc
+            raise
+        body = response["Body"]
+        try:
+            content = body.read(max_bytes + 1)
+        finally:
+            close = getattr(body, "close", None)
+            if close is not None:
+                close()
+        if len(content) > max_bytes:
+            raise StorageObjectTooLargeError("Storage object exceeds the read limit")
+        return content
 
     def _object_key(self, storage_key: str) -> str:
         normalized = validate_storage_key(storage_key)

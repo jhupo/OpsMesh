@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.app.artifacts.models import Artifact
+from backend.app.files.content import WorkspaceFileContent
 from backend.app.files.models import WorkspaceFile
 from backend.app.memory.models import WorkspaceMemoryEntry
 
@@ -24,6 +25,15 @@ def workspace_file_payload(file: WorkspaceFile) -> dict[str, object]:
         "content_type": file.content_type,
         "size_bytes": file.size_bytes,
         "status": file.status,
+    }
+
+
+def workspace_file_content_payload(value: WorkspaceFileContent) -> dict[str, object]:
+    return workspace_file_payload(value.file) | {
+        "content": value.content,
+        "encoding": value.encoding,
+        "checksum_verified": value.checksum_verified,
+        "trust_level": "untrusted_workspace_input",
     }
 
 

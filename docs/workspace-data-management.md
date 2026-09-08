@@ -352,6 +352,12 @@ Useful product tools:
 
 Each tool enforces workspace and agent permission checks.
 
+The implemented agent content path for `read_workspace_file` additionally enforces the frozen run
+file-ID scope, active file resource grants, a configurable UTF-8 text MIME allowlist, a 1 MiB default
+read limit, bounded object-store reads, storage-prefix validation, and size/checksum integrity. Tool
+results label file text as untrusted workspace input. Binary content is not passed through this text
+tool.
+
 ## MVP Scope
 
 For the first backend implementation:

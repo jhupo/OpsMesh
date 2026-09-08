@@ -1,3 +1,5 @@
+from hashlib import sha256
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -17,9 +19,11 @@ from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalogService
 from backend.app.capabilities.models import CapabilityResource, McpCredentialReference, McpServer
+from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.files.models import WorkspaceFile
+from backend.app.files.storage import LocalStorage
 from backend.app.identity.models import User
 from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
@@ -165,11 +169,16 @@ def test_agent_tool_gateway_enforces_locked_parameters_and_live_resource_status(
         raise AssertionError("Expected disabled resource to be denied at execution time")
 
 
-def test_backend_tool_executor_scopes_files_and_records_denial_evidence() -> None:
+def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
+    tmp_path: Path,
+) -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     allowed_file = _workspace_file(workspace, "allowed.txt", user)
     blocked_file = _workspace_file(workspace, "blocked.txt", user)
+    oversized_file = _workspace_file(workspace, "oversized.txt", user)
+    oversized_file.size_bytes = 5
+    oversized_file.checksum_sha256 = sha256(b"large").hexdigest()
     run = AgentRun(workspace_id=workspace.id)
     resource = CapabilityResource(
         workspace_id=workspace.id,
@@ -180,9 +189,9 @@ def test_backend_tool_executor_scopes_files_and_records_denial_evidence() -> Non
         access_mode="read",
         locator={},
     )
-    session.add_all([allowed_file, blocked_file, run, resource])
+    session.add_all([allowed_file, blocked_file, oversized_file, run, resource])
     session.flush()
-    resource.locator = {"file_ids": [str(allowed_file.id)]}
+    resource.locator = {"file_ids": [str(allowed_file.id), str(oversized_file.id)]}
     session.commit()
     grant = AgentRuntimeResourceGrant(
         resource_id=resource.id,
@@ -204,36 +213,82 @@ def test_backend_tool_executor_scopes_files_and_records_denial_evidence() -> Non
         allowed_tools=("list_workspace_files", "read_workspace_file"),
         tool_definitions=definitions,
         resource_grants=(grant,),
-        file_scope_ids=(allowed_file.id, blocked_file.id),
+        file_scope_ids=(allowed_file.id, blocked_file.id, oversized_file.id),
         metadata={
             "authorization_snapshot_fingerprint": "sha256:authorization",
             "capability_catalog_fingerprint": "sha256:catalog",
         },
     )
-    executor = BackendToolExecutor.for_mcp_adapter(session, _UnusedMcpAdapter())
+    storage = LocalStorage(str(tmp_path / "storage"))
+    storage.write(allowed_file.storage_key, b"safe")
+    storage.write(blocked_file.storage_key, b"safe")
+    storage.write(oversized_file.storage_key, b"large")
+    executor = BackendToolExecutor.for_mcp_adapter(
+        session,
+        _UnusedMcpAdapter(),
+        settings=Settings(environment="test", agent_file_read_max_bytes=4),
+        storage=storage,
+    )
 
     listed = executor.execute_tool(
         context=context,
         tool_name="list_workspace_files",
         arguments={},
     )
+    read = executor.execute_tool(
+        context=context,
+        tool_name="read_workspace_file",
+        arguments={"file_id": str(allowed_file.id)},
+    )
     denied = executor.execute_tool(
         context=context,
         tool_name="read_workspace_file",
         arguments={"file_id": str(blocked_file.id)},
     )
+    oversized = executor.execute_tool(
+        context=context,
+        tool_name="read_workspace_file",
+        arguments={"file_id": str(oversized_file.id)},
+    )
 
     assert listed.status == "completed"
     assert listed.output is not None
-    assert [item["id"] for item in listed.output["items"]] == [str(allowed_file.id)]
+    assert {item["id"] for item in listed.output["items"]} == {
+        str(allowed_file.id),
+        str(oversized_file.id),
+    }
+    assert read.status == "completed"
+    assert read.output is not None
+    assert read.output["content"] == "safe"
+    assert read.output["encoding"] == "utf-8"
+    assert read.output["checksum_verified"] is True
+    assert read.output["trust_level"] == "untrusted_workspace_input"
     assert denied.status == "failed"
     assert denied.error is not None
     assert denied.error["code"] == "workspace_file_not_in_resource_scope"
-    security_event = session.scalar(select(SecurityEvent))
-    blocked_event = session.scalar(select(RunEvent).where(RunEvent.event_type == "tool.blocked"))
+    assert oversized.status == "failed"
+    assert oversized.error is not None
+    assert oversized.error["code"] == "workspace_file_too_large"
+    security_event = session.scalar(
+        select(SecurityEvent).where(
+            SecurityEvent.reason == "workspace_file_not_in_resource_scope"
+        )
+    )
+    oversized_security_event = session.scalar(
+        select(SecurityEvent).where(SecurityEvent.reason == "workspace_file_too_large")
+    )
+    blocked_events = session.scalars(
+        select(RunEvent).where(RunEvent.event_type == "tool.blocked")
+    ).all()
+    blocked_event = next(
+        event
+        for event in blocked_events
+        if event.event_metadata["reason"] == "workspace_file_not_in_resource_scope"
+    )
     assert security_event is not None
     assert security_event.reason == "workspace_file_not_in_resource_scope"
     assert security_event.event_metadata["capability_catalog_fingerprint"] == "sha256:catalog"
+    assert oversized_security_event is not None
     assert blocked_event is not None
     assert blocked_event.event_metadata["reason"] == "workspace_file_not_in_resource_scope"
 
@@ -266,8 +321,8 @@ def _workspace_file(workspace: Workspace, filename: str, user: User) -> Workspac
         filename=filename,
         content_type="text/plain",
         size_bytes=4,
-        checksum_sha256="0" * 64,
-        storage_key=f"test/{filename}",
+        checksum_sha256=sha256(b"safe").hexdigest(),
+        storage_key=f"workspaces/{workspace.id}/files/test/{filename}",
     )
 
 

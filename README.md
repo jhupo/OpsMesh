@@ -229,7 +229,8 @@ sequenceDiagram
   probe.
 - Runtime spaces, quota reservations, leases, cleanup evidence, and operator controls.
 - Self-hosted runtime enrollment, trust state, heartbeat, job claim, progress, and artifact upload.
-- Gateway-scoped workspace file access plus explicit low-level staging and artifact collection,
+- Gateway-scoped workspace file content access with frozen grants, MIME/size limits, bounded Local
+  or S3 reads, and integrity verification, plus explicit low-level staging and artifact collection,
   without exposing workspace storage to stdio runtimes or executing untrusted code on the API host.
 
 ### Governance and operations

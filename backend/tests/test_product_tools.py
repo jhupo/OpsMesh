@@ -1,5 +1,7 @@
 
 from datetime import UTC, datetime
+from hashlib import sha256
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import create_engine, select
@@ -14,6 +16,7 @@ from backend.app.artifacts.models import Artifact
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.files.models import WorkspaceFile
+from backend.app.files.storage import LocalStorage
 from backend.app.identity.models import User
 from backend.app.memory.indexing import WorkspaceMemoryIndexingService
 from backend.app.memory.models import WorkspaceMemoryEntry
@@ -28,7 +31,7 @@ from backend.app.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 
-def test_product_tools_enforce_permissions_and_workspace_scope() -> None:
+def test_product_tools_enforce_permissions_and_workspace_scope(tmp_path: Path) -> None:
     session = _session()
     user, workspace = _seed_workspace(session, slug="acme")
     _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
@@ -40,8 +43,8 @@ def test_product_tools_enforce_permissions_and_workspace_scope() -> None:
         filename="brief.txt",
         content_type="text/plain",
         size_bytes=5,
-        checksum_sha256="a" * 64,
-        storage_key="workspaces/acme/files/brief.txt",
+        checksum_sha256=sha256(b"brief").hexdigest(),
+        storage_key=f"workspaces/{workspace.id}/files/brief.txt",
     )
     other_file = WorkspaceFile(
         workspace_id=other_workspace.id,
@@ -67,10 +70,14 @@ def test_product_tools_enforce_permissions_and_workspace_scope() -> None:
             }
         ),
     )
-    service = ProductToolService(session)
+    storage = LocalStorage(str(tmp_path / "storage"))
+    storage.write(file.storage_key, b"brief")
+    service = ProductToolService(session, storage=storage)
 
     assert [item.filename for item in service.list_workspace_files(context)] == ["brief.txt"]
-    assert service.read_workspace_file(context, file.id).filename == "brief.txt"
+    read = service.read_workspace_file(context, file.id)
+    assert read.file.filename == "brief.txt"
+    assert read.content == "brief"
 
     try:
         service.read_workspace_file(context, other_file.id)

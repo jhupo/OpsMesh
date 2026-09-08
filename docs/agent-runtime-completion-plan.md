@@ -80,7 +80,7 @@ Goal: give each run a real, authorized project input and output lifecycle.
 
 | Order | Priority | Functional point | Status | Commit | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- |
-| 3.1 | P0 | Read authorized workspace file content through object storage with type and size limits | Pending | `complete-workspace-file-reading` | Agent receives content, not only metadata; unauthorized and oversized reads fail closed |
+| 3.1 | P0 | Read authorized workspace file content through object storage with type and size limits | Done | `complete-workspace-file-reading` | `read_workspace_file` intersects the frozen file scope with active resource grants, performs bounded Local/S3 reads, verifies workspace storage prefix, actual size and SHA-256, accepts configured UTF-8 text MIME types only, and returns content marked as untrusted input; denied, unsupported, missing, corrupt, and oversized files fail with stable evidence |
 | 3.2 | P0 | Write artifact bytes to object storage with transactional compensation | Pending | `complete-artifact-object-storage` | A downloadable object exists for every committed artifact row; failed writes leave no false artifact |
 | 3.3 | P0 | Model project paths, project configuration, input files, and output locations | Pending | `add-workspace-project-layout` | Paths are normalized, workspace-scoped, and free of traversal or cross-project access |
 | 3.4 | P1 | Add configuration versions, run input snapshots, file versions, and diffs | Pending | `add-workspace-file-versioning` | A historical run can resolve the exact project/config inputs it used |

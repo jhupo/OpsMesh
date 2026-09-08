@@ -87,6 +87,22 @@ class Settings(BaseSettings):
     s3_use_ssl: bool = Field(default=True)
     s3_addressing_style: Literal["auto", "virtual", "path"] = Field(default="auto")
     max_upload_bytes: int = Field(default=10 * 1024 * 1024)
+    agent_file_read_max_bytes: int = Field(default=1024 * 1024, ge=1)
+    agent_file_read_content_types: list[str] = Field(
+        default_factory=lambda: [
+            "application/json",
+            "application/toml",
+            "application/x-yaml",
+            "application/xml",
+            "text/csv",
+            "text/markdown",
+            "text/plain",
+            "text/tab-separated-values",
+            "text/x-python",
+            "text/xml",
+            "text/yaml",
+        ]
+    )
     external_call_max_attempts: int = Field(default=2, ge=1, le=5)
     external_call_circuit_failure_threshold: int = Field(default=5, ge=1, le=100)
     external_call_circuit_reset_seconds: int = Field(default=60, ge=1, le=3_600)
@@ -248,6 +264,8 @@ class Settings(BaseSettings):
             "audit_integrity_stale_after_seconds": self.audit_integrity_stale_after_seconds,
             "storage_backend": self.storage_backend,
             "storage_root": self.storage_root,
+            "agent_file_read_max_bytes": self.agent_file_read_max_bytes,
+            "agent_file_read_content_types": sorted(self.agent_file_read_content_types),
             "s3_bucket": self.s3_bucket if self.storage_backend == "s3" else "",
             "s3_endpoint_url": _redact_url(self.s3_endpoint_url)
             if self.s3_endpoint_url is not None

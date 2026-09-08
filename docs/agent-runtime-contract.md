@@ -206,6 +206,21 @@ Examples:
 - `search_workspace_memory`
 - `write_artifact`
 
+`read_workspace_file` is the only direct provider-tool path for workspace file content. Before an
+SDK receives content, the product tool gateway intersects the frozen run file IDs with active
+`file_collection` resource grants. The content reader then:
+
+1. requires an active file in the same workspace;
+2. requires a configured text MIME type;
+3. rejects declared sizes above `OPSMESH_AGENT_FILE_READ_MAX_BYTES` before storage I/O;
+4. reads at most that limit plus one byte from Local or S3 storage;
+5. verifies the workspace storage-key prefix, actual size, SHA-256, and UTF-8 encoding; and
+6. returns the text with `trust_level=untrusted_workspace_input`.
+
+Binary files are not decoded into model tool results. They remain available to later authorized
+runtime staging and provider-native multimodal paths with their own contracts. File read denials
+produce stable tool errors plus run/security evidence without exposing content or storage keys.
+
 ### Runtime Tools
 
 Tools that require Docker or self-hosted runtime.

@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from backend.app.artifacts.models import Artifact
+from backend.app.files.content import WorkspaceFileContent, WorkspaceFileReadError
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.security import safe_filename
 from backend.app.runs.models import AgentRun
@@ -40,15 +41,41 @@ class WorkspaceFileProductTools(ProductToolEventRecorder):
         file_id: UUID,
         *,
         allowed_file_ids: set[UUID] | None = None,
-    ) -> WorkspaceFile:
+    ) -> WorkspaceFileContent:
         context.require_tool("read_workspace_file")
         self._append_tool_event(context, "tool.called", "read_workspace_file")
+        file = self.resolve_workspace_file(
+            context,
+            file_id,
+            allowed_file_ids=allowed_file_ids,
+        )
+        reader = self._workspace_file_content_reader
+        if reader is None:
+            raise WorkspaceFileReadError(
+                "workspace_file_storage_unavailable",
+                "Workspace file storage is not configured for agent tools",
+            )
+        content = reader.read(file, workspace_id=context.workspace_id)
+        self._append_tool_event(context, "tool.completed", "read_workspace_file")
+        return content
+
+    def resolve_workspace_file(
+        self,
+        context: ToolContext,
+        file_id: UUID,
+        *,
+        allowed_file_ids: set[UUID] | None = None,
+    ) -> WorkspaceFile:
+        context.require_tool("read_workspace_file")
         file = self._session.get(WorkspaceFile, file_id)
-        if file is None or file.workspace_id != context.workspace_id:
+        if (
+            file is None
+            or file.workspace_id != context.workspace_id
+            or file.status != "active"
+        ):
             raise ToolResourceNotFoundError("Workspace file not found")
         if allowed_file_ids is not None and file.id not in allowed_file_ids:
             raise ToolResourceNotFoundError("Workspace file not found in authorized resource scope")
-        self._append_tool_event(context, "tool.completed", "read_workspace_file")
         return file
 
     def write_artifact(

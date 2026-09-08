@@ -25,6 +25,7 @@ from backend.app.capabilities.mcp_execution_adapters import (
 from backend.app.capabilities.mcp_execution_types import McpExecutionRequest
 from backend.app.capabilities.models import McpToolAllowlist
 from backend.app.core.config import Settings
+from backend.app.files.storage import ObjectStorage
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.secrets.service import SecretEncryptionService
 
@@ -38,12 +39,14 @@ class BackendToolExecutor:
         settings: Settings | None = None,
         docker_client: DockerRuntimeClient | None = None,
         secret_service: SecretEncryptionService | None = None,
+        storage: ObjectStorage | None = None,
     ) -> None:
         self._session = session
         self._adapter = adapter
         self._settings = settings
         self._docker_client = docker_client
         self._secret_service = secret_service
+        self._storage = storage
 
     @classmethod
     def for_mcp_adapter(
@@ -54,6 +57,7 @@ class BackendToolExecutor:
         settings: Settings | None = None,
         docker_client: DockerRuntimeClient | None = None,
         secret_service: SecretEncryptionService | None = None,
+        storage: ObjectStorage | None = None,
     ) -> BackendToolExecutor:
         return cls(
             session,
@@ -61,6 +65,7 @@ class BackendToolExecutor:
             settings=settings,
             docker_client=docker_client,
             secret_service=secret_service,
+            storage=storage,
         )
 
     def execute_tool(
@@ -218,6 +223,7 @@ class BackendToolExecutor:
             return ProductToolExecutor(
                 self._session,
                 settings=self._settings,
+                storage=self._storage,
             ).execute(
                 context=context,
                 tool_name=tool_name,

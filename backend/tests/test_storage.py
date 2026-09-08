@@ -5,7 +5,12 @@ import pytest
 
 from backend.app.core.config import Settings
 from backend.app.files import storage as storage_module
-from backend.app.files.storage import LocalStorage, S3Storage, create_storage
+from backend.app.files.storage import (
+    LocalStorage,
+    S3Storage,
+    StorageObjectTooLargeError,
+    create_storage,
+)
 
 
 def test_local_storage_supports_object_storage_semantics(tmp_path: Path) -> None:
@@ -17,6 +22,9 @@ def test_local_storage_supports_object_storage_semantics(tmp_path: Path) -> None
     assert storage.get("workspaces/demo/file.txt") == b"hello"
     with storage.open("workspaces/demo/file.txt") as stream:
         assert stream.read() == b"hello"
+    assert storage.read_limited("workspaces/demo/file.txt", 5) == b"hello"
+    with pytest.raises(StorageObjectTooLargeError):
+        storage.read_limited("workspaces/demo/file.txt", 4)
 
     storage.delete("workspaces/demo/file.txt")
 
@@ -34,6 +42,9 @@ def test_s3_storage_supports_object_storage_semantics() -> None:
     assert storage.get("workspaces/demo/file.txt") == b"hello"
     with storage.open("workspaces/demo/file.txt") as stream:
         assert stream.read() == b"hello"
+    assert storage.read_limited("workspaces/demo/file.txt", 5) == b"hello"
+    with pytest.raises(StorageObjectTooLargeError):
+        storage.read_limited("workspaces/demo/file.txt", 4)
 
     storage.delete("workspaces/demo/file.txt")
 
@@ -103,11 +114,20 @@ class FakeS3Client:
     def put_object(self, *, Bucket: str, Key: str, Body: bytes) -> None:
         self.objects[(Bucket, Key)] = Body
 
-    def get_object(self, *, Bucket: str, Key: str) -> dict[str, BytesIO]:
+    def get_object(
+        self,
+        *,
+        Bucket: str,
+        Key: str,
+        Range: str | None = None,
+    ) -> dict[str, BytesIO]:
         try:
             content = self.objects[(Bucket, Key)]
         except KeyError as exc:
             raise FakeS3NotFound() from exc
+        if Range is not None:
+            end = int(Range.removeprefix("bytes=0-"))
+            content = content[: end + 1]
         return {"Body": BytesIO(content)}
 
     def delete_object(self, *, Bucket: str, Key: str) -> None:
