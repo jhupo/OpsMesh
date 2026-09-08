@@ -187,6 +187,7 @@ def _task_create_command(request: TaskCreateRequest) -> TaskCreateCommand:
     return TaskCreateCommand(
         agent_team_id=request.agent_team_id,
         runtime_space_id=request.runtime_space_id,
+        workspace_project_id=request.workspace_project_id,
         domain_type=request.domain_type,
         title=request.title,
         description=request.description,
@@ -195,5 +196,3 @@ def _task_create_command(request: TaskCreateRequest) -> TaskCreateCommand:
         generic_state=request.generic_state,
         domain_state=request.domain_state,
     )
-
-

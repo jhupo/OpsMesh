@@ -9,6 +9,7 @@ from backend.app.audit.service import AuditService
 from backend.app.db.pagination import page_scalars
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.attempts import TaskPlanningAttemptService
+from backend.app.projects.models import WorkspaceProject
 from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
@@ -21,6 +22,7 @@ class TaskCreateCommand:
     title: str
     agent_team_id: UUID | None = None
     runtime_space_id: UUID | None = None
+    workspace_project_id: UUID | None = None
     domain_type: str = "general"
     description: str = ""
     priority: int = 0
@@ -55,6 +57,7 @@ class WorkspaceTaskService:
         payload = _task_payload(command)
         runtime_spaces = RuntimeSpaceService(self._session)
         team = self._team_for_task(workspace_id, command)
+        self._validate_project(workspace_id, command.workspace_project_id)
 
         if command.runtime_space_id is not None:
             runtime_spaces.require_runtime_space_for_target(
@@ -105,6 +108,9 @@ class WorkspaceTaskService:
                 "domain_type": task.domain_type,
                 "initial_run_id": str(initial_run.id) if initial_run is not None else None,
                 "initial_run_enqueued": initial_run_enqueued,
+                "workspace_project_id": str(task.workspace_project_id)
+                if task.workspace_project_id is not None
+                else None,
             },
         )
         self._session.commit()
@@ -132,6 +138,19 @@ class WorkspaceTaskService:
         if team is None:
             raise ValueError("Team not found")
         return team
+
+    def _validate_project(self, workspace_id: UUID, project_id: UUID | None) -> None:
+        if project_id is None:
+            return
+        project = self._session.scalar(
+            select(WorkspaceProject.id).where(
+                WorkspaceProject.workspace_id == workspace_id,
+                WorkspaceProject.id == project_id,
+                WorkspaceProject.status == "active",
+            )
+        )
+        if project is None:
+            raise ValueError("Workspace project not found")
 
     def _team_task_payload(
         self,
@@ -164,6 +183,7 @@ def _task_payload(command: TaskCreateCommand) -> dict[str, object]:
     return {
         "agent_team_id": command.agent_team_id,
         "runtime_space_id": command.runtime_space_id,
+        "workspace_project_id": command.workspace_project_id,
         "domain_type": command.domain_type,
         "title": command.title,
         "description": command.description,

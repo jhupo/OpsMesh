@@ -38,6 +38,11 @@ from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.notifications.models import WorkspaceNotification
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.planning.models import TaskPlanningAttempt
+from backend.app.projects.models import (
+    WorkspaceProject,
+    WorkspaceProjectFile,
+    WorkspaceProjectOutput,
+)
 from backend.app.runs.models import AgentRun, AgentRunStateSnapshot, RunEvent
 from backend.app.runtime_spaces.models import (
     RuntimeSpace,
@@ -150,6 +155,9 @@ __all__ = [
     "WorkspaceMemoryEntry",
     "WorkspaceMarketplaceInstall",
     "WorkspaceNotification",
+    "WorkspaceProject",
+    "WorkspaceProjectFile",
+    "WorkspaceProjectOutput",
     "WorkspaceQuota",
     "WorkspaceReservation",
     "WorkspaceRuntime",

@@ -12,6 +12,7 @@ from backend.app.api.schemas.redaction import redact_sensitive_payload
 class TaskCreateRequest(BaseModel):
     agent_team_id: UUID | None = None
     runtime_space_id: UUID | None = None
+    workspace_project_id: UUID | None = None
     domain_type: str = Field(default="general", max_length=80)
     title: str = Field(min_length=1, max_length=240)
     description: str = ""
@@ -27,6 +28,7 @@ class TaskResponse(TimestampedModel):
     created_by_agent_run_id: UUID | None
     agent_team_id: UUID | None
     runtime_space_id: UUID | None
+    workspace_project_id: UUID | None
     domain_type: str
     title: str
     description: str

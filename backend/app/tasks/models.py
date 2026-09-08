@@ -25,6 +25,7 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_tasks_workspace_team", "workspace_id", "agent_team_id"),
         Index("ix_tasks_workspace_domain", "workspace_id", "domain_type"),
         Index("ix_tasks_workspace_runtime_space", "workspace_id", "runtime_space_id"),
+        Index("ix_tasks_workspace_project", "workspace_id", "workspace_project_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -46,6 +47,9 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     runtime_space_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    workspace_project_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("workspace_projects.id", ondelete="SET NULL"), nullable=True
     )
     domain_type: Mapped[str] = mapped_column(String(80), nullable=False, default="general")
     title: Mapped[str] = mapped_column(String(240), nullable=False)

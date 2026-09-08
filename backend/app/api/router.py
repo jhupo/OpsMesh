@@ -18,6 +18,7 @@ from backend.app.api.routes.model_provider_capabilities import (
 from backend.app.api.routes.model_providers import router as model_providers_router
 from backend.app.api.routes.notifications import router as notifications_router
 from backend.app.api.routes.operations import router as operations_router
+from backend.app.api.routes.projects import router as projects_router
 from backend.app.api.routes.runtime_spaces import router as runtime_spaces_router
 from backend.app.api.routes.runtimes import router as runtimes_router
 from backend.app.api.routes.scheduled_jobs import router as scheduled_jobs_router
@@ -48,6 +49,7 @@ api_router.include_router(agent_messages_router)
 api_router.include_router(notifications_router)
 api_router.include_router(scheduled_jobs_router)
 api_router.include_router(files_router)
+api_router.include_router(projects_router)
 api_router.include_router(approvals_router)
 api_router.include_router(domains_router)
 api_router.include_router(capabilities_router)

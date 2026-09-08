@@ -8,6 +8,23 @@ The product should treat files as first-class workspace resources, not anonymous
 
 ## Data Types
 
+### Workspace Projects
+
+`workspace_projects` is the durable logical file-system boundary used by tasks and runs. A project
+owns three normalized, non-overlapping relative directories: inputs, mutable work, and declared
+outputs. It also owns bounded JSON configuration that cannot contain credentials; credential IDs
+and capability grants remain in their existing security domains.
+
+Input files are attached through `workspace_project_files`. Each binding points to an active
+`workspace_files` row in the same workspace, assigns one normalized path below the project's input
+directory, and declares either read-only or copy-on-write staging. Output allowlists are stored in
+`workspace_project_outputs` with a normalized path below the output directory, artifact type,
+optional content type, required flag, and byte limit.
+
+Tasks may reference an active `workspace_project_id`. The task service validates the workspace and
+project state before creating any run. Project IDs, file IDs, and output IDs are never authorized
+without the workspace scope.
+
 ### Workspace Files
 
 Files uploaded by users or imported from connectors.
