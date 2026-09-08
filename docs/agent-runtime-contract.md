@@ -9,6 +9,21 @@ without introducing another Agent framework.
 
 The product layer owns users, workspaces, tasks, permissions, runtimes, approvals, files, artifacts, and audit logs. The OpenAI Agents SDK layer owns agent execution primitives such as `Agent`, `Runner`, tools, handoffs, guardrails, sessions, and traces.
 
+## Product-Owned Runtime Contracts
+
+The adapter boundary is defined by `backend.app.agent_runtime.contracts`; orchestration code does not
+accept SDK result, state, session, or stream-event objects. The contract includes:
+
+- `AgentRuntimeSession` for durable conversation history
+- `AgentRuntimeHandoff` and `AgentRuntimeHandoffResult` for authorized control transfer
+- `AgentRuntimeInterruption` for approval and resumable pauses
+- `AgentRuntimeStructuredOutput` and `AgentRuntimeOutputSchema` for typed results
+- `AgentRuntimeStreamEvent` for ordered, redacted stream data
+- `AgentRuntimeCapabilities` for explicit feature support and limits
+
+SDK objects are created, restored, and mapped only inside the provider adapter. A request that asks
+for an adapter feature which is not implemented is rejected explicitly; it is never silently ignored.
+
 ## Runtime Inputs
 
 The orchestration layer provides an `AgentRunRequest`.
@@ -64,16 +79,16 @@ AgentProfile.model          -> Agent.model
 AgentProfile.model_provider_credential_id -> request-scoped OpenAIProvider
 AgentProfile.model_settings -> Agent.model_settings
 AgentProfile.tools          -> Agent.tools
-AgentProfile.handoffs       -> Agent.handoffs
-AgentProfile.guardrails     -> Agent input/output/tool guardrails
-AgentProfile.output_schema  -> Agent.output_type
+request.handoffs             -> Agent.handoffs (when the adapter advertises `handoffs`)
+request.guardrails           -> Agent input/output guardrails (when advertised)
+request.output_schema        -> Agent.output_type (when advertised)
 ```
 
 Rules:
 
 - only tools in the frozen effective catalog are attached
 - SDK tool names, descriptions, and JSON Schemas come from the frozen descriptor
-- only same-workspace handoff targets are attached
+- only same-workspace handoff targets are attached after capability and authorization checks
 - every product and MCP tool crosses the Agent tool gateway before execution
 - frozen defaults are merged and locked parameters cannot be overridden
 - referenced resources and MCP allowlist provenance are rechecked as active at execution time
@@ -178,6 +193,7 @@ Rules:
 - event sequence is monotonic per run
 - sensitive values are redacted
 - raw provider payloads are optional and should be controlled by debug policy
+- stream events use the same redaction rules and carry a monotonic product-owned sequence
 
 ## Approval Contract
 

@@ -31,6 +31,7 @@ class AnthropicMessagesRunner:
         self._client = client
 
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
+        self._validate_contract_requests(request)
         if not request.api_key:
             raise ValueError("Anthropic provider requires an api_key")
         result = await async_retry_with_circuit(
@@ -41,6 +42,22 @@ class AnthropicMessagesRunner:
             should_retry=lambda exc: normalize_agent_error(exc).retryable,
         )
         return result
+
+    def _validate_contract_requests(self, request: AgentRunRequest) -> None:
+        unsupported: list[str] = []
+        if request.handoffs:
+            unsupported.append("handoffs")
+        if request.output_schema is not None:
+            unsupported.append("structured output")
+        if request.guardrails is not None:
+            unsupported.append("guardrails")
+        if request.stream:
+            unsupported.append("streaming")
+        if unsupported:
+            raise NotImplementedError(
+                "Anthropic Messages runtime contract features are not enabled yet: "
+                + ", ".join(unsupported)
+            )
 
     async def _run_once(self, request: AgentRunRequest) -> AgentRunResult:
         user_input = self._input_for_request(request)

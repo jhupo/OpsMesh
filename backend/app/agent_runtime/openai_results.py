@@ -9,13 +9,39 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeEvent,
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
+    AgentRuntimeStreamEvent,
+    AgentRuntimeStructuredOutput,
 )
 from backend.app.security.redaction import redact_sensitive_payload
 
 
 class OpenAIAgentsResultMapper:
+    def final_output(self, result: Any) -> tuple[str, AgentRuntimeStructuredOutput | None]:
+        value = getattr(result, "final_output", None)
+        if value is None:
+            return "", None
+        if isinstance(value, str):
+            return value, None
+        normalized = jsonable(value)
+        output_schema = getattr(result, "_current_agent_output_schema", None)
+        schema_name = None
+        if output_schema is not None:
+            name = getattr(output_schema, "name", None)
+            if callable(name):
+                candidate = name()
+                schema_name = candidate if isinstance(candidate, str) else None
+        return (
+            json.dumps(normalized, ensure_ascii=False, sort_keys=True),
+            AgentRuntimeStructuredOutput(
+                value=normalized,
+                schema_name=schema_name,
+                validated=output_schema is not None,
+            ),
+        )
+
     def safe_raw_output(self, result: Any) -> dict[str, object]:
-        payload: dict[str, object] = {"final_output": str(getattr(result, "final_output", ""))}
+        final_output, _ = self.final_output(result)
+        payload: dict[str, object] = {"final_output": final_output}
         sdk_continuation: dict[str, object] = {
             "provider": "openai_agents",
             "mode": "sdk_continuation_snapshot",
@@ -128,6 +154,21 @@ class OpenAIAgentsResultMapper:
                     events.append(event)
         return events
 
+    def stream_events(self, result: Any) -> list[AgentRuntimeStreamEvent]:
+        """Map buffered SDK stream items without exposing SDK event instances."""
+
+        raw_events = getattr(result, "stream_events", None)
+        if not isinstance(raw_events, list | tuple):
+            raw_events = getattr(result, "events", None)
+        if not isinstance(raw_events, list | tuple):
+            return []
+        mapped: list[AgentRuntimeStreamEvent] = []
+        for sequence, item in enumerate(raw_events, start=1):
+            event = runtime_stream_event_from_sdk_item(item, sequence=sequence)
+            if event is not None:
+                mapped.append(event)
+        return mapped
+
     def _capture_resume_input(
         self,
         result: Any,
@@ -156,6 +197,35 @@ def runtime_event_from_sdk_item(item: object) -> AgentRuntimeEvent | None:
         payload=redact_sensitive_payload(
             payload if isinstance(payload, dict) else {"value": payload}
         ),
+    )
+
+
+def runtime_stream_event_from_sdk_item(
+    item: object,
+    *,
+    sequence: int,
+) -> AgentRuntimeStreamEvent | None:
+    event_type = getattr(item, "type", None) or getattr(item, "event_type", None)
+    if not isinstance(event_type, str) or not event_type:
+        return None
+    payload = jsonable(item)
+    normalized_payload = redact_sensitive_payload(
+        payload if isinstance(payload, dict) else {"value": payload}
+    )
+    delta = getattr(item, "delta", None)
+    if not isinstance(delta, str):
+        delta = getattr(item, "text", None)
+    if not isinstance(delta, str):
+        delta = None
+    if delta is not None:
+        redacted_delta = redact_sensitive_payload({"value": delta}).get("value")
+        delta = redacted_delta if isinstance(redacted_delta, str) else str(redacted_delta)
+    return AgentRuntimeStreamEvent(
+        sequence=sequence,
+        event_type=event_type,
+        payload=normalized_payload,
+        delta=delta,
+        is_terminal=event_type in {"run.completed", "run.failed", "error"},
     )
 
 

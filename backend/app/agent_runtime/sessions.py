@@ -1,15 +1,15 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 from uuid import UUID
 
-from agents.items import TResponseInputItem
 from sqlalchemy import ForeignKey, Index, Integer, String, UniqueConstraint, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import Session as DbSession
 
+from backend.app.agent_runtime.contracts import AgentRuntimeSessionItem
 from backend.app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 ACTIVE_SESSION_STATUS = "active"
@@ -114,17 +114,16 @@ class SQLAlchemyAgentSession:
         self._metadata = metadata or {}
         self.session_id = ref.session_key
 
-    async def get_items(self, limit: int | None = None) -> list[TResponseInputItem]:
-        return [cast(TResponseInputItem, item) for item in self._get_items_sync(limit)]
+    async def get_items(self, limit: int | None = None) -> list[AgentRuntimeSessionItem]:
+        return self._get_items_sync(limit)
 
-    async def add_items(self, items: list[TResponseInputItem]) -> None:
+    async def add_items(self, items: list[AgentRuntimeSessionItem]) -> None:
         if not items:
             return
         self._add_items_sync([_dict_item(item) for item in items])
 
-    async def pop_item(self) -> TResponseInputItem | None:
-        item = self._pop_item_sync()
-        return cast(TResponseInputItem, item) if item is not None else None
+    async def pop_item(self) -> AgentRuntimeSessionItem | None:
+        return self._pop_item_sync()
 
     async def clear_session(self) -> None:
         self._clear_session_sync()

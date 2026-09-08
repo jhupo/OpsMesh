@@ -46,6 +46,7 @@ class OpenAIAgentsRunner:
         self._result_mapper = OpenAIAgentsResultMapper()
 
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
+        self._validate_contract_requests(request)
         agent = self._build_agent(request)
         runner_input = await self._runner_input(request, agent)
         result = await async_retry_with_circuit(
@@ -64,13 +65,32 @@ class OpenAIAgentsRunner:
             circuit_config=self._circuit_config,
             should_retry=lambda exc: normalize_agent_error(exc).retryable,
         )
+        final_output, structured_output = self._result_mapper.final_output(result)
         return AgentRunResult(
-            final_output=str(result.final_output) if result.final_output is not None else "",
+            final_output=final_output,
             raw_output=self._result_mapper.safe_raw_output(result),
             events=tuple(self._result_mapper.runtime_events(result)),
             resume_state=self._result_mapper.resume_state(result),
             interruptions=tuple(self._result_mapper.interruptions(result)),
+            structured_output=structured_output,
+            stream_events=tuple(self._result_mapper.stream_events(result)),
         )
+
+    def _validate_contract_requests(self, request: AgentRunRequest) -> None:
+        unsupported: list[str] = []
+        if request.handoffs:
+            unsupported.append("handoffs")
+        if request.output_schema is not None:
+            unsupported.append("structured output")
+        if request.guardrails is not None:
+            unsupported.append("guardrails")
+        if request.stream:
+            unsupported.append("streaming")
+        if unsupported:
+            raise NotImplementedError(
+                "OpenAI Agents runtime contract features are not enabled yet: "
+                + ", ".join(unsupported)
+            )
 
     async def _runner_input(
         self,
