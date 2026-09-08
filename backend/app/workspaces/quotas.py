@@ -160,8 +160,17 @@ class WorkspaceQuotaService:
         *,
         released_at: datetime | None = None,
     ) -> None:
-        if reservation.status != "active":
+        locked = self._session.scalar(
+            select(WorkspaceReservation)
+            .where(
+                WorkspaceReservation.workspace_id == reservation.workspace_id,
+                WorkspaceReservation.id == reservation.id,
+            )
+            .with_for_update()
+        )
+        if locked is None or locked.status != "active":
             return
+        reservation = locked
         quotas = {
             quota.quota_key: quota
             for quota in self._session.scalars(

@@ -22,6 +22,7 @@ from backend.app.audit.service import AuditService
 from backend.app.exports.models import WorkspaceExportJob
 from backend.app.exports.status import WorkspaceExportJobStatus
 from backend.app.files.storage import ObjectStorage
+from backend.app.files.storage_transactions import CompensatingObjectStorageWrites
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace
@@ -197,7 +198,12 @@ class WorkspaceArchiveExportJobService:
             storage=storage,
         )
         storage_key = f"workspaces/{workspace.id}/exports/{export_job.id}/archive.zip"
-        storage.write(storage_key, result.content)
+        writes = CompensatingObjectStorageWrites(storage)
+        try:
+            writes.write_new(storage_key, result.content)
+        except Exception:
+            self._session.rollback()
+            raise
         export_job.status = WorkspaceExportJobStatus.COMPLETED.value
         export_job.storage_key = storage_key
         export_job.filename = result.filename
@@ -222,7 +228,13 @@ class WorkspaceArchiveExportJobService:
                 "skipped_objects": result.skipped_objects,
             },
         )
-        self._session.commit()
+        try:
+            self._session.commit()
+        except Exception:
+            self._session.rollback()
+            writes.compensate()
+            raise
+        writes.complete()
         self._session.refresh(export_job)
         return export_job
 
