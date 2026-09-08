@@ -4,11 +4,11 @@ from datetime import datetime
 from uuid import UUID
 
 from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.teams.models import AgentTeam
-from backend.app.teams.team_context_redaction import (
-    redact_context_value,
-    redact_secret_like_text,
+from backend.app.security.redaction import (
+    redact_sensitive_payload_item,
+    redact_text_fragments,
 )
+from backend.app.teams.models import AgentTeam
 
 TEAM_MEMORY_SCOPES = {"team"}
 SHARED_MEMORY_SCOPES = {"workspace", "company", "organization", "shared"}
@@ -41,7 +41,7 @@ def memory_summary_payload(
         "shared_entry_count": len(shared_entries),
         "scope_counts": _memory_scope_counts(visible_entries),
         "last_updated_at": _last_updated_at(visible_entries),
-        "tags": redact_context_value(_top_tags(visible_entries)),
+        "tags": redact_sensitive_payload_item(_top_tags(visible_entries), text_mode="fragments"),
         "entries": [
             _memory_entry_payload(entry) for entry in visible_entries[:MEMORY_SUMMARY_LIMIT]
         ],
@@ -67,21 +67,21 @@ def _is_team_memory(entry: WorkspaceMemoryEntry, team_id: UUID) -> bool:
 def _memory_entry_payload(entry: WorkspaceMemoryEntry) -> dict[str, object]:
     return {
         "id": entry.id,
-        "title": redact_secret_like_text(entry.title),
+        "title": redact_text_fragments(entry.title),
         "snippet": _snippet(entry.content),
         "entry_type": entry.entry_type,
         "visibility_scope": entry.visibility_scope,
         "importance": entry.importance,
-        "tags": redact_context_value(entry.tags),
+        "tags": redact_sensitive_payload_item(entry.tags, text_mode="fragments"),
         "source_type": entry.source_type,
-        "source_id": redact_context_value(entry.source_id),
+        "source_id": redact_sensitive_payload_item(entry.source_id, text_mode="fragments"),
         "updated_at": entry.updated_at,
-        "metadata": redact_context_value(entry.memory_metadata),
+        "metadata": redact_sensitive_payload_item(entry.memory_metadata, text_mode="fragments"),
     }
 
 
 def _snippet(value: str) -> str:
-    collapsed = redact_secret_like_text(" ".join(value.split()))
+    collapsed = redact_text_fragments(" ".join(value.split()))
     if len(collapsed) <= MEMORY_SNIPPET_LENGTH:
         return collapsed
     return f"{collapsed[:MEMORY_SNIPPET_LENGTH].rstrip()}..."

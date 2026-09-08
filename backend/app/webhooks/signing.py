@@ -1,11 +1,11 @@
 import time
 
 from backend.app.secrets.service import SecretEncryptionService
+from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
 from backend.app.webhooks.utils import (
     _canonical_json,
     _signed_headers,
-    redact_webhook_sensitive_fields,
 )
 
 
@@ -26,7 +26,7 @@ class WebhookDeliverySigner:
                 "workspace_id": str(attempt.workspace_id),
                 "delivery_attempt_id": str(attempt.id),
                 "attempt": attempt.attempt_count,
-                "data": redact_webhook_sensitive_fields(attempt.payload),
+                "data": redact_sensitive_payload(attempt.payload),
                 "created_at": attempt.created_at.isoformat(),
             }
         )

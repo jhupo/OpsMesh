@@ -16,7 +16,6 @@ from backend.app.webhooks.http_client import (
 )
 from backend.app.webhooks.scheduler import WebhookDeliveryScheduler, WebhookDeliveryScheduleSummary
 from backend.app.webhooks.subscriptions import WebhookSubscriptionService
-from backend.app.webhooks.utils import redact_webhook_sensitive_fields
 
 __all__ = [
     "WEBHOOK_REPLAY_COOLDOWN_SECONDS",
@@ -30,5 +29,4 @@ __all__ = [
     "WebhookHttpClient",
     "WebhookHttpResponse",
     "WebhookSubscriptionService",
-    "redact_webhook_sensitive_fields",
 ]

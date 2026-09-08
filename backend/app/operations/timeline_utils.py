@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
@@ -9,16 +8,6 @@ from backend.app.audit.models import AuditEvent
 from backend.app.operations.timeline_models import TimelineEvent, TimelineFilters
 
 TEAM_RUNTIME_CAPABILITY_KEY = "team_runtime"
-REDACTED_TEXT = "[redacted]"
-SECRET_LIKE_PATTERNS = (
-    re.compile(r"\bsk-[A-Za-z0-9][A-Za-z0-9_-]{6,}\b"),
-    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{6,}\b"),
-    re.compile(
-        r"(?i)\b(?:api[_ -]?key|token|secret|password)\s*[:=]\s*"
-        r"['\"]?[^\s,'\";}]+['\"]?"
-    ),
-    re.compile(r"(?i)\bbase[_ -]?url\s*[:=]\s*['\"]?[^\s,'\";}]+['\"]?"),
-)
 
 
 def apply_time_filters(statement: Any, column: Any, filters: TimelineFilters) -> Any:
@@ -100,25 +89,3 @@ def mcp_governance_message(event: AuditEvent) -> str:
     if event.action == "capability_governance.mcp_server_disabled":
         return f"MCP server disabled by governance: {target}"
     return event.action
-
-
-def redact_secret_like_text(value: str) -> str:
-    redacted = value
-    for pattern in SECRET_LIKE_PATTERNS:
-        redacted = pattern.sub(REDACTED_TEXT, redacted)
-    return redacted
-
-
-def redact_metadata(value: object) -> object:
-    from backend.app.security.redaction import is_sensitive_payload_key
-
-    if isinstance(value, dict):
-        return {
-            str(key): REDACTED_TEXT if is_sensitive_payload_key(str(key)) else redact_metadata(item)
-            for key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [redact_metadata(item) for item in value]
-    if isinstance(value, str):
-        return redact_secret_like_text(value)
-    return value

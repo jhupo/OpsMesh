@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, HttpUrl, computed_field, field_validator, model_validator
 
 from backend.app.api.schemas.common import ORMModel
-from backend.app.webhooks.service import redact_webhook_sensitive_fields
+from backend.app.security.redaction import redact_sensitive_payload_item
 
 
 class WebhookSubscriptionCreateRequest(BaseModel):
@@ -89,7 +89,7 @@ class WebhookDeliveryAttemptResponse(ORMModel):
     @field_validator("dead_letter_metadata")
     @classmethod
     def redact_dead_letter_metadata(cls, value: dict[str, object]) -> dict[str, object]:
-        redacted = redact_webhook_sensitive_fields(value)
+        redacted = redact_sensitive_payload_item(value)
         return redacted if isinstance(redacted, dict) else {}
 
 

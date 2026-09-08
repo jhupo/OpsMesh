@@ -5,10 +5,9 @@ import hmac
 import json
 from datetime import UTC, datetime
 
+from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.webhooks.constants import (
-    WEBHOOK_REDACTED_FIELD_NAMES,
     WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH,
-    WEBHOOK_SECRET_MASK,
 )
 
 
@@ -59,33 +58,15 @@ def _signed_headers(
 def _snippet(value: str | None) -> str | None:
     if value is None:
         return None
-    return value[:WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH]
+    return redact_sensitive_text(value)[:WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH]
 
 
 def _truncate(value: str, max_length: int) -> str:
-    return value[:max_length]
+    return redact_sensitive_text(value)[:max_length]
 
 
 def _safe_headers(headers: dict[str, str]) -> dict[str, object]:
-    sensitive = {"authorization", "cookie", "set-cookie", "x-api-key", "x-auth-token"}
-    safe: dict[str, object] = {}
-    for key, value in headers.items():
-        safe[key] = WEBHOOK_SECRET_MASK if key.lower() in sensitive else value
-    return safe
-
-
-def redact_webhook_sensitive_fields(value: object) -> object:
-    if isinstance(value, dict):
-        redacted: dict[str, object] = {}
-        for key, item in value.items():
-            if key.lower() in WEBHOOK_REDACTED_FIELD_NAMES:
-                redacted[key] = WEBHOOK_SECRET_MASK
-            else:
-                redacted[key] = redact_webhook_sensitive_fields(item)
-        return redacted
-    if isinstance(value, list):
-        return [redact_webhook_sensitive_fields(item) for item in value]
-    return value
+    return redact_sensitive_payload(dict(headers))
 
 
 def _metadata_datetime(metadata: dict[str, object], key: str) -> datetime | None:

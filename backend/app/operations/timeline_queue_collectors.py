@@ -8,10 +8,9 @@ from redis.exceptions import RedisError
 from backend.app.operations.timeline_models import TimelineEvent, TimelineFilters
 from backend.app.operations.timeline_utils import (
     queue_job_time,
-    redact_metadata,
-    redact_secret_like_text,
     within,
 )
+from backend.app.security.redaction import redact_sensitive_payload_item, redact_text_fragments
 from backend.app.workers.jobs import JobType
 from backend.app.workers.queue.redis_queue import RedisQueue
 
@@ -62,7 +61,7 @@ class TeamRuntimeQueueTimelineCollector:
                         "workspace_id": str(workspace_id),
                         "resource_id": str(team_id),
                         "error_type": type(exc).__name__,
-                        "error": redact_secret_like_text(str(exc)),
+                        "error": redact_text_fragments(str(exc)),
                     },
                 )
             ]
@@ -90,15 +89,19 @@ class TeamRuntimeQueueTimelineCollector:
                             "attempt": job.attempt,
                             "max_attempts": job.max_attempts,
                             "priority": job.priority,
-                            "last_error": redact_secret_like_text(job.last_error)
+                            "last_error": redact_text_fragments(job.last_error)
                             if job.last_error is not None
                             else None,
                             "last_error_type": job.last_error_type,
                             "last_failed_at": job.last_failed_at.isoformat()
                             if job.last_failed_at is not None
                             else None,
-                            "routing": redact_metadata(dict(job.routing)),
-                            "trace": redact_metadata(job.trace_metadata()),
+                            "routing": redact_sensitive_payload_item(
+                                dict(job.routing), text_mode="fragments"
+                            ),
+                            "trace": redact_sensitive_payload_item(
+                                job.trace_metadata(), text_mode="fragments"
+                            ),
                         },
                     )
                 )

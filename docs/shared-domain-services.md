@@ -27,6 +27,15 @@ Trust summaries and artifact checks use `positive_policy_int` from the self-host
 Only positive integers are accepted; booleans, strings, zero, negative and fractional values return
 no positive value. This preserves optional-field handling while excluding Python bool-as-int.
 
+## Shared Redaction
+
+Security owns one set of sensitive field and text detectors, including GitHub/AWS credentials,
+encrypted credential fields, and provider URL assignments. Teams, operations, memory capture,
+audit and webhooks use it directly. Text rendering explicitly chooses whole-value masking or
+fragment masking; both modes share detection and recursive traversal. Webhook payloads are
+redacted before signing, and response snippets are redacted before truncation. Superseded
+domain-specific redaction implementations and exports have been removed.
+
 ## Validation Limits
 
 The PostgreSQL concurrency test uses `OPSMESH_TEST_POSTGRES_URL` and must run separately from tests

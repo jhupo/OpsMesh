@@ -15,9 +15,8 @@ from backend.app.operations.timeline_models import TimelineFilters
 from backend.app.operations.timeline_utils import (
     counts,
     matches_filters,
-    redact_metadata,
-    redact_secret_like_text,
 )
+from backend.app.security.redaction import redact_sensitive_payload_item, redact_text_fragments
 from backend.app.workers.queue.redis_queue import RedisQueue
 
 
@@ -67,8 +66,8 @@ class TeamRuntimeTimelineService:
                     event_type=event.event_type,
                     occurred_at=event.occurred_at,
                     resource_id=event.resource_id,
-                    message=redact_secret_like_text(event.message),
-                    metadata=redact_metadata(event.metadata),
+                    message=redact_text_fragments(event.message),
+                    metadata=redact_sensitive_payload_item(event.metadata, text_mode="fragments"),
                 )
                 for event in page
             ],

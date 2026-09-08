@@ -1,4 +1,3 @@
-import re
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -8,19 +7,11 @@ from backend.app.agent_runtime.contracts import AgentRunResult
 from backend.app.agents.models import AgentProfile
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.runs.models import AgentRun
+from backend.app.security.redaction import redact_text_fragments
 from backend.app.tasks.models import Task
 
 RUN_SUMMARY_ENTRY_TYPE = "agent_run_summary"
 RUN_SUMMARY_SOURCE_TYPE = "agent_run"
-REDACTED_TEXT = "[redacted]"
-SECRET_LIKE_PATTERNS = (
-    re.compile(r"\bsk-[A-Za-z0-9][A-Za-z0-9_-]{6,}\b"),
-    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{6,}\b"),
-    re.compile(
-        r"(?i)\b(?:api[_ -]?key|token|secret|password)\s*[:=]\s*"
-        r"['\"]?[^\s,'\";}]+['\"]?"
-    ),
-)
 
 
 class AgentRunMemoryCaptureService:
@@ -108,11 +99,11 @@ def _summary_title(
         title = f"Run summary: {task.title}"
     else:
         title = f"Run summary: {profile.name or profile.role or run.id}"
-    return _redact_secret_like_text(title)[:240]
+    return redact_text_fragments(title)[:240]
 
 
 def _summary_content(result: AgentRunResult) -> str:
-    content = _redact_secret_like_text(" ".join(result.final_output.split()))
+    content = redact_text_fragments(" ".join(result.final_output.split()))
     return content or "Agent run completed without textual output."
 
 
@@ -144,8 +135,8 @@ def _summary_metadata(
         },
         "agent": {
             "profile_id": str(profile.id) if profile.id is not None else None,
-            "name": _redact_secret_like_text(profile.name) if profile.name else profile.name,
-            "role": _redact_secret_like_text(profile.role),
+            "name": redact_text_fragments(profile.name) if profile.name else profile.name,
+            "role": redact_text_fragments(profile.role),
             "version": profile.version,
         },
         "content_chars": len(content),
@@ -153,9 +144,9 @@ def _summary_metadata(
     if task is not None:
         metadata["task"] = {
             "id": str(task.id),
-            "title": _redact_secret_like_text(task.title),
+            "title": redact_text_fragments(task.title),
             "status": task.status,
-            "domain_type": _redact_secret_like_text(task.domain_type)
+            "domain_type": redact_text_fragments(task.domain_type)
             if task.domain_type
             else task.domain_type,
         }
@@ -167,10 +158,3 @@ def _capture_importance(policy: dict[str, object]) -> int:
     if isinstance(value, int) and not isinstance(value, bool):
         return max(0, min(value, 10))
     return 1
-
-
-def _redact_secret_like_text(value: str) -> str:
-    redacted = value
-    for pattern in SECRET_LIKE_PATTERNS:
-        redacted = pattern.sub(REDACTED_TEXT, redacted)
-    return redacted
