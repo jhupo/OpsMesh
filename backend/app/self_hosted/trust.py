@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -15,6 +13,7 @@ from backend.app.core.config import Settings
 from backend.app.core.typing import string_list
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.self_hosted.models import RuntimeCredential, SelfHostedWorker
+from backend.app.self_hosted.policy import positive_policy_int
 from backend.app.workspaces.models import Workspace
 
 
@@ -181,9 +180,9 @@ def _worker_policy_summary(capabilities: dict[str, object]) -> dict[str, object]
         "supported_runtimes": string_list(capabilities.get("supported_runtimes")),
         "supported_network_modes": string_list(capabilities.get("supported_network_modes")),
         "allowed_runtime_space_ids": string_list(capabilities.get("allowed_runtime_space_ids")),
-        "max_concurrent_jobs": _positive_int(capabilities.get("max_concurrent_jobs")),
-        "max_concurrent_mcp_jobs": _positive_int(capabilities.get("max_concurrent_mcp_jobs")),
-        "max_artifact_bytes": _positive_int(capabilities.get("max_artifact_bytes")),
+        "max_concurrent_jobs": positive_policy_int(capabilities.get("max_concurrent_jobs")),
+        "max_concurrent_mcp_jobs": positive_policy_int(capabilities.get("max_concurrent_mcp_jobs")),
+        "max_artifact_bytes": positive_policy_int(capabilities.get("max_artifact_bytes")),
     }
 
 
@@ -275,10 +274,6 @@ def _worker_version_diagnostics(
     return diagnostics
 
 
-def _positive_int(value: object) -> int | None:
-    if isinstance(value, int) and value > 0:
-        return value
-    return None
 
 
 def _uuid_from_capabilities(capabilities: dict[str, object], key: str) -> UUID | None:

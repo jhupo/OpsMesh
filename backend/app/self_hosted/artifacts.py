@@ -1,11 +1,10 @@
-from __future__ import annotations
-
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.self_hosted import ArtifactUploadRequest, LocalFileReferenceRequest
 from backend.app.files.security import safe_filename, validate_storage_key
 from backend.app.runs.models import AgentRun
 from backend.app.self_hosted.models import LocalFileReference, SelfHostedArtifactUpload
+from backend.app.self_hosted.policy import positive_policy_int
 from backend.app.self_hosted.types import AuthenticatedWorker
 from backend.app.tasks.models import Task, TaskStep
 
@@ -54,8 +53,8 @@ class SelfHostedArtifactService:
             if run is not None and run.task_step_id is not None
             else None
         )
-        max_artifact_bytes = _positive_int(auth.worker.capabilities.get("max_artifact_bytes"))
-        artifact_size = _positive_int(data.metadata.get("size_bytes"))
+        max_artifact_bytes = positive_policy_int(auth.worker.capabilities.get("max_artifact_bytes"))
+        artifact_size = positive_policy_int(data.metadata.get("size_bytes"))
         if (
             max_artifact_bytes is not None
             and artifact_size is not None
@@ -113,9 +112,3 @@ class SelfHostedArtifactService:
         ):
             raise ValueError("Run not found for self-hosted worker")
         return run
-
-
-def _positive_int(value: object) -> int | None:
-    if isinstance(value, int) and value > 0:
-        return value
-    return None

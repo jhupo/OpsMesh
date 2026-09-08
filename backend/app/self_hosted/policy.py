@@ -5,6 +5,12 @@ from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.models import RuntimeSpace
 
 
+def positive_policy_int(value: object) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return None
+
+
 @dataclass(frozen=True)
 class WorkerJobPolicyDecision:
     allowed: bool
