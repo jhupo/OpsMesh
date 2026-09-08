@@ -60,6 +60,10 @@ class ModelRunGateway:
             return None
         except AgentRuntimeCancelledError:
             raise
+        except AgentRuntimePolicyError as exc:
+            self.mark_run_failed(run, exc)
+            self.session.commit()
+            return None
         except Exception as exc:
             fallback_request = routing.fallback_request(
                 run=run,
@@ -87,6 +91,10 @@ class ModelRunGateway:
             return None
         except AgentRuntimeCancelledError:
             raise
+        except AgentRuntimePolicyError as exc:
+            self.mark_run_failed(run, exc)
+            self.session.commit()
+            return None
         except Exception as fallback_exc:
             self.events.append_model_request_failed_event(run, fallback_request, fallback_exc)
             audit.record_request_failed(run, fallback_request, job, fallback_exc)

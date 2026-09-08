@@ -76,6 +76,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         adapter="openai_agents",
         supported=frozenset(
             {
+                AgentRuntimeCapability.TOOLS,
                 AgentRuntimeCapability.HANDOFFS,
                 AgentRuntimeCapability.AGENTS_AS_TOOLS,
                 AgentRuntimeCapability.STRUCTURED_OUTPUT,
@@ -84,6 +85,8 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                 AgentRuntimeCapability.GUARDRAILS,
                 AgentRuntimeCapability.SESSIONS,
                 AgentRuntimeCapability.CANCELLATION,
+                AgentRuntimeCapability.LIFECYCLE_EVENTS,
+                AgentRuntimeCapability.USAGE,
             }
         ),
         limits={"max_agent_tool_depth": 3, "max_agent_tool_turns": 20},

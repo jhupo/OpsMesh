@@ -11,6 +11,7 @@ AgentRuntimeSessionItem = dict[str, object]
 
 
 class AgentRuntimeCapability(StrEnum):
+    TOOLS = "tools"
     HANDOFFS = "handoffs"
     AGENTS_AS_TOOLS = "agents_as_tools"
     STRUCTURED_OUTPUT = "structured_output"
@@ -19,6 +20,8 @@ class AgentRuntimeCapability(StrEnum):
     GUARDRAILS = "guardrails"
     SESSIONS = "sessions"
     CANCELLATION = "cancellation"
+    LIFECYCLE_EVENTS = "lifecycle_events"
+    USAGE = "usage"
 
 
 @dataclass(frozen=True)

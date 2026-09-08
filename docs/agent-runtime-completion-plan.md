@@ -51,7 +51,7 @@ Verification: `test_phase_one_approval_flow_survives_worker_restart_and_executes
 complete durable path with a recreated database session and a duplicate execution attempt. Focused
 approval lifecycle tests cover rejection, timeout, cancellation, and unknown worker outcomes.
 
-## Phase 2: OpenAI Agents SDK Adapter Closure
+## Phase 2: Provider Agent SDK Adapter Closure
 
 Goal: expose the supported Agents SDK orchestration surface through vendor-neutral OpsMesh contracts.
 
@@ -62,12 +62,17 @@ Goal: expose the supported Agents SDK orchestration surface through vendor-neutr
 | 2.3 | P0 | Implement agents-as-tools with nested run provenance and limits | Done | `add-openai-agents-as-tools` | OpenAI `Agent.as_tool()` receives only frozen same-team targets; every nested level intersects tool, resource, and file scope, enforces graph, depth, and turn limits, and persists source, target, call, and usage provenance |
 | 2.4 | P0 | Add structured output plus agent input/output guardrails | Done | `add-agent-output-and-guardrails` | Versioned JSON Schemas and bounded guardrail policies are validated at profile write, frozen in run authorization, restored by workers, enforced by both adapters, and persisted as redacted results or non-retryable policy failures |
 | 2.5 | P1 | Add lifecycle hooks, streaming events, cancellation propagation, and usage capture | Done | `add-agent-runtime-streaming-hooks` | Both SDK adapters share one execution observer and template lifecycle; ordered redacted stream events and normalized usage are persisted, while durable run cancellation interrupts the active SDK client and tool executor without provider fallback |
-| 2.6 | P1 | Publish and enforce the provider adapter capability matrix | Pending | `add-agent-adapter-capability-matrix` | Unsupported provider features fail explicitly instead of silently degrading |
+| 2.6 | P1 | Publish and enforce the provider adapter capability matrix | Done | `add-agent-adapter-capability-matrix` | A workspace-readable API publishes every adapter feature, limit, and unsupported reason; the provider registry derives required capabilities from each request and rejects gaps as non-retryable policy failures without cross-provider fallback |
 
 Phase acceptance gate:
 
 Single-agent turns, handoffs, agents-as-tools, structured results, streaming, cancellation, and paused
 run restoration all execute through the same OpsMesh runner contract.
+
+Verification: focused adapter tests cover both provider SDK implementations, ordered streaming,
+SDK/tool cancellation, lifecycle events, normalized usage, and capability rejection. The worker
+integration path proves SDK stream events reach durable run history, while the workspace capability
+API publishes the same matrix enforced by the registry.
 
 ## Phase 3: Workspace Projects, Files, Configuration, And Outputs
 

@@ -6906,9 +6906,14 @@ def test_model_provider_capabilities_are_listed_without_secrets() -> None:
         headers=_headers(owner.id),
         params={"provider": "anthropic", "capability": "tools"},
     )
+    runtimes = client.get(
+        f"/api/v1/workspaces/{workspace.id}/model-provider-capabilities/agent-runtimes",
+        headers=_headers(owner.id),
+    )
 
     assert listed.status_code == 200
     assert anthropic_tools.status_code == 200
+    assert runtimes.status_code == 200
     compatible = next(item for item in listed.json() if item["provider"] == "openai-compatible")
     assert compatible["model_apis"] == ["responses", "chat_completions"]
     assert compatible["default_model_api"] is None
@@ -6920,8 +6925,19 @@ def test_model_provider_capabilities_are_listed_without_secrets() -> None:
         and item["default_model_api"] == "anthropic_messages"
         for item in anthropic_tools.json()
     )
-    assert "api_key" not in json.dumps(listed.json())
-    assert "base_url" not in json.dumps(listed.json())
+    runtime_by_provider = {item["provider"]: item for item in runtimes.json()}
+    assert set(runtime_by_provider) == {"anthropic", "openai-compatible"}
+    claude_features = {
+        feature["name"]: feature
+        for feature in runtime_by_provider["anthropic"]["features"]
+    }
+    assert claude_features["tools"]["supported"] is True
+    assert claude_features["cancellation"]["supported"] is True
+    assert claude_features["handoffs"]["supported"] is False
+    assert claude_features["handoffs"]["reason"]
+    serialized = json.dumps(listed.json()) + json.dumps(runtimes.json())
+    assert "api_key" not in serialized
+    assert "base_url" not in serialized
 
 
 def test_create_agent_can_reference_workspace_model_provider_credential() -> None:

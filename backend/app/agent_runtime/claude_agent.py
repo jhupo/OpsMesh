@@ -135,12 +135,15 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
         adapter="claude_agent_sdk",
         supported=frozenset(
             {
+                AgentRuntimeCapability.TOOLS,
                 AgentRuntimeCapability.STRUCTURED_OUTPUT,
                 AgentRuntimeCapability.STREAMING,
                 AgentRuntimeCapability.RESUMABLE_STATE,
                 AgentRuntimeCapability.GUARDRAILS,
                 AgentRuntimeCapability.SESSIONS,
                 AgentRuntimeCapability.CANCELLATION,
+                AgentRuntimeCapability.LIFECYCLE_EVENTS,
+                AgentRuntimeCapability.USAGE,
             }
         ),
         limits={"builtin_tools": "disabled", "mcp_server": "opsmesh"},
@@ -148,6 +151,9 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             AgentRuntimeCapability.HANDOFFS.value: (
                 "Claude SDK agents are exposed as tools; OpenAI-style handoff "
                 "descriptors are not equivalent."
+            ),
+            AgentRuntimeCapability.AGENTS_AS_TOOLS.value: (
+                "Per-subagent MCP execution contexts are not enabled for Claude."
             ),
         },
     )

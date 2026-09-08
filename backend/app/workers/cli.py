@@ -6,7 +6,7 @@ import signal
 import socket
 from threading import Event
 
-from backend.app.agent_runtime.factory import build_agent_runner
+from backend.app.agent_runtime.factory import build_agent_runtime_registry
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.logging import configure_logging
 from backend.app.db.session import SessionLocal, engine
@@ -75,7 +75,7 @@ def _build_runner(settings: Settings, config: WorkerRunnerConfig) -> WorkerRunne
         queue=build_default_queue(redis_client, settings),
         session_factory=SessionLocal,
         config=config,
-        agent_runner=build_agent_runner(settings),
+        agent_runner=build_agent_runtime_registry(settings),
         settings=settings,
     )
 

@@ -39,6 +39,31 @@ The Python boundary deliberately uses a hybrid object model:
 The protocol keeps test doubles and alternate composition lightweight. The base class is used only
 where common execution invariants must not drift between SDKs; domain services do not inherit it.
 
+## Provider Adapter Capability Matrix
+
+`GET /api/v1/workspaces/{workspace_id}/model-provider-capabilities/agent-runtimes` publishes this
+matrix through the normal workspace read authorization boundary. Every feature is returned with a
+boolean support state and an explanation when unsupported; adapter limits are returned separately.
+
+| Capability | OpenAI Agents SDK | Claude Agent SDK |
+| --- | --- | --- |
+| tools | supported | supported through the SDK MCP server bridge |
+| handoffs | supported | unsupported; Claude subagents are not equivalent to OpenAI handoffs |
+| agents as tools | supported | unsupported until each subagent has an enforceable MCP context |
+| structured output | supported | supported |
+| streaming | supported | supported |
+| resumable state | supported | supported |
+| guardrails | supported | supported through SDK hooks plus product output validation |
+| sessions | supported | supported through the product `SessionStore` bridge |
+| cancellation | supported | supported through `ClaudeSDKClient.interrupt()` |
+| lifecycle events | supported | supported |
+| usage | supported | supported |
+
+Before dispatch, the registry derives required capabilities from the actual `AgentRunRequest`,
+including tools, handoffs, nested agents, output schema, streaming, resume state, guardrails,
+sessions, and cancellation. Missing support raises `AgentRuntimeCapabilityError`, produces durable
+`agent.capability.unsupported` evidence, is non-retryable, and cannot trigger provider fallback.
+
 ## Runtime Inputs
 
 The orchestration layer provides an `AgentRunRequest`.

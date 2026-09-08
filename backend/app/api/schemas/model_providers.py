@@ -156,3 +156,16 @@ class ModelCapabilityResponse(BaseModel):
     supports_streaming: bool
     context_window_tokens: int | None = None
     notes: str | None = None
+
+
+class AgentRuntimeCapabilityFeatureResponse(BaseModel):
+    name: str
+    supported: bool
+    reason: str | None = None
+
+
+class AgentRuntimeAdapterCapabilityResponse(BaseModel):
+    provider: str
+    adapter: str
+    features: list[AgentRuntimeCapabilityFeatureResponse]
+    limits: dict[str, object] = Field(default_factory=dict)

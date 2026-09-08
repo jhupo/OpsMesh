@@ -12,17 +12,23 @@ from backend.app.agent_runtime.claude_agent import ClaudeAgentSDKRunner, _model_
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
+    AgentRuntimeAgentRef,
     AgentRuntimeApprovalDecision,
     AgentRuntimeCapabilities,
+    AgentRuntimeCapability,
     AgentRuntimeContext,
+    AgentRuntimeHandoff,
     AgentRuntimeResumeState,
     AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
     AgentRuntimeToolResult,
     AgentRunTracing,
 )
-from backend.app.agent_runtime.errors import normalize_agent_error
-from backend.app.agent_runtime.factory import build_agent_runner
+from backend.app.agent_runtime.errors import (
+    AgentRuntimeCapabilityError,
+    normalize_agent_error,
+)
+from backend.app.agent_runtime.factory import build_agent_runtime_registry
 from backend.app.agent_runtime.multi_provider import ProviderAgentRuntimeRegistry
 from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
 from backend.app.agent_runtime.openai_results import (
@@ -378,7 +384,7 @@ def test_deterministic_test_runner_returns_deterministic_output() -> None:
 
 def test_agent_runner_factory_builds_provider_adapter_registry() -> None:
     assert isinstance(
-        build_agent_runner(Settings(environment="test")),
+        build_agent_runtime_registry(Settings(environment="test")),
         ProviderAgentRuntimeRegistry,
     )
 
@@ -388,7 +394,11 @@ def test_provider_adapter_registry_routes_by_request_provider() -> None:
         def __init__(self, name: str) -> None:
             self.name = name
             self.requests: list[AgentRunRequest] = []
-            self.capabilities = AgentRuntimeCapabilities(provider=name, adapter=name)
+            self.capabilities = AgentRuntimeCapabilities(
+                provider=name,
+                adapter=name,
+                supported=frozenset(AgentRuntimeCapability),
+            )
 
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
             self.requests.append(request)
@@ -432,7 +442,11 @@ def test_provider_adapter_registry_accepts_formal_provider_keys() -> None:
         def __init__(self, name: str) -> None:
             self.name = name
             self.requests: list[AgentRunRequest] = []
-            self.capabilities = AgentRuntimeCapabilities(provider=name, adapter=name)
+            self.capabilities = AgentRuntimeCapabilities(
+                provider=name,
+                adapter=name,
+                supported=frozenset(AgentRuntimeCapability),
+            )
 
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
             self.requests.append(request)
@@ -475,6 +489,39 @@ def test_provider_adapter_registry_accepts_formal_provider_keys() -> None:
     assert results == ["anthropic", "openai"]
     assert len(anthropic_runner.requests) == 1
     assert len(openai_runner.requests) == 1
+
+
+def test_provider_adapter_registry_rejects_unsupported_request_capabilities() -> None:
+    registry = build_agent_runtime_registry(Settings(environment="test"))
+    profile = AgentProfile(
+        workspace_id=uuid4(),
+        name="Claude",
+        role="researcher",
+        instructions="Delegate.",
+        model="claude-sonnet-4-5",
+    )
+    request = AgentRunRequest(
+        agent_profile=profile,
+        input_text="Delegate this task.",
+        context=AgentRuntimeContext(
+            workspace_id=profile.workspace_id,
+            task_id=None,
+            run_id=uuid4(),
+        ),
+        provider="anthropic",
+        api_key="anthropic-test",
+        handoffs=(
+            AgentRuntimeHandoff(target=AgentRuntimeAgentRef(name="Specialist")),
+        ),
+    )
+
+    with pytest.raises(AgentRuntimeCapabilityError) as caught:
+        asyncio.run(registry.run(request))
+
+    assert caught.value.code == "agent_runtime_capability_unsupported"
+    assert caught.value.metadata["provider"] == "anthropic"
+    assert caught.value.metadata["missing"] == ["handoffs"]
+    assert normalize_agent_error(caught.value).retryable is False
 
 
 def test_claude_agent_runner_circuit_key_uses_formal_provider_and_separates_hosts() -> None:

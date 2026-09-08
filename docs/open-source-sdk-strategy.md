@@ -73,6 +73,10 @@ descriptors and per-subagent MCP execution contexts.
 
 Other model providers remain deferred. A future provider must implement the OpsMesh-owned provider
 contract and pass the same runtime contract tests; it must not add a third orchestration framework.
+The workspace model-capability API publishes the runtime adapter matrix. The provider registry
+derives requirements from every request before SDK invocation, so a future adapter cannot silently
+ignore tools, handoffs, nested agents, structured output, streaming, resume, guardrails, sessions,
+or cancellation.
 
 ### SDK Adoption Audit (2026-09)
 

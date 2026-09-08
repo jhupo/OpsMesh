@@ -1,12 +1,13 @@
 from backend.app.agent_runtime.claude_agent import ClaudeAgentSDKRunner
-from backend.app.agent_runtime.contracts import AgentRuntimeExecutor
 from backend.app.agent_runtime.multi_provider import ProviderAgentRuntimeRegistry
 from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
 from backend.app.core.config import Settings
 from backend.app.core.resilience import CircuitBreakerConfig
 
 
-def build_agent_runner(settings: Settings | None = None) -> AgentRuntimeExecutor:
+def build_agent_runtime_registry(
+    settings: Settings | None = None,
+) -> ProviderAgentRuntimeRegistry:
     circuit_config = CircuitBreakerConfig()
     max_attempts = 2
     if settings is not None:

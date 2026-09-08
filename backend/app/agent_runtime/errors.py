@@ -1,7 +1,11 @@
 import re
 from dataclasses import dataclass
 
-from backend.app.agent_runtime.contracts import AgentRuntimeGuardrailResult
+from backend.app.agent_runtime.contracts import (
+    AgentRuntimeCapabilities,
+    AgentRuntimeCapability,
+    AgentRuntimeGuardrailResult,
+)
 from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 _SENSITIVE_URL_PATTERN = re.compile(
@@ -88,6 +92,35 @@ class AgentRuntimeCancelledError(AgentRuntimePolicyError):
             message="Agent runtime execution was cancelled",
             event_type="agent.run.cancelled",
             metadata={"propagated": True},
+        )
+
+
+class AgentRuntimeCapabilityError(AgentRuntimePolicyError):
+    def __init__(
+        self,
+        capabilities: AgentRuntimeCapabilities,
+        missing: tuple[AgentRuntimeCapability, ...],
+    ) -> None:
+        names = tuple(sorted(item.value for item in missing))
+        super().__init__(
+            code="agent_runtime_capability_unsupported",
+            message=(
+                f"Runtime adapter {capabilities.adapter} does not support: "
+                + ", ".join(names)
+            ),
+            event_type="agent.capability.unsupported",
+            metadata={
+                "provider": capabilities.provider,
+                "adapter": capabilities.adapter,
+                "missing": list(names),
+                "reasons": {
+                    name: capabilities.unsupported_reasons.get(
+                        name,
+                        "The adapter does not advertise this capability.",
+                    )
+                    for name in names
+                },
+            },
         )
 
 

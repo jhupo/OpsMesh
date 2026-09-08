@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRuntimeExecutor
 from backend.app.agent_runtime.errors import AgentRuntimeCancelledError
-from backend.app.agent_runtime.factory import build_agent_runner
+from backend.app.agent_runtime.factory import build_agent_runtime_registry
 from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
 from backend.app.approvals.pending_tools import PendingToolInvocationService
@@ -51,7 +51,7 @@ class RunExecutionService:
 
     def __post_init__(self) -> None:
         self.settings = self.settings or get_settings()
-        self.agent_runner = self.agent_runner or build_agent_runner(self.settings)
+        self.agent_runner = self.agent_runner or build_agent_runtime_registry(self.settings)
 
     async def run_agent(self, job: JobPayload) -> AgentRun:
         run = self.session.get(AgentRun, job.resource_id)

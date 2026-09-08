@@ -1,11 +1,13 @@
 from collections.abc import Mapping
 
+from backend.app.agent_runtime.capability_policy import required_runtime_capabilities
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeAdapter,
     AgentRuntimeCapabilities,
 )
+from backend.app.agent_runtime.errors import AgentRuntimeCapabilityError
 from backend.app.model_providers.provider_keys import (
     is_anthropic_provider,
     is_openai_compatible_provider,
@@ -30,7 +32,16 @@ class ProviderAgentRuntimeRegistry:
             )
 
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
-        return await self.adapter_for(request.provider).run(request)
+        adapter = self.adapter_for(request.provider)
+        required = required_runtime_capabilities(request)
+        missing = tuple(
+            capability
+            for capability in required
+            if not adapter.capabilities.supports(capability)
+        )
+        if missing:
+            raise AgentRuntimeCapabilityError(adapter.capabilities, missing)
+        return await adapter.run(request)
 
     def adapter_for(self, provider: str | None) -> AgentRuntimeAdapter:
         if is_openai_compatible_provider(provider):
