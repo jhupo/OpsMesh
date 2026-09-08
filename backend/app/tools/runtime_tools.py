@@ -1,14 +1,12 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
 from backend.app.approvals.service import ApprovalService
 from backend.app.approvals.waiting import ApprovalWaitingService
 from backend.app.core.config import Settings
-from backend.app.runs.models import RunEvent
+from backend.app.runs.event_writer import RunEventWriter
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import RuntimeCommand, WorkspaceRuntime
 from backend.app.tools.context import ToolContext
@@ -117,24 +115,9 @@ class RuntimeToolService:
     def _append_tool_event(self, context: ToolContext, event_type: str, message: str) -> None:
         if context.agent_run_id is None:
             return
-        next_sequence = (
-            self._session.scalar(
-                select(func.coalesce(func.max(RunEvent.sequence), 0)).where(
-                    RunEvent.workspace_id == context.workspace_id,
-                    RunEvent.agent_run_id == context.agent_run_id,
-                )
-            )
-            or 0
-        ) + 1
-        self._session.add(
-            RunEvent(
-                workspace_id=context.workspace_id,
-                agent_run_id=context.agent_run_id,
-                event_type=event_type,
-                sequence=next_sequence,
-                message=message,
-                created_at=datetime.now(UTC),
-            )
+        RunEventWriter(self._session).append(
+            workspace_id=context.workspace_id, run_id=context.agent_run_id,
+            event_type=event_type, message=message,
         )
 
     def _mark_waiting_approval(self, context: ToolContext) -> None:

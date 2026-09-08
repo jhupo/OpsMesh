@@ -1,17 +1,14 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_messages.models import AgentMessage
 from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agent_runtime.errors import AgentRuntimePolicyError, normalize_agent_error
-from backend.app.core.trace_context import with_current_trace_metadata
 from backend.app.orchestration.model_request_reviewing import model_provider_request_snapshot
 from backend.app.orchestration.run_request_utils import dict_copy, json_safe
+from backend.app.runs.event_writer import RunEventWriter
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime import TeamRuntimeService
@@ -29,27 +26,10 @@ class RunEventRecorder:
         message: str,
         metadata: dict[str, object] | None = None,
     ) -> RunEvent:
-        next_sequence = (
-            self.session.scalar(
-                select(func.coalesce(func.max(RunEvent.sequence), 0)).where(
-                    RunEvent.agent_run_id == run.id,
-                    RunEvent.workspace_id == run.workspace_id,
-                )
-            )
-            or 0
-        ) + 1
-        event = RunEvent(
-            workspace_id=run.workspace_id,
-            agent_run_id=run.id,
-            event_type=event_type,
-            sequence=next_sequence,
-            message=message,
-            event_metadata=redact_sensitive_payload(with_current_trace_metadata(metadata)),
-            created_at=datetime.now(UTC),
+        return RunEventWriter(self.session).append(
+            workspace_id=run.workspace_id, run_id=run.id,
+            event_type=event_type, message=message, metadata=metadata,
         )
-        self.session.add(event)
-        self.session.flush([event])
-        return event
 
     def append_run_claimed_event(self, run: AgentRun, job: JobPayload) -> None:
         self.append_event(

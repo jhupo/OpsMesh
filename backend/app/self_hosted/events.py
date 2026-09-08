@@ -1,10 +1,8 @@
-from __future__ import annotations
-
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.runs.event_writer import RunEventWriter
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpaceEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
@@ -21,26 +19,10 @@ class SelfHostedEventRecorder:
         message: str,
         metadata: dict[str, object],
     ) -> RunEvent:
-        next_sequence = (
-            self._session.scalar(
-                select(func.coalesce(func.max(RunEvent.sequence), 0)).where(
-                    RunEvent.workspace_id == run.workspace_id,
-                    RunEvent.agent_run_id == run.id,
-                )
-            )
-            or 0
-        ) + 1
-        event = RunEvent(
-            workspace_id=run.workspace_id,
-            agent_run_id=run.id,
-            event_type=event_type,
-            sequence=next_sequence,
-            message=message,
-            event_metadata=metadata,
-            created_at=datetime.now(UTC),
+        return RunEventWriter(self._session).append(
+            workspace_id=run.workspace_id, run_id=run.id,
+            event_type=event_type, message=message, metadata=metadata,
         )
-        self._session.add(event)
-        return event
 
     def append_runtime_event(
         self,
