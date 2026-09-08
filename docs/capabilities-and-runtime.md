@@ -353,7 +353,7 @@ resource grants, gateway-only file scope, MCP server and allowlist provenance, r
 network requirements, and canonical fingerprints. Later Agent or team configuration changes affect
 new runs only.
 
-Both OpenAI Agents SDK function tools and the Anthropic Messages adapter are generated from the
+Both OpenAI Agents SDK function tools and Claude Agent SDK MCP tools are generated from the
 frozen descriptors. Every backend tool call then crosses the Agent tool gateway, which:
 
 1. requires one exact tool definition from the run manifest;

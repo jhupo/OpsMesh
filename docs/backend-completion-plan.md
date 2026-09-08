@@ -153,7 +153,7 @@ Current state:
   file and memory scopes, rechecks live resource/MCP status, and records durable run/security denial
   evidence before any side effect.
 - Worker-built Agent requests carry typed frozen definitions and grants. OpenAI Agents SDK
-  `FunctionTool` objects and Anthropic tool declarations both use the frozen names, descriptions,
+  `FunctionTool` objects and Claude Agent SDK MCP tools both use the frozen names, descriptions,
   and JSON Schemas.
 - Remote Streamable HTTP, SSE, and hosted MCP servers execute through the official MCP Python SDK `ClientSession` and transports behind the adapter resolver. Stdio MCP has a Docker-runtime-only adapter, but it is not selected by the default resolver; callers must explicitly bind it to a workspace runtime so the API host never executes stdio commands directly. Self-hosted runtimes now have an auditable MCP job queue plus an independent `opsmesh-self-hosted-worker` connector that heartbeats, polls, claims, executes through the official SDK, durably records results, and completes jobs with restart recovery. OpenAI tool calls can submit stdio jobs with an explicit `waiting_self_hosted` result. Completed self-hosted MCP jobs now move waiting runs back to queued, persist pending tool results, and resume through structured tool continuations rendered at the OpenAI runtime boundary.
 - A workspace MCP catalog API now summarizes each server's visibility, allowed tools, credential readiness, execution mode, connection summary, agent-scoped availability, and tool/server usage rollups.

@@ -392,7 +392,7 @@ The updater runs migrations before restarting services.
 
 ## Model Provider Dispatch Runner
 
-The worker routes each run through the real provider-dispatching runner. OpenAI-compatible providers route through the OpenAI Agents SDK; Anthropic/Claude providers route through the native messages runner.
+The worker routes each run through the real provider-dispatching runner. OpenAI-compatible providers route through the OpenAI Agents SDK; Anthropic/Claude providers route through the Claude Agent SDK adapter.
 
 Model provider keys should be stored through the workspace API, not raw environment variables:
 
