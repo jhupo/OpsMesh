@@ -3,13 +3,14 @@ from pathlib import Path
 
 import fakeredis
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.audit.models import AuditEvent
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -112,6 +113,46 @@ def test_upload_size_limit(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 413
+
+
+def test_workspace_file_runtime_policy_is_explicit_and_restricted_is_fail_closed(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(session)
+    uploaded = client.post(
+        f"/api/v1/workspaces/{workspace.id}/files",
+        headers=_headers(owner.id),
+        files={"file": ("brief.txt", b"hello", "text/plain")},
+    )
+    file_id = uploaded.json()["id"]
+
+    updated = client.put(
+        f"/api/v1/workspaces/{workspace.id}/files/{file_id}/runtime-policy",
+        headers=_headers(owner.id),
+        json={"sensitivity": "confidential", "runtime_access": "denied"},
+    )
+    unsafe_restricted = client.put(
+        f"/api/v1/workspaces/{workspace.id}/files/{file_id}/runtime-policy",
+        headers=_headers(owner.id),
+        json={"sensitivity": "restricted", "runtime_access": "allowed"},
+    )
+
+    assert uploaded.json()["sensitivity"] == "internal"
+    assert uploaded.json()["runtime_access"] == "allowed"
+    assert updated.status_code == 200
+    assert updated.json()["sensitivity"] == "confidential"
+    assert updated.json()["runtime_access"] == "denied"
+    assert unsafe_restricted.status_code == 422
+    assert (
+        session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.workspace_id == workspace.id,
+                AuditEvent.action == "file.runtime_policy.updated",
+            )
+        )
+        is not None
+    )
 
 
 def test_upload_sanitizes_filename_and_download_header(tmp_path: Path) -> None:

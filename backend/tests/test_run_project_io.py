@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import tarfile
+from copy import deepcopy
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
@@ -15,13 +16,18 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
+from backend.app.capabilities.models import CapabilityResource
 from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.files.storage import LocalStorage
 from backend.app.identity.models import User
+from backend.app.orchestration.run_authorization_integrity import (
+    authorization_snapshot_fingerprint,
+)
 from backend.app.projects.models import (
     AgentRunProjectIOState,
     WorkspaceProject,
@@ -35,8 +41,10 @@ from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.projects.serialization import sha256_json
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task
 from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.tests.fixtures.project_authorization import authorize_project_run
 
 
 @dataclass
@@ -235,6 +243,232 @@ def test_project_snapshot_without_runtime_fails_instead_of_skipping_io(tmp_path:
     assert fixture.docker.staged_files == {}
 
 
+def test_project_scope_denial_is_fail_closed_and_audited_without_file_details(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    run_input = deepcopy(fixture.run.input)
+    authorization = run_input["authorization_snapshot"]
+    assert isinstance(authorization, dict)
+    file_scope = authorization["file_scope"]
+    runtime_binding = authorization["runtime_binding"]
+    assert isinstance(file_scope, dict)
+    assert isinstance(runtime_binding, dict)
+    binding_scope = runtime_binding["file_access_scope"]
+    assert isinstance(binding_scope, dict)
+    file_scope["allowed_file_ids"] = []
+    binding_scope["allowed_file_ids"] = []
+    authorization["fingerprint"] = authorization_snapshot_fingerprint(authorization)
+    fixture.run.input = run_input
+    fixture.session.commit()
+
+    with pytest.raises(ProjectRunIOError) as failure:
+        RunProjectIOService(
+            fixture.session,
+            fixture.storage,
+            fixture.docker,
+            fixture.settings,
+        ).stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
+
+    assert failure.value.code == "project_input_grant_denied"
+    assert fixture.docker.staged_files == {}
+    audit = fixture.session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == fixture.workspace.id,
+            AuditEvent.action == "project.input_staging.failed",
+        )
+    )
+    security = fixture.session.scalar(
+        select(SecurityEvent).where(
+            SecurityEvent.workspace_id == fixture.workspace.id,
+            SecurityEvent.action == "project.file_boundary_blocked",
+        )
+    )
+    assert audit is not None
+    assert audit.audit_metadata["code"] == "project_input_grant_denied"
+    assert security is not None
+    assert security.reason == "project_input_grant_denied"
+    evidence = json.dumps(
+        {"audit": audit.audit_metadata, "security": security.event_metadata},
+        sort_keys=True,
+    )
+    assert fixture.source_file.filename not in evidence
+    assert fixture.source_file.storage_key not in evidence
+
+
+@pytest.mark.parametrize(
+    ("sensitivity", "runtime_access", "expected_code"),
+    [
+        ("restricted", "denied", "project_input_runtime_access_denied"),
+        ("internal", "allowed", "project_input_sensitive_file_denied"),
+    ],
+)
+def test_sensitive_project_files_are_denied_before_storage_read(
+    tmp_path: Path,
+    sensitivity: str,
+    runtime_access: str,
+    expected_code: str,
+) -> None:
+    fixture = _fixture(tmp_path)
+    fixture.source_file.sensitivity = sensitivity
+    fixture.source_file.runtime_access = runtime_access
+    if expected_code == "project_input_sensitive_file_denied":
+        fixture.source_file.filename = ".env.production"
+    fixture.session.commit()
+
+    with pytest.raises(ProjectRunIOError) as failure:
+        RunProjectIOService(
+            fixture.session,
+            fixture.storage,
+            fixture.docker,
+            fixture.settings,
+        ).stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
+
+    assert failure.value.code == expected_code
+    assert fixture.docker.staged_files == {}
+
+
+def test_file_policy_revocation_blocks_output_harvest(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    service = RunProjectIOService(
+        fixture.session,
+        fixture.storage,
+        fixture.docker,
+        fixture.settings,
+    )
+    service.stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
+    fixture.source_file.runtime_access = "denied"
+    fixture.session.commit()
+    fixture.docker.output_files[
+        f"/workspace/runs/{fixture.run.id}/outputs/report.json"
+    ] = b'{}'
+
+    with pytest.raises(ProjectRunIOError) as failure:
+        service.harvest_outputs(fixture.run, actor_user_id=fixture.owner.id)
+
+    assert failure.value.code == "project_input_runtime_access_denied"
+    assert (
+        fixture.session.scalar(
+            select(Artifact).where(Artifact.agent_run_id == fixture.run.id)
+        )
+        is None
+    )
+
+
+def test_project_runtime_capacity_is_enforced_before_storage_read(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    runtime = fixture.session.get(WorkspaceRuntime, fixture.run.runtime_id)
+    assert runtime is not None
+    runtime.limits = {"disk_mb": 1}
+    snapshot = RunProjectSnapshotService(fixture.session).get_for_run(
+        fixture.workspace.id,
+        fixture.run.id,
+    )
+    assert snapshot is not None
+    manifest = deepcopy(snapshot.manifest)
+    outputs = manifest["outputs"]
+    assert isinstance(outputs, list)
+    output = outputs[0]
+    assert isinstance(output, dict)
+    output["max_bytes"] = 2_000_000
+    snapshot.manifest = manifest
+    snapshot.fingerprint_sha256 = sha256_json(manifest)
+    run_input = deepcopy(fixture.run.input)
+    project_binding = run_input["project_snapshot"]
+    assert isinstance(project_binding, dict)
+    project_binding["fingerprint_sha256"] = snapshot.fingerprint_sha256
+    fixture.run.input = run_input
+    fixture.session.commit()
+
+    with pytest.raises(ProjectRunIOError) as failure:
+        RunProjectIOService(
+            fixture.session,
+            fixture.storage,
+            fixture.docker,
+            fixture.settings,
+        ).stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
+
+    assert failure.value.code == "project_runtime_capacity_exceeded"
+    assert fixture.docker.staged_files == {}
+
+
+def test_changed_file_resource_grant_is_denied_and_audited(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    resource = fixture.session.scalar(
+        select(CapabilityResource).where(
+            CapabilityResource.workspace_id == fixture.workspace.id,
+            CapabilityResource.resource_type == "file_collection",
+        )
+    )
+    assert resource is not None
+    resource.version += 1
+    fixture.session.commit()
+
+    with pytest.raises(ProjectRunIOError) as failure:
+        RunProjectIOService(
+            fixture.session,
+            fixture.storage,
+            fixture.docker,
+            fixture.settings,
+        ).stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
+
+    assert failure.value.code == "project_input_authorization_invalid"
+    assert fixture.docker.staged_files == {}
+    assert (
+        fixture.session.scalar(
+            select(SecurityEvent).where(
+                SecurityEvent.workspace_id == fixture.workspace.id,
+                SecurityEvent.reason == "project_input_authorization_invalid",
+            )
+        )
+        is not None
+    )
+
+
+def test_tampered_project_path_is_rejected_with_redacted_security_evidence(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    snapshot = RunProjectSnapshotService(fixture.session).get_for_run(
+        fixture.workspace.id,
+        fixture.run.id,
+    )
+    assert snapshot is not None
+    manifest = deepcopy(snapshot.manifest)
+    files = manifest["files"]
+    assert isinstance(files, list)
+    project_file = files[0]
+    assert isinstance(project_file, dict)
+    project_file["project_path"] = "../outside.txt"
+    snapshot.manifest = manifest
+    snapshot.fingerprint_sha256 = sha256_json(manifest)
+    run_input = deepcopy(fixture.run.input)
+    project_binding = run_input["project_snapshot"]
+    assert isinstance(project_binding, dict)
+    project_binding["fingerprint_sha256"] = snapshot.fingerprint_sha256
+    fixture.run.input = run_input
+    fixture.session.commit()
+
+    with pytest.raises(ProjectRunIOError) as failure:
+        RunProjectIOService(
+            fixture.session,
+            fixture.storage,
+            fixture.docker,
+            fixture.settings,
+        ).stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
+
+    assert failure.value.code == "project_snapshot_invalid"
+    security = fixture.session.scalar(
+        select(SecurityEvent).where(
+            SecurityEvent.workspace_id == fixture.workspace.id,
+            SecurityEvent.reason == "project_snapshot_invalid",
+        )
+    )
+    assert security is not None
+    assert "outside" not in json.dumps(security.event_metadata)
+    assert fixture.docker.staged_files == {}
+
+
 def _fixture(tmp_path: Path) -> ProjectIOFixture:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
@@ -314,6 +548,7 @@ def _fixture(tmp_path: Path) -> ProjectIOFixture:
         status="running",
         connection_status="online",
         docker_container_id="container-1",
+        limits={"disk_mb": 256},
         capabilities={
             "isolation": {"workspace_mount": {"target": "/workspace", "mode": "rw"}}
         },
@@ -336,6 +571,13 @@ def _fixture(tmp_path: Path) -> ProjectIOFixture:
     )
     session.add(run)
     session.flush()
+    authorize_project_run(
+        session,
+        run=run,
+        task=task,
+        runtime=runtime,
+        files=[source_file],
+    )
     RunProjectSnapshotService(session).freeze_for_run(run=run, task=task)
     session.commit()
     storage = LocalStorage(str(tmp_path / "storage"))
@@ -377,6 +619,15 @@ def _new_run(fixture: ProjectIOFixture) -> AgentRun:
     )
     fixture.session.add(run)
     fixture.session.flush()
+    runtime = fixture.session.get(WorkspaceRuntime, fixture.run.runtime_id)
+    assert runtime is not None
+    authorize_project_run(
+        fixture.session,
+        run=run,
+        task=task,
+        runtime=runtime,
+        files=[fixture.source_file],
+    )
     RunProjectSnapshotService(fixture.session).freeze_for_run(run=run, task=task)
     fixture.session.commit()
     return run

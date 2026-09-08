@@ -119,6 +119,7 @@ class SelfHostedTrustService:
                     "max_concurrent_jobs",
                     "max_concurrent_mcp_jobs",
                     "max_artifact_bytes",
+                    "max_project_bytes",
                 ],
                 "mcp_stdio": {
                     "contract_version": MCP_STDIO_CONTRACT_VERSION,
@@ -198,6 +199,7 @@ def _worker_policy_summary(capabilities: dict[str, object]) -> dict[str, object]
         "max_concurrent_jobs": positive_policy_int(capabilities.get("max_concurrent_jobs")),
         "max_concurrent_mcp_jobs": positive_policy_int(capabilities.get("max_concurrent_mcp_jobs")),
         "max_artifact_bytes": positive_policy_int(capabilities.get("max_artifact_bytes")),
+        "max_project_bytes": positive_policy_int(capabilities.get("max_project_bytes")),
     }
 
 

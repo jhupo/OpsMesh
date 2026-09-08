@@ -1,10 +1,14 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, computed_field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
 from backend.app.api.schemas.redaction import redact_sensitive_payload
+
+FileSensitivity = Literal["public", "internal", "confidential", "restricted"]
+FileRuntimeAccess = Literal["allowed", "denied"]
 
 
 class WorkspaceFileResponse(TimestampedModel):
@@ -16,6 +20,8 @@ class WorkspaceFileResponse(TimestampedModel):
     checksum_sha256: str
     storage_key: str = Field(exclude=True, repr=False)
     status: str
+    sensitivity: FileSensitivity
+    runtime_access: FileRuntimeAccess
     file_metadata: dict[str, object]
 
     @computed_field
@@ -26,6 +32,11 @@ class WorkspaceFileResponse(TimestampedModel):
     @field_serializer("file_metadata")
     def _serialize_file_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+
+class WorkspaceFileRuntimePolicyRequest(BaseModel):
+    sensitivity: FileSensitivity
+    runtime_access: FileRuntimeAccess
 
 
 class ArtifactResponse(ORMModel):

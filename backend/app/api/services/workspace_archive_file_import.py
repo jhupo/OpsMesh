@@ -11,6 +11,7 @@ from backend.app.api.services.workspace_import_checksum import _validated_checks
 from backend.app.api.services.workspace_import_fields import _dict_field, _string_field
 from backend.app.api.services.workspace_import_resolution import _archive_resolution_action
 from backend.app.files.models import WorkspaceFile
+from backend.app.files.runtime_policy import validate_file_runtime_policy
 from backend.app.files.security import safe_filename
 from backend.app.files.storage_transactions import CompensatingObjectStorageWrites
 from backend.app.workspaces.models import Workspace
@@ -69,6 +70,10 @@ class WorkspaceArchiveFileImporter:
         if not checksum_result.matched:
             response.skipped_counts["files"] += 1
             return total_bytes
+        sensitivity, runtime_access = validate_file_runtime_policy(
+            sensitivity=_string_field(item, "sensitivity"),
+            runtime_access=_string_field(item, "runtime_access"),
+        )
         response.created_counts["files"] += 1
         total_bytes += len(content)
         if request.dry_run:
@@ -85,6 +90,8 @@ class WorkspaceArchiveFileImporter:
             checksum_sha256=checksum_result.checksum_sha256,
             storage_key=f"workspaces/{workspace.id}/files/{file_id}/{imported_filename}",
             status="active",
+            sensitivity=sensitivity,
+            runtime_access=runtime_access,
             file_metadata={
                 **_dict_field(item, "metadata"),
                 "imported_from_file_id": source_id,

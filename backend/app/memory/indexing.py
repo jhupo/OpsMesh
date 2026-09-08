@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.artifacts.models import Artifact
 from backend.app.files.models import WorkspaceFile
+from backend.app.files.runtime_policy import runtime_file_denial_code
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.tasks.models import Task
 
@@ -72,6 +73,22 @@ class WorkspaceMemoryIndexingService:
         )
         if file is None:
             return WorkspaceMemoryIndexResult("workspace_file", str(file_id), 0, 0)
+        try:
+            denied = runtime_file_denial_code(file) is not None
+        except ValueError:
+            denied = True
+        if denied:
+            archived = self._archive_existing_chunks(
+                workspace_id=workspace_id,
+                source_type="workspace_file",
+                source_id=str(file.id),
+            )
+            return WorkspaceMemoryIndexResult(
+                "workspace_file",
+                str(file.id),
+                archived,
+                0,
+            )
         text = _join_text(
             file.filename,
             file.content_type,
@@ -84,7 +101,11 @@ class WorkspaceMemoryIndexingService:
             source_id=file.id,
             title=file.filename,
             text=text,
-            metadata={"content_type": file.content_type, "size_bytes": file.size_bytes},
+            metadata={
+                "content_type": file.content_type,
+                "size_bytes": file.size_bytes,
+                "sensitivity": file.sensitivity,
+            },
             source_updated_at=file.updated_at,
         )
 

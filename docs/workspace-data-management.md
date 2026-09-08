@@ -134,6 +134,8 @@ Fields:
 - `checksum_sha256`
 - `storage_key`
 - `status`
+- `sensitivity`
+- `runtime_access`
 - `metadata`
 - `created_at`
 - `updated_at`
@@ -234,20 +236,31 @@ Agents and tools do not mount all workspace files. The implemented lifecycle is:
 
 1. Run creation freezes the project's exact configuration version, input versions, checksums,
    access modes, and output declarations.
-2. At execution start, the worker verifies the snapshot fingerprint, storage scope, object size,
-   and SHA-256 for every input before building the archive.
-3. Managed Docker receives the archive under `/workspace/runs/{run_id}`. The Docker SDK assigns
+2. At execution start and before reading object storage, the file boundary verifies the v2
+   authorization fingerprint, project-snapshot binding, workspace/task/runtime scope, exact active
+   capability-resource versions and locators, and current file identity and runtime policy.
+3. The boundary allows at most 512 inputs and 512 MiB of input bytes, 128 output declarations and
+   1 GiB of declared output bytes. Managed Docker must also report enough `disk_mb` for the full
+   input-plus-declared-output budget; self-hosted runtimes may advertise a tighter
+   `max_project_bytes` capability.
+4. Files marked `runtime_access=denied` or `sensitivity=restricted` never enter a runtime. Common
+   credential containers such as `.env*`, private-key names, and key-store/key-file suffixes are
+   denied independently of metadata.
+5. The worker then verifies storage scope, object size, and SHA-256 for every input before building
+   the archive.
+6. Managed Docker receives the archive under `/workspace/runs/{run_id}`. The Docker SDK assigns
    archive ownership to the runtime user; read-only inputs remain immutable and copy-on-write input
    directories remain writable. Self-hosted workers download the equivalent relative `runs/{run_id}`
    archive after claiming the run.
-4. `.opsmesh/project.json` exposes the frozen configuration and public manifest inside the runtime
+7. `.opsmesh/project.json` exposes the frozen configuration and public manifest inside the runtime
    without object-storage keys.
-5. Completion reads or accepts only the snapshotted output declarations, applies each byte limit,
+8. Completion reads or accepts only the snapshotted output declarations, applies each byte limit,
    and refuses completion if a required output is absent.
-6. Collected bytes become checksum-recorded, workspace-scoped, versioned artifacts. A repeated
+9. Collected bytes become checksum-recorded, workspace-scoped, versioned artifacts. A repeated
    collection returns the same artifact only when its bytes and declaration match.
-7. Durable project-I/O state, file-access events, run events, and audit events record staging,
-   collection, and failures.
+10. Durable project-I/O state, file-access events, run events, audit events, and security events
+    record successful staging/collection and boundary failures. Denial evidence includes stable
+    codes and identifiers or counts only, never content, filenames, or storage paths.
 
 Runtime paths should be internal details, not permanent file identifiers.
 
@@ -257,6 +270,7 @@ bindings.
 
 Runtime I/O endpoints:
 
+- `PUT /api/v1/workspaces/{workspace_id}/files/{file_id}/runtime-policy`
 - `GET /api/v1/workspaces/{workspace_id}/runs/{run_id}/project-io`
 - `GET /api/v1/self-hosted/jobs/{run_id}/project/archive`
 - `PUT /api/v1/self-hosted/jobs/{run_id}/project/outputs/{project_output_id}`
@@ -414,9 +428,10 @@ Each tool enforces workspace and agent permission checks.
 
 The implemented agent content path for `read_workspace_file` additionally enforces the frozen run
 file-ID scope, active file resource grants, a configurable UTF-8 text MIME allowlist, a 1 MiB default
-read limit, bounded object-store reads, storage-prefix validation, and size/checksum integrity. Tool
-results label file text as untrusted workspace input. Binary content is not passed through this text
-tool.
+read limit, explicit runtime-access and sensitivity policy, sensitive filename rules, bounded
+object-store reads, storage-prefix validation, and size/checksum integrity. Runtime-denied files are
+also omitted from `list_workspace_files`. Tool results label file text as untrusted workspace input.
+Binary content is not passed through this text tool.
 
 The implemented artifact write path assigns the artifact UUID before persistence and uses it in the
 workspace-scoped storage key. Model tools and runtime collection write the object before committing

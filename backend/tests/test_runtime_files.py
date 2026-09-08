@@ -1,3 +1,4 @@
+from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 
@@ -29,7 +30,7 @@ def test_runtime_file_staging_and_artifact_collection(tmp_path: Path) -> None:
         filename="input.txt",
         content_type="text/plain",
         size_bytes=5,
-        checksum_sha256="a" * 64,
+        checksum_sha256=sha256(b"hello").hexdigest(),
         storage_key=storage_key,
     )
     session.add(file)
@@ -46,6 +47,7 @@ def test_runtime_file_staging_and_artifact_collection(tmp_path: Path) -> None:
         context=context,
         file_id=file.id,
         relative_path="inputs/input.txt",
+        allowed_file_ids={file.id},
     )
     artifact = service.collect_artifact(
         context=context,
@@ -84,7 +86,12 @@ def test_runtime_staging_rejects_path_escape(tmp_path: Path) -> None:
     service = RuntimeFileService(session, storage, str(tmp_path / "runtime"))
 
     try:
-        service.stage_workspace_file(context=context, file_id=file.id, relative_path="../bad.txt")
+        service.stage_workspace_file(
+            context=context,
+            file_id=file.id,
+            relative_path="../bad.txt",
+            allowed_file_ids={file.id},
+        )
     except ValueError as exc:
         assert "escapes" in str(exc)
     else:

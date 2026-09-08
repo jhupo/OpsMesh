@@ -55,7 +55,18 @@ def test_product_tools_enforce_permissions_and_workspace_scope(tmp_path: Path) -
         checksum_sha256="b" * 64,
         storage_key="workspaces/other/files/secret.txt",
     )
-    session.add_all([task, run, file, other_file])
+    denied_file = WorkspaceFile(
+        workspace_id=workspace.id,
+        uploaded_by_user_id=user.id,
+        filename="restricted.txt",
+        content_type="text/plain",
+        size_bytes=6,
+        checksum_sha256="c" * 64,
+        storage_key=f"workspaces/{workspace.id}/files/restricted.txt",
+        sensitivity="restricted",
+        runtime_access="denied",
+    )
+    session.add_all([task, run, file, other_file, denied_file])
     session.commit()
 
     context = ToolContext(

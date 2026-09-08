@@ -13,9 +13,14 @@ from backend.app.core.config import Settings
 from backend.app.files.models import FileAccessEvent
 from backend.app.files.storage import ObjectStorage, create_storage
 from backend.app.orchestration.run_events import RunEventRecorder
+from backend.app.projects.file_boundaries import (
+    ProjectBoundaryViolation,
+    ProjectFileBoundaryService,
+)
 from backend.app.projects.models import AgentRunProjectSnapshot
 from backend.app.projects.output_artifacts import ProjectOutputArtifactWriter
 from backend.app.projects.run_manifest import (
+    RunProjectManifest,
     RunProjectOutput,
     public_run_project_manifest,
 )
@@ -24,8 +29,10 @@ from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.projects.runtime_io_state import ProjectIOStateService
 from backend.app.projects.runtime_staging import ProjectInputArchiveBuilder
 from backend.app.runs.models import AgentRun
+from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.self_hosted.models import SelfHostedJobClaim
 from backend.app.self_hosted.types import AuthenticatedWorker
+from backend.app.tasks.models import Task
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +74,18 @@ class SelfHostedProjectFileService:
         )
         if snapshot is None:
             return None
-        manifest = self._states.manifest(snapshot, run, stage="input_staging")
+        try:
+            manifest = self._validated_manifest(run, snapshot, auth.runtime)
+        except ProjectRunIOError as exc:
+            state = self._states.lock_or_create(
+                run,
+                snapshot,
+                auth.runtime,
+                f"runs/{run.id}",
+                stage="input_staging",
+            )
+            self._states.record_failure(run, state, exc)
+            raise
         return SelfHostedProjectContract(
             root_path=f"runs/{run.id}",
             snapshot_id=snapshot.id,
@@ -96,7 +114,7 @@ class SelfHostedProjectFileService:
             stage="input_staging",
         )
         try:
-            manifest = self._states.manifest(snapshot, run, stage="input_staging")
+            manifest = self._validated_manifest(run, snapshot, auth.runtime)
             archive = ProjectInputArchiveBuilder(self._object_storage()).build(
                 run=run,
                 snapshot=snapshot,
@@ -138,7 +156,12 @@ class SelfHostedProjectFileService:
         project_output_id: UUID,
     ) -> int:
         run = self._claimed_run(auth, agent_run_id)
-        _, output = self._declared_output(run, project_output_id, lock=False)
+        _, output = self._declared_output(
+            run,
+            auth.runtime,
+            project_output_id,
+            lock=True,
+        )
         return output.max_bytes
 
     def upload_output(
@@ -151,7 +174,12 @@ class SelfHostedProjectFileService:
         content_type: str | None,
     ) -> Artifact:
         run = self._claimed_run(auth, agent_run_id, lock=True)
-        snapshot, output = self._declared_output(run, project_output_id, lock=True)
+        snapshot, output = self._declared_output(
+            run,
+            auth.runtime,
+            project_output_id,
+            lock=True,
+        )
         self._validate_output_payload(output, content, content_type)
         try:
             prepared = ProjectOutputArtifactWriter(
@@ -196,7 +224,34 @@ class SelfHostedProjectFileService:
         artifacts = self._states.harvested_artifacts(run)
         if state.status == "harvested":
             return artifacts
-        manifest = self._states.manifest(snapshot, run, stage="output_harvest")
+        runtime = self._session.scalar(
+            select(WorkspaceRuntime).where(
+                WorkspaceRuntime.workspace_id == run.workspace_id,
+                WorkspaceRuntime.id == state.workspace_runtime_id,
+            )
+        )
+        if runtime is None:
+            error = ProjectRunIOError(
+                code="project_runtime_unavailable",
+                message="The authorized project runtime is unavailable",
+                stage="output_harvest",
+                retryable=False,
+                metadata={"boundary_denial": True},
+            )
+            self._states.record_failure(run, state, error)
+            raise error
+        try:
+            manifest = self._states.manifest(snapshot, run, stage="output_harvest")
+            self._validate_boundary(
+                run,
+                snapshot,
+                runtime,
+                manifest,
+                stage="output_harvest",
+            )
+        except ProjectRunIOError as exc:
+            self._states.record_failure(run, state, exc)
+            raise
         artifact_output_ids = {
             artifact.workspace_project_output_id for artifact in artifacts
         }
@@ -219,6 +274,7 @@ class SelfHostedProjectFileService:
     def _declared_output(
         self,
         run: AgentRun,
+        runtime: WorkspaceRuntime,
         project_output_id: UUID,
         *,
         lock: bool,
@@ -232,7 +288,18 @@ class SelfHostedProjectFileService:
                 retryable=False,
             )
         snapshot = self._states.snapshot_for_state(run, state, stage="output_harvest")
-        manifest = self._states.manifest(snapshot, run, stage="output_harvest")
+        try:
+            manifest = self._states.manifest(snapshot, run, stage="output_harvest")
+            self._validate_boundary(
+                run,
+                snapshot,
+                runtime,
+                manifest,
+                stage="output_harvest",
+            )
+        except ProjectRunIOError as exc:
+            self._states.record_failure(run, state, exc)
+            raise
         output = next(
             (item for item in manifest.outputs if item.project_output_id == project_output_id),
             None,
@@ -341,3 +408,62 @@ class SelfHostedProjectFileService:
         if self._storage is None:
             self._storage = create_storage(self._settings)
         return self._storage
+
+    def _validated_manifest(
+        self,
+        run: AgentRun,
+        snapshot: AgentRunProjectSnapshot,
+        runtime: WorkspaceRuntime,
+    ) -> RunProjectManifest:
+        manifest = self._states.manifest(snapshot, run, stage="input_staging")
+        self._validate_boundary(
+            run,
+            snapshot,
+            runtime,
+            manifest,
+            stage="input_staging",
+        )
+        return manifest
+
+    def _validate_boundary(
+        self,
+        run: AgentRun,
+        snapshot: AgentRunProjectSnapshot,
+        runtime: WorkspaceRuntime,
+        manifest: RunProjectManifest,
+        *,
+        stage: str,
+    ) -> None:
+        if run.task_id is None:
+            error = ProjectRunIOError(
+                code="project_task_missing",
+                message="Project run task is unavailable",
+                stage=stage,
+                retryable=False,
+                metadata={"boundary_denial": True},
+            )
+            raise error
+        task = self._session.scalar(
+            select(Task).where(Task.workspace_id == run.workspace_id, Task.id == run.task_id)
+        )
+        if task is None:
+            error = ProjectRunIOError(
+                code="project_task_missing",
+                message="Project run task is unavailable",
+                stage=stage,
+                retryable=False,
+                metadata={"boundary_denial": True},
+            )
+            raise error
+        boundaries = ProjectFileBoundaryService(self._session)
+        try:
+            boundaries.validate_runtime_io(
+                run=run,
+                task=task,
+                runtime=runtime,
+                project_snapshot=snapshot,
+                manifest=manifest,
+            )
+        except ProjectBoundaryViolation as exc:
+            error = boundaries.as_io_error(exc, stage=stage)
+            raise error from exc

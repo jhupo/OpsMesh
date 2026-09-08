@@ -34,7 +34,8 @@ curl -X POST https://opsmesh.example.com/api/v1/self-hosted/register \
     "version": "0.1.0",
     "capabilities": {
       "allowed_tools": ["workspace.search"],
-      "max_concurrent_mcp_jobs": 1
+      "max_concurrent_mcp_jobs": 1,
+      "max_project_bytes": 536870912
     }
   }'
 ```
@@ -80,6 +81,13 @@ worker cannot download or upload for the claim. Undeclared IDs, oversized bodies
 mismatches, invalid snapshots, and completion with missing required outputs fail closed. Upload
 retries are idempotent only for identical bytes; successful outputs become versioned artifacts and
 the completed harvest is recorded durably.
+
+Before returning project metadata or archive bytes, the control plane revalidates the frozen v2
+authorization, exact capability-resource versions and locators, current file policy, aggregate
+project limits, and the worker's optional `max_project_bytes` capacity. This value is a declared
+self-hosted capability and a scheduling/transfer limit; it is not presented as host-disk
+attestation. Boundary denials are retained as run, audit, and security evidence without filenames,
+storage paths, or file content.
 
 ## Stdio MCP Credentials
 

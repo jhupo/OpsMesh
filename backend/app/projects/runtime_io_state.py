@@ -15,6 +15,7 @@ from backend.app.projects.run_manifest import RunProjectManifest, parse_run_proj
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.runs.models import AgentRun
 from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.security.models import SecurityEvent
 
 
 class ProjectIOStateService:
@@ -113,6 +114,7 @@ class ProjectIOStateService:
                 message="Run project snapshot failed integrity validation",
                 stage=stage,
                 retryable=False,
+                metadata={"boundary_denial": True},
             ) from exc
 
     def mark_inputs_staged(
@@ -226,6 +228,27 @@ class ProjectIOStateService:
             target_id=run.id,
             metadata={"code": error.code, **error.metadata},
         )
+        if error.metadata.get("boundary_denial") is True:
+            self._session.add(
+                SecurityEvent(
+                    workspace_id=run.workspace_id,
+                    user_id=None,
+                    action="project.file_boundary_blocked",
+                    outcome="blocked",
+                    severity="high",
+                    source_ip=None,
+                    user_agent=None,
+                    request_id=None,
+                    path="internal:project_file_gateway",
+                    method="WORKER",
+                    reason=error.code,
+                    event_metadata={
+                        "agent_run_id": str(run.id),
+                        "stage": error.metadata.get("stage"),
+                    },
+                    created_at=datetime.now(UTC),
+                )
+            )
         self._session.commit()
 
     def harvested_artifacts(self, run: AgentRun) -> list[Artifact]:

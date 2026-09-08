@@ -3489,6 +3489,54 @@ def test_workspace_archive_import_rejects_invalid_resolution_json(tmp_path: Path
     assert response.json()["error"]["message"] == "Archive import resolutions must be valid JSON"
 
 
+def test_workspace_archive_import_rejects_missing_file_runtime_policy(tmp_path: Path) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-policy-contract@example.com",
+        slug="source-policy-contract",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-policy-contract@example.com",
+        slug="target-policy-contract",
+    )
+    uploaded = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/files",
+        headers=_headers(source_user.id),
+        files={"file": ("brief.txt", b"portable data", "text/plain")},
+    )
+    assert uploaded.status_code == 201
+    exported = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
+        headers=_headers(source_user.id),
+        json={"include_audit_events": False},
+    )
+    assert exported.status_code == 200
+    mutated = BytesIO()
+    with ZipFile(BytesIO(exported.content)) as source_archive, ZipFile(
+        mutated,
+        "w",
+        ZIP_DEFLATED,
+    ) as target_archive:
+        for name in source_archive.namelist():
+            content = source_archive.read(name)
+            if name == "metadata.json":
+                metadata = json.loads(content)
+                metadata["files"][0].pop("sensitivity")
+                content = json.dumps(metadata).encode()
+            target_archive.writestr(name, content)
+
+    response = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import/preview",
+        headers=_headers(target_user.id),
+        files={"file": ("archive.zip", mutated.getvalue(), "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "Workspace file sensitivity is invalid"
+
+
 def test_workspace_archive_import_restores_metadata_and_file_bytes(tmp_path: Path) -> None:
     client, session = _client(tmp_path)
     source_user, source_workspace = _seed_workspace(
@@ -3507,6 +3555,13 @@ def test_workspace_archive_import_restores_metadata_and_file_bytes(tmp_path: Pat
         files={"file": ("brief.txt", b"portable data", "text/plain")},
     )
     assert uploaded.status_code == 201
+    policy = client.put(
+        f"/api/v1/workspaces/{source_workspace.id}/files/"
+        f"{uploaded.json()['id']}/runtime-policy",
+        headers=_headers(source_user.id),
+        json={"sensitivity": "confidential", "runtime_access": "denied"},
+    )
+    assert policy.status_code == 200
     archive_response = client.post(
         f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
         headers=_headers(source_user.id),
@@ -3539,6 +3594,8 @@ def test_workspace_archive_import_restores_metadata_and_file_bytes(tmp_path: Pat
     )
     assert imported_file is not None
     assert imported_file.filename == "Imported brief.txt"
+    assert imported_file.sensitivity == "confidential"
+    assert imported_file.runtime_access == "denied"
     downloaded = client.get(
         f"/api/v1/workspaces/{target_workspace.id}/files/{imported_file.id}/download",
         headers=_headers(target_user.id),

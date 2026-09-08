@@ -1245,6 +1245,23 @@ def test_docker_sdk_archive_transfer_uses_runtime_identity() -> None:
         assert member.mode == 0o644
 
 
+def test_docker_sdk_archive_rejects_non_normalized_paths() -> None:
+    from backend.app.runtime_manager.docker_client import _rewrite_archive_owner
+
+    source = io.BytesIO()
+    with tarfile.open(fileobj=source, mode="w") as archive:
+        member = tarfile.TarInfo("runs\\run-1\\..\\escape.txt")
+        member.size = 2
+        archive.addfile(member, io.BytesIO(b"no"))
+
+    try:
+        _rewrite_archive_owner(source.getvalue(), uid=1000, gid=1000)
+    except ValueError as exc:
+        assert str(exc) == "Runtime input archive contains an unsafe path"
+    else:
+        raise AssertionError("Expected an unsafe runtime archive path to be rejected")
+
+
 def test_runtime_control_service_applies_team_runtime_space_policy() -> None:
     session = _session()
     workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme", settings={})

@@ -11,6 +11,10 @@ from backend.app.artifacts.models import Artifact
 from backend.app.core.config import Settings
 from backend.app.files.models import FileAccessEvent
 from backend.app.files.storage import ObjectStorage, create_storage
+from backend.app.projects.file_boundaries import (
+    ProjectBoundaryViolation,
+    ProjectFileBoundaryService,
+)
 from backend.app.projects.models import AgentRunProjectIOState, AgentRunProjectSnapshot
 from backend.app.projects.output_artifacts import ProjectOutputArtifactWriter
 from backend.app.projects.run_manifest import RunProjectManifest
@@ -22,6 +26,7 @@ from backend.app.runs.models import AgentRun
 from backend.app.runtime_manager.backends import build_runtime_backend_registry
 from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
 from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.tasks.models import Task
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,11 +79,19 @@ class RunProjectIOService:
             filesystem.root_path,
             stage="input_staging",
         )
-        if state.status in {"staged", "harvesting", "harvested"}:
-            return self._stage_result(state)
-
         try:
             manifest = self._states.manifest(snapshot, run, stage="input_staging")
+            task = self._task(run, stage="input_staging")
+            self._validate_boundary(
+                run=run,
+                task=task,
+                runtime=runtime,
+                snapshot=snapshot,
+                manifest=manifest,
+                stage="input_staging",
+            )
+            if state.status in {"staged", "harvesting", "harvested"}:
+                return self._stage_result(state)
             archive = ProjectInputArchiveBuilder(self._object_storage()).build(
                 run=run,
                 snapshot=snapshot,
@@ -131,9 +144,17 @@ class RunProjectIOService:
                 retryable=False,
             )
         resolved = self._runtime_filesystem(run, stage="output_harvest")
-        _, filesystem = resolved
-        state.status = "harvesting"
+        runtime, filesystem = resolved
         try:
+            self._validate_boundary(
+                run=run,
+                task=self._task(run, stage="output_harvest"),
+                runtime=runtime,
+                snapshot=snapshot,
+                manifest=manifest,
+                stage="output_harvest",
+            )
+            state.status = "harvesting"
             output_contents = self._read_declared_outputs(run, manifest, filesystem)
             return self._persist_harvested_outputs(
                 run=run,
@@ -309,6 +330,53 @@ class RunProjectIOService:
         if self._storage is None:
             self._storage = create_storage(self._settings)
         return self._storage
+
+    def _task(self, run: AgentRun, *, stage: str) -> Task:
+        if run.task_id is None:
+            raise ProjectRunIOError(
+                code="project_task_missing",
+                message="Project run task is unavailable",
+                stage=stage,
+                retryable=False,
+                metadata={"boundary_denial": True},
+            )
+        task = self._session.scalar(
+            select(Task).where(
+                Task.workspace_id == run.workspace_id,
+                Task.id == run.task_id,
+            )
+        )
+        if task is None:
+            raise ProjectRunIOError(
+                code="project_task_missing",
+                message="Project run task is unavailable",
+                stage=stage,
+                retryable=False,
+                metadata={"boundary_denial": True},
+            )
+        return task
+
+    def _validate_boundary(
+        self,
+        *,
+        run: AgentRun,
+        task: Task,
+        runtime: WorkspaceRuntime,
+        snapshot: AgentRunProjectSnapshot,
+        manifest: RunProjectManifest,
+        stage: str,
+    ) -> None:
+        boundaries = ProjectFileBoundaryService(self._session)
+        try:
+            boundaries.validate_runtime_io(
+                run=run,
+                task=task,
+                runtime=runtime,
+                project_snapshot=snapshot,
+                manifest=manifest,
+            )
+        except ProjectBoundaryViolation as exc:
+            raise boundaries.as_io_error(exc, stage=stage) from exc
 
     @staticmethod
     def _stage_result(state: AgentRunProjectIOState) -> ProjectStageResult:

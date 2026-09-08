@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import BigInteger, ForeignKey, Index, String
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,6 +13,18 @@ class WorkspaceFile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_workspace_files_workspace_status", "workspace_id", "status"),
         Index("ix_workspace_files_workspace_checksum", "workspace_id", "checksum_sha256"),
+        CheckConstraint(
+            "sensitivity in ('public', 'internal', 'confidential', 'restricted')",
+            name="sensitivity_valid",
+        ),
+        CheckConstraint(
+            "runtime_access in ('allowed', 'denied')",
+            name="runtime_access_valid",
+        ),
+        CheckConstraint(
+            "sensitivity != 'restricted' or runtime_access = 'denied'",
+            name="restricted_runtime_denied",
+        ),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -33,6 +45,16 @@ class WorkspaceFile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    sensitivity: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="internal",
+    )
+    runtime_access: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="allowed",
+    )
     file_metadata: Mapped[dict[str, object]] = mapped_column(
         "metadata",
         JSONB,

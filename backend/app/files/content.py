@@ -5,6 +5,7 @@ from hashlib import sha256
 from uuid import UUID
 
 from backend.app.files.models import WorkspaceFile
+from backend.app.files.runtime_policy import runtime_file_denial_code
 from backend.app.files.security import validate_storage_key
 from backend.app.files.storage import ObjectStorage, StorageObjectTooLargeError
 
@@ -61,6 +62,18 @@ class WorkspaceFileContentReader:
             raise WorkspaceFileReadError(
                 "workspace_file_not_found",
                 "Workspace file not found",
+            )
+        try:
+            denial_code = runtime_file_denial_code(file)
+        except ValueError as exc:
+            raise WorkspaceFileReadError(
+                "workspace_file_runtime_policy_invalid",
+                "Workspace file runtime policy is invalid",
+            ) from exc
+        if denial_code is not None:
+            raise WorkspaceFileReadError(
+                denial_code,
+                "Workspace file is blocked by its runtime access policy",
             )
         content_type = _normalized_content_type(file.content_type)
         if content_type not in self._allowed_content_types:

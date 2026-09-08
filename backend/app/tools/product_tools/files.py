@@ -8,6 +8,7 @@ from backend.app.artifacts.models import Artifact
 from backend.app.artifacts.persistence import ArtifactPersistenceError
 from backend.app.files.content import WorkspaceFileContent, WorkspaceFileReadError
 from backend.app.files.models import WorkspaceFile
+from backend.app.files.runtime_policy import runtime_file_denial_code
 from backend.app.files.security import safe_filename
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import TaskStep
@@ -26,13 +27,15 @@ class WorkspaceFileProductTools(ProductToolEventRecorder):
         context.require_tool("list_workspace_files")
         self._append_tool_event(context, "tool.called", "list_workspace_files")
         statement = select(WorkspaceFile).where(
-            WorkspaceFile.workspace_id == context.workspace_id
+            WorkspaceFile.workspace_id == context.workspace_id,
+            WorkspaceFile.status == "active",
         )
         if allowed_file_ids is not None:
             statement = statement.where(WorkspaceFile.id.in_(allowed_file_ids))
-        files = list(
+        candidates = list(
             self._session.scalars(statement.order_by(WorkspaceFile.created_at.desc())).all()
         )
+        files = [file for file in candidates if _visible_to_agent_runtime(file)]
         self._append_tool_event(context, "tool.completed", "list_workspace_files")
         return files
 
@@ -164,3 +167,10 @@ class WorkspaceFileProductTools(ProductToolEventRecorder):
             )
             .order_by(Artifact.version.desc(), Artifact.created_at.desc())
         )
+
+
+def _visible_to_agent_runtime(file: WorkspaceFile) -> bool:
+    try:
+        return runtime_file_denial_code(file) is None
+    except ValueError:
+        return False

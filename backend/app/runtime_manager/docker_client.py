@@ -267,7 +267,13 @@ def _rewrite_archive_owner(archive: bytes, *, uid: int, gid: int) -> bytes:
             for member in source.getmembers():
                 if member.issym() or member.islnk() or member.isdev():
                     raise ValueError("Runtime input archive contains an unsupported entry")
-                if member.name.startswith("/") or ".." in member.name.split("/"):
+                normalized_parts = member.name.split("/")
+                if (
+                    not member.name
+                    or "\\" in member.name
+                    or member.name.startswith("/")
+                    or any(part in {"", ".", ".."} for part in normalized_parts)
+                ):
                     raise ValueError("Runtime input archive contains an unsafe path")
                 member.uid = uid
                 member.gid = gid

@@ -35,8 +35,10 @@ from backend.app.projects.models import (
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.projects.serialization import sha256_json
 from backend.app.runs.models import AgentRun
+from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.tasks.models import Task
 from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.tests.fixtures.project_authorization import authorize_project_run
 
 TOKEN = "self-hosted-project-token"
 
@@ -291,6 +293,15 @@ def _seed_project_run(
     )
     session.add(run)
     session.flush()
+    runtime = session.get(WorkspaceRuntime, runtime_id)
+    assert runtime is not None
+    authorize_project_run(
+        session,
+        run=run,
+        task=task,
+        runtime=runtime,
+        files=[source],
+    )
     RunProjectSnapshotService(session).freeze_for_run(run=run, task=task)
     session.commit()
     storage.write(storage_key, content)

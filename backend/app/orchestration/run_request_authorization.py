@@ -61,6 +61,8 @@ class RunAuthorizationService:
         task: Task | None,
         profile: AgentProfile | None,
         snapshot: dict[str, object],
+        *,
+        lock_resources: bool = False,
     ) -> None:
         _ = profile
         if not snapshot:
@@ -111,6 +113,7 @@ class RunAuthorizationService:
         self._require_active_capability_resources(
             run.workspace_id,
             resource_grants_for_snapshot(snapshot),
+            lock=lock_resources,
         )
 
     def _record_runtime_denial(
@@ -158,20 +161,37 @@ class RunAuthorizationService:
         self,
         workspace_id: UUID,
         grants: tuple[AgentRuntimeResourceGrant, ...],
+        *,
+        lock: bool,
     ) -> None:
         if not grants:
             return
-        active_ids = set(
-            self.session.scalars(
-                select(CapabilityResource.id).where(
-                    CapabilityResource.workspace_id == workspace_id,
-                    CapabilityResource.status == "active",
-                    CapabilityResource.id.in_([grant.resource_id for grant in grants]),
-                )
-            ).all()
+        statement = select(CapabilityResource).where(
+            CapabilityResource.workspace_id == workspace_id,
+            CapabilityResource.status == "active",
+            CapabilityResource.id.in_([grant.resource_id for grant in grants]),
         )
-        if any(grant.resource_id not in active_ids for grant in grants):
+        if lock:
+            statement = statement.with_for_update()
+        resources = {
+            resource.id: resource
+            for resource in self.session.scalars(statement).all()
+        }
+        if len(resources) != len(grants):
             raise ValueError("Authorization snapshot references a disabled capability resource")
+        for grant in grants:
+            resource = resources.get(grant.resource_id)
+            if resource is None:
+                raise ValueError(
+                    "Authorization snapshot references a disabled capability resource"
+                )
+            if (
+                resource.version != grant.version
+                or resource.resource_type != grant.resource_type
+                or resource.access_mode != grant.access_mode
+                or resource.locator != grant.locator
+            ):
+                raise ValueError("Authorization snapshot capability resource has changed")
 
     def step_context_for_run(self, run: AgentRun) -> dict[str, object]:
         if run.task_step_id is None:

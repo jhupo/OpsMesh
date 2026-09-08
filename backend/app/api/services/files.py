@@ -8,11 +8,14 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
 from backend.app.artifacts.models import Artifact
+from backend.app.audit.service import AuditService
 from backend.app.db.pagination import page_scalars
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
+from backend.app.files.runtime_policy import validate_file_runtime_policy
 from backend.app.files.security import safe_filename
 from backend.app.files.storage import ObjectStorage
 from backend.app.files.storage_transactions import CompensatingObjectStorageWrites
+from backend.app.memory.indexing import WorkspaceMemoryIndexingService
 from backend.app.tasks.models import Task, TaskStep
 
 T = TypeVar("T")
@@ -91,6 +94,49 @@ class WorkspaceFileService:
         )
         self._session.commit()
         return file, self._storage.read(file.storage_key)
+
+    def update_runtime_policy(
+        self,
+        *,
+        workspace_id: UUID,
+        file_id: UUID,
+        user_id: UUID,
+        sensitivity: str,
+        runtime_access: str,
+    ) -> WorkspaceFile:
+        file = self._session.scalar(
+            select(WorkspaceFile)
+            .where(
+                WorkspaceFile.workspace_id == workspace_id,
+                WorkspaceFile.id == file_id,
+                WorkspaceFile.status == "active",
+            )
+            .with_for_update()
+        )
+        if file is None:
+            raise FileNotFoundError("Workspace file not found")
+        file.sensitivity, file.runtime_access = validate_file_runtime_policy(
+            sensitivity=sensitivity,
+            runtime_access=runtime_access,
+        )
+        WorkspaceMemoryIndexingService(self._session).refresh_file(
+            workspace_id=workspace_id,
+            file_id=file.id,
+        )
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action="file.runtime_policy.updated",
+            target_type="workspace_file",
+            target_id=file.id,
+            metadata={
+                "sensitivity": sensitivity,
+                "runtime_access": runtime_access,
+            },
+        )
+        self._session.commit()
+        self._session.refresh(file)
+        return file
 
     def list_artifacts(self, workspace_id: UUID, page: PageParams) -> tuple[list[Artifact], int]:
         statement = (

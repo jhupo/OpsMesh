@@ -10,6 +10,7 @@ from backend.app.api.schemas.files import (
     ArtifactResponse,
     FinalOutputArtifactHistoryResponse,
     WorkspaceFileResponse,
+    WorkspaceFileRuntimePolicyRequest,
 )
 from backend.app.api.services.files import WorkspaceFileService
 from backend.app.auth.context import WorkspaceContext
@@ -94,6 +95,31 @@ async def download_file(
         media_type=file.content_type,
         headers={"Content-Disposition": content_disposition_attachment(file.filename)},
     )
+
+
+@router.put("/files/{file_id}/runtime-policy", response_model=WorkspaceFileResponse)
+async def update_file_runtime_policy(
+    file_id: UUID,
+    request: WorkspaceFileRuntimePolicyRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    service: WorkspaceFileService = Depends(file_service),
+) -> WorkspaceFileResponse:
+    try:
+        file = service.update_runtime_policy(
+            workspace_id=context.workspace.id,
+            file_id=file_id,
+            user_id=context.user.user_id,
+            sensitivity=request.sensitivity,
+            runtime_access=request.runtime_access,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    return WorkspaceFileResponse.model_validate(file)
 
 
 @router.get("/artifacts", response_model=PageResponse[ArtifactResponse])

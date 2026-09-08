@@ -198,6 +198,8 @@ def _file_payload(file: WorkspaceFile) -> dict[str, object]:
         "size_bytes": file.size_bytes,
         "checksum_sha256": file.checksum_sha256,
         "status": file.status,
+        "sensitivity": file.sensitivity,
+        "runtime_access": file.runtime_access,
         "metadata": file.file_metadata,
         "created_at": _dt(file.created_at),
         "updated_at": _dt(file.updated_at),
@@ -307,4 +309,3 @@ def _dt_or_none(value: datetime | None) -> str | None:
 
 def _str_or_none(value: object | None) -> str | None:
     return str(value) if value is not None else None
-

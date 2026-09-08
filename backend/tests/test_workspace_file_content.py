@@ -50,6 +50,35 @@ def test_agent_file_reader_rejects_type_and_declared_or_actual_oversize(
     assert actual_error.value.code == "workspace_file_too_large"
 
 
+def test_agent_file_reader_rejects_runtime_denied_and_secret_named_files(
+    tmp_path: Path,
+) -> None:
+    workspace_id = uuid4()
+    storage = LocalStorage(str(tmp_path / "storage"))
+    reader = WorkspaceFileContentReader(storage)
+    denied = _file(
+        workspace_id,
+        filename="notes.txt",
+        content_type="text/plain",
+        content=b"denied",
+    )
+    denied.runtime_access = "denied"
+    secret_named = _file(
+        workspace_id,
+        filename=".env.production",
+        content_type="text/plain",
+        content=b"secret",
+    )
+
+    with pytest.raises(WorkspaceFileReadError) as denied_error:
+        reader.read(denied, workspace_id=workspace_id)
+    with pytest.raises(WorkspaceFileReadError) as secret_error:
+        reader.read(secret_named, workspace_id=workspace_id)
+
+    assert denied_error.value.code == "project_input_runtime_access_denied"
+    assert secret_error.value.code == "project_input_sensitive_file_denied"
+
+
 def _file(
     workspace_id: UUID,
     *,
@@ -65,4 +94,6 @@ def _file(
         checksum_sha256=sha256(content).hexdigest(),
         storage_key=f"workspaces/{workspace_id}/files/{filename}",
         status="active",
+        sensitivity="internal",
+        runtime_access="allowed",
     )
