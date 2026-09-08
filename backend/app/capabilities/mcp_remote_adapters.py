@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine
 from datetime import timedelta
 from queue import Queue
@@ -37,7 +38,11 @@ MCP_REMOTE_CALL_MAX_ATTEMPTS = 2
 T = TypeVar("T")
 
 
-class StreamableHttpMcpToolAdapter:
+class BaseRemoteMcpToolAdapter(ABC):
+    @property
+    @abstractmethod
+    def transport(self) -> str: ...
+
     def __init__(
         self,
         *,
@@ -62,7 +67,7 @@ class StreamableHttpMcpToolAdapter:
         )
         if not url:
             raise McpExecutionError("HTTP MCP server is missing url", code="mcp_server_url_missing")
-        validate_mcp_url(url, egress_policy=self._egress_policy, transport="http")
+        validate_mcp_url(url, egress_policy=self._egress_policy, transport=self.transport)
         headers = {
             **string_dict_setting(server.connection, "headers"),
             **self._credential_headers(credential_refs),
@@ -73,8 +78,8 @@ class StreamableHttpMcpToolAdapter:
             tool_name=tool_name,
             arguments=arguments,
             timeout_seconds=timeout_seconds,
-            circuit_key=mcp_circuit_key(url, transport="http"),
-            transport="http",
+            circuit_key=mcp_circuit_key(url, transport=self.transport),
+            transport=self.transport,
         )
 
     def _credential_headers(self, credential_refs: list[McpCredentialReference]) -> dict[str, str]:
@@ -109,36 +114,16 @@ class StreamableHttpMcpToolAdapter:
         return headers
 
 
-class SseMcpToolAdapter(StreamableHttpMcpToolAdapter):
-    def call(
-        self,
-        *,
-        server: McpServer,
-        tool_name: str,
-        arguments: dict[str, object],
-        credential_refs: list[McpCredentialReference],
-        timeout_seconds: int,
-    ) -> dict[str, object]:
-        url = string_setting(server.connection, "url") or string_setting(
-            server.connection,
-            "endpoint",
-        )
-        if not url:
-            raise McpExecutionError("SSE MCP server is missing url", code="mcp_server_url_missing")
-        validate_mcp_url(url, egress_policy=self._egress_policy, transport="sse")
-        headers = {
-            **string_dict_setting(server.connection, "headers"),
-            **self._credential_headers(credential_refs),
-        }
-        return call_remote_mcp(
-            url=url,
-            headers=headers,
-            tool_name=tool_name,
-            arguments=arguments,
-            timeout_seconds=timeout_seconds,
-            circuit_key=mcp_circuit_key(url, transport="sse"),
-            transport="sse",
-        )
+class StreamableHttpMcpToolAdapter(BaseRemoteMcpToolAdapter):
+    @property
+    def transport(self) -> str:
+        return "http"
+
+
+class SseMcpToolAdapter(BaseRemoteMcpToolAdapter):
+    @property
+    def transport(self) -> str:
+        return "sse"
 
 
 class HostedMcpToolAdapter:
