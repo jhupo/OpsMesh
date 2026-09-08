@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, Protocol
 from urllib.parse import urljoin
 
 import httpx
@@ -13,8 +13,7 @@ from backend.app.model_providers.model_api import (
     canonical_model_api,
 )
 from backend.app.model_providers.provider_keys import (
-    is_anthropic_provider,
-    is_openai_compatible_provider,
+    canonical_model_provider,
 )
 
 ProviderHealthStatus = Literal["healthy", "degraded", "unhealthy"]
@@ -85,11 +84,8 @@ async def probe_model_provider(
 ) -> ModelProviderHealthCheckResult:
     timeout = httpx.Timeout(timeout_seconds)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        if is_openai_compatible_provider(target.provider):
-            checks = await _probe_openai_compatible(client, target, probes=probes)
-        elif is_anthropic_provider(target.provider):
-            checks = await _probe_anthropic(client, target, probes=probes)
-        else:
+        adapter = ProviderHealthRegistry().resolve(target.provider)
+        if adapter is None:
             checks = (
                 ModelProviderHealthCheck(
                     name="models",
@@ -98,42 +94,119 @@ async def probe_model_provider(
                     message=f"Provider '{target.provider}' is not supported by health checks.",
                 ),
             )
+        else:
+            checks = await adapter.probe(client, target, probes=probes)
     return ModelProviderHealthCheckResult(
         status=_aggregate_status(checks),
         checks=tuple(checks),
     )
 
 
-async def _probe_openai_compatible(
-    client: httpx.AsyncClient,
-    target: ModelProviderHealthTarget,
-    *,
-    probes: tuple[ProviderProbeName, ...],
-) -> tuple[ModelProviderHealthCheck, ...]:
-    checks: list[ModelProviderHealthCheck] = []
-    base_url = _base_url(target.base_url, default=DEFAULT_OPENAI_BASE_URL)
-    headers = {"Authorization": f"Bearer {target.api_key}"}
-    if "models" in probes:
-        checks.append(
-            await _request_check(
-                client,
-                name="models",
-                method="GET",
-                url=_join_url(base_url, "models"),
-                headers=headers,
-                success_metadata=lambda data: _models_metadata(data, target.model),
+class ProviderHealthProbe(Protocol):
+    async def probe(
+        self,
+        client: httpx.AsyncClient,
+        target: ModelProviderHealthTarget,
+        *,
+        probes: tuple[ProviderProbeName, ...],
+    ) -> tuple[ModelProviderHealthCheck, ...]: ...
+
+
+class OpenAICompatibleHealthProbe:
+    async def probe(
+        self,
+        client: httpx.AsyncClient,
+        target: ModelProviderHealthTarget,
+        *,
+        probes: tuple[ProviderProbeName, ...],
+    ) -> tuple[ModelProviderHealthCheck, ...]:
+        checks: list[ModelProviderHealthCheck] = []
+        base_url = _base_url(target.base_url, default=DEFAULT_OPENAI_BASE_URL)
+        headers = {"Authorization": f"Bearer {target.api_key}"}
+        if "models" in probes:
+            checks.append(
+                await _request_check(
+                    client,
+                    name="models",
+                    method="GET",
+                    url=_join_url(base_url, "models"),
+                    headers=headers,
+                    success_metadata=lambda data: _models_metadata(data, target.model),
+                )
             )
-        )
-    if "inference" in probes:
-        checks.append(
-            await _openai_inference_check(
-                client,
-                target=target,
-                base_url=base_url,
-                headers=headers,
+        if "inference" in probes:
+            checks.append(
+                await _openai_inference_check(
+                    client,
+                    target=target,
+                    base_url=base_url,
+                    headers=headers,
+                )
             )
+        return tuple(checks)
+
+
+class AnthropicHealthProbe:
+    async def probe(
+        self,
+        client: httpx.AsyncClient,
+        target: ModelProviderHealthTarget,
+        *,
+        probes: tuple[ProviderProbeName, ...],
+    ) -> tuple[ModelProviderHealthCheck, ...]:
+        checks: list[ModelProviderHealthCheck] = []
+        base_url = _base_url(target.base_url, default=DEFAULT_ANTHROPIC_BASE_URL)
+        headers = {
+            "x-api-key": target.api_key,
+            "anthropic-version": "2023-06-01",
+        }
+        if "models" in probes:
+            checks.append(
+                await _request_check(
+                    client,
+                    name="models",
+                    method="GET",
+                    url=_join_url(base_url, "v1/models"),
+                    headers=headers,
+                    success_metadata=lambda data: _models_metadata(data, target.model),
+                )
+            )
+        if "inference" in probes:
+            checks.append(
+                await _request_check(
+                    client,
+                    name="inference",
+                    method="POST",
+                    url=_join_url(base_url, "v1/messages"),
+                    headers=headers,
+                    json={
+                        "model": target.model,
+                        "max_tokens": 20,
+                        "messages": [{"role": "user", "content": "Reply with exactly: ok"}],
+                    },
+                    success_metadata=lambda _data: {
+                        "model": target.model,
+                        "model_api": ANTHROPIC_MESSAGES_API,
+                    },
+                )
+            )
+        return tuple(checks)
+
+
+class ProviderHealthRegistry:
+    def __init__(self, adapters: dict[str, ProviderHealthProbe] | None = None) -> None:
+        self._adapters = (
+            dict(adapters)
+            if adapters is not None
+            else {
+                "openai": OpenAICompatibleHealthProbe(),
+                "openai-compatible": OpenAICompatibleHealthProbe(),
+                "anthropic": AnthropicHealthProbe(),
+            }
         )
-    return tuple(checks)
+
+    def resolve(self, provider: str | None) -> ProviderHealthProbe | None:
+        return self._adapters.get(canonical_model_provider(provider))
 
 
 async def _openai_inference_check(
@@ -178,53 +251,6 @@ async def _openai_inference_check(
             "model_api": OPENAI_CHAT_COMPLETIONS_API,
         },
     )
-
-
-async def _probe_anthropic(
-    client: httpx.AsyncClient,
-    target: ModelProviderHealthTarget,
-    *,
-    probes: tuple[ProviderProbeName, ...],
-) -> tuple[ModelProviderHealthCheck, ...]:
-    checks: list[ModelProviderHealthCheck] = []
-    base_url = _base_url(target.base_url, default=DEFAULT_ANTHROPIC_BASE_URL)
-    headers = {
-        "x-api-key": target.api_key,
-        "anthropic-version": "2023-06-01",
-    }
-    if "models" in probes:
-        checks.append(
-            await _request_check(
-                client,
-                name="models",
-                method="GET",
-                url=_join_url(base_url, "v1/models"),
-                headers=headers,
-                success_metadata=lambda data: _models_metadata(data, target.model),
-            )
-        )
-    if "inference" in probes:
-        checks.append(
-            await _request_check(
-                client,
-                name="inference",
-                method="POST",
-                url=_join_url(base_url, "v1/messages"),
-                headers=headers,
-                json={
-                    "model": target.model,
-                    "max_tokens": 20,
-                    "messages": [
-                        {"role": "user", "content": "Reply with exactly: ok"}
-                    ],
-                },
-                success_metadata=lambda _data: {
-                    "model": target.model,
-                    "model_api": ANTHROPIC_MESSAGES_API,
-                },
-            )
-        )
-    return tuple(checks)
 
 
 async def _request_check(
