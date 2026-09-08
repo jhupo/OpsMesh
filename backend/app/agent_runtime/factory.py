@@ -1,4 +1,4 @@
-from backend.app.agent_runtime.anthropic import AnthropicMessagesRunner
+from backend.app.agent_runtime.claude_agent import ClaudeAgentSDKRunner
 from backend.app.agent_runtime.contracts import AgentRunner
 from backend.app.agent_runtime.multi_provider import ProviderDispatchingAgentRunner
 from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
@@ -19,7 +19,7 @@ def build_agent_runner(settings: Settings | None = None) -> AgentRunner:
         max_attempts=max_attempts,
         circuit_config=circuit_config,
     )
-    anthropic_runner = AnthropicMessagesRunner(
+    anthropic_runner = ClaudeAgentSDKRunner(
         max_attempts=max_attempts,
         circuit_config=circuit_config,
     )

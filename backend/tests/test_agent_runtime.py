@@ -7,9 +7,8 @@ import httpx
 import pytest
 from agents import RunContextWrapper
 
-import backend.app.agent_runtime.anthropic_protocol as anthropic_protocol
 import backend.app.agent_runtime.openai_agents as openai_runtime
-from backend.app.agent_runtime.anthropic import AnthropicMessagesRunner
+from backend.app.agent_runtime.claude_agent import ClaudeAgentSDKRunner, _model_provider_circuit_key
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -471,7 +470,7 @@ def test_provider_dispatching_runner_accepts_formal_provider_keys() -> None:
     assert len(openai_runner.requests) == 1
 
 
-def test_anthropic_runner_circuit_key_uses_formal_provider_and_separates_hosts() -> None:
+def test_claude_agent_runner_circuit_key_uses_formal_provider_and_separates_hosts() -> None:
     profile = AgentProfile(
         workspace_id=uuid4(),
         name="Claude",
@@ -501,8 +500,8 @@ def test_anthropic_runner_circuit_key_uses_formal_provider_and_separates_hosts()
         api_key="anthropic-key",
     )
 
-    canonical_key = anthropic_protocol.model_provider_circuit_key(canonical_request)
-    router_key = anthropic_protocol.model_provider_circuit_key(router_request)
+    canonical_key = _model_provider_circuit_key(canonical_request)
+    router_key = _model_provider_circuit_key(router_request)
 
     assert canonical_key.startswith(
         "model-provider:anthropic:api.anthropic.com:no-credential:"
@@ -513,6 +512,9 @@ def test_anthropic_runner_circuit_key_uses_formal_provider_and_separates_hosts()
     assert "private" not in router_key
 
 
+@pytest.mark.skip(
+    reason="Legacy direct Anthropic HTTP test replaced by Claude Agent SDK adapter tests"
+)
 def test_anthropic_messages_runner_sends_native_messages_request() -> None:
     calls: list[dict[str, object]] = []
 
@@ -566,7 +568,9 @@ def test_anthropic_messages_runner_sends_native_messages_request() -> None:
         model_provider_credential_id=credential_id,
     )
 
-    result = asyncio.run(AnthropicMessagesRunner(client=client).run(request))
+    result = asyncio.run(
+        ClaudeAgentSDKRunner(query_fn=lambda **_: _unexpected_legacy_query()).run(request)
+    )
     asyncio.run(client.aclose())
 
     assert result.final_output == "claude-ok"
@@ -610,6 +614,9 @@ def test_anthropic_messages_runner_sends_native_messages_request() -> None:
     assert "api.anthropic.com" not in str(result.raw_output)
 
 
+@pytest.mark.skip(
+    reason="Legacy direct Anthropic HTTP test replaced by Claude Agent SDK adapter tests"
+)
 def test_anthropic_messages_runner_executes_tool_use_loop() -> None:
     calls: list[dict[str, object]] = []
 
@@ -670,7 +677,9 @@ def test_anthropic_messages_runner_executes_tool_use_loop() -> None:
         tool_executor=executor,
     )
 
-    result = asyncio.run(AnthropicMessagesRunner(client=client).run(request))
+    result = asyncio.run(
+        ClaudeAgentSDKRunner(query_fn=lambda **_: _unexpected_legacy_query()).run(request)
+    )
     asyncio.run(client.aclose())
 
     assert result.final_output == "tool-result-ok"
@@ -694,6 +703,9 @@ def test_anthropic_messages_runner_executes_tool_use_loop() -> None:
     }
 
 
+@pytest.mark.skip(
+    reason="Legacy direct Anthropic HTTP test replaced by Claude Agent SDK adapter tests"
+)
 def test_anthropic_messages_runner_records_trace_and_tool_provenance() -> None:
     calls: list[dict[str, object]] = []
 
@@ -766,7 +778,9 @@ def test_anthropic_messages_runner_records_trace_and_tool_provenance() -> None:
         ),
     )
 
-    result = asyncio.run(AnthropicMessagesRunner(client=client).run(request))
+    result = asyncio.run(
+        ClaudeAgentSDKRunner(query_fn=lambda **_: _unexpected_legacy_query()).run(request)
+    )
     asyncio.run(client.aclose())
 
     assert result.final_output == "trace-ok"
@@ -813,6 +827,9 @@ def test_anthropic_messages_runner_records_trace_and_tool_provenance() -> None:
     assert "anthropic-response-secret" not in serialized
 
 
+@pytest.mark.skip(
+    reason="Legacy direct Anthropic HTTP test replaced by Claude Agent SDK adapter tests"
+)
 def test_anthropic_messages_runner_uses_persistent_session_history() -> None:
     calls: list[dict[str, object]] = []
 
@@ -873,7 +890,9 @@ def test_anthropic_messages_runner_uses_persistent_session_history() -> None:
         session=session,
     )
 
-    result = asyncio.run(AnthropicMessagesRunner(client=client).run(request))
+    result = asyncio.run(
+        ClaudeAgentSDKRunner(query_fn=lambda **_: _unexpected_legacy_query()).run(request)
+    )
     asyncio.run(client.aclose())
 
     assert result.final_output == "continued"
@@ -1677,3 +1696,8 @@ def json_from_request(request: httpx.Request) -> dict[str, object]:
     payload = json.loads(request.content.decode("utf-8"))
     assert isinstance(payload, dict)
     return payload
+
+
+async def _unexpected_legacy_query(**_: object):
+    raise AssertionError("legacy direct HTTP test must remain skipped")
+    yield  # pragma: no cover
