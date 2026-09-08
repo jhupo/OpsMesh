@@ -6,15 +6,11 @@ from sqlalchemy.orm import Session
 
 from backend.app.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
 from backend.app.approvals.service import ApprovalService
+from backend.app.approvals.waiting import ApprovalWaitingService
 from backend.app.core.config import Settings
 from backend.app.runs.models import RunEvent
-from backend.app.runs.service import RunStateService
-from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import RuntimeCommand, WorkspaceRuntime
-from backend.app.tasks.models import Task
-from backend.app.tasks.service import TaskStateService
-from backend.app.tasks.status import TaskStatus
 from backend.app.tools.context import ToolContext
 
 
@@ -142,16 +138,9 @@ class RuntimeToolService:
         )
 
     def _mark_waiting_approval(self, context: ToolContext) -> None:
-        if context.agent_run_id is not None:
-            from backend.app.runs.models import AgentRun
-
-            run = self._session.get(AgentRun, context.agent_run_id)
-            if run is not None:
-                RunStateService().transition(run, RunStatus.WAITING_APPROVAL)
-        if context.task_id is not None:
-            task = self._session.get(Task, context.task_id)
-            if task is not None:
-                TaskStateService().transition(task, TaskStatus.WAITING_APPROVAL)
+        ApprovalWaitingService(self._session).mark_waiting(
+            workspace_id=context.workspace_id, run_id=context.agent_run_id, task_id=context.task_id,
+        )
 
 
 def _runtime_review_context(

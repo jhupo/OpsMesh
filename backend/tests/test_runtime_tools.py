@@ -135,6 +135,8 @@ def test_runtime_tool_blocks_risky_command_for_approval() -> None:
         limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
     )
     task = Task(workspace_id=workspace.id, title="Task", status=TaskStatus.RUNNING.value)
+    session.add(task)
+    session.flush()
     run = AgentRun(
         workspace_id=workspace.id,
         task_id=task.id,

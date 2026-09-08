@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from uuid import UUID
 
 from opentelemetry.trace import SpanKind
@@ -36,17 +34,12 @@ from backend.app.agent_runtime.tool_payloads import (
 )
 from backend.app.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
 from backend.app.approvals.service import ApprovalService
+from backend.app.approvals.waiting import ApprovalWaitingService
 from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_NAMES as PRODUCT_TOOL_NAMES
 from backend.app.core.config import Settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.files.storage import ObjectStorage, create_storage
-from backend.app.runs.models import AgentRun
-from backend.app.runs.service import RunStateService
-from backend.app.runs.status import RunStatus
 from backend.app.security.redaction import redact_sensitive_text
-from backend.app.tasks.models import Task
-from backend.app.tasks.service import TaskStateService
-from backend.app.tasks.status import TaskStatus
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
 from backend.app.tools.product_tools.service import ProductToolService
@@ -250,17 +243,9 @@ class ProductToolExecutor:
                 "execution_review": execution_review.approval_payload(),
             },
         )
-        run = self._session.get(AgentRun, context.run_id)
-        if run is not None and run.workspace_id == context.workspace_id:
-            RunStateService().transition(run, RunStatus.WAITING_APPROVAL)
-        if context.task_id is not None:
-            task = self._session.get(Task, context.task_id)
-            if (
-                task is not None
-                and task.workspace_id == context.workspace_id
-                and task.status == TaskStatus.RUNNING.value
-            ):
-                TaskStateService().transition(task, TaskStatus.WAITING_APPROVAL)
+        ApprovalWaitingService(self._session).mark_waiting(
+            workspace_id=context.workspace_id, run_id=context.run_id, task_id=context.task_id,
+        )
         self._session.commit()
 
 

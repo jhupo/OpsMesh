@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.approvals.policy import ApprovalPolicyDecision
 from backend.app.approvals.service import ApprovalService
+from backend.app.approvals.waiting import ApprovalWaitingService
 from backend.app.capabilities.mcp_execution_context import (
     authorization_snapshot,
     snapshot_audit_metadata,
@@ -14,12 +15,7 @@ from backend.app.capabilities.mcp_execution_types import McpExecutionRequest, Mc
 from backend.app.capabilities.mcp_payloads import payload_hash
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.runs.models import AgentRun
-from backend.app.runs.service import RunStateService
-from backend.app.runs.status import RunStatus
 from backend.app.security.redaction import redact_sensitive_payload
-from backend.app.tasks.models import Task
-from backend.app.tasks.service import TaskStateService
-from backend.app.tasks.status import TaskStatus
 
 
 @dataclass(slots=True)
@@ -72,8 +68,9 @@ class McpToolApprovalRequester:
             },
         )
         log.approval_id = approval.id
-        RunStateService().transition(run, RunStatus.WAITING_APPROVAL)
-        self._transition_task_to_waiting_approval(run)
+        ApprovalWaitingService(self.session).mark_waiting(
+            workspace_id=request.workspace_id, run_id=run.id, task_id=run.task_id,
+        )
         self._notify_approval_requested(
             request=request,
             run=run,
@@ -91,13 +88,6 @@ class McpToolApprovalRequester:
             log_id=log.id,
             latency_ms=0,
         )
-
-    def _transition_task_to_waiting_approval(self, run: AgentRun) -> None:
-        if run.task_id is None:
-            return
-        task = self.session.get(Task, run.task_id)
-        if task is not None and task.status == TaskStatus.RUNNING.value:
-            TaskStateService().transition(task, TaskStatus.WAITING_APPROVAL)
 
     def _notify_approval_requested(
         self,
