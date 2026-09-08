@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage
 
 
@@ -22,20 +22,9 @@ class TaskControlMessageWriter:
         reason: str | None,
         metadata: dict[str, object],
     ) -> TaskMessage:
-        sequence = int(
-            self._session.scalar(
-                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
-                    TaskMessage.workspace_id == task.workspace_id,
-                    TaskMessage.task_id == task.id,
-                )
-            )
-            or 0
-        ) + 1
-        message = TaskMessage(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
+        return TaskMessageAppendService(self._session).append_for_task(
+            task,
             message_type=f"task.control.{action}",
-            sequence=sequence,
             body=instruction or reason or action,
             payload={
                 "action": action,
@@ -45,6 +34,3 @@ class TaskControlMessageWriter:
                 "metadata": metadata,
             },
         )
-        self._session.add(message)
-        self._session.flush()
-        return message

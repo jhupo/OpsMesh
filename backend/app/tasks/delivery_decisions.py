@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.tasks import TaskCorrectionRequest, TaskDeliveryDecisionRequest
@@ -11,6 +11,7 @@ from backend.app.audit.service import AuditService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.corrections import TaskCorrectionResult, TaskCorrectionService
+from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
@@ -219,20 +220,9 @@ class TaskDeliveryDecisionService:
         decision: str,
         request: TaskDeliveryDecisionRequest,
     ) -> TaskMessage:
-        sequence = int(
-            self._session.scalar(
-                select(func.coalesce(func.max(TaskMessage.sequence), 0)).where(
-                    TaskMessage.workspace_id == task.workspace_id,
-                    TaskMessage.task_id == task.id,
-                )
-            )
-            or 0
-        ) + 1
-        message = TaskMessage(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
+        return TaskMessageAppendService(self._session).append_for_task(
+            task,
             message_type="pm.acceptance_decision",
-            sequence=sequence,
             body=request.summary,
             payload={
                 "decision": decision,
@@ -243,9 +233,6 @@ class TaskDeliveryDecisionService:
                 "metadata": request.metadata,
             },
         )
-        self._session.add(message)
-        self._session.flush()
-        return message
 
     def _audit(
         self,
