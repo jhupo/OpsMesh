@@ -12,6 +12,7 @@ from agents.tool_context import ToolContext
 
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
+    AgentRuntimeContext,
     AgentRuntimeToolDefinition,
     AgentRuntimeToolExecutor,
 )
@@ -22,7 +23,11 @@ class OpenAIToolBridge:
         if request.tool_executor is None:
             return []
         return [
-            self.function_tool(definition, request.tool_executor)
+            self.function_tool(
+                definition,
+                request.tool_executor,
+                runtime_context=request.context,
+            )
             for definition in request.context.tool_definitions
         ]
 
@@ -30,6 +35,8 @@ class OpenAIToolBridge:
         self,
         definition: AgentRuntimeToolDefinition,
         executor: AgentRuntimeToolExecutor,
+        *,
+        runtime_context: AgentRuntimeContext,
     ) -> Any:
         approval_reviews: dict[str, dict[str, object]] = {}
 
@@ -41,7 +48,7 @@ class OpenAIToolBridge:
             reviewer = getattr(executor, "review_tool_call", None)
             if callable(reviewer):
                 review = reviewer(
-                    context=ctx.context,
+                    context=runtime_context,
                     tool_name=definition.name,
                     arguments=arguments,
                 )
@@ -80,14 +87,14 @@ class OpenAIToolBridge:
             sdk_executor = getattr(executor, "execute_sdk_tool", None)
             if callable(sdk_executor):
                 result = sdk_executor(
-                    context=ctx.context,
+                    context=runtime_context,
                     tool_name=definition.name,
                     arguments=parsed,
                     tool_call_id=ctx.tool_call_id,
                 )
             else:
                 result = executor.execute_tool(
-                    context=ctx.context,
+                    context=runtime_context,
                     tool_name=definition.name,
                     arguments=parsed,
                 )
@@ -115,7 +122,12 @@ class OpenAIToolBridge:
             params_json_schema=dict(definition.input_schema),
             on_invoke_tool=invoke_tool,
             strict_json_schema=False,
-            tool_input_guardrails=[tool_provenance_guardrail(definition.name)],
+            tool_input_guardrails=[
+                tool_provenance_guardrail(
+                    definition.name,
+                    runtime_context=runtime_context,
+                )
+            ],
             needs_approval=needs_approval,
         )
         tool._opsmesh_tool_kind = definition.source
@@ -142,10 +154,18 @@ def tool_response_with_metadata(
     return response
 
 
-def tool_provenance_guardrail(tool_name: str) -> ToolInputGuardrail[Any]:
+def tool_provenance_guardrail(
+    tool_name: str,
+    *,
+    runtime_context: AgentRuntimeContext | None = None,
+) -> ToolInputGuardrail[Any]:
     async def assert_runtime_tool_provenance(data: Any) -> ToolGuardrailFunctionOutput:
-        runtime_context = getattr(getattr(data, "context", None), "context", None)
-        allowed_tools = runtime_allowed_tools(runtime_context)
+        active_context = runtime_context or getattr(
+            getattr(data, "context", None),
+            "context",
+            None,
+        )
+        allowed_tools = runtime_allowed_tools(active_context)
         allowed = tool_name in allowed_tools
         return ToolGuardrailFunctionOutput(
             output_info={

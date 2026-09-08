@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -18,10 +19,15 @@ from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeAgentDefinition,
+    AgentRuntimeAgentRef,
+    AgentRuntimeAgentTool,
+    AgentRuntimeAgentToolResult,
+    AgentRuntimeCapabilities,
+    AgentRuntimeCapability,
     AgentRuntimeEvent,
 )
 from backend.app.agent_runtime.errors import normalize_agent_error
-from backend.app.agent_runtime.openai_results import OpenAIAgentsResultMapper
+from backend.app.agent_runtime.openai_results import OpenAIAgentsResultMapper, jsonable
 from backend.app.agent_runtime.openai_settings import OpenAIModelSettingsMapper
 from backend.app.agent_runtime.openai_tools import OpenAIToolBridge
 from backend.app.core.resilience import CircuitBreakerConfig, async_retry_with_circuit
@@ -31,12 +37,37 @@ from backend.app.model_providers.model_api import (
     OPENAI_RESPONSES_API,
     canonical_model_api,
 )
-from backend.app.model_providers.provider_keys import model_provider_key
+from backend.app.model_providers.provider_keys import (
+    is_openai_compatible_provider,
+    model_provider_key,
+)
 
 DEFAULT_MODEL_PROVIDER_CIRCUIT_CONFIG = CircuitBreakerConfig()
 
 
 class OpenAIAgentsRunner:
+    capabilities = AgentRuntimeCapabilities(
+        provider="openai-compatible",
+        adapter="openai_agents",
+        supported=frozenset(
+            {
+                AgentRuntimeCapability.HANDOFFS,
+                AgentRuntimeCapability.AGENTS_AS_TOOLS,
+                AgentRuntimeCapability.RESUMABLE_STATE,
+                AgentRuntimeCapability.SESSIONS,
+            }
+        ),
+        limits={"max_agent_tool_depth": 3, "max_agent_tool_turns": 20},
+        unsupported_reasons={
+            AgentRuntimeCapability.STRUCTURED_OUTPUT.value: "Adapter mapping is not enabled yet.",
+            AgentRuntimeCapability.STREAMING.value: "Adapter streaming is not enabled yet.",
+            AgentRuntimeCapability.GUARDRAILS.value: "Adapter guardrails are not enabled yet.",
+            AgentRuntimeCapability.CANCELLATION.value: (
+                "Cancellation propagation is not enabled yet."
+            ),
+        },
+    )
+
     def __init__(
         self,
         *,
@@ -52,7 +83,12 @@ class OpenAIAgentsRunner:
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
         self._validate_contract_requests(request)
         handoff_audits: dict[str, dict[str, object]] = {}
-        agent = self._build_agent(request, handoff_audits=handoff_audits)
+        agent_tool_calls: list[AgentRuntimeAgentToolResult] = []
+        agent = self._build_agent(
+            request,
+            handoff_audits=handoff_audits,
+            agent_tool_calls=agent_tool_calls,
+        )
         runner_input = await self._runner_input(request, agent)
         result = await async_retry_with_circuit(
             key=_model_provider_circuit_key(request),
@@ -87,6 +123,7 @@ class OpenAIAgentsRunner:
             )
             for handoff in handoffs
         )
+        runtime_events.extend(_agent_tool_events(agent_tool_calls))
         return AgentRunResult(
             final_output=final_output,
             raw_output=self._result_mapper.safe_raw_output(result),
@@ -96,6 +133,8 @@ class OpenAIAgentsRunner:
             structured_output=structured_output,
             stream_events=tuple(self._result_mapper.stream_events(result)),
             handoffs=tuple(handoffs),
+            agent_tool_calls=tuple(agent_tool_calls),
+            capabilities=self.capabilities,
         )
 
     def _validate_contract_requests(self, request: AgentRunRequest) -> None:
@@ -111,6 +150,7 @@ class OpenAIAgentsRunner:
                 "OpenAI Agents runtime contract features are not enabled yet: "
                 + ", ".join(unsupported)
             )
+        self._validate_agent_tools(request)
 
     async def _runner_input(
         self,
@@ -157,6 +197,7 @@ class OpenAIAgentsRunner:
         request: AgentRunRequest,
         *,
         handoff_audits: dict[str, dict[str, object]] | None = None,
+        agent_tool_calls: list[AgentRuntimeAgentToolResult] | None = None,
     ) -> Agent[Any]:
         profile = request.agent_profile
         model_name = request.model or profile.model
@@ -167,17 +208,202 @@ class OpenAIAgentsRunner:
             base_url=normalize_openai_compatible_base_url(request.base_url),
             use_responses=_use_responses_api(request.model_api),
         ).get_model(model_name)
+        nested_calls = agent_tool_calls if agent_tool_calls is not None else []
+        tools = self._tool_bridge.tools(request)
+        tools.extend(
+            self._build_agent_tools(
+                request,
+                request.agent_tools,
+                source=AgentRuntimeAgentRef(
+                    name=profile.name,
+                    profile_id=getattr(profile, "id", None),
+                    role=profile.role,
+                ),
+                calls=nested_calls,
+            )
+        )
         return Agent(
             name=profile.name,
             instructions=profile.instructions,
             model=model,
             model_settings=self._settings_mapper.map_settings(profile.model_settings),
-            tools=self._tool_bridge.tools(request),
+            tools=tools,
             handoffs=self._build_handoffs(
                 request,
                 handoff_audits if handoff_audits is not None else {},
             ),
         )
+
+    def _build_agent_tools(
+        self,
+        request: AgentRunRequest,
+        definitions: tuple[AgentRuntimeAgentTool, ...],
+        *,
+        source: AgentRuntimeAgentRef,
+        calls: list[AgentRuntimeAgentToolResult],
+    ) -> list[Any]:
+        tools: list[Any] = []
+        for definition in definitions:
+            target = self._build_agent_tool_target(request, definition, calls=calls)
+
+            async def extract_output(
+                result: Any,
+                *,
+                item: AgentRuntimeAgentTool = definition,
+                source_ref: AgentRuntimeAgentRef = source,
+            ) -> str:
+                invocation = getattr(result, "agent_tool_invocation", None)
+                status = (
+                    "waiting_approval"
+                    if getattr(result, "interruptions", None)
+                    else "completed"
+                )
+                calls.append(
+                    _agent_tool_result(
+                        source=source_ref,
+                        item=item,
+                        invocation=invocation,
+                        status=status,
+                        usage=getattr(result, "usage", None),
+                    )
+                )
+                output, _ = self._result_mapper.final_output(result)
+                return output
+
+            async def handle_failure(
+                context: Any,
+                exc: Exception,
+                *,
+                item: AgentRuntimeAgentTool = definition,
+                source_ref: AgentRuntimeAgentRef = source,
+            ) -> str:
+                error = normalize_agent_error(exc)
+                calls.append(
+                    _agent_tool_result(
+                        source=source_ref,
+                        item=item,
+                        invocation=context,
+                        status="failed",
+                        error=error.as_dict(),
+                    )
+                )
+                return f"Specialist agent failed: {error.message}"
+
+            tools.append(
+                target.as_tool(
+                    tool_name=definition.tool_name,
+                    tool_description=definition.description,
+                    max_turns=definition.max_turns,
+                    custom_output_extractor=extract_output,
+                    failure_error_function=handle_failure,
+                )
+            )
+        return tools
+
+    def _build_agent_tool_target(
+        self,
+        request: AgentRunRequest,
+        definition: AgentRuntimeAgentTool,
+        *,
+        calls: list[AgentRuntimeAgentToolResult],
+    ) -> Agent[Any]:
+        if not is_openai_compatible_provider(definition.provider):
+            raise ValueError("OpenAI agent tools require an OpenAI-compatible target provider")
+        if not definition.api_key:
+            raise ValueError("OpenAI agent tool target requires an explicit provider API key")
+        model = OpenAIProvider(
+            api_key=definition.api_key,
+            base_url=normalize_openai_compatible_base_url(definition.base_url),
+            use_responses=_use_responses_api(definition.model_api),
+        ).get_model(definition.model)
+        scoped_request = replace(
+            request,
+            context=definition.context,
+            model=definition.model,
+            provider=definition.provider,
+            base_url=definition.base_url,
+            api_key=definition.api_key,
+            model_api=definition.model_api,
+            model_provider_credential_id=definition.model_provider_credential_id,
+            agent_tools=definition.nested_tools,
+            handoffs=(),
+            handoff_agents=(),
+        )
+        tools = self._tool_bridge.tools(scoped_request)
+        tools.extend(
+            self._build_agent_tools(
+                scoped_request,
+                definition.nested_tools,
+                source=definition.target.ref,
+                calls=calls,
+            )
+        )
+        return Agent(
+            name=definition.target.ref.name,
+            handoff_description=definition.target.handoff_description,
+            instructions=definition.target.instructions,
+            model=model,
+            model_settings=self._settings_mapper.map_settings(
+                definition.target.model_settings
+            ),
+            tools=tools,
+        )
+
+    def _validate_agent_tools(self, request: AgentRunRequest) -> None:
+        self._validate_agent_tool_level(
+            request.agent_tools,
+            workspace_id=request.context.workspace_id,
+            task_id=request.context.task_id,
+            run_id=request.context.run_id,
+            expected_depth=1,
+            product_tool_names=set(request.context.allowed_tools),
+            path=(getattr(request.agent_profile, "id", None),),
+        )
+
+    def _validate_agent_tool_level(
+        self,
+        definitions: tuple[AgentRuntimeAgentTool, ...],
+        *,
+        workspace_id: object,
+        task_id: object,
+        run_id: object,
+        expected_depth: int,
+        product_tool_names: set[str],
+        path: tuple[object, ...],
+    ) -> None:
+        names: set[str] = set()
+        for definition in definitions:
+            profile_id = definition.target.ref.profile_id
+            if definition.tool_name in names or definition.tool_name in product_tool_names:
+                raise ValueError("Agent tool names must be unique and cannot shadow runtime tools")
+            names.add(definition.tool_name)
+            if definition.target.workspace_id != workspace_id:
+                raise ValueError("Agent tool target belongs to another workspace")
+            if (
+                definition.context.workspace_id != workspace_id
+                or definition.context.task_id != task_id
+                or definition.context.run_id != run_id
+            ):
+                raise ValueError("Agent tool context does not match the parent run")
+            if definition.depth != expected_depth:
+                raise ValueError("Agent tool depth does not match its nesting level")
+            if not 1 <= definition.depth <= definition.max_depth <= 3:
+                raise ValueError("Agent tool depth policy is invalid")
+            if not 1 <= definition.max_turns <= 20:
+                raise ValueError("Agent tool turn limit is invalid")
+            if profile_id is None or profile_id in path:
+                raise ValueError("Agent tool graph contains a missing target or cycle")
+            if definition.nested_tools and definition.depth >= definition.max_depth:
+                raise ValueError("Agent tool graph exceeds its maximum depth")
+            self._validate_agent_tool_level(
+                definition.nested_tools,
+                workspace_id=workspace_id,
+                task_id=task_id,
+                run_id=run_id,
+                expected_depth=expected_depth + 1,
+                product_tool_names=set(definition.context.allowed_tools),
+                path=(*path, profile_id),
+            )
 
     def _build_handoffs(
         self,
@@ -283,6 +509,65 @@ class OpenAIAgentsRunner:
             tracing_disabled=request.tracing.disabled,
             trace_include_sensitive_data=request.tracing.include_sensitive_data,
         )
+
+
+def _agent_tool_result(
+    *,
+    source: AgentRuntimeAgentRef,
+    item: AgentRuntimeAgentTool,
+    invocation: object | None,
+    status: str,
+    usage: object | None = None,
+    error: dict[str, object] | None = None,
+) -> AgentRuntimeAgentToolResult:
+    call_id = getattr(invocation, "tool_call_id", None)
+    if not isinstance(call_id, str) or not call_id:
+        call_id = "unknown"
+    usage_payload = jsonable(usage)
+    return AgentRuntimeAgentToolResult(
+        source=source,
+        target=item.target.ref,
+        tool_name=item.tool_name,
+        tool_call_id=call_id,
+        status=status,
+        depth=item.depth,
+        max_turns=item.max_turns,
+        usage=usage_payload if isinstance(usage_payload, dict) else {},
+        error=error,
+    )
+
+
+def _agent_tool_events(
+    calls: list[AgentRuntimeAgentToolResult],
+) -> list[AgentRuntimeEvent]:
+    return [
+        AgentRuntimeEvent(
+            event_type=f"agent.tool.{call.status}",
+            message=(
+                "Specialist agent completed delegated work."
+                if call.status == "completed"
+                else "Specialist agent delegation changed state."
+            ),
+            payload={
+                "source_agent": call.source.name,
+                "source_agent_profile_id": str(call.source.profile_id)
+                if call.source.profile_id is not None
+                else None,
+                "target_agent": call.target.name,
+                "target_agent_profile_id": str(call.target.profile_id)
+                if call.target.profile_id is not None
+                else None,
+                "tool_name": call.tool_name,
+                "tool_call_id": call.tool_call_id,
+                "status": call.status,
+                "depth": call.depth,
+                "max_turns": call.max_turns,
+                "usage": call.usage,
+                "error": call.error,
+            },
+        )
+        for call in calls
+    ]
 
 
 

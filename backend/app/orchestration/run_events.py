@@ -98,6 +98,7 @@ class RunEventRecorder:
                 if request.model_provider_credential_id is not None
                 else None,
                 "allowed_tool_count": len(request.context.allowed_tools),
+                "agent_tool_count": len(request.agent_tools),
                 "continuation_count": len(request.continuations),
                 "has_tool_executor": request.tool_executor is not None,
             },
@@ -121,6 +122,7 @@ class RunEventRecorder:
                 else None,
                 "fallback_selected": fallback_selected,
                 "allowed_tool_count": len(request.context.allowed_tools),
+                "agent_tool_count": len(request.agent_tools),
                 "continuation_count": len(request.continuations),
             },
         )

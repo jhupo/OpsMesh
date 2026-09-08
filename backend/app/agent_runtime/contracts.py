@@ -201,6 +201,39 @@ class AgentRuntimeContext:
 
 
 @dataclass(frozen=True)
+class AgentRuntimeAgentTool:
+    """One authorized nested agent exposed as a provider SDK tool."""
+
+    target: AgentRuntimeAgentDefinition
+    tool_name: str
+    description: str
+    context: AgentRuntimeContext
+    max_turns: int
+    depth: int
+    max_depth: int
+    model: str
+    provider: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model_api: str | None = None
+    model_provider_credential_id: UUID | None = None
+    nested_tools: tuple[AgentRuntimeAgentTool, ...] = ()
+
+
+@dataclass(frozen=True)
+class AgentRuntimeAgentToolResult:
+    source: AgentRuntimeAgentRef
+    target: AgentRuntimeAgentRef
+    tool_name: str
+    tool_call_id: str
+    status: str
+    depth: int
+    max_turns: int
+    usage: dict[str, object] = field(default_factory=dict)
+    error: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
 class AgentRuntimeToolResult:
     status: str
     output: dict[str, object] | None = None
@@ -287,6 +320,7 @@ class AgentRunRequest:
     approval_decisions: tuple[AgentRuntimeApprovalDecision, ...] = ()
     handoffs: tuple[AgentRuntimeHandoff, ...] = ()
     handoff_agents: tuple[AgentRuntimeAgentDefinition, ...] = ()
+    agent_tools: tuple[AgentRuntimeAgentTool, ...] = ()
     output_schema: AgentRuntimeOutputSchema | None = None
     guardrails: AgentRuntimeGuardrails | None = None
     stream: bool = False
@@ -309,6 +343,7 @@ class AgentRunResult:
     structured_output: AgentRuntimeStructuredOutput | None = None
     stream_events: tuple[AgentRuntimeStreamEvent, ...] = ()
     handoffs: tuple[AgentRuntimeHandoffResult, ...] = ()
+    agent_tool_calls: tuple[AgentRuntimeAgentToolResult, ...] = ()
     capabilities: AgentRuntimeCapabilities | None = None
 
 

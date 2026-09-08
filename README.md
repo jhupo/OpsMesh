@@ -260,15 +260,15 @@ sequenceDiagram
 
 ## Open-Source First
 
-OpsMesh already builds on FastAPI, SQLAlchemy, Alembic, Pydantic, Redis, Postgres, and the Python
-[OpenAI Agents SDK](https://github.com/openai/openai-agents-python) (`openai-agents` on PyPI). In the
-current phase, this is the only Agent orchestration core. Other model providers are deferred and
-may be added later through the product-owned provider contract and contract tests; they must not
-introduce a second Agent framework.
+OpsMesh already builds on FastAPI, SQLAlchemy, Alembic, Pydantic, Redis, Postgres, the Python
+[OpenAI Agents SDK](https://github.com/openai/openai-agents-python) (`openai-agents` on PyPI), and the
+[Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-python). Both provider SDKs sit
+behind the same product-owned runtime contract; authorization, durable state, policy, redaction,
+audit, and capability negotiation remain in the OpsMesh control plane.
 
 | Area | Preferred upstream | Direction |
 | --- | --- | --- |
-| Agent turns, tools, handoffs, sessions, HITL | Python OpenAI Agents SDK (`openai-agents`) | Current and only Agent orchestration core; keep the product control plane |
+| Agent turns, tools, sessions, HITL | Python OpenAI Agents SDK and Claude Agent SDK | Provider execution cores behind one OpsMesh contract; provider-specific capabilities are explicit |
 | MCP protocol and transports | [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | Current for remote Streamable HTTP/SSE and isolated stdio; keep the SDK client inside Docker/self-hosted runtimes |
 | Docker Engine access | [Docker SDK for Python](https://docs.docker.com/reference/api/engine/sdk/) | Replace CLI construction behind the existing runtime client contract |
 | Logs, traces, and instrumentation | [OpenTelemetry Python](https://github.com/open-telemetry/opentelemetry-python) | Current for API/worker OTLP logs and FastAPI, database, Redis, HTTP, queue, model, and tool traces |

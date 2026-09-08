@@ -22,6 +22,10 @@ def run_output_payload(result: AgentRunResult) -> dict[str, object]:
         payload["structured_output"] = json_safe_object(asdict(result.structured_output))
     if result.handoffs:
         payload["handoffs"] = json_safe_object([asdict(item) for item in result.handoffs])
+    if result.agent_tool_calls:
+        payload["agent_tool_calls"] = json_safe_object(
+            [asdict(item) for item in result.agent_tool_calls]
+        )
     return payload
 
 

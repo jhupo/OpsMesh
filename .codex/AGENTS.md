@@ -17,7 +17,7 @@ Use these documents as the project map instead of guessing:
 - `README.md`: product position, current capabilities, target architecture, and near-term goals.
 - `docs/architecture.md`: system boundaries and durable-state model.
 - `docs/backend-service-architecture.md`: service and dependency boundaries.
-- `docs/agent-runtime-contract.md`: boundary around the OpenAI Agents SDK.
+- `docs/agent-runtime-contract.md`: boundary around the supported provider Agent SDKs.
 - `docs/capabilities-and-runtime.md`: skill, tool, MCP, and runtime model.
 - `docs/isolation-and-security.md`: mandatory tenant and runtime isolation rules.
 - `docs/threat-model.md`: threats and required mitigations.
@@ -79,9 +79,10 @@ to preserve an old internal behavior.
 Preferred candidates and their adoption order are documented in
 `docs/open-source-sdk-strategy.md`. In particular:
 
-- Use the Python OpenAI Agents SDK (`openai-agents`, upstream `openai/openai-agents-python`) as the
-  only Agent orchestration core for the current phase. Use it for agent turns, handoffs, tools,
-  sessions, run state, and HITL where its stable contracts satisfy product requirements.
+- Use the Python OpenAI Agents SDK (`openai-agents`, upstream `openai/openai-agents-python`) and the
+  official Claude Agent SDK (`claude-agent-sdk`, upstream `anthropics/claude-agent-sdk-python`) as
+  provider execution cores. Use their public APIs for agent turns, tools, sessions, run state, and
+  HITL where their stable contracts satisfy product requirements.
 - Prefer the official MCP Python SDK and Agents SDK MCP integrations over custom JSON-RPC and
   transport implementations.
 - Prefer Docker SDK for Python over constructing Docker CLI commands.
@@ -91,11 +92,11 @@ Preferred candidates and their adoption order are documented in
 - Evaluate Temporal with a real OpsMesh workflow before replacing durable orchestration.
 - Evaluate OpenFGA or OPA only against concrete authorization or policy requirements.
 - Defer Any-LLM and LiteLLM Agents SDK integrations. Add other model providers only through the
-  product-owned provider contract after the OpenAI Agents SDK path is stable and contract-tested.
+  product-owned provider contract after an SDK path is stable and contract-tested.
 
-Avoid adding LangChain, LlamaIndex, or another general agent framework as a second orchestration
-core. A focused library is acceptable when it fills a documented gap without duplicating the
-Agents SDK and OpsMesh control plane.
+Avoid adding LangChain, LlamaIndex, or another general agent framework alongside the provider SDKs.
+A focused library is acceptable when it fills a documented gap without duplicating those SDKs and
+the OpsMesh control plane.
 
 ## Architecture And Code Quality
 

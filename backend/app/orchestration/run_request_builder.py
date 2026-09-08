@@ -24,6 +24,7 @@ from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType
 
+from .run_agent_tool_authorization import hydrate_agent_tools
 from .run_request_authorization import (
     RunAuthorizationService,
     file_scope_ids_for_snapshot,
@@ -144,6 +145,24 @@ class RunRequestBuilder:
                 for item in continuations
             ]
 
+        runtime_context = AgentRuntimeContext(
+            workspace_id=run.workspace_id,
+            task_id=run.task_id,
+            run_id=run.id,
+            user_id=job.requested_by_user_id,
+            allowed_tools=allowed_tools,
+            tool_definitions=tool_definitions,
+            resource_grants=resource_grants,
+            file_scope_ids=file_scope_ids,
+            runtime_binding=runtime_binding.as_runtime_context(),
+            metadata=metadata,
+        )
+        agent_tools = hydrate_agent_tools(
+            session=self.session,
+            snapshot=authorization_snapshot,
+            root_context=runtime_context,
+            resolve_model_provider=self.resolve_model_provider,
+        )
         tracing = agent_run_tracing(
             run=run,
             task=task,
@@ -158,18 +177,7 @@ class RunRequestBuilder:
                 allowed_tools=allowed_tools,
                 runtime_metadata=metadata,
             ),
-            context=AgentRuntimeContext(
-                workspace_id=run.workspace_id,
-                task_id=run.task_id,
-                run_id=run.id,
-                user_id=job.requested_by_user_id,
-                allowed_tools=allowed_tools,
-                tool_definitions=tool_definitions,
-                resource_grants=resource_grants,
-                file_scope_ids=file_scope_ids,
-                runtime_binding=runtime_binding.as_runtime_context(),
-                metadata=metadata,
-            ),
+            context=runtime_context,
             model=model_provider["model"],
             provider=model_provider["provider"],
             base_url=model_provider["base_url"],
@@ -204,6 +212,7 @@ class RunRequestBuilder:
                 workspace_id=run.workspace_id,
                 run_id=run.id,
             ),
+            agent_tools=agent_tools,
         )
 
     def runtime_metadata(

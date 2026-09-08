@@ -13,10 +13,9 @@ override an incomplete production closure identified here.
 
 - Complete and commit one functional point at a time, in the order below unless a documented blocker
   requires a dependency-first change.
-- Use the OpenAI Agents SDK as the orchestration core for turns, tools, handoffs, sessions, run state,
-  and HITL. Keep OpsMesh-owned authorization, policy, durable state, redaction, quotas, and audit at
-  the adapter boundary.
-- Do not add compatibility shims or a second agent orchestration core.
+- Use the OpenAI Agents SDK and Claude Agent SDK as the provider execution cores. Keep OpsMesh-owned
+  authorization, policy, durable state, redaction, quotas, and audit at the adapter boundary.
+- Do not add compatibility shims or a general-purpose agent framework alongside the provider SDKs.
 - Run targeted tests and targeted lint for each functional point. Do not run the full test suite
   during normal implementation; reserve it for the release gate.
 - Update status only after the acceptance gate works across API, database, queue, worker, and runtime
@@ -60,7 +59,7 @@ Goal: expose the supported Agents SDK orchestration surface through vendor-neutr
 | --- | --- | --- | --- | --- | --- |
 | 2.1 | P0 | Expand typed contracts for agents, handoffs, interruptions, streaming, structured results, and capabilities | Done | `expand-agent-runtime-contracts` | Product-owned session, handoff, interruption, stream, structured-output, and capability contracts are mapped at the adapter boundary; orchestration has no SDK result/state imports; unsupported request features fail explicitly |
 | 2.2 | P0 | Implement SDK handoffs and handoff input filtering | Done | `add-openai-agent-handoffs` | SDK handoff objects are created only for unique same-workspace authorized targets; filtered context and source/target metadata are returned, persisted, and emitted as redacted runtime events |
-| 2.3 | P0 | Implement agents-as-tools with nested run provenance and limits | Pending | `add-openai-agents-as-tools` | Manager invokes a specialist as a tool without bypassing tool, resource, or depth policy |
+| 2.3 | P0 | Implement agents-as-tools with nested run provenance and limits | Done | `add-openai-agents-as-tools` | OpenAI `Agent.as_tool()` receives only frozen same-team targets; every nested level intersects tool, resource, and file scope, enforces graph, depth, and turn limits, and persists source, target, call, and usage provenance |
 | 2.4 | P0 | Add structured output plus agent input/output guardrails | Pending | `add-agent-output-and-guardrails` | Invalid output fails validation; blocked input/output produces redacted evidence |
 | 2.5 | P1 | Add lifecycle hooks, streaming events, cancellation propagation, and usage capture | Pending | `add-agent-runtime-streaming-hooks` | Stream ordering is stable and cancellation reaches the active SDK run and tools |
 | 2.6 | P1 | Publish and enforce the provider adapter capability matrix | Pending | `add-agent-adapter-capability-matrix` | Unsupported provider features fail explicitly instead of silently degrading |

@@ -108,10 +108,25 @@ of SDK input item `type` or `role` values; the filter is applied to the handoff 
 history remains available to the SDK session. The adapter records source, target, retained counts,
 and filtered item types in `AgentRuntimeHandoffResult` and emits a redacted `agent.handoff` event.
 
-Claude's `AgentDefinition` is an agents-as-tools primitive, not an OpenAI-style handoff. The Claude
-adapter does not enable it yet because the product tool/resource scope for nested agents must be
-explicit; it rejects both an OpenAI handoff descriptor and an unscoped nested-agent definition
-instead of silently changing their semantics.
+### Agents As Tools
+
+`AgentRunRequest.agent_tools` is an immutable tree of product-owned target definitions. The
+authorization snapshot admits only active, task-accepting members of the task's team and freezes the
+target profile, model-provider binding, capability catalog, file scope, depth, and turn limits.
+Every nested level receives the intersection of its own effective catalog and the parent's already
+authorized tool, resource, and file scope. Cycles, duplicate targets, cross-workspace targets,
+provider-family changes, graph overflow, depth overflow, and tool-name collisions fail before model
+execution.
+
+The OpenAI adapter maps each definition to the SDK's public `Agent.as_tool()` interface. Nested tool
+execution binds the frozen child `AgentRuntimeContext` instead of inheriting the manager's wider SDK
+context. Completion, approval interruption, and failure produce redacted `agent.tool.*` events and
+persist source, target, SDK call ID, depth, turn limit, usage, and normalized failure provenance.
+
+Claude's `AgentDefinition` is also an agents-as-tools primitive, but its in-process MCP server is
+shared by subagents and cannot enforce a distinct product execution context for each nested agent.
+The Claude adapter therefore does not advertise this capability and rejects nested-agent requests
+instead of weakening tool or resource scope.
 
 ## Tool Mapping
 

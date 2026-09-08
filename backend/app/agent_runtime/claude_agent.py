@@ -165,6 +165,11 @@ class ClaudeAgentSDKRunner:
                 "Claude Agent SDK agent definitions are not enabled until "
                 "their MCP tool scope is explicit"
             )
+        if request.agent_tools:
+            raise NotImplementedError(
+                "Claude Agent SDK subagents are not enabled until their per-agent "
+                "MCP execution contexts can be enforced"
+            )
         if request.guardrails is not None:
             raise NotImplementedError(
                 "Claude Agent SDK guardrails must be applied by the OpsMesh runtime lifecycle"

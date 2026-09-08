@@ -59,6 +59,9 @@ def _message_type(event_type: str) -> str | None:
     normalized = event_type.strip().lower()
     mapping = {
         "agent.handoff": "agent.handoff",
+        "agent.tool.completed": "agent.tool.completed",
+        "agent.tool.failed": "agent.tool.failed",
+        "agent.tool.waiting_approval": "agent.tool.waiting_approval",
         "tool.called": "tool.requested",
         "tool.requested": "tool.requested",
         "tool.completed": "tool.completed",
@@ -76,6 +79,9 @@ def _message_type(event_type: str) -> str | None:
 def _default_body(message_type: str) -> str:
     return {
         "agent.handoff": "Agent handoff.",
+        "agent.tool.completed": "Specialist agent completed delegated work.",
+        "agent.tool.failed": "Specialist agent delegation failed.",
+        "agent.tool.waiting_approval": "Specialist agent is waiting for approval.",
         "tool.requested": "Tool requested.",
         "tool.completed": "Tool completed.",
         "tool.failed": "Tool failed.",

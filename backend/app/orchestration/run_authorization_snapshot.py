@@ -12,6 +12,9 @@ from backend.app.model_providers.model_api import (
 )
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.model_providers.resolution import ModelProviderResolutionService
+from backend.app.orchestration.run_agent_tool_authorization import (
+    AgentToolAuthorizationSnapshotService,
+)
 from backend.app.orchestration.run_authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
@@ -70,6 +73,17 @@ class RunAuthorizationSnapshotService:
             capability_catalog=catalog_snapshot,
             runtime_policy=frozen_runtime_policy,
         )
+        agent_tools = AgentToolAuthorizationSnapshotService(self.session).build(
+            task=task,
+            source_profile=profile,
+            source_catalog=catalog_snapshot,
+            source_model_provider=model_provider,
+            file_scope_ids=runtime_binding.allowed_file_ids,
+            model_provider_snapshot=lambda target: self.model_provider_snapshot(
+                task.workspace_id,
+                target,
+            ),
+        )
         snapshot: dict[str, object] = {
             "version": 2,
             "workspace_id": str(task.workspace_id),
@@ -92,6 +106,7 @@ class RunAuthorizationSnapshotService:
             "runtime_policy": frozen_runtime_policy,
             "memory_policy": dict_copy(memory_policy),
             "approval_policy": dict_copy(approval_policy),
+            "agent_tools": agent_tools,
             "file_scope": {
                 "mode": "authorized_file_resources",
                 "workspace_id": str(task.workspace_id),
