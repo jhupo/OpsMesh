@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import TypeVar
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from backend.app.db.pagination import page_scalars
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.files.security import safe_filename
 from backend.app.files.storage import ObjectStorage
+from backend.app.files.storage_transactions import CompensatingObjectStorageWrites
 from backend.app.tasks.models import Task, TaskStep
 
 T = TypeVar("T")
@@ -45,19 +46,30 @@ class WorkspaceFileService:
 
         checksum = sha256(content).hexdigest()
         sanitized_filename = safe_filename(filename)
+        file_id = uuid4()
         file = WorkspaceFile(
+            id=file_id,
             workspace_id=workspace_id,
             uploaded_by_user_id=uploaded_by_user_id,
             filename=sanitized_filename,
             content_type=content_type,
             size_bytes=len(content),
             checksum_sha256=checksum,
-            storage_key=f"workspaces/{workspace_id}/files/{checksum}/{sanitized_filename}",
+            storage_key=f"workspaces/{workspace_id}/files/{file_id}/{sanitized_filename}",
         )
-        self._session.add(file)
-        self._session.flush()
-        self._storage.write(file.storage_key, content)
-        self._session.commit()
+        writes = CompensatingObjectStorageWrites(self._storage)
+        try:
+            self._session.add(file)
+            self._session.flush()
+            writes.write_new(file.storage_key, content)
+            self._session.commit()
+        except Exception:
+            try:
+                self._session.rollback()
+            finally:
+                writes.compensate()
+            raise
+        writes.complete()
         self._session.refresh(file)
         return file
 
