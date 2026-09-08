@@ -2,12 +2,12 @@
 
 ## Purpose
 
-This document defines the boundary between the OpsMesh product layer and the Python OpenAI Agents
-SDK runtime layer. The `openai-agents` package is the only Agent orchestration core in the current
-phase. Other model providers, when added later, must implement the OpsMesh-owned provider contract
-without introducing another Agent framework.
+This document defines the boundary between the OpsMesh product layer and the vendor Agent SDK
+runtime adapters. OpenAI Agents SDK and Anthropic Claude Agent SDK are the two supported provider
+orchestration cores. Both implement the same OpsMesh-owned runtime contract; neither provider SDK
+crosses into product authorization, durable state, audit, quotas, or isolation.
 
-The product layer owns users, workspaces, tasks, permissions, runtimes, approvals, files, artifacts, and audit logs. The OpenAI Agents SDK layer owns agent execution primitives such as `Agent`, `Runner`, tools, handoffs, guardrails, sessions, and traces.
+The product layer owns users, workspaces, tasks, permissions, runtimes, approvals, files, artifacts, and audit logs. The OpenAI adapter delegates agent turns, tools, handoffs, sessions, run state, and tracing to `openai-agents`; the Claude adapter delegates turns, MCP tools, streaming, structured output, session transcript mirroring, and deferred tool state to `claude-agent-sdk`.
 
 ## Product-Owned Runtime Contracts
 
@@ -107,6 +107,10 @@ The adapter converts an authorized target to an SDK `handoff()` object. `input_f
 of SDK input item `type` or `role` values; the filter is applied to the handoff input while the full
 history remains available to the SDK session. The adapter records source, target, retained counts,
 and filtered item types in `AgentRuntimeHandoffResult` and emits a redacted `agent.handoff` event.
+
+Claude's `AgentDefinition` is an agents-as-tools primitive, not an OpenAI-style handoff. The Claude
+adapter advertises this distinction in `AgentRuntimeCapabilities` and rejects an OpenAI handoff
+descriptor instead of silently changing its semantics.
 
 ## Tool Mapping
 
@@ -293,7 +297,9 @@ Runtime layer should:
 
 ## Tracing Contract
 
-OpenAI tracing can be enabled for debugging. Product run events remain the durable source of user-visible truth.
+OpenAI tracing can be enabled for debugging. Claude usage/cost/session metadata is mapped into the
+same product events; provider tracing is optional. Product run events remain the durable source of
+user-visible truth.
 
 Rules:
 

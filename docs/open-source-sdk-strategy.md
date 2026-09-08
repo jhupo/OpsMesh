@@ -37,12 +37,13 @@ successful proof must include failure and security cases, not only a happy-path 
 
 ## Recommended Adoption Order
 
-### P0: Python OpenAI Agents SDK foundation
+### P0: Agent SDK foundations
 
-**Current position:** `openai-agents` is already the agent execution foundation and is the only
-Agent orchestration core for the current phase. The upstream project is
-`openai/openai-agents-python`. OpsMesh still contains product-level adapters for run state, provider
-behavior, tools, approvals, and sandboxes.
+**Current position:** OpsMesh supports two vendor SDKs behind one product-owned runtime contract.
+`openai-agents` is the OpenAI execution core and `claude-agent-sdk` is the Anthropic execution core.
+The upstream projects are `openai/openai-agents-python` and
+`anthropics/claude-agent-sdk-python`. `ProviderDispatchingAgentRunner` selects a concrete adapter,
+while `AgentRunRequest` and `AgentRunResult` remain vendor-neutral.
 
 **Use upstream for:** agent turns, tools, handoffs, sessions, serializable run state, human approval
 interruptions, MCP integration, and sandbox client contracts when those APIs are stable.
@@ -50,13 +51,39 @@ interruptions, MCP integration, and sandbox client contracts when those APIs are
 **Keep in OpsMesh:** workspace authorization, durable task/run models, scheduling, quotas, provider
 credential policy, audit events, artifact ownership, and recovery evidence.
 
-**Next action:** create a version support matrix against the installed and target Agents SDK versions.
-Exercise tool calling, structured output, streaming, sessions, approval pause/resume, MCP, provider
-selection, and serialized run restoration. Replace custom code only after behavior is equivalent.
+**Claude SDK use:** `query()`/`ClaudeAgentOptions` own the model turn; `create_sdk_mcp_server()` and
+`tool()` own the in-process MCP bridge; `SessionStore` mirrors the transcript into the existing
+Postgres-backed session; `output_format` and `ResultMessage.structured_output` own structured output;
+`PreToolUse`/`deferred_tool_use` own provider-side approval pause state. The adapter retains product
+authorization, approval records, redaction, retry/circuit state, audit events, and workspace scope.
 
-Other model providers are deferred. When provider expansion begins, each provider must implement the
-OpsMesh-owned provider contract and pass the same runtime contract tests. Do not add another Agent
-orchestration framework.
+The Claude wheel bundles the Claude Code CLI and is materially larger than a protocol-only client
+(about 99 MB on Windows for the currently pinned release). That footprint is accepted because the
+user explicitly requested the official SDK; no additional general agent framework is added.
+
+**Support matrix:** contract tests cover tool registration, policy review, structured output,
+stream events, session mirroring, deferred approval state, rejection without resume, provider
+selection, and secret-safe raw output. Unsupported semantics are rejected explicitly: OpenAI-style
+handoff descriptors, provider guardrails, and interactive cancellation through the buffered
+`query()` entry point.
+
+Other model providers remain deferred. A future provider must implement the OpsMesh-owned provider
+contract and pass the same runtime contract tests; it must not add a third orchestration framework.
+
+### SDK Adoption Audit (2026-09)
+
+| Area | Current implementation | Decision |
+| --- | --- | --- |
+| Agent turns and tools | OpenAI Agents SDK and Claude Agent SDK adapters | Adopt official SDKs; keep only contract translation and product policy |
+| MCP protocol and transports | Official MCP Python SDK | Keep; no custom JSON-RPC replacement |
+| Schema validation | `jsonschema` | Keep; product adds workspace/resource policy |
+| Tracing and metrics | OpenTelemetry and Prometheus clients | Keep; product audit remains durable Postgres state |
+| Retry and circuit state | Product resilience module | Keep; provider SDK retry cannot replace durable side-effect policy |
+| Sessions and memory | Product Postgres session/memory services, Claude `SessionStore` bridge | Keep product ownership; use SDK transcript extension point |
+| Provider health probes | Direct HTTP health checks | Keep; SDKs do not expose a stable account/model readiness probe |
+| Generic agent frameworks | LangChain, LlamaIndex, LiteLLM | Reject for now; they would duplicate the two SDK cores and add weight |
+| Durable workflow engines | Temporal | Evaluate with a representative workflow before replacing current task/worker state |
+| Runtime execution | Docker boundary and self-hosted connector | Keep product isolation; evaluate Docker SDK behind the existing client |
 
 ### P0: MCP Python SDK
 
