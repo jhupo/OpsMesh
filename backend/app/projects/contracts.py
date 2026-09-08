@@ -23,6 +23,7 @@ class ProjectUpdateCommand:
     work_path: str | None = None
     output_path: str | None = None
     configuration: dict[str, object] | None = None
+    change_summary: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +31,12 @@ class ProjectFileCommand:
     workspace_file_id: UUID
     project_path: str
     access_mode: str = "read_only"
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectFileReplacementCommand:
+    workspace_file_id: UUID
+    access_mode: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -133,18 +133,8 @@ class TaskControlExecutionService:
                 team_id=task.agent_team_id,
                 requested_by_user_id=actor_user_id,
             )
-        run = AgentRun(
-            workspace_id=task.workspace_id,
-            task_id=task.id,
-            runtime_space_id=task.runtime_space_id,
-            status=RunStatus.QUEUED.value,
-            input={
-                "task_id": str(task.id),
-                "title": task.title,
-                "source": "task_control_resume",
-            },
-        )
-        self._session.add(run)
-        self._session.flush()
+        run = orchestrator.create_queued_run_for_task(task)
+        if run is None:
+            return []
         orchestrator.enqueue_run(run, actor_user_id)
         return [run]

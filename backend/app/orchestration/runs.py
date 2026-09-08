@@ -22,6 +22,7 @@ from backend.app.orchestration.step_scheduling_state import (
 )
 from backend.app.orchestration.team_step_planner import TeamStepPlanner
 from backend.app.planning.attempts import TaskPlanningAttemptService
+from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
@@ -87,6 +88,11 @@ class RunOrchestrationService:
                 },
             )
             self._session.add(generic_run)
+            self._session.flush([generic_run])
+            RunProjectSnapshotService(self._session).freeze_for_run(
+                run=generic_run,
+                task=task,
+            )
             run = generic_run
         else:
             run = self._run_step_launcher().create_reserved_run_for_step(task, first_team_step)

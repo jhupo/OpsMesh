@@ -12,15 +12,18 @@ from backend.app.files.models import WorkspaceFile
 from backend.app.projects.contracts import (
     ProjectCreateCommand,
     ProjectFileCommand,
+    ProjectFileReplacementCommand,
     ProjectOutputCommand,
     ProjectUpdateCommand,
 )
 from backend.app.projects.models import (
     WorkspaceProject,
+    WorkspaceProjectConfigurationVersion,
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
 from backend.app.projects.policy import (
+    normalize_change_summary,
     normalize_project_description,
     normalize_project_name,
     normalize_project_slug,
@@ -29,6 +32,7 @@ from backend.app.projects.policy import (
     validate_project_configuration,
     validate_project_layout,
 )
+from backend.app.projects.serialization import sha256_json
 
 
 class WorkspaceProjectService:
@@ -76,6 +80,7 @@ class WorkspaceProjectService:
             work_path=command.work_path,
             output_path=command.output_path,
         )
+        configuration = validate_project_configuration(command.configuration)
         project = WorkspaceProject(
             workspace_id=workspace_id,
             created_by_user_id=actor_user_id,
@@ -85,10 +90,23 @@ class WorkspaceProjectService:
             input_path=input_path,
             work_path=work_path,
             output_path=output_path,
-            configuration=validate_project_configuration(command.configuration),
+            configuration=configuration,
+            configuration_version=1,
         )
         self._session.add(project)
         flush_or_raise_conflict(self._session, "Workspace project slug already exists")
+        self._session.add(
+            WorkspaceProjectConfigurationVersion(
+                workspace_id=workspace_id,
+                project_id=project.id,
+                version=1,
+                configuration=configuration,
+                checksum_sha256=sha256_json(configuration),
+                created_by_user_id=actor_user_id,
+                change_summary="Initial configuration",
+            )
+        )
+        self._session.flush()
         self._audit(project, actor_user_id, "workspace_project.created")
         commit_or_raise_conflict(self._session, "Workspace project slug already exists")
         self._session.refresh(project)
@@ -105,6 +123,8 @@ class WorkspaceProjectService:
         project = self._lock_project(workspace_id, project_id)
         if project is None:
             return None
+        previous_configuration_version = project.configuration_version
+        configuration_changed = False
         input_path, work_path, output_path = validate_project_layout(
             input_path=command.input_path if command.input_path is not None else project.input_path,
             work_path=command.work_path if command.work_path is not None else project.work_path,
@@ -120,9 +140,37 @@ class WorkspaceProjectService:
         project.input_path = input_path
         project.work_path = work_path
         project.output_path = output_path
+        change_summary = normalize_change_summary(command.change_summary)
+        if command.configuration is None and change_summary:
+            raise ValueError("Change summary requires a configuration update")
         if command.configuration is not None:
-            project.configuration = validate_project_configuration(command.configuration)
-        self._audit(project, actor_user_id, "workspace_project.updated")
+            configuration = validate_project_configuration(command.configuration)
+            if configuration != project.configuration:
+                configuration_changed = True
+                project.configuration_version += 1
+                project.configuration = configuration
+                self._session.add(
+                    WorkspaceProjectConfigurationVersion(
+                        workspace_id=workspace_id,
+                        project_id=project.id,
+                        version=project.configuration_version,
+                        configuration=configuration,
+                        checksum_sha256=sha256_json(configuration),
+                        created_by_user_id=actor_user_id,
+                        change_summary=change_summary,
+                    )
+                )
+        self._audit(
+            project,
+            actor_user_id,
+            "workspace_project.updated",
+            metadata={
+                "slug": project.slug,
+                "configuration_changed": configuration_changed,
+                "previous_configuration_version": previous_configuration_version,
+                "configuration_version": project.configuration_version,
+            },
+        )
         self._session.commit()
         self._session.refresh(project)
         return project
@@ -167,13 +215,7 @@ class WorkspaceProjectService:
         project = self._lock_project(workspace_id, project_id)
         if project is None:
             return None
-        workspace_file = self._session.scalar(
-            select(WorkspaceFile).where(
-                WorkspaceFile.workspace_id == workspace_id,
-                WorkspaceFile.id == command.workspace_file_id,
-                WorkspaceFile.status == "active",
-            )
-        )
+        workspace_file = self._active_workspace_file(workspace_id, command.workspace_file_id)
         if workspace_file is None:
             raise ValueError("Workspace file not found")
         if command.access_mode not in {"read_only", "copy_on_write"}:
@@ -183,20 +225,87 @@ class WorkspaceProjectService:
             workspace_id=workspace_id,
             project_id=project.id,
             workspace_file_id=workspace_file.id,
+            supersedes_project_file_id=None,
             project_path=project_path,
+            version=1,
             access_mode=command.access_mode,
         )
+        previous = self._latest_file_version(project, project_path)
+        if previous is not None:
+            binding.supersedes_project_file_id = previous.id
+            binding.version = previous.version + 1
         self._session.add(binding)
         flush_or_raise_conflict(self._session, "Project input file or path already exists")
         self._audit(
             project,
             actor_user_id,
             "workspace_project.input_file_added",
-            metadata={"project_file_id": str(binding.id), "project_path": project_path},
+            metadata={
+                "project_file_id": str(binding.id),
+                "project_path": project_path,
+                "version": binding.version,
+            },
         )
         commit_or_raise_conflict(self._session, "Project input file or path already exists")
         self._session.refresh(binding)
         return binding
+
+    def replace_input_file(
+        self,
+        *,
+        workspace_id: UUID,
+        project_id: UUID,
+        project_file_id: UUID,
+        actor_user_id: UUID,
+        command: ProjectFileReplacementCommand,
+    ) -> WorkspaceProjectFile | None:
+        project = self._lock_project(workspace_id, project_id)
+        if project is None:
+            return None
+        current = self._session.scalar(
+            select(WorkspaceProjectFile).where(
+                WorkspaceProjectFile.workspace_id == workspace_id,
+                WorkspaceProjectFile.project_id == project_id,
+                WorkspaceProjectFile.id == project_file_id,
+                WorkspaceProjectFile.status == "active",
+            )
+        )
+        if current is None:
+            raise ValueError("Active project input file not found")
+        workspace_file = self._active_workspace_file(workspace_id, command.workspace_file_id)
+        if workspace_file is None:
+            raise ValueError("Workspace file not found")
+        access_mode = command.access_mode or current.access_mode
+        if access_mode not in {"read_only", "copy_on_write"}:
+            raise ValueError("Unsupported project file access mode")
+
+        current.status = "superseded"
+        self._session.flush([current])
+        replacement = WorkspaceProjectFile(
+            workspace_id=workspace_id,
+            project_id=project.id,
+            workspace_file_id=workspace_file.id,
+            supersedes_project_file_id=current.id,
+            project_path=current.project_path,
+            version=current.version + 1,
+            access_mode=access_mode,
+        )
+        self._session.add(replacement)
+        flush_or_raise_conflict(self._session, "Project input file replacement conflicts")
+        self._audit(
+            project,
+            actor_user_id,
+            "workspace_project.input_file_replaced",
+            metadata={
+                "project_file_id": str(replacement.id),
+                "supersedes_project_file_id": str(current.id),
+                "project_path": replacement.project_path,
+                "version": replacement.version,
+            },
+        )
+        commit_or_raise_conflict(self._session, "Project input file replacement conflicts")
+        self._session.refresh(replacement)
+        return replacement
 
     def remove_input_file(
         self,
@@ -314,6 +423,31 @@ class WorkspaceProjectService:
                 WorkspaceProject.status == "active",
             )
             .with_for_update()
+        )
+
+    def _active_workspace_file(
+        self, workspace_id: UUID, workspace_file_id: UUID
+    ) -> WorkspaceFile | None:
+        return self._session.scalar(
+            select(WorkspaceFile).where(
+                WorkspaceFile.workspace_id == workspace_id,
+                WorkspaceFile.id == workspace_file_id,
+                WorkspaceFile.status == "active",
+            )
+        )
+
+    def _latest_file_version(
+        self, project: WorkspaceProject, project_path: str
+    ) -> WorkspaceProjectFile | None:
+        return self._session.scalar(
+            select(WorkspaceProjectFile)
+            .where(
+                WorkspaceProjectFile.workspace_id == project.workspace_id,
+                WorkspaceProjectFile.project_id == project.id,
+                WorkspaceProjectFile.project_path == project_path,
+            )
+            .order_by(WorkspaceProjectFile.version.desc())
+            .limit(1)
         )
 
     def _ensure_existing_paths_fit(

@@ -14,6 +14,7 @@ from backend.app.orchestration.run_runtime_authorization import (
     runtime_binding_for_snapshot,
 )
 from backend.app.orchestration.scheduler import WorkspaceScheduler
+from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskStep
@@ -93,6 +94,7 @@ class RunStepLauncher:
         )
         self.session.add(run)
         self.session.flush([run])
+        RunProjectSnapshotService(self.session).freeze_for_run(run=run, task=task)
         model_provider = authorization_snapshot.get("model_provider")
         if isinstance(model_provider, dict):
             self.events.append_event(

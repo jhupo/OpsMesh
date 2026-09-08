@@ -11,6 +11,7 @@ _SENSITIVE_EXACT_KEYS = {
     "endpoint_url",
     "external_ref",
     "remote_url",
+    "storage_key",
 }
 _SAFE_EXACT_KEYS = {
     "authorization_snapshot_version",

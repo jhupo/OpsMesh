@@ -7,10 +7,14 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
 from backend.app.api.schemas.projects import (
+    WorkspaceProjectConfigurationVersionResponse,
     WorkspaceProjectCreateRequest,
     WorkspaceProjectDetailResponse,
+    WorkspaceProjectDiffEntryResponse,
     WorkspaceProjectFileCreateRequest,
+    WorkspaceProjectFileReplacementRequest,
     WorkspaceProjectFileResponse,
+    WorkspaceProjectFileVersionResponse,
     WorkspaceProjectOutputCreateRequest,
     WorkspaceProjectOutputResponse,
     WorkspaceProjectResponse,
@@ -24,10 +28,12 @@ from backend.app.db.session import get_db_session
 from backend.app.projects.contracts import (
     ProjectCreateCommand,
     ProjectFileCommand,
+    ProjectFileReplacementCommand,
     ProjectOutputCommand,
     ProjectUpdateCommand,
 )
 from backend.app.projects.service import WorkspaceProjectService
+from backend.app.projects.versioning import WorkspaceProjectVersionQueryService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/projects", tags=["projects"])
 
@@ -179,6 +185,139 @@ async def remove_project_input_file(
             status_code=status.HTTP_404_NOT_FOUND, detail="Project input file not found"
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{project_id}/input-files/{project_file_id}/versions",
+    response_model=WorkspaceProjectFileResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def replace_project_input_file(
+    project_id: UUID,
+    project_file_id: UUID,
+    request: WorkspaceProjectFileReplacementRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceProjectFileResponse:
+    try:
+        binding = WorkspaceProjectService(session).replace_input_file(
+            workspace_id=context.workspace.id,
+            project_id=project_id,
+            project_file_id=project_file_id,
+            actor_user_id=context.user.user_id,
+            command=ProjectFileReplacementCommand(**request.model_dump()),
+        )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    except ValueError as exc:
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in str(exc).lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+    if binding is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return WorkspaceProjectFileResponse.model_validate(binding)
+
+
+@router.get(
+    "/{project_id}/configuration/versions",
+    response_model=list[WorkspaceProjectConfigurationVersionResponse],
+)
+async def list_project_configuration_versions(
+    project_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> list[WorkspaceProjectConfigurationVersionResponse]:
+    versions = WorkspaceProjectVersionQueryService(session).list_configuration_versions(
+        context.workspace.id,
+        project_id,
+    )
+    if versions is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return [WorkspaceProjectConfigurationVersionResponse.model_validate(item) for item in versions]
+
+
+@router.get(
+    "/{project_id}/configuration/diff",
+    response_model=list[WorkspaceProjectDiffEntryResponse],
+)
+async def diff_project_configuration_versions(
+    project_id: UUID,
+    from_version: int = Query(ge=1),
+    to_version: int = Query(ge=1),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> list[WorkspaceProjectDiffEntryResponse]:
+    try:
+        entries = WorkspaceProjectVersionQueryService(session).configuration_diff(
+            context.workspace.id,
+            project_id,
+            from_version=from_version,
+            to_version=to_version,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if entries is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return [WorkspaceProjectDiffEntryResponse.model_validate(item) for item in entries]
+
+
+@router.get(
+    "/{project_id}/input-files/history",
+    response_model=list[WorkspaceProjectFileVersionResponse],
+)
+async def list_project_input_file_versions(
+    project_id: UUID,
+    project_path: str = Query(min_length=1, max_length=512),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> list[WorkspaceProjectFileVersionResponse]:
+    try:
+        versions = WorkspaceProjectVersionQueryService(session).list_file_versions(
+            context.workspace.id,
+            project_id,
+            project_path=project_path,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if versions is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return [WorkspaceProjectFileVersionResponse.model_validate(item) for item in versions]
+
+
+@router.get(
+    "/{project_id}/input-files/diff",
+    response_model=list[WorkspaceProjectDiffEntryResponse],
+)
+async def diff_project_input_file_versions(
+    project_id: UUID,
+    project_path: str = Query(min_length=1, max_length=512),
+    from_version: int = Query(ge=1),
+    to_version: int = Query(ge=1),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> list[WorkspaceProjectDiffEntryResponse]:
+    try:
+        entries = WorkspaceProjectVersionQueryService(session).file_diff(
+            context.workspace.id,
+            project_id,
+            project_path=project_path,
+            from_version=from_version,
+            to_version=to_version,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in detail.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=detail) from exc
+    if entries is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return [WorkspaceProjectDiffEntryResponse.model_validate(item) for item in entries]
 
 
 @router.post(

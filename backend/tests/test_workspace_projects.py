@@ -1,5 +1,5 @@
 from collections.abc import Generator
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import fakeredis
 from fastapi.testclient import TestClient
@@ -20,6 +20,7 @@ from backend.app.identity.models import User
 from backend.app.main import create_app_with_dependencies
 from backend.app.projects.policy import validate_project_configuration
 from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
+from backend.app.runs.models import AgentRun
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "project-test-token"
@@ -153,6 +154,178 @@ def test_project_api_rejects_unsafe_layout_and_viewer_writes() -> None:
         raise AssertionError("Secret-bearing project configuration must be rejected")
 
 
+def test_project_versions_freeze_exact_run_inputs_and_retry_snapshot() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner", slug="versions")
+    foreign_owner, foreign_workspace = _seed_workspace(session, role="owner", slug="other")
+    first_file = _file(
+        session,
+        workspace.id,
+        owner.id,
+        "spec-v1.txt",
+        checksum="a" * 64,
+    )
+    second_file = _file(
+        session,
+        workspace.id,
+        owner.id,
+        "spec-v2.txt",
+        checksum="b" * 64,
+    )
+    headers = _headers(owner.id)
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/projects",
+        headers=headers,
+        json={
+            "name": "Versioned project",
+            "slug": "versioned-project",
+            "configuration": {"python": {"version": "3.12"}},
+        },
+    )
+    assert created.status_code == 201
+    project_id = created.json()["id"]
+    attached = client.post(
+        f"/api/v1/workspaces/{workspace.id}/projects/{project_id}/input-files",
+        headers=headers,
+        json={
+            "workspace_file_id": str(first_file.id),
+            "project_path": "inputs/spec.txt",
+        },
+    )
+    assert attached.status_code == 201
+    assert attached.json()["version"] == 1
+
+    first_task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=headers,
+        json={"title": "First run", "workspace_project_id": project_id},
+    )
+    assert first_task.status_code == 201
+    first_run = session.scalar(
+        select(AgentRun).where(AgentRun.task_id == UUID(first_task.json()["id"]))
+    )
+    assert first_run is not None
+    first_snapshot = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runs/{first_run.id}/project-snapshot",
+        headers=headers,
+    )
+    assert first_snapshot.status_code == 200
+    first_run.status = "failed"
+    session.commit()
+
+    updated = client.patch(
+        f"/api/v1/workspaces/{workspace.id}/projects/{project_id}",
+        headers=headers,
+        json={
+            "configuration": {"python": {"version": "3.13"}, "retries": 2},
+            "change_summary": "Upgrade runtime",
+        },
+    )
+    replaced = client.post(
+        f"/api/v1/workspaces/{workspace.id}/projects/{project_id}/input-files/"
+        f"{attached.json()['id']}/versions",
+        headers=headers,
+        json={
+            "workspace_file_id": str(second_file.id),
+            "access_mode": "copy_on_write",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["configuration_version"] == 2
+    assert replaced.status_code == 201
+    assert replaced.json()["version"] == 2
+    assert replaced.json()["supersedes_project_file_id"] == attached.json()["id"]
+
+    versions = client.get(
+        f"/api/v1/workspaces/{workspace.id}/projects/{project_id}/configuration/versions",
+        headers=headers,
+    )
+    configuration_diff = client.get(
+        f"/api/v1/workspaces/{workspace.id}/projects/{project_id}/configuration/diff",
+        headers=headers,
+        params={"from_version": 1, "to_version": 2},
+    )
+    file_history = client.get(
+        f"/api/v1/workspaces/{workspace.id}/projects/{project_id}/input-files/history",
+        headers=headers,
+        params={"project_path": "inputs/spec.txt"},
+    )
+    file_diff = client.get(
+        f"/api/v1/workspaces/{workspace.id}/projects/{project_id}/input-files/diff",
+        headers=headers,
+        params={
+            "project_path": "inputs/spec.txt",
+            "from_version": 1,
+            "to_version": 2,
+        },
+    )
+    assert versions.status_code == 200
+    assert [item["version"] for item in versions.json()] == [2, 1]
+    assert versions.json()[0]["change_summary"] == "Upgrade runtime"
+    assert configuration_diff.status_code == 200
+    assert [entry["path"] for entry in configuration_diff.json()] == [
+        "/python/version",
+        "/retries",
+    ]
+    assert file_history.status_code == 200
+    assert [item["version"] for item in file_history.json()] == [2, 1]
+    assert file_diff.status_code == 200
+    assert {entry["path"] for entry in file_diff.json()} >= {
+        "/access_mode",
+        "/checksum_sha256",
+        "/workspace_file_id",
+    }
+
+    retried = client.post(
+        f"/api/v1/workspaces/{workspace.id}/runs/{first_run.id}/retry",
+        headers=headers,
+    )
+    assert retried.status_code == 201
+    retry_snapshot = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runs/{retried.json()['id']}/project-snapshot",
+        headers=headers,
+    )
+    assert retry_snapshot.status_code == 200
+    assert retry_snapshot.json()["fingerprint_sha256"] == first_snapshot.json()[
+        "fingerprint_sha256"
+    ]
+    assert retry_snapshot.json()["manifest"]["configuration"]["version"] == 1
+    assert retry_snapshot.json()["manifest"]["files"][0]["workspace_file_id"] == str(
+        first_file.id
+    )
+    assert retry_snapshot.json()["manifest"]["files"][0]["storage_key"] == "[redacted]"
+
+    second_task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=headers,
+        json={"title": "Second run", "workspace_project_id": project_id},
+    )
+    assert second_task.status_code == 201
+    second_run = session.scalar(
+        select(AgentRun).where(AgentRun.task_id == UUID(second_task.json()["id"]))
+    )
+    assert second_run is not None
+    second_snapshot = client.get(
+        f"/api/v1/workspaces/{workspace.id}/runs/{second_run.id}/project-snapshot",
+        headers=headers,
+    )
+    assert second_snapshot.status_code == 200
+    assert second_snapshot.json()["fingerprint_sha256"] != first_snapshot.json()[
+        "fingerprint_sha256"
+    ]
+    assert second_snapshot.json()["manifest"]["configuration"]["version"] == 2
+    assert second_snapshot.json()["manifest"]["files"][0]["workspace_file_id"] == str(
+        second_file.id
+    )
+
+    cross_workspace = client.get(
+        f"/api/v1/workspaces/{foreign_workspace.id}/runs/{first_run.id}/project-snapshot",
+        headers=_headers(foreign_owner.id),
+    )
+    assert cross_workspace.status_code == 404
+
+
 def _client() -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
@@ -211,6 +384,8 @@ def _file(
     workspace_id: object,
     user_id: object | None,
     filename: str,
+    *,
+    checksum: str = "a" * 64,
 ) -> WorkspaceFile:
     file = WorkspaceFile(
         workspace_id=workspace_id,
@@ -218,7 +393,7 @@ def _file(
         filename=filename,
         content_type="text/plain",
         size_bytes=1,
-        checksum_sha256="a" * 64,
+        checksum_sha256=checksum,
         storage_key=f"workspaces/{workspace_id}/files/{uuid4()}/{filename}",
     )
     session.add(file)

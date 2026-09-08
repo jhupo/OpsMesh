@@ -39,7 +39,9 @@ from backend.app.notifications.models import WorkspaceNotification
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.projects.models import (
+    AgentRunProjectSnapshot,
     WorkspaceProject,
+    WorkspaceProjectConfigurationVersion,
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
@@ -89,6 +91,7 @@ __all__ = [
     "AgentMessage",
     "AgentMessageThread",
     "AgentRun",
+    "AgentRunProjectSnapshot",
     "AgentRunStateSnapshot",
     "AgentTeam",
     "AgentTeamMember",
@@ -156,6 +159,7 @@ __all__ = [
     "WorkspaceMarketplaceInstall",
     "WorkspaceNotification",
     "WorkspaceProject",
+    "WorkspaceProjectConfigurationVersion",
     "WorkspaceProjectFile",
     "WorkspaceProjectOutput",
     "WorkspaceQuota",

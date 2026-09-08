@@ -48,3 +48,19 @@ class RunEventResponse(ORMModel):
     @field_serializer("event_metadata")
     def _serialize_event_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+
+class AgentRunProjectSnapshotResponse(ORMModel):
+    id: UUID
+    workspace_id: UUID
+    agent_run_id: UUID
+    project_id: UUID
+    configuration_version_id: UUID
+    schema_version: int
+    manifest: dict[str, object]
+    fingerprint_sha256: str
+    created_at: datetime
+
+    @field_serializer("manifest")
+    def _serialize_manifest(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)

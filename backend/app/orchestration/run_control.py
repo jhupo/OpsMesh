@@ -15,6 +15,7 @@ from backend.app.orchestration.statuses import (
     ACTIVE_RUN_STATUS_VALUES,
     STALE_RECOVERABLE_RUN_STATUS_VALUES,
 )
+from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
@@ -181,6 +182,10 @@ class RunControlService:
         )
         self.session.add(retry_run)
         self.session.flush()
+        RunProjectSnapshotService(self.session).clone_for_retry(
+            source_run=failed_run,
+            retry_run=retry_run,
+        )
         RunEventRecorder(self.session).append_event(
             retry_run,
             "run.retry_queued",

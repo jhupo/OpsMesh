@@ -25,6 +25,30 @@ Tasks may reference an active `workspace_project_id`. The task service validates
 project state before creating any run. Project IDs, file IDs, and output IDs are never authorized
 without the workspace scope.
 
+Project configuration is versioned in `workspace_project_configuration_versions`. Every accepted
+configuration change creates an immutable, checksummed version with its actor and optional change
+summary. Input bindings form a per-project-path version chain: replacement marks the current
+binding as superseded and points the new version at it; removing and later reattaching a path also
+advances that path's version instead of erasing history. The API exposes scoped configuration and
+file history plus deterministic JSON-Pointer diffs.
+
+Every run created for a project stores one immutable `agent_run_project_snapshots` row. Its
+fingerprinted manifest fixes the project layout, exact configuration version, exact workspace file
+IDs/checksums/storage locators, access modes, and declared outputs. Ordinary runs, team-step runs,
+and task resumes freeze the current project state at creation. Retrying a failed run clones the
+failed run's original manifest, so retry never silently adopts newer project inputs. Public API
+serialization redacts storage locators; workers consume the raw manifest only inside the trusted
+runtime-staging path.
+
+Version and snapshot endpoints:
+
+- `GET /api/v1/workspaces/{workspace_id}/projects/{project_id}/configuration/versions`
+- `GET /api/v1/workspaces/{workspace_id}/projects/{project_id}/configuration/diff`
+- `POST /api/v1/workspaces/{workspace_id}/projects/{project_id}/input-files/{binding_id}/versions`
+- `GET /api/v1/workspaces/{workspace_id}/projects/{project_id}/input-files/history`
+- `GET /api/v1/workspaces/{workspace_id}/projects/{project_id}/input-files/diff`
+- `GET /api/v1/workspaces/{workspace_id}/runs/{run_id}/project-snapshot`
+
 ### Workspace Files
 
 Files uploaded by users or imported from connectors.
@@ -217,6 +241,10 @@ Agents and tools should not mount all workspace files.
 7. Artifacts are stored under workspace-scoped storage keys.
 
 Runtime paths should be internal details, not permanent file identifiers.
+
+The immutable run project snapshot is the only source of project inputs for staging. Orchestration
+must not reconstruct a historical run from the project's current configuration or active file
+bindings.
 
 ## Artifact Collection
 

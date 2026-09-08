@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
-from backend.app.api.schemas.common import TimestampedModel
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.api.schemas.common import ORMModel, TimestampedModel
+from backend.app.security.redaction import (
+    redact_sensitive_payload,
+    redact_sensitive_payload_item,
+    redact_text_fragments,
+)
 
 
 class WorkspaceProjectCreateRequest(BaseModel):
@@ -26,6 +31,7 @@ class WorkspaceProjectUpdateRequest(BaseModel):
     work_path: str | None = Field(default=None, min_length=1, max_length=512)
     output_path: str | None = Field(default=None, min_length=1, max_length=512)
     configuration: dict[str, object] | None = None
+    change_summary: str = Field(default="", max_length=500)
 
     @model_validator(mode="after")
     def _require_change(self) -> WorkspaceProjectUpdateRequest:
@@ -41,6 +47,8 @@ class WorkspaceProjectUpdateRequest(BaseModel):
             )
         ):
             raise ValueError("At least one project field is required")
+        if self.change_summary and self.configuration is None:
+            raise ValueError("Change summary requires a configuration update")
         return self
 
 
@@ -54,6 +62,7 @@ class WorkspaceProjectResponse(TimestampedModel):
     work_path: str
     output_path: str
     configuration: dict[str, object]
+    configuration_version: int
     status: str
 
     @field_serializer("configuration")
@@ -67,11 +76,18 @@ class WorkspaceProjectFileCreateRequest(BaseModel):
     access_mode: Literal["read_only", "copy_on_write"] = "read_only"
 
 
+class WorkspaceProjectFileReplacementRequest(BaseModel):
+    workspace_file_id: UUID
+    access_mode: Literal["read_only", "copy_on_write"] | None = None
+
+
 class WorkspaceProjectFileResponse(TimestampedModel):
     workspace_id: UUID
     project_id: UUID
     workspace_file_id: UUID
+    supersedes_project_file_id: UUID | None
     project_path: str
+    version: int
     access_mode: str
     status: str
 
@@ -99,3 +115,41 @@ class WorkspaceProjectDetailResponse(BaseModel):
     project: WorkspaceProjectResponse
     input_files: list[WorkspaceProjectFileResponse]
     outputs: list[WorkspaceProjectOutputResponse]
+
+
+class WorkspaceProjectConfigurationVersionResponse(ORMModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    version: int
+    configuration: dict[str, object]
+    checksum_sha256: str
+    created_by_user_id: UUID | None
+    change_summary: str
+    created_at: datetime
+
+    @field_serializer("configuration")
+    def _serialize_configuration(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+    @field_serializer("change_summary")
+    def _serialize_change_summary(self, value: str) -> str:
+        return redact_text_fragments(value)
+
+
+class WorkspaceProjectFileVersionResponse(WorkspaceProjectFileResponse):
+    filename: str
+    content_type: str
+    size_bytes: int
+    checksum_sha256: str
+
+
+class WorkspaceProjectDiffEntryResponse(ORMModel):
+    path: str
+    operation: Literal["added", "removed", "changed"]
+    before: object | None
+    after: object | None
+
+    @field_serializer("before", "after")
+    def _serialize_value(self, value: object | None) -> object | None:
+        return redact_sensitive_payload_item(value)

@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
 from backend.app.api.schemas.audit import AuditEventResponse
-from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
+from backend.app.api.schemas.runs import (
+    AgentRunProjectSnapshotResponse,
+    AgentRunResponse,
+    RunEventResponse,
+)
 from backend.app.api.services.workspace_reads import WorkspaceReadService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
@@ -13,6 +17,7 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.session import get_db_session
 from backend.app.orchestration.run_control import RunControlService
 from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue.redis_queue import RedisQueue
 
@@ -47,6 +52,27 @@ async def list_run_events(
         page,
     )
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get(
+    "/runs/{agent_run_id}/project-snapshot",
+    response_model=AgentRunProjectSnapshotResponse,
+)
+async def get_run_project_snapshot(
+    agent_run_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> AgentRunProjectSnapshotResponse:
+    snapshot = RunProjectSnapshotService(session).get_for_run(
+        context.workspace.id,
+        agent_run_id,
+    )
+    if snapshot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run project snapshot not found",
+        )
+    return AgentRunProjectSnapshotResponse.model_validate(snapshot)
 
 
 @router.post("/runs/{agent_run_id}/cancel", response_model=AgentRunResponse)

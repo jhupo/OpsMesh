@@ -33,6 +33,15 @@ def normalize_project_description(value: str) -> str:
     return normalized
 
 
+def normalize_change_summary(value: str) -> str:
+    normalized = value.strip()
+    if len(normalized) > 500:
+        raise ValueError("Project configuration change summary exceeds maximum length")
+    if is_sensitive_payload_value(normalized):
+        raise ValueError("Project configuration change summary cannot contain secret values")
+    return normalized
+
+
 def validate_output_declaration(
     *, artifact_type: str, content_type: str | None, max_bytes: int
 ) -> tuple[str, str | None, int]:
@@ -89,7 +98,11 @@ def validate_project_configuration(value: dict[str, object]) -> dict[str, object
         raise ValueError("Project configuration cannot contain credentials or secret values")
     try:
         encoded = json.dumps(
-            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            value,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
         ).encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise ValueError("Project configuration must be JSON serializable") from exc
