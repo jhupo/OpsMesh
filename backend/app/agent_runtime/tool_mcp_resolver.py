@@ -11,19 +11,14 @@ from backend.app.capabilities.mcp_execution_adapters import (
     McpToolAdapterResolver,
 )
 from backend.app.capabilities.mcp_execution_types import McpExecutionError
-from backend.app.capabilities.mcp_stdio_adapters import (
-    DockerRuntimeStdioMcpToolAdapter,
-    SelfHostedStdioMcpToolAdapter,
-)
 from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings
 from backend.app.runs.models import AgentRun
+from backend.app.runtime_manager.backends import build_runtime_backend_registry
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
-from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.models import SecurityEvent
-from backend.app.self_hosted.mcp_jobs import SelfHostedMcpJobService
 
 
 class ContextualMcpAdapterResolver:
@@ -50,20 +45,13 @@ class ContextualMcpAdapterResolver:
         if run is None:
             self._deny_stdio("stdio_run_context_invalid", "MCP stdio run context is invalid")
         runtime = self._authorized_runtime_for_run(run)
-        if run is not None and runtime is not None and runtime.runtime_provider == "self_hosted":
-            return SelfHostedStdioMcpToolAdapter(
-                service=SelfHostedMcpJobService(self._session),
-                runtime=runtime,
-                agent_run_id=run.id,
-            )
-        if runtime is not None and _is_docker_runtime(runtime):
-            if self._docker_client is None:
-                raise RuntimeError("Docker runtime MCP execution requires a worker-injected client")
-            return DockerRuntimeStdioMcpToolAdapter(
-                runtime_manager=RuntimeManager(self._session, self._docker_client),
-                runtime=runtime,
-                secret_service=self._secret_service,
-            )
+        backend = build_runtime_backend_registry(
+            self._session,
+            self._docker_client,
+            self._secret_service,
+        ).resolve(runtime.runtime_provider)
+        if backend is not None and backend.capabilities.mcp_stdio:
+            return backend.mcp_adapter(runtime, run.id)
         self._deny_stdio(
             "stdio_runtime_provider_unsupported",
             "Authorized runtime provider does not support MCP stdio execution",
@@ -148,11 +136,3 @@ class ContextualMcpAdapterResolver:
         )
         self._session.flush()
         raise McpExecutionError(message, code=code)
-
-
-def _is_docker_runtime(runtime: WorkspaceRuntime) -> bool:
-    return (
-        runtime.runtime_provider in {"cloud_docker", "docker"}
-        or runtime.runtime_type == "docker"
-        or runtime.docker_container_id is not None
-    )
