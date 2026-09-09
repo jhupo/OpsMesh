@@ -95,7 +95,9 @@ contracts. A separate giant CLI framework is not needed.
 - At commit `f9112a6`, strict mypy passes all 1004 source files (zero errors), down from the
   original 721. Ruff passes repository-wide. Both commands were rerun without module filters or
   relaxed settings. Hosted Backend CI run `34345716568` also passed dependency sync, Ruff and strict
-  type checks; its changed-area test step is still running at this checkpoint.
+  type checks but failed changed-area tests. After the repairs below, Backend CI
+  [run 34348069051](https://github.com/jhupo/OpsMesh/actions/runs/34348069051) on `dc1a7b2`
+  completed successfully, including the changed-area tests.
 - Repairs replace unstructured cross-module contracts with protocols/TypedDicts, preserve SQL
   workspace scope, use native Redis/S3 SDK contracts, and fix working-memory list redaction and
   cross-workspace capacity batches. Each functional change has a separate commit and focused tests.
@@ -112,9 +114,23 @@ contracts. A separate giant CLI framework is not needed.
   No global type-check relaxation or compatibility implementation was added.
 - Backend CI now reuses the delivery command wrapper to publish bounded, redacted failure
   annotations. Public status inspection does not require downloading authenticated full logs.
+  The wrapper preserves merged stdout/stderr ordering and the test selector propagates pytest's
+  exit status, so a wrapper traceback cannot hide the actual failed-test summary.
+- Worker fixtures now create positive authorization snapshots through the production snapshot
+  service. Missing/obsolete snapshots, scope violations and tampering remain rejected. Cost tests
+  supply typed usage; marketplace and mailbox assertions follow the current memory and catalog
+  contracts. A bounded reproduction of the failing changed-area set and focused failure reruns
+  were used; this was not a full pre-release test suite.
+- Revoked team membership now records `capability_authorization_blocked` on the waiting step
+  without rolling back the previously completed step. Frozen planning assignments do not grant
+  permission to execute as a revoked member; tests cover both active and revoked membership.
+- Previously recorded WorkerRunner and self-hosted failures were revalidated and repaired locally:
+  authorized queue fixtures, queue-producer/worker-consumer trace ancestry, async MCP adapters,
+  current runtime resource grants and project-limit trust summaries. Their final hosted validation
+  remains to be recorded after the next push.
 - Hosted Delivery Integration run `34340457352` on `97e7dab` also succeeded (2m 6s), confirming the
   previously recorded migration and fresh-container acceptance. This is not cross-version update
   or signed-publication evidence.
-- The historical worker/self-hosted failures have not all been revalidated. Signed release assets,
-  cross-version upgrade, systemd installation and database restore remain unaccepted; do not tag a
+- Signed release assets, cross-version upgrade, systemd installation and database restore remain
+  unaccepted; do not tag a
   release or describe the complete delivery system as finished on this checkpoint alone.
