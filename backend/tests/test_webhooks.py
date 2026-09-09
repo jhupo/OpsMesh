@@ -530,7 +530,7 @@ def test_worker_handler_dispatches_webhook_delivery_job(monkeypatch: pytest.Monk
             )
 
     monkeypatch.setattr(
-        "backend.app.workers.handlers.WebhookDeliveryService",
+        "backend.app.workers.job_handlers.io.WebhookDeliveryService",
         RecordingDeliveryService,
     )
 
