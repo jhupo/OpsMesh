@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict
-from typing import Any
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
@@ -207,34 +206,46 @@ def _parse_guardrail_stage(
 
 def _validate_guardrail_config(kind: str, config: dict[str, object]) -> None:
     if kind == "blocked_terms":
-        unknown = set(config) - {"terms", "case_sensitive"}
-        terms = config.get("terms")
-        if unknown or not isinstance(terms, list) or not 1 <= len(terms) <= MAX_BLOCKED_TERMS:
-            raise ValueError("blocked_terms guardrail requires a bounded terms list")
-        if any(
-            not isinstance(term, str) or not term or len(term) > MAX_TERM_LENGTH
-            for term in terms
-        ):
-            raise ValueError("blocked_terms guardrail terms must be non-empty short strings")
-        case_sensitive = config.get("case_sensitive", False)
-        if not isinstance(case_sensitive, bool):
-            raise ValueError("blocked_terms case_sensitive must be a boolean")
+        _blocked_terms_config(config)
         return
     if kind == "max_characters":
-        if set(config) != {"max_characters"}:
-            raise ValueError("max_characters guardrail requires only max_characters")
-        maximum = config.get("max_characters")
-        if (
-            not isinstance(maximum, int)
-            or isinstance(maximum, bool)
-            or not 1 <= maximum <= MAX_CHARACTER_LIMIT
-        ):
-            raise ValueError("max_characters must be a positive bounded integer")
+        _maximum_characters(config)
         return
+    if kind != "json_schema":
+        raise ValueError("Unsupported agent guardrail kind")
     if set(config) != {"schema"}:
         raise ValueError("json_schema guardrail requires only schema")
     schema = _mapping(config.get("schema"), "Guardrail JSON schema")
     _validate_json_schema(schema, "Guardrail JSON schema")
+
+
+def _blocked_terms_config(config: dict[str, object]) -> tuple[list[str], bool]:
+    unknown = set(config) - {"terms", "case_sensitive"}
+    raw_terms = config.get("terms")
+    if unknown or not isinstance(raw_terms, list) or not 1 <= len(raw_terms) <= MAX_BLOCKED_TERMS:
+        raise ValueError("blocked_terms guardrail requires a bounded terms list")
+    terms: list[str] = []
+    for term in raw_terms:
+        if not isinstance(term, str) or not term or len(term) > MAX_TERM_LENGTH:
+            raise ValueError("blocked_terms guardrail terms must be non-empty short strings")
+        terms.append(term)
+    case_sensitive = config.get("case_sensitive", False)
+    if not isinstance(case_sensitive, bool):
+        raise ValueError("blocked_terms case_sensitive must be a boolean")
+    return terms, case_sensitive
+
+
+def _maximum_characters(config: dict[str, object]) -> int:
+    if set(config) != {"max_characters"}:
+        raise ValueError("max_characters guardrail requires only max_characters")
+    maximum = config.get("max_characters")
+    if (
+        not isinstance(maximum, int)
+        or isinstance(maximum, bool)
+        or not 1 <= maximum <= MAX_CHARACTER_LIMIT
+    ):
+        raise ValueError("max_characters must be a positive bounded integer")
+    return maximum
 
 
 def _evaluate(
@@ -243,14 +254,12 @@ def _evaluate(
 ) -> tuple[bool, dict[str, object]]:
     if definition.kind == "blocked_terms":
         text = _text_value(value)
-        terms = definition.config["terms"]
-        case_sensitive = bool(definition.config.get("case_sensitive", False))
+        terms, case_sensitive = _blocked_terms_config(definition.config)
         haystack = text if case_sensitive else text.casefold()
         matches = sum(
             1
             for raw_term in terms
-            if isinstance(raw_term, str)
-            and (raw_term if case_sensitive else raw_term.casefold()) in haystack
+            if (raw_term if case_sensitive else raw_term.casefold()) in haystack
         )
         return matches == 0, {
             "evaluated_characters": len(text),
@@ -258,11 +267,12 @@ def _evaluate(
         }
     if definition.kind == "max_characters":
         text = _text_value(value)
-        maximum = int(definition.config["max_characters"])
+        maximum = _maximum_characters(definition.config)
         return len(text) <= maximum, {
             "evaluated_characters": len(text),
             "max_characters": maximum,
         }
+    _validate_guardrail_config(definition.kind, definition.config)
     schema = _mapping(definition.config["schema"], "Guardrail JSON schema")
     error = next(Draft202012Validator(schema).iter_errors(value), None)
     return error is None, {
@@ -299,7 +309,7 @@ def _validate_json_schema(schema: dict[str, object], label: str) -> None:
         raise ValueError(f"{label} is invalid: {exc.message}") from exc
 
 
-def _mapping(value: object, label: str) -> dict[str, Any]:
+def _mapping(value: object, label: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError(f"{label} must be an object")
     return dict(value)

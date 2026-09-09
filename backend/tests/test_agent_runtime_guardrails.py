@@ -127,7 +127,7 @@ def test_openai_sdk_guardrail_block_is_non_retryable(
     monkeypatch.setattr(openai_runtime.Runner, "run", fake_run)
 
     with pytest.raises(AgentRuntimeGuardrailBlockedError) as raised:
-        asyncio.run(OpenAIAgentsRunner(max_attempts=3).run(request))
+        asyncio.run(OpenAIAgentsRunner().run(request))
 
     normalized = normalize_agent_error(raised.value)
     assert calls == 1
@@ -312,6 +312,29 @@ def test_policy_failure_appends_redacted_durable_event() -> None:
         "match_count": 1,
         "api_key": "[redacted]",
     }
+
+
+@pytest.mark.parametrize(
+    ("kind", "config"),
+    [
+        ("blocked_terms", {"terms": [1]}),
+        ("blocked_terms", {"terms": ["secret"], "case_sensitive": "false"}),
+        ("max_characters", {"max_characters": True}),
+        ("max_characters", {"max_characters": "10"}),
+        ("unknown", {"schema": {"type": "string"}}),
+    ],
+)
+def test_guardrail_execution_rejects_invalid_direct_contract(
+    kind: str, config: dict[str, object]
+) -> None:
+    from backend.app.agent_runtime.guardrails import evaluate_guardrail
+
+    with pytest.raises(ValueError):
+        evaluate_guardrail(
+            AgentRuntimeGuardrail(name="invalid", kind=kind, config=config),
+            "safe input",
+            stage="input",
+        )
 
 
 def test_agent_profile_rejects_invalid_guardrail_configuration() -> None:

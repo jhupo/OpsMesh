@@ -22,6 +22,7 @@ from backend.app.agent_runtime.sessions import (
     ACTIVE_SESSION_STATUS,
     ARCHIVED_SESSION_STATUS,
     FROZEN_SESSION_STATUS,
+    PersistentAgentSession,
 )
 from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
@@ -206,7 +207,7 @@ class PersistentAgentSessionManagementService:
         self._db_session.flush([session])
         return self._summary_for_session(session)
 
-    def _summary_for_session(self, session) -> PersistentSessionSummary:
+    def _summary_for_session(self, session: PersistentAgentSession) -> PersistentSessionSummary:
         return session_summary(
             session,
             item_count=self._repository.item_count(session.workspace_id, session.id),

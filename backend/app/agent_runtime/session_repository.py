@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import Select, delete, func, select
 from sqlalchemy.orm import Session as DbSession
 
 from backend.app.agent_runtime.sessions import (
@@ -201,7 +201,7 @@ def _session_filter_statement(
     agent_team_id: UUID | None,
     task_id: UUID | None,
     status: str | None,
-):
+) -> Select[tuple[PersistentAgentSession]]:
     if status is not None:
         validate_status(status)
     statement = select(PersistentAgentSession).where(
