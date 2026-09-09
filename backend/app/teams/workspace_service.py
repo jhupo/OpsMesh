@@ -188,6 +188,8 @@ class WorkspaceTeamService:
             raise ValueError("Team member not found")
         reports_to_member_id = command.changes.get("reports_to_member_id")
         if reports_to_member_id is not None:
+            if not isinstance(reports_to_member_id, UUID):
+                raise ValueError("Reporting manager member ID must be a UUID")
             if reports_to_member_id == member.id:
                 raise ValueError("Team member cannot report to itself")
             self._require_team_member(workspace_id, team_id, reports_to_member_id)
@@ -197,7 +199,7 @@ class WorkspaceTeamService:
                 workspace_id,
                 team_id,
                 member.id,
-                _uuid_or_none(command.changes["reports_to_member_id"]),
+                reports_to_member_id,
             )
         before = _team_member_update_snapshot(member, command.changes)
         for field_name, value in command.changes.items():
@@ -323,10 +325,3 @@ def _serializable_team_member_value(value: object) -> object:
         return str(value)
     return value
 
-
-def _uuid_or_none(value: object) -> UUID | None:
-    if value is None:
-        return None
-    if isinstance(value, UUID):
-        return value
-    return UUID(str(value))

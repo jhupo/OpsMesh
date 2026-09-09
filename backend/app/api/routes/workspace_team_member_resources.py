@@ -10,6 +10,7 @@ from backend.app.agent_runtime.session_management import (
     PersistentAgentSessionManagementService,
 )
 from backend.app.agents.model_provider_summary import agent_profile_response
+from backend.app.agents.models import AgentProfile
 from backend.app.agents.service import AgentManagementService
 from backend.app.api.idempotency import (
     IdempotencyInProgressError,
@@ -313,7 +314,7 @@ def _append_team_model_provider_updated_message(
     session.flush([message])
 
 
-def _team_member_model_provider_state(agent) -> dict[str, object]:
+def _team_member_model_provider_state(agent: AgentProfile) -> dict[str, object]:
     return {
         "model": agent.model,
         "model_provider_credential_id": str(agent.model_provider_credential_id)
