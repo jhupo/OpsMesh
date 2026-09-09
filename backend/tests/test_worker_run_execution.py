@@ -2554,10 +2554,10 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
         task_id=task.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": {
-                "workspace_id": str(workspace.id),
-                "allowed_tools": [],
-            },
+            "authorization_snapshot": _v2_authorization_snapshot(
+                workspace_id=str(workspace.id),
+                task_id=str(task.id),
+            ),
             "pending_tool_results": [
                 {
                     "tool_name": "generate_image",
@@ -2973,7 +2973,13 @@ def test_agent_request_restores_provider_native_continuation_from_persistent_ses
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input={
+            "authorization_snapshot": _v2_authorization_snapshot(
+                workspace_id=str(workspace.id),
+                task_id=str(task.id),
+                agent_profile_id=str(agent.id),
+            )
+        },
     )
     session.add_all([first_run, second_run])
     session.commit()

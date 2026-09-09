@@ -14,7 +14,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
-    AgentRuntimeEvent,
+    AgentRuntimeUsage,
 )
 from backend.app.agents.models import AgentProfile
 from backend.app.audit.models import AuditEvent
@@ -106,11 +106,11 @@ def test_cost_api_is_workspace_scoped_audited_and_returns_summary() -> None:
         ),
         result=AgentRunResult(
             final_output="done",
-            events=(
-                AgentRuntimeEvent(
-                    event_type="model.usage",
-                    payload={"usage": {"input_tokens": 1_000, "output_tokens": 500}},
-                ),
+            usage=AgentRuntimeUsage(
+                request_count=1,
+                input_tokens=1_000,
+                output_tokens=500,
+                total_tokens=1_500,
             ),
         ),
         job_attempt=0,

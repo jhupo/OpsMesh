@@ -757,6 +757,12 @@ def test_talent_install_uses_frozen_public_snapshot_without_private_workspace_re
     assert agent["tool_policy"] == {"mcp_tools": ["generate_image"], "nested": {}}
     assert agent["runtime_policy"] == {"provider": "docker", "limits": {"cpu": 2}}
     assert agent["memory_policy"] == {
+        "context_retrieval": {
+            "enabled": True,
+            "max_context_tokens": 4_096,
+            "max_results": 12,
+            "query_max_tokens": 1_024,
+        },
         "context_budget": {
             "max_input_tokens": None,
             "context_window_tokens": None,
