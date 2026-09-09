@@ -1,6 +1,9 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
+from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.memory.working import AgentWorkingMemoryService
 from backend.app.runs.models import AgentRun
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
@@ -71,19 +74,25 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
             raise ValueError("Memory source type is outside the authorized resource scope")
         if allowed_tags is not None and not allowed_tags.intersection(normalized_entry_tags):
             raise ValueError("Memory tags are outside the authorized resource scope")
+        title_value = bounded_text(title, 240, "Untitled memory")
+        content_value = content.strip()
         entry = WorkspaceMemoryEntry(
             workspace_id=context.workspace_id,
             created_by_agent_profile_id=run.agent_profile_id if run is not None else None,
             created_by_agent_run_id=context.agent_run_id,
             source_type=normalized_source_type,
             source_id=bounded_optional(source_id, 120),
+            memory_layer="semantic",
+            scope_type="workspace",
+            scope_id=str(context.workspace_id),
             entry_type=normalized_entry_type,
-            title=bounded_text(title, 240, "Untitled memory"),
-            content=content.strip(),
+            title=title_value,
+            content=content_value,
             tags=normalized_entry_tags,
             visibility_scope=bounded_text(visibility_scope, 32, "workspace"),
             importance=max(0, min(100, importance)),
             status="active",
+            content_fingerprint=memory_content_fingerprint(title_value, content_value),
             memory_metadata=metadata or {},
         )
         self._session.add(entry)
@@ -112,8 +121,27 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
         if allowed_tags is not None and not allowed_tags.intersection(entry.tags):
             raise ToolResourceNotFoundError("Memory entry is outside the authorized resource scope")
         entry.status = "archived"
+        entry.archived_at = datetime.now(UTC)
         self._session.flush([entry])
         self._append_tool_event(context, "tool.completed", "archive_workspace_memory")
+        return entry
+
+    def promote_working_memory(
+        self,
+        context: ToolContext,
+        working_memory_entry_id: UUID,
+    ) -> WorkspaceMemoryEntry:
+        context.require_tool("promote_working_memory")
+        self._append_tool_event(context, "tool.called", "promote_working_memory")
+        if context.agent_run_id is None:
+            raise ValueError("Working memory promotion requires an agent run")
+        entry = AgentWorkingMemoryService(self._session).promote(
+            workspace_id=context.workspace_id,
+            run_id=context.agent_run_id,
+            memory_entry_id=working_memory_entry_id,
+        )
+        self._session.flush([entry])
+        self._append_tool_event(context, "tool.completed", "promote_working_memory")
         return entry
 
     def _run_for_context(self, context: ToolContext) -> AgentRun | None:

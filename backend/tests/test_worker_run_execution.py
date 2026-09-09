@@ -214,6 +214,15 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
     assert events[2].event_metadata["context_budget"]["included_tokens"] > 0
     assert events[3].event_metadata["model"] == "gpt-4.1"
     assert events[5].event_metadata["runtime_event_count"] == 0
+    working_entries = session.scalars(
+        select(WorkspaceMemoryEntry).where(
+            WorkspaceMemoryEntry.workspace_id == workspace.id,
+            WorkspaceMemoryEntry.memory_layer == "working",
+            WorkspaceMemoryEntry.scope_id == str(run.id),
+        )
+    ).all()
+    assert working_entries
+    assert {entry.status for entry in working_entries} == {"expired"}
 
 
 def test_worker_persists_interrupted_sdk_state_for_resume() -> None:

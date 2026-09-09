@@ -387,6 +387,13 @@ Rules:
 - fixed instructions and tool contracts that leave no safe task-input capacity fail closed
 - agents may lower their input budget but cannot bypass platform context budgeting
 
+Working memory is a distinct Postgres-backed `working` layer. The runner initializes the current
+objective and execution plan under a run scope, the tool gateway records redacted tool outcomes,
+and request construction injects only entries bound to the same workspace and run. Entries are
+idempotent by run/key, revisions change when content changes, and normal, failed, cancelled, stale,
+and expired runs retire their active working set. Working entries are excluded from workspace and
+team search, so one run cannot observe another run's temporary state.
+
 ## Error Contract
 
 Runtime errors should be normalized.

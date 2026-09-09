@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunResult
 from backend.app.agents.models import AgentProfile
+from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.runs.models import AgentRun
 from backend.app.security.redaction import redact_text_fragments
@@ -41,12 +42,18 @@ class AgentRunMemoryCaptureService:
         task = task or self._task_for_run(run)
         title = _summary_title(run=run, profile=profile, task=task)
         content = _summary_content(result)
+        scope_type = "task" if task is not None else "run"
+        scope_id = str(task.id) if task is not None else str(run.id)
         entry = WorkspaceMemoryEntry(
             workspace_id=run.workspace_id,
             created_by_agent_profile_id=profile.id,
             created_by_agent_run_id=run.id,
             source_type=RUN_SUMMARY_SOURCE_TYPE,
             source_id=str(run.id),
+            memory_layer="episodic",
+            scope_type=scope_type,
+            scope_id=scope_id,
+            memory_key=f"run:{run.id}",
             entry_type=RUN_SUMMARY_ENTRY_TYPE,
             title=title,
             content=content,
@@ -54,6 +61,7 @@ class AgentRunMemoryCaptureService:
             visibility_scope="workspace",
             importance=_capture_importance(profile.memory_policy),
             status="active",
+            content_fingerprint=memory_content_fingerprint(title, content),
             memory_metadata=_summary_metadata(
                 run=run,
                 profile=profile,

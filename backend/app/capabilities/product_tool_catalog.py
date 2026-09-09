@@ -131,6 +131,20 @@ PRODUCT_TOOL_CATALOG = (
         required_access_modes=("write", "read_write"),
     ),
     ProductToolDefinition(
+        name="promote_working_memory",
+        description=(
+            "Promote one active current-run working-memory record into task-scoped episodic memory."
+        ),
+        input_schema=_object_schema(
+            {"working_memory_entry_id": UUID_SCHEMA},
+            required=("working_memory_entry_id",),
+        ),
+        requires_approval=True,
+        risk_level="medium",
+        required_resource_type="memory_collection",
+        required_access_modes=("write", "read_write"),
+    ),
+    ProductToolDefinition(
         name="list_workspace_files",
         description="List files visible to the current run in its workspace.",
         input_schema=_object_schema(),

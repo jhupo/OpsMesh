@@ -222,6 +222,7 @@ class TeamProjectSpaceRepository:
                 .where(
                     WorkspaceMemoryEntry.workspace_id == workspace_id,
                     WorkspaceMemoryEntry.status == "active",
+                    WorkspaceMemoryEntry.memory_layer.in_(("episodic", "semantic")),
                 )
                 .order_by(WorkspaceMemoryEntry.importance.desc(), WorkspaceMemoryEntry.id.asc())
             ).all()

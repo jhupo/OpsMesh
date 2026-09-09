@@ -86,7 +86,13 @@ def test_agent_profiles_receive_a_complete_default_context_budget() -> None:
             "context_window_tokens": None,
             "output_reserve_tokens": 4_096,
             "safety_margin_tokens": 1_024,
-        }
+        },
+        "working_memory": {
+            "enabled": True,
+            "ttl_seconds": 86_400,
+            "max_entries": 64,
+            "max_entry_tokens": 2_048,
+        },
     }
 
 

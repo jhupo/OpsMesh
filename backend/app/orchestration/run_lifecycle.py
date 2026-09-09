@@ -115,6 +115,7 @@ class RunLifecycleService:
         self.callbacks.append_event(run, "run.completed", "Run completed", None)
         self.callbacks.release_reservations(run, run.completed_at)
         self._memory_completion().capture(run, result)
+        self._memory_completion().expire_working(run)
 
         if run.task_id is None:
             return
@@ -193,6 +194,7 @@ class RunLifecycleService:
         RunStateService().transition(run, RunStatus.FAILED, error=error.as_dict())
         self.callbacks.append_event(run, "run.failed", error.message, None)
         self.callbacks.release_reservations(run, run.completed_at)
+        self._memory_completion().expire_working(run)
 
         if run.task_id is not None:
             task = self.session.get(Task, run.task_id)

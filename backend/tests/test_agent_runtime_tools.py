@@ -3,7 +3,7 @@ import json
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
@@ -30,6 +30,7 @@ from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_CATALOG
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.orchestration.run_authorization_integrity import (
     authorization_snapshot_fingerprint,
@@ -780,11 +781,16 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
     _, workspace = _seed_workspace(session)
     task = Task(workspace_id=workspace.id, title="Task")
     agent = AgentProfile(workspace_id=workspace.id, name="Researcher", role="researcher")
+    existing_content = "The company positioning is durable multi-agent operations."
     existing = WorkspaceMemoryEntry(
         workspace_id=workspace.id,
+        memory_layer="semantic",
+        scope_type="workspace",
+        scope_id=str(workspace.id),
         entry_type="note",
         title="Launch positioning",
-        content="The company positioning is durable multi-agent operations.",
+        content=existing_content,
+        content_fingerprint=memory_content_fingerprint("Launch positioning", existing_content),
         tags=["strategy"],
         visibility_scope="workspace",
         importance=3,
@@ -872,6 +878,15 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
     assert stored.created_by_agent_run_id == run.id
     assert stored.created_by_agent_profile_id == agent.id
     assert stored.status == "archived"
+    working_results = session.scalars(
+        select(WorkspaceMemoryEntry).where(
+            WorkspaceMemoryEntry.workspace_id == workspace.id,
+            WorkspaceMemoryEntry.memory_layer == "working",
+            WorkspaceMemoryEntry.scope_id == str(run.id),
+            WorkspaceMemoryEntry.entry_type == "tool_result",
+        )
+    ).all()
+    assert len(working_results) == 3
 
 
 def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:

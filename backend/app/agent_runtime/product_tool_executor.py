@@ -329,6 +329,16 @@ def _execute_product_tool(
                 allowed_tags=_memory_tags(resource_grants),
             )
         )
+    if tool_name == "promote_working_memory":
+        return memory_entry_payload(
+            service.promote_working_memory(
+                context,
+                working_memory_entry_id=uuid_argument(
+                    arguments,
+                    "working_memory_entry_id",
+                ),
+            )
+        )
     if tool_name == "list_workspace_files":
         return {
             "items": [

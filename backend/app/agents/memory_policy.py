@@ -23,6 +23,15 @@ class ContextBudgetPolicy(BaseModel):
     )
 
 
+class WorkingMemoryPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    ttl_seconds: int = Field(default=86_400, ge=300, le=604_800)
+    max_entries: int = Field(default=64, ge=1, le=500)
+    max_entry_tokens: int = Field(default=2_048, ge=128, le=16_384)
+
+
 def context_budget_policy(memory_policy: object) -> ContextBudgetPolicy:
     raw_policy = memory_policy if isinstance(memory_policy, dict) else {}
     raw_context = raw_policy.get("context_budget")
@@ -41,4 +50,16 @@ def default_context_budget_policy() -> dict[str, object]:
 def normalized_memory_policy(value: object) -> dict[str, object]:
     policy = deepcopy(value) if isinstance(value, dict) else {}
     policy["context_budget"] = context_budget_policy(policy).model_dump(mode="json")
+    policy["working_memory"] = working_memory_policy(policy).model_dump(mode="json")
     return policy
+
+
+def working_memory_policy(memory_policy: object) -> WorkingMemoryPolicy:
+    raw_policy = memory_policy if isinstance(memory_policy, dict) else {}
+    raw_working = raw_policy.get("working_memory")
+    try:
+        return WorkingMemoryPolicy.model_validate(
+            raw_working if isinstance(raw_working, dict) else {}
+        )
+    except ValidationError as exc:
+        raise ValueError(f"Invalid agent working memory policy: {exc}") from exc

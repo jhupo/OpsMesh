@@ -15,11 +15,12 @@ from backend.app.agent_runtime.sessions import (
 )
 from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.agent_runtime.tools import BackendToolExecutor
-from backend.app.agents.memory_policy import context_budget_policy
+from backend.app.agents.memory_policy import context_budget_policy, working_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
 from backend.app.core.config import Settings
+from backend.app.memory.working import AgentWorkingMemoryService, working_memory_context
 from backend.app.projects.runtime_context import project_runtime_context
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
@@ -27,7 +28,7 @@ from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType
 
-from .context_budget import ContextBudgetManager
+from .context_budget import ContextBudgetManager, ContextFragment, ContextPriority
 from .run_agent_tool_authorization import hydrate_agent_tools
 from .run_cancellation import DatabaseRunCancellation
 from .run_request_authorization import (
@@ -123,6 +124,20 @@ class RunRequestBuilder:
         if project_workspace is not None:
             metadata["project_workspace"] = project_workspace
         persistent_session_ref = self.persistent_session_ref_for_run(run, task, profile)
+        working_policy = working_memory_policy(authorization_snapshot.get("memory_policy"))
+        working_entries = AgentWorkingMemoryService(self.session).prepare_run(
+            run=run,
+            profile=profile,
+            task=task,
+            session_key=persistent_session_ref.session_key,
+            policy=working_policy,
+        )
+        metadata["working_memory"] = {
+            "enabled": working_policy.enabled,
+            "entry_count": len(working_entries),
+            "entry_ids": [str(entry.id) for entry in working_entries],
+            "policy": working_policy.model_dump(mode="json"),
+        }
         persistent_session = self.persistent_session_for_run(
             run,
             task,
@@ -172,12 +187,22 @@ class RunRequestBuilder:
             resolve_model_provider=self.resolve_model_provider,
         )
         output_schema, guardrails = runtime_controls_from_snapshot(authorization_snapshot)
+        context_fragments = self.prompt_renderer.context_fragments_for_run(
+            run,
+            allowed_tools=allowed_tools,
+            runtime_metadata=metadata,
+        )
+        rendered_working_memory = working_memory_context(working_entries)
+        if rendered_working_memory:
+            context_fragments += (
+                ContextFragment(
+                    key="memory.working",
+                    text=rendered_working_memory,
+                    priority=ContextPriority.HIGH,
+                ),
+            )
         context_budget = ContextBudgetManager().build(
-            fragments=self.prompt_renderer.context_fragments_for_run(
-                run,
-                allowed_tools=allowed_tools,
-                runtime_metadata=metadata,
-            ),
+            fragments=context_fragments,
             provider=model_provider["provider"],
             model=model_provider["model"],
             policy=context_budget_policy(authorization_snapshot.get("memory_policy")),

@@ -9,11 +9,14 @@ from backend.app.memory.models import WorkspaceMemoryEntry
 def memory_entry_payload(entry: WorkspaceMemoryEntry) -> dict[str, object]:
     return {
         "id": str(entry.id),
+        "memory_layer": entry.memory_layer,
+        "scope_type": entry.scope_type,
         "entry_type": entry.entry_type,
         "title": entry.title,
         "status": entry.status,
         "visibility_scope": entry.visibility_scope,
         "importance": entry.importance,
+        "revision": entry.revision,
         "tags": list(entry.tags or []),
     }
 

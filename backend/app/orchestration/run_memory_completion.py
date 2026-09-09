@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from backend.app.agent_runtime.contracts import AgentRunResult
 from backend.app.agents.models import AgentProfile
 from backend.app.memory.run_capture import AgentRunMemoryCaptureService
+from backend.app.memory.working import AgentWorkingMemoryService
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task
 
@@ -23,6 +24,12 @@ class RunMemoryCompletionService:
             result,
             profile=profile,
             task=task,
+        )
+
+    def expire_working(self, run: AgentRun) -> int:
+        return AgentWorkingMemoryService(self.session).expire_run(
+            workspace_id=run.workspace_id,
+            run_id=run.id,
         )
 
     def _profile_for_run(self, run: AgentRun) -> AgentProfile | None:

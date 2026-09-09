@@ -105,6 +105,7 @@ class PostgresFullTextMemorySearchBackend:
             .where(
                 WorkspaceMemoryEntry.workspace_id == request.workspace_id,
                 WorkspaceMemoryEntry.status == "active",
+                WorkspaceMemoryEntry.memory_layer.in_(("episodic", "semantic")),
                 vector.op("@@")(query),
             )
             .order_by(func.ts_rank_cd(vector, query).desc(), WorkspaceMemoryEntry.updated_at.desc())

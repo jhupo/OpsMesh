@@ -50,6 +50,7 @@ class TeamOperatingContextRepository:
                 select(WorkspaceMemoryEntry).where(
                     WorkspaceMemoryEntry.workspace_id == workspace_id,
                     WorkspaceMemoryEntry.status == "active",
+                    WorkspaceMemoryEntry.memory_layer.in_(("episodic", "semantic")),
                     WorkspaceMemoryEntry.visibility_scope.in_(memory_visibility_scopes()),
                 )
             )

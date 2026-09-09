@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from backend.app.artifacts.models import Artifact
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.runtime_policy import runtime_file_denial_code
+from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.tasks.models import Task
 
@@ -176,6 +177,9 @@ class WorkspaceMemoryIndexingService:
                 workspace_id=workspace_id,
                 source_type=source_type,
                 source_id=source_id_text,
+                memory_layer="semantic",
+                scope_type="workspace",
+                scope_id=str(workspace_id),
                 entry_type="indexed_chunk",
                 title=f"{title} #{index + 1}" if len(chunks) > 1 else title,
                 content=chunk,
@@ -183,6 +187,10 @@ class WorkspaceMemoryIndexingService:
                 visibility_scope="workspace",
                 importance=_importance(source_type),
                 status="active",
+                content_fingerprint=memory_content_fingerprint(
+                    f"{title} #{index + 1}" if len(chunks) > 1 else title,
+                    chunk,
+                ),
                 memory_metadata={
                     **metadata,
                     "indexed": True,
@@ -214,6 +222,7 @@ class WorkspaceMemoryIndexingService:
         ).all()
         for entry in entries:
             entry.status = "archived"
+            entry.archived_at = datetime.now(UTC)
         return len(entries)
 
 

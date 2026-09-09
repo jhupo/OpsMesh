@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from backend.app.memory.working import AgentWorkingMemoryService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
@@ -46,6 +47,7 @@ class RunTerminalStateService:
             {"worker_cancel_requests": worker_cancel_requests},
         )
         self.release_reservations(run, completed_at)
+        self._expire_working_memory(run)
         if run.task_step_id is not None:
             step = self.session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
@@ -73,6 +75,7 @@ class RunTerminalStateService:
         )
         self.append_event(run, "run.recovered_failed", event_message, None)
         self.release_reservations(run, run.completed_at)
+        self._expire_working_memory(run)
 
         if run.task_id is None:
             return
@@ -96,4 +99,10 @@ class RunTerminalStateService:
             workspace_id=run.workspace_id,
             run_id=run.id,
             requested_at=requested_at,
+        )
+
+    def _expire_working_memory(self, run: AgentRun) -> None:
+        AgentWorkingMemoryService(self.session).expire_run(
+            workspace_id=run.workspace_id,
+            run_id=run.id,
         )
