@@ -1,9 +1,9 @@
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
@@ -12,13 +12,17 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.admin.models import PlatformPolicy
 from backend.app.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.capabilities.models import McpServer
+from backend.app.agents.models import AgentProfile
+from backend.app.capabilities.models import CapabilityResource, McpServer, McpToolAllowlist
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
+from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.run_request_builder import RunRequestBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import (
     RuntimeSpace,
@@ -27,6 +31,7 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceReservation,
 )
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.secrets.service import SecretEncryptionService
 from backend.app.self_hosted.models import (
     RuntimeCredential,
     SelfHostedJobClaim,
@@ -884,36 +889,62 @@ def test_self_hosted_worker_enforces_capability_policy_for_jobs() -> None:
     )
     credential = registered.json()["credential_token"]
     runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    runtime = session.scalar(select(WorkspaceRuntime).where(
+        WorkspaceRuntime.workspace_id == workspace.id, WorkspaceRuntime.id == runtime_id,
+    ))
+    assert runtime is not None
+    runtime.network_policy = {"disabled": True}
+    ModelProviderCredentialCommandService(
+        session,
+        SecretEncryptionService(secret="change-me-credential-encryption-secret", key_id="local"),
+    ).create(
+        workspace_id=workspace.id, created_by_user_id=owner.id,
+        name="Policy test provider", provider="openai", api_key="sk-unit-test",
+        default_model="gpt-4.1-mini", base_url=None, is_default=True,
+    )
+    server = McpServer(
+        workspace_id=workspace.id, name="Policy test tools", server_type="streamable_http",
+        connection={"url": "https://mcp.example.test/rpc"},
+    )
+    session.add(server)
+    session.flush()
+    session.add_all([
+        McpToolAllowlist(
+            workspace_id=workspace.id, mcp_server_id=server.id, tool_name=tool_name,
+        )
+        for tool_name in ("runtime_shell", "search_web")
+    ])
+    session.flush()
     denied_tool_run = _agent_run_with_snapshot(
-        workspace_id=workspace.id,
+        session=session, workspace=workspace,
         runtime_id=runtime_id,
         model="gpt-4.1-mini",
         allowed_tools=["runtime_shell"],
         runtime_policy={"provider": "self_hosted", "network": {"mode": "none"}},
     )
     denied_model_run = _agent_run_with_snapshot(
-        workspace_id=workspace.id,
+        session=session, workspace=workspace,
         runtime_id=runtime_id,
         model="gpt-5",
         allowed_tools=["search_web"],
         runtime_policy={"provider": "self_hosted", "network": {"mode": "none"}},
     )
     denied_runtime_run = _agent_run_with_snapshot(
-        workspace_id=workspace.id,
+        session=session, workspace=workspace,
         runtime_id=runtime_id,
         model="gpt-4.1-mini",
         allowed_tools=["search_web"],
         runtime_policy={"provider": "cloud_docker", "network": {"mode": "none"}},
     )
     denied_network_run = _agent_run_with_snapshot(
-        workspace_id=workspace.id,
+        session=session, workspace=workspace,
         runtime_id=runtime_id,
         model="gpt-4.1-mini",
         allowed_tools=["search_web"],
         runtime_policy={"provider": "self_hosted", "network": {"mode": "internet"}},
     )
     allowed_run = _agent_run_with_snapshot(
-        workspace_id=workspace.id,
+        session=session, workspace=workspace,
         runtime_id=runtime_id,
         model="gpt-4.1-mini",
         allowed_tools=["search_web"],
@@ -1653,6 +1684,7 @@ def test_self_hosted_worker_trust_view_summarizes_machine_policy_and_state() -> 
         "max_concurrent_jobs": 2,
         "max_concurrent_mcp_jobs": 1,
         "max_artifact_bytes": 4096,
+        "max_project_bytes": None,
     }
     assert item["policy_diagnostics"] == []
     assert item["capabilities"] == {
@@ -1965,26 +1997,42 @@ def _runtime_headers(token: str) -> dict[str, str]:
 
 def _agent_run_with_snapshot(
     *,
-    workspace_id: UUID,
+    session: Session,
+    workspace: Workspace,
     runtime_id: UUID,
     model: str,
     allowed_tools: list[str],
     runtime_policy: dict[str, object],
 ) -> AgentRun:
+    resource = CapabilityResource(
+        workspace_id=workspace.id, key=f"runtime-{uuid4()}", name="Worker runtime",
+        resource_type="runtime", access_mode="execute",
+        locator={"workspace_runtime_id": str(runtime_id)},
+    )
+    session.add(resource)
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id, created_by_user_id=workspace.owner_user_id,
+        title="Worker policy job", status="queued",
+    )
+    agent = AgentProfile(
+        workspace_id=workspace.id, name="Policy agent", role="worker", model=model,
+        capabilities={"resource_ids": [str(resource.id)]},
+        tool_policy={"allowed_tools": allowed_tools}, runtime_policy=runtime_policy,
+    )
+    session.add_all([task, agent])
+    session.flush()
+    snapshot = RunAuthorizationSnapshotService(
+        session, RunRequestBuilder(session, Settings(environment="test")),
+    ).build_authorization_snapshot(task, None, agent)
     return AgentRun(
-        workspace_id=workspace_id,
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
         runtime_id=runtime_id,
         status="queued",
         model=model,
-        input={
-            "authorization_snapshot": {
-                "version": 1,
-                "workspace_id": str(workspace_id),
-                "allowed_tools": allowed_tools,
-                "runtime_policy": runtime_policy,
-                "model_provider": {"selected_model": model},
-            }
-        },
+        input={"authorization_snapshot": snapshot},
     )
 
 
