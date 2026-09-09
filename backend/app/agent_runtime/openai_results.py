@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from agents import Agent, Tool
 from agents import __version__ as agents_sdk_version
 
 from backend.app.agent_runtime.contracts import (
@@ -14,6 +15,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeStreamEvent,
     AgentRuntimeStructuredOutput,
 )
+from backend.app.agent_runtime.openai_tools import OpenAIProductFunctionTool
 from backend.app.security.redaction import redact_sensitive_payload
 
 
@@ -115,15 +117,20 @@ class OpenAIAgentsResultMapper:
             if not isinstance(arguments, dict):
                 raise ValueError("OpenAI Agents interruption arguments must be an object")
             tool = _interrupted_tool(item, tool_name)
-            reviews = getattr(tool, "_opsmesh_approval_reviews", {})
-            review = reviews.get(call_id, {}) if isinstance(reviews, dict) else {}
+            review = (
+                tool.approval_reviews.get(call_id, {})
+                if isinstance(tool, OpenAIProductFunctionTool)
+                else {}
+            )
             mapped.append(
                 AgentRuntimeInterruption(
                     tool_call_id=call_id,
                     tool_name=tool_name,
-                    tool_kind=str(getattr(tool, "_opsmesh_tool_kind", "unknown")),
+                    tool_kind=tool.tool_kind
+                    if isinstance(tool, OpenAIProductFunctionTool)
+                    else "unknown",
                     arguments=arguments,
-                    policy_decision=dict(review) if isinstance(review, dict) else {},
+                    policy_decision=dict(review),
                 )
             )
         return mapped
@@ -297,7 +304,7 @@ def _openai_run_item_event_type(value: object) -> str:
     }.get(str(value), f"agent.item.{value or 'created'}")
 
 
-def jsonable(value: Any) -> object:
+def jsonable(value: object) -> object:
     if value is None or isinstance(value, str | int | float | bool):
         return value
     if isinstance(value, dict):
@@ -324,9 +331,11 @@ def _serialize_runtime_context(value: object) -> dict[str, object]:
     }
 
 
-def _interrupted_tool(item: object, tool_name: str) -> object | None:
+def _interrupted_tool(item: object, tool_name: str) -> Tool | None:
     agent = getattr(item, "agent", None)
-    for tool in getattr(agent, "tools", ()) or ():
+    if not isinstance(agent, Agent):
+        return None
+    for tool in agent.tools:
         if getattr(tool, "name", None) == tool_name:
             return tool
     return None

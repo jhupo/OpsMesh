@@ -999,7 +999,7 @@ def test_openai_tool_bridge_maps_dynamic_sdk_approval_interruption() -> None:
     item.call_id = "call-dynamic"
     item.name = "write_artifact"
     item.arguments = '{"content":"private"}'
-    item.agent = type("AgentStub", (), {"tools": [tool]})()
+    item.agent = openai_runtime.Agent(name="Approver", tools=[tool])
     result = type("Result", (), {"interruptions": [item]})()
 
     interruptions = OpenAIAgentsResultMapper().interruptions(result)
@@ -1017,6 +1017,29 @@ def test_openai_tool_bridge_maps_dynamic_sdk_approval_interruption() -> None:
     assert interruptions[0].policy_decision["risk_level"] == "high"
     assert output["ok"] is True
     assert calls == ["call-dynamic"]
+
+
+@pytest.mark.parametrize("decision", [None, "unknown", "deny"])
+def test_openai_tool_bridge_denies_non_allowing_policy_decisions(decision: str | None) -> None:
+    class Executor:
+        def review_tool_call(self, **_: object) -> dict[str, object]:
+            return {"decision": decision}
+
+        async def execute_tool(self, **_: object) -> AgentRuntimeToolResult:
+            raise AssertionError("Denied tool must not execute")
+
+    context = AgentRuntimeContext(workspace_id=uuid4(), task_id=None, run_id=uuid4())
+    tool = OpenAIToolBridge().function_tool(
+        AgentRuntimeToolDefinition(
+            name="write_artifact", source="product", description="Write",
+            input_schema={"type": "object"},
+        ),
+        Executor(),
+        runtime_context=context,
+    )
+    assert callable(tool.needs_approval)
+    with pytest.raises(ValueError):
+        asyncio.run(tool.needs_approval(RunContextWrapper(context=context), {}, "denied-call"))
 
 
 def test_openai_agents_runner_tool_provenance_accepts_restored_mapping_context() -> None:

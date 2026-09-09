@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from agents import (
     FunctionTool,
+    RunContextWrapper,
+    Tool,
     ToolGuardrailFunctionOutput,
     ToolInputGuardrail,
 )
@@ -20,8 +23,14 @@ from backend.app.agent_runtime.contracts import (
 )
 
 
+@dataclass(kw_only=True)
+class OpenAIProductFunctionTool(FunctionTool):
+    tool_kind: str
+    approval_reviews: dict[str, dict[str, object]]
+
+
 class OpenAIToolBridge:
-    def tools(self, request: AgentRunRequest) -> list[Any]:
+    def tools(self, request: AgentRunRequest) -> list[Tool]:
         if request.tool_executor is None:
             return []
         return [
@@ -41,12 +50,12 @@ class OpenAIToolBridge:
         *,
         runtime_context: AgentRuntimeContext,
         cancellation: AgentRuntimeCancellation | None = None,
-    ) -> Any:
+    ) -> OpenAIProductFunctionTool:
         approval_reviews: dict[str, dict[str, object]] = {}
 
         async def needs_approval(
-            ctx: Any,
-            arguments: dict[str, Any],
+            ctx: RunContextWrapper[AgentRuntimeContext],
+            arguments: dict[str, object],
             call_id: str,
         ) -> bool:
             review = executor.review_tool_call(
@@ -60,7 +69,11 @@ class OpenAIToolBridge:
             decision = review.get("decision")
             if decision == "deny":
                 raise ValueError(f"Tool {definition.name} was denied by policy")
-            return decision == "require_approval"
+            if decision == "require_approval":
+                return True
+            if decision == "allow":
+                return False
+            raise ValueError("Tool approval review returned an invalid decision")
 
         async def invoke_tool(ctx: ToolContext[Any], raw_arguments: str) -> dict[str, object]:
             await raise_if_cancelled(cancellation)
@@ -103,7 +116,9 @@ class OpenAIToolBridge:
                 "metadata": result.metadata,
             }
 
-        tool = FunctionTool(
+        return OpenAIProductFunctionTool(
+            tool_kind=definition.source,
+            approval_reviews=approval_reviews,
             name=definition.name,
             description=definition.description,
             params_json_schema=dict(definition.input_schema),
@@ -117,9 +132,6 @@ class OpenAIToolBridge:
             ],
             needs_approval=needs_approval,
         )
-        tool._opsmesh_tool_kind = definition.source
-        tool._opsmesh_approval_reviews = approval_reviews
-        return tool
 
 
 def tool_response_with_metadata(
