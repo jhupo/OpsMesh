@@ -52,7 +52,10 @@ class TaskDeliveryReviewService:
             for step in steps
         ]
         unattached_artifacts = [
-            _artifact_summary(artifact, agents.get(artifact.agent_profile_id))
+            _artifact_summary(
+                artifact,
+                agents.get(artifact.agent_profile_id) if artifact.agent_profile_id else None,
+            )
             for artifact in artifacts
             if artifact.task_step_id is None
         ]
@@ -105,7 +108,9 @@ def _step_review(
     produced_types = {artifact.artifact_type for artifact in artifacts}
     missing = [item for item in expected if item not in produced_types]
     latest_artifacts = [
-        _artifact_summary(artifact, agents.get(artifact.agent_profile_id))
+        _artifact_summary(
+            artifact, agents.get(artifact.agent_profile_id) if artifact.agent_profile_id else None
+        )
         for artifact in _latest_artifacts_by_type(artifacts)
     ]
     return {

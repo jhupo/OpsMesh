@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import UUID
 
 from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
@@ -18,4 +19,4 @@ class TaskObservationRecords:
     messages: list[TaskMessage]
     artifacts: list[Artifact]
     run_events: list[RunEvent]
-    agents: dict[object, AgentProfile]
+    agents: dict[UUID, AgentProfile]

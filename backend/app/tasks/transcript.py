@@ -58,9 +58,9 @@ class TaskInteractionTranscriptService:
         items = [
             _transcript_item(
                 message,
-                agent=agents.get(message.agent_profile_id),
-                step=steps.get(message.task_step_id),
-                run=runs.get(message.agent_run_id),
+                agent=agents.get(message.agent_profile_id) if message.agent_profile_id else None,
+                step=steps.get(message.task_step_id) if message.task_step_id else None,
+                run=runs.get(message.agent_run_id) if message.agent_run_id else None,
             )
             for message in messages
         ]

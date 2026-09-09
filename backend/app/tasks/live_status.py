@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.core.typing import counts_by_value
 from backend.app.runs.activity import run_activity
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
@@ -38,7 +39,7 @@ class TaskLiveStatusService:
             after_sequence=max(after_sequence, 0),
             limit=max(1, min(message_limit, 200)),
         )
-        agents = self._agents_by_id(runs, steps)
+        agents = self._agents_by_id(workspace_id, runs, steps, messages)
         latest_events = self._latest_events_by_run_id(workspace_id, runs)
         latest_sequence = self._latest_message_sequence(workspace_id, task_id)
         active_runs = [run for run in runs if run.status in ACTIVE_RUN_STATUSES]
@@ -57,9 +58,9 @@ class TaskLiveStatusService:
                 "completed_at": task.completed_at,
             },
             "summary": {
-                "step_status_counts": _count_by_status(step.status for step in steps),
-                "run_status_counts": _count_by_status(run.status for run in runs),
-                "active_run_phase_counts": _count_by_status(
+                "step_status_counts": counts_by_value(step.status for step in steps),
+                "run_status_counts": counts_by_value(run.status for run in runs),
+                "active_run_phase_counts": counts_by_value(
                     run_activity(run, latest_events.get(run.id))["phase"]
                     for run in active_runs
                 ),
@@ -77,13 +78,20 @@ class TaskLiveStatusService:
                     "status": step.status,
                     "order_index": step.order_index,
                     "assigned_agent_profile_id": step.assigned_agent_profile_id,
-                    "assigned_agent": _agent_summary(agents.get(step.assigned_agent_profile_id)),
+                    "assigned_agent": _agent_summary(
+                        agents.get(step.assigned_agent_profile_id)
+                        if step.assigned_agent_profile_id else None
+                    ),
                     "result_summary": step.result_summary,
                 }
                 for step in steps
             ],
             "active_runs": [
-                self._run_payload(run, agents.get(run.agent_profile_id), latest_events.get(run.id))
+                self._run_payload(
+                    run,
+                    agents.get(run.agent_profile_id) if run.agent_profile_id else None,
+                    latest_events.get(run.id),
+                )
                 for run in active_runs
             ],
             "recent_messages": [
@@ -95,7 +103,9 @@ class TaskLiveStatusService:
                     "task_step_id": message.task_step_id,
                     "agent_run_id": message.agent_run_id,
                     "agent_profile_id": message.agent_profile_id,
-                    "agent": _agent_summary(agents.get(message.agent_profile_id)),
+                    "agent": _agent_summary(
+                        agents.get(message.agent_profile_id) if message.agent_profile_id else None
+                    ),
                     "payload": message.payload,
                     "created_at": message.created_at,
                 }
@@ -144,21 +154,26 @@ class TaskLiveStatusService:
 
     def _agents_by_id(
         self,
+        workspace_id: UUID,
         runs: list[AgentRun],
         steps: list[TaskStep],
+        messages: list[TaskMessage],
     ) -> dict[UUID, AgentProfile]:
         agent_ids = {
             agent_id
             for agent_id in [
                 *(run.agent_profile_id for run in runs),
                 *(step.assigned_agent_profile_id for step in steps),
+                *(message.agent_profile_id for message in messages),
             ]
             if agent_id is not None
         }
         if not agent_ids:
             return {}
         agents = self._session.scalars(
-            select(AgentProfile).where(AgentProfile.id.in_(agent_ids))
+            select(AgentProfile).where(
+                AgentProfile.workspace_id == workspace_id, AgentProfile.id.in_(agent_ids)
+            )
         ).all()
         return {agent.id: agent for agent in agents}
 
@@ -234,10 +249,3 @@ def _event_summary(event: RunEvent | None) -> dict[str, object] | None:
         "created_at": event.created_at,
     }
 
-
-def _count_by_status(statuses: object) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for status in statuses:
-        key = str(status)
-        counts[key] = counts.get(key, 0) + 1
-    return counts

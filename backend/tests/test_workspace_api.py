@@ -8001,6 +8001,27 @@ def test_task_live_status_api_returns_active_runs_and_message_cursor() -> None:
     assert payload["recent_messages"][0]["agent"]["role"] == "researcher"
 
 
+def test_task_live_status_scopes_participants_and_includes_message_only_agents() -> None:
+    from backend.app.tasks.live_status import TaskLiveStatusService
+
+    _, session = _client()
+    _, workspace = _seed_workspace(session, role="owner")
+    _, other = _seed_workspace(
+        session, role="owner", email="live-other@example.com", slug="live-other"
+    )
+    local_agent = AgentProfile(workspace_id=workspace.id, name="Message author", role="researcher")
+    foreign_agent = AgentProfile(workspace_id=other.id, name="Private agent", role="researcher")
+    session.add_all([local_agent, foreign_agent])
+    session.flush()
+    agents = TaskLiveStatusService(session)._agents_by_id(
+        workspace.id,
+        [],
+        [TaskStep(assigned_agent_profile_id=foreign_agent.id)],
+        [TaskMessage(agent_profile_id=local_agent.id), TaskMessage(agent_profile_id=None)],
+    )
+    assert agents == {local_agent.id: local_agent}
+
+
 def test_task_event_stream_returns_redacted_snapshot() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
