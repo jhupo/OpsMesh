@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.app.memory.episodic import AgentEpisodicMemoryService
 from backend.app.tasks.event_outbox import TaskEventOutboxService
 from backend.app.tasks.models import Task, TaskMessage
 
@@ -97,6 +98,7 @@ class TaskMessageAppendService:
                     self._session.add(message)
                     self._session.flush([message])
                 self._enqueue_message_created(message)
+                self._capture_episode(message)
                 return message
             except IntegrityError as exc:
                 if not _is_sequence_collision(exc):
@@ -148,6 +150,9 @@ class TaskMessageAppendService:
             event_type=TASK_MESSAGE_CREATED_EVENT_TYPE,
             payload=_message_created_payload(message),
         )
+
+    def _capture_episode(self, message: TaskMessage) -> None:
+        AgentEpisodicMemoryService(self._session).capture_task_message(message)
 
 
 def _is_sequence_collision(exc: IntegrityError) -> bool:

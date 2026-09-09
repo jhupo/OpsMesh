@@ -181,6 +181,7 @@ class RunLifecycleService:
             completed_at=run.completed_at,
             final_output=task_output,
         )
+        self._memory_completion().capture_task_completed(run, task, result)
         if pm_acceptance is not None:
             pm_acceptance_service.append_decision_message(
                 task,
@@ -194,7 +195,6 @@ class RunLifecycleService:
         RunStateService().transition(run, RunStatus.FAILED, error=error.as_dict())
         self.callbacks.append_event(run, "run.failed", error.message, None)
         self.callbacks.release_reservations(run, run.completed_at)
-        self._memory_completion().expire_working(run)
 
         if run.task_id is not None:
             task = self.session.get(Task, run.task_id)
@@ -208,6 +208,8 @@ class RunLifecycleService:
             step = self.session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
                 TaskStepStateService().transition(step, TaskStepStatus.FAILED)
+        self._memory_completion().capture_failed(run, error.as_dict())
+        self._memory_completion().expire_working(run)
 
     def mark_run_recovered_failed(
         self,

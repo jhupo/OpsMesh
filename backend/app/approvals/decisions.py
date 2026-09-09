@@ -9,6 +9,7 @@ from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.approvals.run_gate import ApprovalRunGateService
 from backend.app.audit.service import AuditService
 from backend.app.core.config import get_settings
+from backend.app.memory.episodic import AgentEpisodicMemoryService
 from backend.app.reviews.resource_review_targets import ResourceReviewDecisionService
 from backend.app.runs.models import AgentRunStateSnapshot
 from backend.app.secrets.service import SecretEncryptionService
@@ -71,6 +72,10 @@ class ApprovalDecisionService:
             if snapshot is not None:
                 snapshot.status = status
         self._append_audit_event(approval, user_id, f"approval.{status}")
+        AgentEpisodicMemoryService(self._session).capture_approval_decision(
+            approval,
+            actor_user_id=user_id,
+        )
         ResourceReviewDecisionService(self._session).apply_decision(
             approval,
             user_id=user_id,

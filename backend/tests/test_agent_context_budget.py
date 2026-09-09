@@ -93,11 +93,18 @@ def test_agent_profiles_receive_a_complete_default_context_budget() -> None:
             "max_entries": 64,
             "max_entry_tokens": 2_048,
         },
+        "episodic_memory": {
+            "capture_enabled": True,
+            "retrieval_enabled": True,
+            "retention_days": 180,
+            "max_results": 8,
+            "default_importance": 30,
+        },
     }
 
 
 def test_context_budget_rejects_unknown_or_invalid_agent_configuration() -> None:
-    with pytest.raises(ValueError, match="Invalid agent context budget policy"):
+    with pytest.raises(ValueError, match="Invalid agent memory policy"):
         normalize_create_payload(
             {
                 "name": "Analyst",

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.tasks import TaskCorrectionRequest, TaskDeliveryDecisionRequest
 from backend.app.audit.service import AuditService
+from backend.app.memory.episodic import AgentEpisodicMemoryService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.corrections import TaskCorrectionResult, TaskCorrectionService
@@ -63,6 +64,12 @@ class TaskDeliveryDecisionService:
         )
         final_output = _final_output_from_decision(decision_message)
         finalization = self._finalization_result(task, request.finalize, final_output)
+        if finalization["status"] == "finalized":
+            AgentEpisodicMemoryService(self._session).capture_task_completed(
+                task,
+                event_id=decision_message.id,
+                summary=request.summary,
+            )
         self._audit(
             task,
             actor_user_id=actor_user_id,

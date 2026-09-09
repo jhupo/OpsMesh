@@ -19,6 +19,7 @@ from backend.app.api.routes.workspace_task_streaming import (
     get_task_event_bus,
 )
 from backend.app.api.schemas.tasks import (
+    TaskFeedbackRequest,
     TaskLiveStatusResponse,
     TaskMessageResponse,
     TaskPlanningAttemptResponse,
@@ -30,6 +31,7 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.trace_context import current_trace_metadata
 from backend.app.db.session import get_db_session
 from backend.app.tasks.events import TaskEventBus
+from backend.app.tasks.feedback import TaskFeedbackService
 from backend.app.tasks.live_status import TaskLiveStatusService
 
 if TYPE_CHECKING:
@@ -38,6 +40,30 @@ else:
     RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
+
+
+@router.post(
+    "/tasks/{task_id}/feedback",
+    response_model=TaskMessageResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def record_task_feedback(
+    task_id: UUID,
+    request: TaskFeedbackRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> TaskMessageResponse:
+    message = TaskFeedbackService(session).record(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        actor_user_id=context.user.user_id,
+        body=request.body,
+        feedback_kind=request.feedback_kind,
+        metadata=request.metadata,
+    )
+    if message is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskMessageResponse.model_validate(message)
 
 
 @router.get("/tasks/{task_id}/messages", response_model=PageResponse[TaskMessageResponse])
@@ -203,5 +229,4 @@ async def list_task_planning_attempts(
         limit=page.limit,
         offset=page.offset,
     )
-
 

@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from backend.app.memory.episodic import AgentEpisodicMemoryService
 from backend.app.memory.working import AgentWorkingMemoryService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.service import RunStateService
@@ -47,11 +48,12 @@ class RunTerminalStateService:
             {"worker_cancel_requests": worker_cancel_requests},
         )
         self.release_reservations(run, completed_at)
-        self._expire_working_memory(run)
         if run.task_step_id is not None:
             step = self.session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
                 TaskStepStateService().transition(step, TaskStepStatus.CANCELLED)
+        AgentEpisodicMemoryService(self.session).capture_run_cancelled(run)
+        self._expire_working_memory(run)
         return worker_cancel_requests
 
     def mark_run_recovered_failed(
@@ -75,18 +77,23 @@ class RunTerminalStateService:
         )
         self.append_event(run, "run.recovered_failed", event_message, None)
         self.release_reservations(run, run.completed_at)
+        if run.task_id is not None:
+            task = self.session.get(Task, run.task_id)
+            if task is not None and TaskStatus(task.status) not in TERMINAL_TASK_STATUSES:
+                TaskStateService().transition(
+                    task,
+                    TaskStatus.FAILED,
+                    completed_at=run.completed_at,
+                )
+                if run.task_step_id is not None:
+                    step = self.session.get(TaskStep, run.task_step_id)
+                    if step is not None and step.workspace_id == run.workspace_id:
+                        TaskStepStateService().transition(step, TaskStepStatus.FAILED)
+        AgentEpisodicMemoryService(self.session).capture_run_failed(
+            run,
+            run.error or {"code": code, "message": message, "retryable": retryable},
+        )
         self._expire_working_memory(run)
-
-        if run.task_id is None:
-            return
-        task = self.session.get(Task, run.task_id)
-        if task is None or TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
-            return
-        TaskStateService().transition(task, TaskStatus.FAILED, completed_at=run.completed_at)
-        if run.task_step_id is not None:
-            step = self.session.get(TaskStep, run.task_step_id)
-            if step is not None and step.workspace_id == run.workspace_id:
-                TaskStepStateService().transition(step, TaskStepStatus.FAILED)
 
     def record_worker_cancel_requested(
         self,

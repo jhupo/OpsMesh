@@ -17,6 +17,7 @@ from backend.app.api.schemas.task_control import (
 )
 from backend.app.api.schemas.task_core import (
     TaskCreateRequest,
+    TaskFeedbackRequest,
     TaskMessageResponse,
     TaskPlanningAttemptResponse,
     TaskResponse,
@@ -85,6 +86,7 @@ __all__ = [
     "TaskExecutionRunDiagnostic",
     "TaskExecutionStatusResponse",
     "TaskExecutionStepDiagnostic",
+    "TaskFeedbackRequest",
     "TaskHandoffQueueItemResponse",
     "TaskHandoffQueueResponse",
     "TaskInteractionTranscriptResponse",

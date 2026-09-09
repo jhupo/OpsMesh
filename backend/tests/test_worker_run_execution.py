@@ -627,7 +627,7 @@ def test_run_activity_maps_precise_execution_lifecycle_events() -> None:
     assert activity_phase("running", "model.request_failed") == "model_failed"
 
 
-def test_completed_run_auto_capture_writes_workspace_memory_when_enabled() -> None:
+def test_completed_run_writes_episodic_memory_by_default() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     agent = AgentProfile(
@@ -635,7 +635,6 @@ def test_completed_run_auto_capture_writes_workspace_memory_when_enabled() -> No
         name="Writer token=agent-name-secret",
         role="writer",
         instructions="Write clearly.",
-        memory_policy={"auto_capture": True},
     )
     task = Task(
         workspace_id=workspace.id,
@@ -666,7 +665,7 @@ def test_completed_run_auto_capture_writes_workspace_memory_when_enabled() -> No
             WorkspaceMemoryEntry.workspace_id == workspace.id,
             WorkspaceMemoryEntry.source_type == "agent_run",
             WorkspaceMemoryEntry.source_id == str(run.id),
-            WorkspaceMemoryEntry.entry_type == "agent_run_summary",
+            WorkspaceMemoryEntry.entry_type == "agent_run_completed",
         )
     )
     assert entry is not None
@@ -682,7 +681,7 @@ def test_completed_run_auto_capture_writes_workspace_memory_when_enabled() -> No
     assert "task-title-secret" not in serialized_metadata
 
 
-def test_completed_run_auto_capture_disabled_by_default() -> None:
+def test_completed_run_episodic_capture_can_be_disabled() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     agent = AgentProfile(
@@ -690,6 +689,7 @@ def test_completed_run_auto_capture_disabled_by_default() -> None:
         name="Writer",
         role="writer",
         instructions="Write clearly.",
+        memory_policy={"episodic_memory": {"capture_enabled": False}},
     )
     task = Task(
         workspace_id=workspace.id,
@@ -718,7 +718,7 @@ def test_completed_run_auto_capture_disabled_by_default() -> None:
     assert session.scalar(select(WorkspaceMemoryEntry)) is None
 
 
-def test_completed_run_auto_capture_is_idempotent_for_same_run() -> None:
+def test_completed_run_episodic_capture_is_idempotent_for_same_run() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     agent = AgentProfile(
@@ -726,7 +726,6 @@ def test_completed_run_auto_capture_is_idempotent_for_same_run() -> None:
         name="Writer",
         role="writer",
         instructions="Write clearly.",
-        memory_policy={"auto_capture": True},
     )
     task = Task(
         workspace_id=workspace.id,
@@ -760,7 +759,7 @@ def test_completed_run_auto_capture_is_idempotent_for_same_run() -> None:
         requested_by_user_id=user.id,
     )
 
-    assert session.scalar(select(func.count(WorkspaceMemoryEntry.id))) == 1
+    assert session.scalar(select(func.count(WorkspaceMemoryEntry.id))) == 2
 
 
 def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:

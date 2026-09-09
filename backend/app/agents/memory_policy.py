@@ -32,15 +32,26 @@ class WorkingMemoryPolicy(BaseModel):
     max_entry_tokens: int = Field(default=2_048, ge=128, le=16_384)
 
 
+class EpisodicMemoryPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capture_enabled: bool = True
+    retrieval_enabled: bool = True
+    retention_days: int = Field(default=180, ge=1, le=3_650)
+    max_results: int = Field(default=8, ge=1, le=50)
+    default_importance: int = Field(default=30, ge=0, le=100)
+
+
+class AgentMemoryPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    context_budget: ContextBudgetPolicy = Field(default_factory=ContextBudgetPolicy)
+    working_memory: WorkingMemoryPolicy = Field(default_factory=WorkingMemoryPolicy)
+    episodic_memory: EpisodicMemoryPolicy = Field(default_factory=EpisodicMemoryPolicy)
+
+
 def context_budget_policy(memory_policy: object) -> ContextBudgetPolicy:
-    raw_policy = memory_policy if isinstance(memory_policy, dict) else {}
-    raw_context = raw_policy.get("context_budget")
-    try:
-        return ContextBudgetPolicy.model_validate(
-            raw_context if isinstance(raw_context, dict) else {}
-        )
-    except ValidationError as exc:
-        raise ValueError(f"Invalid agent context budget policy: {exc}") from exc
+    return agent_memory_policy(memory_policy).context_budget
 
 
 def default_context_budget_policy() -> dict[str, object]:
@@ -48,18 +59,20 @@ def default_context_budget_policy() -> dict[str, object]:
 
 
 def normalized_memory_policy(value: object) -> dict[str, object]:
-    policy = deepcopy(value) if isinstance(value, dict) else {}
-    policy["context_budget"] = context_budget_policy(policy).model_dump(mode="json")
-    policy["working_memory"] = working_memory_policy(policy).model_dump(mode="json")
-    return policy
+    return agent_memory_policy(value).model_dump(mode="json")
 
 
 def working_memory_policy(memory_policy: object) -> WorkingMemoryPolicy:
-    raw_policy = memory_policy if isinstance(memory_policy, dict) else {}
-    raw_working = raw_policy.get("working_memory")
+    return agent_memory_policy(memory_policy).working_memory
+
+
+def episodic_memory_policy(memory_policy: object) -> EpisodicMemoryPolicy:
+    return agent_memory_policy(memory_policy).episodic_memory
+
+
+def agent_memory_policy(value: object) -> AgentMemoryPolicy:
+    raw_policy = deepcopy(value) if isinstance(value, dict) else {}
     try:
-        return WorkingMemoryPolicy.model_validate(
-            raw_working if isinstance(raw_working, dict) else {}
-        )
+        return AgentMemoryPolicy.model_validate(raw_policy)
     except ValidationError as exc:
-        raise ValueError(f"Invalid agent working memory policy: {exc}") from exc
+        raise ValueError(f"Invalid agent memory policy: {exc}") from exc

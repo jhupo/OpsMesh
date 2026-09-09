@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.memory_policy import normalized_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.api.pagination import PageParams
 from backend.app.db.pagination import page_scalars
@@ -160,5 +161,5 @@ def copy_agent_definition(source: AgentDefinitionSnapshot, target: AgentProfile)
     target.skills = dict(source.skills)
     target.tool_policy = dict(source.tool_policy)
     target.runtime_policy = dict(source.runtime_policy)
-    target.memory_policy = dict(source.memory_policy)
+    target.memory_policy = normalized_memory_policy(source.memory_policy)
     target.approval_policy = dict(source.approval_policy)

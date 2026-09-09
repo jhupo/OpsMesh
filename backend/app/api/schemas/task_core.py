@@ -22,6 +22,15 @@ class TaskCreateRequest(BaseModel):
     domain_state: dict[str, object] = Field(default_factory=dict)
 
 
+class TaskFeedbackRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=4_000)
+    feedback_kind: str = Field(
+        default="comment",
+        pattern="^(comment|praise|concern|correction)$",
+    )
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
 class TaskResponse(TimestampedModel):
     workspace_id: UUID
     created_by_user_id: UUID | None

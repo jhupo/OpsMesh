@@ -101,7 +101,7 @@ Goal: keep context bounded and make durable knowledge useful without crossing au
 | 4.1 | P0 | Add token-aware context budgeting, priority classes, and deterministic truncation | Done | `add-context-budget-manager` | Every request fits its model budget and records included/excluded context provenance |
 | 4.2 | P0 | Use provider-native semantic context compaction | Done | `replace-custom-session-compaction-with-provider-sdk` | OpenAI Responses sessions use `OpenAIResponsesCompactionSession`; Claude uses its SDK auto-compaction, and the superseded preview-summary API is removed |
 | 4.3 | P0 | Add working memory for current run state, plan, temporary facts, and tool results | Done | `add-agent-working-memory` | Working memory is isolated to its run/session and expires or promotes explicitly |
-| 4.4 | P0 | Add episodic memory for tasks, runs, decisions, failures, and human feedback | Pending | `add-agent-episodic-memory` | Relevant prior episodes are searchable with task/run provenance |
+| 4.4 | P0 | Add episodic memory for tasks, runs, decisions, failures, and human feedback | Done | `add-agent-episodic-memory` | Relevant prior episodes are searchable with task/run provenance |
 | 4.5 | P0 | Add semantic memory for workspace/team knowledge, configuration, and policy | Pending | `add-agent-semantic-memory` | Durable knowledge is versioned and scoped separately from transient history |
 | 4.6 | P1 | Add hybrid retrieval, ranking, deduplication, promotion, decay, and archive rules | Pending | `complete-memory-lifecycle` | Retrieval quality and lifecycle decisions are observable and deterministic at policy boundaries |
 | 4.7 | P0 | Inject authorized memory retrieval into context construction | Pending | `integrate-memory-context-retrieval` | Relevant memories are selected automatically within budget and cannot cross workspace/team grants |
@@ -111,6 +111,12 @@ Phase acceptance gate:
 Long sessions remain within context limits, new runs retrieve relevant authorized history, and
 working, episodic, and semantic memory have distinct storage, retrieval, promotion, and retention
 semantics.
+
+Episodic capture is enabled in the strict default agent memory policy. Completed, failed, recovered,
+and cancelled runs; terminal task outcomes; approval and delivery decisions; corrections; operator
+decisions; and explicit human feedback are stored as redacted, expiring, idempotent events. Each
+entry carries task, run, agent, source-event, and actor provenance when available, and the workspace
+memory search surface returns that provenance with the matching episode.
 
 ## Phase 5: Task And Agent Orchestration
 

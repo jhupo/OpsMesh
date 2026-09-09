@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.memory_policy import normalized_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.api.services.workspace_import_conflicts import _skip_conflict
 from backend.app.api.services.workspace_import_fields import (
@@ -63,7 +64,9 @@ class AgentMetadataImporter:
                     ),
                     tool_policy=_dict_field(item, "tool_policy"),
                     runtime_policy=_dict_field(item, "runtime_policy"),
-                    memory_policy=_dict_field(item, "memory_policy"),
+                    memory_policy=normalized_memory_policy(
+                        _dict_field(item, "memory_policy")
+                    ),
                     approval_policy=_dict_field(item, "approval_policy"),
                     version=_int_field(item, "version", 1),
                     status="active",

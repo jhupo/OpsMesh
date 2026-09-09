@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunResult
 from backend.app.agents.models import AgentProfile
-from backend.app.memory.run_capture import AgentRunMemoryCaptureService
+from backend.app.memory.episodic import AgentEpisodicMemoryService
 from backend.app.memory.working import AgentWorkingMemoryService
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task
@@ -16,14 +16,35 @@ class RunMemoryCompletionService:
 
     def capture(self, run: AgentRun, result: AgentRunResult) -> None:
         profile = self._profile_for_run(run)
-        if profile is None:
-            return
         task = self._task_for_run(run)
-        AgentRunMemoryCaptureService(self.session).capture_completed_run(
+        AgentEpisodicMemoryService(self.session).capture_run_completed(
             run,
             result,
             profile=profile,
             task=task,
+        )
+
+    def capture_failed(self, run: AgentRun, error: dict[str, object]) -> None:
+        profile = self._profile_for_run(run)
+        AgentEpisodicMemoryService(self.session).capture_run_failed(
+            run,
+            error,
+            profile=profile,
+            task=self._task_for_run(run),
+        )
+
+    def capture_task_completed(
+        self,
+        run: AgentRun,
+        task: Task,
+        result: AgentRunResult,
+    ) -> None:
+        AgentEpisodicMemoryService(self.session).capture_task_completed(
+            task,
+            event_id=run.id,
+            run=run,
+            profile=self._profile_for_run(run),
+            summary=result.final_output,
         )
 
     def expire_working(self, run: AgentRun) -> int:

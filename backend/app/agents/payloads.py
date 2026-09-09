@@ -6,8 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from backend.app.agents.memory_policy import (
-    WorkingMemoryPolicy,
-    default_context_budget_policy,
+    AgentMemoryPolicy,
     normalized_memory_policy,
 )
 from backend.app.agents.models import AgentProfile
@@ -70,10 +69,7 @@ CREATE_DEFAULTS: dict[str, object] = {
     "skills": {},
     "tool_policy": {},
     "runtime_policy": {},
-    "memory_policy": {
-        "context_budget": default_context_budget_policy(),
-        "working_memory": WorkingMemoryPolicy().model_dump(mode="json"),
-    },
+    "memory_policy": AgentMemoryPolicy().model_dump(mode="json"),
     "approval_policy": {},
 }
 

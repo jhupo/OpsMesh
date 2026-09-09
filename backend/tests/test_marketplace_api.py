@@ -708,7 +708,7 @@ def test_talent_install_uses_frozen_public_snapshot_without_private_workspace_re
             "runtime_space_id": "source-runtime",
             "limits": {"cpu": 2},
         },
-        memory_policy={"scope": "task", "workspace_runtime_id": "source-runtime"},
+        memory_policy={"episodic_memory": {"capture_enabled": False}},
         approval_policy={"mode": "default", "credential_id": "source-secret"},
         version=1,
     )
@@ -756,7 +756,27 @@ def test_talent_install_uses_frozen_public_snapshot_without_private_workspace_re
     assert agent["skills"] == {"skills": ["image"], "nested": {}}
     assert agent["tool_policy"] == {"mcp_tools": ["generate_image"], "nested": {}}
     assert agent["runtime_policy"] == {"provider": "docker", "limits": {"cpu": 2}}
-    assert agent["memory_policy"] == {"scope": "task"}
+    assert agent["memory_policy"] == {
+        "context_budget": {
+            "max_input_tokens": None,
+            "context_window_tokens": None,
+            "output_reserve_tokens": 4_096,
+            "safety_margin_tokens": 1_024,
+        },
+        "working_memory": {
+            "enabled": True,
+            "ttl_seconds": 86_400,
+            "max_entries": 64,
+            "max_entry_tokens": 2_048,
+        },
+        "episodic_memory": {
+            "capture_enabled": False,
+            "retrieval_enabled": True,
+            "retention_days": 180,
+            "max_results": 8,
+            "default_importance": 30,
+        },
+    }
     assert agent["approval_policy"] == {"mode": "default"}
     assert agent["model_settings"] == {"temperature": 0.2}
     assert agent["capabilities"] == {"tools": ["image.generate"]}

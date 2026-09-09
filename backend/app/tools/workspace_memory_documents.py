@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.artifacts.models import Artifact
@@ -54,6 +55,10 @@ class WorkspaceMemoryDocumentRepository:
                 WorkspaceMemoryEntry.workspace_id == workspace_id,
                 WorkspaceMemoryEntry.status == "active",
                 WorkspaceMemoryEntry.memory_layer.in_(("episodic", "semantic")),
+                or_(
+                    WorkspaceMemoryEntry.expires_at.is_(None),
+                    WorkspaceMemoryEntry.expires_at > datetime.now(UTC),
+                ),
             )
             .order_by(
                 WorkspaceMemoryEntry.importance.desc(),
@@ -76,6 +81,9 @@ class WorkspaceMemoryDocumentRepository:
                 created_at=entry.created_at,
                 metadata={
                     "entry_type": entry.entry_type,
+                    "memory_layer": entry.memory_layer,
+                    "scope_type": entry.scope_type,
+                    "scope_id": entry.scope_id,
                     "tags": entry.tags,
                     "visibility_scope": entry.visibility_scope,
                     "importance": entry.importance,

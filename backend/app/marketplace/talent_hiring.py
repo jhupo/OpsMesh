@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.agents.memory_policy import normalized_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.marketplace import HireTalentRequest, HireTaskTalentRequest
 from backend.app.audit.service import AuditService
@@ -86,7 +87,7 @@ class TalentHiringService:
             skills=dict(definition.skills),
             tool_policy=dict(definition.tool_policy),
             runtime_policy=dict(definition.runtime_policy),
-            memory_policy=dict(definition.memory_policy),
+            memory_policy=normalized_memory_policy(definition.memory_policy),
             approval_policy=dict(definition.approval_policy),
             version=listing.version,
         )
@@ -151,4 +152,3 @@ class TalentHiringService:
                 "installed_agent_profile_id": str(install.installed_agent_profile_id),
             },
         )
-
