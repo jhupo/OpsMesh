@@ -31,6 +31,8 @@ from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsService
+from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.run_request_builder import RunRequestBuilder
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.model_request import ModelRequestReview
@@ -170,6 +172,10 @@ def test_worker_runner_run_once_processes_agent_job() -> None:
                 priority=7,
             )
         )
+    queued_trace = queue.list_queued(workspace_id=workspace_id)[0].trace_context()
+    assert queued_trace is not None
+    assert queued_trace.trace_id == parent_trace.trace_id
+    assert queued_trace.parent_span_id == parent_trace.span_id
     runner = WorkerRunner(
         queue=queue,
         session_factory=session_factory,
@@ -194,7 +200,7 @@ def test_worker_runner_run_once_processes_agent_job() -> None:
         )
         assert event is not None
         assert event.event_metadata["trace_id"] == parent_trace.trace_id
-        assert event.event_metadata["parent_span_id"] == parent_trace.span_id
+        assert event.event_metadata["parent_span_id"] == queued_trace.span_id
         usage = session.scalar(
             select(ModelUsageRecord).where(ModelUsageRecord.agent_run_id == run_id)
         )
@@ -2174,20 +2180,20 @@ def test_worker_runner_processes_mcp_tool_execution_job() -> None:
         )
         run = session.get(AgentRun, run_id)
         assert run is not None
+        task = session.scalar(select(Task).where(
+            Task.workspace_id == workspace_id, Task.id == run.task_id,
+        ))
+        agent = session.scalar(select(AgentProfile).where(
+            AgentProfile.workspace_id == workspace_id, AgentProfile.id == run.agent_profile_id,
+        ))
+        assert task is not None and agent is not None
+        agent.tool_policy = {"allowed_tools": ["generate_image"]}
+        agent.runtime_policy = {"mcp": {"timeout_seconds": 15}}
+        session.flush()
         run.input = {
-            "authorization_snapshot": {
-                "version": 1,
-                "workspace_id": str(workspace_id),
-                "agent_run_id": str(run_id),
-                "allowed_tools": ["generate_image"],
-                "runtime_policy": {
-                    "mcp": {
-                        "timeout_seconds": 15,
-                        "max_input_bytes": 64_000,
-                        "max_output_bytes": 256_000,
-                    }
-                },
-            }
+            "authorization_snapshot": RunAuthorizationSnapshotService(
+                session, RunRequestBuilder(session, Settings(environment="test")),
+            ).build_authorization_snapshot(task, None, agent)
         }
         session.commit()
         server_id = server.id
@@ -2950,7 +2956,7 @@ class RecordingMcpAdapter:
         self._response = response
         self.calls: list[dict[str, object]] = []
 
-    def call(
+    async def call(
         self,
         *,
         server: McpServer,
@@ -3151,7 +3157,12 @@ def _seed_run(
             task_id=task.id,
             agent_profile_id=agent.id,
             status=status.value,
-            input={"task_id": str(task.id)},
+            input={
+                "task_id": str(task.id),
+                "authorization_snapshot": RunAuthorizationSnapshotService(
+                    session, RunRequestBuilder(session, Settings(environment="test")),
+                ).build_authorization_snapshot(task, None, agent),
+            },
             started_at=started_at,
             created_at=datetime.now(UTC),
         )
