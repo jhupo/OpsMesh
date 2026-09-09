@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Integer, String, UniqueConstraint, func, select
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column
@@ -88,7 +88,9 @@ class PersistentAgentSessionItem(UUIDPrimaryKeyMixin, Base):
     )
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     item: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
 
 
 class SQLAlchemyAgentSession:

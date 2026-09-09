@@ -28,6 +28,9 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "workspace_runtimes"
     __table_args__ = (
         Index("ix_workspace_runtimes_workspace_status", "workspace_id", "status"),
+        Index(
+            "ix_workspace_runtimes_workspace_provider", "workspace_id", "runtime_provider", "status"
+        ),
         Index("ix_workspace_runtimes_workspace_runtime_space", "workspace_id", "runtime_space_id"),
         Index("ix_workspace_runtimes_container", "docker_container_id"),
     )

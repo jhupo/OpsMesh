@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
@@ -16,6 +18,15 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("OPSMESH_DELIVERY_POSTGRES_TEST") != "1",
     reason="Requires explicit disposable PostgreSQL delivery test database",
 )
+
+
+def test_release_schema_roundtrip_has_no_metadata_drift() -> None:
+    assert os.environ.get("OPSMESH_ENVIRONMENT") == "test"
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", os.environ["OPSMESH_DATABASE_URL"].replace("%", "%%"))
+    command.downgrade(config, "0071_platform_delivery")
+    command.upgrade(config, "head")
+    command.check(config)
 
 
 def test_installation_admission_lock_blocks_exclusive_maintenance() -> None:

@@ -74,6 +74,8 @@ class TaskStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "task_steps"
     __table_args__ = (
         Index("ix_task_steps_workspace_task", "workspace_id", "task_id"),
+        Index("ix_task_steps_workspace_work_package", "workspace_id", "work_package_id"),
+        Index("ix_task_steps_workspace_required_role", "workspace_id", "required_role"),
         Index("ix_task_steps_workspace_status", "workspace_id", "status"),
         Index("ix_task_steps_workspace_runtime_space", "workspace_id", "runtime_space_id"),
     )

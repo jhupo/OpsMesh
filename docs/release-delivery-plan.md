@@ -2,6 +2,17 @@
 
 Status: in progress. A green unit test is not deployment evidence.
 
+## rc3 verification checkpoint
+
+- Run `34363744943` passes full pytest: 1165 passed, 8 skipped. It then rejects ORM/schema drift
+  through `alembic check`; no packages or images were published.
+- ORM metadata now retains the deployed timezone-aware fields, named email uniqueness and existing
+  task/runtime/PostgreSQL memory indexes. Migration `0072_release_schema` aligns marketplace source
+  nullability, JSONB memory snapshots and quota/reservation timestamps (explicit UTC conversion).
+  Invalid existing rows fail migration rather than being deleted or fabricated.
+- Delivery Integration now checks metadata drift and the 0071/0072 downgrade/upgrade roundtrip in
+  disposable PostgreSQL. This validates the migration before another immutable release attempt.
+
 ## Publication repair checkpoint (2026-09-09)
 
 - `v0.1.0rc1` run `34352635366` failed during full pytest; publication was skipped. Its diagnostic

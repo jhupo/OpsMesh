@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, String, event
+from sqlalchemy import DateTime, ForeignKey, Index, String, event
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -74,4 +74,4 @@ class AuditIntegrityCheck(UUIDPrimaryKeyMixin, Base):
     valid: Mapped[bool] = mapped_column(nullable=False)
     broken_event_id: Mapped[UUID | None] = mapped_column(nullable=True)
     reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

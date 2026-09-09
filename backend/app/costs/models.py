@@ -6,6 +6,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Numeric,
@@ -73,8 +74,8 @@ class ModelPricingRule(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         default=Decimal("0"),
     )
-    effective_from: Mapped[datetime] = mapped_column(nullable=False)
-    effective_to: Mapped[datetime | None] = mapped_column(nullable=True)
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     source: Mapped[str] = mapped_column(String(500), nullable=False, default="operator")
 
@@ -209,4 +210,4 @@ class ModelUsageRecord(UUIDPrimaryKeyMixin, Base):
     total_cost: Mapped[Decimal | None] = mapped_column(Numeric(24, 12), nullable=True)
     raw_usage: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    occurred_at: Mapped[datetime] = mapped_column(nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

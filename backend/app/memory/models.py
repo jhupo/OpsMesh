@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -30,6 +31,22 @@ class WorkspaceMemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_workspace_memory_entries_workspace_type", "workspace_id", "entry_type"),
         Index("ix_workspace_memory_entries_workspace_scope", "workspace_id", "visibility_scope"),
         Index("ix_workspace_memory_entries_workspace_source", "workspace_id", "source_type"),
+        Index(
+            "ix_workspace_memory_entries_embedding_hnsw", "embedding",
+            postgresql_using="hnsw", postgresql_ops={"embedding": "vector_cosine_ops"},
+            postgresql_where=text("status = 'active' AND embedding_status = 'ready'"),
+        ).ddl_if(dialect="postgresql"),
+        Index(
+            "ix_workspace_memory_entries_fts_simple_active",
+            text("to_tsvector('simple', title || ' ' || content)"),
+            postgresql_using="gin", postgresql_where=text("status = 'active'"),
+        ).ddl_if(dialect="postgresql"),
+        Index(
+            "ix_workspace_memory_entries_full_text_gin",
+            text("to_tsvector('simple', title || ' ' || content)"),
+            postgresql_using="gin",
+            postgresql_where=text("status = 'active' AND memory_layer IN ('episodic', 'semantic')"),
+        ).ddl_if(dialect="postgresql"),
         Index(
             "ix_workspace_memory_entries_workspace_layer_scope",
             "workspace_id",
@@ -118,7 +135,9 @@ class WorkspaceMemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         default=dict,
     )
-    last_accessed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_accessed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     access_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

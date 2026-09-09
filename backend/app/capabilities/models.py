@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -85,7 +85,7 @@ class WorkspaceSkillInstall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source_checksum: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     config: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
-    disabled_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ToolGroup(UUIDPrimaryKeyMixin, TimestampMixin, Base):
