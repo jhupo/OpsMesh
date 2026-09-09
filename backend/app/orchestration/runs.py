@@ -26,7 +26,7 @@ from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeam
@@ -143,8 +143,10 @@ class RunOrchestrationService:
         )
         runs: list[AgentRun] = []
         for step in scheduled_steps:
-            task = self._session.get(Task, step.task_id)
-            if task is None or task.workspace_id != workspace_id:
+            task = self._session.scalar(
+                select(Task).where(Task.workspace_id == workspace_id, Task.id == step.task_id)
+            )
+            if task is None:
                 continue
             run = self._run_step_launcher().create_reserved_run_for_step(task, step)
             if run is None:
@@ -177,8 +179,14 @@ class RunOrchestrationService:
         )
         runs: list[AgentRun] = []
         for step in scheduled_steps:
-            task = self._session.get(Task, step.task_id)
-            if task is None or task.workspace_id != workspace_id or task.agent_team_id != team_id:
+            task = self._session.scalar(
+                select(Task).where(
+                    Task.workspace_id == workspace_id,
+                    Task.id == step.task_id,
+                    Task.agent_team_id == team_id,
+                )
+            )
+            if task is None:
                 continue
             run = self._run_step_launcher().create_reserved_run_for_step(task, step)
             if run is None:
@@ -246,10 +254,8 @@ class RunOrchestrationService:
     def _run_reservations(self) -> RunResourceReservationService:
         return RunResourceReservationService(
             session=self._session,
-            mark_step_scheduling_blocked=lambda step, reason, details=None: (
-                self._mark_step_scheduling_blocked(step, reason, details=details)
-            ),
-            mark_step_scheduling_runnable=self._mark_step_scheduling_runnable,
+            mark_step_scheduling_blocked=mark_step_scheduling_blocked,
+            mark_step_scheduling_runnable=mark_step_scheduling_runnable,
         )
 
     def _request_builder(self) -> RunRequestBuilder:
@@ -290,10 +296,8 @@ class RunOrchestrationService:
             model_provider_blocked_details=(
                 self._authorization_snapshots().model_provider_blocked_details
             ),
-            mark_step_scheduling_blocked=lambda step, reason, details=None: (
-                self._mark_step_scheduling_blocked(step, reason, details=details)
-            ),
-            mark_step_scheduling_runnable=self._mark_step_scheduling_runnable,
+            mark_step_scheduling_blocked=mark_step_scheduling_blocked,
+            mark_step_scheduling_runnable=mark_step_scheduling_runnable,
             step_has_active_run=self._eligibility().step_has_active_run,
             team_scheduler_policy=self._team_scheduler_policy,
         )
@@ -332,18 +336,6 @@ class RunOrchestrationService:
             self.enqueue_run(next_run, requested_by_user_id)
             next_runs.append(next_run)
         return next_runs
-
-    def _mark_step_scheduling_runnable(self, step: TaskStep) -> None:
-        mark_step_scheduling_runnable(step)
-
-    def _mark_step_scheduling_blocked(
-        self,
-        step: TaskStep,
-        reason: str,
-        *,
-        details: dict[str, object] | None = None,
-    ) -> None:
-        mark_step_scheduling_blocked(step, reason, details=details)
 
     def _scheduler(self) -> WorkspaceScheduler:
         return WorkspaceScheduler(self._session)

@@ -22,6 +22,10 @@ from backend.app.orchestration.run_resource_reservations import RunResourceReser
 from backend.app.orchestration.run_step_launcher import RunStepLauncher
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.orchestration.scheduler import WorkspaceScheduler
+from backend.app.orchestration.step_scheduling_state import (
+    mark_step_scheduling_blocked,
+    mark_step_scheduling_runnable,
+)
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_spaces.models import (
@@ -550,7 +554,8 @@ def test_run_orchestration_blocks_paused_runtime_space_without_reserving_capacit
     assert _runtime_space_quota(session, runtime_space.id).reserved_value == 0
     assert _runtime_space_reservations(session, runtime_space.id) == []
     assert step.dependencies["scheduling_status"] == "blocked"
-    assert step.dependencies["blocked_reason"] == "runtime_space_paused"
+    assert step.dependencies["blocked_reason"] == "runtime_authorization_blocked"
+    assert step.dependencies["blocked_details"]["code"] == "runtime_space_unavailable"
 
 
 def test_run_orchestration_reserves_runtime_space_resource_requirements() -> None:
@@ -1152,8 +1157,8 @@ def _seed_runtime_space(
 ) -> RuntimeSpace:
     runtime_space = RuntimeSpace(
         workspace_id=workspace.id,
-        name="Team space",
-        scope="team",
+        name="Workspace quota space",
+        scope="workspace",
         policy=policy or {},
     )
     session.add(runtime_space)
@@ -1291,10 +1296,8 @@ def _run_step_launcher(session: Session) -> RunStepLauncher:
             )
         ),
         model_provider_blocked_details=authorization_snapshots.model_provider_blocked_details,
-        mark_step_scheduling_blocked=lambda step, reason, details=None: (
-            orchestration._mark_step_scheduling_blocked(step, reason, details=details)
-        ),
-        mark_step_scheduling_runnable=orchestration._mark_step_scheduling_runnable,
+        mark_step_scheduling_blocked=mark_step_scheduling_blocked,
+        mark_step_scheduling_runnable=mark_step_scheduling_runnable,
         step_has_active_run=eligibility.step_has_active_run,
         team_scheduler_policy=orchestration._team_scheduler_policy,
     )
@@ -1330,13 +1333,10 @@ def _run_lifecycle(session: Session) -> RunLifecycleService:
 
 
 def _run_reservations(session: Session) -> RunResourceReservationService:
-    orchestration = RunOrchestrationService(session)
     return RunResourceReservationService(
         session=session,
-        mark_step_scheduling_blocked=lambda step, reason, details=None: (
-            orchestration._mark_step_scheduling_blocked(step, reason, details=details)
-        ),
-        mark_step_scheduling_runnable=orchestration._mark_step_scheduling_runnable,
+        mark_step_scheduling_blocked=mark_step_scheduling_blocked,
+        mark_step_scheduling_runnable=mark_step_scheduling_runnable,
     )
 
 

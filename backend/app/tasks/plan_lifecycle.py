@@ -48,7 +48,9 @@ class TaskPlanLifecycleService:
             raise ValueError("Task is not team-backed")
         if command.input is not None:
             task.input = command.input
-        self._refresh_team_snapshot_for_retry(workspace_id, task, command)
+        self._refresh_team_snapshot(
+            task, task.agent_team_id, refresh=command.refresh_team_snapshot
+        )
         task.project_plan = None
         if task.status in {"blocked", "failed"}:
             TaskStateService().reset_to_draft(task)
@@ -100,7 +102,9 @@ class TaskPlanLifecycleService:
         completed_work_package_ids = self._completed_work_package_ids(workspace_id, task.id)
         if command.input is not None:
             task.input = command.input
-        self._refresh_team_snapshot_for_regeneration(workspace_id, task, command)
+        self._refresh_team_snapshot(
+            task, task.agent_team_id, refresh=command.refresh_team_snapshot
+        )
 
         previous_plan = task.project_plan
         task.project_plan = None
@@ -157,36 +161,18 @@ class TaskPlanLifecycleService:
             select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
         )
 
-    def _refresh_team_snapshot_for_retry(
+    def _refresh_team_snapshot(
         self,
-        workspace_id: UUID,
         task: Task,
-        command: TaskPlanRetryCommand,
+        team_id: UUID,
+        *,
+        refresh: bool,
     ) -> None:
-        if command.refresh_team_snapshot:
+        if refresh or task.team_snapshot is None:
             task.team_snapshot = build_team_snapshot(
                 self._session,
-                workspace_id=workspace_id,
-                team_id=task.agent_team_id,
-            )
-        if task.team_snapshot is None:
-            task.team_snapshot = build_team_snapshot(
-                self._session,
-                workspace_id=workspace_id,
-                team_id=task.agent_team_id,
-            )
-
-    def _refresh_team_snapshot_for_regeneration(
-        self,
-        workspace_id: UUID,
-        task: Task,
-        command: TaskPlanRegenerateCommand,
-    ) -> None:
-        if command.refresh_team_snapshot or task.team_snapshot is None:
-            task.team_snapshot = build_team_snapshot(
-                self._session,
-                workspace_id=workspace_id,
-                team_id=task.agent_team_id,
+                workspace_id=task.workspace_id,
+                team_id=team_id,
             )
 
     def _completed_work_package_ids(self, workspace_id: UUID, task_id: UUID) -> set[str]:

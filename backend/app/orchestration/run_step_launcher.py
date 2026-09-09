@@ -29,7 +29,7 @@ ModelProviderBlockedDetails = Callable[[UUID, TaskStep], dict[str, object]]
 MarkStepBlocked = Callable[[TaskStep, str, dict[str, object] | None], None]
 MarkStepRunnable = Callable[[TaskStep], None]
 StepHasActiveRun = Callable[[TaskStep], bool]
-TeamSchedulerPolicy = Callable[[UUID, UUID | None], dict[str, object]]
+TeamSchedulerPolicy = Callable[[UUID, UUID], dict[str, object] | None]
 
 
 @dataclass(slots=True)
@@ -51,7 +51,12 @@ class RunStepLauncher:
         authorization_snapshot: dict[str, object] | None = None,
     ) -> AgentRun:
         profile = (
-            self.session.get(AgentProfile, step.assigned_agent_profile_id)
+            self.session.scalar(
+                select(AgentProfile).where(
+                    AgentProfile.workspace_id == task.workspace_id,
+                    AgentProfile.id == step.assigned_agent_profile_id,
+                )
+            )
             if step.assigned_agent_profile_id is not None
             else None
         )
@@ -178,7 +183,12 @@ class RunStepLauncher:
         step: TaskStep,
     ) -> dict[str, object]:
         profile = (
-            self.session.get(AgentProfile, step.assigned_agent_profile_id)
+            self.session.scalar(
+                select(AgentProfile).where(
+                    AgentProfile.workspace_id == task.workspace_id,
+                    AgentProfile.id == step.assigned_agent_profile_id,
+                )
+            )
             if step.assigned_agent_profile_id is not None
             else None
         )

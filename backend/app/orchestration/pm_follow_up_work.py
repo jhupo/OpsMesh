@@ -132,8 +132,8 @@ class PmFollowUpWorkService:
             source_step.work_package_id if source_step is not None else "unknown"
         )
         required_role = optional_string(request.get("required_role")) or (
-            source_step.required_role if source_step is not None else "specialist"
-        )
+            source_step.required_role if source_step is not None else None
+        ) or "specialist"
         required_skills = string_list(request.get("required_skills")) or (
             source_step.required_skills if source_step is not None else []
         )

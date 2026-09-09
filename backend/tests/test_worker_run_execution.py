@@ -72,6 +72,10 @@ from backend.app.orchestration.run_step_launcher import RunStepLauncher
 from backend.app.orchestration.runs import (
     RunOrchestrationService,
 )
+from backend.app.orchestration.step_scheduling_state import (
+    mark_step_scheduling_blocked,
+    mark_step_scheduling_runnable,
+)
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.model_request import ModelRequestReview
@@ -6302,10 +6306,8 @@ def _run_step_launcher(session: Session) -> RunStepLauncher:
             )
         ),
         model_provider_blocked_details=authorization_snapshots.model_provider_blocked_details,
-        mark_step_scheduling_blocked=lambda step, reason, details=None: (
-            orchestration._mark_step_scheduling_blocked(step, reason, details=details)
-        ),
-        mark_step_scheduling_runnable=orchestration._mark_step_scheduling_runnable,
+        mark_step_scheduling_blocked=mark_step_scheduling_blocked,
+        mark_step_scheduling_runnable=mark_step_scheduling_runnable,
         step_has_active_run=eligibility.step_has_active_run,
         team_scheduler_policy=orchestration._team_scheduler_policy,
     )
@@ -6419,13 +6421,10 @@ def _run_lifecycle(session: Session) -> RunLifecycleService:
 
 
 def _run_reservations(session: Session) -> RunResourceReservationService:
-    orchestration = RunOrchestrationService(session)
     return RunResourceReservationService(
         session=session,
-        mark_step_scheduling_blocked=lambda step, reason, details=None: (
-            orchestration._mark_step_scheduling_blocked(step, reason, details=details)
-        ),
-        mark_step_scheduling_runnable=orchestration._mark_step_scheduling_runnable,
+        mark_step_scheduling_blocked=mark_step_scheduling_blocked,
+        mark_step_scheduling_runnable=mark_step_scheduling_runnable,
     )
 
 

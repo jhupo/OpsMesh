@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.guardrails import runtime_controls_snapshot
@@ -159,7 +160,7 @@ class RunAuthorizationSnapshotService:
             .as_dict()
         )
         snapshot["model_api"] = model_api_for_agent_provider(
-            snapshot.get("provider") if isinstance(snapshot.get("provider"), str) else None,
+            optional_string(snapshot.get("provider")),
             agent_model_settings,
             {"model_api": snapshot.get("model_api")},
         )
@@ -171,15 +172,22 @@ class RunAuthorizationSnapshotService:
         step: TaskStep,
     ) -> dict[str, object]:
         profile = (
-            self.session.get(AgentProfile, step.assigned_agent_profile_id)
+            self.session.scalar(
+                select(AgentProfile).where(
+                    AgentProfile.workspace_id == workspace_id,
+                    AgentProfile.id == step.assigned_agent_profile_id,
+                )
+            )
             if step.assigned_agent_profile_id is not None
             else None
         )
         credential: ModelProviderCredential | None = None
         if profile is not None and profile.model_provider_credential_id is not None:
-            credential = self.session.get(
-                ModelProviderCredential,
-                profile.model_provider_credential_id,
+            credential = self.session.scalar(
+                select(ModelProviderCredential).where(
+                    ModelProviderCredential.workspace_id == workspace_id,
+                    ModelProviderCredential.id == profile.model_provider_credential_id,
+                )
             )
         agent_provider = credential.provider if credential is not None else None
         source = "agent_model"

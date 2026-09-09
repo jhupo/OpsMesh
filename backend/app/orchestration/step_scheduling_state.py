@@ -32,8 +32,8 @@ def mark_step_scheduling_runnable(
 def mark_step_scheduling_blocked(
     step: TaskStep,
     reason: str,
-    *,
     details: dict[str, object] | None = None,
+    *,
     priority_score: int | None = None,
 ) -> None:
     dependencies = _dependencies(step)

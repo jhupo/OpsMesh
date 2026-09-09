@@ -201,6 +201,8 @@ class TeamStepPlanner:
         snapshot = task.team_snapshot if isinstance(task.team_snapshot, dict) else None
         if snapshot is not None:
             return snapshot
+        if task.agent_team_id is None:
+            return None
         try:
             snapshot = build_team_snapshot(
                 self.session,
