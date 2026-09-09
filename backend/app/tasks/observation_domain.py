@@ -1,8 +1,51 @@
 from __future__ import annotations
 
+from typing import TypedDict
+
 from backend.app.artifacts.models import Artifact
 from backend.app.tasks.models import Task
 from backend.app.tasks.observation_utils import count_items, int_value, present
+
+
+class AigcMetrics(TypedDict):
+    prompt_present: bool
+    variant_count: int
+    selected_asset_present: bool
+    model_settings_present: bool
+    review_note_count: int
+    artifact_count: int
+    review_status: str
+
+
+class NovelMetrics(TypedDict):
+    outline_item_count: int
+    chapter_count: int
+    scene_count: int
+    character_count: int
+    continuity_note_count: int
+    word_count: int
+    editorial_status: str
+    artifact_count: int
+
+
+class ResearchMetrics(TypedDict):
+    source_count: int
+    claim_count: int
+    citation_count: int
+    report_section_count: int
+    confidence: object
+    artifact_count: int
+
+
+class SoftwareMetrics(TypedDict):
+    requirement_count: int
+    design_task_count: int
+    branch_count: int
+    patch_count: int
+    test_count: int
+    build_status: str
+    review_comment_count: int
+    artifact_count: int
 
 
 class TaskObservationDomainCards:
@@ -103,7 +146,7 @@ class TaskObservationDomainCards:
             fallback=self._domain_value(task, "review_status"),
             default="pending_review" if present(selected_asset) else "drafting",
         )
-        metrics = {
+        metrics: AigcMetrics = {
             "prompt_present": present(prompt),
             "variant_count": count_items(variants),
             "selected_asset_present": present(selected_asset),
@@ -127,7 +170,7 @@ class TaskObservationDomainCards:
         characters = self._domain_value(task, "characters")
         continuity_notes = self._domain_value(task, "continuity_notes")
         editorial_review = self._domain_value(task, "editorial_review")
-        metrics = {
+        metrics: NovelMetrics = {
             "outline_item_count": count_items(outline),
             "chapter_count": count_items(chapters),
             "scene_count": count_items(scenes),
@@ -151,7 +194,7 @@ class TaskObservationDomainCards:
 
     def _research_status_card(self, task: Task, artifacts: list[Artifact]) -> dict[str, object]:
         confidence = self._domain_value(task, "confidence")
-        metrics = {
+        metrics: ResearchMetrics = {
             "source_count": count_items(self._domain_value(task, "sources")),
             "claim_count": count_items(self._domain_value(task, "claims")),
             "citation_count": count_items(self._domain_value(task, "citations")),
@@ -170,7 +213,7 @@ class TaskObservationDomainCards:
     def _software_status_card(self, task: Task, artifacts: list[Artifact]) -> dict[str, object]:
         build_status = self._domain_value(task, "build_status")
         tests = self._domain_value(task, "tests")
-        metrics = {
+        metrics: SoftwareMetrics = {
             "requirement_count": count_items(self._domain_value(task, "requirements")),
             "design_task_count": count_items(self._domain_value(task, "design_tasks")),
             "branch_count": count_items(self._domain_value(task, "branches")),
@@ -246,7 +289,7 @@ def _domain_attention_status(recommended_actions: list[str]) -> str:
     return "attention" if recommended_actions else "healthy"
 
 
-def _aigc_recommended_actions(metrics: dict[str, object]) -> list[str]:
+def _aigc_recommended_actions(metrics: AigcMetrics) -> list[str]:
     actions: list[str] = []
     if not metrics["prompt_present"]:
         actions.append("add_prompt")
@@ -264,7 +307,7 @@ def _aigc_recommended_actions(metrics: dict[str, object]) -> list[str]:
     return actions
 
 
-def _novel_recommended_actions(metrics: dict[str, object]) -> list[str]:
+def _novel_recommended_actions(metrics: NovelMetrics) -> list[str]:
     actions: list[str] = []
     if metrics["outline_item_count"] == 0:
         actions.append("create_outline")
@@ -284,7 +327,7 @@ def _novel_recommended_actions(metrics: dict[str, object]) -> list[str]:
     return actions
 
 
-def _research_recommended_actions(metrics: dict[str, object]) -> list[str]:
+def _research_recommended_actions(metrics: ResearchMetrics) -> list[str]:
     actions: list[str] = []
     if metrics["source_count"] == 0:
         actions.append("collect_sources")
@@ -299,7 +342,7 @@ def _research_recommended_actions(metrics: dict[str, object]) -> list[str]:
     return actions
 
 
-def _software_recommended_actions(metrics: dict[str, object]) -> list[str]:
+def _software_recommended_actions(metrics: SoftwareMetrics) -> list[str]:
     actions: list[str] = []
     if metrics["requirement_count"] == 0:
         actions.append("capture_requirements")

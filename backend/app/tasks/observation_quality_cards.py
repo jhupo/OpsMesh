@@ -1,3 +1,4 @@
+from backend.app.core.typing import dict_or_empty
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import TaskMessage, TaskStep
 from backend.app.tasks.observation_utils import risk_flags_from_payload, safe_message_payload
@@ -35,15 +36,11 @@ class TaskObservationQualityCards:
                             "work_package_id": step.work_package_id,
                             "mode": correction.get("mode"),
                             "target": redact_sensitive_payload(
-                                correction.get("target")
-                                if isinstance(correction.get("target"), dict)
-                                else {}
+                                dict_or_empty(correction.get("target"))
                             ),
                             "instruction": correction.get("instruction"),
                             "metadata": redact_sensitive_payload(
-                                correction.get("metadata")
-                                if isinstance(correction.get("metadata"), dict)
-                                else {}
+                                dict_or_empty(correction.get("metadata"))
                             ),
                             "created_at": step.created_at,
                         },

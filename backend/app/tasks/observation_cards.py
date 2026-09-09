@@ -70,7 +70,7 @@ class TaskObservationTimelineCards:
         messages: list[TaskMessage],
         run_events: list[RunEvent],
     ) -> list[dict[str, object]]:
-        cards = [
+        cards: list[dict[str, object]] = [
             {
                 "card_type": "task_message",
                 "title": message.message_type,
@@ -137,7 +137,7 @@ class TaskObservationReviewCards:
             if message.message_type
             in {"pm.acceptance_decision", "pm.follow_up_created", "approval.requested"}
         ]
-        cards = [
+        cards: list[dict[str, object]] = [
             {
                 "card_type": "review_event",
                 "title": message.message_type,
