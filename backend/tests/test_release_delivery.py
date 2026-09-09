@@ -89,7 +89,8 @@ def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
     assert workflow["jobs"]["gate"]["uses"] == "./.github/workflows/release-prepare.yml"
     assert workflow["jobs"]["gate"]["with"]["tag"] == "${{ github.ref_name }}"
     assert workflow["jobs"]["gate"]["permissions"] == {"contents": "read"}
-    assert workflow["jobs"]["publish"]["needs"] == "gate"
+    assert workflow["jobs"]["candidate"]["needs"] == "gate"
+    assert workflow["jobs"]["publish"]["needs"] == ["gate", "candidate"]
     assert "if" not in workflow["jobs"]["publish"]
     assert "workflow_dispatch" not in publish
     gate = yaml.load(
@@ -105,13 +106,16 @@ def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
     for required in (
         "uv run pytest", "uv run ruff check .", "uv run mypy",
         "uv run alembic upgrade head", "uv run alembic check", "uv build --all-packages",
-        "docker build", "mcp_stdio_client --check",
     ):
         assert required in commands
     assert not any("continue-on-error" in step for step in steps)
     assert "packages: write" in publish
     assert "subject-path: dist/*" in publish
-    assert "--draft=false" in publish
+    assert "scripts.publish_release" in publish
+    assert "mcp_stdio_client --check" in publish
+    assert "uv build" not in publish
+    assert "docker build" not in commands
+    assert "candidate-${{ github.run_id }}-${{ github.run_attempt }}" in publish
     ci = (ROOT / ".github/workflows/backend-ci.yml").read_text("utf-8")
     assert "branches: [master]" in ci
     assert "uv run pytest\n" not in ci

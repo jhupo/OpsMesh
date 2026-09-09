@@ -38,16 +38,23 @@ maintenance procedure; an application update does not hot-replace the executing 
 2. Commit and push to master, then create and push the canonical tag for that commit.
 3. **Release Publish** automatically runs the read-only **Release Gate** from the same commit:
    tag/version identity, master ancestry, Ruff, strict mypy, full pytest, real PostgreSQL migrations,
-   package builds and Docker image probes. Only a successful gate enables the separate publishing
-   job with write/signing permissions. It builds wheels/sdists, a deployment bundle, both images,
-   SBOM/provenance and an attested manifest, publishing the draft Release last. No manual workflow
+   package builds and a clean operator installation. The validated packages are retained as an
+   immutable run artifact. A candidate job builds both images once, with SBOM/provenance, under
+   run/attempt-specific candidate tags and probes their exact digests. Only successful validation
+   enables the signing/publishing job, which downloads the same packages and promotes the tested
+   image digests without rebuilding. It publishes the draft Release last. No manual workflow
    dispatch or previously successful workflow run is required.
 4. Operators discover a version through `update check`; this does not approve or install it.
 
 The workflows use minimal job permissions and pinned Action SHAs. No mutable `latest` reference
 is used for production deployment. An incomplete publication is not an installable release. If a
-publish run fails, inspect any draft and already-uploaded immutable artifacts before retrying;
-do not overwrite a previously public version with different bytes.
+publish job fails, use GitHub's **Re-run failed jobs** to reuse its successful package/candidate
+jobs. Existing draft assets must match local size and SHA-256 before missing assets are uploaded;
+conflicting or unverifiable bytes fail closed, never use overwrite upload. A matching complete
+public release is a no-op. Rebuilding candidates is not a substitute for retrying publication:
+different bytes require a new version. Do not move an existing tag. Candidate image tags are not
+installable releases and do not participate in update discovery. Redacted release-test diagnostics
+are retained for 14 days even when tests fail.
 
 ## Install
 

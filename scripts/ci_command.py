@@ -1,8 +1,10 @@
 """Expose a bounded failure annotation when public Actions log download needs authentication."""
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 from backend.app.security.redaction import redact_text_fragments
 
@@ -15,6 +17,10 @@ def main() -> int:
     )
     output = redact_text_fragments(result.stdout)
     print(output)
+    if report_path := os.environ.get("OPSMESH_CI_REPORT_PATH"):
+        report = Path(report_path)
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(output, encoding="utf-8")
     if result.returncode:
         # Keep public failure summaries bounded and redact before truncating sensitive values.
         detail = output[-4000:]

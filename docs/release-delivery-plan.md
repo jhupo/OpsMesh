@@ -2,6 +2,21 @@
 
 Status: in progress. A green unit test is not deployment evidence.
 
+## Publication repair checkpoint (2026-09-09)
+
+- `v0.1.0rc1` run `34352635366` failed during full pytest; publication was skipped. Its diagnostic
+  wrapper incorrectly replaced the entire output with `[redacted]`. Fragment redaction now
+  preserves failure context and the release gate retains a redacted test report for 14 days.
+- Packages are built once and transferred as a run artifact. Candidate images are built once under
+  run/attempt-specific tags, tested by digest with production Compose migrations and readiness,
+  then promoted without rebuilding. Candidate tags do not participate in release discovery.
+- Publication verifies existing draft assets by size/hash, uploads only missing files, verifies
+  inventory, promotes image digests and publishes the draft last. Matching public releases are
+  read-only no-ops; conflicting bytes fail closed. Retry failed jobs, not a fresh build of an
+  existing version. These changes still require hosted release acceptance.
+- Full pytest root cause, signed installation, systemd and cross-version recovery acceptance remain
+  outstanding. Do not interpret this workflow repair as completion of all delivery stages.
+
 ## Acceptance and sequence
 
 | Stage | Scope | Status |

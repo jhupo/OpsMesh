@@ -14,15 +14,16 @@ jobs:
       contents: read
     with:
       tag: ${{ github.ref_name }}
-  publish:
+  candidate:
     needs: gate
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
-      contents: write
+      contents: read
       packages: write
-      id-token: write
-      attestations: write
+    outputs:
+      backend: ${{ steps.backend.outputs.digest }}
+      runtime: ${{ steps.runtime.outputs.digest }}
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ github.ref_name }}
@@ -36,13 +37,6 @@ jobs:
           python-version: '3.12'
       - run: uv sync --frozen --all-groups
       - run: uv run python scripts/release.py validate --tag "$RELEASE_TAG"
-      - run: uv build --all-packages
-      - run: uv run python scripts/release.py bundle --tag "$RELEASE_TAG"
-      - name: Verify installed CLI and backend packages
-        run: |
-          uv venv /tmp/opsmesh-package-check
-          uv pip install --python /tmp/opsmesh-package-check/bin/python dist/opsmesh_operator-*.whl
-          /tmp/opsmesh-package-check/bin/opsmesh version
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -56,7 +50,7 @@ jobs:
           file: Dockerfile
           push: true
           platforms: linux/amd64
-          tags: ghcr.io/jhupo/opsmesh:${{ github.ref_name }}
+          tags: ghcr.io/jhupo/opsmesh:candidate-${{ github.run_id }}-${{ github.run_attempt }}
           build-args: BUILD_COMMIT=${{ github.sha }}
           provenance: mode=max
           sbom: true
@@ -69,25 +63,68 @@ jobs:
           file: Dockerfile.runtime
           push: true
           platforms: linux/amd64
-          tags: ghcr.io/jhupo/opsmesh-runtime:${{ github.ref_name }}
+          tags: ghcr.io/jhupo/opsmesh-runtime:candidate-${{ github.run_id }}-${{ github.run_attempt }}
           provenance: mode=max
           sbom: true
           cache-from: type=gha,scope=runtime
           cache-to: type=gha,mode=max,scope=runtime
+      - name: Test the exact candidate image digests
+        env:
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          RUNTIME_DIGEST: ${{ steps.runtime.outputs.digest }}
+        run: |
+          docker run --rm "ghcr.io/jhupo/opsmesh-runtime@$RUNTIME_DIGEST" python -m opsmesh_runtime.mcp_stdio_client --check
+          docker run --rm "ghcr.io/jhupo/opsmesh@$BACKEND_DIGEST" python -c 'from backend.app.main import create_app; create_app()'
+      - name: Verify fresh production Compose deployment using candidate digests
+        env:
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          RUNTIME_DIGEST: ${{ steps.runtime.outputs.digest }}
+        run: |
+          sudo env "PATH=$PATH" GITHUB_ACTIONS=true "DOCKER_CONFIG=$HOME/.docker" \
+            "BACKEND_DIGEST=$BACKEND_DIGEST" "RUNTIME_DIGEST=$RUNTIME_DIGEST" \
+            .venv/bin/python scripts/ci_command.py .venv/bin/python scripts/check_candidate.py
+  publish:
+    needs: [gate, candidate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      BACKEND_DIGEST: ${{ needs.candidate.outputs.backend }}
+      RUNTIME_DIGEST: ${{ needs.candidate.outputs.runtime }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --frozen --all-groups
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-packages-${{ github.run_id }}
+          path: dist
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
         with:
           subject-name: ghcr.io/jhupo/opsmesh
-          subject-digest: ${{ steps.backend.outputs.digest }}
+          subject-digest: ${{ needs.candidate.outputs.backend }}
           push-to-registry: true
       - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
         with:
           subject-name: ghcr.io/jhupo/opsmesh-runtime
-          subject-digest: ${{ steps.runtime.outputs.digest }}
+          subject-digest: ${{ needs.candidate.outputs.runtime }}
           push-to-registry: true
       - name: Create final release manifest
-        env:
-          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
-          RUNTIME_DIGEST: ${{ steps.runtime.outputs.digest }}
         run: |
           uv run python scripts/release.py manifest --tag "$RELEASE_TAG" \
             --repository "$GITHUB_REPOSITORY" --backend-digest "$BACKEND_DIGEST" --runtime-digest "$RUNTIME_DIGEST"
@@ -96,7 +133,4 @@ jobs:
           subject-path: dist/*
       - name: Publish complete release only
         run: |
-          prerelease=false
-          case "$RELEASE_TAG" in *rc*) prerelease=true ;; esac
-          gh release create "$RELEASE_TAG" dist/* --verify-tag --draft --generate-notes --prerelease="$prerelease"
-          gh release edit "$RELEASE_TAG" --draft=false
+          uv run python -m scripts.publish_release --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY"
