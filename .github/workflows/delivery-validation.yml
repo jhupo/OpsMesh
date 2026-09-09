@@ -46,6 +46,11 @@ jobs:
           curl --fail http://127.0.0.1:8000/api/v1/health/ready
           docker build -f Dockerfile.runtime -t opsmesh-runtime:ci .
           docker run --rm opsmesh-runtime:ci python -m opsmesh_runtime.mcp_stdio_client --check
+      - name: Real backup restoration and tamper denial
+        run: |
+          sudo env "PATH=$PATH" OPSMESH_ENVIRONMENT=test OPSMESH_DELIVERY_BACKUP_TEST=1 \
+            "OPSMESH_DATABASE_URL=$OPSMESH_DATABASE_URL" \
+            .venv/bin/python scripts/ci_command.py .venv/bin/python -m pytest backend/tests/test_delivery_backup_linux.py
       - name: Tear down disposable CI deployment
         if: always()
         run: |

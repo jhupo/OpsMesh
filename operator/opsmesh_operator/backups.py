@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import tarfile
 from datetime import UTC, datetime
@@ -223,4 +224,11 @@ class BackupStore:
         os.chown(storage, 10001, 10001)
         for path in storage.rglob("*"):
             os.chown(path, 10001, 10001)
-        atomic_write(root / ".env", (directory / "configuration.env").read_text("utf-8"))
+        config = root / ".env"
+        identity = config.stat()
+        atomic_write(
+            config,
+            (directory / "configuration.env").read_text("utf-8"),
+            mode=stat.S_IMODE(identity.st_mode),
+        )
+        os.chown(config, identity.st_uid, identity.st_gid)
