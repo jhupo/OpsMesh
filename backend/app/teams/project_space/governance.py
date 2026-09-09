@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from backend.app.core.typing import counts_by_value
 from backend.app.runtime_spaces.models import RuntimeSpace
 from backend.app.teams.execution_overview_constants import DONE_TASK_STATUSES
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.project_space.policies import ACTIVE_RUN_STATUSES
 from backend.app.teams.project_space.types import ProjectSpaceRecords
-from backend.app.teams.project_space.utils import counts
 
 
 def landing_rules(team: AgentTeam, spaces: list[RuntimeSpace]) -> dict[str, object]:
@@ -62,12 +62,12 @@ def summary(
         "include_completed": include_completed,
         "limit": limit,
         "task_count": len(records.tasks),
-        "task_status_counts": counts(task.status for task in records.tasks),
+        "task_status_counts": counts_by_value(task.status for task in records.tasks),
         "step_count": len(records.steps),
-        "step_status_counts": counts(step.status for step in records.steps),
+        "step_status_counts": counts_by_value(step.status for step in records.steps),
         "run_count": len(records.runs),
         "active_run_count": sum(1 for run in records.runs if run.status in ACTIVE_RUN_STATUSES),
-        "run_status_counts": counts(run.status for run in records.runs),
+        "run_status_counts": counts_by_value(run.status for run in records.runs),
         "artifact_count": len(records.artifacts),
         "workspace_file_count": len(records.files),
         "memory_entry_count": len(records.memories),

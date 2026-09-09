@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TypedDict
+
 from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,6 +16,13 @@ from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task
+
+
+class QuotaUsage(TypedDict):
+    limit_value: int
+    reserved_value: int
+    unit: str
+    max_utilization: float
 
 
 class AdminOperationsSummaryService(AdminRedisService):
@@ -99,7 +108,7 @@ class AdminOperationsSummaryService(AdminRedisService):
         quotas = self._session.scalars(
             select(RuntimeSpaceQuota).where(RuntimeSpaceQuota.status == "active")
         ).all()
-        quota_usage: dict[str, dict[str, object]] = {}
+        quota_usage: dict[str, QuotaUsage] = {}
         for quota in quotas:
             entry = quota_usage.setdefault(
                 quota.quota_key,
@@ -110,12 +119,12 @@ class AdminOperationsSummaryService(AdminRedisService):
                     "max_utilization": 0.0,
                 },
             )
-            entry["limit_value"] = int(entry["limit_value"]) + quota.limit_value
-            entry["reserved_value"] = int(entry["reserved_value"]) + quota.reserved_value
+            entry["limit_value"] += quota.limit_value
+            entry["reserved_value"] += quota.reserved_value
             utilization = (
                 quota.reserved_value / quota.limit_value if quota.limit_value > 0 else 0.0
             )
-            entry["max_utilization"] = max(float(entry["max_utilization"]), utilization)
+            entry["max_utilization"] = max(entry["max_utilization"], utilization)
         return {
             "total": self._count(select(RuntimeSpace)),
             "active": self._count(select(RuntimeSpace).where(RuntimeSpace.status == "active")),

@@ -1,13 +1,7 @@
 from __future__ import annotations
 
-from collections import Counter
 from datetime import datetime
 from uuid import UUID
-
-
-def counts(values: object) -> dict[str, int]:
-    counted: Counter[str] = Counter(str(value) for value in values)
-    return dict(sorted(counted.items()))
 
 
 def list_of_dicts(value: object) -> list[dict[str, object]]:

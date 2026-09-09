@@ -4,11 +4,11 @@ from collections import defaultdict
 from uuid import UUID
 
 from backend.app.artifacts.models import Artifact
+from backend.app.core.typing import counts_by_value
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.project_space.policies import ACTIVE_RUN_STATUSES
 from backend.app.teams.project_space.types import ProjectSpaceRecords
-from backend.app.teams.project_space.utils import counts
 
 
 def project_task_items(records: ProjectSpaceRecords) -> list[dict[str, object]]:
@@ -53,9 +53,9 @@ def task_item(
         "priority": task.priority,
         "runtime_space_id": task.runtime_space_id,
         "step_count": len(steps),
-        "step_status_counts": counts(step.status for step in steps),
+        "step_status_counts": counts_by_value(step.status for step in steps),
         "active_run_count": sum(1 for run in runs if run.status in ACTIVE_RUN_STATUSES),
-        "run_status_counts": counts(run.status for run in runs),
+        "run_status_counts": counts_by_value(run.status for run in runs),
         "artifact_count": len(artifacts),
         "artifact_bytes": sum(max(artifact.size_bytes, 0) for artifact in artifacts),
         "message_count": len(messages),

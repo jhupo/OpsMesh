@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import Select, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.notifications import NotificationCreateRequest
@@ -194,7 +194,9 @@ class NotificationCenterService:
         )
         return int(total or 0)
 
-    def _group_counts(self, workspace_id: UUID, column: object) -> dict[str, int]:
+    def _group_counts(
+        self, workspace_id: UUID, column: InstrumentedAttribute[str]
+    ) -> dict[str, int]:
         rows = self._session.execute(
             select(column, func.count())
             .where(WorkspaceNotification.workspace_id == workspace_id)
