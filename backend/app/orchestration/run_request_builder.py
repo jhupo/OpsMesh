@@ -269,7 +269,7 @@ class RunRequestBuilder:
             api_key=model_provider["api_key"],
             model_api=model_provider["model_api"],
             model_provider_credential_id=model_provider["model_provider_credential_id"],
-            tool_executor=BackendToolExecutor.for_mcp_adapter(
+            tool_executor=BackendToolExecutor(
                 self.session,
                 McpAdapterResolver(secret_service=self.mcp_secret_service()),
                 settings=self.settings,

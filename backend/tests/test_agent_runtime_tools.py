@@ -96,7 +96,7 @@ def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
     session.commit()
 
     result = asyncio.run(
-        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
                 workspace_id=workspace.id,
                 task_id=task.id,
@@ -154,7 +154,7 @@ def test_backend_tool_executor_records_team_runtime_tool_provenance() -> None:
     agent_profile_id = uuid4()
 
     result = asyncio.run(
-        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
                 workspace_id=workspace.id,
                 task_id=task.id,
@@ -243,7 +243,7 @@ def test_backend_tool_executor_enforces_mcp_per_run_call_limit() -> None:
     session.flush()
     _set_mcp_snapshot(run, workspace, server, allow)
     session.commit()
-    executor = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter())
+    executor = BackendToolExecutor(session, StaticMcpAdapter())
     context = AgentRuntimeContext(
         workspace_id=workspace.id,
         task_id=task.id,
@@ -317,7 +317,7 @@ def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs() -> N
     _set_mcp_snapshot(first_run, workspace, server, allow)
     _set_mcp_snapshot(second_run, workspace, server, allow)
     session.commit()
-    executor = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter())
+    executor = BackendToolExecutor(session, StaticMcpAdapter())
 
     first = asyncio.run(
         executor.execute_tool(
@@ -386,7 +386,7 @@ def test_backend_tool_executor_enforces_runtime_allowed_tools() -> None:
     session.commit()
 
     result = asyncio.run(
-        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
                 workspace_id=workspace.id,
                 task_id=task.id,
@@ -432,7 +432,7 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
     )
     session.add(run)
     session.commit()
-    executor = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter())
+    executor = BackendToolExecutor(session, StaticMcpAdapter())
     context = AgentRuntimeContext(
         workspace_id=workspace.id,
         task_id=task.id,
@@ -532,7 +532,7 @@ def test_backend_tool_executor_redacts_product_tool_failure_messages(
     )
 
     result = asyncio.run(
-        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
                 workspace_id=workspace.id,
                 task_id=task.id,
@@ -591,7 +591,7 @@ def test_backend_tool_executor_dispatches_agent_inbox_product_tools() -> None:
     )
     session.add_all([message, run])
     session.commit()
-    executor = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter())
+    executor = BackendToolExecutor(session, StaticMcpAdapter())
     context = AgentRuntimeContext(
         workspace_id=workspace.id,
         task_id=task.id,
@@ -684,7 +684,7 @@ def test_backend_tool_executor_scopes_agent_inbox_to_runtime_metadata() -> None:
     session.commit()
 
     result = asyncio.run(
-        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
                 workspace_id=workspace.id,
                 task_id=current_task.id,
@@ -754,7 +754,7 @@ def test_backend_tool_executor_scopes_mark_read_to_runtime_metadata() -> None:
     session.commit()
 
     result = asyncio.run(
-        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
                 workspace_id=workspace.id,
                 task_id=current_task.id,
@@ -831,7 +831,7 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
     )
     session.add(run)
     session.commit()
-    executor = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter())
+    executor = BackendToolExecutor(session, StaticMcpAdapter())
     context = AgentRuntimeContext(
         workspace_id=workspace.id,
         task_id=task.id,
@@ -980,7 +980,7 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
     session.commit()
 
     result = asyncio.run(
-        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
                 workspace_id=workspace.id,
                 task_id=task.id,
@@ -1099,7 +1099,7 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
     )
 
     result = asyncio.run(
-        BackendToolExecutor.for_mcp_adapter(
+        BackendToolExecutor(
             session,
             StaticMcpAdapter(),
             docker_client=docker,

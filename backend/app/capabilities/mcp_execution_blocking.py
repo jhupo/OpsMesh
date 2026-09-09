@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import NoReturn
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.capabilities.mcp_execution_context import (
@@ -29,19 +30,21 @@ class McpExecutionBlocker:
         *,
         mcp_server_id: UUID | None = None,
     ) -> NoReturn:
-        run = self.session.get(AgentRun, request.agent_run_id)
-        resolved_server_id = mcp_server_id or request.mcp_server_id
-        snapshot = (
-            authorization_snapshot(run)
-            if run is not None and run.workspace_id == request.workspace_id
-            else {}
+        run = self.session.scalar(
+            select(AgentRun).where(
+                AgentRun.workspace_id == request.workspace_id,
+                AgentRun.id == request.agent_run_id,
+            )
         )
-        error = {"code": reason, "message": "MCP tool invocation was blocked by policy"}
-        scoped_run = run if run is not None and run.workspace_id == request.workspace_id else None
-        if scoped_run is not None:
+        resolved_server_id = mcp_server_id or request.mcp_server_id
+        snapshot = authorization_snapshot(run) if run is not None else {}
+        error: dict[str, object] = {
+            "code": reason, "message": "MCP tool invocation was blocked by policy",
+        }
+        if run is not None:
             self._notify_blocked(
                 request=request,
-                run=scoped_run,
+                run=run,
                 reason=reason,
                 resolved_server_id=resolved_server_id,
                 snapshot=snapshot,
@@ -53,7 +56,7 @@ class McpExecutionBlocker:
             response=None,
             error=error,
             snapshot=snapshot,
-            run=scoped_run,
+            run=run,
             latency_ms=0,
         )
         self._record_security_event(

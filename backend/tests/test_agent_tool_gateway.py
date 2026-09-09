@@ -222,7 +222,7 @@ def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
     storage.write(allowed_file.storage_key, b"safe")
     storage.write(blocked_file.storage_key, b"safe")
     storage.write(oversized_file.storage_key, b"large")
-    executor = BackendToolExecutor.for_mcp_adapter(
+    executor = BackendToolExecutor(
         session,
         _UnusedMcpAdapter(),
         settings=Settings(environment="test", agent_file_read_max_bytes=4),

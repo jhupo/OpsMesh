@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from uuid import UUID
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRuntimeContext, AgentRuntimeToolResult
@@ -49,26 +52,6 @@ class BackendToolExecutor:
         self._docker_client = docker_client
         self._secret_service = secret_service
         self._storage = storage
-
-    @classmethod
-    def for_mcp_adapter(
-        cls,
-        session: Session,
-        adapter: McpToolAdapter | McpToolAdapterResolver,
-        *,
-        settings: Settings | None = None,
-        docker_client: DockerRuntimeClient | None = None,
-        secret_service: SecretEncryptionService | None = None,
-        storage: ObjectStorage | None = None,
-    ) -> BackendToolExecutor:
-        return cls(
-            session,
-            adapter,
-            settings=settings,
-            docker_client=docker_client,
-            secret_service=secret_service,
-            storage=storage,
-        )
 
     async def execute_tool(
         self,
@@ -181,7 +164,7 @@ class BackendToolExecutor:
                 context=product_review_context(context),
             )
         elif prepared.definition.source == "mcp":
-            allow = self._mcp_allowlist(prepared)
+            allow = self._mcp_allowlist(prepared, workspace_id=context.workspace_id)
             decision = policies.evaluate_mcp_tool(
                 workspace_id=context.workspace_id,
                 tool_name=tool_name,
@@ -248,7 +231,7 @@ class BackendToolExecutor:
             docker_client=self._docker_client,
             secret_service=self._secret_service,
         )
-        result = await McpToolExecutionService(
+        mcp_result = await McpToolExecutionService(
             self._session,
             resolver,
             settings=self._settings,
@@ -264,16 +247,16 @@ class BackendToolExecutor:
             )
         )
         tool_result = AgentRuntimeToolResult(
-            status=result.status,
-            output=result.response,
-            error=result.error,
+            status=mcp_result.status,
+            output=mcp_result.response,
+            error=mcp_result.error,
             metadata=tool_metadata(
                 context=context,
                 tool_name=tool_name,
                 tool_kind="mcp",
                 extra={
-                    "mcp_tool_call_log_id": str(result.log_id),
-                    "latency_ms": result.latency_ms,
+                    "mcp_tool_call_log_id": str(mcp_result.log_id),
+                    "latency_ms": mcp_result.latency_ms,
                 },
             ),
         )
@@ -301,9 +284,17 @@ class BackendToolExecutor:
             policy=policy,
         )
 
-    def _mcp_allowlist(self, prepared: PreparedToolCall) -> McpToolAllowlist:
+    def _mcp_allowlist(
+        self, prepared: PreparedToolCall, *, workspace_id: UUID
+    ) -> McpToolAllowlist:
         allowlist_id = prepared.definition.mcp_tool_allowlist_id
-        allow = self._session.get(McpToolAllowlist, allowlist_id) if allowlist_id else None
+        allow = self._session.scalar(
+            select(McpToolAllowlist).where(
+                McpToolAllowlist.workspace_id == workspace_id,
+                McpToolAllowlist.id == allowlist_id,
+                McpToolAllowlist.mcp_server_id == prepared.definition.mcp_server_id,
+            )
+        ) if allowlist_id is not None else None
         if allow is None:
             raise ToolGatewayDenied(
                 "mcp_tool_allowlist_missing",
