@@ -204,7 +204,7 @@ def _static_tool_review(
     if _policy_requires_admin_review(allowlist_policy):
         reasons.append("tool.policy.requires_admin_review")
         risk_level = _max_risk(risk_level, "high")
-    signals = {
+    signals: dict[str, object] = {
         "signal_source": "tool_execution_policy_signals",
         "tool_kind": tool_kind,
         "tool_name": tool_name,

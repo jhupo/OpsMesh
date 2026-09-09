@@ -181,7 +181,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "request_id": getattr(request.state, "request_id", None),
                 },
             )
-            response: Response = error_response(
+            response = error_response(
                 status_code=HTTP_429_TOO_MANY_REQUESTS,
                 code="rate_limited",
                 message="API rate limit exceeded",

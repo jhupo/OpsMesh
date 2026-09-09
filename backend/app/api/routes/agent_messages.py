@@ -171,13 +171,13 @@ async def create_agent_message(
             data=request,
         )
     except ValueError as exc:
-        message = str(exc)
+        error_message = str(exc)
         code = (
             status.HTTP_404_NOT_FOUND
-            if "not found" in message.lower()
+            if "not found" in error_message.lower()
             else status.HTTP_409_CONFLICT
         )
-        raise HTTPException(status_code=code, detail=message) from exc
+        raise HTTPException(status_code=code, detail=error_message) from exc
     session.commit()
     return AgentMessageResponse.model_validate(message)
 
