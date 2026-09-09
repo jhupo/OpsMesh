@@ -113,6 +113,24 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
         )
 
     assert json.loads(run("check"))["version"] == tag.removeprefix("v")
+    subprocess.run(
+        [*base, image, "/bin/sh", "-n", "/bundle/scripts/server-smoke-test.sh"],
+        check=True,
+    )
+    subprocess.run(
+        [
+            *base,
+            image,
+            "/bundle/python/bin/python3",
+            "/bundle/scripts/render-alertmanager-config.py",
+            "--webhook-url",
+            "https://alerts.example.com/hook",
+            "--output",
+            "/work/opsmesh/alerts.yml",
+        ],
+        check=True,
+    )
+    assert (state / "opsmesh/alerts.yml").is_file()
     run("migrate")
     run("migrate", "check")
     run("worker", "--once")

@@ -5,7 +5,9 @@ This project ships as a backend control plane with two long-running process type
 - API process: serves workspace, task, runtime, approval, file, and operations APIs.
 - Worker process: pulls queued agent runs from Redis and records durable run state in Postgres.
 
-Production server deployments run the API and worker directly on the VPS through systemd and a release-local Python virtual environment. Docker is still required on the host for dangerous task runtimes and the pinned observability stack; it is not used to run the backend API or worker.
+Packaged production deployment supports Compose or direct systemd services. Systemd uses the
+self-contained release runtime, not a host Python virtual environment. Docker remains required
+for isolated task runtimes and the separately managed observability stack.
 
 Postgres remains the source of truth. Redis is used for queues, locks, pub/sub, and short-lived cache. User-controlled execution must still happen in Docker runtimes or self-hosted isolated machines, never inside the API or worker process.
 
@@ -28,7 +30,8 @@ The API is exposed at `http://localhost:8000`. Health checks are available at:
 - `GET /api/v1/health`
 - `GET /api/v1/health/ready`
 
-The local compose stack is only for development and CI checks. Production backend processes are managed by systemd.
+The root Compose file is for development and CI. Production Compose uses
+`deploy/server/compose.yml`; direct systemd deployment is the other managed mode.
 
 Build the dedicated isolated runtime image before enabling Docker-backed agent or stdio MCP
 execution:
@@ -78,24 +81,22 @@ capability object preserves the capabilities established at registration; pass
 
 ## VPS Layout
 
-Provision a VPS with Python 3.11+, `uv`, Postgres, Redis, Docker, and systemd. Keep release assets under `/opt/opsmesh`:
+Provision a Linux amd64 VPS with Postgres, Redis, Docker, systemd, GitHub CLI and PostgreSQL client
+tools. The release supplies Python and application dependencies. The managed installer owns:
 
 ```text
 /opt/opsmesh/.env
 /opt/opsmesh/current -> /opt/opsmesh/releases/v1.2.3
 /opt/opsmesh/downloads
 /opt/opsmesh/releases
-/opt/opsmesh/release-state.env
-/var/lib/opsmesh/storage
+/opt/opsmesh/installation.json
+/opt/opsmesh/updater
+/opt/opsmesh/data/storage
 ```
 
-Create the deploy environment from the server template:
-
-```bash
-sudo mkdir -p /opt/opsmesh/releases /opt/opsmesh/downloads /var/lib/opsmesh/storage
-sudo cp deploy/server/env.example /opt/opsmesh/.env
-sudo chmod 600 /opt/opsmesh/.env
-```
+Use the native CLI and [managed installation procedure](delivery-operations.md). It generates
+secrets and preserves existing configuration. Systemd mode requires pre-provisioned Postgres/Redis
+configuration. Do not make immutable release directories writable by application service users.
 
 Set production values in `/opt/opsmesh/.env`, especially:
 
@@ -108,76 +109,20 @@ Set production values in `/opt/opsmesh/.env`, especially:
 - `OPSMESH_ENABLE_API_DOCS=false`
 - `OPSMESH_READINESS_WORKER_CHECK_ENABLED=true`
 - `OPSMESH_CREDENTIAL_ENCRYPTION_SECRET`
-- `OPSMESH_STORAGE_ROOT=/var/lib/opsmesh/storage`
+- `OPSMESH_STORAGE_ROOT=/opt/opsmesh/data/storage`
 - `OPSMESH_RUNTIME_ALLOWED_IMAGES=["opsmesh-runtime:local"]` or a reviewed immutable runtime image
   digest
 
-Install Docker on the VPS and leave the daemon available only to the worker service user if hosted runtime execution is enabled. The backend API and worker are not Compose services. Docker runs isolated task containers and the separately managed observability stack; the API process must not be able to control the Docker daemon.
+Only the worker receives Docker authority for hosted task execution, in either deployment mode.
+The API process must not be able to control the Docker daemon.
 
 ## systemd Services
 
-Create separate unprivileged service users and install systemd units for the API and worker. The
-observability unit is root-owned because Docker manages its containers; the Collector receives
-application telemetry over the loopback OTLP endpoint and does not mount the host filesystem:
-
-```bash
-sudo groupadd --system opsmesh
-sudo useradd --system --home /opt/opsmesh --shell /usr/sbin/nologin --gid opsmesh opsmesh-api
-sudo useradd --system --home /opt/opsmesh --shell /usr/sbin/nologin --gid opsmesh opsmesh-worker
-sudo chown -R opsmesh-api:opsmesh /opt/opsmesh
-sudo chown -R opsmesh-worker:opsmesh /var/lib/opsmesh
-sudo usermod -aG docker opsmesh-worker
-```
-
-`/etc/systemd/system/opsmesh-api.service`:
-
-```ini
-[Unit]
-Description=OpsMesh API
-After=network-online.target postgresql.service redis-server.service
-Wants=network-online.target
-
-[Service]
-User=opsmesh-api
-Group=opsmesh
-WorkingDirectory=/opt/opsmesh/current
-EnvironmentFile=/opt/opsmesh/.env
-ExecStart=/bin/sh -c 'exec /opt/opsmesh/current/.venv/bin/uvicorn backend.app.main:create_app --factory --host "${OPSMESH_API_BIND:-127.0.0.1}" --port "${OPSMESH_API_PORT:-8000}"'
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-`/etc/systemd/system/opsmesh-worker.service`:
-
-```ini
-[Unit]
-Description=OpsMesh Worker
-After=network-online.target postgresql.service redis-server.service docker.service
-Wants=network-online.target docker.service
-
-[Service]
-User=opsmesh-worker
-Group=opsmesh
-WorkingDirectory=/opt/opsmesh/current
-EnvironmentFile=/opt/opsmesh/.env
-ExecStart=/opt/opsmesh/current/.venv/bin/python -m backend.app.workers.cli
-Restart=always
-RestartSec=5
-SupplementaryGroups=docker
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable the units after the first release is installed:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable opsmesh-api opsmesh-worker
-```
+The installer creates reserved service identities and installs the canonical units from
+`deploy/server/systemd/opsmesh-api.service` and `opsmesh-worker.service`. They run
+`current/opsmesh-server api` and `current/opsmesh-server worker`; the independent root-owned updater
+runs `updater/opsmesh-server updater`. Configuration remains outside immutable release contents.
+The observability unit is separately root-owned because Docker manages its containers.
 
 Put Nginx or another controlled ingress in front of `127.0.0.1:8000` before exposing the API outside the server.
 
@@ -193,8 +138,8 @@ The official packaged deployment is a prebuilt GHCR backend image and a separate
 The backend image is shared by the API, worker and explicit migration job. Production Compose is
 `deploy/server/compose.yml`; the root Compose file remains a source-build development environment.
 Neither API startup nor worker startup runs migrations automatically.
-The installer uses `uv sync --frozen --no-dev --no-editable` for the separate host updater and
-systemd application environment. Database migration remains an explicit `alembic upgrade head` step.
+Systemd and the independent updater use the verified self-contained runtime without downloading
+Python packages at installation time. Migration is explicit: `opsmesh-server migrate`.
 
 See [Delivery operations](delivery-operations.md) for installation, CLI commands, verification,
 upgrade approval, maintenance, backup verification and offline recovery. The old shell updater and
@@ -210,8 +155,8 @@ rollback.
 
 Existing VPS/systemd installations must perform a maintenance-window migration to the managed
 installation layout and preserve their database, storage and encryption keys. This is not an
-in-place adapter for the removed shell update format. The manual VPS setup above describes service
-boundaries; use the managed installer for the new release/update contract.
+in-place adapter for the removed shell update format. Use the managed installer for the current
+release/update contract.
 
 ## Smoke Checks
 
@@ -226,7 +171,7 @@ The smoke test verifies:
 - `GET /api/v1/health/ready`
 - `systemctl is-active opsmesh-api`
 - `systemctl is-active opsmesh-worker`
-- `.venv/bin/alembic current`
+- `opsmesh-server migrate current`
 
 Docker access is checked only when hosted dangerous-task runtimes are enabled for the VPS:
 
@@ -322,20 +267,20 @@ Hosted MCP health checks are treated as stale after `OPSMESH_MCP_HEALTH_CHECK_ST
 API:
 
 ```bash
-/opt/opsmesh/current/.venv/bin/uvicorn backend.app.main:create_app --factory --host 127.0.0.1 --port 8000
+/opt/opsmesh/current/opsmesh-server api --host 127.0.0.1 --port 8000
 ```
 
 Worker:
 
 ```bash
-/opt/opsmesh/current/.venv/bin/python -m backend.app.workers.cli
+/opt/opsmesh/current/opsmesh-server worker
 ```
 
 Run one-shot migrations:
 
 ```bash
 cd /opt/opsmesh/current
-.venv/bin/alembic upgrade head
+./opsmesh-server migrate
 ```
 
 The updater runs migrations before restarting services.

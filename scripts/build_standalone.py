@@ -56,6 +56,10 @@ def copy_server_assets(target: Path) -> None:
     shutil.copy2(ROOT / "docs/standalone-distributions.md", target / "DISTRIBUTION.md")
     shutil.copy2(ROOT / "deploy/server/opsmesh-server", target / "opsmesh-server")
     (target / "opsmesh-server").chmod(0o755)
+    (target / "scripts").mkdir()
+    for name in ("server-smoke-test.sh", "render-alertmanager-config.py"):
+        shutil.copy2(ROOT / "scripts" / name, target / "scripts" / name)
+        (target / "scripts" / name).chmod(0o755)
 
 
 def build(kind: str, tag: str, wheels: Path, output: Path, uv: str) -> Path:

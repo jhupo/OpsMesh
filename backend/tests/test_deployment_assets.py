@@ -75,8 +75,8 @@ def test_deployment_docs_cover_processes_and_production_guards() -> None:
     assert "Worker process" in docs
     assert "VPS Layout" in docs
     assert "systemd Services" in docs
-    assert "Docker is still required on the host for dangerous task runtimes" in docs
-    assert "the API process must not be able to control the Docker daemon" in docs
+    assert "for isolated task runtimes" in docs
+    assert "The API process must not be able to control the Docker daemon" in docs
     assert "pinned observability stack" in docs
     assert "OPSMESH_SMOKE_MONITORING=true" in docs
     assert "scripts/server-smoke-test.sh" in docs
@@ -84,14 +84,17 @@ def test_deployment_docs_cover_processes_and_production_guards() -> None:
     assert "opsmesh-worker.service" in docs
     assert "opsmesh-api" in docs
     assert "opsmesh-worker" in docs
-    assert "sudo usermod -aG docker opsmesh-worker" in docs
-    assert "sudo usermod -aG docker opsmesh\n" not in docs
-    assert (
-        "Description=OpsMesh API\n"
-        "After=network-online.target postgresql.service redis-server.service\n" in docs
-    )
-    assert "uv sync" in docs
-    assert "alembic upgrade head" in docs
+    assert "Only the worker receives Docker authority" in docs
+    assert "Do not make immutable release directories writable" in docs
+    assert "uv sync" not in docs
+    assert ".venv/" not in docs
+    assert "opsmesh-server migrate" in docs
+    api_unit = read_repo_file("deploy/server/systemd/opsmesh-api.service")
+    worker_unit = read_repo_file("deploy/server/systemd/opsmesh-worker.service")
+    assert "ExecStart=/opt/opsmesh/current/opsmesh-server api" in api_unit
+    assert "ExecStart=/opt/opsmesh/current/opsmesh-server worker" in worker_unit
+    assert "SupplementaryGroups=docker" in worker_unit
+    assert "SupplementaryGroups=docker" not in api_unit
     assert "systemctl restart" not in docs
     assert "docker compose -f deploy/server/docker-compose.backend.yml" not in docs
     assert "OPSMESH_COMPOSE_FILE" not in docs
@@ -159,8 +162,9 @@ def test_server_smoke_script_checks_health_and_migrations() -> None:
     assert "systemctl" in smoke_script
     assert "opsmesh-api" in smoke_script
     assert "opsmesh-worker" in smoke_script
-    assert ".venv/bin/alembic" in smoke_script
-    assert "alembic current" in smoke_script
+    assert "./opsmesh-server migrate current" in smoke_script
+    assert "-m dotenv" in smoke_script
+    assert ".venv/" not in smoke_script
     assert "OPSMESH_SMOKE_DOCKER_RUNTIME" in smoke_script
     assert "OPSMESH_DOCKER_CHECK_USER" in smoke_script
     assert "docker.service" in smoke_script

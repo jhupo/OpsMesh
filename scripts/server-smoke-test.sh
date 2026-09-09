@@ -5,11 +5,9 @@ opsmesh_root="${OPSMESH_ROOT:-/opt/opsmesh}"
 current_link="${OPSMESH_CURRENT_LINK:-${opsmesh_root}/current}"
 env_file="${OPSMESH_ENV_FILE:-${opsmesh_root}/.env}"
 
-if [ -f "${env_file}" ]; then
-    set -a
-    # shellcheck disable=SC1090
-    . "${env_file}"
-    set +a
+if [ -f "${env_file}" ] && [ "${OPSMESH_SMOKE_ENV_LOADED:-false}" != "true" ]; then
+    export OPSMESH_SMOKE_ENV_LOADED=true
+    exec "${current_link}/python/bin/python3" -m dotenv -f "${env_file}" run -- /bin/sh "$0"
 fi
 
 api_service="${OPSMESH_API_SERVICE:-opsmesh-api}"
@@ -28,7 +26,7 @@ otel_health_url="${OPSMESH_OTEL_HEALTH_URL:-http://127.0.0.1:13133/}"
 docker_check_user="${OPSMESH_DOCKER_CHECK_USER:-opsmesh-worker}"
 
 json_has_data() {
-    "${current_link}/.venv/bin/python" -c \
+    "${current_link}/python/bin/python3" -c \
         'import json, sys; data=json.load(sys.stdin).get("data", {}).get("result", []); raise SystemExit(0 if data else 1)'
 }
 
@@ -63,7 +61,7 @@ wait_for_prometheus_series() {
 
 wait_for_loki_logs() {
     attempts=15
-    start_nanoseconds="$("${current_link}/.venv/bin/python" -c 'import time; print(time.time_ns() - 300_000_000_000)')"
+    start_nanoseconds="$("${current_link}/python/bin/python3" -c 'import time; print(time.time_ns() - 300_000_000_000)')"
     while [ "${attempts}" -gt 0 ]; do
         if curl -fsSG "${loki_base_url}/loki/api/v1/query_range" \
             --data-urlencode 'query={service_name="opsmesh-api"}' \
@@ -95,14 +93,14 @@ wait_for_http "${api_url}"
 "${systemctl_bin}" is-active --quiet "${api_service}"
 "${systemctl_bin}" is-active --quiet "${worker_service}"
 
-if [ ! -x "${current_link}/.venv/bin/alembic" ]; then
-    echo "Missing alembic executable: ${current_link}/.venv/bin/alembic" >&2
+if [ ! -x "${current_link}/opsmesh-server" ]; then
+    echo "Missing server executable: ${current_link}/opsmesh-server" >&2
     exit 1
 fi
 
 (
     cd "${current_link}"
-    ./.venv/bin/alembic current
+    ./opsmesh-server migrate current
 )
 
 if [ "${OPSMESH_SMOKE_DOCKER_RUNTIME:-false}" = "true" ]; then
@@ -141,8 +139,8 @@ if [ "${OPSMESH_SMOKE_MONITORING:-false}" = "true" ]; then
     wait_for_loki_logs
 
     if [ "${OPSMESH_SMOKE_TELEMETRY:-true}" = "true" ]; then
-        trace_id="$("${current_link}/.venv/bin/python" -c 'import secrets; print(secrets.token_hex(16))')"
-        span_id="$("${current_link}/.venv/bin/python" -c 'import secrets; print(secrets.token_hex(8))')"
+        trace_id="$("${current_link}/python/bin/python3" -c 'import secrets; print(secrets.token_hex(16))')"
+        span_id="$("${current_link}/python/bin/python3" -c 'import secrets; print(secrets.token_hex(8))')"
         curl -sS -o /dev/null \
             -H "traceparent: 00-${trace_id}-${span_id}-01" \
             "${api_base_url}/api/v1/does-not-exist"

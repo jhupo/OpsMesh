@@ -11,6 +11,18 @@ CLI archives, signed checksums and mandatory relocated-artifact execution before
 Windows CLI relocation and a real administrative HTTP request have passed locally. Hosted native
 matrix/server and final release evidence must be recorded before this correction is complete.
 
+- Native CLI matrix run `34373885167` passed all five platforms; its server job exposed uv alias
+  discovery, subsequently fixed through `uv python find`. Run `34374107928` again passed all five
+  native CLIs and exposed mixed diagnostic/JSON output in the server check, now regression-tested.
+- Server acceptance `34375162276` passed in a Python-free Ubuntu container: packaged SDK/native
+  imports and timezone data, all migrations and schema comparison, Worker, a real updater tick and
+  API readiness. The safety rejection of an overly broad test root was fixed in the test fixture,
+  not by weakening installation validation.
+- Strict mypy passes 1005 application source files. Runtime/operator, publication and deployment
+  asset regression checks pass. Operational scripts now ship in the runtime and use its interpreter;
+  obsolete source-venv installation instructions and duplicated manual unit templates were removed.
+- Final tag publication, native archive signatures and public download verification are pending.
+
 ## rc5 final publication acceptance (2026-09-09)
 
 - [Release Publish 34368777720](https://github.com/jhupo/OpsMesh/actions/runs/34368777720)

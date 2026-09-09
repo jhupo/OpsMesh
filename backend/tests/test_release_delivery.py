@@ -63,6 +63,8 @@ def test_bundle_contains_migration_config_without_local_secrets(tmp_path: Path) 
     assert "alembic.ini" in names
     assert "backend/migrations/env.py" in names
     assert "opsmesh-server" in names
+    assert "scripts/server-smoke-test.sh" in names
+    assert "scripts/render-alertmanager-config.py" in names
     assert "operator/pyproject.toml" not in names
     assert not any("__pycache__" in name or name.endswith(".env") for name in names)
     assert file_record(bundle).size > 0
