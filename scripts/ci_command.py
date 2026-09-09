@@ -14,10 +14,10 @@ def main() -> int:
     print(redact_sensitive_text(result.stdout))
     print(redact_sensitive_text(result.stderr), file=sys.stderr)
     if result.returncode:
-        # These commands run only on the disposable CI database, never against production data.
+        # Keep public failure summaries bounded and redact before truncating sensitive values.
         detail = redact_sensitive_text(result.stderr or result.stdout)[-4000:]
         detail = detail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-        print(f"::error title=Delivery validation failed::{detail}")
+        print(f"::error title=CI validation failed::{detail}")
     return result.returncode
 
 

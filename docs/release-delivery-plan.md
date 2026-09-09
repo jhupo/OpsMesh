@@ -61,11 +61,12 @@ contracts. A separate giant CLI framework is not needed.
 - Normal development and PRs use focused tests. Full pytest is restricted to the pre-tag gate.
 - Baseline audit against detached `d264ffb`: mypy reports 721 existing errors. The first new run
   reported 728; the seven additional diagnostics were operator package discovery, corrected with
-  an explicit mypy source path and `py.typed`. No type errors are suppressed to publish a release.
+  an explicit mypy source path and `py.typed`. The baseline remains a blocking release gate.
 - Broader worker/self-hosted checks: 11 failures are reproduced on `d264ffb` (missing authorization
   fixtures and outdated contract assertions). The same 11 failures occur with the delivery change.
-- GitHub CLI exists but is not authenticated. No hosted workflow dispatch, release tag or production
-  update has been executed. These are validation blockers, not evidence of successful deployment.
+- GitHub CLI exists but is not authenticated. Public Actions status can be inspected in the browser
+  without CLI login, and authenticated Git pushes already trigger CI. CLI login is not a blocker
+  for this repair. No release tag or production update has been executed.
 - Final focused set: 55 passing tests (delivery contracts, operator security, update state machine,
   admin API, deployment assets). Ruff passes repository-wide. The 16 newly introduced/affected
   operator, update-domain and route modules pass strict mypy. Alembic has one head:
@@ -88,3 +89,19 @@ contracts. A separate giant CLI framework is not needed.
   migrations, update locking/append-only audit contracts, fresh Docker Compose build/start/readiness
   and the runtime image probe. It does not verify signed release publication, cross-version managed
   upgrades, systemd installation, or backup restoration. Those remain outstanding acceptance work.
+
+## Baseline repair checkpoint (2026-09-09)
+
+- At commit `1a8fc2f`, strict mypy reports 164 errors, down from the original 721. Ruff passes
+  repository-wide. Remaining diagnostics are release blockers, not waived acceptance criteria.
+- Repairs replace unstructured cross-module contracts with protocols/TypedDicts, preserve SQL
+  workspace scope, use native Redis/S3 SDK contracts, and fix working-memory list redaction and
+  cross-workspace capacity batches. Each functional change has a separate commit and focused tests.
+- Nineteen `prop-decorator` annotations apply only to Pydantic computed properties, following its
+  [documented mypy limitation](https://pydantic.dev/docs/validation/latest/api/pydantic/fields/).
+  No global type-check relaxation or compatibility implementation was added.
+- Backend CI now reuses the delivery command wrapper to publish bounded, redacted failure
+  annotations. Public status inspection does not require downloading authenticated full logs.
+- The historical worker/self-hosted failures have not all been revalidated. Signed release assets,
+  cross-version upgrade, systemd installation and database restore remain unaccepted; do not tag a
+  release or describe the complete delivery system as finished on this checkpoint alone.
