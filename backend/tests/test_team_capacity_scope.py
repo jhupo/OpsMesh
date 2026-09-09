@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
+from backend.app.db import models  # noqa: F401 - register ORM relationship targets
 from backend.app.orchestration.scheduler_team_capacity import (
     TeamMemberCapacityResolver,
     manager_capacity_context,

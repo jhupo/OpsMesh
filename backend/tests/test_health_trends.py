@@ -1,3 +1,4 @@
+from backend.app.db import models  # noqa: F401 - register ORM relationship targets
 from backend.app.workspaces.health_trends import risk_changes
 from backend.app.workspaces.models import WorkspaceHealthSnapshot
 
