@@ -1,6 +1,6 @@
 """add pending tool execution results
 
-Revision ID: 0061_pending_tool_execution_results
+Revision ID: 0061_pending_tool_results
 Revises: 0060_agent_run_state_snapshots
 Create Date: 2026-09-08 11:00:00.000000
 """
@@ -10,7 +10,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0061_pending_tool_execution_results"
+revision: str = "0061_pending_tool_results"
 down_revision: str | None = "0060_agent_run_state_snapshots"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

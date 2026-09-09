@@ -3,12 +3,21 @@ from pathlib import Path
 
 import pytest
 import yaml
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from opsmesh_operator.contracts import ReleaseFile, ReleaseManifest, require_tag
 from pydantic import ValidationError
 
 from scripts.release import build_bundle, file_record, validate_version
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_migration_chain_fits_alembic_version_column() -> None:
+    scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
+    assert len(scripts.get_heads()) == 1
+    for revision in scripts.walk_revisions():
+        assert len(revision.revision) <= 32, revision.revision
 
 
 def test_release_versions_are_aligned() -> None:

@@ -73,3 +73,9 @@ contracts. A separate giant CLI framework is not needed.
 - The Linux integration workflow exercises PostgreSQL migration/locking/WORM and fresh Docker
   startup. A real released-version-to-released-version upgrade, systemd install and database restore
   have NOT been executed on this Windows host. Do not report these acceptance items as complete.
+- First hosted delivery run passed focused tests and type checks, but fresh PostgreSQL migration
+  failed: historical revision `0061_pending_tool_execution_results` exceeded Alembic's 32-character
+  version column. Its identifier and successor reference are shortened together, without aliases.
+  A migration-chain regression check now enforces the length limit; all 11 delivery tests pass.
+  Hosted migration acceptance must be rerun after this fix. Public API access is rate-limited and
+  downloading complete Actions logs requires GitHub authentication.

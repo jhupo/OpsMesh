@@ -1,7 +1,7 @@
 """create workspace project layouts
 
 Revision ID: 0062_create_workspace_projects
-Revises: 0061_pending_tool_execution_results
+Revises: 0061_pending_tool_results
 Create Date: 2026-09-09 10:00:00.000000
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0062_create_workspace_projects"
-down_revision: str | None = "0061_pending_tool_execution_results"
+down_revision: str | None = "0061_pending_tool_results"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
