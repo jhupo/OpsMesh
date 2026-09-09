@@ -1,7 +1,7 @@
 # Delivery operations
 
 Implementation is not yet production-accepted: see [release delivery evidence](release-delivery-plan.md).
-Backend CI, real Linux backup restoration and rc5 signed publication/download verification pass.
+Backend CI, real Linux backup restoration and rc6 native archive/image publication verification pass.
 Managed installation and cross-version upgrade acceptance must still pass before delivery is
 declared complete.
 

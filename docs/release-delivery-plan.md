@@ -2,14 +2,43 @@
 
 Status: in progress. A green unit test is not deployment evidence.
 
+## rc6 standalone publication acceptance (2026-09-10)
+
+- [Release Publish 34375776121](https://github.com/jhupo/OpsMesh/actions/runs/34375776121)
+  passed on its first attempt for `v0.1.0rc6`, commit `e95aedf`. Full tests: **1174 passed,
+  9 skipped**; Ruff, strict mypy, real migration/schema checks and clean wheel installation pass.
+- All five native CLI jobs passed on Linux amd64/arm64, Windows amd64 and macOS amd64/arm64.
+  Each archive was relocated before version/doctor and real administrative HTTP request checks
+  with system Python removed from PATH. The CLI dependency environment excludes backend/model SDKs.
+- The Linux amd64 server archive passed in a Python-free Ubuntu container: bundled SDK/driver/
+  timezone imports, real PostgreSQL migrations/schema comparison, Worker, updater, API readiness,
+  shell syntax and the bundled Alertmanager renderer. Both Docker image probes and production
+  Compose acceptance passed independently.
+- [Release v0.1.0rc6](https://github.com/jhupo/OpsMesh/releases/tag/v0.1.0rc6) contains 14 assets:
+  five native CLI archives, one self-contained server archive, six wheel/sdist developer packages,
+  `checksums.txt` and the signed release manifest. The server archive is 216432032 bytes; native
+  CLI archives are approximately 21-29 MiB. The obsolete source-only server bundle is not emitted.
+- The final workflow step downloaded every public asset through the operator release source,
+  checked sizes/SHA-256 and verified package/archive/OCI provenance against the repository,
+  workflow, tag and commit. Anonymous version-tag GHCR requests also returned 200 with the same
+  signed digests: backend `sha256:f2121b9ffffe945379e7c0d195d6207d97dd17f6133b1566fe3f3e5f44e7492f`,
+  runtime `sha256:4fb97ede44776aa343dc9a29bbdfed22e2f4f67f5c6abaf5c709da758289aaae`.
+- This completes the standalone artifact/publication correction. Server support remains Linux
+  amd64; desktop CLI availability does not imply desktop server support. Full managed systemd
+  install and cross-version interrupted-updater recovery remain separately unaccepted.
+- Workstation post-publication verification also passed: the real operator release source fetched
+  the signed manifest and Windows archive, checked SHA-256/provenance, then the public archive
+  passed relocated version/doctor and HTTP administration checks without Python on PATH. An initial
+  stalled gh download was stopped; no partial file was executed or substituted for verification.
+
 ## Standalone delivery correction
 
 The rc5 publication checkpoint below validated wheels, source bundles and images, not standalone
 executables. Native ready-to-run archives were missing from that acceptance boundary. The current
 change replaces source-based host installation with a bundled CPython runtime, adds five native
 CLI archives, signed checksums and mandatory relocated-artifact execution before publication.
-Windows CLI relocation and a real administrative HTTP request have passed locally. Hosted native
-matrix/server and final release evidence must be recorded before this correction is complete.
+Windows CLI relocation and a real administrative HTTP request passed locally before publication.
+The following checkpoints record repairs; final hosted/public evidence is in the rc6 section above.
 
 - Native CLI matrix run `34373885167` passed all five platforms; its server job exposed uv alias
   discovery, subsequently fixed through `uv python find`. Run `34374107928` again passed all five
@@ -21,7 +50,8 @@ matrix/server and final release evidence must be recorded before this correction
 - Strict mypy passes 1005 application source files. Runtime/operator, publication and deployment
   asset regression checks pass. Operational scripts now ship in the runtime and use its interpreter;
   obsolete source-venv installation instructions and duplicated manual unit templates were removed.
-- Final tag publication, native archive signatures and public download verification are pending.
+- Final tag publication, native archive signatures and public download verification subsequently
+  passed in rc6; these checkpoints alone were not treated as completion.
 
 ## rc5 final publication acceptance (2026-09-09)
 
@@ -100,7 +130,7 @@ matrix/server and final release evidence must be recorded before this correction
 
 | Stage | Scope | Status |
 | --- | --- | --- |
-| 1 | master CI, tag-triggered release gate, locked image builds, packages, GHCR, signed manifest | Accepted: rc5 first-attempt release, public downloads and package/image provenance pass |
+| 1 | master CI, tag-triggered release gate, locked image builds, native archives, packages, GHCR, signed manifest | Accepted: rc6 native matrix, self-contained server, public downloads and provenance pass |
 | 2 | lightweight CLI, production Compose/systemd deployment, install and diagnostics | Implemented; Linux installation acceptance pending |
 | 3 | durable platform update jobs, independent host updater, maintenance and audit | Implemented; focused contract tests pass |
 | 4 | verified backup, interruption recovery, constrained rollback and Linux integration gate | Real Linux/PostgreSQL backup restoration passes; integrated upgrade/recovery acceptance pending |

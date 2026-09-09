@@ -1,5 +1,8 @@
 # Self-contained release distributions
 
+Accepted in [v0.1.0rc6](https://github.com/jhupo/OpsMesh/releases/tag/v0.1.0rc6):
+[native matrix, server startup and public provenance verification](https://github.com/jhupo/OpsMesh/actions/runs/34375776121).
+
 ## Decision and scope
 
 The native operator CLI uses PyInstaller onedir builds on each native runner (Linux amd64/arm64,

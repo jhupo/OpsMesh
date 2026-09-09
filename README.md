@@ -27,9 +27,10 @@ product contract.
 
 Release delivery is being upgraded to attested GHCR images, a lightweight `opsmesh` CLI and a
 durable host updater. See [delivery operations](docs/delivery-operations.md) and the
-[implementation/validation ledger](docs/release-delivery-plan.md). Signed wheel/image publication
-passes; native standalone distribution acceptance is being added. Managed installation and
-cross-version upgrade acceptance remain blockers for declaring the complete delivery system ready.
+[implementation/validation ledger](docs/release-delivery-plan.md). Signed native CLI/server archives,
+developer packages and images pass release and public-download acceptance in `v0.1.0rc6`.
+Managed installation and cross-version upgrade acceptance remain blockers for declaring the
+complete delivery system ready.
 Backend CI and real Linux/PostgreSQL backup restoration now pass.
 
 | Area | Status |
