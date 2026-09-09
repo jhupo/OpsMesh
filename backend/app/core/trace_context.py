@@ -178,13 +178,14 @@ def telemetry_span(
         set_status_on_exception=True,
     ) as span:
         span_context = span.get_span_context()
+        span_id = format(span_context.span_id, "016x")
         active = (
             TraceContext(
                 trace_id=format(span_context.trace_id, "032x"),
-                span_id=format(span_context.span_id, "016x"),
+                span_id=span_id,
                 parent_span_id=parent.span_id if parent is not None else None,
             )
-            if span_context.is_valid
+            if span_context.is_valid and (parent is None or span_id != parent.span_id)
             else child_trace_context(parent)
         )
         with trace_context(active):
