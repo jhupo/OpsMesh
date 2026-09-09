@@ -11,6 +11,8 @@ from backend.app.approvals.lifecycle import AgentToolApprovalLifecycleService
 from backend.app.audit.integrity import AuditIntegrityService
 from backend.app.core.config import Settings
 from backend.app.files.storage import create_storage
+from backend.app.memory.embedding_jobs import WorkspaceMemoryEmbeddingScheduler
+from backend.app.memory.lifecycle import WorkspaceMemoryLifecycleService
 from backend.app.operations.runtime_cleanup import RuntimeCleanupService
 from backend.app.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
 from backend.app.orchestration.run_control import RunControlService
@@ -64,6 +66,12 @@ class WorkerMaintenanceSummary:
     audit_integrity_workspaces_checked: int = 0
     audit_integrity_workspaces_invalid: int = 0
     expired_tool_approvals: int = 0
+    memory_embedding_jobs_enqueued: int = 0
+    memory_embedding_jobs_already_queued: int = 0
+    memory_embedding_jobs_recovered: int = 0
+    memory_episodes_archived: int = 0
+    memory_semantic_archived: int = 0
+    memory_episodes_promoted: int = 0
 
 
 class WorkerMaintenanceService:
@@ -148,6 +156,13 @@ class WorkerMaintenanceService:
             ),
             limit=self._config.recovery_batch_size,
         )
+        memory_lifecycle = WorkspaceMemoryLifecycleService(session).run_due(
+            limit=self._config.recovery_batch_size,
+        )
+        memory_embeddings = WorkspaceMemoryEmbeddingScheduler(session).enqueue_pending(
+            queue=self._queue,
+            limit=self._config.recovery_batch_size,
+        )
         return WorkerMaintenanceSummary(
             recovered_runs=recovery.recovered_runs,
             expired_leases=expired_leases,
@@ -181,6 +196,12 @@ class WorkerMaintenanceService:
             audit_integrity_workspaces_checked=audit_integrity.checked_workspaces,
             audit_integrity_workspaces_invalid=audit_integrity.invalid_workspaces,
             expired_tool_approvals=expired_tool_approvals.expired,
+            memory_embedding_jobs_enqueued=memory_embeddings.enqueued,
+            memory_embedding_jobs_already_queued=memory_embeddings.already_queued,
+            memory_embedding_jobs_recovered=memory_embeddings.recovered,
+            memory_episodes_archived=memory_lifecycle.archived_episodes,
+            memory_semantic_archived=memory_lifecycle.archived_semantic,
+            memory_episodes_promoted=memory_lifecycle.promoted_episodes,
         )
 
     @contextmanager

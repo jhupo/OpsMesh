@@ -10,6 +10,7 @@ from backend.app.agent_runtime.contracts import AgentRunResult
 from backend.app.agents.memory_policy import EpisodicMemoryPolicy, episodic_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval
+from backend.app.memory.configuration import initial_embedding_status
 from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.runs.models import AgentRun
@@ -331,6 +332,7 @@ class AgentEpisodicMemoryService:
             content_fingerprint=memory_content_fingerprint(title, content),
             memory_metadata=provenance,
             expires_at=captured_at + timedelta(days=policy.retention_days),
+            embedding_status=initial_embedding_status(self._session, workspace_id),
         )
         self._session.add(entry)
         self._session.flush([entry])

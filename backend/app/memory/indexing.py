@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from backend.app.artifacts.models import Artifact
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.runtime_policy import runtime_file_denial_code
+from backend.app.memory.configuration import initial_embedding_status
 from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.tasks.models import Task
@@ -199,6 +200,7 @@ class WorkspaceMemoryIndexingService:
                     "source_updated_at": _dt_or_none(source_updated_at),
                     "indexed_at": datetime.now(UTC).isoformat(),
                 },
+                embedding_status=initial_embedding_status(self._session, workspace_id),
             )
             self._session.add(entry)
         self._session.flush()
@@ -223,6 +225,7 @@ class WorkspaceMemoryIndexingService:
         for entry in entries:
             entry.status = "archived"
             entry.archived_at = datetime.now(UTC)
+            entry.invalidate_embedding(status="not_applicable")
         return len(entries)
 
 

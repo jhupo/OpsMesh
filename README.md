@@ -35,7 +35,7 @@ product contract.
 | Files, artifacts, memory, approvals, and audit | Implemented |
 | Web Portal | Planned; intentionally not scaffolded yet |
 | Enterprise SSO and fine-grained authorization | Planned |
-| Knowledge registry and vector/hybrid retrieval | Planned |
+| Knowledge registry and vector/hybrid retrieval | Partially implemented: three-layer memory and hybrid retrieval are complete; external knowledge-source registration and citations remain planned |
 | Logs, metrics, tracing, audit integrity, and cost accounting | Implemented |
 | Kubernetes and multi-region deployment | Future, driven by measured scale requirements |
 
@@ -54,7 +54,7 @@ The APIs and database model may change before the first stable release. See the
 | Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, call audit, runtime-resource placement, live revocation, explicit MCP connection reconfiguration, and credential rotation |
 | MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; the self-hosted connector now provides durable claim, execution, completion, and restart recovery |
 | Run isolation and workspace | Official Docker SDK and self-hosted control-plane contracts, frozen runtime bindings, runtime-space reservations, exact project snapshot staging, declared-output harvesting, and fail-closed stdio routing are implemented; a dedicated `opsmesh-runtime` image provides the isolated MCP SDK helper and connector CLI |
-| Knowledge service | Partial: workspace memory, lexical search, and Postgres full-text abstraction exist; source ingestion, citations, vector search, and hybrid ranking are planned |
+| Knowledge service | Three-layer memory, Postgres full-text, pgvector/HNSW similarity, weighted hybrid ranking, lifecycle policy, and evidence are implemented; external source ingestion and citation contracts remain planned |
 | Observability and operations | Implemented for the VPS topology: OTLP logs and traces, official Prometheus metrics, Loki, Tempo, Grafana correlation, alerts, WORM audit verification, cost ledger, budgets, queue/runtime diagnostics, and recovery actions |
 | Infrastructure and scaling | Postgres, Redis, storage, VPS/systemd, Docker runtime, and remote validation assets exist; Kubernetes, multi-region, and microVM backends are future work |
 
@@ -277,7 +277,7 @@ audit, and capability negotiation remain in the OpsMesh control plane.
 | Docker Engine access | [Docker SDK for Python](https://docs.docker.com/reference/api/engine/sdk/) | Current managed-runtime implementation behind the OpsMesh runtime client contract; no CLI fallback |
 | Logs, traces, and instrumentation | [OpenTelemetry Python](https://github.com/open-telemetry/opentelemetry-python) | Current for API/worker OTLP logs and FastAPI, database, Redis, HTTP, queue, model, and tool traces |
 | Prometheus exposition | [Prometheus Python client](https://github.com/prometheus/client_python) | Current; domain collectors publish through official Counter, Histogram, and Gauge primitives |
-| Vector and hybrid retrieval | [pgvector-python](https://github.com/pgvector/pgvector-python) | Extend the current Postgres full-text memory path before adding another database |
+| Vector and hybrid retrieval | [pgvector-python](https://github.com/pgvector/pgvector-python) | Current Postgres vector type, cosine search, and HNSW index; OpsMesh owns scoped hybrid ranking and lifecycle policy |
 | OAuth 2.0 and OpenID Connect | [Authlib](https://authlib.org/) | Use for future enterprise SSO; do not build an identity provider |
 | Durable workflows | [Temporal Python SDK](https://github.com/temporalio/sdk-python) | Run an architecture spike before replacing the current queue and state machine |
 | Fine-grained authorization | [OpenFGA](https://github.com/openfga/openfga) or [OPA](https://www.openpolicyagent.org/) | Evaluate only when concrete relationship or policy requirements exceed current RBAC |
@@ -319,7 +319,7 @@ recommended order, and boundaries that remain owned by OpsMesh.
 - Add policy-driven ephemeral sandbox creation, per-run file materialization, and selected artifact
   harvesting on top of the implemented frozen runtime binding.
 - Add knowledge-source registration, ingestion jobs, citations, and permission-aware retrieval.
-- Add pgvector-backed vector search and hybrid ranking alongside existing Postgres full-text search.
+- Inject authorized hybrid memory results into Agent context construction within the token budget.
 
 ### 4. Add enterprise identity and policy integration
 

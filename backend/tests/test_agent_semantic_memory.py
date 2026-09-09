@@ -17,12 +17,15 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.memory.configuration import WorkspaceMemoryConfigurationService
 from backend.app.memory.semantic import (
     AgentSemanticMemoryService,
     SemanticMemoryConflictError,
     SemanticMemoryUpsert,
 )
+from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.redis.dependencies import get_redis_client
+from backend.app.secrets.service import SecretEncryptionService
 from backend.app.teams.models import AgentTeam
 from backend.app.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.workspaces.models import Workspace, WorkspaceMember
@@ -194,6 +197,101 @@ def test_semantic_memory_api_manages_current_head_and_version_history() -> None:
     assert archived.status_code == 200
     assert archived.json()["status"] == "archived"
     assert archived.json()["revision"] == 3
+
+
+def test_memory_configuration_api_versions_policy_and_retries_failed_embeddings() -> None:
+    client, session = _client()
+    user, workspace = _seed_workspace(session, "api-memory-configuration")
+    configuration = WorkspaceMemoryConfigurationService(session).create_default(workspace.id)
+    credential = ModelProviderCredentialCommandService(
+        session,
+        SecretEncryptionService(secret="test-secret", key_id="test"),
+    ).create(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        name="Memory embeddings",
+        provider="openai",
+        api_key="sk-test-memory",
+        default_model="gpt-5.5",
+        base_url=None,
+        is_default=False,
+    )
+    entry = AgentSemanticMemoryService(session).upsert(
+        SemanticMemoryUpsert(
+            workspace_id=workspace.id,
+            scope_type="workspace",
+            scope_id=workspace.id,
+            memory_key="failed-embedding",
+            knowledge_type="fact",
+            title="Failed embedding",
+            content="Retry this embedding.",
+            tags=[],
+            importance=50,
+            metadata={},
+            changed_by_user_id=user.id,
+        )
+    )
+    entry.embedding_status = "failed"
+    session.commit()
+
+    fetched = client.get(
+        f"/api/v1/workspaces/{workspace.id}/memories/configuration",
+        headers=_headers(user.id),
+    )
+    updated = client.put(
+        f"/api/v1/workspaces/{workspace.id}/memories/configuration",
+        headers=_headers(user.id),
+        json={
+            "embedding_enabled": True,
+            "embedding_credential_id": str(credential.id),
+            "embedding_model": "text-embedding-3-small",
+            "embedding_dimensions": 1536,
+            "expected_version": 1,
+        },
+    )
+    stale = client.put(
+        f"/api/v1/workspaces/{workspace.id}/memories/configuration",
+        headers=_headers(user.id),
+        json={
+            "embedding_enabled": False,
+            "embedding_model": "text-embedding-3-small",
+            "embedding_dimensions": 1536,
+            "expected_version": 1,
+        },
+    )
+    session.refresh(entry)
+    entry.embedding_status = "failed"
+    session.commit()
+    retried = client.post(
+        f"/api/v1/workspaces/{workspace.id}/memories/embeddings/retry",
+        headers=_headers(user.id),
+    )
+    WorkspaceMemorySearchService(session).search(
+        workspace_id=workspace.id,
+        query="retry embedding secret-query-value",
+        limit=5,
+        source_types={"workspace_memory"},
+    )
+    session.commit()
+    retrieval_events = client.get(
+        f"/api/v1/workspaces/{workspace.id}/memories/retrieval-events",
+        headers=_headers(user.id),
+    )
+
+    assert fetched.status_code == 200
+    assert fetched.json()["id"] == str(configuration.id)
+    assert updated.status_code == 200
+    assert updated.json()["version"] == 2
+    assert updated.json()["embedding_enabled"] is True
+    assert stale.status_code == 409
+    assert retried.status_code == 200
+    assert retried.json() == {"reset_entries": 1}
+    assert retrieval_events.status_code == 200
+    assert retrieval_events.json()["total"] == 1
+    event = retrieval_events.json()["items"][0]
+    assert event["selected"][0]["memory_entry_id"] == str(entry.id)
+    assert all(term.startswith("sha256:") for term in event["query_terms"])
+    assert "secret-query-value" not in retrieval_events.text
 
 
 def _session() -> Session:

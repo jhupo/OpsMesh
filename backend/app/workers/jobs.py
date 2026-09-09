@@ -20,6 +20,7 @@ class JobType(StrEnum):
     RUNTIME_CLEANUP = "runtime.cleanup"
     WORKSPACE_ARCHIVE_EXPORT = "workspace.archive_export"
     MEMORY_INDEX = "memory.index"
+    MEMORY_EMBED = "memory.embed"
     WEBHOOK_DELIVERY = "webhook.delivery"
     SECRET_REENCRYPT = "secret.reencrypt"
     MODEL_PROVIDER_HEALTH_CHECK = "model_provider.health_check"

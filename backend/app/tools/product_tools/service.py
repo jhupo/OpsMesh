@@ -10,6 +10,7 @@ from backend.app.files.content import (
     WorkspaceFileContentReader,
 )
 from backend.app.files.storage import ObjectStorage
+from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
 from backend.app.tools.product_tools.files import WorkspaceFileProductTools
@@ -29,6 +30,7 @@ class ProductToolService(
         storage: ObjectStorage | None = None,
         max_file_read_bytes: int = DEFAULT_AGENT_FILE_READ_MAX_BYTES,
         readable_content_types: frozenset[str] = DEFAULT_AGENT_READABLE_CONTENT_TYPES,
+        memory_embedding_secret_service: SecretEncryptionService | None = None,
     ) -> None:
         self._session = session
         self._artifact_persistence = (
@@ -43,6 +45,7 @@ class ProductToolService(
             if storage is not None
             else None
         )
+        self._memory_embedding_secret_service = memory_embedding_secret_service
 
     def _sender_agent_profile_id(self, context: ToolContext) -> UUID:
         run = self._run_for_context(context)

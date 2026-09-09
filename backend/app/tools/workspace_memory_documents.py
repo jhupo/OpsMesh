@@ -80,6 +80,8 @@ class WorkspaceMemoryDocumentRepository:
                 ),
                 created_at=entry.created_at,
                 metadata={
+                    "memory_entry_id": str(entry.id),
+                    "content_fingerprint": entry.content_fingerprint,
                     "entry_type": entry.entry_type,
                     "memory_layer": entry.memory_layer,
                     "scope_type": entry.scope_type,
@@ -87,6 +89,9 @@ class WorkspaceMemoryDocumentRepository:
                     "tags": entry.tags,
                     "visibility_scope": entry.visibility_scope,
                     "importance": entry.importance,
+                    "access_count": entry.access_count,
+                    "last_accessed_at": _dt_or_none(entry.last_accessed_at),
+                    "updated_at": _dt_or_none(entry.updated_at),
                     "source_type": entry.source_type,
                     "source_id": entry.source_id,
                     **entry.memory_metadata,
@@ -296,6 +301,7 @@ def result_payload(hit: MemorySearchHit) -> dict[str, object]:
         "snippet": hit.snippet,
         "score": hit.score,
         "search_backend": hit.backend_name,
+        "ranking": hit.ranking_details,
         "created_at": document.created_at.isoformat() if document.created_at else None,
         "metadata": document.metadata,
     }
@@ -313,6 +319,10 @@ def json_text(value: object) -> str:
 
 def str_or_none(value: object) -> str | None:
     return str(value) if value is not None else None
+
+
+def _dt_or_none(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
 
 
 def memory_entry_source_type(entry: WorkspaceMemoryEntry) -> str:

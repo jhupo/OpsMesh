@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.redaction import redact_sensitive_payload
+from backend.app.memory.configuration import initial_embedding_status
 from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry, WorkspaceMemoryVersion
 from backend.app.runs.models import AgentRun
@@ -96,6 +97,10 @@ class AgentSemanticMemoryService:
                 revision=1,
                 content_fingerprint=memory_content_fingerprint(title, content),
                 memory_metadata=metadata,
+                embedding_status=initial_embedding_status(
+                    self._session,
+                    command.workspace_id,
+                ),
             )
             try:
                 with self._session.begin_nested():
@@ -123,6 +128,8 @@ class AgentSemanticMemoryService:
             raise SemanticMemoryConflictError(
                 f"Semantic memory revision is {existing.revision}, not {command.expected_revision}"
             )
+        previous_fingerprint = existing.content_fingerprint
+        was_inactive = existing.status != "active"
         existing.entry_type = f"semantic_{knowledge_type}"
         existing.title = title
         existing.content = content
@@ -132,6 +139,10 @@ class AgentSemanticMemoryService:
         existing.status = "active"
         existing.archived_at = None
         existing.content_fingerprint = memory_content_fingerprint(title, content)
+        if existing.content_fingerprint != previous_fingerprint or was_inactive:
+            existing.invalidate_embedding(
+                status=initial_embedding_status(self._session, command.workspace_id),
+            )
         existing.revision += 1
         self._session.flush([existing])
         self._record_version(existing, command)
@@ -169,6 +180,7 @@ class AgentSemanticMemoryService:
             return entry
         entry.status = "archived"
         entry.archived_at = datetime.now(UTC)
+        entry.invalidate_embedding(status="not_applicable")
         entry.revision += 1
         self._session.flush([entry])
         self._record_version(

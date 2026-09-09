@@ -217,9 +217,9 @@ allowed resource types, workspace reference checks, parameter default merging, s
 and policy decisions. A custom schema parser was rejected because it would duplicate a standard,
 security-sensitive validation protocol and provide weaker keyword coverage.
 
-### P1: pgvector-python
+### Adopted: pgvector-python
 
-**Candidate:** [pgvector/pgvector-python](https://github.com/pgvector/pgvector-python)
+**Dependency:** [pgvector/pgvector-python](https://github.com/pgvector/pgvector-python)
 
 OpsMesh already uses Postgres and has lexical and Postgres full-text memory search. pgvector adds
 SQLAlchemy vector types, distance operators, and HNSW/IVFFlat indexes without introducing a second
@@ -230,8 +230,10 @@ database.
 **Keep:** knowledge-source registration, chunk ownership, workspace filters, ingestion state,
 embedding-provider abstraction, citations, retention, and hybrid ranking policy.
 
-Begin with one embedding model and reciprocal-rank fusion over Postgres full-text and vector
-results. Add a separate vector database only after measured Postgres limits justify it.
+The active implementation uses a fixed 1,536-dimension vector contract, a partial HNSW cosine
+index, official OpenAI SDK embedding calls, asynchronous generation-guarded indexing, and weighted
+reciprocal-rank fusion over Postgres full-text, vector, and deterministic lexical candidates. A
+separate vector database remains deferred until measured Postgres limits justify it.
 
 ### P1: Authlib
 

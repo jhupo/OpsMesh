@@ -1,10 +1,19 @@
 from uuid import UUID
 
+from sqlalchemy.orm import Session
+
 from backend.app.agents.memory_policy import semantic_memory_policy
+from backend.app.costs.service import CostBudgetExceededError
+from backend.app.memory.configuration import WorkspaceMemoryConfigurationService
+from backend.app.memory.embeddings import (
+    MemoryEmbeddingError,
+    WorkspaceMemoryEmbeddingProviderResolver,
+)
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
 from backend.app.memory.working import AgentWorkingMemoryService
 from backend.app.runs.models import AgentRun
+from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
 from backend.app.tools.product_tools.events import ProductToolEventRecorder
@@ -13,6 +22,9 @@ from backend.app.tools.workspace_memory import WorkspaceMemorySearchService
 
 
 class WorkspaceMemoryProductTools(ProductToolEventRecorder):
+    _session: Session
+    _memory_embedding_secret_service: SecretEncryptionService | None
+
     def search_workspace_memory(
         self,
         context: ToolContext,
@@ -27,6 +39,10 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
     ) -> list[dict[str, object]]:
         context.require_tool("search_workspace_memory")
         self._append_tool_event(context, "tool.called", "search_workspace_memory")
+        query_embedding, embedding_model, embedding_evidence = self._query_embedding(
+            workspace_id=context.workspace_id,
+            query=query,
+        )
         results = WorkspaceMemorySearchService(self._session).search(
             workspace_id=context.workspace_id,
             query=query,
@@ -35,9 +51,58 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
             tags=allowed_tags,
             scope_types=allowed_scope_types,
             scope_ids=allowed_scope_ids,
+            query_embedding=query_embedding,
+            embedding_model=embedding_model,
+            query_embedding_evidence=embedding_evidence,
+            agent_run_id=context.agent_run_id,
         )
         self._append_tool_event(context, "tool.completed", "search_workspace_memory")
         return results
+
+    def _query_embedding(
+        self,
+        *,
+        workspace_id: UUID,
+        query: str,
+    ) -> tuple[list[float] | None, str | None, dict[str, object]]:
+        if not query.strip():
+            return None, None, {"status": "skipped", "reason_code": "empty_query"}
+        configuration = WorkspaceMemoryConfigurationService(self._session).get(workspace_id)
+        if configuration is None or not configuration.embedding_enabled:
+            return None, None, {"status": "disabled"}
+        if self._memory_embedding_secret_service is None:
+            return None, None, {
+                "status": "failed",
+                "error_code": "embedding_secret_service_unavailable",
+            }
+        try:
+            provider = WorkspaceMemoryEmbeddingProviderResolver(
+                self._session,
+                self._memory_embedding_secret_service,
+            ).resolve(
+                workspace_id=workspace_id,
+                configuration=configuration,
+            )
+            result = provider.embed(query)
+        except CostBudgetExceededError:
+            return None, None, {
+                "status": "failed",
+                "error_code": "embedding_cost_budget_exceeded",
+            }
+        except MemoryEmbeddingError as exc:
+            return None, None, {"status": "failed", "error_code": exc.code}
+        except Exception:
+            return None, None, {
+                "status": "failed",
+                "error_code": "embedding_provider_failed",
+            }
+        return result.vector, provider.model, {
+            "status": "completed",
+            "provider": provider.provider_name,
+            "model": provider.model,
+            "dimensions": provider.dimensions,
+            "input_tokens": result.input_tokens,
+        }
 
     def upsert_semantic_memory(
         self,

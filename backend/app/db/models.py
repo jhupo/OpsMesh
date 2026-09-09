@@ -33,7 +33,14 @@ from backend.app.marketplace.models import (
     WorkspaceAgentInstall,
     WorkspaceMarketplaceInstall,
 )
-from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.memory.models import (
+    WorkspaceMemoryConfiguration,
+    WorkspaceMemoryEmbeddingEvent,
+    WorkspaceMemoryEntry,
+    WorkspaceMemoryLifecycleEvent,
+    WorkspaceMemoryRetrievalEvent,
+    WorkspaceMemoryVersion,
+)
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.notifications.models import WorkspaceNotification
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
@@ -157,7 +164,12 @@ __all__ = [
     "WorkspaceExportJob",
     "WorkspaceFile",
     "WorkspaceMember",
+    "WorkspaceMemoryConfiguration",
+    "WorkspaceMemoryEmbeddingEvent",
     "WorkspaceMemoryEntry",
+    "WorkspaceMemoryLifecycleEvent",
+    "WorkspaceMemoryRetrievalEvent",
+    "WorkspaceMemoryVersion",
     "WorkspaceMarketplaceInstall",
     "WorkspaceNotification",
     "WorkspaceProject",

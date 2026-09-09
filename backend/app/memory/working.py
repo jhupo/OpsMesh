@@ -11,6 +11,7 @@ from backend.app.agent_runtime.contracts import AgentRuntimeToolResult
 from backend.app.agent_runtime.token_estimation import truncate_to_token_bound
 from backend.app.agents.memory_policy import WorkingMemoryPolicy
 from backend.app.agents.models import AgentProfile
+from backend.app.memory.configuration import initial_embedding_status
 from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.runs.models import AgentRun
@@ -307,6 +308,7 @@ class AgentWorkingMemoryService:
                     "promoted_at": datetime.now(UTC).isoformat(),
                 },
             },
+            embedding_status=initial_embedding_status(self._session, workspace_id),
         )
         self._session.add(promoted)
         self._session.flush([promoted])

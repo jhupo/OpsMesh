@@ -255,6 +255,7 @@ def test_workspace_memory_search_uses_pluggable_backend_with_workspace_scope() -
             "snippet": "backend snippet",
             "score": 0.91,
             "search_backend": "vector_test",
+            "ranking": {},
             "created_at": task.created_at.isoformat(),
             "metadata": {
                 "status": "draft",

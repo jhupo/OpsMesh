@@ -4,18 +4,33 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.memory import (
+    MemoryEmbeddingEventListResponse,
+    MemoryEmbeddingEventResponse,
+    MemoryEmbeddingRetryResponse,
+    MemoryLifecycleEventListResponse,
+    MemoryLifecycleEventResponse,
+    MemoryRetrievalEventListResponse,
+    MemoryRetrievalEventResponse,
     SemanticMemoryArchiveRequest,
     SemanticMemoryListResponse,
     SemanticMemoryResponse,
     SemanticMemoryUpsertRequest,
     SemanticMemoryVersionResponse,
     SemanticScope,
+    WorkspaceMemoryConfigurationResponse,
+    WorkspaceMemoryConfigurationUpdateRequest,
 )
 from backend.app.audit.service import AuditService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.session import get_db_session
+from backend.app.memory.configuration import (
+    MemoryConfigurationConflictError,
+    MemoryConfigurationUpdate,
+    WorkspaceMemoryConfigurationService,
+)
+from backend.app.memory.evidence import WorkspaceMemoryEvidenceService
 from backend.app.memory.semantic import (
     AgentSemanticMemoryService,
     SemanticMemoryConflictError,
@@ -23,6 +38,125 @@ from backend.app.memory.semantic import (
 )
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/memories", tags=["workspace-memory"])
+
+
+@router.get("/configuration", response_model=WorkspaceMemoryConfigurationResponse)
+async def get_memory_configuration(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceMemoryConfigurationResponse:
+    configuration = WorkspaceMemoryConfigurationService(session).get(context.workspace.id)
+    if configuration is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace memory configuration not found",
+        )
+    return WorkspaceMemoryConfigurationResponse.model_validate(configuration)
+
+
+@router.put("/configuration", response_model=WorkspaceMemoryConfigurationResponse)
+async def update_memory_configuration(
+    request: WorkspaceMemoryConfigurationUpdateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceMemoryConfigurationResponse:
+    try:
+        configuration = WorkspaceMemoryConfigurationService(session).update(
+            workspace_id=context.workspace.id,
+            actor_user_id=context.user.user_id,
+            command=MemoryConfigurationUpdate(
+                embedding_enabled=request.embedding_enabled,
+                embedding_credential_id=request.embedding_credential_id,
+                embedding_model=request.embedding_model,
+                embedding_dimensions=request.embedding_dimensions,
+                retrieval_policy=request.retrieval_policy.model_dump(mode="json"),
+                lifecycle_policy=request.lifecycle_policy.model_dump(mode="json"),
+                expected_version=request.expected_version,
+            ),
+        )
+    except MemoryConfigurationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    session.commit()
+    session.refresh(configuration)
+    return WorkspaceMemoryConfigurationResponse.model_validate(configuration)
+
+
+@router.post("/embeddings/retry", response_model=MemoryEmbeddingRetryResponse)
+async def retry_memory_embeddings(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> MemoryEmbeddingRetryResponse:
+    try:
+        count = WorkspaceMemoryConfigurationService(session).retry_failed_embeddings(
+            workspace_id=context.workspace.id,
+            actor_user_id=context.user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    session.commit()
+    return MemoryEmbeddingRetryResponse(reset_entries=count)
+
+
+@router.get("/retrieval-events", response_model=MemoryRetrievalEventListResponse)
+async def list_memory_retrieval_events(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> MemoryRetrievalEventListResponse:
+    items, total = WorkspaceMemoryEvidenceService(session).retrieval_events(
+        workspace_id=context.workspace.id,
+        limit=limit,
+        offset=offset,
+    )
+    return MemoryRetrievalEventListResponse(
+        items=[MemoryRetrievalEventResponse.model_validate(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/lifecycle-events", response_model=MemoryLifecycleEventListResponse)
+async def list_memory_lifecycle_events(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> MemoryLifecycleEventListResponse:
+    items, total = WorkspaceMemoryEvidenceService(session).lifecycle_events(
+        workspace_id=context.workspace.id,
+        limit=limit,
+        offset=offset,
+    )
+    return MemoryLifecycleEventListResponse(
+        items=[MemoryLifecycleEventResponse.model_validate(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/embedding-events", response_model=MemoryEmbeddingEventListResponse)
+async def list_memory_embedding_events(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> MemoryEmbeddingEventListResponse:
+    items, total = WorkspaceMemoryEvidenceService(session).embedding_events(
+        workspace_id=context.workspace.id,
+        limit=limit,
+        offset=offset,
+    )
+    return MemoryEmbeddingEventListResponse(
+        items=[MemoryEmbeddingEventResponse.model_validate(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post("/semantic", response_model=SemanticMemoryResponse)

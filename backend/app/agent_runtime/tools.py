@@ -216,6 +216,7 @@ class BackendToolExecutor:
                 self._session,
                 settings=self._settings,
                 storage=self._storage,
+                secret_service=self._secret_service,
             ).execute(
                 context=context,
                 tool_name=tool_name,

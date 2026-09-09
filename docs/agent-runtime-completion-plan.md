@@ -103,7 +103,7 @@ Goal: keep context bounded and make durable knowledge useful without crossing au
 | 4.3 | P0 | Add working memory for current run state, plan, temporary facts, and tool results | Done | `add-agent-working-memory` | Working memory is isolated to its run/session and expires or promotes explicitly |
 | 4.4 | P0 | Add episodic memory for tasks, runs, decisions, failures, and human feedback | Done | `add-agent-episodic-memory` | Relevant prior episodes are searchable with task/run provenance |
 | 4.5 | P0 | Add semantic memory for workspace/team knowledge, configuration, and policy | Done | `add-agent-semantic-memory` | Durable knowledge is versioned and scoped separately from transient history |
-| 4.6 | P1 | Add hybrid retrieval, ranking, deduplication, promotion, decay, and archive rules | Pending | `complete-memory-lifecycle` | Retrieval quality and lifecycle decisions are observable and deterministic at policy boundaries |
+| 4.6 | P1 | Add hybrid retrieval, ranking, deduplication, promotion, decay, and archive rules | Done | `complete-memory-lifecycle` | Postgres full-text, pgvector cosine search, and lexical candidates use weighted reciprocal-rank fusion, fingerprint deduplication, deterministic importance/recency decay, and versioned workspace lifecycle policy; background embedding, retrieval, promotion, and archive decisions retain query-safe evidence |
 | 4.7 | P0 | Inject authorized memory retrieval into context construction | Pending | `integrate-memory-context-retrieval` | Relevant memories are selected automatically within budget and cannot cross workspace/team grants |
 
 Phase acceptance gate:
@@ -124,6 +124,13 @@ prevent lost updates, and every material update or archive creates an immutable,
 with user/run/agent provenance. User APIs and approval-gated agent tools share the same domain
 service; frozen memory policy and memory-resource grants constrain agent writes, archives, and
 searches before any result is returned.
+
+Hybrid retrieval now keeps vectors in Postgres through pgvector and calls the official OpenAI SDK
+embedding API behind an OpsMesh provider boundary. Workspace-versioned policies control retrieval
+weights, decay, retention, and opt-in episodic promotion. Durable worker jobs generate vectors with
+generation and content-fingerprint guards, while retrieval, embedding, and lifecycle evidence stores
+stable hashes, ranks, policy versions, and error codes without raw queries, credentials, or provider
+exceptions.
 
 ## Phase 5: Task And Agent Orchestration
 

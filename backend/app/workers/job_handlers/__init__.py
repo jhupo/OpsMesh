@@ -11,6 +11,7 @@ from backend.app.workers.job_handlers.maintenance import (
 from backend.app.workers.job_handlers.mcp_tool_execution import (
     McpToolExecutionJobHandler,
 )
+from backend.app.workers.job_handlers.memory_embedding import MemoryEmbeddingJobHandler
 from backend.app.workers.job_handlers.memory_index import MemoryIndexJobHandler
 from backend.app.workers.job_handlers.runtime_control import (
     RuntimeCleanupJobHandler,
@@ -26,6 +27,7 @@ __all__ = [
     "AuditIntegrityJobHandler",
     "McpToolExecutionJobHandler",
     "MemoryIndexJobHandler",
+    "MemoryEmbeddingJobHandler",
     "ModelProviderHealthJobHandler",
     "RuntimeCleanupJobHandler",
     "RuntimeControlJobHandler",

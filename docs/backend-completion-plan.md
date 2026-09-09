@@ -59,7 +59,8 @@ Incomplete or basic-only areas:
 - Operations APIs expose short-cached overview, capacity, scheduler, outcomes, runtime capacity,
   MCP job, queue insight, and unified control-plane health aggregates.
 - Workspace memory now has explicit durable memory entries plus workspace-scoped lexical search
-  across operational data; full-text/vector indexing remains a future upgrade.
+  across operational data; Postgres full-text, pgvector indexing, hybrid ranking, and memory
+  lifecycle policy are implemented.
 - Runtime, runtime-space, workspace-domain, marketplace, audit, security, worker, export, and
   self-hosted API schemas redact sensitive policy/metadata fields while keeping underlying
   durable evidence intact.
@@ -656,7 +657,8 @@ Current state:
 - Agents use approval-gated `upsert_semantic_memory` and `archive_semantic_memory` tools for
   versioned workspace, team, or agent knowledge; archived entries stop appearing in search results.
 - Search and writes enforce the memory-resource source, tag, and scope locators before returning or
-  mutating data, while the retrieval backend remains replaceable for the hybrid-search phase.
+  mutating data. Postgres full-text, pgvector cosine search, and lexical candidates now feed a
+  weighted reciprocal-rank fusion backend with fingerprint deduplication and deterministic decay.
 
 Build:
 
@@ -664,8 +666,8 @@ Build:
 - [x] Replace placeholder implementation with a workspace-scoped lexical search service.
 - [x] Enforce workspace authorization at query time by filtering every source by `workspace_id`.
 - [x] Add a memory indexing service with deterministic text chunks and metadata.
-- [x] Keep search ranking behind a clean ranker interface so Postgres full-text or vector search
-  can replace the lexical ranker later.
+- [x] Keep search ranking behind a clean backend interface and combine Postgres full-text,
+  pgvector cosine search, and lexical candidates through weighted reciprocal-rank fusion.
 - [x] Enforce workspace, file, and task authorization at query time.
 - [x] Add initial freshness rules: when indexed chunks exist for a source, search uses active
   chunks instead of the raw stale source candidate.
@@ -678,6 +680,10 @@ API/data changes:
 - [x] Replace placeholder implementation with real search ranked by text relevance and recency.
 - [x] Add internal tool operations to upsert and version-archive scoped semantic memory entries.
 - [x] Add product-tool controls for result limit and source-type filters.
+- [x] Add workspace-versioned embedding, retrieval, decay, promotion, and retention policy.
+- [x] Generate embeddings asynchronously through the official OpenAI SDK with generation and
+  content-fingerprint guards.
+- [x] Expose query-safe retrieval, lifecycle, and embedding evidence APIs.
 
 Tests:
 
@@ -687,6 +693,9 @@ Tests:
 - [x] search respects max results and source filters
 - [x] refreshing a task memory index archives stale chunks and exposes fresh indexed chunks
 - [x] worker memory-index job refreshes source chunks and records a completed lease
+- [x] hybrid ranking deduplicates identical content and records deterministic rank evidence
+- [x] lifecycle maintenance archives expired entries and promotes only when explicitly enabled
+- [x] embedding retries and stale completions cannot overwrite newer content
 
 Acceptance:
 

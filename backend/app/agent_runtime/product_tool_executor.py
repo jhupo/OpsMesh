@@ -40,6 +40,7 @@ from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_NAMES as 
 from backend.app.core.config import Settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.files.storage import ObjectStorage, create_storage
+from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.redaction import redact_sensitive_text
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
@@ -55,10 +56,12 @@ class ProductToolExecutor:
         *,
         settings: Settings | None = None,
         storage: ObjectStorage | None = None,
+        secret_service: SecretEncryptionService | None = None,
     ) -> None:
         self._session = session
         self._settings = settings
         self._storage = storage or (create_storage(settings) if settings is not None else None)
+        self._secret_service = secret_service
 
     def execute(
         self,
@@ -155,10 +158,15 @@ class ProductToolExecutor:
 
     def _product_tool_service(self) -> ProductToolService:
         if self._settings is None:
-            return ProductToolService(self._session, storage=self._storage)
+            return ProductToolService(
+                self._session,
+                storage=self._storage,
+                memory_embedding_secret_service=self._secret_service,
+            )
         return ProductToolService(
             self._session,
             storage=self._storage,
+            memory_embedding_secret_service=self._secret_service,
             max_file_read_bytes=self._settings.agent_file_read_max_bytes,
             readable_content_types=frozenset(
                 self._settings.agent_file_read_content_types

@@ -19,6 +19,8 @@ from backend.app.auth.permissions import WorkspaceRole
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import commit_or_raise_conflict
 from backend.app.db.pagination import page_scalars
+from backend.app.memory.models import WorkspaceMemoryConfiguration
+from backend.app.memory.policy import default_lifecycle_policy, default_retrieval_policy
 from backend.app.workspaces.models import (
     Workspace,
     WorkspaceInvite,
@@ -63,7 +65,15 @@ class WorkspaceService:
             user_id=owner_user_id,
             role=WorkspaceRole.OWNER.value,
         )
-        self._session.add_all([workspace, membership])
+        memory_configuration = WorkspaceMemoryConfiguration(
+            workspace=workspace,
+            embedding_enabled=False,
+            embedding_model="text-embedding-3-small",
+            embedding_dimensions=1_536,
+            retrieval_policy=default_retrieval_policy(),
+            lifecycle_policy=default_lifecycle_policy(),
+        )
+        self._session.add_all([workspace, membership, memory_configuration])
         commit_or_raise_conflict(self._session, "Workspace slug already exists")
         self._session.refresh(workspace)
         return workspace
