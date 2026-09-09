@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy import select
@@ -6,6 +7,25 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.teams.models import AgentTeam, AgentTeamMember
+
+
+class OrgMemberNode(TypedDict):
+    id: UUID
+    agent_profile_id: UUID
+    reports_to_member_id: UUID | None
+    team_role: str
+    department: str | None
+    position_title: str | None
+    responsibilities: list[str]
+    skill_weights: dict[str, object]
+    availability: dict[str, object]
+    max_concurrent_tasks: int
+    accepts_tasks: bool
+    is_required: bool
+    order_index: int
+    status: str
+    agent: dict[str, object] | None
+    children: list["OrgMemberNode"]
 
 
 @dataclass(slots=True)
@@ -77,16 +97,16 @@ class TeamOrgChartBuilder:
 
 
 def _link_member_nodes(
-    member_nodes: list[dict[str, object]],
+    member_nodes: list[OrgMemberNode],
     members: list[AgentTeamMember],
-) -> tuple[list[dict[str, object]], list[UUID], list[UUID]]:
+) -> tuple[list[OrgMemberNode], list[UUID], list[UUID]]:
     node_by_id = {str(node["id"]): node for node in member_nodes}
     reports_to_by_id = {
         str(member.id): str(member.reports_to_member_id)
         for member in members
         if member.reports_to_member_id is not None
     }
-    roots: list[dict[str, object]] = []
+    roots: list[OrgMemberNode] = []
     orphan_member_ids: list[UUID] = []
     cycle_member_ids: list[UUID] = []
     for node in member_nodes:
@@ -124,7 +144,7 @@ def has_reporting_cycle(member_id: str, reports_to_by_id: dict[str, str]) -> boo
 def _team_org_member_node(
     member: AgentTeamMember,
     agent: AgentProfile | None,
-) -> dict[str, object]:
+) -> OrgMemberNode:
     return {
         "id": member.id,
         "agent_profile_id": member.agent_profile_id,
