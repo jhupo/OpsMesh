@@ -86,6 +86,7 @@ or cancellation.
 | Area | Current implementation | Decision |
 | --- | --- | --- |
 | Agent turns and tools | OpenAI Agents SDK and Claude Agent SDK adapters | Adopt official SDKs; keep only contract translation and product policy |
+| Stateless semantic resource review | OpenAI Python SDK and Anthropic Python SDK structured-output parsers | Adopt provider SDK parsing; keep resource redaction, policy merge, and fail-closed activation rules |
 | MCP protocol and transports | Official MCP Python SDK | Keep; no custom JSON-RPC replacement |
 | Schema validation | `jsonschema` | Keep; product adds workspace/resource policy |
 | Tracing and metrics | OpenTelemetry and Prometheus clients | Keep; product audit remains durable Postgres state |
@@ -95,6 +96,25 @@ or cancellation.
 | Generic agent frameworks | LangChain, LlamaIndex, LiteLLM | Reject for now; they would duplicate the two SDK cores and add weight |
 | Durable workflow engines | Temporal | Evaluate with a representative workflow before replacing current task/worker state |
 | Runtime execution | Official Docker SDK behind the product runtime boundary and self-hosted connector contracts | Adopted for daemon access; keep product isolation, policy, leases, and evidence |
+
+### P0: Provider SDK structured resource review
+
+Resource review uses one product-owned `ResourceReviewProviderAdapter` contract with three concrete
+protocol implementations: OpenAI Responses, OpenAI Chat Completions, and Anthropic Messages. Each
+implementation calls the public structured-output parser from the
+[OpenAI Python SDK](https://github.com/openai/openai-python) or
+[Anthropic Python SDK](https://github.com/anthropics/anthropic-sdk-python) with the same strict
+Pydantic result model. Canonical OpenAI defaults to Responses; OpenAI-compatible credentials default
+to Chat Completions unless their stored `model_api` explicitly selects Responses; Anthropic uses
+Messages. Unknown providers and protocols fail closed instead of falling through to another vendor.
+
+The direct `openai` and `anthropic` clients are the right boundary for this stateless classification
+request. `openai-agents` and `claude-agent-sdk` remain the execution cores for stateful agent runs;
+launching an agent runtime for a single resource classification would add process, session, and tool
+semantics that the review does not need. OpsMesh owns input redaction, workspace credential
+selection, static-policy signals, activation decisions, and durable review evidence. The SDK owns
+request serialization, authentication, provider errors, JSON Schema generation, and typed response
+parsing. The former manual HTTP payload and hand-written response parser are removed.
 
 ### P0: MCP Python SDK
 

@@ -1,13 +1,32 @@
 from __future__ import annotations
 
 import json
+from abc import ABC, abstractmethod
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Literal
 
-import httpx
+from anthropic import Anthropic, AnthropicError
+from openai import OpenAI, OpenAIError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from backend.app.model_providers.model_api import (
+    ANTHROPIC_MESSAGES_API,
+    OPENAI_CHAT_COMPLETIONS_API,
+    OPENAI_RESPONSES_API,
+)
+from backend.app.model_providers.provider_keys import (
+    canonical_model_provider,
+    is_anthropic_provider,
+    is_openai_compatible_provider,
+)
 from backend.app.model_providers.service_models import ResolvedModelProvider
 from backend.app.security.redaction import redact_sensitive_payload
+
+OPENAI_RESPONSES_REVIEWER = "openai_responses"
+OPENAI_CHAT_REVIEWER = "openai_chat_completions"
+ANTHROPIC_MESSAGES_REVIEWER = "anthropic_messages"
+_MAX_REVIEW_OUTPUT_TOKENS = 1_200
 
 
 @dataclass(frozen=True)
@@ -18,9 +37,132 @@ class LlmReviewResult:
     signals: dict[str, object]
 
 
+class ResourceReviewFinding(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    severity: Literal["low", "medium", "high", "critical"]
+    category: Literal["security", "privacy", "execution", "permissions", "quality", "operations"]
+    message: str = Field(min_length=1, max_length=500)
+
+
+class StructuredResourceReview(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    verdict: Literal["approve", "needs_admin_review", "reject"]
+    risk_level: Literal["low", "medium", "high", "critical"]
+    reasons: list[str] = Field(min_length=1, max_length=10)
+    findings: list[ResourceReviewFinding] = Field(max_length=10)
+    recommendation: str = Field(min_length=1, max_length=1_000)
+
+
+@dataclass(frozen=True)
+class ResourceReviewAdapterRequest:
+    provider: ResolvedModelProvider
+    input_text: str
+    timeout_seconds: float
+
+
+class ResourceReviewProviderAdapter(ABC):
+    @property
+    @abstractmethod
+    def key(self) -> str: ...
+
+    @abstractmethod
+    def review(self, request: ResourceReviewAdapterRequest) -> StructuredResourceReview: ...
+
+
+class OpenAIResponsesResourceReviewAdapter(ResourceReviewProviderAdapter):
+    def __init__(self, client_factory: Callable[..., OpenAI] = OpenAI) -> None:
+        self._client_factory = client_factory
+
+    @property
+    def key(self) -> str:
+        return OPENAI_RESPONSES_REVIEWER
+
+    def review(self, request: ResourceReviewAdapterRequest) -> StructuredResourceReview:
+        with self._client_factory(
+            api_key=request.provider.api_key,
+            base_url=request.provider.base_url,
+            max_retries=0,
+        ) as client:
+            response = client.responses.parse(
+                model=request.provider.model,
+                instructions=_SYSTEM_PROMPT,
+                input=request.input_text,
+                text_format=StructuredResourceReview,
+                max_output_tokens=_MAX_REVIEW_OUTPUT_TOKENS,
+                store=False,
+                timeout=request.timeout_seconds,
+            )
+        if response.output_parsed is None:
+            raise ValueError("OpenAI Responses review returned no structured output")
+        return response.output_parsed
+
+
+class OpenAIChatCompletionsResourceReviewAdapter(ResourceReviewProviderAdapter):
+    def __init__(self, client_factory: Callable[..., OpenAI] = OpenAI) -> None:
+        self._client_factory = client_factory
+
+    @property
+    def key(self) -> str:
+        return OPENAI_CHAT_REVIEWER
+
+    def review(self, request: ResourceReviewAdapterRequest) -> StructuredResourceReview:
+        with self._client_factory(
+            api_key=request.provider.api_key,
+            base_url=request.provider.base_url,
+            max_retries=0,
+        ) as client:
+            completion = client.chat.completions.parse(
+                model=request.provider.model,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": request.input_text},
+                ],
+                response_format=StructuredResourceReview,
+                timeout=request.timeout_seconds,
+            )
+        if not completion.choices or completion.choices[0].message.parsed is None:
+            raise ValueError("OpenAI Chat Completions review returned no structured output")
+        return completion.choices[0].message.parsed
+
+
+class AnthropicMessagesResourceReviewAdapter(ResourceReviewProviderAdapter):
+    def __init__(self, client_factory: Callable[..., Anthropic] = Anthropic) -> None:
+        self._client_factory = client_factory
+
+    @property
+    def key(self) -> str:
+        return ANTHROPIC_MESSAGES_REVIEWER
+
+    def review(self, request: ResourceReviewAdapterRequest) -> StructuredResourceReview:
+        with self._client_factory(
+            api_key=request.provider.api_key,
+            base_url=request.provider.base_url,
+            max_retries=0,
+        ) as client:
+            message = client.messages.parse(
+                model=request.provider.model,
+                max_tokens=_MAX_REVIEW_OUTPUT_TOKENS,
+                system=_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": request.input_text}],
+                output_format=StructuredResourceReview,
+                timeout=request.timeout_seconds,
+            )
+        if message.parsed_output is None:
+            raise ValueError("Anthropic Messages review returned no structured output")
+        return message.parsed_output
+
+
 class LlmResourceReviewer:
-    def __init__(self, *, timeout_seconds: float = 20.0) -> None:
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 20.0,
+        adapters: Mapping[str, ResourceReviewProviderAdapter] | None = None,
+    ) -> None:
         self._timeout_seconds = timeout_seconds
+        self._adapters = dict(_default_adapters() if adapters is None else adapters)
 
     def review(
         self,
@@ -33,67 +175,93 @@ class LlmResourceReviewer:
     ) -> LlmReviewResult:
         if not provider.api_key:
             raise ValueError("Review model provider is missing api_key")
-        payload = {
-            "model": provider.model,
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {
-                    "role": "system",
-                    "content": _SYSTEM_PROMPT,
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "resource_type": resource_type,
-                            "resource": redact_sensitive_payload(resource),
-                            "static_signals": redact_sensitive_payload(static_signals),
-                        },
-                        ensure_ascii=True,
-                        sort_keys=True,
-                    ),
-                },
-            ],
-        }
+        adapter_key = _reviewer_key(provider)
+        adapter = self._adapters.get(adapter_key)
+        if adapter is None:
+            raise ValueError(f"Review adapter is not configured for {adapter_key}")
+        request = ResourceReviewAdapterRequest(
+            provider=provider,
+            input_text=_review_input(resource_type, resource, static_signals),
+            timeout_seconds=timeout_seconds or self._timeout_seconds,
+        )
         try:
-            response = httpx.post(
-                _chat_completions_url(provider.base_url),
-                headers={
-                    "Authorization": f"Bearer {provider.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-                timeout=timeout_seconds or self._timeout_seconds,
-            )
-            response.raise_for_status()
-            body = response.json()
-            content = _message_content(body)
-            data = json.loads(content)
-            return _parse_review_result(data)
-        except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
+            decision = adapter.review(request)
+        except (OpenAIError, AnthropicError, ValidationError, ValueError, OSError) as exc:
             raise RuntimeError("Review model request failed") from exc
+        return _review_result(decision, provider=provider, adapter_key=adapter.key)
+
+
+def _default_adapters() -> dict[str, ResourceReviewProviderAdapter]:
+    adapters: tuple[ResourceReviewProviderAdapter, ...] = (
+        OpenAIResponsesResourceReviewAdapter(),
+        OpenAIChatCompletionsResourceReviewAdapter(),
+        AnthropicMessagesResourceReviewAdapter(),
+    )
+    return {adapter.key: adapter for adapter in adapters}
+
+
+def _reviewer_key(provider: ResolvedModelProvider) -> str:
+    provider_name = canonical_model_provider(provider.provider)
+    if is_anthropic_provider(provider_name):
+        if provider.model_api not in {None, ANTHROPIC_MESSAGES_API}:
+            raise ValueError(f"Unsupported Anthropic review model API: {provider.model_api}")
+        return ANTHROPIC_MESSAGES_REVIEWER
+    if not is_openai_compatible_provider(provider_name):
+        raise ValueError(f"Unsupported review model provider: {provider_name or 'unset'}")
+    if provider.model_api == OPENAI_CHAT_COMPLETIONS_API:
+        return OPENAI_CHAT_REVIEWER
+    if provider.model_api == OPENAI_RESPONSES_API:
+        return OPENAI_RESPONSES_REVIEWER
+    if provider.model_api is None:
+        return OPENAI_RESPONSES_REVIEWER if provider_name == "openai" else OPENAI_CHAT_REVIEWER
+    raise ValueError(f"Unsupported OpenAI review model API: {provider.model_api}")
+
+
+def _review_input(
+    resource_type: str,
+    resource: dict[str, object],
+    static_signals: dict[str, object],
+) -> str:
+    return json.dumps(
+        {
+            "resource_type": resource_type,
+            "resource": redact_sensitive_payload(resource),
+            "static_signals": redact_sensitive_payload(static_signals),
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+    )
+
+
+def _review_result(
+    decision: StructuredResourceReview,
+    *,
+    provider: ResolvedModelProvider,
+    adapter_key: str,
+) -> LlmReviewResult:
+    required = decision.verdict != "approve" or decision.risk_level in {"high", "critical"}
+    reasons = [reason[:160] for reason in decision.reasons if reason]
+    return LlmReviewResult(
+        required=required,
+        risk_level=decision.risk_level,
+        reasons=reasons
+        or ["llm_review.requires_admin_review" if required else "llm_review.approved"],
+        signals={
+            "reviewer": "provider_sdk",
+            "provider": canonical_model_provider(provider.provider),
+            "adapter": adapter_key,
+            "verdict": decision.verdict,
+            "findings": [finding.model_dump(mode="json") for finding in decision.findings],
+            "recommendation": decision.recommendation,
+        },
+    )
 
 
 _SYSTEM_PROMPT = """
 You are a senior security and product reviewer for a multi-agent workspace platform.
 Review newly created employees, skills, MCP servers, and MCP tool permissions before activation.
 
-Return ONLY a JSON object with:
-{
-  "verdict": "approve" | "needs_admin_review" | "reject",
-  "risk_level": "low" | "medium" | "high" | "critical",
-  "reasons": ["short_machine_readable_reason"],
-  "findings": [
-    {
-      "severity": "low" | "medium" | "high" | "critical",
-      "category": "security|privacy|execution|permissions|quality|operations",
-      "message": "concise human-readable finding"
-    }
-  ],
-  "recommendation": "concise operator recommendation"
-}
-
+Return a structured decision matching the supplied output schema.
 Require admin review for dangerous execution, broad filesystem/network access,
 deletion/destructive tools, credential exfiltration risk, approval bypass,
 production deployment control, or unclear high-impact authority.
@@ -101,93 +269,20 @@ Approve normal scoped tools, authenticated remote MCP servers, and runtime tool
 permissions that already require per-run approval, unless the resource grants
 broad dangerous capability.
 Do not reject unless the resource is clearly malicious or impossible to govern safely.
+Use short machine-readable reason identifiers and concise findings.
 """.strip()
 
 
-def _chat_completions_url(base_url: str | None) -> str:
-    root = (base_url or "https://api.openai.com/v1").rstrip("/")
-    if root.endswith("/chat/completions"):
-        return root
-    return f"{root}/chat/completions"
-
-
-def _message_content(body: dict[str, Any]) -> str:
-    choices = body.get("choices")
-    if not isinstance(choices, list) or not choices:
-        raise ValueError("Review provider returned no choices")
-    first = choices[0]
-    if not isinstance(first, dict):
-        raise ValueError("Review provider returned invalid choice")
-    message = first.get("message")
-    if not isinstance(message, dict):
-        raise ValueError("Review provider returned invalid message")
-    content = message.get("content")
-    if not isinstance(content, str) or not content.strip():
-        raise ValueError("Review provider returned empty content")
-    return content
-
-
-def _parse_review_result(data: object) -> LlmReviewResult:
-    if not isinstance(data, dict):
-        raise ValueError("Review provider returned non-object JSON")
-    risk_level = _risk_level(data.get("risk_level"))
-    verdict = str(data.get("verdict") or "").lower().strip()
-    reasons = _string_list(data.get("reasons"))
-    findings = _findings(data.get("findings"))
-    recommendation = data.get("recommendation")
-    if verdict not in {"approve", "needs_admin_review", "reject"}:
-        verdict = "needs_admin_review"
-        if "llm_review.unknown_verdict_requires_admin" not in reasons:
-            reasons.insert(0, "llm_review.unknown_verdict_requires_admin")
-        risk_level = _max_risk(risk_level, "high")
-    signals: dict[str, object] = {
-        "reviewer": "llm",
-        "verdict": verdict,
-        "findings": findings,
-    }
-    if isinstance(recommendation, str) and recommendation:
-        signals["recommendation"] = recommendation[:1_000]
-    required = verdict in {"needs_admin_review", "reject"} or risk_level in {"high", "critical"}
-    if not reasons:
-        reasons = ["llm_review.requires_admin_review" if required else "llm_review.approved"]
-    return LlmReviewResult(
-        required=required,
-        risk_level=risk_level,
-        reasons=reasons[:10],
-        signals=signals,
-    )
-
-
-def _max_risk(left: str, right: str) -> str:
-    order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
-    left_risk = _risk_level(left)
-    right_risk = _risk_level(right)
-    return left_risk if order[left_risk] >= order[right_risk] else right_risk
-
-
-def _risk_level(value: object) -> str:
-    risk = str(value or "medium").lower().strip()
-    return risk if risk in {"low", "medium", "high", "critical"} else "medium"
-
-
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [str(item)[:160] for item in value if isinstance(item, str) and item][:10]
-
-
-def _findings(value: object) -> list[dict[str, str]]:
-    if not isinstance(value, list):
-        return []
-    findings: list[dict[str, str]] = []
-    for item in value[:10]:
-        if not isinstance(item, dict):
-            continue
-        findings.append(
-            {
-                "severity": _risk_level(item.get("severity")),
-                "category": str(item.get("category") or "security")[:80],
-                "message": str(item.get("message") or "")[:500],
-            }
-        )
-    return findings
+__all__ = [
+    "ANTHROPIC_MESSAGES_REVIEWER",
+    "OPENAI_CHAT_REVIEWER",
+    "OPENAI_RESPONSES_REVIEWER",
+    "AnthropicMessagesResourceReviewAdapter",
+    "LlmResourceReviewer",
+    "LlmReviewResult",
+    "OpenAIChatCompletionsResourceReviewAdapter",
+    "OpenAIResponsesResourceReviewAdapter",
+    "ResourceReviewAdapterRequest",
+    "ResourceReviewProviderAdapter",
+    "StructuredResourceReview",
+]

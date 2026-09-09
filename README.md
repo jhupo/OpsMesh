@@ -272,6 +272,7 @@ audit, and capability negotiation remain in the OpsMesh control plane.
 | Area | Preferred upstream | Direction |
 | --- | --- | --- |
 | Agent turns, tools, sessions, HITL | Python OpenAI Agents SDK and Claude Agent SDK | Provider execution cores behind one OpsMesh contract; provider-specific capabilities are explicit |
+| Semantic resource review | OpenAI and Anthropic Python SDK structured-output parsers | Provider protocol adapters behind one review contract; OpsMesh keeps redaction, policy merge, and fail-closed activation |
 | MCP protocol and transports | [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | Current for remote Streamable HTTP/SSE and isolated stdio; keep the SDK client inside Docker/self-hosted runtimes |
 | Docker Engine access | [Docker SDK for Python](https://docs.docker.com/reference/api/engine/sdk/) | Current managed-runtime implementation behind the OpsMesh runtime client contract; no CLI fallback |
 | Logs, traces, and instrumentation | [OpenTelemetry Python](https://github.com/open-telemetry/opentelemetry-python) | Current for API/worker OTLP logs and FastAPI, database, Redis, HTTP, queue, model, and tool traces |

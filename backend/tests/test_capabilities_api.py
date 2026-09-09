@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -22,7 +23,7 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.reviews.llm import LlmReviewResult, _parse_review_result
+from backend.app.reviews.llm import LlmReviewResult, StructuredResourceReview
 from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task, TaskStep
@@ -280,20 +281,17 @@ def test_llm_resource_review_can_require_admin_approval(monkeypatch) -> None:
     assert approval["payload"]["review"]["signals"]["verdict"] == "needs_admin_review"
 
 
-def test_llm_resource_review_unknown_verdict_fails_closed() -> None:
-    review = _parse_review_result(
-        {
-            "verdict": "maybe",
-            "risk_level": "low",
-            "reasons": [],
-            "findings": [],
-        }
-    )
-
-    assert review.required is True
-    assert review.risk_level == "high"
-    assert review.reasons[0] == "llm_review.unknown_verdict_requires_admin"
-    assert review.signals["verdict"] == "needs_admin_review"
+def test_llm_resource_review_schema_rejects_unknown_verdict() -> None:
+    with pytest.raises(ValidationError):
+        StructuredResourceReview.model_validate(
+            {
+                "verdict": "maybe",
+                "risk_level": "low",
+                "reasons": ["resource.scoped"],
+                "findings": [],
+                "recommendation": "Approve.",
+            }
+        )
 
 
 def test_operator_cannot_approve_resource_review(monkeypatch) -> None:
