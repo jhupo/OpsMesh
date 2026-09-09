@@ -10,6 +10,7 @@ import openai
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
+from backend.app.model_providers.health_probes import ProviderProbeName
 from backend.app.model_providers.model_api import (
     ANTHROPIC_MESSAGES_API,
     OPENAI_CHAT_COMPLETIONS_API,
@@ -19,7 +20,6 @@ from backend.app.model_providers.model_api import (
 from backend.app.model_providers.provider_keys import canonical_model_provider
 
 ProviderHealthStatus = Literal["healthy", "degraded", "unhealthy"]
-ProviderProbeName = Literal["models", "inference"]
 ProbeOperation = Callable[[], Awaitable[dict[str, object]]]
 OpenAIClientFactory = Callable[..., AsyncOpenAI]
 AnthropicClientFactory = Callable[..., AsyncAnthropic]

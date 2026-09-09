@@ -1,12 +1,12 @@
 import asyncio
 
 from backend.app.audit.integrity import AuditIntegrityService
+from backend.app.model_providers.health_probes import provider_health_probes
 from backend.app.model_providers.health_service import ModelProviderHealthService
 from backend.app.secrets.rotation import HostedSecretReencryptService
 from backend.app.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.workers.job_routing import positive_float
 from backend.app.workers.jobs import JobPayload
-from backend.app.workers.routing_payloads import provider_health_probes
 
 
 class SecretReencryptJobHandler:

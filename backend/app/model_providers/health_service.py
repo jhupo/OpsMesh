@@ -9,9 +9,9 @@ from backend.app.model_providers.credential_queries import ModelProviderCredenti
 from backend.app.model_providers.health import (
     ModelProviderHealthCheckResult,
     ModelProviderHealthTarget,
-    ProviderProbeName,
     probe_model_provider,
 )
+from backend.app.model_providers.health_probes import ProviderProbeName
 from backend.app.model_providers.health_state import (
     apply_health_check_result,
     record_provider_failure,

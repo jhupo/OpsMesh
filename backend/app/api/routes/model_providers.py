@@ -25,6 +25,7 @@ from backend.app.model_providers.credential_commands import (
 from backend.app.model_providers.credential_queries import (
     ModelProviderCredentialQueryService,
 )
+from backend.app.model_providers.health_probes import provider_health_probes
 from backend.app.model_providers.health_service import ModelProviderHealthService
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import EgressUrlValidationError
@@ -180,13 +181,13 @@ async def check_model_provider_credential_health(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> ModelProviderHealthCheckResponse:
-    probes = tuple(dict.fromkeys(request.probes or ["models", "inference"]))
-    invalid_probes = sorted(set(probes) - {"models", "inference"})
-    if invalid_probes:
+    try:
+        probes = provider_health_probes(request.probes)
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported provider health probe: {', '.join(invalid_probes)}",
-        )
+            detail=str(exc),
+        ) from exc
     health = _health(session, settings)
     queries = _queries(session, settings)
     try:
