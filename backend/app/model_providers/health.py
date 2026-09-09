@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
-from urllib.parse import urljoin
+from typing import Literal
 
-import httpx
+import anthropic
+import openai
+from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
 from backend.app.model_providers.model_api import (
     ANTHROPIC_MESSAGES_API,
@@ -12,12 +16,13 @@ from backend.app.model_providers.model_api import (
     OPENAI_RESPONSES_API,
     canonical_model_api,
 )
-from backend.app.model_providers.provider_keys import (
-    canonical_model_provider,
-)
+from backend.app.model_providers.provider_keys import canonical_model_provider
 
 ProviderHealthStatus = Literal["healthy", "degraded", "unhealthy"]
 ProviderProbeName = Literal["models", "inference"]
+ProbeOperation = Callable[[], Awaitable[dict[str, object]]]
+OpenAIClientFactory = Callable[..., AsyncOpenAI]
+AnthropicClientFactory = Callable[..., AsyncAnthropic]
 
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
@@ -82,115 +87,161 @@ async def probe_model_provider(
     probes: tuple[ProviderProbeName, ...] = ("models", "inference"),
     timeout_seconds: float = 15,
 ) -> ModelProviderHealthCheckResult:
-    timeout = httpx.Timeout(timeout_seconds)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        adapter = ProviderHealthRegistry().resolve(target.provider)
-        if adapter is None:
-            checks = (
-                ModelProviderHealthCheck(
-                    name="models",
-                    status="failed",
-                    code="unsupported_provider",
-                    message=f"Provider '{target.provider}' is not supported by health checks.",
-                ),
-            )
-        else:
-            checks = await adapter.probe(client, target, probes=probes)
+    adapter = ProviderHealthRegistry().resolve(target.provider)
+    checks: tuple[ModelProviderHealthCheck, ...]
+    if adapter is None:
+        checks = (
+            ModelProviderHealthCheck(
+                name="models",
+                status="failed",
+                code="unsupported_provider",
+                message=f"Provider '{target.provider}' is not supported by health checks.",
+            ),
+        )
+    else:
+        checks = await adapter.probe(
+            target,
+            probes=probes,
+            timeout_seconds=timeout_seconds,
+        )
     return ModelProviderHealthCheckResult(
         status=_aggregate_status(checks),
         checks=tuple(checks),
     )
 
 
-class ProviderHealthProbe(Protocol):
+class ProviderHealthProbe(ABC):
+    @abstractmethod
     async def probe(
         self,
-        client: httpx.AsyncClient,
         target: ModelProviderHealthTarget,
         *,
         probes: tuple[ProviderProbeName, ...],
+        timeout_seconds: float,
     ) -> tuple[ModelProviderHealthCheck, ...]: ...
 
 
-class OpenAICompatibleHealthProbe:
+class OpenAICompatibleHealthProbe(ProviderHealthProbe):
+    def __init__(self, client_factory: OpenAIClientFactory | None = None) -> None:
+        self._client_factory = client_factory or AsyncOpenAI
+
     async def probe(
         self,
-        client: httpx.AsyncClient,
         target: ModelProviderHealthTarget,
         *,
         probes: tuple[ProviderProbeName, ...],
+        timeout_seconds: float,
     ) -> tuple[ModelProviderHealthCheck, ...]:
-        checks: list[ModelProviderHealthCheck] = []
-        base_url = _base_url(target.base_url, default=DEFAULT_OPENAI_BASE_URL)
-        headers = {"Authorization": f"Bearer {target.api_key}"}
-        if "models" in probes:
-            checks.append(
-                await _request_check(
-                    client,
-                    name="models",
-                    method="GET",
-                    url=_join_url(base_url, "models"),
-                    headers=headers,
-                    success_metadata=lambda data: _models_metadata(data, target.model),
+        client = self._client_factory(
+            api_key=target.api_key,
+            base_url=target.base_url or DEFAULT_OPENAI_BASE_URL,
+            max_retries=0,
+            timeout=timeout_seconds,
+        )
+        async with client:
+            checks: list[ModelProviderHealthCheck] = []
+            if "models" in probes:
+                checks.append(
+                    await _run_sdk_probe(
+                        "models",
+                        lambda: self._models_metadata(client, target.model),
+                    )
                 )
-            )
-        if "inference" in probes:
-            checks.append(
-                await _openai_inference_check(
-                    client,
-                    target=target,
-                    base_url=base_url,
-                    headers=headers,
+            if "inference" in probes:
+                checks.append(
+                    await _run_sdk_probe(
+                        "inference",
+                        lambda: self._inference_metadata(client, target),
+                    )
                 )
-            )
         return tuple(checks)
 
+    async def _models_metadata(
+        self,
+        client: AsyncOpenAI,
+        model: str,
+    ) -> dict[str, object]:
+        models = await client.models.list()
+        return _models_metadata(models.data, model)
 
-class AnthropicHealthProbe:
+    async def _inference_metadata(
+        self,
+        client: AsyncOpenAI,
+        target: ModelProviderHealthTarget,
+    ) -> dict[str, object]:
+        model_api = canonical_model_api(target.model_api)
+        if model_api == OPENAI_RESPONSES_API:
+            await client.responses.create(
+                model=target.model,
+                input="Reply with exactly: ok",
+                max_output_tokens=20,
+                store=False,
+            )
+        else:
+            await client.chat.completions.create(
+                model=target.model,
+                messages=[{"role": "user", "content": "Reply with exactly: ok"}],
+                temperature=0,
+                max_tokens=20,
+            )
+            model_api = OPENAI_CHAT_COMPLETIONS_API
+        return {"model": target.model, "model_api": model_api}
+
+
+class AnthropicHealthProbe(ProviderHealthProbe):
+    def __init__(self, client_factory: AnthropicClientFactory | None = None) -> None:
+        self._client_factory = client_factory or AsyncAnthropic
+
     async def probe(
         self,
-        client: httpx.AsyncClient,
         target: ModelProviderHealthTarget,
         *,
         probes: tuple[ProviderProbeName, ...],
+        timeout_seconds: float,
     ) -> tuple[ModelProviderHealthCheck, ...]:
-        checks: list[ModelProviderHealthCheck] = []
-        base_url = _base_url(target.base_url, default=DEFAULT_ANTHROPIC_BASE_URL)
-        headers = {
-            "x-api-key": target.api_key,
-            "anthropic-version": "2023-06-01",
-        }
-        if "models" in probes:
-            checks.append(
-                await _request_check(
-                    client,
-                    name="models",
-                    method="GET",
-                    url=_join_url(base_url, "v1/models"),
-                    headers=headers,
-                    success_metadata=lambda data: _models_metadata(data, target.model),
+        client = self._client_factory(
+            api_key=target.api_key,
+            base_url=target.base_url or DEFAULT_ANTHROPIC_BASE_URL,
+            max_retries=0,
+            timeout=timeout_seconds,
+        )
+        async with client:
+            checks: list[ModelProviderHealthCheck] = []
+            if "models" in probes:
+                checks.append(
+                    await _run_sdk_probe(
+                        "models",
+                        lambda: self._models_metadata(client, target.model),
+                    )
                 )
-            )
-        if "inference" in probes:
-            checks.append(
-                await _request_check(
-                    client,
-                    name="inference",
-                    method="POST",
-                    url=_join_url(base_url, "v1/messages"),
-                    headers=headers,
-                    json={
-                        "model": target.model,
-                        "max_tokens": 20,
-                        "messages": [{"role": "user", "content": "Reply with exactly: ok"}],
-                    },
-                    success_metadata=lambda _data: {
-                        "model": target.model,
-                        "model_api": ANTHROPIC_MESSAGES_API,
-                    },
+            if "inference" in probes:
+                checks.append(
+                    await _run_sdk_probe(
+                        "inference",
+                        lambda: self._inference_metadata(client, target),
+                    )
                 )
-            )
         return tuple(checks)
+
+    async def _models_metadata(
+        self,
+        client: AsyncAnthropic,
+        model: str,
+    ) -> dict[str, object]:
+        models = await client.models.list()
+        return _models_metadata(models.data, model)
+
+    async def _inference_metadata(
+        self,
+        client: AsyncAnthropic,
+        target: ModelProviderHealthTarget,
+    ) -> dict[str, object]:
+        await client.messages.create(
+            model=target.model,
+            max_tokens=20,
+            messages=[{"role": "user", "content": "Reply with exactly: ok"}],
+        )
+        return {"model": target.model, "model_api": ANTHROPIC_MESSAGES_API}
 
 
 class ProviderHealthRegistry:
@@ -209,90 +260,57 @@ class ProviderHealthRegistry:
         return self._adapters.get(canonical_model_provider(provider))
 
 
-async def _openai_inference_check(
-    client: httpx.AsyncClient,
-    *,
-    target: ModelProviderHealthTarget,
-    base_url: str,
-    headers: dict[str, str],
-) -> ModelProviderHealthCheck:
-    model_api = canonical_model_api(target.model_api)
-    if model_api == OPENAI_RESPONSES_API:
-        return await _request_check(
-            client,
-            name="inference",
-            method="POST",
-            url=_join_url(base_url, "responses"),
-            headers=headers,
-            json={
-                "model": target.model,
-                "input": "Reply with exactly: ok",
-                "max_output_tokens": 20,
-            },
-            success_metadata=lambda _data: {
-                "model": target.model,
-                "model_api": OPENAI_RESPONSES_API,
-            },
-        )
-    return await _request_check(
-        client,
-        name="inference",
-        method="POST",
-        url=_join_url(base_url, "chat/completions"),
-        headers=headers,
-        json={
-            "model": target.model,
-            "messages": [{"role": "user", "content": "Reply with exactly: ok"}],
-            "temperature": 0,
-            "max_tokens": 20,
-        },
-        success_metadata=lambda _data: {
-            "model": target.model,
-            "model_api": OPENAI_CHAT_COMPLETIONS_API,
-        },
-    )
-
-
-async def _request_check(
-    client: httpx.AsyncClient,
-    *,
+async def _run_sdk_probe(
     name: ProviderProbeName,
-    method: str,
-    url: str,
-    headers: dict[str, str],
-    json: dict[str, object] | None = None,
-    success_metadata,
+    operation: ProbeOperation,
 ) -> ModelProviderHealthCheck:
     try:
-        response = await client.request(method, url, headers=headers, json=json)
-    except httpx.TimeoutException:
+        metadata = await operation()
+    except (openai.APITimeoutError, anthropic.APITimeoutError):
         return ModelProviderHealthCheck(
             name=name,
             status="failed",
             code="timeout",
             message="Provider health check timed out.",
         )
-    except httpx.HTTPError as exc:
+    except (openai.APIStatusError, anthropic.APIStatusError) as exc:
+        return _status_failure(name, exc.status_code, str(exc)[:500])
+    except (openai.APIConnectionError, anthropic.APIConnectionError) as exc:
         return ModelProviderHealthCheck(
             name=name,
             status="failed",
-            code=exc.__class__.__name__,
+            code="connection_error",
             message=str(exc)[:500],
         )
-    if 200 <= response.status_code < 300:
-        data = _response_json(response)
+    except (openai.OpenAIError, anthropic.AnthropicError) as exc:
         return ModelProviderHealthCheck(
             name=name,
-            status="passed",
-            metadata=success_metadata(data),
+            status="failed",
+            code="provider_sdk_error",
+            message=str(exc)[:500],
         )
-    code, message = _failure_from_response(response)
+    return ModelProviderHealthCheck(name=name, status="passed", metadata=metadata)
+
+
+def _status_failure(
+    name: ProviderProbeName,
+    status_code: int,
+    message: str,
+) -> ModelProviderHealthCheck:
+    if status_code in {401, 403}:
+        code = "permission_denied"
+    elif status_code == 429:
+        code = "rate_limited"
+    elif status_code >= 500:
+        code = "upstream_error"
+    else:
+        code = "request_failed"
     return ModelProviderHealthCheck(
         name=name,
         status="failed",
         code=code,
         message=message,
-        metadata={"status_code": response.status_code},
+        metadata={"status_code": status_code},
     )
 
 
@@ -306,56 +324,13 @@ def _aggregate_status(checks: tuple[ModelProviderHealthCheck, ...]) -> ProviderH
     return "unhealthy"
 
 
-def _models_metadata(data: object, model: str) -> dict[str, object]:
-    model_ids = []
-    if isinstance(data, dict):
-        values = data.get("data")
-        if isinstance(values, list):
-            for item in values:
-                if isinstance(item, dict) and isinstance(item.get("id"), str):
-                    model_ids.append(item["id"])
+def _models_metadata(models: Iterable[object], model: str) -> dict[str, object]:
+    model_ids = [
+        model_id
+        for item in models
+        if isinstance((model_id := getattr(item, "id", None)), str)
+    ]
     return {
         "model_count": len(model_ids),
         "model_present": model in model_ids if model_ids else None,
     }
-
-
-def _failure_from_response(response: httpx.Response) -> tuple[str, str]:
-    text = _error_message(response)
-    lowered = text.lower()
-    if response.status_code in {401, 403} or "blocked" in lowered:
-        return "permission_denied", text
-    if response.status_code == 429:
-        return "rate_limited", text
-    if response.status_code >= 500 or "upstream" in lowered:
-        return "upstream_error", text
-    return "request_failed", text
-
-
-def _error_message(response: httpx.Response) -> str:
-    data = _response_json(response)
-    if isinstance(data, dict):
-        error = data.get("error")
-        if isinstance(error, dict):
-            message = error.get("message")
-            if isinstance(message, str) and message:
-                return message[:500]
-        message = data.get("message")
-        if isinstance(message, str) and message:
-            return message[:500]
-    return response.text[:500] or response.reason_phrase
-
-
-def _response_json(response: httpx.Response) -> object:
-    try:
-        return response.json()
-    except ValueError:
-        return None
-
-
-def _base_url(value: str | None, *, default: str) -> str:
-    return (value or default).rstrip("/")
-
-
-def _join_url(base_url: str, path: str) -> str:
-    return urljoin(f"{base_url}/", path)

@@ -98,7 +98,7 @@ or cancellation.
 | Tracing and metrics | OpenTelemetry and Prometheus clients | Keep; product audit remains durable Postgres state |
 | Request retries | Provider SDK request retries and durable worker workflow retries | Never replay a complete agent run or MCP tool call in-process; retry only an explicitly idempotent transport or durable workflow step |
 | Sessions and memory | Product Postgres session/memory services, OpenAI Responses compaction session, Claude `SessionStore` bridge | Keep product ownership of storage and durable knowledge; use provider SDK transcript and compaction extension points |
-| Provider health probes | Direct HTTP health checks | Keep; SDKs do not expose a stable account/model readiness probe |
+| Provider health probes | OpenAI and Anthropic SDK model listing plus minimal inference | Adopt provider SDK clients; keep probe selection, no-retry policy, stable health codes, persistence, and audit |
 | Generic agent frameworks | LangChain, LlamaIndex, LiteLLM | Reject for now; they would duplicate the two SDK cores and add weight |
 | Durable workflow engines | Temporal | Evaluate with a representative workflow before replacing current task/worker state |
 | Runtime execution | Official Docker SDK behind the product runtime boundary and self-hosted connector contracts | Adopted for daemon access; keep product isolation, policy, leases, and evidence |
