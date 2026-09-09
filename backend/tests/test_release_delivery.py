@@ -10,7 +10,7 @@ from alembic.script import ScriptDirectory
 from opsmesh_operator.contracts import ReleaseFile, ReleaseManifest, require_tag
 from pydantic import ValidationError
 
-from scripts.build_standalone import archive_tree, copy_server_assets
+from scripts.build_standalone import archive_tree, build, copy_server_assets
 from scripts.release import file_record, validate_version, write_checksums
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -146,6 +146,13 @@ def test_checksums_cover_artifacts_not_their_own_digest(tmp_path: Path) -> None:
     assert (tmp_path / "checksums.txt").read_text() == expected
     write_checksums(tmp_path)
     assert (tmp_path / "checksums.txt").read_text() == expected
+
+
+@pytest.mark.parametrize("tag", ["../v1.0.0", "v9.9.9"])
+def test_native_builder_rejects_wrong_identity_before_writing(tmp_path: Path, tag: str) -> None:
+    with pytest.raises(ValueError):
+        build("cli", tag, tmp_path, tmp_path / "output", "never-run")
+    assert not (tmp_path / "output").exists()
 
 
 def test_images_use_locked_dependencies_and_explicit_migrations() -> None:

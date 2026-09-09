@@ -60,7 +60,9 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str) -> Path:
     if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:rc[0-9]+)?", tag) is None:
         raise ValueError("Expected a canonical release tag")
     for project in (ROOT, ROOT / "operator", ROOT / "runtime"):
-        version = tomllib.loads((project / "pyproject.toml").read_text("utf-8"))["project"]["version"]
+        version = tomllib.loads((project / "pyproject.toml").read_text("utf-8"))["project"][
+            "version"
+        ]
         if version != tag.removeprefix("v"):
             raise ValueError("Native artifact tag does not match checkout version")
     target_platform = host_platform()
@@ -167,7 +169,8 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str) -> Path:
             # uv also creates minor-version aliases; use its discovery API, not directory globbing.
             installed_python = subprocess.check_output(
                 [uv, "python", "find", "--managed-python", "--no-project", PYTHON_VERSION],
-                env={**os.environ, "UV_PYTHON_INSTALL_DIR": str(installs)}, text=True,
+                env={**os.environ, "UV_PYTHON_INSTALL_DIR": str(installs)},
+                text=True,
             ).strip()
             python_home = Path(installed_python).resolve().parent.parent
             bundle = work / "server"
