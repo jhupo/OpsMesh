@@ -150,4 +150,5 @@ contracts. A separate giant CLI framework is not needed.
 - This proves backup-store restoration, not the entire interrupted-updater recovery workflow.
   Final acceptance still needs two approved published versions, their attested assets, and actual
   Compose/systemd install and upgrade runs. Proposed acceptance releases are `v0.1.0rc1` and
-  `v0.1.0rc2`; publication approval is pending. No release tags or production changes were made.
+  `v0.1.0rc2`; publication of both prereleases and GHCR images is now approved. Production changes
+  remain out of scope. Signed installation and cross-version recovery acceptance are still pending.
