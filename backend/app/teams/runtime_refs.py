@@ -29,6 +29,15 @@ def team_bound_runtime_id(team: AgentTeam) -> UUID | None:
     return uuid_or_none(runtime.get(TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY))
 
 
+def team_runtime_metadata(team: AgentTeam) -> dict[str, object]:
+    value = team.default_task_policy.get(TEAM_RUNTIME_STATUS_KEY)
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("Team runtime metadata must be an object")
+    return dict(value)
+
+
 def _team_session_key(workspace_id: UUID, team_id: UUID) -> str:
     return f"{workspace_id}:{TEAM_RUNTIME_SESSION_SCOPE}:{team_id}"
 

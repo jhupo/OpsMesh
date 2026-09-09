@@ -3,9 +3,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.runtime_manager.lifecycle_control import RuntimeLifecycleControl
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError
 from backend.app.runtime_manager.safety import RuntimeSafetyError
-from backend.app.runtime_manager.service import RuntimeControlService
 from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.execution_loop_finalization import TeamExecutionFinalizationService
 from backend.app.teams.execution_loop_jobs import enqueue_team_execution_loop_job
@@ -82,7 +82,7 @@ class TeamExecutionLoopService:
         max_tasks_per_action: int = 100,
         max_finalize_tasks: int = 50,
         queue: RedisQueue | None = None,
-        runtime_control: RuntimeControlService | None = None,
+        runtime_control: RuntimeLifecycleControl | None = None,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> dict[str, object] | None:
@@ -258,4 +258,3 @@ class TeamExecutionLoopService:
             status=status,
             summary=summary,
         )
-

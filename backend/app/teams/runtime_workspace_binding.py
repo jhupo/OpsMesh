@@ -5,13 +5,13 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.runtime_manager.contracts import RuntimeLimits
-from backend.app.runtime_manager.service import RuntimeControlService
+from backend.app.runtime_manager.lifecycle_control import RuntimeLifecycleControl
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime_mailbox import TeamRuntimeMailboxStore
 from backend.app.teams.runtime_repository import TeamRuntimeRepository
 from backend.app.teams.runtime_sessions import TeamRuntimeSessionStore
-from backend.app.teams.runtime_state_builder import TeamRuntimeState
+from backend.app.teams.runtime_state_builder import TeamRuntimeState, TeamRuntimeStateBuilder
 from backend.app.teams.runtime_workspace_binding_commit import (
     TeamWorkspaceRuntimeBindingCommitter,
 )
@@ -32,7 +32,7 @@ class TeamWorkspaceRuntimeBindingService:
         repo: TeamRuntimeRepository,
         mailbox: TeamRuntimeMailboxStore,
         sessions: TeamRuntimeSessionStore,
-        state_builder,
+        state_builder: TeamRuntimeStateBuilder,
     ) -> None:
         self._session = session
         self._repo = repo
@@ -89,7 +89,7 @@ class TeamWorkspaceRuntimeBindingService:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeControlService,
+        runtime_control: RuntimeLifecycleControl,
         template_id: UUID | None = None,
         name: str | None = None,
         limits: RuntimeLimits | None = None,
@@ -146,7 +146,7 @@ class TeamWorkspaceRuntimeBindingService:
         self,
         *,
         team: AgentTeam,
-        runtime_control: RuntimeControlService,
+        runtime_control: RuntimeLifecycleControl,
         template_id: UUID | None,
         name: str | None,
         limits: RuntimeLimits | None,
@@ -176,7 +176,7 @@ class TeamWorkspaceRuntimeBindingService:
         *,
         team: AgentTeam,
         runtime: WorkspaceRuntime,
-        runtime_control: RuntimeControlService,
+        runtime_control: RuntimeLifecycleControl,
         start: bool,
     ) -> tuple[WorkspaceRuntime, bool]:
         if not start:

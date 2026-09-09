@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.audit.service import AuditService
 from backend.app.orchestration.runs import RunOrchestrationService
-from backend.app.runtime_manager.service import RuntimeControlService
+from backend.app.runtime_manager.lifecycle_control import RuntimeLifecycleControl
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.teams.command_center_action_plan import (
@@ -130,7 +130,7 @@ class TeamCommandCenterService:
         max_tasks_per_action: int = 100,
         enqueue_runs: bool = False,
         queue: RedisQueue | None = None,
-        runtime_control: RuntimeControlService | None = None,
+        runtime_control: RuntimeLifecycleControl | None = None,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> dict[str, object] | None:
@@ -249,4 +249,3 @@ class TeamCommandCenterService:
             "scheduled_run_count": len(scheduled_runs),
             "scheduled_runs": [_scheduled_run_payload(run) for run in scheduled_runs],
         }
-

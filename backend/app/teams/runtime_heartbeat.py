@@ -11,6 +11,7 @@ from backend.app.teams.runtime_constants import (
     TEAM_RUNTIME_STATUS_KEY,
 )
 from backend.app.teams.runtime_mailbox import TeamRuntimeMailboxStore
+from backend.app.teams.runtime_refs import team_runtime_metadata
 from backend.app.teams.runtime_repository import TeamRuntimeRepository
 from backend.app.teams.runtime_state_utils import _int, _stall_metadata_update
 
@@ -42,7 +43,7 @@ class TeamRuntimeHeartbeatRecorder:
         if team is None:
             return
         policy = dict(team.default_task_policy or {})
-        runtime_metadata = dict(policy.get(TEAM_RUNTIME_STATUS_KEY) or {})
+        runtime_metadata = team_runtime_metadata(team)
         recorded_at = datetime.now(UTC).isoformat()
         iteration_count = _int(runtime_metadata.get("iteration_count")) + 1
         last_iteration: dict[str, object] = {
@@ -105,7 +106,7 @@ class TeamRuntimeHeartbeatRecorder:
         if team is None:
             return
         policy = dict(team.default_task_policy or {})
-        runtime_metadata = dict(policy.get(TEAM_RUNTIME_STATUS_KEY) or {})
+        runtime_metadata = team_runtime_metadata(team)
         recorded_at = datetime.now(UTC).isoformat()
         failure = {
             "status": status,

@@ -9,12 +9,11 @@ from backend.app.agent_runtime.sessions import PersistentAgentSession
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.operating_context import TeamOperatingContextService
 from backend.app.teams.runtime_constants import (
-    TEAM_RUNTIME_STATUS_KEY,
     TEAM_RUNTIME_STOPPED,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
 )
 from backend.app.teams.runtime_mailbox import TeamRuntimeMailboxStore
-from backend.app.teams.runtime_refs import _uuid_or_none
+from backend.app.teams.runtime_refs import _uuid_or_none, team_runtime_metadata
 from backend.app.teams.runtime_repository import TeamRuntimeRepository
 from backend.app.teams.runtime_state_utils import _last_iteration, _runtime_health
 
@@ -63,9 +62,7 @@ class TeamRuntimeStateBuilder:
         thread: AgentMessageThread | None,
         member_sessions: list[PersistentAgentSession],
     ) -> TeamRuntimeState:
-        runtime_metadata = dict(
-            (team.default_task_policy or {}).get(TEAM_RUNTIME_STATUS_KEY) or {}
-        )
+        runtime_metadata = team_runtime_metadata(team)
         status = str(runtime_metadata.get("status") or TEAM_RUNTIME_STOPPED)
         workspace_runtime_id = _uuid_or_none(
             runtime_metadata.get(TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY)

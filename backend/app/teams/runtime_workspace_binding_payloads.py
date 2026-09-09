@@ -11,6 +11,7 @@ from backend.app.teams.runtime_constants import (
     TEAM_RUNTIME_STOPPED,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
 )
+from backend.app.teams.runtime_refs import team_runtime_metadata
 
 
 def bind_runtime_metadata(
@@ -22,7 +23,7 @@ def bind_runtime_metadata(
     metadata: dict[str, object] | None,
 ) -> dict[str, object]:
     policy = dict(team.default_task_policy or {})
-    runtime_metadata = dict(policy.get(TEAM_RUNTIME_STATUS_KEY) or {})
+    runtime_metadata = team_runtime_metadata(team)
     runtime_metadata[TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY] = str(runtime.id)
     runtime_metadata["runtime_bound_at"] = datetime.now(UTC).isoformat()
     runtime_metadata["updated_by_user_id"] = str(actor_user_id)
@@ -45,7 +46,7 @@ def ensure_runtime_metadata(
     metadata: dict[str, object] | None,
 ) -> dict[str, object]:
     policy = dict(team.default_task_policy or {})
-    runtime_metadata = dict(policy.get(TEAM_RUNTIME_STATUS_KEY) or {})
+    runtime_metadata = team_runtime_metadata(team)
     ensured_at = datetime.now(UTC).isoformat()
     runtime_metadata.update(
         {

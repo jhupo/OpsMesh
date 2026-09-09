@@ -102,6 +102,8 @@ class TeamRuntimeService(
         team = self._repo.team(workspace_id, team_id)
         if team is None:
             return None
+        thread: AgentMessageThread | None
+        team_session: PersistentAgentSession | None
         if initialize:
             thread = self._mailbox._get_or_create_thread(team)
             team_session = self._sessions._get_or_create_team_session(team)

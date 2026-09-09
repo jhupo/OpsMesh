@@ -2,23 +2,26 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.runtime_manager.service import RuntimeControlService
+from backend.app.runtime_manager.lifecycle_control import RuntimeLifecycleControl
 from backend.app.teams.runtime_constants import (
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,
     TEAM_RUNTIME_STOPPED,
 )
+from backend.app.teams.runtime_lifecycle import TeamRuntimeLifecycleService
 from backend.app.teams.runtime_state_builder import TeamRuntimeState
 
 
 class TeamRuntimeLifecycleMixin:
+    _lifecycle: TeamRuntimeLifecycleService
+
     def start(
         self,
         *,
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeControlService | None = None,
+        runtime_control: RuntimeLifecycleControl | None = None,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> TeamRuntimeState | None:
@@ -39,7 +42,7 @@ class TeamRuntimeLifecycleMixin:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeControlService | None = None,
+        runtime_control: RuntimeLifecycleControl | None = None,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> TeamRuntimeState | None:
@@ -60,7 +63,7 @@ class TeamRuntimeLifecycleMixin:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeControlService | None = None,
+        runtime_control: RuntimeLifecycleControl | None = None,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> TeamRuntimeState | None:
@@ -81,7 +84,7 @@ class TeamRuntimeLifecycleMixin:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeControlService | None = None,
+        runtime_control: RuntimeLifecycleControl | None = None,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> TeamRuntimeState | None:
@@ -102,7 +105,7 @@ class TeamRuntimeLifecycleMixin:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeControlService | None = None,
+        runtime_control: RuntimeLifecycleControl | None = None,
         instruction: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> TeamRuntimeState | None:
@@ -125,7 +128,7 @@ class TeamRuntimeLifecycleMixin:
         actor_user_id: UUID,
         status: str,
         event_type: str,
-        runtime_control: RuntimeControlService | None,
+        runtime_control: RuntimeLifecycleControl | None,
         reason: str | None,
         metadata: dict[str, object] | None,
     ) -> TeamRuntimeState | None:

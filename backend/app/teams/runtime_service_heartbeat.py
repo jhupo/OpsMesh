@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from backend.app.teams.runtime_heartbeat import TeamRuntimeHeartbeatRecorder
+
 
 class TeamRuntimeHeartbeatMixin:
+    _heartbeat: TeamRuntimeHeartbeatRecorder
+
     def record_iteration(
         self,
         *,

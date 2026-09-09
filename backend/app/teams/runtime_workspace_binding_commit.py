@@ -10,7 +10,7 @@ from backend.app.audit.service import AuditService
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime_mailbox import TeamRuntimeMailboxStore
 from backend.app.teams.runtime_sessions import TeamRuntimeSessionStore
-from backend.app.teams.runtime_state_builder import TeamRuntimeState
+from backend.app.teams.runtime_state_builder import TeamRuntimeState, TeamRuntimeStateBuilder
 
 
 class TeamWorkspaceRuntimeBindingCommitter:
@@ -22,7 +22,7 @@ class TeamWorkspaceRuntimeBindingCommitter:
         session: Session,
         mailbox: TeamRuntimeMailboxStore,
         sessions: TeamRuntimeSessionStore,
-        state_builder,
+        state_builder: TeamRuntimeStateBuilder,
     ) -> None:
         self._session = session
         self._mailbox = mailbox

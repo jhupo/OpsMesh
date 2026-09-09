@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from backend.app.agent_messages.models import AgentMessageThread
 from backend.app.agent_runtime.sessions import PersistentAgentSession
 from backend.app.audit.service import AuditService
-from backend.app.runtime_manager.service import RuntimeControlService
+from backend.app.runtime_manager.lifecycle_control import RuntimeLifecycleControl
+from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime_constants import (
     TEAM_RUNTIME_PAUSED,
@@ -18,10 +19,10 @@ from backend.app.teams.runtime_constants import (
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
 )
 from backend.app.teams.runtime_mailbox import TeamRuntimeMailboxStore
-from backend.app.teams.runtime_refs import _dict_or_none
+from backend.app.teams.runtime_refs import _dict_or_none, team_runtime_metadata
 from backend.app.teams.runtime_repository import TeamRuntimeRepository
 from backend.app.teams.runtime_sessions import TeamRuntimeSessionStore
-from backend.app.teams.runtime_state_builder import TeamRuntimeState
+from backend.app.teams.runtime_state_builder import TeamRuntimeState, TeamRuntimeStateBuilder
 
 
 class TeamRuntimeLifecycleService:
@@ -34,7 +35,7 @@ class TeamRuntimeLifecycleService:
         repo: TeamRuntimeRepository,
         mailbox: TeamRuntimeMailboxStore,
         sessions: TeamRuntimeSessionStore,
-        state_builder,
+        state_builder: TeamRuntimeStateBuilder,
     ) -> None:
         self._session = session
         self._repo = repo
@@ -50,7 +51,7 @@ class TeamRuntimeLifecycleService:
         actor_user_id: UUID,
         status: str,
         event_type: str,
-        runtime_control: RuntimeControlService | None,
+        runtime_control: RuntimeLifecycleControl | None,
         reason: str | None,
         metadata: dict[str, object] | None,
     ) -> TeamRuntimeState | None:
@@ -74,7 +75,7 @@ class TeamRuntimeLifecycleService:
         actor_user_id: UUID,
         status: str,
         event_type: str,
-        runtime_control: RuntimeControlService | None,
+        runtime_control: RuntimeLifecycleControl | None,
         reason: str | None,
         metadata: dict[str, object] | None,
     ) -> TeamRuntimeState | None:
@@ -114,12 +115,12 @@ class TeamRuntimeLifecycleService:
         actor_user_id: UUID,
         status: str,
         event_type: str,
-        runtime_control: RuntimeControlService | None,
+        runtime_control: RuntimeLifecycleControl | None,
         reason: str | None,
         metadata: dict[str, object] | None,
     ) -> dict[str, object]:
         policy = dict(team.default_task_policy or {})
-        runtime_metadata = dict(policy.get(TEAM_RUNTIME_STATUS_KEY) or {})
+        runtime_metadata = team_runtime_metadata(team)
         updated_at = datetime.now(UTC).isoformat()
         workspace_runtime_control = self._apply_bound_runtime_control(
             team=team,
@@ -176,7 +177,7 @@ class TeamRuntimeLifecycleService:
         *,
         team: AgentTeam,
         desired_status: str,
-        runtime_control: RuntimeControlService | None,
+        runtime_control: RuntimeLifecycleControl | None,
         updated_at: str,
     ) -> dict[str, object]:
         runtime = self._repo.bound_runtime(team)
@@ -209,8 +210,8 @@ class TeamRuntimeLifecycleService:
         self,
         *,
         team: AgentTeam,
-        runtime_control: RuntimeControlService | None,
-        runtime,
+        runtime_control: RuntimeLifecycleControl | None,
+        runtime: WorkspaceRuntime,
         control: dict[str, object],
     ) -> dict[str, object]:
         control["action"] = "start"
@@ -230,8 +231,8 @@ class TeamRuntimeLifecycleService:
         self,
         *,
         team: AgentTeam,
-        runtime_control: RuntimeControlService | None,
-        runtime,
+        runtime_control: RuntimeLifecycleControl | None,
+        runtime: WorkspaceRuntime,
         control: dict[str, object],
     ) -> dict[str, object]:
         control["action"] = "stop"

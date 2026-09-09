@@ -4,9 +4,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.runtime_manager.lifecycle_control import RuntimeLifecycleControl
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError
 from backend.app.runtime_manager.safety import RuntimeSafetyError
-from backend.app.runtime_manager.service import RuntimeControlService
 from backend.app.teams.command_center_constants import NON_APPLICABLE_RUNTIME_ACTIONS
 from backend.app.teams.command_center_grouping import _runtime_action_result
 from backend.app.teams.command_center_payloads import _runtime_payload
@@ -27,7 +27,7 @@ class TeamCommandCenterActionApplier:
         actor_user_id: UUID,
         grouped: list[dict[str, object]],
         max_tasks_per_action: int,
-        runtime_control: RuntimeControlService | None,
+        runtime_control: RuntimeLifecycleControl | None,
         reason: str | None,
         metadata: dict[str, object],
     ) -> list[dict[str, object]]:
@@ -86,7 +86,7 @@ class TeamCommandCenterActionApplier:
         team_id: UUID,
         actor_user_id: UUID,
         item: dict[str, object],
-        runtime_control: RuntimeControlService | None,
+        runtime_control: RuntimeLifecycleControl | None,
         reason: str | None,
         metadata: dict[str, object],
     ) -> dict[str, object]:

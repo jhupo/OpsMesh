@@ -2379,7 +2379,7 @@ def test_team_runtime_controls_create_sessions_mailbox_and_workspace_runtime() -
     assert "sk-ensure-runtime" not in str(ensured.json())
     assert ensured_again.status_code == 200
     assert ensured_again.json()["workspace_runtime_id"] == ensured_runtime_id
-    _consume_runtime_control_jobs(queue, session, docker)
+    _consume_runtime_control_jobs(queue, session, docker, client.app.state.settings)
     assert len(docker.created_requests) == 1
     assert docker.created_requests[0].image == "python:3.12-slim"
     assert docker.created_requests[0].name.startswith("opsmesh-")
@@ -2682,7 +2682,7 @@ def test_bound_team_runtime_stop_and_resume_control_workspace_runtime() -> None:
     assert resumed.json()["runtime_status"] == "starting"
     assert resumed.json()["metadata"]["workspace_runtime_control"]["mode"] == "lifecycle"
     assert resumed.json()["metadata"]["workspace_runtime_control"]["action"] == "start"
-    _consume_runtime_control_jobs(queue, session, docker)
+    _consume_runtime_control_jobs(queue, session, docker, client.app.state.settings)
     assert docker.stopped == ["bound-container"]
     assert docker.started == ["bound-container"]
     session.expire_all()
@@ -5316,7 +5316,7 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     assert created_runtime.status == "starting"
     assert created_runtime.connection_status == "offline"
     assert created_runtime.capabilities["team_runtime"]["team_id"] == str(team.id)
-    _consume_runtime_control_jobs(queue, session, docker)
+    _consume_runtime_control_jobs(queue, session, docker, client.app.state.settings)
     session.expire_all()
     created_runtime = session.get(WorkspaceRuntime, created_runtime.id)
     assert created_runtime is not None
@@ -11873,11 +11873,12 @@ def _consume_runtime_control_jobs(
     queue: RedisQueue,
     session: Session,
     docker: FakeDockerClient,
+    settings: Settings,
 ) -> None:
     handler = WorkerJobHandler(
         session,
         queue,
-        settings=get_settings(),
+        settings=settings,
         runtime_docker_client=docker,
     )
     while True:

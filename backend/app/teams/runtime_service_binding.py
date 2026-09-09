@@ -3,11 +3,14 @@ from __future__ import annotations
 from uuid import UUID
 
 from backend.app.runtime_manager.contracts import RuntimeLimits
-from backend.app.runtime_manager.service import RuntimeControlService
+from backend.app.runtime_manager.lifecycle_control import RuntimeLifecycleControl
 from backend.app.teams.runtime_state_builder import TeamRuntimeState
+from backend.app.teams.runtime_workspace_binding import TeamWorkspaceRuntimeBindingService
 
 
 class TeamRuntimeBindingMixin:
+    _workspace_binding: TeamWorkspaceRuntimeBindingService
+
     def bind_runtime(
         self,
         *,
@@ -33,7 +36,7 @@ class TeamRuntimeBindingMixin:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeControlService,
+        runtime_control: RuntimeLifecycleControl,
         template_id: UUID | None = None,
         name: str | None = None,
         limits: RuntimeLimits | None = None,
