@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.tasks import TaskControlActionRequest, TaskCorrectionRequest
 from backend.app.audit.service import AuditService
+from backend.app.core.typing import int_or_zero
 from backend.app.orchestration.run_control import RunControlService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.tasks import control_execution
@@ -199,7 +200,7 @@ class TaskControlService:
         if not request.instruction:
             raise ValueError("instruction is required")
         control = task_control_state(task)
-        control["instruction_count"] = int(control.get("instruction_count") or 0) + 1
+        control["instruction_count"] = int_or_zero(control.get("instruction_count")) + 1
         control["last_instruction_at"] = datetime.now(UTC).isoformat()
         task.generic_state = with_task_control_state(task.generic_state, control)
         message = TaskControlMessageWriter(self._session).append_control_message(
@@ -231,7 +232,7 @@ class TaskControlService:
         *,
         actor_user_id: UUID,
         request: TaskControlActionRequest,
-    ) -> dict[str, object]:
+    ) -> dict[str, object] | None:
         if not request.instruction:
             raise ValueError("instruction is required")
         correction = TaskCorrectionRequest(
@@ -274,7 +275,7 @@ class TaskControlService:
         *,
         actor_user_id: UUID,
         request: TaskControlActionRequest,
-    ) -> dict[str, object]:
+    ) -> dict[str, object] | None:
         cancelled = RunControlService(
             session=self._session,
             enqueue_run=RunOrchestrationService(self._session, queue=self._queue).enqueue_run,

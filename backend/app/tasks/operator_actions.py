@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.tasks.manager_review_requests import ManagerReviewRequestService
 from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.operator_action_contracts import TaskOperatorActionResult
 from backend.app.tasks.operator_action_recording import TaskOperatorActionRecorder
 from backend.app.tasks.operator_dependencies import (
     completed_source_steps,
@@ -118,7 +119,7 @@ class TaskOperatorActionService:
         self,
         task: Task,
         task_step_ids: list[UUID],
-    ) -> dict[str, object]:
+    ) -> TaskOperatorActionResult:
         steps = self._target_steps(task, task_step_ids)
         if not steps:
             raise ValueError("No matching task steps found")
@@ -150,7 +151,7 @@ class TaskOperatorActionService:
         self,
         task: Task,
         task_step_ids: list[UUID],
-    ) -> dict[str, object]:
+    ) -> TaskOperatorActionResult:
         steps = self._task_steps(task)
         step_by_id = {step.id: step for step in steps}
         source_steps = completed_source_steps(steps, task_step_ids)
@@ -228,7 +229,7 @@ class TaskOperatorActionService:
         *,
         task_step_ids: list[UUID],
         agent_profile_id: UUID | None,
-    ) -> dict[str, object]:
+    ) -> TaskOperatorActionResult:
         if len(task_step_ids) != 1:
             raise ValueError("reassign_step requires exactly one task_step_id")
         if agent_profile_id is None:
@@ -298,7 +299,7 @@ class TaskOperatorActionService:
             )
         )
 
-    def _wake_task(self, task: Task, affected_step_ids: object) -> None:
+    def _wake_task(self, task: Task, affected_step_ids: list[UUID]) -> None:
         if not affected_step_ids:
             return
         if task.status == TaskStatus.BLOCKED.value:

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.operator_action_contracts import TaskOperatorActionResult
 from backend.app.tasks.operator_dependencies import manager_agent_id
 
 
@@ -19,7 +20,7 @@ class ManagerReviewRequestService:
         *,
         instruction: str | None,
         reason: str | None,
-    ) -> dict[str, object]:
+    ) -> TaskOperatorActionResult:
         manager_id = manager_agent_id(task)
         if manager_id is None:
             raise ValueError("Task manager not found")

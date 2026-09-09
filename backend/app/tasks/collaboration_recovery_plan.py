@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from uuid import UUID
 
-from backend.app.core.typing import dict_list, dict_or_empty, string_list
+from backend.app.core.typing import dict_list, dict_or_empty, int_or_zero, string_list
 from backend.app.tasks.operator_actions import TASK_OPERATOR_ACTIONS
 
 RECOVERY_PLAN_SOURCES = {
@@ -99,7 +99,7 @@ def build_recovery_plan(
 
     return sorted(
         dedupe_recovery_plan(items),
-        key=lambda item: (-int(item["priority"]), str(item["action"])),
+        key=lambda item: (-int_or_zero(item["priority"]), str(item["action"])),
     )
 
 

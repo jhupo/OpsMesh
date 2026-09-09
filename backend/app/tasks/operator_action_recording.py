@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from backend.app.audit.service import AuditService
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage
+from backend.app.tasks.operator_action_contracts import TaskOperatorActionResult
 
 
 class TaskOperatorActionRecorder:
@@ -16,7 +17,7 @@ class TaskOperatorActionRecorder:
         task: Task,
         *,
         action: str,
-        result: dict[str, object],
+        result: TaskOperatorActionResult,
         instruction: str | None,
         reason: str | None,
         metadata: dict[str, object],
@@ -45,7 +46,7 @@ class TaskOperatorActionRecorder:
         action: str,
         task_step_ids: list[UUID],
         agent_profile_id: UUID | None,
-        result: dict[str, object],
+        result: TaskOperatorActionResult,
         message: TaskMessage,
         reason: str | None,
         metadata: dict[str, object],
