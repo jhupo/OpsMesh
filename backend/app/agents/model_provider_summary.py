@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from typing import TypedDict
+from uuid import UUID
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
@@ -19,6 +23,16 @@ from backend.app.model_providers.resolution import (
     ModelProviderResolutionService,
     ModelProviderResolutionSnapshot,
 )
+
+
+class AgentModelProviderHealth(TypedDict):
+    credential_status: str | None
+    credential_health_status: str | None
+    failure_count: int
+    budget_exhausted: bool
+    readiness_status: str
+    reasons: list[str]
+    warnings: list[str]
 
 
 def agent_profile_response(
@@ -44,7 +58,12 @@ def agent_model_provider_summary(
         )
     except ValueError:
         credential = (
-            db_session.get(ModelProviderCredential, agent.model_provider_credential_id)
+            db_session.scalar(
+                select(ModelProviderCredential).where(
+                    ModelProviderCredential.workspace_id == agent.workspace_id,
+                    ModelProviderCredential.id == agent.model_provider_credential_id,
+                )
+            )
             if agent.model_provider_credential_id is not None
             else None
         )
@@ -62,7 +81,7 @@ def agent_model_provider_summary(
                 )
             except ValueError:
                 effective_model_api = None
-            payload = {
+            payload: dict[str, object] = {
                 "source": "agent_override",
                 "selected_model": _selected_model(agent.model, credential),
                 "agent_model": agent.model,
@@ -84,13 +103,15 @@ def agent_model_provider_summary(
                     _selected_model(agent.model, credential),
                 ),
             }
-            payload.update(_agent_model_provider_health_summary(db_session, credential.id))
+            health = _agent_model_provider_health_summary(
+                db_session, agent.workspace_id, credential.id
+            )
             if unsupported_model_api is not None:
-                reasons = list(payload.get("reasons", []))
+                reasons = health["reasons"]
                 if "model_api_override_unsupported" not in reasons:
                     reasons.append("model_api_override_unsupported")
-                payload["reasons"] = reasons
-                payload["readiness_status"] = "blocked"
+                health["readiness_status"] = "blocked"
+            payload.update(health)
             return payload
         return {
             "source": "unavailable",
@@ -125,14 +146,11 @@ def agent_model_provider_summary(
     )
     summary = snapshot.as_dict()
     try:
-        summary["model_api"] = (
-            model_api_for_agent_provider(
-                snapshot.provider,
-                agent.model_settings,
-                {"model_api": summary.get("model_api")},
-            )
-            or summary.get("model_api")
-        )
+        summary["model_api"] = model_api_for_agent_provider(
+            snapshot.provider,
+            agent.model_settings,
+            {"model_api": summary.get("model_api")},
+        ) or summary.get("model_api")
     except ValueError:
         summary["model_api"] = None
     summary["requested_model_api"] = unsupported_model_api
@@ -140,25 +158,23 @@ def agent_model_provider_summary(
         _capability_provider(snapshot),
         snapshot.selected_model,
     )
-    summary.update(_agent_model_provider_health_summary(db_session, snapshot))
+    health = _agent_model_provider_health_summary(
+        db_session, agent.workspace_id, snapshot.credential_id
+    )
     if unsupported_model_api is not None:
-        reasons = list(summary.get("reasons", []))
+        reasons = health["reasons"]
         if "model_api_override_unsupported" not in reasons:
             reasons.append("model_api_override_unsupported")
-        summary["reasons"] = reasons
-        summary["readiness_status"] = "blocked"
+        health["readiness_status"] = "blocked"
+    summary.update(health)
     return summary
 
 
 def _agent_model_provider_health_summary(
     db_session: Session,
-    snapshot_or_credential_id: ModelProviderResolutionSnapshot | object,
-) -> dict[str, object]:
-    credential_id = (
-        snapshot_or_credential_id.credential_id
-        if isinstance(snapshot_or_credential_id, ModelProviderResolutionSnapshot)
-        else snapshot_or_credential_id
-    )
+    workspace_id: UUID,
+    credential_id: UUID | None,
+) -> AgentModelProviderHealth:
     if credential_id is None:
         return {
             "credential_status": None,
@@ -169,7 +185,12 @@ def _agent_model_provider_health_summary(
             "reasons": ["model_provider_unavailable"],
             "warnings": [],
         }
-    credential = db_session.get(ModelProviderCredential, credential_id)
+    credential = db_session.scalar(
+        select(ModelProviderCredential).where(
+            ModelProviderCredential.workspace_id == workspace_id,
+            ModelProviderCredential.id == credential_id,
+        )
+    )
     reasons: list[str] = []
     warnings: list[str] = []
     if credential is None:

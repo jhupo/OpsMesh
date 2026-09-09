@@ -128,7 +128,7 @@ def model_provider_audit_summary(
         )
     except ValueError:
         effective_model_api = None
-    payload = {
+    payload: dict[str, object] = {
         "credential_id": str(credential.id),
         "provider": credential.provider,
         "default_model": credential.default_model,

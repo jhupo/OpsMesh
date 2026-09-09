@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -19,39 +19,28 @@ class AgentProfileReviewService:
         self._session = session
         self._settings = settings
 
-    def review_create(self, *, workspace_id: UUID, values: dict[str, object]) -> ResourceReview:
-        return self._resource_reviews().review_agent_profile(
-            workspace_id=workspace_id,
-            visibility="private",
-            name=str(values["name"]),
-            role=str(values["role"]),
-            instructions=str(values["instructions"]),
-            capabilities=dict(values["capabilities"]),
-            skills=dict(values["skills"]),
-            tool_policy=dict(values["tool_policy"]),
-            runtime_policy=dict(values["runtime_policy"]),
-            approval_policy=dict(values["approval_policy"]),
-        )
-
-    def review_update(
-        self,
-        profile: AgentProfile,
-        values: dict[str, Any],
-    ) -> ResourceReview | None:
-        if not AGENT_PROFILE_REVIEW_FIELDS.intersection(values):
-            return None
+    def review_profile(self, profile: AgentProfile) -> ResourceReview:
         return self._resource_reviews().review_agent_profile(
             workspace_id=profile.workspace_id,
             visibility="private",
             name=profile.name,
             role=profile.role,
             instructions=profile.instructions,
-            capabilities=dict(profile.capabilities or {}),
-            skills=dict(profile.skills or {}),
-            tool_policy=dict(profile.tool_policy or {}),
-            runtime_policy=dict(profile.runtime_policy or {}),
-            approval_policy=dict(profile.approval_policy or {}),
+            capabilities=dict(profile.capabilities),
+            skills=dict(profile.skills),
+            tool_policy=dict(profile.tool_policy),
+            runtime_policy=dict(profile.runtime_policy),
+            approval_policy=dict(profile.approval_policy),
         )
+
+    def review_update(
+        self,
+        profile: AgentProfile,
+        values: Mapping[str, object],
+    ) -> ResourceReview | None:
+        if not AGENT_PROFILE_REVIEW_FIELDS.intersection(values):
+            return None
+        return self.review_profile(profile)
 
     def request_review(
         self,

@@ -62,17 +62,17 @@ class AgentProfileCommandService:
 
         now = datetime.now(UTC)
         review_service = AgentProfileReviewService(self._session, self._settings)
-        review = review_service.review_create(
-            workspace_id=workspace_id,
-            values=values,
-        )
         profile = AgentProfile(
             workspace_id=workspace_id,
             **values,
-            status=RESOURCE_STATUS_PENDING_APPROVAL if review.required else AGENT_STATUS_ACTIVE,
+            status=RESOURCE_STATUS_PENDING_APPROVAL,
             version=1,
             archived_at=None,
             last_versioned_at=now,
+        )
+        review = review_service.review_profile(profile)
+        profile.status = (
+            RESOURCE_STATUS_PENDING_APPROVAL if review.required else AGENT_STATUS_ACTIVE
         )
         self._session.add(profile)
         self._session.flush()
