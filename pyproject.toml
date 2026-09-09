@@ -5,6 +5,7 @@ description = "Run AI agent teams with control, isolation, and auditability."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "opsmesh-operator==0.1.0",
     "alembic>=1.18.4",
     "anthropic>=1.4.0,<2.0.0",
     "boto3>=1.35.0,<2.0.0",
@@ -55,10 +56,17 @@ dev = [
 ]
 
 [tool.uv]
-package = false
+package = true
+
+[tool.uv.workspace]
+members = ["operator", "runtime"]
+
+[tool.uv.sources]
+opsmesh-operator = { workspace = true }
 
 [tool.setuptools.packages.find]
 include = ["backend*"]
+exclude = ["backend.tests*"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]

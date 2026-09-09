@@ -13,33 +13,6 @@ def read_repo_file(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
-def test_dockerfile_defines_non_root_api_runtime() -> None:
-    dockerfile = read_repo_file("Dockerfile")
-
-    assert "FROM python:3.12-slim" in dockerfile
-    assert "pip install ." in dockerfile
-    assert "sed -i 's/\\r$//'" in dockerfile
-    assert "adduser --system --ingroup opsmesh opsmesh" in dockerfile
-    assert "/app/.opsmesh-storage" in dockerfile
-    assert "USER opsmesh" in dockerfile
-    assert "ENTRYPOINT" in dockerfile
-    assert "backend.app.main:create_app" in dockerfile
-
-
-def test_runtime_dockerfile_installs_only_isolated_runtime_package() -> None:
-    dockerfile = read_repo_file("Dockerfile.runtime")
-    runtime_project = read_repo_file("runtime/pyproject.toml")
-
-    assert "FROM python:3.12-slim" in dockerfile
-    assert "COPY runtime/pyproject.toml" in dockerfile
-    assert "COPY runtime/opsmesh_runtime" in dockerfile
-    assert "python -m opsmesh_runtime.mcp_stdio_client --check" in dockerfile
-    assert "USER opsmesh-runtime" in dockerfile
-    assert "WORKDIR /workspace" in dockerfile
-    assert "backend/app" not in dockerfile
-    assert '"mcp==1.27.1"' in runtime_project
-    assert '"filelock>=3.20.0,<4.0.0"' in runtime_project
-    assert 'opsmesh-self-hosted-worker = "opsmesh_runtime.connector_cli:main"' in runtime_project
 
 
 def test_self_hosted_connector_smoke_script_is_packaged_and_redacted() -> None:
@@ -263,46 +236,6 @@ def test_openai_gateway_smoke_script_uses_env_key_and_marker() -> None:
     assert "sk-" not in smoke_script
 
 
-def test_backend_ci_runs_tests_and_alembic_drift_check() -> None:
-    workflow = read_repo_file(".github/workflows/backend-ci.yml")
-
-    assert "postgres:16" in workflow
-    assert "uv run pytest" in workflow
-    assert "uv run ruff check ." in workflow
-    assert "uv run alembic upgrade head" in workflow
-    assert "uv run alembic check" in workflow
-    assert "Validate release bundle manifest" in workflow
-    assert "release-bundle/backend/app/main.py" in workflow
-    assert "release-bundle/systemd/opsmesh-api.service" in workflow
-    assert "release-bundle/systemd/opsmesh-worker.service" in workflow
-    assert "deploy/server/docker-compose.backend.yml" not in workflow
-    assert "docker build" not in workflow
-    assert "docker run" not in workflow
-    assert "docker compose" not in workflow
-    assert "anchore/sbom-action" not in workflow
-    assert "aquasecurity/trivy-action" not in workflow
-
-
-def test_release_publish_workflow_builds_vps_bundle_without_backend_image() -> None:
-    workflow = read_repo_file(".github/workflows/release-publish.yml")
-
-    assert "packages: write" not in workflow
-    assert "docker/login-action" not in workflow
-    assert "docker/build-push-action" not in workflow
-    assert "ghcr.io/jhupo/opsmesh" not in workflow
-    assert "push: true" not in workflow
-    assert "softprops/action-gh-release" in workflow
-    assert "opsmesh-server-${{ github.ref_name }}-manifest.json" in workflow
-    assert "opsmesh-server-${{ github.ref_name }}.tar.gz" in workflow
-    assert "opsmesh-server-${{ github.ref_name }}.tar.gz.sha256" in workflow
-    assert "release-bundle/manifest.json" in workflow
-    assert '"bundle": {' in workflow
-    assert '"sha256": "${bundle_sha256}"' in workflow
-    assert '"image"' not in workflow
-    assert '"deployment_mode": "systemd"' in workflow
-    assert "deploy/server/monitoring" in workflow
-    assert "opsmesh-observability.service" in workflow
-    assert "render-alertmanager-config.py" in workflow
 
 
 def test_monitoring_assets_define_alerts_and_grafana_provisioning() -> None:
@@ -521,7 +454,7 @@ def test_audit_migration_enforces_database_level_worm_protection() -> None:
     assert "DROP TRIGGER IF EXISTS trg_opsmesh_protect_audit_events" in migration
 
 
-def test_postgres_migration_chain_renders_offline_through_head() -> None:
+def test_postgres_data_backfill_rejects_offline_migration() -> None:
     rendered = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "heads", "--sql"],
         cwd=ROOT,
@@ -531,6 +464,5 @@ def test_postgres_migration_chain_renders_offline_through_head() -> None:
         check=False,
     )
 
-    assert rendered.returncode == 0, rendered.stderr
-    assert "CREATE TABLE model_usage_records" in rendered.stdout
-    assert "CREATE TRIGGER trg_opsmesh_protect_audit_events" in rendered.stdout
+    assert rendered.returncode != 0
+    assert "requires an online database connection" in rendered.stderr

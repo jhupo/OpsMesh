@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from uuid import uuid4
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0063_project_run_snapshots"
@@ -21,6 +21,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    if context.is_offline_mode():
+        raise RuntimeError("Project configuration backfill requires an online database connection")
     op.add_column(
         "workspace_projects",
         sa.Column("configuration_version", sa.Integer(), server_default="1", nullable=False),

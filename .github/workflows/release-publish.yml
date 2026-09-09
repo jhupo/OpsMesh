@@ -1,87 +1,101 @@
 name: Release Publish
-
 on:
   push:
-    branches:
-      - main
-    tags:
-      - "v*.*.*"
-  workflow_dispatch:
-
+    tags: ['v*.*.*']
 permissions:
-  contents: write
-
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+      actions: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Build VPS release bundle
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          mkdir -p release-bundle
-          mkdir -p release-bundle/deploy/server release-bundle/scripts
-          cp pyproject.toml uv.lock README.md release-bundle/
-          cp -R backend release-bundle/backend
-          cp -R deploy/server/systemd release-bundle/deploy/server/systemd
-          cp deploy/server/env.example release-bundle/deploy/server/env.example
-          cp -R deploy/server/monitoring release-bundle/deploy/server/monitoring
-          cp scripts/server-update.sh release-bundle/scripts/server-update.sh
-          cp scripts/server-smoke-test.sh release-bundle/scripts/server-smoke-test.sh
-          cp scripts/render-alertmanager-config.py release-bundle/scripts/render-alertmanager-config.py
-          cat > release-bundle/manifest.json <<EOF
-          {
-            "schema_version": 1,
-            "project": "opsmesh",
-            "tag": "${GITHUB_REF_NAME}",
-            "version": "${GITHUB_REF_NAME#v}",
-            "commit": "${GITHUB_SHA}",
-            "deployment_mode": "systemd",
-            "systemd_units": [
-              "deploy/server/systemd/opsmesh-api.service",
-              "deploy/server/systemd/opsmesh-worker.service",
-              "deploy/server/systemd/opsmesh-observability.service"
-            ],
-            "alertmanager_config_renderer": "scripts/render-alertmanager-config.py",
-            "update_script": "scripts/server-update.sh",
-            "smoke_script": "scripts/server-smoke-test.sh"
-          }
-          EOF
-          (cd release-bundle && find . -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
-          tar -czf opsmesh-server-${GITHUB_REF_NAME}.tar.gz release-bundle
-          bundle_sha256="$(sha256sum opsmesh-server-${GITHUB_REF_NAME}.tar.gz | awk '{print $1}')"
-          echo "${bundle_sha256}  opsmesh-server-${GITHUB_REF_NAME}.tar.gz" > opsmesh-server-${GITHUB_REF_NAME}.tar.gz.sha256
-          cat > opsmesh-server-${GITHUB_REF_NAME}-manifest.json <<EOF
-          {
-            "schema_version": 1,
-            "project": "opsmesh",
-            "tag": "${GITHUB_REF_NAME}",
-            "version": "${GITHUB_REF_NAME#v}",
-            "commit": "${GITHUB_SHA}",
-            "bundle": {
-              "name": "opsmesh-server-${GITHUB_REF_NAME}.tar.gz",
-              "url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/opsmesh-server-${GITHUB_REF_NAME}.tar.gz",
-              "sha256": "${bundle_sha256}"
-            },
-            "deployment_mode": "systemd",
-            "systemd_units": [
-              "deploy/server/systemd/opsmesh-api.service",
-              "deploy/server/systemd/opsmesh-worker.service",
-              "deploy/server/systemd/opsmesh-observability.service"
-            ],
-            "alertmanager_config_renderer": "scripts/render-alertmanager-config.py",
-            "update_script": "scripts/server-update.sh",
-            "smoke_script": "scripts/server-smoke-test.sh"
-          }
-          EOF
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          generate_release_notes: true
-          files: |
-            opsmesh-server-${{ github.ref_name }}-manifest.json
-            opsmesh-server-${{ github.ref_name }}.tar.gz
-            opsmesh-server-${{ github.ref_name }}.tar.gz.sha256
+          fetch-depth: 0
+      - name: Require successful pre-tag gate for this exact master commit
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release-prepare.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=100" \
+            --jq '.workflow_runs | any(.head_branch == "master" and .event == "workflow_dispatch")' | grep -qx true
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --frozen --all-groups
+      - run: uv run python scripts/release.py validate --tag "$RELEASE_TAG"
+      - run: uv build --all-packages
+      - run: uv run python scripts/release.py bundle --tag "$RELEASE_TAG"
+      - name: Verify installed CLI and backend packages
+        run: |
+          uv venv /tmp/opsmesh-package-check
+          uv pip install --python /tmp/opsmesh-package-check/bin/python dist/opsmesh_operator-*.whl
+          /tmp/opsmesh-package-check/bin/opsmesh version
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        id: backend
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/jhupo/opsmesh:${{ github.ref_name }}
+          build-args: BUILD_COMMIT=${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        id: runtime
+        with:
+          context: .
+          file: Dockerfile.runtime
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/jhupo/opsmesh-runtime:${{ github.ref_name }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,mode=max,scope=runtime
+      - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-name: ghcr.io/jhupo/opsmesh
+          subject-digest: ${{ steps.backend.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-name: ghcr.io/jhupo/opsmesh-runtime
+          subject-digest: ${{ steps.runtime.outputs.digest }}
+          push-to-registry: true
+      - name: Create final release manifest
+        env:
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          RUNTIME_DIGEST: ${{ steps.runtime.outputs.digest }}
+        run: |
+          uv run python scripts/release.py manifest --tag "$RELEASE_TAG" \
+            --repository "$GITHUB_REPOSITORY" --backend-digest "$BACKEND_DIGEST" --runtime-digest "$RUNTIME_DIGEST"
+      - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-path: dist/*
+      - name: Publish complete release only
+        run: |
+          prerelease=false
+          case "$RELEASE_TAG" in *rc*) prerelease=true ;; esac
+          gh release create "$RELEASE_TAG" dist/* --verify-tag --draft --generate-notes --prerelease="$prerelease"
+          gh release edit "$RELEASE_TAG" --draft=false
