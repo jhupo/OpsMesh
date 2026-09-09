@@ -4,10 +4,11 @@ from uuid import UUID
 from sqlalchemy import func, select
 
 from backend.app.agent_messages.constants import PENDING_STATUSES, READ_STATUSES
+from backend.app.agent_messages.contracts import MailboxStore
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 
 
-class AgentMailboxSummaryMixin:
+class AgentMailboxSummaryMixin(MailboxStore):
     def get_summary(self, workspace_id: UUID, *, latest_limit: int = 20) -> dict[str, object]:
         limit = max(latest_limit, 0)
         return {

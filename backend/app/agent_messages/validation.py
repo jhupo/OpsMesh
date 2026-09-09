@@ -2,13 +2,14 @@ from uuid import UUID
 
 from sqlalchemy import select
 
+from backend.app.agent_messages.contracts import MailboxStore
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.models import AgentProfile
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
 
 
-class AgentMailboxValidationMixin:
+class AgentMailboxValidationMixin(MailboxStore):
     def _require_thread(self, workspace_id: UUID, thread_id: UUID) -> AgentMessageThread:
         thread = self._session.scalar(
             select(AgentMessageThread).where(

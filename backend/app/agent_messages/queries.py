@@ -3,13 +3,14 @@ from uuid import UUID
 
 from sqlalchemy import Select, select
 
+from backend.app.agent_messages.contracts import MailboxStore
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.api.pagination import PageParams
 
 T = TypeVar("T")
 
 
-class AgentMailboxQueryMixin:
+class AgentMailboxQueryMixin(MailboxStore):
     def list_threads(
         self,
         workspace_id: UUID,

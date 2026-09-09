@@ -4,11 +4,12 @@ from uuid import UUID
 from sqlalchemy import func, select
 
 from backend.app.agent_messages.constants import PENDING_STATUSES, READ_STATUSES
+from backend.app.agent_messages.contracts import MailboxStore
 from backend.app.agent_messages.models import AgentMessage
 from backend.app.agent_messages.queries import scoped_message_statement
 
 
-class AgentMailboxInboxMixin:
+class AgentMailboxInboxMixin(MailboxStore):
     def get_agent_inbox(
         self,
         workspace_id: UUID,

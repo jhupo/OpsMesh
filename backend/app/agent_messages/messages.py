@@ -3,12 +3,13 @@ from uuid import UUID
 
 from sqlalchemy import select
 
+from backend.app.agent_messages.contracts import MailboxStore
 from backend.app.agent_messages.models import AgentMessage
 from backend.app.agent_messages.payloads import message_create_payload
 from backend.app.api.schemas.agent_messages import AgentMessageCreateRequest
 
 
-class AgentMailboxMessageMixin:
+class AgentMailboxMessageMixin(MailboxStore):
     def create_message(
         self,
         workspace_id: UUID,

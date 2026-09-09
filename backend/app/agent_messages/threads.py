@@ -4,12 +4,13 @@ from uuid import UUID
 from sqlalchemy import select
 
 from backend.app.agent_messages.constants import THREAD_STATUSES
+from backend.app.agent_messages.contracts import MailboxStore
 from backend.app.agent_messages.models import AgentMessageThread
 from backend.app.agent_messages.payloads import thread_create_payload
 from backend.app.api.schemas.agent_messages import AgentMessageThreadCreateRequest
 
 
-class AgentMailboxThreadMixin:
+class AgentMailboxThreadMixin(MailboxStore):
     def create_thread(
         self,
         workspace_id: UUID,
