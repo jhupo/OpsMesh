@@ -1,11 +1,11 @@
 [project]
 name = "opsmesh"
-version = "0.1.0rc1"
+version = "0.1.0rc2"
 description = "Run AI agent teams with control, isolation, and auditability."
 readme = "README.md"
 requires-python = ">=3.11.8"
 dependencies = [
-    "opsmesh-operator[host]==0.1.0rc1",
+    "opsmesh-operator[host]==0.1.0rc2",
     "alembic>=1.18.4",
     "anthropic>=1.4.0,<2.0.0",
     "boto3>=1.35.0,<2.0.0",

@@ -1,6 +1,6 @@
 [project]
 name = "opsmesh-operator"
-version = "0.1.0rc1"
+version = "0.1.0rc2"
 description = "OpsMesh installation, release verification and host operations."
 requires-python = ">=3.11.8"
 dependencies = ["httpx>=0.28.0,<1.0.0", "pydantic>=2.12.0,<3.0.0", "packaging>=26.2,<27.0", "filelock>=3.20.0,<4.0.0"]
