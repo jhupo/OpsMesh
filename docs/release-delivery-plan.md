@@ -92,16 +92,29 @@ contracts. A separate giant CLI framework is not needed.
 
 ## Baseline repair checkpoint (2026-09-09)
 
-- At commit `1a8fc2f`, strict mypy reports 164 errors, down from the original 721. Ruff passes
-  repository-wide. Remaining diagnostics are release blockers, not waived acceptance criteria.
+- At commit `f9112a6`, strict mypy passes all 1004 source files (zero errors), down from the
+  original 721. Ruff passes repository-wide. Both commands were rerun without module filters or
+  relaxed settings. Hosted Backend CI run `34345716568` also passed dependency sync, Ruff and strict
+  type checks; its changed-area test step is still running at this checkpoint.
 - Repairs replace unstructured cross-module contracts with protocols/TypedDicts, preserve SQL
   workspace scope, use native Redis/S3 SDK contracts, and fix working-memory list redaction and
   cross-workspace capacity batches. Each functional change has a separate commit and focused tests.
+- Subsequent repairs cover the OpenAI session protocol and native SDK tool provenance, Claude SDK
+  hook/store contracts, fail-closed approval decisions, task/Run lifecycle scope, runtime event
+  redaction, typed team scheduling, reporting trees, operational summaries and operator audit
+  results. Regression tests exercise partial finalization filtering, runtime startup before
+  scheduling, quota denial, approval expiration/cancellation scope and message-only participants.
+- Old synchronous-runtime tests now run worker startup before expecting authorized runs. Quota
+  fixtures use an online runtime or workspace-scoped placement as appropriate; authorization gates
+  remain enabled. Focused tests are run per repaired behavior, not a full release suite.
 - Nineteen `prop-decorator` annotations apply only to Pydantic computed properties, following its
   [documented mypy limitation](https://pydantic.dev/docs/validation/latest/api/pydantic/fields/).
   No global type-check relaxation or compatibility implementation was added.
 - Backend CI now reuses the delivery command wrapper to publish bounded, redacted failure
   annotations. Public status inspection does not require downloading authenticated full logs.
+- Hosted Delivery Integration run `34340457352` on `97e7dab` also succeeded (2m 6s), confirming the
+  previously recorded migration and fresh-container acceptance. This is not cross-version update
+  or signed-publication evidence.
 - The historical worker/self-hosted failures have not all been revalidated. Signed release assets,
   cross-version upgrade, systemd installation and database restore remain unaccepted; do not tag a
   release or describe the complete delivery system as finished on this checkpoint alone.
