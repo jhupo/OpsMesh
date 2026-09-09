@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 
 from sqlalchemy.orm import Session
 
@@ -13,7 +14,7 @@ from backend.app.workers.runner_models import WorkerRunnerConfig
 
 logger = logging.getLogger(__name__)
 
-SessionScope = Callable[[], Iterator[Session]]
+SessionScope = Callable[[], AbstractContextManager[Session]]
 
 
 class WorkerLeaseReporter:

@@ -5,7 +5,6 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from threading import Event
-from typing import Protocol
 
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
@@ -42,16 +41,12 @@ from backend.app.workers.runner_models import WorkerRunnerConfig, WorkerRunSumma
 logger = logging.getLogger(__name__)
 
 
-class SessionFactory(Protocol):
-    def __call__(self) -> Session: ...
-
-
 class WorkerRunner:
     def __init__(
         self,
         *,
         queue: RedisQueue,
-        session_factory: SessionFactory,
+        session_factory: Callable[[], Session],
         config: WorkerRunnerConfig,
         agent_runner: AgentRuntimeExecutor | None = None,
         mcp_adapter: McpToolAdapter | McpToolAdapterResolver | None = None,
@@ -271,7 +266,7 @@ class WorkerRunner:
         base_delay = max(0.0, self._config.retry_base_delay_seconds)
         if base_delay <= 0:
             return 0.0
-        delay = base_delay * (2 ** max(0, job.attempt))
+        delay = float(base_delay * (2 ** max(0, job.attempt)))
         max_delay = self._config.retry_max_delay_seconds
         return min(delay, max_delay) if max_delay > 0 else delay
 

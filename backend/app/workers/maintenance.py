@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
@@ -26,10 +26,6 @@ from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.data_lifecycle import WorkspaceDataLifecycleService
 
 logger = logging.getLogger(__name__)
-
-
-class SessionFactory:
-    def __call__(self) -> Session: ...
 
 
 @dataclass(frozen=True)
@@ -79,7 +75,7 @@ class WorkerMaintenanceService:
         self,
         *,
         queue: RedisQueue,
-        session_factory: SessionFactory,
+        session_factory: Callable[[], Session],
         config: WorkerMaintenanceConfig,
         settings: Settings | None = None,
     ) -> None:

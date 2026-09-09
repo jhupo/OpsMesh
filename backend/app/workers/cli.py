@@ -13,7 +13,8 @@ from backend.app.db.session import SessionLocal, engine
 from backend.app.orchestration.runs import build_default_queue
 from backend.app.redis.client import redis_client
 from backend.app.telemetry.tracing import configure_worker_telemetry
-from backend.app.workers.runner import WorkerRunner, WorkerRunnerConfig
+from backend.app.workers.runner import WorkerRunner
+from backend.app.workers.runner_models import WorkerRunnerConfig
 
 logger = logging.getLogger(__name__)
 
