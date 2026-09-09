@@ -35,13 +35,15 @@ def test_ci_command_redacts_secrets_before_public_output(
         ci_command.subprocess,
         "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(
-            ["checker"], 2, "token=private-value\npassword=private-password"
+            ["checker"], 2,
+            "token=private-value\npassword=private-password\nFAILED test_release - assertion"
         ),
     )
     assert ci_command.main() == 2
     output = capsys.readouterr()
     assert "private-" not in output.out + output.err
     assert "::error title=CI validation failed::[redacted]" in output.out
+    assert "FAILED test_release - assertion" in output.out
 
 
 def test_ci_tests_propagates_pytest_failure_without_wrapper_traceback(

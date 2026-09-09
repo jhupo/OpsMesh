@@ -4,7 +4,7 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from backend.app.security.redaction import redact_sensitive_text
+from backend.app.security.redaction import redact_text_fragments
 
 
 def main() -> int:
@@ -13,10 +13,11 @@ def main() -> int:
     result = subprocess.run(
         sys.argv[1:], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=False
     )
-    print(redact_sensitive_text(result.stdout))
+    output = redact_text_fragments(result.stdout)
+    print(output)
     if result.returncode:
         # Keep public failure summaries bounded and redact before truncating sensitive values.
-        detail = redact_sensitive_text(result.stdout)[-4000:]
+        detail = output[-4000:]
         detail = detail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
         print(f"::error title=CI validation failed::{detail}")
     return result.returncode
