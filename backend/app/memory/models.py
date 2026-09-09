@@ -38,12 +38,12 @@ class WorkspaceMemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ).ddl_if(dialect="postgresql"),
         Index(
             "ix_workspace_memory_entries_fts_simple_active",
-            text("to_tsvector('simple', title || ' ' || content)"),
+            text("to_tsvector('simple'::regconfig, (title::text || ' '::text) || content::text)"),
             postgresql_using="gin", postgresql_where=text("status = 'active'"),
         ).ddl_if(dialect="postgresql"),
         Index(
             "ix_workspace_memory_entries_full_text_gin",
-            text("to_tsvector('simple', title || ' ' || content)"),
+            text("to_tsvector('simple'::regconfig, (title::text || ' '::text) || content::text)"),
             postgresql_using="gin",
             postgresql_where=text("status = 'active' AND memory_layer IN ('episodic', 'semantic')"),
         ).ddl_if(dialect="postgresql"),
