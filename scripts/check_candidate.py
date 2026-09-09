@@ -31,8 +31,12 @@ def main() -> None:
             ]),
             "OPSMESH_DOCKER_GID": str(Path("/var/run/docker.sock").stat().st_gid),
             "OPSMESH_ENVIRONMENT": "production",
+            "OPSMESH_ENABLE_API_DOCS": "false",
+            "OPSMESH_API_RATE_LIMIT_ENABLED": "true",
+            "OPSMESH_CORS_ORIGINS": '["https://candidate.example.com"]',
             "OPSMESH_TRACING_ENABLED": "false",
             "OPSMESH_OTEL_LOGS_ENABLED": "false",
+            "OPSMESH_OTEL_EXPORTER_OTLP_INSECURE": "false",
             "OPSMESH_READINESS_WORKER_CHECK_ENABLED": "true",
         })
         for key in (
