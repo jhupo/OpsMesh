@@ -21,7 +21,12 @@ def test_key_builder_scopes_workspace_keys() -> None:
 
 def test_enqueue_is_idempotent_and_dequeue_round_trips_payload() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("opsmesh"), queue_name="agent_runs")
+    queue = RedisQueue(
+        redis=redis,
+        keys=RedisKeyBuilder("opsmesh"),
+        queue_name="agent_runs",
+        tracing_enabled=False,
+    )
     job = _job()
 
     assert queue.enqueue(job) is True

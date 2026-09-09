@@ -4,10 +4,8 @@ import time
 from collections.abc import Callable
 from uuid import UUID
 
-from redis.exceptions import ResponseError
-
 from backend.app.workers.jobs import JobPayload
-from backend.app.workers.queue.scripts import LEASE_JOB_SCRIPT, eval_unsupported
+from backend.app.workers.queue.scripts import LEASE_JOB_SCRIPT
 
 
 class QueueLeaseMixin:
@@ -71,24 +69,15 @@ class QueueLeaseMixin:
     def _lease_raw_job(self, queue_key: str, raw_payload: bytes | str) -> bool:
         processing_entry = self._serialize_processing_entry(raw_payload)
         processing_deadline = time.time() + self.visibility_timeout_seconds
-        try:
-            leased = self.redis.eval(
-                LEASE_JOB_SCRIPT,
-                2,
-                queue_key,
-                self._processing_key(),
-                raw_payload,
-                processing_deadline,
-                processing_entry,
-            )
-        except ResponseError as exc:
-            if not eval_unsupported(exc):
-                raise
-            removed = self.redis.lrem(queue_key, 1, raw_payload)
-            if int(removed) == 0:
-                return False
-            self.redis.zadd(self._processing_key(), {processing_entry: processing_deadline})
-            return True
+        leased = self.redis.eval(  # type: ignore[no-untyped-call]
+            LEASE_JOB_SCRIPT,
+            2,
+            queue_key,
+            self._processing_key(),
+            raw_payload,
+            processing_deadline,
+            processing_entry,
+        )
         return bool(leased)
 
     def _remove_processing_job(self, job_id: UUID) -> JobPayload | None:

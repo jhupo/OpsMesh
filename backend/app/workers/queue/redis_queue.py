@@ -6,16 +6,14 @@ from dataclasses import dataclass
 
 from opentelemetry.trace import SpanKind
 from redis import Redis
-from redis.exceptions import ResponseError
 
 from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.redis.locks import redis_lock
 from backend.app.workers.jobs import JobPayload
 from backend.app.workers.queue.leases import QueueLeaseMixin
 from backend.app.workers.queue.queries import QueueInspectionMixin
 from backend.app.workers.queue.retries import QueueRetryMixin
-from backend.app.workers.queue.scripts import ENQUEUE_SCRIPT, eval_unsupported
+from backend.app.workers.queue.scripts import ENQUEUE_SCRIPT
 from backend.app.workers.queue.serialization import QueueSerializationMixin
 
 
@@ -56,46 +54,17 @@ class RedisQueue(
         idempotency_key = self.keys.idempotency_key(str(job.workspace_id), job.idempotency_key)
         payload = self._serialize(job)
         queue_key = self.keys.queue(self.queue_name)
-        try:
-            queued = self.redis.eval(
-                ENQUEUE_SCRIPT,
-                2,
-                idempotency_key,
-                queue_key,
-                str(job.job_id),
-                payload,
-                "1" if force else "0",
-                "86400",
-            )
-        except ResponseError as exc:
-            if not eval_unsupported(exc):
-                raise
-            return self._enqueue_without_lua(
-                idempotency_key=idempotency_key,
-                queue_key=queue_key,
-                job_id=str(job.job_id),
-                payload=payload,
-                force=force,
-            )
+        queued = self.redis.eval(  # type: ignore[no-untyped-call]
+            ENQUEUE_SCRIPT,
+            2,
+            idempotency_key,
+            queue_key,
+            str(job.job_id),
+            payload,
+            "1" if force else "0",
+            "86400",
+        )
         return bool(queued)
-
-    def _enqueue_without_lua(
-        self,
-        *,
-        idempotency_key: str,
-        queue_key: str,
-        job_id: str,
-        payload: str,
-        force: bool,
-    ) -> bool:
-        if force:
-            self.redis.set(idempotency_key, job_id, ex=86_400)
-        else:
-            created = self.redis.set(idempotency_key, job_id, nx=True, ex=86_400)
-            if not created:
-                return False
-        self.redis.rpush(queue_key, payload)
-        return True
 
     def dequeue(self) -> JobPayload | None:
         return self._dequeue_with_optional_wait(lambda _: True)
@@ -114,5 +83,10 @@ class RedisQueue(
     @contextmanager
     def run_lock(self, workspace_id: str, run_id: str, ttl_seconds: int = 600) -> Iterator[bool]:
         lock_key = self.keys.run_lock(workspace_id, run_id)
-        with redis_lock(self.redis, lock_key, ttl_seconds) as acquired:
+        lock = self.redis.lock(lock_key, timeout=ttl_seconds, blocking=False)
+        acquired = lock.acquire()
+        try:
             yield acquired
+        finally:
+            if acquired:
+                lock.release()
