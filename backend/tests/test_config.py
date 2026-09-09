@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 import pytest
 
@@ -14,8 +15,11 @@ from backend.app.db.session import create_database_engine, database_pool_snapsho
 from backend.app.redis.client import create_redis_client, redis_pool_snapshot
 
 
-def test_settings_defaults_are_local_development_friendly() -> None:
-    settings = Settings()
+def test_settings_defaults_are_local_development_friendly(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in os.environ:
+        if key.startswith("OPSMESH_"):
+            monkeypatch.delenv(key)
+    settings = Settings(_env_file=None)
 
     assert settings.environment == "local"
     assert settings.service_name == "opsmesh-backend"

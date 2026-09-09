@@ -3461,6 +3461,7 @@ def _client(redis: fakeredis.FakeRedis, **settings_overrides: object) -> tuple[T
         "environment": "test",
         "log_format": "text",
         "internal_api_token": TOKEN,
+        "worker_heartbeat_token": None,
     }
     settings_values.update(settings_overrides)
     app = create_app(Settings(**settings_values))
