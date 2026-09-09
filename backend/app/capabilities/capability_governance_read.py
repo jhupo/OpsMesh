@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import UTC, datetime
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy import select
@@ -22,6 +23,15 @@ from backend.app.capabilities.skill_tool_diagnostics import SkillToolDiagnostics
 from backend.app.core.config import Settings, get_settings
 
 
+class McpGovernanceSummary(TypedDict):
+    catalog_total: int
+    blocked_reasons: Counter[str]
+    allowed_tool_count: int
+    high_risk_tool_count: int
+    approval_required_tool_count: int
+    failed_tool_call_count: int
+
+
 class CapabilityGovernanceReadService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self._session = session
@@ -32,7 +42,7 @@ class CapabilityGovernanceReadService:
         agent_items, agent_blocked_reasons = self._agent_governance_items(workspace_id)
         server_items, server_summary = self._mcp_server_governance_items(workspace_id)
 
-        blocked_reason_counts = Counter()
+        blocked_reason_counts: Counter[str] = Counter()
         blocked_reason_counts.update(skill_blocked_reasons)
         blocked_reason_counts.update(agent_blocked_reasons)
         blocked_reason_counts.update(server_summary["blocked_reasons"])
@@ -155,7 +165,7 @@ class CapabilityGovernanceReadService:
     def _mcp_server_governance_items(
         self,
         workspace_id: UUID,
-    ) -> tuple[list[dict[str, object]], dict[str, object]]:
+    ) -> tuple[list[dict[str, object]], McpGovernanceSummary]:
         catalog_items, catalog_total = McpCatalogService(
             self._session,
             self._settings,

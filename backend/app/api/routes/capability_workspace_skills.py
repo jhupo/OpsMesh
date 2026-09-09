@@ -183,13 +183,6 @@ async def get_workspace_skill_impact(
             else status.HTTP_409_CONFLICT
         )
         raise HTTPException(status_code=code, detail=message) from exc
-    impact = {
-        **impact,
-        "target_tool_availability": [
-            _workspace_skill_tool_availability_response(tool)
-            for tool in impact["target_tool_availability"]
-        ],
-    }
     return WorkspaceSkillImpactResponse.model_validate(impact)
 
 
@@ -216,23 +209,8 @@ async def get_workspace_skill_availability(
         usable=availability.usable,
         required_tools=availability.required_tools,
         tools=[
-            _workspace_skill_tool_availability_response(tool)
+            WorkspaceSkillToolAvailabilityResponse.model_validate(tool)
             for tool in availability.tools
         ],
         blocked_reasons=availability.blocked_reasons,
-    )
-
-
-def _workspace_skill_tool_availability_response(
-    tool: object,
-) -> WorkspaceSkillToolAvailabilityResponse:
-    return WorkspaceSkillToolAvailabilityResponse(
-        tool_name=tool.tool_name,
-        available=tool.available,
-        server_id=tool.server_id,
-        server_name=tool.server_name,
-        capability_key=tool.capability_key,
-        requires_approval=tool.requires_approval,
-        risk_level=tool.risk_level,
-        blocked_reasons=tool.blocked_reasons,
     )

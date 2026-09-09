@@ -23,6 +23,11 @@ from backend.app.capabilities.models import (
     McpToolAllowlist,
     WorkspaceSkillInstall,
 )
+from backend.app.capabilities.skill_diagnostic_types import (
+    AgentSkillDiagnostic,
+    AgentToolDiagnostic,
+    AgentToolPolicyDiagnostic,
+)
 from backend.app.capabilities.skill_manifest_tools import (
     agent_installed_skill_ids,
     manifest_mcp_tools,
@@ -106,7 +111,7 @@ class SkillToolDiagnosticsService:
         self,
         workspace_id: UUID,
         agent_profile_id: UUID,
-    ) -> dict[str, object]:
+    ) -> AgentToolPolicyDiagnostic:
         agent = self._session.get(AgentProfile, agent_profile_id)
         if agent is None or agent.workspace_id != workspace_id:
             raise ValueError("Agent profile not found")
@@ -261,7 +266,7 @@ class SkillToolDiagnosticsService:
         self,
         workspace_id: UUID,
         install: WorkspaceSkillInstall,
-    ) -> dict[str, object]:
+    ) -> AgentSkillDiagnostic:
         availability = self.workspace_skill_availability(workspace_id, install.id)
         return {
             "install_id": install.id,
@@ -283,7 +288,7 @@ class SkillToolDiagnosticsService:
         allowed_by_agent_policy: bool,
         credential_count: int,
         workspace_credential_count: int,
-    ) -> dict[str, object]:
+    ) -> AgentToolDiagnostic:
         availability = skill_tool_availability(
             tool_name,
             allowed_tool,
@@ -359,4 +364,3 @@ class SkillToolDiagnosticsService:
     @property
     def _mcp_health_check_stale_after(self) -> timedelta:
         return timedelta(seconds=self._settings.mcp_health_check_stale_after_seconds)
-

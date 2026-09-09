@@ -1414,6 +1414,17 @@ def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:
             "connection": {"url": "https://mcp.example.test/rpc"},
         },
     )
+    rejected_tool = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
+        headers=_headers(owner.id),
+        json={
+            "tool_name": "generate_image",
+            "policy": {"headers": {"authorization": "Bearer hidden"}},
+        },
+    )
+    assert rejected_tool.status_code == 422
+    assert "Bearer hidden" not in rejected_tool.text
+
     first_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
@@ -1425,7 +1436,6 @@ def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:
                 "max_output_bytes": 456,
                 "max_calls_per_run": 1,
                 "max_calls_per_hour": 2,
-                "headers": {"authorization": "Bearer hidden"},
             },
         },
     )
@@ -1465,7 +1475,7 @@ def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:
     assert server.status_code == 201
     assert first_tool.status_code == 201
     assert second_tool.status_code == 201
-    assert first_tool.json()["policy"]["headers"] == "[redacted]"
+    assert "headers" not in first_tool.json()["policy"]
     assert succeeded.status_code == 201
     assert failed.status_code == 201
     assert catalog.status_code == 200

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from backend.app.api.schemas.common import TimestampedModel
 from backend.app.api.schemas.redaction import redact_sensitive_payload
@@ -55,6 +55,8 @@ class WorkspaceSkillInstallResponse(TimestampedModel):
 
 
 class WorkspaceSkillToolAvailabilityResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     tool_name: str
     available: bool
     server_id: UUID | None = None

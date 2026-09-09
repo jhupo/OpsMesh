@@ -41,7 +41,7 @@ class ResourceReviewSettings:
         raw_value = scope_config.get(resource_type)
         if raw_value is None or not isinstance(raw_value, bool):
             return _PRIVATE_REVIEW_DEFAULTS.get(resource_type, True)
-        return raw_value
+        return raw_value is True
 
     def semantic_config(self, workspace_id: UUID) -> ResourceReviewConfig:
         resource_review = self.resource_review_settings(workspace_id)
