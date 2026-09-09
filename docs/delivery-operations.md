@@ -35,10 +35,13 @@ maintenance procedure; an application update does not hot-replace the executing 
    `uv.lock`, and review `release-policy.json`. Declare supported source database revisions and
    revisions on which this application may safely run after rollback. Do not infer these from
    version numbers. Canonical prerelease tags use `v0.2.0rc1`.
-2. Commit to master. Run **Release Gate** with that version against that exact commit.
-3. Only after the gate succeeds, create and push the tag for that commit. The tag workflow checks
-   the successful gate and master ancestry; it builds wheels/sdists, a deployment bundle, both
-   images, SBOM/provenance, and an attested manifest. It publishes the draft Release last.
+2. Commit and push to master, then create and push the canonical tag for that commit.
+3. **Release Publish** automatically runs the read-only **Release Gate** from the same commit:
+   tag/version identity, master ancestry, Ruff, strict mypy, full pytest, real PostgreSQL migrations,
+   package builds and Docker image probes. Only a successful gate enables the separate publishing
+   job with write/signing permissions. It builds wheels/sdists, a deployment bundle, both images,
+   SBOM/provenance and an attested manifest, publishing the draft Release last. No manual workflow
+   dispatch or previously successful workflow run is required.
 4. Operators discover a version through `update check`; this does not approve or install it.
 
 The workflows use minimal job permissions and pinned Action SHAs. No mutable `latest` reference

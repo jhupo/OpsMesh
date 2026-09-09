@@ -8,12 +8,18 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  gate:
+    uses: ./.github/workflows/release-prepare.yml
+    permissions:
+      contents: read
+    with:
+      tag: ${{ github.ref_name }}
   publish:
+    needs: gate
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
       contents: write
-      actions: read
       packages: write
       id-token: write
       attestations: write
@@ -24,11 +30,6 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - name: Require successful pre-tag gate for this exact master commit
-        run: |
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/master
-          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release-prepare.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=100" \
-            --jq '.workflow_runs | any(.head_branch == "master" and .event == "workflow_dispatch")' | grep -qx true
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           version: '0.12.10'

@@ -1,5 +1,6 @@
 import ast
 import tarfile
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -38,7 +39,8 @@ def test_long_explicit_constraint_names_use_alembic_naming() -> None:
 
 
 def test_release_versions_are_aligned() -> None:
-    validate_version("v0.1.0")
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))
+    validate_version(f"v{project['project']['version']}")
     with pytest.raises(ValueError, match="does not match"):
         validate_version("v9.9.9")
 
@@ -82,7 +84,31 @@ def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
                 if "uses" in step:
                     assert len(step["uses"].split("@")[1]) == 40
     publish = (ROOT / ".github/workflows/release-publish.yml").read_text("utf-8")
-    assert "head_sha=$GITHUB_SHA&status=success" in publish
+    workflow = yaml.load(publish, Loader=yaml.BaseLoader)
+    assert workflow["on"] == {"push": {"tags": ["v*.*.*"]}}
+    assert workflow["jobs"]["gate"]["uses"] == "./.github/workflows/release-prepare.yml"
+    assert workflow["jobs"]["gate"]["with"]["tag"] == "${{ github.ref_name }}"
+    assert workflow["jobs"]["gate"]["permissions"] == {"contents": "read"}
+    assert workflow["jobs"]["publish"]["needs"] == "gate"
+    assert "if" not in workflow["jobs"]["publish"]
+    assert "workflow_dispatch" not in publish
+    gate = yaml.load(
+        (ROOT / ".github/workflows/release-prepare.yml").read_text("utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    assert set(gate["on"]) == {"workflow_call"}
+    assert gate["permissions"] == {"contents": "read"}
+    steps = gate["jobs"]["gate"]["steps"]
+    commands = "\n".join(step.get("run", "") for step in steps)
+    assert 'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"' in commands
+    assert "git merge-base --is-ancestor HEAD origin/master" in commands
+    for required in (
+        "uv run pytest", "uv run ruff check .", "uv run mypy",
+        "uv run alembic upgrade head", "uv run alembic check", "uv build --all-packages",
+        "docker build", "mcp_stdio_client --check",
+    ):
+        assert required in commands
+    assert not any("continue-on-error" in step for step in steps)
     assert "packages: write" in publish
     assert "subject-path: dist/*" in publish
     assert "--draft=false" in publish

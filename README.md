@@ -392,7 +392,7 @@ uv run pytest backend/tests/test_health.py
 ```
 
 Run the tests that cover the modules you changed. The complete pytest suite is a release gate and
-is run only immediately before creating a release tag.
+is run only by the tag-triggered release gate, before artifact publication.
 
 Start the API, worker, Postgres, and Redis:
 

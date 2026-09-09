@@ -179,7 +179,8 @@ uv run pytest backend/tests/test_health.py
 Run focused pytest targets for the affected module or behavior. Non-essential full-suite tests are
 prohibited during normal development and pull requests. Expand to a small set of integration tests
 only when the changed boundary requires it. Run the complete `uv run pytest` suite only as a release
-gate immediately before creating a release tag, and report any baseline failure precisely.
+gate triggered by pushing a release tag, before publishing any release artifacts, and report any
+baseline failure precisely.
 
 For database behavior that depends on PostgreSQL semantics, do not rely only on SQLite-based tests.
 Use the Postgres integration path or Docker Compose where appropriate. Never require live provider

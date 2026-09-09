@@ -6,7 +6,7 @@ Status: in progress. A green unit test is not deployment evidence.
 
 | Stage | Scope | Status |
 | --- | --- | --- |
-| 1 | master CI, pre-tag release gate, locked image builds, packages, GHCR, signed manifest | Backend CI passes; actual pre-release publication and signature acceptance pending |
+| 1 | master CI, tag-triggered release gate, locked image builds, packages, GHCR, signed manifest | Backend CI passes; actual pre-release publication and signature acceptance pending |
 | 2 | lightweight CLI, production Compose/systemd deployment, install and diagnostics | Implemented; Linux installation acceptance pending |
 | 3 | durable platform update jobs, independent host updater, maintenance and audit | Implemented; focused contract tests pass |
 | 4 | verified backup, interruption recovery, constrained rollback and Linux integration gate | Real Linux/PostgreSQL backup restoration passes; integrated upgrade/recovery acceptance pending |
@@ -58,7 +58,7 @@ contracts. A separate giant CLI framework is not needed.
   frozen lock validates. Migration 0063 now explicitly rejects offline execution before emitting
   partial DDL; its Python canonical JSON backfill still runs online. The release gate uses an actual
   Postgres connection, not an incomplete offline SQL script.
-- Normal development and PRs use focused tests. Full pytest is restricted to the pre-tag gate.
+- Normal development and PRs use focused tests. Full pytest is restricted to the tag-triggered gate.
 - Baseline audit against detached `d264ffb`: mypy reports 721 existing errors. The first new run
   reported 728; the seven additional diagnostics were operator package discovery, corrected with
   an explicit mypy source path and `py.typed`. The baseline remains a blocking release gate.
