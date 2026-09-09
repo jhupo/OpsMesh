@@ -2,6 +2,28 @@
 
 Status: in progress. A green unit test is not deployment evidence.
 
+## rc5 final publication acceptance (2026-09-09)
+
+- [Release Publish 34368777720](https://github.com/jhupo/OpsMesh/actions/runs/34368777720)
+  succeeded on its first attempt for commit `d045b5d` / tag `v0.1.0rc5`. The gate reports
+  **1168 passed, 9 skipped**; Ruff, strict mypy, real PostgreSQL migrations/schema comparison,
+  all package builds and clean-environment operator installation passed.
+- Both candidate images passed exact-digest startup probes and production Compose migrations,
+  API/worker startup and readiness. The first-creation publication path succeeded without a
+  retry, uploaded the eight release assets, promoted the tested image digests and published
+  [v0.1.0rc5](https://github.com/jhupo/OpsMesh/releases/tag/v0.1.0rc5).
+- The final workflow step downloaded the public manifest and all seven packages, checked size
+  and SHA-256, and verified GitHub provenance for the packages and both OCI images, enforcing
+  repository, signing workflow, source tag/commit and hosted runners. This is actual published
+  artifact acceptance, not only a successful upload or mocked signature check.
+- Anonymous GHCR version-tag requests return HTTP 200 for both images. Backend digest:
+  `sha256:3a2dbaac6dfb34eb18d4dbc24f539b924262c27bb922c1a367e4458347692132`;
+  runtime digest: `sha256:0bdd548ac1e1420e6d0908bd311e1df078d09c21cfe00eebba5840939c4ee081`.
+- rc4 also passed signed public download verification; its downloaded operator wheel installed
+  in a clean workstation environment and `opsmesh version` returned `0.1.0rc4`. No production
+  installation was changed. Stage 1 is accepted; systemd/managed install and cross-version
+  upgrade/interruption recovery remain unaccepted and are not implied by this release result.
+
 ## rc4 publication checkpoint
 
 - [Release run 34366081003](https://github.com/jhupo/OpsMesh/actions/runs/34366081003)
@@ -57,7 +79,7 @@ Status: in progress. A green unit test is not deployment evidence.
 
 | Stage | Scope | Status |
 | --- | --- | --- |
-| 1 | master CI, tag-triggered release gate, locked image builds, packages, GHCR, signed manifest | Backend CI passes; actual pre-release publication and signature acceptance pending |
+| 1 | master CI, tag-triggered release gate, locked image builds, packages, GHCR, signed manifest | Accepted: rc5 first-attempt release, public downloads and package/image provenance pass |
 | 2 | lightweight CLI, production Compose/systemd deployment, install and diagnostics | Implemented; Linux installation acceptance pending |
 | 3 | durable platform update jobs, independent host updater, maintenance and audit | Implemented; focused contract tests pass |
 | 4 | verified backup, interruption recovery, constrained rollback and Linux integration gate | Real Linux/PostgreSQL backup restoration passes; integrated upgrade/recovery acceptance pending |

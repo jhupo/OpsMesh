@@ -1,8 +1,9 @@
 # Delivery operations
 
 Implementation is not yet production-accepted: see [release delivery evidence](release-delivery-plan.md).
-Backend CI and real Linux backup restoration pass. Signed publication, installation and
-cross-version upgrade acceptance must still pass before delivery is declared complete.
+Backend CI, real Linux backup restoration and rc5 signed publication/download verification pass.
+Managed installation and cross-version upgrade acceptance must still pass before delivery is
+declared complete.
 
 ## Supported topology and prerequisites
 
@@ -42,7 +43,10 @@ maintenance procedure; an application update does not hot-replace the executing 
    immutable run artifact. A candidate job builds both images once, with SBOM/provenance, under
    run/attempt-specific candidate tags and probes their exact digests. Only successful validation
    enables the signing/publishing job, which downloads the same packages and promotes the tested
-   image digests without rebuilding. It publishes the draft Release last. No manual workflow
+   image digests without rebuilding. It publishes the draft Release last, then downloads its public
+   assets through the operator's real release source, checks their sizes/hashes and verifies every
+   package and both image attestations against the repository, workflow, tag and commit. These
+   post-publication checks must also pass before the workflow reports success. No manual workflow
    dispatch or previously successful workflow run is required.
 4. Operators discover a version through `update check`; this does not approve or install it.
 
