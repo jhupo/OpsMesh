@@ -209,6 +209,16 @@ stores only the stable correlation fields needed by queue payloads and logs.
 Histogram, Gauge, and collector primitives. Domain collectors stay under `backend/app/operations`,
 and route-template labels prevent request-ID path cardinality.
 
+### Adopted: S3 SDK type contracts
+
+Object storage continues to use Boto3 behind `ObjectStorage`. Development installs include only
+`boto3-stubs[s3]`, aligned with the locked Boto3 version, to validate SDK requests, streaming bodies,
+and `ClientError` responses. Stub imports are type-checking-only and do not add production runtime
+dependencies. The adapter calls `StreamingBody.close()` directly and catches the SDK's documented
+error type; it does not emulate arbitrary response-bearing exceptions. Handwritten S3 protocol
+stubs and the all-services stub bundle were rejected as duplicate maintenance and unnecessary
+development overhead. See the [upstream S3 typing documentation](https://youtype.github.io/boto3_stubs_docs/mypy_boto3_s3/).
+
 ### Adopted: jsonschema
 
 OpsMesh uses the maintained `jsonschema` package and its Draft 2020-12 validator for tool and

@@ -1,11 +1,17 @@
+from __future__ import annotations
+
 import os
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Protocol
+from typing import TYPE_CHECKING, BinaryIO, Literal, Protocol
+
+from botocore.exceptions import ClientError
 
 from backend.app.files.security import validate_storage_key
 
 if TYPE_CHECKING:
+    from mypy_boto3_s3.client import S3Client
+
     from backend.app.core.config import Settings
 
 
@@ -89,14 +95,14 @@ class S3Storage:
         *,
         bucket: str,
         prefix: str = "",
-        client: Any | None = None,
+        client: S3Client | None = None,
         endpoint_url: str | None = None,
         region_name: str | None = None,
         access_key_id: str | None = None,
         secret_access_key: str | None = None,
         session_token: str | None = None,
         use_ssl: bool = True,
-        addressing_style: str = "auto",
+        addressing_style: Literal["auto", "virtual", "path"] = "auto",
     ) -> None:
         if not bucket.strip():
             raise ValueError("S3 storage bucket is required")
@@ -125,9 +131,7 @@ class S3Storage:
         try:
             return body.read()
         finally:
-            close = getattr(body, "close", None)
-            if close is not None:
-                close()
+            body.close()
 
     def delete(self, storage_key: str) -> None:
         self._client.delete_object(Bucket=self._bucket, Key=self._object_key(storage_key))
@@ -135,7 +139,7 @@ class S3Storage:
     def exists(self, storage_key: str) -> bool:
         try:
             self._client.head_object(Bucket=self._bucket, Key=self._object_key(storage_key))
-        except Exception as exc:
+        except ClientError as exc:
             if _is_not_found_error(exc):
                 return False
             raise
@@ -159,7 +163,7 @@ class S3Storage:
                 Key=self._object_key(storage_key),
                 Range=f"bytes=0-{max_bytes}",
             )
-        except Exception as exc:
+        except ClientError as exc:
             if _is_not_found_error(exc):
                 raise FileNotFoundError("Storage object not found") from exc
             raise
@@ -167,9 +171,7 @@ class S3Storage:
         try:
             content = body.read(max_bytes + 1)
         finally:
-            close = getattr(body, "close", None)
-            if close is not None:
-                close()
+            body.close()
         if len(content) > max_bytes:
             raise StorageObjectTooLargeError("Storage object exceeds the read limit")
         return content
@@ -181,7 +183,7 @@ class S3Storage:
         return f"{self._prefix}/{normalized}"
 
 
-def create_storage(settings: "Settings") -> ObjectStorage:
+def create_storage(settings: Settings) -> ObjectStorage:
     if settings.storage_backend == "local":
         return LocalStorage(settings.storage_root)
     if settings.storage_backend == "s3":
@@ -207,8 +209,8 @@ def _create_s3_client(
     secret_access_key: str | None,
     session_token: str | None,
     use_ssl: bool,
-    addressing_style: str,
-) -> Any:
+    addressing_style: Literal["auto", "virtual", "path"],
+) -> S3Client:
     import boto3
     from botocore.config import Config
 
@@ -231,11 +233,5 @@ def _normalize_prefix(prefix: str) -> str:
     return validate_storage_key(stripped)
 
 
-def _is_not_found_error(exc: Exception) -> bool:
-    response = getattr(exc, "response", None)
-    if not isinstance(response, dict):
-        return False
-    error = response.get("Error")
-    if not isinstance(error, dict):
-        return False
-    return str(error.get("Code")) in {"404", "NoSuchKey", "NotFound"}
+def _is_not_found_error(exc: ClientError) -> bool:
+    return exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}

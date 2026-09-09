@@ -1,7 +1,12 @@
+from contextlib import closing
 from io import BytesIO
 from pathlib import Path
 
 import pytest
+from boto3 import client as boto3_client
+from botocore.exceptions import ClientError
+from botocore.response import StreamingBody
+from botocore.stub import Stubber
 
 from backend.app.core.config import Settings
 from backend.app.files import storage as storage_module
@@ -107,6 +112,40 @@ def test_create_storage_selects_s3_backend(monkeypatch: pytest.MonkeyPatch) -> N
     }
 
 
+@pytest.mark.parametrize("limited", [False, True])
+def test_s3_sdk_stream_is_closed_after_read(limited: bool) -> None:
+    client = boto3_client(
+        "s3", region_name="us-east-1", aws_access_key_id="test", aws_secret_access_key="test"
+    )
+    stream = BytesIO(b"hello")
+    parameters = {"Bucket": "opsmesh", "Key": "file.txt"}
+    if limited:
+        parameters["Range"] = "bytes=0-5"
+    with closing(client), Stubber(client) as stubber:
+        stubber.add_response("get_object", {"Body": StreamingBody(stream, 5)}, parameters)
+        storage = S3Storage(bucket="opsmesh", client=client)
+        content = storage.read_limited("file.txt", 5) if limited else storage.get("file.txt")
+        assert content == b"hello"
+        assert stream.closed
+        stubber.assert_no_pending_responses()
+
+
+def test_s3_sdk_access_denied_is_not_treated_as_missing() -> None:
+    client = boto3_client(
+        "s3", region_name="us-east-1", aws_access_key_id="test", aws_secret_access_key="test"
+    )
+    with closing(client), Stubber(client) as stubber:
+        stubber.add_client_error(
+            "head_object",
+            service_error_code="AccessDenied",
+            http_status_code=403,
+            expected_params={"Bucket": "opsmesh", "Key": "file.txt"},
+        )
+        with pytest.raises(ClientError, match="AccessDenied"):
+            S3Storage(bucket="opsmesh", client=client).exists("file.txt")
+        stubber.assert_no_pending_responses()
+
+
 class FakeS3Client:
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
@@ -138,5 +177,6 @@ class FakeS3Client:
             raise FakeS3NotFound()
 
 
-class FakeS3NotFound(Exception):
-    response = {"Error": {"Code": "404"}}
+class FakeS3NotFound(ClientError):
+    def __init__(self) -> None:
+        super().__init__({"Error": {"Code": "404"}}, "GetObject")
