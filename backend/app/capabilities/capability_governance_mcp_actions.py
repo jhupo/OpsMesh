@@ -15,6 +15,7 @@ from backend.app.capabilities.capability_governance_rules import (
     mcp_server_should_be_governance_disabled,
     mcp_server_should_refresh_health,
 )
+from backend.app.capabilities.mcp_catalog import McpCatalogServer
 from backend.app.capabilities.mcp_catalog_service import McpCatalogService
 from backend.app.capabilities.mcp_server_rules import (
     connection_summary as _connection_summary,
@@ -307,7 +308,7 @@ class CapabilityGovernanceMcpActionService:
             )
         )
 
-    def _catalog_items(self, workspace_id: UUID):
+    def _catalog_items(self, workspace_id: UUID) -> tuple[list[McpCatalogServer], int]:
         return McpCatalogService(self._session, self._settings).list_mcp_catalog(
             workspace_id,
             PageParams(limit=10_000, offset=0),

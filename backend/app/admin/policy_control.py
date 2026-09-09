@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from backend.app.admin.base import AdminSessionService
 from backend.app.admin.models import PlatformPolicy, PlatformPolicyEvent
@@ -19,7 +20,7 @@ from backend.app.api.pagination import PageParams
 
 
 class AdminPolicyService(AdminSessionService):
-    def __init__(self, session) -> None:
+    def __init__(self, session: Session) -> None:
         super().__init__(session)
         self._events = AdminPolicyEventService(session)
 

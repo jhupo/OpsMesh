@@ -1,4 +1,4 @@
-from typing import TypeAlias
+from typing import TypeAlias, cast
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -31,7 +31,7 @@ ResourceReviewTarget: TypeAlias = (
     | TalentListing
 )
 
-RESOURCE_REVIEW_TARGET_MODELS = {
+RESOURCE_REVIEW_TARGET_MODELS: dict[str, type[ResourceReviewTarget]] = {
     "agent_profile": AgentProfile,
     "capability": Capability,
     "skill": Skill,
@@ -83,7 +83,7 @@ class ResourceReviewDecisionService:
         model = RESOURCE_REVIEW_TARGET_MODELS.get(target_type)
         if model is None:
             return None
-        target = self._session.get(model, target_id)
+        target = cast(ResourceReviewTarget | None, self._session.get(model, target_id))
         if target is None:
             return None
         if isinstance(target, Capability):

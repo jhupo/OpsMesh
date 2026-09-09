@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams
 from backend.app.db.pagination import page_scalars
-from backend.app.marketplace.models import TalentListing
+from backend.app.marketplace.models import TalentListing, WorkspaceAgentInstall
 from backend.app.marketplace.talent_repository import TalentMarketplaceRepository
 
 
@@ -41,10 +41,12 @@ class TalentCatalogService:
     def get_listing(self, listing_id: UUID) -> TalentListing | None:
         return self._repository.get_public_listing(listing_id)
 
-    def get_install(self, workspace_id: UUID, install_id: UUID):
+    def get_install(self, workspace_id: UUID, install_id: UUID) -> WorkspaceAgentInstall | None:
         return self._repository.get_install(workspace_id, install_id)
 
-    def list_installs(self, workspace_id: UUID, page: PageParams):
+    def list_installs(
+        self, workspace_id: UUID, page: PageParams
+    ) -> tuple[list[WorkspaceAgentInstall], int]:
         return self._repository.list_installs(workspace_id, page)
 
     def _page(
@@ -53,4 +55,3 @@ class TalentCatalogService:
         page: PageParams,
     ) -> tuple[list[TalentListing], int]:
         return page_scalars(self._session, statement, page)
-

@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from backend.app.admin.base import AdminSessionService
 from backend.app.admin.common import normalized_worker_capacity, worker_node_snapshot
@@ -13,7 +14,7 @@ from backend.app.operations.models import WorkerLease, WorkerNode
 
 
 class AdminWorkerService(AdminSessionService):
-    def __init__(self, session, policy_service: AdminWorkerPolicyControlService) -> None:
+    def __init__(self, session: Session, policy_service: AdminWorkerPolicyControlService) -> None:
         super().__init__(session)
         self._policy_service = policy_service
 

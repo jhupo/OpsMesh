@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import select
@@ -113,14 +114,18 @@ class SchedulerBlockedStepService:
             unblocked_steps=unblocked,
         )
 
-    def _blocked_step_rows(self, workspace_id: UUID):
-        return self._session.execute(
-            select(TaskStep, Task)
-            .join(Task, Task.id == TaskStep.task_id)
-            .where(
-                TaskStep.workspace_id == workspace_id,
-                Task.workspace_id == workspace_id,
-                TaskStep.status == "queued",
+    def _blocked_step_rows(self, workspace_id: UUID) -> Sequence[tuple[TaskStep, Task]]:
+        return (
+            self._session.execute(
+                select(TaskStep, Task)
+                .join(Task, Task.id == TaskStep.task_id)
+                .where(
+                    TaskStep.workspace_id == workspace_id,
+                    Task.workspace_id == workspace_id,
+                    TaskStep.status == "queued",
+                )
+                .order_by(TaskStep.created_at.asc(), TaskStep.id.asc())
             )
-            .order_by(TaskStep.created_at.asc(), TaskStep.id.asc())
-        ).all()
+            .tuples()
+            .all()
+        )

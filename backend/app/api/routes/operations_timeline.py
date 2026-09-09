@@ -15,7 +15,8 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.session import get_db_session
-from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
+from backend.app.operations.timeline import TeamRuntimeTimelineService
+from backend.app.operations.timeline_models import TimelineFilters
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue.redis_queue import RedisQueue
 

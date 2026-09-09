@@ -76,7 +76,11 @@ def normalize_project_path(value: str) -> str:
 def validate_project_layout(
     *, input_path: str, work_path: str, output_path: str
 ) -> tuple[str, str, str]:
-    paths = tuple(normalize_project_path(item) for item in (input_path, work_path, output_path))
+    paths = (
+        normalize_project_path(input_path),
+        normalize_project_path(work_path),
+        normalize_project_path(output_path),
+    )
     if any(PurePosixPath(path).parts[0] in _RESERVED_PROJECT_PATH_ROOTS for path in paths):
         raise ValueError("Project layout uses a reserved internal path")
     for index, left in enumerate(paths):
