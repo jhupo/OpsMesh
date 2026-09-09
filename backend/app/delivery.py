@@ -11,6 +11,7 @@ import sys
 from contextlib import redirect_stdout
 from importlib.metadata import version
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 def main() -> None:
@@ -60,6 +61,8 @@ def main() -> None:
 
 
 def check_runtime(directory: Path) -> None:
+    ZoneInfo("Etc/UTC")
+    ZoneInfo("Asia/Shanghai")
     for module in (
         "agents",
         "claude_agent_sdk",

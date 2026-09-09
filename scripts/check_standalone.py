@@ -75,6 +75,8 @@ def check_cli(directory: Path, tag: str) -> None:
 def check_server(directory: Path, tag: str, work: Path) -> None:
     # The base image contains neither Python nor uv. Only the extracted archive supplies Python.
     container = "opsmesh-native-" + secrets.token_hex(6)
+    state = work / "state"
+    (state / "opsmesh").mkdir(parents=True)
     environment = {
         "OPSMESH_ENVIRONMENT": "test",
         "OPSMESH_DATABASE_URL": os.environ["OPSMESH_DATABASE_URL"],
@@ -82,7 +84,7 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
         "OPSMESH_TRACING_ENABLED": "false",
         "OPSMESH_OTEL_LOGS_ENABLED": "false",
         "OPSMESH_READINESS_WORKER_CHECK_ENABLED": "true",
-        "OPSMESH_STORAGE_ROOT": "/work/storage",
+        "OPSMESH_STORAGE_ROOT": "/work/opsmesh/storage",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
     base = [
@@ -94,9 +96,9 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
         "-v",
         f"{directory}:/bundle:ro",
         "-v",
-        f"{work}:/work",
+        f"{state}:/work",
         "-w",
-        "/work",
+        "/work/opsmesh",
     ]
     for key, value in environment.items():
         base += ["-e", f"{key}={value}"]
@@ -115,8 +117,10 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
     run("migrate", "check")
     run("worker", "--once")
     # A real no-job updater tick must load its bundled SQLAlchemy/driver and persistent config.
-    (work / "installation.json").write_text(json.dumps({"root": "/work", "mode": "systemd"}))
-    run("updater", "--root", "/work", "--once")
+    (state / "opsmesh/installation.json").write_text(
+        json.dumps({"root": "/work/opsmesh", "mode": "systemd"})
+    )
+    run("updater", "--root", "/work/opsmesh", "--once")
     subprocess.run(
         [*base, "--name", container, "-d", image, "/bundle/opsmesh-server", "api"], check=True
     )
