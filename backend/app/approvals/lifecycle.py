@@ -71,6 +71,7 @@ class AgentToolApprovalLifecycleService:
                 PendingToolInvocation.approval_id == Approval.id,
             )
             .where(
+                Approval.workspace_id == PendingToolInvocation.workspace_id,
                 Approval.status == "pending",
                 PendingToolInvocation.status == "pending",
                 Approval.created_at < cutoff,
@@ -122,10 +123,11 @@ class AgentToolApprovalLifecycleService:
                     PendingToolInvocation.approval_id == Approval.id,
                 )
                 .where(
+                    Approval.workspace_id == workspace_id,
                     PendingToolInvocation.workspace_id == workspace_id,
                     PendingToolInvocation.agent_run_id == run_id,
                 )
-            ).all()
+            ).tuples().all()
         )
 
     def _mark_snapshot(

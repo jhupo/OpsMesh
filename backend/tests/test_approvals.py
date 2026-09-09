@@ -472,6 +472,30 @@ def test_run_cancellation_closes_pending_sdk_tool_state() -> None:
     assert restored is None
 
 
+@pytest.mark.parametrize("operation", ["cancel", "expire"])
+def test_approval_lifecycle_rejects_cross_workspace_join(operation: str) -> None:
+    session = _session()
+    user, workspace, task, run = _seed_run(session)
+    _, foreign_workspace, _, _ = _seed_run(session)
+    secrets = SecretEncryptionService(secret="pending-tool-secret", key_id="test-key")
+    approval, invocation = _persist_sdk_interruption(
+        session, workspace.id, task.id, run.id, secrets
+    )
+    approval.workspace_id = foreign_workspace.id
+    approval.created_at = datetime.now(UTC) - timedelta(hours=1)
+    session.flush()
+
+    lifecycle = AgentToolApprovalLifecycleService(session)
+    if operation == "cancel":
+        assert lifecycle.cancel_for_run(
+            workspace_id=workspace.id, run_id=run.id, actor_user_id=user.id
+        ) == 0
+    else:
+        assert lifecycle.expire_pending(timeout_seconds=60).expired == 0
+    assert approval.status == "pending"
+    assert invocation.status == "pending"
+
+
 def test_claimed_tool_after_worker_loss_returns_unknown_without_replay() -> None:
     session = _session()
     user, workspace, task, run = _seed_run(session)
