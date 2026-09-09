@@ -3277,7 +3277,8 @@ def test_completed_run_updates_persistent_session_conversation_id() -> None:
     assert persistent_session.openai_conversation_id == "conv_new"
 
 
-def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
+@pytest.mark.parametrize("member_revoked", [False, True])
+def test_team_task_orchestration_uses_frozen_team_snapshot(member_revoked: bool) -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     manager = AgentProfile(
@@ -3343,7 +3344,9 @@ def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
         },
         title="Build dashboard",
     )
-    original_member.status = "inactive"
+    original_member.status = "inactive" if member_revoked else "active"
+    original_member.team_role = "backend_engineer"
+    original_member.order_index = 5
     replacement_member = AgentTeamMember(
         workspace_id=workspace.id,
         agent_team_id=team.id,
@@ -3385,7 +3388,16 @@ def test_team_task_orchestration_uses_frozen_team_snapshot() -> None:
     ]
     assert steps[1].required_role == "frontend_engineer"
     assert new_developer.id not in {run.agent_profile_id for run in runs}
-    assert task.status == TaskStatus.COMPLETED.value
+    if member_revoked:
+        assert task.status == TaskStatus.RUNNING.value
+        assert len(runs) == 1
+        assert runs[0].status == RunStatus.COMPLETED.value
+        assert steps[0].status == "completed"
+        assert steps[1].status == "queued"
+        assert steps[1].dependencies["blocked_reason"] == "capability_authorization_blocked"
+        assert steps[1].dependencies["blocked_details"]["code"] == "agent_team_membership_required"
+    else:
+        assert task.status == TaskStatus.COMPLETED.value
 
 
 def test_invalid_project_plan_records_attempt_and_blocks_task_for_review() -> None:

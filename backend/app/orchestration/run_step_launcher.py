@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.core.errors import DomainError
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_resource_reservations import RunResourceReservationService
 from backend.app.orchestration.run_runtime_authorization import (
@@ -140,6 +141,13 @@ class RunStepLauncher:
                     "code": exc.code,
                     "message": str(exc),
                 },
+            )
+            return None
+        except DomainError as exc:
+            self.mark_step_scheduling_blocked(
+                step,
+                "capability_authorization_blocked",
+                {"code": exc.code, "message": exc.message},
             )
             return None
         except ValueError as exc:
