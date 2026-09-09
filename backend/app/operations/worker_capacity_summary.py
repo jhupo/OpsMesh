@@ -38,7 +38,9 @@ class OperationsWorkerCapacityService:
                 select(WorkerLease.worker_id, func.count())
                 .where(WorkerLease.status.in_(RUNNING_LEASE_STATUSES))
                 .group_by(WorkerLease.worker_id)
-            ).all()
+            )
+            .tuples()
+            .all()
         )
         grouped: dict[str, dict[str, int]] = {}
         for node in nodes:

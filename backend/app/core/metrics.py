@@ -23,7 +23,7 @@ PrometheusMetric = Counter | Gauge | Histogram
 class GaugeMetric:
     name: str
     value: float
-    labels: dict[str, object] = field(default_factory=dict)
+    labels: Mapping[str, object] = field(default_factory=dict)
     help_text: str | None = None
 
 

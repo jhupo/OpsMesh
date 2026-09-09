@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -17,7 +18,7 @@ from backend.app.self_hosted.models import (
 
 @dataclass(frozen=True, slots=True)
 class SelfHostedMachineRecords:
-    workers: list[SelfHostedWorker]
+    workers: Sequence[SelfHostedWorker]
     runtimes: dict[UUID, WorkspaceRuntime]
     credentials: dict[UUID, RuntimeCredential]
     active_claim_counts: dict[UUID, int]
@@ -93,15 +94,19 @@ class SelfHostedMachineRepository:
         workspace_id: UUID,
         worker_ids: list[UUID],
     ) -> dict[UUID, int]:
-        rows = self._session.execute(
-            select(SelfHostedJobClaim.worker_id, func.count())
-            .where(
-                SelfHostedJobClaim.workspace_id == workspace_id,
-                SelfHostedJobClaim.worker_id.in_(worker_ids),
-                SelfHostedJobClaim.status == "claimed",
+        rows = (
+            self._session.execute(
+                select(SelfHostedJobClaim.worker_id, func.count())
+                .where(
+                    SelfHostedJobClaim.workspace_id == workspace_id,
+                    SelfHostedJobClaim.worker_id.in_(worker_ids),
+                    SelfHostedJobClaim.status == "claimed",
+                )
+                .group_by(SelfHostedJobClaim.worker_id)
             )
-            .group_by(SelfHostedJobClaim.worker_id)
-        ).all()
+            .tuples()
+            .all()
+        )
         return _counts_by_uuid(rows)
 
     def _claimed_mcp_jobs(
@@ -109,15 +114,19 @@ class SelfHostedMachineRepository:
         workspace_id: UUID,
         worker_ids: list[UUID],
     ) -> dict[UUID, int]:
-        rows = self._session.execute(
-            select(SelfHostedMcpJob.worker_id, func.count())
-            .where(
-                SelfHostedMcpJob.workspace_id == workspace_id,
-                SelfHostedMcpJob.worker_id.in_(worker_ids),
-                SelfHostedMcpJob.status == "claimed",
+        rows = (
+            self._session.execute(
+                select(SelfHostedMcpJob.worker_id, func.count())
+                .where(
+                    SelfHostedMcpJob.workspace_id == workspace_id,
+                    SelfHostedMcpJob.worker_id.in_(worker_ids),
+                    SelfHostedMcpJob.status == "claimed",
+                )
+                .group_by(SelfHostedMcpJob.worker_id)
             )
-            .group_by(SelfHostedMcpJob.worker_id)
-        ).all()
+            .tuples()
+            .all()
+        )
         return _counts_by_uuid(rows)
 
     def _queued_mcp_jobs(
@@ -125,17 +134,21 @@ class SelfHostedMachineRepository:
         workspace_id: UUID,
         runtime_ids: list[UUID],
     ) -> dict[UUID, int]:
-        rows = self._session.execute(
-            select(SelfHostedMcpJob.workspace_runtime_id, func.count())
-            .where(
-                SelfHostedMcpJob.workspace_id == workspace_id,
-                SelfHostedMcpJob.workspace_runtime_id.in_(runtime_ids),
-                SelfHostedMcpJob.status == "queued",
+        rows = (
+            self._session.execute(
+                select(SelfHostedMcpJob.workspace_runtime_id, func.count())
+                .where(
+                    SelfHostedMcpJob.workspace_id == workspace_id,
+                    SelfHostedMcpJob.workspace_runtime_id.in_(runtime_ids),
+                    SelfHostedMcpJob.status == "queued",
+                )
+                .group_by(SelfHostedMcpJob.workspace_runtime_id)
             )
-            .group_by(SelfHostedMcpJob.workspace_runtime_id)
-        ).all()
+            .tuples()
+            .all()
+        )
         return _counts_by_uuid(rows)
 
 
-def _counts_by_uuid(rows: list[tuple[UUID | None, int]]) -> dict[UUID, int]:
+def _counts_by_uuid(rows: Sequence[tuple[UUID | None, int]]) -> dict[UUID, int]:
     return {key: int(count) for key, count in rows if key is not None}

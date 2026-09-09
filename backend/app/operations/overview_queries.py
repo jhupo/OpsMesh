@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.operations.models import WorkerHeartbeat
@@ -55,5 +55,5 @@ class OperationsOverviewQueryService:
             )
         )
 
-    def _count(self, statement: object) -> int:
+    def _count(self, statement: Select[tuple[int]]) -> int:
         return int(self._session.scalar(statement) or 0)

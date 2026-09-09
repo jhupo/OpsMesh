@@ -27,7 +27,9 @@ class RuntimePrometheusMetrics:
                     AgentRun.status.in_(ACTIVE_RUNTIME_RUN_STATUSES),
                 )
                 .group_by(AgentRun.runtime_id)
-            ).all()
+            )
+            .tuples()
+            .all()
         )
         grouped: dict[tuple[str, str], dict[str, int]] = {}
         for runtime in self._session.scalars(select(WorkspaceRuntime)).all():

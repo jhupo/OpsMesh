@@ -61,7 +61,7 @@ class StaleRunsDiagnosticsResponse(BaseModel):
 class StaleRunRecoveryRequest(BaseModel):
     stale_after_seconds: int = Field(default=900, ge=60, le=86_400)
     statuses: list[StaleRunRecoverStatus] = Field(
-        default_factory=lambda: ["queued", "running", "waiting_runtime"],
+        default=["queued", "running", "waiting_runtime"],
         min_length=1,
         max_length=3,
     )
