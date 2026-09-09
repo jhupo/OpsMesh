@@ -10,6 +10,11 @@ on:
         type: string
   workflow_dispatch:
     inputs:
+      component:
+        description: Focused acceptance scope (tag publication always builds every platform)
+        type: choice
+        options: [all, server]
+        default: all
       tag:
         description: Version of the current checkout (build and acceptance only; no publication)
         required: true
@@ -18,6 +23,7 @@ permissions:
   contents: read
 jobs:
   cli:
+    if: github.event_name != 'workflow_dispatch' || inputs.component == 'all'
     strategy:
       fail-fast: false
       matrix:
