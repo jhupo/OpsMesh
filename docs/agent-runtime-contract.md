@@ -55,6 +55,7 @@ boolean support state and an explanation when unsupported; adapter limits are re
 | resumable state | supported | supported |
 | guardrails | supported | supported through SDK hooks plus product output validation |
 | sessions | supported | supported through the product `SessionStore` bridge |
+| context compaction | supported for OpenAI Responses sessions through the SDK compaction session | supported through Claude SDK auto-compaction |
 | cancellation | supported | supported through `ClaudeSDKClient.interrupt()` |
 | lifecycle events | supported | supported |
 | usage | supported | supported |
@@ -353,6 +354,13 @@ Rules:
 ## Memory Contract
 
 Short-term state may use SDK sessions. Long-term memory belongs to product storage.
+
+Provider transcript compaction also belongs to the SDK. OpenAI Responses runs wrap the durable
+product session with `OpenAIResponsesCompactionSession`, which calls the official
+`responses.compact` operation and atomically replaces stored history through the session contract.
+Claude Agent SDK owns its automatic context compaction and mirrors the resulting transcript back
+through `SessionStore`. OpsMesh does not construct substitute summary messages or expose a second
+manual compaction API.
 
 Rules:
 

@@ -217,9 +217,6 @@ class RunOrchestrationService:
                 ),
                 schedule_workspace_steps=self._schedule_workspace_steps_for_lifecycle,
                 task_has_open_team_work=self._eligibility().task_has_open_team_work,
-                persistent_session_ref_for_run=(
-                    self._request_builder().persistent_session_ref_for_run
-                ),
             ),
         )
 

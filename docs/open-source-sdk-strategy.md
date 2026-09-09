@@ -47,8 +47,9 @@ The upstream projects are `openai/openai-agents-python` and
 adapters share `BaseSDKAgentRuntimeAdapter` for product execution invariants and implement
 provider-specific construction, invocation, and result mapping as subclasses.
 
-**Use upstream for:** agent turns, tools, handoffs, sessions, serializable run state, human approval
-interruptions, MCP integration, and sandbox client contracts when those APIs are stable.
+**Use upstream for:** agent turns, tools, handoffs, sessions, context compaction, serializable run
+state, human approval interruptions, MCP integration, and sandbox client contracts when those APIs
+are stable.
 
 **Keep in OpsMesh:** workspace authorization, durable task/run models, scheduling, quotas, provider
 credential policy, audit events, artifact ownership, and recovery evidence.
@@ -57,7 +58,8 @@ credential policy, audit events, artifact ownership, and recovery evidence.
 stream consumption plus `interrupt()`; `create_sdk_mcp_server()` and `tool()` own the in-process MCP
 bridge; `SessionStore` mirrors the transcript into the existing Postgres-backed session;
 `output_format` and `ResultMessage.structured_output` own structured output; SDK hooks plus
-`deferred_tool_use` own provider-side lifecycle and approval pause state. The adapter retains product
+`deferred_tool_use` own provider-side lifecycle and approval pause state; Claude owns automatic
+context compaction. The adapter retains product
 authorization, input/output guardrail policy, approval records, redaction, retry/circuit state,
 audit events, usage normalization, and workspace scope.
 
@@ -87,7 +89,7 @@ or cancellation.
 | Schema validation | `jsonschema` | Keep; product adds workspace/resource policy |
 | Tracing and metrics | OpenTelemetry and Prometheus clients | Keep; product audit remains durable Postgres state |
 | Retry and circuit state | Product resilience module | Keep; provider SDK retry cannot replace durable side-effect policy |
-| Sessions and memory | Product Postgres session/memory services, Claude `SessionStore` bridge | Keep product ownership; use SDK transcript extension point |
+| Sessions and memory | Product Postgres session/memory services, OpenAI Responses compaction session, Claude `SessionStore` bridge | Keep product ownership of storage and durable knowledge; use provider SDK transcript and compaction extension points |
 | Provider health probes | Direct HTTP health checks | Keep; SDKs do not expose a stable account/model readiness probe |
 | Generic agent frameworks | LangChain, LlamaIndex, LiteLLM | Reject for now; they would duplicate the two SDK cores and add weight |
 | Durable workflow engines | Temporal | Evaluate with a representative workflow before replacing current task/worker state |

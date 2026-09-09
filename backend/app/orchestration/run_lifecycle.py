@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunResult
 from backend.app.agent_runtime.errors import normalize_agent_error
-from backend.app.agent_runtime.sessions import PersistentAgentSessionRef
 from backend.app.orchestration.pm_acceptance import PmAcceptanceService
 from backend.app.orchestration.pm_final_output import PmFinalOutputService
 from backend.app.orchestration.pm_follow_up_work import PmFollowUpWorkService
@@ -37,12 +36,6 @@ SyncConversation = Callable[[AgentRun], None]
 CreateNextRuns = Callable[[Task, UUID | None], list[AgentRun]]
 ScheduleWorkspaceSteps = Callable[[UUID, UUID | None], list[AgentRun]]
 TaskHasOpenTeamWork = Callable[[Task], bool]
-PersistentSessionRefForRun = Callable[
-    [AgentRun, Task | None, object],
-    PersistentAgentSessionRef,
-]
-
-
 @dataclass(slots=True)
 class RunLifecycleCallbacks:
     append_event: AppendEvent
@@ -51,7 +44,6 @@ class RunLifecycleCallbacks:
     create_next_runs: CreateNextRuns
     schedule_workspace_steps: ScheduleWorkspaceSteps
     task_has_open_team_work: TaskHasOpenTeamWork
-    persistent_session_ref_for_run: PersistentSessionRefForRun
 
 
 @dataclass(slots=True)
@@ -122,7 +114,7 @@ class RunLifecycleService:
         self.callbacks.sync_provider_conversation_id(run)
         self.callbacks.append_event(run, "run.completed", "Run completed", None)
         self.callbacks.release_reservations(run, run.completed_at)
-        self._memory_completion().capture_and_compact(run, result)
+        self._memory_completion().capture(run, result)
 
         if run.task_id is None:
             return
@@ -288,10 +280,7 @@ class RunLifecycleService:
         return TaskStepCompletionService(self.session, self.callbacks.append_event)
 
     def _memory_completion(self) -> RunMemoryCompletionService:
-        return RunMemoryCompletionService(
-            session=self.session,
-            persistent_session_ref_for_run=self.callbacks.persistent_session_ref_for_run,
-        )
+        return RunMemoryCompletionService(session=self.session)
 
     def _task_progress(self) -> RunTaskProgressService:
         return RunTaskProgressService(

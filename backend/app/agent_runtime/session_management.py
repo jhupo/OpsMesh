@@ -5,7 +5,6 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session as DbSession
 
-from backend.app.agent_runtime.session_compaction import PersistentSessionCompactionService
 from backend.app.agent_runtime.session_repository import (
     PersistentSessionRepository,
     bounded_limit,
@@ -13,7 +12,6 @@ from backend.app.agent_runtime.session_repository import (
     validate_status,
 )
 from backend.app.agent_runtime.session_views import (
-    PersistentSessionCompactionResult,
     PersistentSessionDetail,
     PersistentSessionItemView,
     PersistentSessionSummary,
@@ -34,7 +32,6 @@ class PersistentAgentSessionManagementService:
     def __init__(self, db_session: DbSession) -> None:
         self._db_session = db_session
         self._repository = PersistentSessionRepository(db_session)
-        self._compaction = PersistentSessionCompactionService(db_session, self._repository)
 
     def list_sessions(
         self,
@@ -208,36 +205,6 @@ class PersistentAgentSessionManagementService:
         session.updated_at = datetime.now(UTC)
         self._db_session.flush([session])
         return self._summary_for_session(session)
-
-    def compact_session(
-        self,
-        *,
-        workspace_id: UUID,
-        session_id: UUID,
-        fold_first_n: int,
-        keep_recent_m: int,
-        summary_role: str = "developer",
-    ) -> PersistentSessionCompactionResult | None:
-        return self._compaction.compact_session(
-            workspace_id=workspace_id,
-            session_id=session_id,
-            fold_first_n=fold_first_n,
-            keep_recent_m=keep_recent_m,
-            summary_role=summary_role,
-        )
-
-    def compact_if_needed(
-        self,
-        *,
-        workspace_id: UUID,
-        session_id: UUID,
-        policy: dict[str, object],
-    ) -> PersistentSessionCompactionResult | None:
-        return self._compaction.compact_if_needed(
-            workspace_id=workspace_id,
-            session_id=session_id,
-            policy=policy,
-        )
 
     def _summary_for_session(self, session) -> PersistentSessionSummary:
         return session_summary(

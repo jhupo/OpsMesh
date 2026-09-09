@@ -2514,11 +2514,6 @@ def test_team_session_controls_manage_runtime_and_member_sessions() -> None:
         f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/sessions/{team_session.id}/activate",
         headers=_headers(owner.id),
     )
-    compacted = client.post(
-        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/sessions/{team_session.id}/compact",
-        headers=_headers(owner.id),
-        json={"fold_first_n": 2, "keep_recent_m": 1, "summary_role": "developer"},
-    )
     cleared = client.delete(
         f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/sessions/{team_session.id}/items",
         headers=_headers(owner.id),
@@ -2551,12 +2546,8 @@ def test_team_session_controls_manage_runtime_and_member_sessions() -> None:
     assert frozen.json()["status"] == "frozen"
     assert active.status_code == 200
     assert active.json()["status"] == "active"
-    assert compacted.status_code == 200
-    assert compacted.json()["folded_item_count"] == 2
-    assert compacted.json()["retained_item_count"] == 1
-    assert compacted.json()["item_count"] == 2
     assert cleared.status_code == 200
-    assert cleared.json()["deleted_item_count"] == 2
+    assert cleared.json()["deleted_item_count"] == 3
     assert missing_team_session.status_code == 404
     assert foreign_team_session.status_code == 404
     assert forbidden.status_code == 403

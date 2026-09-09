@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from agents import RunContextWrapper
+from agents import OpenAIResponsesCompactionSession, RunContextWrapper
 
 import backend.app.agent_runtime.openai_agents as openai_runtime
 from backend.app.agent_runtime.claude_agent import ClaudeAgentSDKRunner, _model_provider_circuit_key
@@ -1186,7 +1186,7 @@ def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
     assert rejected == [(rejected_interruption, "operator denied")]
 
 
-def test_openai_agents_runner_passes_persistent_session_to_sdk(
+def test_openai_agents_runner_wraps_persistent_session_with_native_compaction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class Result:
@@ -1244,13 +1244,16 @@ def test_openai_agents_runner_passes_persistent_session_to_sdk(
     assert result.final_output == "done"
     hooks = captured["kwargs"].pop("hooks")
     assert hooks.__class__.__name__ == "OpenAIRuntimeHooks"
+    sdk_session = captured["kwargs"].pop("session")
+    assert isinstance(sdk_session, OpenAIResponsesCompactionSession)
+    assert sdk_session.underlying_session is session
+    assert sdk_session.model == "gpt-4.1"
     assert captured["kwargs"] == {
         "context": request.context,
         "max_turns": 10,
         "run_config": None,
         "previous_response_id": "resp_previous",
         "conversation_id": "conv_123",
-        "session": session,
     }
 
 

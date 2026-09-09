@@ -16,8 +16,6 @@ from backend.app.api.routes.workspace_team_common import (
 )
 from backend.app.api.schemas.agents import (
     AgentSessionClearResponse,
-    AgentSessionCompactionResponse,
-    AgentSessionCompactRequest,
     AgentSessionDetailResponse,
     AgentSessionSummaryResponse,
 )
@@ -162,33 +160,4 @@ async def clear_team_session_items(
     )
     session.commit()
     return AgentSessionClearResponse(deleted_item_count=deleted)
-
-
-@router.post(
-    "/teams/{team_id}/sessions/{session_id}/compact",
-    response_model=AgentSessionCompactionResponse,
-)
-async def compact_team_session(
-    team_id: UUID,
-    session_id: UUID,
-    request: AgentSessionCompactRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
-    session: Session = Depends(get_db_session),
-) -> AgentSessionCompactionResponse:
-    _require_team_session(session, context.workspace.id, team_id, session_id)
-    try:
-        result = PersistentAgentSessionManagementService(session).compact_session(
-            workspace_id=context.workspace.id,
-            session_id=session_id,
-            fold_first_n=request.fold_first_n,
-            keep_recent_m=request.keep_recent_m,
-            summary_role=request.summary_role,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team session not found")
-    session.commit()
-    return AgentSessionCompactionResponse.model_validate(result)
-
 

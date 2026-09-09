@@ -1325,7 +1325,6 @@ def _run_lifecycle(session: Session) -> RunLifecycleService:
                 )
             ),
             task_has_open_team_work=eligibility.task_has_open_team_work,
-            persistent_session_ref_for_run=builder.persistent_session_ref_for_run,
         ),
     )
 
@@ -1378,4 +1377,3 @@ def _patch_portable_types_for_sqlite() -> None:
                 column.type = column.type.as_generic()
             if isinstance(column.type, JSONB):
                 column.type = SqliteJSON()
-

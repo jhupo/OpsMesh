@@ -20,7 +20,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
-from backend.app.agent_runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
+from backend.app.agent_runtime.sessions import PersistentAgentSession
 from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
@@ -748,77 +748,6 @@ def test_completed_run_auto_capture_is_idempotent_for_same_run() -> None:
     )
 
     assert session.scalar(select(func.count(WorkspaceMemoryEntry.id))) == 1
-
-
-def test_completed_run_auto_compacts_existing_persistent_session() -> None:
-    session = _session()
-    user, workspace = _seed_workspace(session)
-    agent = AgentProfile(
-        workspace_id=workspace.id,
-        name="Writer",
-        role="writer",
-        instructions="Write clearly.",
-        memory_policy={
-            "auto_compact_enabled": True,
-            "session_max_items": 3,
-            "session_keep_recent_items": 1,
-            "summary_role": "system",
-        },
-    )
-    task = Task(
-        workspace_id=workspace.id,
-        created_by_user_id=user.id,
-        title="Draft launch note",
-        status=TaskStatus.RUNNING.value,
-    )
-    session.add_all([agent, task])
-    session.flush()
-    run = AgentRun(
-        workspace_id=workspace.id,
-        task_id=task.id,
-        agent_profile_id=agent.id,
-        status=RunStatus.RUNNING.value,
-        input={},
-    )
-    session.add(run)
-    session.flush()
-    persistent_session = PersistentAgentSession(
-        workspace_id=workspace.id,
-        session_key=f"{workspace.id}:task_agent:{task.id}:{agent.id}",
-        scope_type="task_agent",
-        scope_id=f"{task.id}:{agent.id}",
-        agent_profile_id=agent.id,
-        task_id=task.id,
-        session_metadata={"source": "test"},
-    )
-    session.add(persistent_session)
-    session.flush()
-    for sequence, content in enumerate(["one", "two", "three", "four"], start=1):
-        session.add(
-            PersistentAgentSessionItem(
-                workspace_id=workspace.id,
-                persistent_session_id=persistent_session.id,
-                sequence=sequence,
-                item={"role": "user", "content": content},
-            )
-        )
-    session.flush()
-
-    _run_lifecycle(session).mark_run_completed(
-        run,
-        AgentRunResult(final_output="Launch note complete."),
-        requested_by_user_id=user.id,
-    )
-
-    items = session.scalars(
-        select(PersistentAgentSessionItem)
-        .where(PersistentAgentSessionItem.persistent_session_id == persistent_session.id)
-        .order_by(PersistentAgentSessionItem.sequence)
-    ).all()
-    assert [item.sequence for item in items] == [1, 2]
-    assert items[0].item["role"] == "system"
-    assert "folded_items: 3" in str(items[0].item["content"])
-    assert items[1].item["content"] == "four"
 
 
 def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
@@ -6256,7 +6185,6 @@ def _run_lifecycle(session: Session) -> RunLifecycleService:
                 )
             ),
             task_has_open_team_work=eligibility.task_has_open_team_work,
-            persistent_session_ref_for_run=builder.persistent_session_ref_for_run,
         ),
     )
 

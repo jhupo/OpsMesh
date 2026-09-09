@@ -47,15 +47,6 @@ class PersistentSessionDetail:
     item_offset: int
 
 
-@dataclass(frozen=True)
-class PersistentSessionCompactionResult:
-    session_id: UUID
-    folded_item_count: int
-    retained_item_count: int
-    summary_sequence: int | None
-    item_count: int
-
-
 def session_item_view(row: PersistentAgentSessionItem) -> PersistentSessionItemView:
     return PersistentSessionItemView(
         id=row.id,

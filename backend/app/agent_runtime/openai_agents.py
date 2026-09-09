@@ -42,6 +42,7 @@ from backend.app.agent_runtime.guardrails import (
     guardrail_events,
     validated_structured_output,
 )
+from backend.app.agent_runtime.openai_compaction import openai_run_session
 from backend.app.agent_runtime.openai_guardrails import (
     OpenAIRuntimeOutputSchema,
     OpenAIRuntimeOutputSchemaError,
@@ -152,7 +153,9 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             ) as exc:
                 raise _guardrail_blocked_error(exc, guardrail_results) from exc
 
-        result = await invoke_sdk()
+        async with openai_run_session(request) as run_session:
+            request = replace(request, session=run_session)
+            result = await invoke_sdk()
         guardrail_results = merged_openai_guardrail_results(result, guardrail_results)
         interruptions = self._result_mapper.interruptions(result)
         final_output, structured_output = self._result_mapper.final_output(result)

@@ -161,19 +161,5 @@ class AgentSessionDetailResponse(ORMModel):
     item_offset: int
 
 
-class AgentSessionCompactRequest(BaseModel):
-    fold_first_n: int = Field(gt=0)
-    keep_recent_m: int = Field(ge=0)
-    summary_role: str = Field(default="developer", pattern="^(system|developer)$")
-
-
-class AgentSessionCompactionResponse(ORMModel):
-    session_id: UUID
-    folded_item_count: int
-    retained_item_count: int
-    summary_sequence: int | None
-    item_count: int
-
-
 class AgentSessionClearResponse(BaseModel):
     deleted_item_count: int
