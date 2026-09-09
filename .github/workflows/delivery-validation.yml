@@ -37,8 +37,8 @@ jobs:
         env:
           OPSMESH_DELIVERY_POSTGRES_TEST: '1'
         run: |
-          uv run alembic upgrade head
-          uv run pytest backend/tests/test_delivery_postgres.py
+          uv run python scripts/ci_command.py uv run alembic upgrade head
+          uv run python scripts/ci_command.py uv run pytest backend/tests/test_delivery_postgres.py
       - name: Fresh container deployment and runtime probe
         run: |
           cp .env.example .env
@@ -48,4 +48,5 @@ jobs:
           docker run --rm opsmesh-runtime:ci python -m opsmesh_runtime.mcp_stdio_client --check
       - name: Tear down disposable CI deployment
         if: always()
-        run: docker compose down --volumes
+        run: |
+          if [ -f .env ]; then docker compose down --volumes; fi

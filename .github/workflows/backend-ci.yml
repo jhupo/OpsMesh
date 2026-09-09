@@ -21,7 +21,7 @@ jobs:
           version: '0.12.10'
           python-version: '3.12'
       - run: uv sync --frozen --all-groups
-      - run: uv run ruff check .
+      - run: uv run ruff check . --output-format github
       - run: uv run mypy
       - name: Focused tests
         env:
