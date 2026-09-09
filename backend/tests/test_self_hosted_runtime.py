@@ -34,6 +34,7 @@ from backend.app.self_hosted.models import (
     SelfHostedWorker,
 )
 from backend.app.self_hosted.service import SelfHostedRuntimeService
+from backend.app.self_hosted.trust import _worker_version_diagnostics
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
 from backend.app.workspaces.models import Workspace, WorkspaceMember, WorkspaceQuota
@@ -1835,6 +1836,17 @@ def test_self_hosted_connector_manifest_exposes_bootstrap_contract_without_secre
         "upgrade_url": "https://downloads.example.test/connector",
     }
     assert "hidden-policy-token" not in str(payload)
+
+
+def test_self_hosted_version_policy_uses_pep440_prerelease_ordering() -> None:
+    worker = SelfHostedWorker(version="0.4.0rc1")
+
+    diagnostics = _worker_version_diagnostics(
+        worker,
+        {"min_version": "0.4.0", "recommended_version": "0.4.1"},
+    )
+
+    assert diagnostics[0]["code"] == "self_hosted_connector_upgrade_required"
 
 
 def test_self_hosted_worker_trust_view_reflects_degraded_and_revoked_states() -> None:

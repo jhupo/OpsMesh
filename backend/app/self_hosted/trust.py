@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from packaging.version import InvalidVersion, Version
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -262,7 +263,7 @@ def _worker_version_diagnostics(
     diagnostics: list[dict[str, object]] = []
     if min_version is not None:
         parsed_min = _parse_version(min_version)
-        if parsed_min is not None and _version_less_than(current, parsed_min):
+        if parsed_min is not None and current < parsed_min:
             diagnostics.append(
                 {
                     "code": "self_hosted_connector_upgrade_required",
@@ -277,7 +278,7 @@ def _worker_version_diagnostics(
             return diagnostics
     if recommended_version is not None:
         parsed_recommended = _parse_version(recommended_version)
-        if parsed_recommended is not None and _version_less_than(current, parsed_recommended):
+        if parsed_recommended is not None and current < parsed_recommended:
             diagnostics.append(
                 {
                     "code": "self_hosted_connector_upgrade_recommended",
@@ -290,9 +291,6 @@ def _worker_version_diagnostics(
             )
     return diagnostics
 
-
-
-
 def _uuid_from_capabilities(capabilities: dict[str, object], key: str) -> UUID | None:
     value = capabilities.get(key)
     if not isinstance(value, str):
@@ -303,25 +301,14 @@ def _uuid_from_capabilities(capabilities: dict[str, object], key: str) -> UUID |
         return None
 
 
-def _parse_version(value: object) -> tuple[int, ...] | None:
+def _parse_version(value: object) -> Version | None:
     text = _version_string(value)
     if text is None:
         return None
-    normalized = text.removeprefix("v").replace("-", ".")
-    parts: list[int] = []
-    for raw_part in normalized.split("."):
-        digits = "".join(char for char in raw_part if char.isdigit())
-        if not digits:
-            break
-        parts.append(int(digits))
-    return tuple(parts) if parts else None
-
-
-def _version_less_than(current: tuple[int, ...], required: tuple[int, ...]) -> bool:
-    length = max(len(current), len(required))
-    padded_current = current + (0,) * (length - len(current))
-    padded_required = required + (0,) * (length - len(required))
-    return padded_current < padded_required
+    try:
+        return Version(text)
+    except InvalidVersion:
+        return None
 
 
 def _version_string(value: object) -> str | None:
