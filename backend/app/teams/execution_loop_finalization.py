@@ -46,9 +46,9 @@ class TeamExecutionFinalizationService:
         ]
         finalized = [item for item in results if item["status"] == "finalized"]
         if finalized and not dry_run:
-            AuditService(self._session).record_user_action(
+            self._record_finalization_action(
                 workspace_id=workspace_id,
-                user_id=actor_user_id,
+                actor_user_id=actor_user_id,
                 action="team.execution_loop.tasks_finalized",
                 target_type="agent_team",
                 target_id=team_id,
@@ -111,9 +111,9 @@ class TeamExecutionFinalizationService:
             completed_at=datetime.now(UTC),
             final_output=final_output,
         )
-        AuditService(self._session).record_user_action(
+        self._record_finalization_action(
             workspace_id=task.workspace_id,
-            user_id=actor_user_id,
+            actor_user_id=actor_user_id,
             action="task.execution_loop.finalized",
             target_type="task",
             target_id=task.id,
@@ -123,6 +123,36 @@ class TeamExecutionFinalizationService:
             },
         )
         return _result(task, "finalized", "ready", final_output=final_output)
+
+    def _record_finalization_action(
+        self,
+        *,
+        workspace_id: UUID,
+        actor_user_id: UUID | None,
+        action: str,
+        target_type: str,
+        target_id: UUID,
+        metadata: dict[str, object],
+    ) -> None:
+        audit = AuditService(self._session)
+        if actor_user_id is None:
+            audit.record_system_action(
+                workspace_id=workspace_id,
+                actor_id="opsmesh.team_execution_loop",
+                action=action,
+                target_type=target_type,
+                target_id=target_id,
+                metadata=metadata,
+            )
+        else:
+            audit.record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action=action,
+                target_type=target_type,
+                target_id=target_id,
+                metadata=metadata,
+            )
 
     def _blocked_reason(self, task: Task) -> str | None:
         if task.status != TaskStatus.RUNNING.value:

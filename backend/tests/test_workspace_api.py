@@ -1980,7 +1980,8 @@ def test_team_command_center_apply_reports_blocked_reasons_with_partial_schedule
     assert "hidden-partial-scheduler-token" not in str(audit.audit_metadata)
 
 
-def test_team_execution_loop_finalize_closes_approved_tasks_only() -> None:
+@pytest.mark.parametrize("system_execution", [False, True])
+def test_team_execution_loop_finalize_closes_approved_tasks_only(system_execution: bool) -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
     other_owner, _ = _seed_workspace(
@@ -2132,13 +2133,24 @@ def test_team_execution_loop_finalize_closes_approved_tasks_only() -> None:
     session.refresh(approved_task)
     assert approved_task.status == "running"
 
-    applied = client.post(
-        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/execution-loop/finalize",
-        headers=_headers(owner.id),
-        json={"dry_run": False},
-    )
-    assert applied.status_code == 200
-    applied_body = applied.json()
+    if system_execution:
+        from backend.app.teams.execution_loop_finalization import TeamExecutionFinalizationService
+
+        applied_body = TeamExecutionFinalizationService(session).finalize_ready_tasks(
+            workspace_id=workspace.id,
+            team_id=team.id,
+            actor_user_id=None,
+            dry_run=False,
+        )
+        assert applied_body is not None
+    else:
+        applied = client.post(
+            f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/execution-loop/finalize",
+            headers=_headers(owner.id),
+            json={"dry_run": False},
+        )
+        assert applied.status_code == 200
+        applied_body = applied.json()
     assert applied_body["status"] == "finalized"
     assert applied_body["finalized_task_count"] == 1
     session.expire_all()
@@ -2167,6 +2179,12 @@ def test_team_execution_loop_finalize_closes_approved_tasks_only() -> None:
         "task.execution_loop.finalized",
         "team.execution_loop.tasks_finalized",
     }
+    for audit in audits:
+        assert audit.actor_type == ("system" if system_execution else "user")
+        assert audit.actor_id == (
+            "opsmesh.team_execution_loop" if system_execution else str(owner.id)
+        )
+        assert audit.user_id == (None if system_execution else owner.id)
 
 
 def test_team_execution_loop_enqueue_queues_job_idempotently() -> None:
