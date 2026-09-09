@@ -1502,7 +1502,7 @@ wheels = [
 
 [[package]]
 name = "opsmesh"
-version = "0.1.0rc4"
+version = "0.1.0rc5"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1603,7 +1603,7 @@ dev = [
 
 [[package]]
 name = "opsmesh-operator"
-version = "0.1.0rc4"
+version = "0.1.0rc5"
 source = { editable = "operator" }
 dependencies = [
     { name = "filelock" },
@@ -1633,7 +1633,7 @@ provides-extras = ["host"]
 
 [[package]]
 name = "opsmesh-runtime"
-version = "0.1.0rc4"
+version = "0.1.0rc5"
 source = { editable = "runtime" }
 dependencies = [
     { name = "filelock" },
