@@ -197,7 +197,9 @@ workspace/task/run correlation fields.
 
 The active implementation exports structured API/worker logs and traces over OTLP, propagates W3C
 context through HTTP and Redis jobs, and instruments FastAPI, HTTPX, SQLAlchemy, and Redis. Product
-audit events remain an independent Postgres record.
+audit events remain an independent Postgres record. Trace/span identifiers and `traceparent`
+extraction/injection use the OpenTelemetry ID generator and propagator; the product trace context
+stores only the stable correlation fields needed by queue payloads and logs.
 
 ### Adopted: Prometheus Python client
 

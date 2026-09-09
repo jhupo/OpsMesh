@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import re
-import secrets
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 
 from opentelemetry import propagate, trace
+from opentelemetry.context import Context
+from opentelemetry.sdk.trace.id_generator import RandomIdGenerator
 from opentelemetry.trace import NonRecordingSpan, SpanContext, SpanKind, TraceFlags
 
 TRACE_ID_HEADER = "X-Trace-ID"
@@ -17,6 +18,7 @@ TRACEPARENT_HEADER = "traceparent"
 
 _TRACE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _SPAN_ID_RE = re.compile(r"^[0-9a-f]{16}$")
+_ID_GENERATOR = RandomIdGenerator()
 
 trace_id_var: ContextVar[str | None] = ContextVar("trace_id", default=None)
 span_id_var: ContextVar[str | None] = ContextVar("span_id", default=None)
@@ -45,11 +47,11 @@ class TraceContext:
 
 
 def new_trace_id() -> str:
-    return secrets.token_hex(16)
+    return format(_ID_GENERATOR.generate_trace_id(), "032x")
 
 
 def new_span_id() -> str:
-    return secrets.token_hex(8)
+    return format(_ID_GENERATOR.generate_span_id(), "016x")
 
 
 def new_trace_context() -> TraceContext:
@@ -165,15 +167,7 @@ def telemetry_span(
 ) -> Iterator[TraceContext]:
     parent_context = None
     if parent is not None:
-        parent_span = NonRecordingSpan(
-            SpanContext(
-                trace_id=int(parent.trace_id, 16),
-                span_id=int(parent.span_id, 16),
-                is_remote=True,
-                trace_flags=TraceFlags(TraceFlags.SAMPLED),
-            )
-        )
-        parent_context = trace.set_span_in_context(parent_span)
+        parent_context = _opentelemetry_context(parent, is_remote=True)
     tracer = trace.get_tracer("opsmesh.control-plane")
     with tracer.start_as_current_span(
         name,
@@ -198,7 +192,21 @@ def telemetry_span(
 
 
 def traceparent_header(context: TraceContext) -> str:
-    return f"00-{context.trace_id}-{context.span_id}-01"
+    carrier: dict[str, str] = {}
+    propagate.inject(carrier, context=_opentelemetry_context(context, is_remote=False))
+    return carrier[TRACEPARENT_HEADER]
+
+
+def _opentelemetry_context(context: TraceContext, *, is_remote: bool) -> Context:
+    span = NonRecordingSpan(
+        SpanContext(
+            trace_id=int(context.trace_id, 16),
+            span_id=int(context.span_id, 16),
+            is_remote=is_remote,
+            trace_flags=TraceFlags(TraceFlags.SAMPLED),
+        )
+    )
+    return trace.set_span_in_context(span)
 
 
 def _normalize_trace_id(value: str | None) -> str | None:
