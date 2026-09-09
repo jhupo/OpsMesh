@@ -14,7 +14,7 @@ from backend.app.webhooks.constants import (
 )
 from backend.app.webhooks.delivery_state import WebhookDeliveryStateRecorder
 from backend.app.webhooks.http_client import (
-    UrllibWebhookHttpClient,
+    HttpxWebhookHttpClient,
     WebhookHttpClient,
 )
 from backend.app.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
@@ -36,7 +36,7 @@ class WebhookDeliveryService:
         http_client: WebhookHttpClient | None = None,
     ) -> None:
         self._session = session
-        self._http_client = http_client or UrllibWebhookHttpClient()
+        self._http_client = http_client or HttpxWebhookHttpClient()
         self._signer = WebhookDeliverySigner(secret_service)
         self._state = WebhookDeliveryStateRecorder()
 

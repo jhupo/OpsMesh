@@ -10,7 +10,7 @@ from backend.app.webhooks.delivery import (
     WebhookDeliveryService,
 )
 from backend.app.webhooks.http_client import (
-    UrllibWebhookHttpClient,
+    HttpxWebhookHttpClient,
     WebhookHttpClient,
     WebhookHttpResponse,
 )
@@ -20,7 +20,7 @@ from backend.app.webhooks.subscriptions import WebhookSubscriptionService
 __all__ = [
     "WEBHOOK_REPLAY_COOLDOWN_SECONDS",
     "WEBHOOK_REPLAY_WORKSPACE_LIMIT",
-    "UrllibWebhookHttpClient",
+    "HttpxWebhookHttpClient",
     "WebhookDeliveryReplayError",
     "WebhookDeliveryReplayRateLimitError",
     "WebhookDeliveryScheduleSummary",
