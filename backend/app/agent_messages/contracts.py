@@ -1,13 +1,25 @@
-from typing import Protocol, TypeVar
+from datetime import datetime
+from typing import Protocol, TypedDict, TypeVar
 from uuid import UUID
 
 from sqlalchemy import Select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_messages.models import AgentMessageThread
+from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.api.pagination import PageParams
 
 T = TypeVar("T")
+
+
+class AgentInbox(TypedDict):
+    workspace_id: UUID
+    agent_profile_id: UUID
+    generated_at: datetime
+    thread_count: int
+    message_count: int
+    unread_count: int
+    pending_count: int
+    latest_messages: list[AgentMessage]
 
 
 class MailboxStore(Protocol):

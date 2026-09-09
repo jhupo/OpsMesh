@@ -131,8 +131,7 @@ class AgentMailboxProductTools(ProductToolEventRecorder):
             **inbox,
             "latest_messages": [
                 agent_message_payload(message)
-                for message in inbox.get("latest_messages", [])
-                if isinstance(message, AgentMessage)
+                for message in inbox["latest_messages"]
             ],
         }
 

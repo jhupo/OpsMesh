@@ -5,8 +5,12 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from backend.app.artifacts.models import Artifact
-from backend.app.artifacts.persistence import ArtifactPersistenceError
-from backend.app.files.content import WorkspaceFileContent, WorkspaceFileReadError
+from backend.app.artifacts.persistence import ArtifactPersistenceError, ArtifactPersistenceService
+from backend.app.files.content import (
+    WorkspaceFileContent,
+    WorkspaceFileContentReader,
+    WorkspaceFileReadError,
+)
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.runtime_policy import runtime_file_denial_code
 from backend.app.files.security import safe_filename
@@ -18,6 +22,9 @@ from backend.app.tools.product_tools.events import ProductToolEventRecorder
 
 
 class WorkspaceFileProductTools(ProductToolEventRecorder):
+    _workspace_file_content_reader: WorkspaceFileContentReader | None
+    _artifact_persistence: ArtifactPersistenceService | None
+
     def list_workspace_files(
         self,
         context: ToolContext,

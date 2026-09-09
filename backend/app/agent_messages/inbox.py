@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 
 from backend.app.agent_messages.constants import PENDING_STATUSES, READ_STATUSES
-from backend.app.agent_messages.contracts import MailboxStore
+from backend.app.agent_messages.contracts import AgentInbox, MailboxStore
 from backend.app.agent_messages.models import AgentMessage
 from backend.app.agent_messages.queries import scoped_message_statement
 
@@ -19,7 +19,7 @@ class AgentMailboxInboxMixin(MailboxStore):
         unread_only: bool = False,
         thread_id: UUID | None = None,
         task_id: UUID | None = None,
-    ) -> dict[str, object]:
+    ) -> AgentInbox:
         self._require_agent(workspace_id, agent_profile_id)
         if thread_id is not None:
             thread = self._require_thread(workspace_id, thread_id)
