@@ -12,7 +12,7 @@ The initial managed updater supports this single-host maintenance-window topolog
 advertise rolling upgrades, multi-host coordination, ARM64, remote S3 snapshot restoration or
 Postgres major upgrades. Such deployments must not use its local backup/restore path.
 
-Install Docker Engine and Compose v2, Python 3.12, uv 0.12.10, GitHub CLI with attestation support,
+Install Docker Engine and Compose v2, GitHub CLI with attestation support,
 PostgreSQL 16 client tools (`pg_dump`/`pg_restore`), and systemd. The backup role needs permission to
 create temporary databases for restore verification. Authenticate `gh` for the public repository
 and GHCR if necessary; credentials belong to the host updater environment, never a request body.
@@ -41,7 +41,10 @@ maintenance procedure; an application update does not hot-replace the executing 
    tag/version identity, master ancestry, Ruff, strict mypy, full pytest, real PostgreSQL migrations,
    package builds and a clean operator installation. The validated packages are retained as an
    immutable run artifact. A candidate job builds both images once, with SBOM/provenance, under
-   run/attempt-specific candidate tags and probes their exact digests. Only successful validation
+   run/attempt-specific candidate tags and probes their exact digests. Native runners also build
+   five CLI archives and a Linux amd64 self-contained server archive from the validated wheels.
+   Relocation, CLI HTTP requests and server migration/readiness in a Python-free container are
+   mandatory checks. Only successful validation
    enables the signing/publishing job, which downloads the same packages and promotes the tested
    image digests without rebuilding. It publishes the draft Release last, then downloads its public
    assets through the operator's real release source, checks their sizes/hashes and verifies every
@@ -62,18 +65,24 @@ are retained for 14 days even when tests fail.
 
 ## Install
 
-Download the operator wheel from a verified release and verify its provenance before installing:
+Download the native CLI archive for your host from the release, and verify before extraction.
+For Linux amd64 (replace the tag with your approved version):
 
 ```sh
-gh attestation verify opsmesh_operator-0.1.0-py3-none-any.whl --repo jhupo/OpsMesh \
+gh attestation verify opsmesh-cli-v0.1.0rc6-linux-amd64.tar.gz --repo jhupo/OpsMesh \
   --signer-workflow jhupo/OpsMesh/.github/workflows/release-publish.yml \
-  --source-ref refs/tags/v0.1.0 --deny-self-hosted-runners
-uv tool install './opsmesh_operator-0.1.0-py3-none-any.whl[host]'
-opsmesh doctor
-sudo opsmesh --root /opt/opsmesh install --version v0.1.0 --origin https://opsmesh.example.com
+  --source-ref refs/tags/v0.1.0rc6 --deny-self-hosted-runners
+mkdir opsmesh-cli
+tar -xzf opsmesh-cli-v0.1.0rc6-linux-amd64.tar.gz -C opsmesh-cli
+./opsmesh-cli/opsmesh doctor
+sudo ./opsmesh-cli/opsmesh --root /opt/opsmesh install --version v0.1.0rc6 --origin https://opsmesh.example.com
 ```
 
-The administrator must make the verified `opsmesh`, `uv`, `gh` and PostgreSQL binaries available to
+Keep the CLI executable and its bundled libraries together. Python developer wheels remain
+available but are not the standalone installation route. The server archive contains its own
+CPython and locked production dependencies; installation does not resolve packages online.
+
+The administrator must make the verified `opsmesh`, `gh` and PostgreSQL binaries available to
 sudo/systemd; sudo may reset PATH and authentication environment. For systemd application mode add
 `--mode systemd` and provide `/opt/opsmesh/.env` for the pre-provisioned database and Redis first.
 Use dedicated `opsmesh-api` (UID 10001), `opsmesh-worker` (UID 10002), group `opsmesh` (GID 10001).
@@ -92,7 +101,7 @@ reachable secured collector for container clients; container loopback is not hos
   installation-status.json   installation recovery marker
   current -> releases/v…     selected immutable release
   releases/                  verified bundles, deployment files and release manifests
-  updater/                   independently managed host Python environment
+  updater/                   independent copy of the verified self-contained server runtime
   downloads/                 bounded downloaded release assets
   updates/<job-id>.json       fsynced execution checkpoints
   backups/<backup-id>/        database, storage and configuration snapshots (sensitive)

@@ -10,7 +10,8 @@ from alembic.script import ScriptDirectory
 from opsmesh_operator.contracts import ReleaseFile, ReleaseManifest, require_tag
 from pydantic import ValidationError
 
-from scripts.release import build_bundle, file_record, validate_version
+from scripts.build_standalone import archive_tree, copy_server_assets
+from scripts.release import file_record, validate_version, write_checksums
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -52,12 +53,17 @@ def test_release_tag_cannot_be_a_path_or_command(tag: str) -> None:
 
 
 def test_bundle_contains_migration_config_without_local_secrets(tmp_path: Path) -> None:
-    bundle = build_bundle(tmp_path, "v0.1.0")
+    staging = tmp_path / "server"
+    staging.mkdir()
+    copy_server_assets(staging)
+    bundle = tmp_path / "server.tar.gz"
+    archive_tree(staging, bundle)
     with tarfile.open(bundle) as archive:
         names = archive.getnames()
     assert "alembic.ini" in names
     assert "backend/migrations/env.py" in names
-    assert "operator/pyproject.toml" in names
+    assert "opsmesh-server" in names
+    assert "operator/pyproject.toml" not in names
     assert not any("__pycache__" in name or name.endswith(".env") for name in names)
     assert file_record(bundle).size > 0
 
@@ -65,10 +71,16 @@ def test_bundle_contains_migration_config_without_local_secrets(tmp_path: Path) 
 def test_manifest_pins_images_and_rejects_duplicate_files() -> None:
     file = ReleaseFile(name="bundle.tar.gz", sha256="a" * 64, size=10)
     manifest = ReleaseManifest(
-        tag="v0.1.0", commit="b" * 40, repository="jhupo/OpsMesh",
-        backend_digest="sha256:" + "c" * 64, runtime_digest="sha256:" + "d" * 64,
-        database_revision="0070_memory_lifecycle", upgrade_from_revisions=[],
-        rollback_database_revisions=[], connector_protocol=2, platforms=["linux/amd64"],
+        tag="v0.1.0",
+        commit="b" * 40,
+        repository="jhupo/OpsMesh",
+        backend_digest="sha256:" + "c" * 64,
+        runtime_digest="sha256:" + "d" * 64,
+        database_revision="0070_memory_lifecycle",
+        upgrade_from_revisions=[],
+        rollback_database_revisions=[],
+        connector_protocol=2,
+        platforms=["linux/amd64"],
         files=[file],
     )
     assert manifest.image("backend") == "ghcr.io/jhupo/opsmesh@sha256:" + "c" * 64
@@ -90,7 +102,8 @@ def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
     assert workflow["jobs"]["gate"]["with"]["tag"] == "${{ github.ref_name }}"
     assert workflow["jobs"]["gate"]["permissions"] == {"contents": "read"}
     assert workflow["jobs"]["candidate"]["needs"] == "gate"
-    assert workflow["jobs"]["publish"]["needs"] == ["gate", "candidate"]
+    assert workflow["jobs"]["publish"]["needs"] == ["gate", "candidate", "standalone"]
+    assert workflow["jobs"]["standalone"]["needs"] == "gate"
     assert "if" not in workflow["jobs"]["publish"]
     assert "workflow_dispatch" not in publish
     gate = yaml.load(
@@ -104,8 +117,12 @@ def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
     assert 'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"' in commands
     assert "git merge-base --is-ancestor HEAD origin/master" in commands
     for required in (
-        "uv run pytest", "uv run ruff check .", "uv run mypy",
-        "uv run alembic upgrade head", "uv run alembic check", "uv build --all-packages",
+        "uv run pytest",
+        "uv run ruff check .",
+        "uv run mypy",
+        "uv run alembic upgrade head",
+        "uv run alembic check",
+        "uv build --all-packages",
     ):
         assert required in commands
     assert not any("continue-on-error" in step for step in steps)
@@ -119,6 +136,16 @@ def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
     ci = (ROOT / ".github/workflows/backend-ci.yml").read_text("utf-8")
     assert "branches: [master]" in ci
     assert "uv run pytest\n" not in ci
+
+
+def test_checksums_cover_artifacts_not_their_own_digest(tmp_path: Path) -> None:
+    path = tmp_path / "server.tar.gz"
+    path.write_bytes(b"runtime")
+    write_checksums(tmp_path)
+    expected = f"{file_record(path).sha256}  server.tar.gz\n"
+    assert (tmp_path / "checksums.txt").read_text() == expected
+    write_checksums(tmp_path)
+    assert (tmp_path / "checksums.txt").read_text() == expected
 
 
 def test_images_use_locked_dependencies_and_explicit_migrations() -> None:

@@ -44,6 +44,7 @@ requires = ["setuptools>=69.0"]
 build-backend = "setuptools.build_meta"
 
 [dependency-groups]
+packaging = ["pyinstaller==6.22.2"]
 dev = [
     "boto3-stubs[s3]==1.43.23",
     "fakeredis[lua]>=2.35.1",

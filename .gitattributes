@@ -6,3 +6,4 @@
 Dockerfile text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+deploy/server/opsmesh-server text eol=lf

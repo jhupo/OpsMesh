@@ -135,9 +135,8 @@ def execute(args: argparse.Namespace) -> object:
         if args.strategy == "restore" and not args.ack_data_loss:
             raise ValueError("Database restoration requires --ack-data-loss")
         command = [
-            str(installation.root / "updater/bin/python"),
-            "-m",
-            "backend.app.admin.updates.daemon",
+            str(installation.root / "updater/opsmesh-server"),
+            "updater",
             "--root",
             str(installation.root),
             "--recover",

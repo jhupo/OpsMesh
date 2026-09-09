@@ -24,7 +24,7 @@ def doctor(root: Path) -> dict[str, object]:
         "installed": (root / "installation.json").is_file(),
         "commands": {
             name: shutil.which(name) is not None
-            for name in ("docker", "uv", "gh", "systemctl", "pg_dump", "pg_restore")
+            for name in ("docker", "gh", "systemctl", "pg_dump", "pg_restore")
         },
     }
 
@@ -57,7 +57,7 @@ def install(installation: Installation, tag: str, origin: str) -> None:
                 status_path,
                 json.dumps({"phase": "installing", "tag": tag, "mode": installation.mode}),
             )
-        for name in ("uv", "gh", "systemctl", "pg_dump", "pg_restore"):
+        for name in ("gh", "systemctl", "pg_dump", "pg_restore"):
             if shutil.which(name) is None:
                 raise ValueError(f"Install prerequisite {name} before continuing")
         _service_accounts(installation)
@@ -105,11 +105,7 @@ def install(installation: Installation, tag: str, origin: str) -> None:
         # Bootstrap the independently managed updater once. Application updates do not replace
         # this process's environment while it is executing; unsupported protocol changes fail.
         updater_directory = root / "updater"
-        run_command(
-            ["uv", "sync", "--frozen", "--no-dev", "--no-editable"],
-            cwd=directory,
-            env={**os.environ, "UV_PROJECT_ENVIRONMENT": str(updater_directory)},
-        )
+        provision_updater(directory, updater_directory)
         deployment.migrate(manifest)
         deployment.switch(manifest)
         if installation.mode == "systemd":
@@ -127,7 +123,7 @@ def install(installation: Installation, tag: str, origin: str) -> None:
             "[Service]\nType=simple\nUser=root\n"
             f"WorkingDirectory={root}\nEnvironmentFile={root}/.env\n"
             f"EnvironmentFile=-{root}/updater.env\n"
-            f"ExecStart={updater_directory}/bin/python -m backend.app.admin.updates.daemon "
+            f"ExecStart={updater_directory}/opsmesh-server updater "
             f"--root {root}\n"
             "Restart=on-failure\nRestartSec=10\nUMask=0077\nPrivateTmp=true\n"
             "[Install]\nWantedBy=multi-user.target\n"
@@ -143,6 +139,19 @@ def install(installation: Installation, tag: str, origin: str) -> None:
         atomic_write(
             status_path, json.dumps({"phase": "ready", "tag": tag, "mode": installation.mode})
         )
+
+
+def provision_updater(directory: Path, target: Path) -> None:
+    """Copy the verified runtime once; application switches never replace the running updater."""
+    if target.exists():
+        if (target / "BUILD.json").read_bytes() != (directory / "BUILD.json").read_bytes():
+            raise ValueError("Independent updater already belongs to a different release")
+        return
+    staging = target.with_name(".updater.staging")
+    if staging.exists():
+        raise ValueError("Interrupted updater staging requires operator inspection")
+    shutil.copytree(directory, staging, ignore=shutil.ignore_patterns(".env", "__pycache__"))
+    staging.rename(target)
 
 
 def _service_accounts(installation: Installation) -> None:

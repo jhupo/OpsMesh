@@ -43,7 +43,7 @@ jobs:
           version: '0.12.10'
           python-version: '3.12'
       - run: uv sync --frozen --all-groups
-      - run: uv run python scripts/release.py validate --tag "$RELEASE_TAG"
+      - run: uv run python -m scripts.release validate --tag "$RELEASE_TAG"
       - run: uv run ruff check . && uv run mypy
       # Full-suite validation is restricted to tag-triggered release publication.
       - run: uv run python scripts/ci_command.py uv run pytest
@@ -59,7 +59,6 @@ jobs:
           retention-days: 14
       - run: uv run alembic upgrade head && uv run alembic check
       - run: uv build --all-packages
-      - run: uv run python scripts/release.py bundle --tag "$RELEASE_TAG"
       - name: Verify the built operator wheel in a clean environment
         run: |
           uv venv /tmp/opsmesh-package-check

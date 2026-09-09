@@ -9,6 +9,7 @@ from opsmesh_operator.cli import parser, request
 from opsmesh_operator.contracts import ReleaseFile
 from opsmesh_operator.files import atomic_write, require_install_root
 from opsmesh_operator.installation import Installation
+from opsmesh_operator.installer import provision_updater
 from opsmesh_operator.releases import ReleaseSource, extract_bundle
 
 from backend.tests.test_platform_updates import manifest
@@ -91,3 +92,26 @@ def test_installation_rejects_broad_root_and_preserves_atomic_state(tmp_path: Pa
 def test_cli_requires_exact_plan_fingerprint_for_approval() -> None:
     with pytest.raises(SystemExit):
         parser().parse_args(["update", "apply", "--plan", "00000000-0000-0000-0000-000000000001"])
+
+
+def test_updater_is_an_independent_copy_without_secrets(tmp_path: Path) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "BUILD.json").write_text('{"tag":"v0.1.0"}')
+    (bundle / "opsmesh-server").write_text("launcher")
+    (bundle / ".env").write_text("secret")
+    updater = tmp_path / "updater"
+    provision_updater(bundle, updater)
+    assert not (updater / ".env").exists()
+    (bundle / "opsmesh-server").write_text("changed app")
+    assert (updater / "opsmesh-server").read_text() == "launcher"
+    provision_updater(bundle, updater)
+    (bundle / "BUILD.json").write_text('{"tag":"v0.2.0"}')
+    with pytest.raises(ValueError, match="different release"):
+        provision_updater(bundle, updater)
+
+
+def test_interrupted_updater_copy_is_not_silently_reused(tmp_path: Path) -> None:
+    (tmp_path / ".updater.staging").mkdir()
+    with pytest.raises(ValueError, match="Interrupted"):
+        provision_updater(tmp_path / "bundle", tmp_path / "updater")

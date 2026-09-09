@@ -6,7 +6,6 @@ import argparse
 import hashlib
 import json
 import subprocess
-import tarfile
 import tomllib
 from pathlib import Path
 
@@ -31,38 +30,21 @@ def file_record(path: Path) -> ReleaseFile:
     return ReleaseFile(name=path.name, size=path.stat().st_size, sha256=digest)
 
 
-def build_bundle(output: Path, tag: str) -> Path:
-    """Explicit allowlist: no checkout secrets, caches or generated local files."""
-    bundle = output / f"opsmesh-server-{tag}.tar.gz"
-    with tarfile.open(bundle, "w:gz") as archive:
-        for name in ("README.md", "alembic.ini", "pyproject.toml", "uv.lock"):
-            archive.add(ROOT / name, arcname=name)
-        for directory in ("backend", "operator", "runtime", "deploy", "scripts"):
-            for path in sorted((ROOT / directory).rglob("*")):
-                relative = path.relative_to(ROOT)
-                if any(
-                    part.startswith(".")
-                    or part in {"__pycache__", "build"}
-                    or part.endswith(".egg-info")
-                    for part in relative.parts
-                ):
-                    continue
-                if path.is_file() and path.suffix in {
-                    ".py",
-                    ".toml",
-                    ".yml",
-                    ".json",
-                    ".sh",
-                    ".service",
-                    ".example",
-                }:
-                    archive.add(path, arcname=relative.as_posix())
-    return bundle
+def write_checksums(output: Path) -> None:
+    records = [
+        file_record(path)
+        for path in sorted(output.iterdir())
+        if path.is_file() and path.name not in {"checksums.txt", "release-manifest.json"}
+    ]
+    (output / "checksums.txt").write_text(
+        "".join(f"{record.sha256}  {record.name}\n" for record in records),
+        encoding="utf-8",
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["validate", "bundle", "manifest"])
+    parser.add_argument("command", choices=["validate", "manifest"])
     parser.add_argument("--tag", required=True)
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     parser.add_argument("--repository", default="jhupo/OpsMesh")
@@ -73,9 +55,15 @@ def main() -> None:
     if args.command == "validate":
         return
     args.output.mkdir(parents=True, exist_ok=True)
-    if args.command == "bundle":
-        build_bundle(args.output, args.tag)
-        return
+    from scripts.build_standalone import CLI_PLATFORMS
+
+    required = {f"opsmesh-server-{args.tag}-linux-amd64.tar.gz"} | {
+        f"opsmesh-cli-{args.tag}-{target}.{'zip' if target.startswith('windows-') else 'tar.gz'}"
+        for target in CLI_PLATFORMS
+    }
+    if not required <= {path.name for path in args.output.iterdir()}:
+        raise ValueError("Release is missing required standalone distributions")
+    write_checksums(args.output)
     policy = json.loads((ROOT / "release-policy.json").read_text("utf-8"))
     revision = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini"))).get_current_head()
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()

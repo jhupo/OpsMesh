@@ -34,6 +34,33 @@ def verify_assets(assets: list[dict[str, object]], directory: Path) -> set[str]:
     return present
 
 
+def release_notes(manifest: ReleaseManifest) -> str:
+    archives = sorted(file.name for file in manifest.files if file.name.startswith(
+        ("opsmesh-cli-", "opsmesh-server-")
+    ))
+    lines = [
+        "## Ready-to-run distributions", "",
+        "Download and extract the archive for your platform. Python/pip/uv are not required.",
+        "Keep the executable with its accompanying runtime directory; do not copy only the binary.",
+        "", *[f"- `{name}`" for name in archives], "",
+        "CLI: `./opsmesh version` (Windows: `opsmesh.exe version`).",
+        "Server (Linux amd64): `./opsmesh-server check`, then `migrate`, `api` or `worker`.",
+        "PostgreSQL, Redis and deployment host services remain external prerequisites.", "",
+        "## Integrity and provenance", "",
+        "`checksums.txt` lists SHA-256 hashes. Verify the downloaded archive before execution:",
+        "```sh",
+        f"gh attestation verify ARCHIVE --repo {manifest.repository} "
+        f"--signer-workflow {manifest.repository}/.github/workflows/release-publish.yml "
+        f"--source-ref refs/tags/{manifest.tag} --source-digest {manifest.commit} "
+        "--deny-self-hosted-runners", "```", "",
+        "## Container images", "", f"- `{manifest.image('backend')}`",
+        f"- `{manifest.image('runtime')}`", "",
+        "The `.whl` and source distributions are developer packages, not standalone executables.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def publish(tag: str, repository: str, directory: Path) -> None:
     require_tag(tag)
     manifest = ReleaseManifest.model_validate_json(
@@ -61,6 +88,7 @@ def publish(tag: str, repository: str, directory: Path) -> None:
         existing = [json.loads(command(
             "gh", "api", f"repos/{repository}/releases", "--method", "POST",
             "--raw-field", f"tag_name={tag}", "--field", "draft=true",
+            "--raw-field", f"body={release_notes(manifest)}",
             "--field", "generate_release_notes=true",
             "--field", f"prerelease={'true' if 'rc' in tag else 'false'}",
         ))]

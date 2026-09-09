@@ -14,6 +14,12 @@ jobs:
       contents: read
     with:
       tag: ${{ github.ref_name }}
+  standalone:
+    needs: gate
+    uses: ./.github/workflows/standalone.yml
+    with:
+      tag: ${{ github.ref_name }}
+      wheels-artifact: release-packages-${{ github.run_id }}
   candidate:
     needs: gate
     runs-on: ubuntu-latest
@@ -36,7 +42,7 @@ jobs:
           version: '0.12.10'
           python-version: '3.12'
       - run: uv sync --frozen --all-groups
-      - run: uv run python scripts/release.py validate --tag "$RELEASE_TAG"
+      - run: uv run python -m scripts.release validate --tag "$RELEASE_TAG"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -84,7 +90,7 @@ jobs:
             "BACKEND_DIGEST=$BACKEND_DIGEST" "RUNTIME_DIGEST=$RUNTIME_DIGEST" \
             .venv/bin/python scripts/ci_command.py .venv/bin/python scripts/check_candidate.py
   publish:
-    needs: [gate, candidate]
+    needs: [gate, candidate, standalone]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -108,6 +114,11 @@ jobs:
         with:
           name: release-packages-${{ github.run_id }}
           path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: standalone-*-${{ github.run_id }}
+          path: dist
+          merge-multiple: true
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -126,7 +137,7 @@ jobs:
           push-to-registry: true
       - name: Create final release manifest
         run: |
-          uv run python scripts/release.py manifest --tag "$RELEASE_TAG" \
+          uv run python -m scripts.release manifest --tag "$RELEASE_TAG" \
             --repository "$GITHUB_REPOSITORY" --backend-digest "$BACKEND_DIGEST" --runtime-digest "$RUNTIME_DIGEST"
       - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
         with:

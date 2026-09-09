@@ -2,6 +2,15 @@
 
 Status: in progress. A green unit test is not deployment evidence.
 
+## Standalone delivery correction
+
+The rc5 publication checkpoint below validated wheels, source bundles and images, not standalone
+executables. Native ready-to-run archives were missing from that acceptance boundary. The current
+change replaces source-based host installation with a bundled CPython runtime, adds five native
+CLI archives, signed checksums and mandatory relocated-artifact execution before publication.
+Windows CLI relocation and a real administrative HTTP request have passed locally. Hosted native
+matrix/server and final release evidence must be recorded before this correction is complete.
+
 ## rc5 final publication acceptance (2026-09-09)
 
 - [Release Publish 34368777720](https://github.com/jhupo/OpsMesh/actions/runs/34368777720)

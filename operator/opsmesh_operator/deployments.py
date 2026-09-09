@@ -56,7 +56,9 @@ class Deployment(ABC):
                 atomic_write(target / ".prepared", manifest.commit)
             return target
         record = next(
-            file for file in manifest.files if file.name == f"opsmesh-server-{manifest.tag}.tar.gz"
+            file
+            for file in manifest.files
+            if file.name == f"opsmesh-server-{manifest.tag}-linux-amd64.tar.gz"
         )
         archive = source.download_file(manifest, record, cache)
         staging = self.root / "releases" / f".{manifest.tag}.staging"
@@ -170,7 +172,11 @@ class ComposeDeployment(Deployment):
 
 class SystemdDeployment(Deployment):
     def prepare(self, directory: Path, manifest: ReleaseManifest) -> None:
-        run_command(["uv", "sync", "--frozen", "--no-dev", "--no-editable"], cwd=directory)
+        result = json.loads(
+            run_command([str(directory / "opsmesh-server"), "check"], cwd=directory)
+        )
+        if result["version"] != manifest.tag.removeprefix("v"):
+            raise ValueError("Bundled server version does not match release manifest")
 
     def migrate(self, manifest: ReleaseManifest) -> None:
         directory = self.installation.release_dir(manifest.tag)
@@ -178,7 +184,7 @@ class SystemdDeployment(Deployment):
         env_link = directory / ".env"
         if not env_link.exists():
             env_link.symlink_to(self.root / ".env")
-        run_command([str(directory / ".venv/bin/alembic"), "upgrade", "head"], cwd=directory)
+        run_command([str(directory / "opsmesh-server"), "migrate"], cwd=directory)
 
     def stop(self) -> None:
         run_command(["systemctl", "stop", "opsmesh-api", "opsmesh-worker"])

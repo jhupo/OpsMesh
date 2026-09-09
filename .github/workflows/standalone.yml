@@ -1,0 +1,111 @@
+name: Standalone Distributions
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      wheels-artifact:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version of the current checkout (build and acceptance only; no publication)
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: linux-amd64
+            extension: tar.gz
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+            extension: tar.gz
+          - runner: windows-2022
+            target: windows-amd64
+            extension: zip
+          - runner: macos-15-intel
+            target: darwin-amd64
+            extension: tar.gz
+          - runner: macos-14
+            target: darwin-arm64
+            extension: tar.gz
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12.14'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: inputs.wheels-artifact != ''
+        with:
+          name: ${{ inputs.wheels-artifact }}
+          path: wheels
+      - if: inputs.wheels-artifact == ''
+        run: uv build --package opsmesh-operator --wheel --out-dir wheels
+      - name: Build native CLI from the locked wheel
+        run: uv run --no-project python scripts/build_standalone.py --kind cli --tag "$RELEASE_TAG" --wheels wheels
+      - name: Verify relocated CLI without system Python
+        run: uv run --no-project python scripts/check_standalone.py --kind cli --tag "$RELEASE_TAG" --archive "dist/opsmesh-cli-$RELEASE_TAG-${{ matrix.target }}.${{ matrix.extension }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: standalone-cli-${{ matrix.target }}-${{ github.run_id }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+  server:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg16-bookworm
+        env:
+          POSTGRES_DB: opsmesh
+          POSTGRES_USER: opsmesh
+          POSTGRES_PASSWORD: opsmesh
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U opsmesh" --health-interval 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:opsmesh@127.0.0.1:5432/opsmesh
+      OPSMESH_REDIS_URL: redis://127.0.0.1:6379/0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12.14'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: inputs.wheels-artifact != ''
+        with:
+          name: ${{ inputs.wheels-artifact }}
+          path: wheels
+      - if: inputs.wheels-artifact == ''
+        run: uv build --all-packages --wheel --out-dir wheels
+      - name: Build self-contained server from locked wheels and CPython
+        run: uv run --no-project python scripts/build_standalone.py --kind server --tag "$RELEASE_TAG" --wheels wheels
+      - name: Verify relocation, real migrations, API, worker and updater without system Python
+        run: uv run --no-project python scripts/check_standalone.py --kind server --tag "$RELEASE_TAG" --archive "dist/opsmesh-server-$RELEASE_TAG-linux-amd64.tar.gz"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: standalone-server-linux-amd64-${{ github.run_id }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
