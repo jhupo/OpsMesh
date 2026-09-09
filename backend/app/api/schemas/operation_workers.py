@@ -97,7 +97,7 @@ class RuntimeLeaseResponse(TimestampedModel):
     acquired_at: datetime
     released_at: datetime | None
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def has_docker_container(self) -> bool:
         return self.docker_container_id is not None

@@ -53,19 +53,19 @@ class McpCredentialReferenceResponse(TimestampedModel):
     scopes: list[str]
     status: str
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def external_ref_configured(self) -> bool:
         raw_value = getattr(self, "external_ref", None)
         return isinstance(raw_value, str) and bool(raw_value)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def external_ref_kind(self) -> str | None:
         raw_value = getattr(self, "external_ref", None)
         return vault_reference_kind(raw_value) if isinstance(raw_value, str) else None
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def secret_metadata(self) -> dict[str, object]:
         if self.secret_fingerprint:

@@ -59,7 +59,7 @@ class WebhookSubscriptionResponse(ORMModel):
     created_at: datetime
     updated_at: datetime
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def signing_secret(self) -> str:
         return "[redacted]"

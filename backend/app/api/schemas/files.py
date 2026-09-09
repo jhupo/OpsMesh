@@ -24,7 +24,7 @@ class WorkspaceFileResponse(TimestampedModel):
     runtime_access: FileRuntimeAccess
     file_metadata: dict[str, object]
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def has_storage_object(self) -> bool:
         return bool(self.storage_key)
@@ -62,7 +62,7 @@ class ArtifactResponse(ORMModel):
     artifact_metadata: dict[str, object]
     created_at: datetime
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def has_storage_object(self) -> bool:
         return bool(self.storage_key)

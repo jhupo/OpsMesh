@@ -68,28 +68,28 @@ class ModelProviderCredentialResponse(ORMModel):
     def serialize_budget_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return sanitize_budget_metadata(value)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def base_url_configured(self) -> bool:
         return bool(self.base_url)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def base_url_host(self) -> str | None:
         return model_provider_base_url_host(self.base_url)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def model_api(self) -> str | None:
         return model_api_for_provider(self.provider, self.budget_metadata)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def model_capability(self) -> dict[str, object] | None:
         capability = resolve_model_capability(self.provider, self.default_model)
         return capability.as_dict() if capability is not None else None
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def last_health_check_at(self) -> datetime | None:
         timestamps = [
@@ -99,7 +99,7 @@ class ModelProviderCredentialResponse(ORMModel):
         ]
         return max(timestamps) if timestamps else None
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def secret_metadata(self) -> dict[str, object]:
         return hosted_secret_metadata(

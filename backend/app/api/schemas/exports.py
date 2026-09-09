@@ -80,7 +80,7 @@ class WorkspaceExportJobResponse(ORMModel):
     created_at: datetime
     updated_at: datetime
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def has_storage_object(self) -> bool:
         return self.storage_key is not None
