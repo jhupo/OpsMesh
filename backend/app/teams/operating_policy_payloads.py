@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from backend.app.agents.models import AgentProfile
 from backend.app.runtime_spaces.models import RuntimeSpace
 from backend.app.security.redaction import (
     redact_sensitive_payload_item,
@@ -118,7 +119,7 @@ def _member_policy_summary(member: AgentTeamMember) -> dict[str, object]:
     }
 
 
-def _agent_policy(agent) -> dict[str, object]:
+def _agent_policy(agent: AgentProfile) -> dict[str, object]:
     return {
         "model": redact_text_fragments(agent.model),
         "model_settings": redact_sensitive_payload_item(

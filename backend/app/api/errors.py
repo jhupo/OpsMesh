@@ -1,3 +1,5 @@
+from collections.abc import Mapping, Sequence
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -76,9 +78,9 @@ def error_response(
     message: str,
     request_id: str | None = None,
     details: dict[str, object] | None = None,
-    headers: dict[str, str] | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
-    payload = {
+    payload: dict[str, object] = {
         "code": code,
         "message": message,
         "request_id": request_id,
@@ -114,7 +116,9 @@ def _code_for_status(status_code: int) -> str:
             return "http_error"
 
 
-def _json_safe_validation_errors(errors: list[dict[str, object]]) -> list[dict[str, object]]:
+def _json_safe_validation_errors(
+    errors: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
     safe_errors: list[dict[str, object]] = []
     for error in errors:
         safe_error = dict(error)

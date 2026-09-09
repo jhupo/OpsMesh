@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import TypeVar
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -32,6 +33,15 @@ from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
 
+OwnedResource = TypeVar(
+    "OwnedResource",
+    WorkspaceFile,
+    McpServer,
+    McpCredentialReference,
+    RuntimeSpace,
+    WorkspaceRuntime,
+)
+
 
 class CapabilityResourceService:
     def __init__(self, session: Session) -> None:
@@ -47,8 +57,10 @@ class CapabilityResourceService:
         statement = select(CapabilityResource).where(
             CapabilityResource.workspace_id == workspace_id
         )
-        count_statement = select(func.count()).select_from(CapabilityResource).where(
-            CapabilityResource.workspace_id == workspace_id
+        count_statement = (
+            select(func.count())
+            .select_from(CapabilityResource)
+            .where(CapabilityResource.workspace_id == workspace_id)
         )
         if not include_disabled:
             statement = statement.where(CapabilityResource.status == "active")
@@ -330,15 +342,11 @@ class CapabilityResourceService:
 
     def _require_owned(
         self,
-        model: type[WorkspaceFile]
-        | type[McpServer]
-        | type[McpCredentialReference]
-        | type[RuntimeSpace]
-        | type[WorkspaceRuntime],
+        model: type[OwnedResource],
         workspace_id: UUID,
         resource_id: UUID,
         label: str,
-    ) -> WorkspaceFile | McpServer | McpCredentialReference | RuntimeSpace | WorkspaceRuntime:
+    ) -> OwnedResource:
         resource = self._session.scalar(
             select(model).where(model.id == resource_id, model.workspace_id == workspace_id)
         )
