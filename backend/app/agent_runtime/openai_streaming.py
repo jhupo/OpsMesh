@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
-from agents import Agent, Runner
+from agents import Agent, RunConfig, RunHooks, Runner, RunResultStreaming, RunState, Session
+from agents.items import TResponseInputItem
 
 from backend.app.agent_runtime.cancellation import (
     cancel_active_tools,
@@ -12,6 +12,7 @@ from backend.app.agent_runtime.cancellation import (
 )
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
+    AgentRuntimeContext,
 )
 from backend.app.agent_runtime.errors import AgentRuntimeCancelledError
 from backend.app.agent_runtime.execution_observer import AgentRuntimeExecutionObserver
@@ -21,12 +22,13 @@ from backend.app.agent_runtime.openai_results import runtime_stream_event_from_s
 async def run_openai_streamed(
     *,
     request: AgentRunRequest,
-    agent: Agent[Any],
-    runner_input: Any,
-    hooks: Any,
-    run_config: Any,
+    agent: Agent[AgentRuntimeContext],
+    runner_input: str | list[TResponseInputItem] | RunState[AgentRuntimeContext],
+    hooks: RunHooks[AgentRuntimeContext],
+    run_config: RunConfig | None,
+    session: Session | None,
     observer: AgentRuntimeExecutionObserver,
-) -> Any:
+) -> RunResultStreaming:
     await raise_if_cancelled(request.cancellation)
     result = Runner.run_streamed(
         agent,
@@ -37,7 +39,7 @@ async def run_openai_streamed(
         run_config=run_config,
         previous_response_id=request.previous_response_id,
         conversation_id=request.conversation_id,
-        session=request.session,
+        session=session,
     )
     cancelled = asyncio.Event()
 

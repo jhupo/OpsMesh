@@ -8,6 +8,7 @@ from agents import (
     RunContextWrapper,
     Runner,
     RunState,
+    Session,
 )
 from agents.exceptions import (
     InputGuardrailTripwireTriggered,
@@ -112,7 +113,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
 
         hooks = OpenAIRuntimeHooks(observer, request.cancellation)
 
-        async def invoke_sdk() -> Any:
+        async def invoke_sdk(session: Session | None) -> Any:
             try:
                 if request.stream or request.cancellation is not None:
                     return await run_openai_streamed(
@@ -121,6 +122,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                         runner_input=runner_input,
                         hooks=hooks,
                         run_config=self._run_config(request),
+                        session=session,
                         observer=observer,
                     )
                 return await Runner.run(
@@ -132,7 +134,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                     run_config=self._run_config(request),
                     previous_response_id=request.previous_response_id,
                     conversation_id=request.conversation_id,
-                    session=request.session,
+                    session=session,
                 )
             except OpenAIRuntimeOutputSchemaError as exc:
                 raise exc.policy_error from exc
@@ -143,8 +145,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                 raise _guardrail_blocked_error(exc, guardrail_results) from exc
 
         async with openai_run_session(request) as run_session:
-            request = replace(request, session=run_session)
-            result = await invoke_sdk()
+            result = await invoke_sdk(run_session)
         guardrail_results = merged_openai_guardrail_results(result, guardrail_results)
         interruptions = self._result_mapper.interruptions(result)
         final_output, structured_output = self._result_mapper.final_output(result)
@@ -494,14 +495,14 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         if not request.handoffs:
             return []
         definitions: dict[tuple[str, str], AgentRuntimeAgentDefinition] = {}
-        for definition in request.handoff_agents:
+        for authorized_definition in request.handoff_agents:
             for key in {
-                _agent_definition_key(definition),
-                ("name", definition.ref.name),
+                _agent_definition_key(authorized_definition),
+                ("name", authorized_definition.ref.name),
             }:
-                if key in definitions and definitions[key] != definition:
+                if key in definitions and definitions[key] != authorized_definition:
                     raise ValueError("OpenAI Agents handoff targets must be unique")
-                definitions[key] = definition
+                definitions[key] = authorized_definition
         handoffs: list[Any] = []
         seen_targets: set[tuple[str, str]] = set()
         for descriptor in request.handoffs:

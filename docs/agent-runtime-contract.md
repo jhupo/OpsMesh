@@ -364,6 +364,12 @@ Rules:
 
 Short-term state may use SDK sessions. Long-term memory belongs to product storage.
 
+The OpenAI boundary uses `OpenAISessionAdapter` to translate the product session into the SDK's
+`Session` protocol. Stored histories are validated against the installed SDK's input-item types;
+invalid or foreign-provider history is rejected without exposing its contents. SDK session objects
+never replace the product-owned session in `AgentRunRequest`. Both streamed and non-streamed runs
+use this boundary, while workspace-scoped persistence remains owned by the product.
+
 Provider transcript compaction also belongs to the SDK. OpenAI Responses runs wrap the durable
 product session with `OpenAIResponsesCompactionSession`, which calls the official
 `responses.compact` operation and atomically replaces stored history through the session contract.

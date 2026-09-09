@@ -763,7 +763,8 @@ def test_openai_agents_runner_wraps_persistent_session_with_native_compaction(
     assert hooks.__class__.__name__ == "OpenAIRuntimeHooks"
     sdk_session = captured["kwargs"].pop("session")
     assert isinstance(sdk_session, OpenAIResponsesCompactionSession)
-    assert sdk_session.underlying_session is session
+    assert sdk_session.underlying_session.session_id == session.session_id
+    assert asyncio.run(sdk_session.underlying_session.get_items()) == []
     assert sdk_session.model == "gpt-4.1"
     assert captured["kwargs"] == {
         "context": request.context,
