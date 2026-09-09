@@ -36,12 +36,17 @@ class RecordingExecutor:
     def __init__(self) -> None:
         self.contexts: list[AgentRuntimeContext] = []
 
-    def execute_tool(
+    def review_tool_call(self, **_: object) -> dict[str, object]:
+        return {"decision": "allow", "risk_level": "low", "reasons": []}
+
+    async def execute_tool(
         self,
         *,
         context: AgentRuntimeContext,
         tool_name: str,
         arguments: dict[str, object],
+        tool_call_id: str,
+        approval_granted: bool,
     ) -> AgentRuntimeToolResult:
         self.contexts.append(context)
         return AgentRuntimeToolResult(
@@ -171,9 +176,7 @@ def test_openai_agent_tool_uses_sdk_and_scoped_runtime_context(
     assert any(item.event_type == "agent.tool.completed" for item in result.events)
     persisted_output = run_output_payload(result)
     assert persisted_output["agent_tool_calls"][0]["tool_call_id"] == "agent-call-1"
-    assert persisted_output["agent_tool_calls"][0]["target"]["profile_id"] == str(
-        specialist_id
-    )
+    assert persisted_output["agent_tool_calls"][0]["target"]["profile_id"] == str(specialist_id)
 
 
 def test_team_agent_tool_policy_is_frozen_and_hydrated_for_worker_request() -> None:

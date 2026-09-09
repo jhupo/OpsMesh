@@ -249,6 +249,23 @@ class RuntimeManager:
             working_dir=working_dir,
         )
 
+    async def execute_command_async(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime: WorkspaceRuntime,
+        command: list[str],
+        input_file: RuntimeCommandInputFile | None = None,
+        working_dir: str | None = None,
+    ) -> RuntimeCommand:
+        return await self._commands.execute_command_async(
+            workspace_id=workspace_id,
+            runtime=runtime,
+            command=command,
+            input_file=input_file,
+            working_dir=working_dir,
+        )
+
     def execute_existing_command(
         self,
         *,

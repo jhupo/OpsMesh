@@ -89,7 +89,7 @@ or cancellation.
 | MCP protocol and transports | Official MCP Python SDK | Keep; no custom JSON-RPC replacement |
 | Schema validation | `jsonschema` | Keep; product adds workspace/resource policy |
 | Tracing and metrics | OpenTelemetry and Prometheus clients | Keep; product audit remains durable Postgres state |
-| Retry and circuit state | Product resilience module | Keep; provider SDK retry cannot replace durable side-effect policy |
+| Request retries | Provider SDK request retries and durable worker workflow retries | Never replay a complete agent run or MCP tool call in-process; retry only an explicitly idempotent transport or durable workflow step |
 | Sessions and memory | Product Postgres session/memory services, OpenAI Responses compaction session, Claude `SessionStore` bridge | Keep product ownership of storage and durable knowledge; use provider SDK transcript and compaction extension points |
 | Provider health probes | Direct HTTP health checks | Keep; SDKs do not expose a stable account/model readiness probe |
 | Generic agent frameworks | LangChain, LlamaIndex, LiteLLM | Reject for now; they would duplicate the two SDK cores and add weight |
@@ -111,12 +111,15 @@ compatibility layer.
 session initialization, standard tool calls, and protocol result models.
 
 **OpsMesh-owned:** server catalog, workspace credentials, allowlists, egress rules, payload limits,
-approvals, circuit policy, call logs, run events, self-hosted dispatch, and redaction.
+approvals, call logs, run events, self-hosted dispatch, and redaction.
 
-**Current boundary:** remote HTTP, SSE, and hosted remote connections resolve to the SDK-backed
-adapter behind `McpToolAdapter`; the superseded remote JSON-RPC/SSE parser is removed. Stdio is now
-also SDK-backed, but the client process is launched only inside a Docker runtime or a trusted
-self-hosted connector. The control plane passes a versioned request contract and receives a
+**Current boundary:** remote HTTP, SSE, and hosted remote connections resolve to the asynchronous
+SDK-backed adapter behind `McpToolAdapter`. Agent SDK callbacks await the product tool gateway and
+the gateway directly awaits the official MCP client session; no thread-owned event loop, custom
+retry loop, or complete-call replay sits between them. The superseded remote JSON-RPC/SSE parser is
+removed. Stdio is also SDK-backed, but the client process is launched only inside a Docker runtime
+or a trusted self-hosted connector. The synchronous Docker infrastructure boundary is isolated with
+`asyncio.to_thread`, while the control plane passes a versioned request contract and receives a
 serialized `CallToolResult`; it never starts a user-controlled stdio process.
 
 The Docker entrypoint is `python -m opsmesh_runtime.mcp_stdio_client`. Runtime images that enable
@@ -220,11 +223,13 @@ claim semantics are specified.
 
 **Candidate:** [jd/tenacity](https://github.com/jd/tenacity)
 
-Use Tenacity for bounded retries around idempotent outbound transport calls. It can replace generic
-backoff loops in HTTP/provider integrations.
+Use Tenacity only for bounded retries around explicitly idempotent outbound transport calls. It can
+replace generic backoff loops in HTTP/provider integrations after the call's idempotency contract is
+documented.
 
-Do not use Tenacity to replace durable worker retry state, idempotency keys, task transitions,
-dead-letter handling, or circuit state that must survive a process restart.
+Do not use Tenacity to replay an agent run or MCP tool invocation, or to replace durable worker retry
+state, idempotency keys, task transitions, dead-letter handling, or circuit state that must survive a
+process restart.
 
 ## Architecture Spikes
 

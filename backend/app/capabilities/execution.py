@@ -39,7 +39,7 @@ class McpToolExecutionService:
         self._adapter_or_resolver = adapter
         self._settings = settings or get_settings()
 
-    def execute(self, request: McpExecutionRequest) -> McpExecutionResult:
+    async def execute(self, request: McpExecutionRequest) -> McpExecutionResult:
         with telemetry_span(
             "opsmesh.mcp.tool.execute",
             parent=current_trace_context(),
@@ -50,9 +50,9 @@ class McpToolExecutionService:
                 "opsmesh.tool.name": request.tool_name,
             },
         ):
-            return self._execute(request)
+            return await self._execute(request)
 
-    def _execute(self, request: McpExecutionRequest) -> McpExecutionResult:
+    async def _execute(self, request: McpExecutionRequest) -> McpExecutionResult:
         validated = McpExecutionValidator(self._session, self._settings).validate(request)
         request = validated.request
         run = validated.run
@@ -113,7 +113,7 @@ class McpToolExecutionService:
                 execution_review=execution_review,
             )
 
-        return McpToolInvoker(self._session, self._adapter_or_resolver).invoke(
+        return await McpToolInvoker(self._session, self._adapter_or_resolver).invoke(
             request=request,
             run=run,
             server=server,

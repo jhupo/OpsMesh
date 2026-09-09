@@ -10,7 +10,7 @@ from backend.app.capabilities.models import McpCredentialReference, McpServer
 class UnsupportedMcpToolAdapter:
     server_type: str
 
-    def call(
+    async def call(
         self,
         *,
         server: McpServer,

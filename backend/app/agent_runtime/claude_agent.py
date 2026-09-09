@@ -455,9 +455,7 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
         if request.output_schema is not None and validate_output:
             structured = validated_structured_output(
                 request.output_schema,
-                result.structured_output
-                if result.structured_output is not None
-                else result.result,
+                result.structured_output if result.structured_output is not None else result.result,
             )
             return (
                 json.dumps(structured.value, ensure_ascii=False, sort_keys=True),
@@ -610,23 +608,16 @@ def _sdk_tool(
         if executor is None:
             return _tool_error("No runtime tool executor is configured")
         try:
-            sdk_executor = getattr(executor, "execute_sdk_tool", None)
-            if callable(sdk_executor):
-                tool_call_id = approval_state.active_calls.get(definition.name)
-                if not tool_call_id:
-                    return _tool_error("Claude tool call is missing its runtime call ID")
-                result = sdk_executor(
-                    context=request.context,
-                    tool_name=definition.name,
-                    arguments=arguments,
-                    tool_call_id=tool_call_id,
-                )
-            else:
-                result = executor.execute_tool(
-                    context=request.context,
-                    tool_name=definition.name,
-                    arguments=arguments,
-                )
+            tool_call_id = approval_state.active_calls.get(definition.name)
+            if not tool_call_id:
+                return _tool_error("Claude tool call is missing its runtime call ID")
+            result = await executor.execute_tool(
+                context=request.context,
+                tool_name=definition.name,
+                arguments=arguments,
+                tool_call_id=tool_call_id,
+                approval_granted=True,
+            )
             await raise_if_cancelled(request.cancellation)
             if result.status == "completed":
                 payload = result.output or {}
@@ -656,11 +647,7 @@ def _claude_hooks(
     has_tools: bool,
 ) -> dict[str, list[HookMatcher]]:
     hooks: dict[str, list[HookMatcher]] = {
-        "Stop": [
-            HookMatcher(
-                hooks=[_claude_lifecycle_hook("agent.stop", request, observer)]
-            )
-        ]
+        "Stop": [HookMatcher(hooks=[_claude_lifecycle_hook("agent.stop", request, observer)])]
     }
     if not has_tools:
         return hooks
@@ -676,9 +663,7 @@ def _claude_hooks(
     hooks["PostToolUse"] = [
         HookMatcher(
             matcher=f"{_SDK_TOOL_PREFIX}.*",
-            hooks=[
-                _claude_lifecycle_hook("agent.tool.completed", request, observer)
-            ],
+            hooks=[_claude_lifecycle_hook("agent.tool.completed", request, observer)],
         )
     ]
     hooks["PostToolUseFailure"] = [
@@ -745,24 +730,13 @@ def _approval_hook(
                 }
             }
         executor = request.tool_executor
-        reviewer = getattr(executor, "review_tool_call", None)
-        review: object
-        if callable(reviewer):
-            review = reviewer(
-                context=request.context,
-                tool_name=product_name,
-                arguments=dict(input_data.get("tool_input") or {}),
-            )
-        else:
-            review = {
-                "decision": "require_approval" if definition.requires_approval else "allow",
-                "risk_level": definition.risk_level,
-                "reasons": [
-                    "tool.manifest.requires_approval"
-                    if definition.requires_approval
-                    else "tool.manifest.auto_allow"
-                ],
-            }
+        if executor is None:
+            raise ValueError("Claude tool execution requires a runtime tool executor")
+        review: object = executor.review_tool_call(
+            context=request.context,
+            tool_name=product_name,
+            arguments=dict(input_data.get("tool_input") or {}),
+        )
         if not isinstance(review, dict):
             return {
                 "hookSpecificOutput": {

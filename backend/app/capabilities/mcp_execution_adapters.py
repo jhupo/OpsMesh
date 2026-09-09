@@ -5,7 +5,7 @@ from backend.app.capabilities.models import McpCredentialReference, McpServer
 
 
 class McpToolAdapter(Protocol):
-    def call(
+    async def call(
         self,
         *,
         server: McpServer,
@@ -23,7 +23,7 @@ class McpToolAdapterResolver(Protocol):
 
 
 class UnconfiguredMcpToolAdapter:
-    def call(
+    async def call(
         self,
         *,
         server: McpServer,

@@ -1,3 +1,4 @@
+import asyncio
 from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
@@ -90,9 +91,7 @@ def test_effective_catalog_hides_product_tool_without_required_resource() -> Non
         agent_profile_id=profile.id,
     )
 
-    assert [item.descriptor.name for item in with_resource.tools] == [
-        "read_workspace_file"
-    ]
+    assert [item.descriptor.name for item in with_resource.tools] == ["read_workspace_file"]
     assert with_resource.tools[0].descriptor.required_resource_type == "file_collection"
     assert with_resource.tools[0].descriptor.required_access_modes == ["read"]
 
@@ -230,25 +229,33 @@ def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
         storage=storage,
     )
 
-    listed = executor.execute_tool(
-        context=context,
-        tool_name="list_workspace_files",
-        arguments={},
+    listed = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="list_workspace_files",
+            arguments={},
+        )
     )
-    read = executor.execute_tool(
-        context=context,
-        tool_name="read_workspace_file",
-        arguments={"file_id": str(allowed_file.id)},
+    read = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="read_workspace_file",
+            arguments={"file_id": str(allowed_file.id)},
+        )
     )
-    denied = executor.execute_tool(
-        context=context,
-        tool_name="read_workspace_file",
-        arguments={"file_id": str(blocked_file.id)},
+    denied = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="read_workspace_file",
+            arguments={"file_id": str(blocked_file.id)},
+        )
     )
-    oversized = executor.execute_tool(
-        context=context,
-        tool_name="read_workspace_file",
-        arguments={"file_id": str(oversized_file.id)},
+    oversized = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="read_workspace_file",
+            arguments={"file_id": str(oversized_file.id)},
+        )
     )
 
     assert listed.status == "completed"
@@ -270,9 +277,7 @@ def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
     assert oversized.error is not None
     assert oversized.error["code"] == "workspace_file_too_large"
     security_event = session.scalar(
-        select(SecurityEvent).where(
-            SecurityEvent.reason == "workspace_file_not_in_resource_scope"
-        )
+        select(SecurityEvent).where(SecurityEvent.reason == "workspace_file_not_in_resource_scope")
     )
     oversized_security_event = session.scalar(
         select(SecurityEvent).where(SecurityEvent.reason == "workspace_file_too_large")

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from uuid import UUID, uuid4
 
@@ -93,16 +94,18 @@ def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
     _set_mcp_snapshot(run, workspace, server, allow)
     session.commit()
 
-    result = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
-        context=AgentRuntimeContext(
-            workspace_id=workspace.id,
-            task_id=task.id,
-            run_id=run.id,
-            allowed_tools=("generate_image",),
-            tool_definitions=(_mcp_definition(server, allow),),
-        ),
-        tool_name="generate_image",
-        arguments={"prompt": "mountain"},
+    result = asyncio.run(
+        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+            context=AgentRuntimeContext(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                run_id=run.id,
+                allowed_tools=("generate_image",),
+                tool_definitions=(_mcp_definition(server, allow),),
+            ),
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+        )
     )
 
     assert result.status == "completed"
@@ -149,40 +152,42 @@ def test_backend_tool_executor_records_team_runtime_tool_provenance() -> None:
     team_session_id = uuid4()
     agent_profile_id = uuid4()
 
-    result = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
-        context=AgentRuntimeContext(
-            workspace_id=workspace.id,
-            task_id=task.id,
-            run_id=run.id,
-            allowed_tools=("generate_image",),
-            tool_definitions=(_mcp_definition(server, allow),),
-            metadata={
-                "team_context": {
-                    "team_id": str(team_id),
-                    "team_name": "Product Team",
-                    "team_type": "software",
-                    "current_member": {
-                        "member_id": str(member_id),
-                        "agent_profile_id": str(agent_profile_id),
-                        "team_role": "Builder",
-                        "department": "Engineering",
-                        "position_title": "Backend Engineer",
-                        "responsibilities": ["ignored in provenance"],
-                    },
-                    "runtime": {
-                        "status": "running",
-                        "workspace_runtime_id": str(runtime_id),
-                        "runtime_status": "running",
-                        "runtime_space_id": str(runtime_space_id),
-                        "thread_id": str(thread_id),
-                        "team_session_id": str(team_session_id),
-                        "member_session_count": 3,
-                    },
-                }
-            },
-        ),
-        tool_name="generate_image",
-        arguments={"prompt": "runtime provenance"},
+    result = asyncio.run(
+        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+            context=AgentRuntimeContext(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                run_id=run.id,
+                allowed_tools=("generate_image",),
+                tool_definitions=(_mcp_definition(server, allow),),
+                metadata={
+                    "team_context": {
+                        "team_id": str(team_id),
+                        "team_name": "Product Team",
+                        "team_type": "software",
+                        "current_member": {
+                            "member_id": str(member_id),
+                            "agent_profile_id": str(agent_profile_id),
+                            "team_role": "Builder",
+                            "department": "Engineering",
+                            "position_title": "Backend Engineer",
+                            "responsibilities": ["ignored in provenance"],
+                        },
+                        "runtime": {
+                            "status": "running",
+                            "workspace_runtime_id": str(runtime_id),
+                            "runtime_status": "running",
+                            "runtime_space_id": str(runtime_space_id),
+                            "thread_id": str(thread_id),
+                            "team_session_id": str(team_session_id),
+                            "member_session_count": 3,
+                        },
+                    }
+                },
+            ),
+            tool_name="generate_image",
+            arguments={"prompt": "runtime provenance"},
+        )
     )
 
     assert result.status == "completed"
@@ -246,16 +251,20 @@ def test_backend_tool_executor_enforces_mcp_per_run_call_limit() -> None:
         tool_definitions=(_mcp_definition(server, allow),),
     )
 
-    first = executor.execute_tool(
-        context=context,
-        tool_name="generate_image",
-        arguments={"prompt": "mountain"},
-    )
-    try:
+    first = asyncio.run(
         executor.execute_tool(
             context=context,
             tool_name="generate_image",
-            arguments={"prompt": "forest"},
+            arguments={"prompt": "mountain"},
+        )
+    )
+    try:
+        asyncio.run(
+            executor.execute_tool(
+                context=context,
+                tool_name="generate_image",
+                arguments={"prompt": "forest"},
+            )
         )
     except ToolPermissionError as exc:
         assert "mcp_tool_run_call_limit_exceeded" in str(exc)
@@ -309,28 +318,32 @@ def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs() -> N
     session.commit()
     executor = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter())
 
-    first = executor.execute_tool(
-        context=AgentRuntimeContext(
-            workspace_id=workspace.id,
-            task_id=task.id,
-            run_id=first_run.id,
-            allowed_tools=("generate_image",),
-            tool_definitions=(_mcp_definition(server, allow),),
-        ),
-        tool_name="generate_image",
-        arguments={"prompt": "mountain"},
-    )
-    try:
+    first = asyncio.run(
         executor.execute_tool(
             context=AgentRuntimeContext(
                 workspace_id=workspace.id,
                 task_id=task.id,
-                run_id=second_run.id,
+                run_id=first_run.id,
                 allowed_tools=("generate_image",),
                 tool_definitions=(_mcp_definition(server, allow),),
             ),
             tool_name="generate_image",
-            arguments={"prompt": "forest"},
+            arguments={"prompt": "mountain"},
+        )
+    )
+    try:
+        asyncio.run(
+            executor.execute_tool(
+                context=AgentRuntimeContext(
+                    workspace_id=workspace.id,
+                    task_id=task.id,
+                    run_id=second_run.id,
+                    allowed_tools=("generate_image",),
+                    tool_definitions=(_mcp_definition(server, allow),),
+                ),
+                tool_name="generate_image",
+                arguments={"prompt": "forest"},
+            )
         )
     except ToolPermissionError as exc:
         assert "mcp_tool_hourly_call_limit_exceeded" in str(exc)
@@ -371,16 +384,18 @@ def test_backend_tool_executor_enforces_runtime_allowed_tools() -> None:
     _set_mcp_snapshot(run, workspace, server, allow)
     session.commit()
 
-    result = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
-        context=AgentRuntimeContext(
-            workspace_id=workspace.id,
-            task_id=task.id,
-            run_id=run.id,
-            allowed_tools=(),
-            tool_definitions=(_mcp_definition(server, allow),),
-        ),
-        tool_name="generate_image",
-        arguments={"prompt": "mountain"},
+    result = asyncio.run(
+        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+            context=AgentRuntimeContext(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                run_id=run.id,
+                allowed_tools=(),
+                tool_definitions=(_mcp_definition(server, allow),),
+            ),
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+        )
     )
 
     assert result.status == "failed"
@@ -428,42 +443,50 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
         ),
     )
 
-    sent = executor.execute_tool(
-        context=context,
-        tool_name="send_agent_message",
-        arguments={
-            "recipient_agent_profile_id": str(recipient.id),
-            "subject": "Handoff",
-            "body": "Please continue.",
-            "payload": {"scope": "backend"},
-        },
+    sent = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="send_agent_message",
+            arguments={
+                "recipient_agent_profile_id": str(recipient.id),
+                "subject": "Handoff",
+                "body": "Please continue.",
+                "payload": {"scope": "backend"},
+            },
+        )
     )
     assert sent.status == "completed"
     assert sent.output is not None
     assert sent.metadata["provenance"] == "backend_tool_executor"
     assert sent.metadata["tool_kind"] == "product"
     assert sent.metadata["tool_name"] == "send_agent_message"
-    listed = executor.execute_tool(
-        context=context,
-        tool_name="list_agent_thread_messages",
-        arguments={"thread_id": sent.output["thread"]["id"]},
+    listed = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="list_agent_thread_messages",
+            arguments={"thread_id": sent.output["thread"]["id"]},
+        )
     )
-    sensitive = executor.execute_tool(
-        context=context,
-        tool_name="send_agent_message",
-        arguments={
-            "recipient_agent_profile_id": str(recipient.id),
-            "body": "Please review sensitive context.",
-            "payload": {"token": "hidden", "scope": "backend"},
-        },
+    sensitive = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="send_agent_message",
+            arguments={
+                "recipient_agent_profile_id": str(recipient.id),
+                "body": "Please review sensitive context.",
+                "payload": {"token": "hidden", "scope": "backend"},
+            },
+        )
     )
-    blocked = executor.execute_tool(
-        context=context,
-        tool_name="send_agent_message",
-        arguments={
-            "recipient_agent_profile_id": str(other_agent.id),
-            "body": "Cross workspace should fail.",
-        },
+    blocked = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="send_agent_message",
+            arguments={
+                "recipient_agent_profile_id": str(other_agent.id),
+                "body": "Cross workspace should fail.",
+            },
+        )
     )
 
     stored = session.query(AgentMessage).one()
@@ -507,19 +530,21 @@ def test_backend_tool_executor_redacts_product_tool_failure_messages(
         fail_send_agent_message,
     )
 
-    result = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
-        context=AgentRuntimeContext(
-            workspace_id=workspace.id,
-            task_id=task.id,
-            run_id=run.id,
-            allowed_tools=("send_agent_message",),
-            tool_definitions=_product_definitions("send_agent_message"),
-        ),
-        tool_name="send_agent_message",
-        arguments={
-            "recipient_agent_profile_id": str(recipient.id),
-            "body": "Should fail before sending.",
-        },
+    result = asyncio.run(
+        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+            context=AgentRuntimeContext(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                run_id=run.id,
+                allowed_tools=("send_agent_message",),
+                tool_definitions=_product_definitions("send_agent_message"),
+            ),
+            tool_name="send_agent_message",
+            arguments={
+                "recipient_agent_profile_id": str(recipient.id),
+                "body": "Should fail before sending.",
+            },
+        )
     )
 
     assert result.status == "failed"
@@ -577,15 +602,19 @@ def test_backend_tool_executor_dispatches_agent_inbox_product_tools() -> None:
         ),
     )
 
-    inbox = executor.execute_tool(
-        context=context,
-        tool_name="get_agent_inbox",
-        arguments={"latest_limit": 5, "unread_only": True},
+    inbox = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="get_agent_inbox",
+            arguments={"latest_limit": 5, "unread_only": True},
+        )
     )
-    marked = executor.execute_tool(
-        context=context,
-        tool_name="mark_agent_message_read",
-        arguments={"message_id": str(message.id)},
+    marked = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="mark_agent_message_read",
+            arguments={"message_id": str(message.id)},
+        )
     )
 
     session.refresh(message)
@@ -653,17 +682,19 @@ def test_backend_tool_executor_scopes_agent_inbox_to_runtime_metadata() -> None:
     session.add_all([current_message, other_message, run])
     session.commit()
 
-    result = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
-        context=AgentRuntimeContext(
-            workspace_id=workspace.id,
-            task_id=current_task.id,
-            run_id=run.id,
-            allowed_tools=("get_agent_inbox",),
-            tool_definitions=_product_definitions("get_agent_inbox"),
-            metadata={"agent_mailbox": {"scope": {"task_id": str(current_task.id)}}},
-        ),
-        tool_name="get_agent_inbox",
-        arguments={"latest_limit": 5, "unread_only": True},
+    result = asyncio.run(
+        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+            context=AgentRuntimeContext(
+                workspace_id=workspace.id,
+                task_id=current_task.id,
+                run_id=run.id,
+                allowed_tools=("get_agent_inbox",),
+                tool_definitions=_product_definitions("get_agent_inbox"),
+                metadata={"agent_mailbox": {"scope": {"task_id": str(current_task.id)}}},
+            ),
+            tool_name="get_agent_inbox",
+            arguments={"latest_limit": 5, "unread_only": True},
+        )
     )
 
     assert result.status == "completed"
@@ -721,17 +752,19 @@ def test_backend_tool_executor_scopes_mark_read_to_runtime_metadata() -> None:
     session.add_all([other_message, run])
     session.commit()
 
-    result = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
-        context=AgentRuntimeContext(
-            workspace_id=workspace.id,
-            task_id=current_task.id,
-            run_id=run.id,
-            allowed_tools=("mark_agent_message_read",),
-            tool_definitions=_product_definitions("mark_agent_message_read"),
-            metadata={"agent_mailbox": {"scope": {"task_id": str(current_task.id)}}},
-        ),
-        tool_name="mark_agent_message_read",
-        arguments={"message_id": str(other_message.id)},
+    result = asyncio.run(
+        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+            context=AgentRuntimeContext(
+                workspace_id=workspace.id,
+                task_id=current_task.id,
+                run_id=run.id,
+                allowed_tools=("mark_agent_message_read",),
+                tool_definitions=_product_definitions("mark_agent_message_read"),
+                metadata={"agent_mailbox": {"scope": {"task_id": str(current_task.id)}}},
+            ),
+            tool_name="mark_agent_message_read",
+            arguments={"message_id": str(other_message.id)},
+        )
     )
 
     session.refresh(other_message)
@@ -795,27 +828,33 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
         resource_grants=(memory_grant,),
     )
 
-    searched = executor.execute_tool(
-        context=context,
-        tool_name="search_workspace_memory",
-        arguments={"query": "multi-agent operations", "limit": 5},
+    searched = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="search_workspace_memory",
+            arguments={"query": "multi-agent operations", "limit": 5},
+        )
     )
-    remembered = executor.execute_tool(
-        context=context,
-        tool_name="remember_workspace_memory",
-        arguments={
-            "title": "Runtime lesson",
-            "content": "Use persistent sessions for team operations.",
-            "entry_type": "lesson",
-            "tags": ["runtime", "team"],
-            "importance": 7,
-        },
+    remembered = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="remember_workspace_memory",
+            arguments={
+                "title": "Runtime lesson",
+                "content": "Use persistent sessions for team operations.",
+                "entry_type": "lesson",
+                "tags": ["runtime", "team"],
+                "importance": 7,
+            },
+        )
     )
     assert remembered.output is not None
-    archived = executor.execute_tool(
-        context=context,
-        tool_name="archive_workspace_memory",
-        arguments={"memory_entry_id": remembered.output["id"]},
+    archived = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="archive_workspace_memory",
+            arguments={"memory_entry_id": remembered.output["id"]},
+        )
     )
 
     stored = session.get(WorkspaceMemoryEntry, UUID(str(remembered.output["id"])))
@@ -883,21 +922,23 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
     _set_mcp_snapshot(run, workspace, server, allow)
     session.commit()
 
-    result = BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
-        context=AgentRuntimeContext(
-            workspace_id=workspace.id,
-            task_id=task.id,
-            run_id=run.id,
-            allowed_tools=("generate_image",),
-            tool_definitions=(_mcp_definition(server, allow),),
-            runtime_binding=AgentRuntimeExecutionBinding(
-                mode="team_runtime",
-                workspace_runtime_id=runtime.id,
-                runtime_space_id=None,
+    result = asyncio.run(
+        BackendToolExecutor.for_mcp_adapter(session, StaticMcpAdapter()).execute_tool(
+            context=AgentRuntimeContext(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                run_id=run.id,
+                allowed_tools=("generate_image",),
+                tool_definitions=(_mcp_definition(server, allow),),
+                runtime_binding=AgentRuntimeExecutionBinding(
+                    mode="team_runtime",
+                    workspace_runtime_id=runtime.id,
+                    runtime_space_id=None,
+                ),
             ),
-        ),
-        tool_name="generate_image",
-        arguments={"prompt": "mountain"},
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+        )
     )
     job = session.query(SelfHostedMcpJob).one()
 
@@ -1000,26 +1041,28 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
         ]
     )
 
-    result = BackendToolExecutor.for_mcp_adapter(
-        session,
-        StaticMcpAdapter(),
-        docker_client=docker,
-        secret_service=secret_service,
-    ).execute_tool(
-        context=AgentRuntimeContext(
-            workspace_id=workspace.id,
-            task_id=task.id,
-            run_id=run.id,
-            allowed_tools=("generate_image",),
-            tool_definitions=(_mcp_definition(server, allow),),
-            runtime_binding=AgentRuntimeExecutionBinding(
-                mode="team_runtime",
-                workspace_runtime_id=runtime.id,
-                runtime_space_id=None,
+    result = asyncio.run(
+        BackendToolExecutor.for_mcp_adapter(
+            session,
+            StaticMcpAdapter(),
+            docker_client=docker,
+            secret_service=secret_service,
+        ).execute_tool(
+            context=AgentRuntimeContext(
+                workspace_id=workspace.id,
+                task_id=task.id,
+                run_id=run.id,
+                allowed_tools=("generate_image",),
+                tool_definitions=(_mcp_definition(server, allow),),
+                runtime_binding=AgentRuntimeExecutionBinding(
+                    mode="team_runtime",
+                    workspace_runtime_id=runtime.id,
+                    runtime_space_id=None,
+                ),
             ),
-        ),
-        tool_name="generate_image",
-        arguments={"prompt": "mountain"},
+            tool_name="generate_image",
+            arguments={"prompt": "mountain"},
+        )
     )
 
     assert result.status == "completed"
@@ -1055,7 +1098,7 @@ def test_waiting_runtime_status_transition_is_allowed() -> None:
 
 
 class StaticMcpAdapter:
-    def call(
+    async def call(
         self,
         *,
         server: McpServer,

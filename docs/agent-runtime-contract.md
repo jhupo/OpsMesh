@@ -270,6 +270,10 @@ Rules:
 - final arguments are validated against the frozen schema before credential resolution
 - write-capable tools follow approval policy
 - calls and denials are logged as durable run and security events
+- SDK tool callbacks await the product executor, which awaits the policy service, invocation boundary,
+  and official MCP `ClientSession`; remote MCP calls never cross a synchronous event-loop bridge
+- one logical tool invocation is attempted once in-process; OpsMesh does not replay an entire MCP
+  tool call because the remote operation may already have produced a side effect
 
 ## Authorization Snapshot Contract
 

@@ -49,23 +49,11 @@ class OpenAIToolBridge:
             arguments: dict[str, Any],
             call_id: str,
         ) -> bool:
-            reviewer = getattr(executor, "review_tool_call", None)
-            if callable(reviewer):
-                review = reviewer(
-                    context=runtime_context,
-                    tool_name=definition.name,
-                    arguments=arguments,
-                )
-            else:
-                review = {
-                    "decision": "require_approval"
-                    if definition.requires_approval
-                    else "allow",
-                    "risk_level": definition.risk_level,
-                    "reasons": ["tool.manifest.requires_approval"]
-                    if definition.requires_approval
-                    else ["tool.manifest.auto_allow"],
-                }
+            review = executor.review_tool_call(
+                context=runtime_context,
+                tool_name=definition.name,
+                arguments=arguments,
+            )
             if not isinstance(review, dict):
                 raise ValueError("Tool approval review must return a mapping")
             approval_reviews[call_id] = dict(review)
@@ -89,20 +77,13 @@ class OpenAIToolBridge:
                     "tool_name": definition.name,
                     "status": "failed",
                 }
-            sdk_executor = getattr(executor, "execute_sdk_tool", None)
-            if callable(sdk_executor):
-                result = sdk_executor(
-                    context=runtime_context,
-                    tool_name=definition.name,
-                    arguments=parsed,
-                    tool_call_id=ctx.tool_call_id,
-                )
-            else:
-                result = executor.execute_tool(
-                    context=runtime_context,
-                    tool_name=definition.name,
-                    arguments=parsed,
-                )
+            result = await executor.execute_tool(
+                context=runtime_context,
+                tool_name=definition.name,
+                arguments=parsed,
+                tool_call_id=ctx.tool_call_id,
+                approval_granted=True,
+            )
             await raise_if_cancelled(cancellation)
             if result.status == "completed":
                 return tool_response_with_metadata(
@@ -139,11 +120,6 @@ class OpenAIToolBridge:
         tool._opsmesh_tool_kind = definition.source
         tool._opsmesh_approval_reviews = approval_reviews
         return tool
-
-
-def safe_tool_function_name(tool_name: str) -> str:
-    safe = "".join(char if char.isalnum() else "_" for char in tool_name)
-    return safe or "tool"
 
 
 def tool_response_with_metadata(

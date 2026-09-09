@@ -65,12 +65,17 @@ class RecordingExecutor:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
 
-    def execute_tool(
+    def review_tool_call(self, **_: object) -> dict[str, object]:
+        return {"decision": "allow", "risk_level": "low", "reasons": []}
+
+    async def execute_tool(
         self,
         *,
         context: AgentRuntimeContext,
         tool_name: str,
         arguments: dict[str, object],
+        tool_call_id: str,
+        approval_granted: bool,
     ) -> AgentRuntimeToolResult:
         self.calls.append((tool_name, arguments))
         return AgentRuntimeToolResult(status="completed", output={"answer": "found"})

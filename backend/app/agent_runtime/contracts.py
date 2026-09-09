@@ -40,9 +40,7 @@ class AgentRuntimeCapabilities:
 
     def supports(self, capability: AgentRuntimeCapability | str) -> bool:
         value = (
-            capability.value
-            if isinstance(capability, AgentRuntimeCapability)
-            else str(capability)
+            capability.value if isinstance(capability, AgentRuntimeCapability) else str(capability)
         )
         return any(item.value == value for item in self.supported)
 
@@ -312,12 +310,22 @@ class AgentRuntimeToolContinuation:
 
 
 class AgentRuntimeToolExecutor(Protocol):
-    def execute_tool(
+    def review_tool_call(
         self,
         *,
         context: AgentRuntimeContext,
         tool_name: str,
         arguments: dict[str, object],
+    ) -> dict[str, object]: ...
+
+    async def execute_tool(
+        self,
+        *,
+        context: AgentRuntimeContext,
+        tool_name: str,
+        arguments: dict[str, object],
+        tool_call_id: str | None = None,
+        approval_granted: bool = False,
     ) -> AgentRuntimeToolResult: ...
 
 

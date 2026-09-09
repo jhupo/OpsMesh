@@ -32,7 +32,7 @@ class McpToolInvoker:
     session: Session
     adapter_or_resolver: McpToolAdapter | McpToolAdapterResolver
 
-    def invoke(
+    async def invoke(
         self,
         *,
         request: McpExecutionRequest,
@@ -45,7 +45,7 @@ class McpToolInvoker:
         started = monotonic()
         try:
             self._enforce_payload_size(request.arguments, policy.max_input_bytes)
-            response = self._adapter_for(server).call(
+            response = await self._adapter_for(server).call(
                 server=server,
                 tool_name=request.tool_name,
                 arguments=request.arguments,

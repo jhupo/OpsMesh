@@ -40,10 +40,13 @@ class CancellableExecutor:
     def __init__(self) -> None:
         self.cancelled = False
 
-    def execute_tool(self, **_: object) -> AgentRuntimeToolResult:
+    def review_tool_call(self, **_: object) -> dict[str, object]:
+        return {"decision": "allow", "risk_level": "low", "reasons": []}
+
+    async def execute_tool(self, **_: object) -> AgentRuntimeToolResult:
         return AgentRuntimeToolResult(status="completed")
 
-    def cancel_active_tools(self, **_: object) -> None:
+    async def cancel_active_tools(self, **_: object) -> None:
         self.cancelled = True
 
 
@@ -163,7 +166,7 @@ def test_openai_cancellation_stops_sdk_run_and_active_tools(
     )
 
     with pytest.raises(AgentRuntimeCancelledError):
-        asyncio.run(OpenAIAgentsRunner(max_attempts=3).run(request))
+        asyncio.run(OpenAIAgentsRunner().run(request))
 
     assert sdk_cancelled.is_set()
     assert executor.cancelled is True
@@ -243,7 +246,7 @@ def test_claude_cancellation_interrupts_client_and_active_tools() -> None:
         tool_executor=executor,
     )
     with pytest.raises(AgentRuntimeCancelledError):
-        asyncio.run(ClaudeAgentSDKRunner(max_attempts=3, client_factory=factory).run(request))
+        asyncio.run(ClaudeAgentSDKRunner(client_factory=factory).run(request))
 
     assert len(created) == 1
     assert created[0].interrupted.is_set()

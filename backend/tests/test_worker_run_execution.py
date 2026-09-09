@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -218,9 +219,7 @@ def test_worker_persists_interrupted_sdk_state_for_resume() -> None:
                 final_output="",
                 resume_state=AgentRuntimeResumeState(
                     provider="openai_agents",
-                    serialized_state=(
-                        '{"$schemaVersion":"1.10","private":"state-secret"}'
-                    ),
+                    serialized_state=('{"$schemaVersion":"1.10","private":"state-secret"}'),
                     schema_version="1.10",
                     sdk_version="0.17.2",
                 ),
@@ -331,18 +330,19 @@ def test_phase_one_approval_flow_survives_worker_restart_and_executes_once() -> 
             assert request.approval_decisions[0].tool_call_id == "call-phase-one"
             assert request.approval_decisions[0].status == "approved"
             assert request.tool_executor is not None
-            execute = request.tool_executor.execute_sdk_tool  # type: ignore[attr-defined]
-            first = execute(
+            first = await request.tool_executor.execute_tool(
                 context=request.context,
                 tool_name="write_artifact",
                 arguments=arguments,
                 tool_call_id="call-phase-one",
+                approval_granted=True,
             )
-            replay = execute(
+            replay = await request.tool_executor.execute_tool(
                 context=request.context,
                 tool_name="write_artifact",
                 arguments=arguments,
                 tool_call_id="call-phase-one",
+                approval_granted=True,
             )
             assert first.status == "completed"
             assert replay.output == first.output
@@ -5902,14 +5902,18 @@ def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
         "mark_agent_message_read",
     )
     assert planner_request.session is not None
-    send_result = planner_request.tool_executor.execute_tool(
-        context=planner_request.context,
-        tool_name="send_agent_message",
-        arguments={
-            "recipient_agent_profile_id": str(builder.id),
-            "subject": "Builder handoff",
-            "body": "Start with the runtime ensure path.",
-        },
+    send_result = asyncio.run(
+        planner_request.tool_executor.execute_tool(
+            context=planner_request.context,
+            tool_name="send_agent_message",
+            arguments={
+                "recipient_agent_profile_id": str(builder.id),
+                "subject": "Builder handoff",
+                "body": "Start with the runtime ensure path.",
+            },
+            tool_call_id="test-builder-handoff",
+            approval_granted=False,
+        )
     )
     assert send_result.status == "completed"
     assert send_result.output is not None

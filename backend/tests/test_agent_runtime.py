@@ -945,10 +945,12 @@ def test_openai_tool_bridge_maps_dynamic_sdk_approval_interruption() -> None:
                 "reasons": ["tool.arguments.sensitive"],
             }
 
-        def execute_tool(self, **_: object) -> AgentRuntimeToolResult:
-            raise AssertionError("SDK execution method should be used")
-
-        def execute_sdk_tool(self, *, tool_call_id: str, **_: object) -> AgentRuntimeToolResult:
+        async def execute_tool(
+            self,
+            *,
+            tool_call_id: str,
+            **_: object,
+        ) -> AgentRuntimeToolResult:
             calls.append(tool_call_id)
             return AgentRuntimeToolResult(status="completed", output={"ok": True})
 
@@ -1240,12 +1242,17 @@ class RecordingToolExecutor:
         self.output = output or {"ok": True}
         self.calls: list[str] = []
 
-    def execute_tool(
+    def review_tool_call(self, **_: object) -> dict[str, object]:
+        return {"decision": "allow", "risk_level": "low", "reasons": []}
+
+    async def execute_tool(
         self,
         *,
         context: AgentRuntimeContext,
         tool_name: str,
         arguments: dict[str, object],
+        tool_call_id: str,
+        approval_granted: bool,
     ) -> AgentRuntimeToolResult:
         self.calls.append(tool_name)
         return AgentRuntimeToolResult(

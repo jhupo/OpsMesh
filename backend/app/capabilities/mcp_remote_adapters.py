@@ -1,13 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Coroutine
 from datetime import timedelta
-from queue import Queue
-from threading import Thread
-from typing import Any, TypeVar
-from urllib.parse import urlparse
 
 import httpx
 from mcp import ClientSession
@@ -21,7 +15,6 @@ from backend.app.capabilities.mcp_adapter_payloads import (
 )
 from backend.app.capabilities.mcp_execution_types import McpExecutionError
 from backend.app.capabilities.models import McpCredentialReference, McpServer
-from backend.app.core.resilience import CircuitBreakerConfig, retry_with_circuit
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import (
     MCP_EGRESS_URL_POLICY,
@@ -29,13 +22,6 @@ from backend.app.security.egress import (
     EgressUrlValidationError,
     validate_egress_url,
 )
-
-MCP_REMOTE_CALL_CIRCUIT_CONFIG = CircuitBreakerConfig(
-    failure_threshold=5,
-    reset_after_seconds=60,
-)
-MCP_REMOTE_CALL_MAX_ATTEMPTS = 2
-T = TypeVar("T")
 
 
 class BaseRemoteMcpToolAdapter(ABC):
@@ -52,7 +38,7 @@ class BaseRemoteMcpToolAdapter(ABC):
         self._secret_service = secret_service
         self._egress_policy = egress_policy
 
-    def call(
+    async def call(
         self,
         *,
         server: McpServer,
@@ -72,13 +58,12 @@ class BaseRemoteMcpToolAdapter(ABC):
             **string_dict_setting(server.connection, "headers"),
             **self._credential_headers(credential_refs),
         }
-        return call_remote_mcp(
+        return await call_remote_mcp_async(
             url=url,
             headers=headers,
             tool_name=tool_name,
             arguments=arguments,
             timeout_seconds=timeout_seconds,
-            circuit_key=mcp_circuit_key(url, transport=self.transport),
             transport=self.transport,
         )
 
@@ -142,7 +127,7 @@ class HostedMcpToolAdapter:
             egress_policy=egress_policy,
         )
 
-    def call(
+    async def call(
         self,
         *,
         server: McpServer,
@@ -153,7 +138,7 @@ class HostedMcpToolAdapter:
     ) -> dict[str, object]:
         transport = (string_setting(server.connection, "transport") or "").lower().strip()
         if transport == "streamable_http":
-            return self._http_adapter.call(
+            return await self._http_adapter.call(
                 server=server,
                 tool_name=tool_name,
                 arguments=arguments,
@@ -161,7 +146,7 @@ class HostedMcpToolAdapter:
                 timeout_seconds=timeout_seconds,
             )
         if transport == "sse":
-            return self._sse_adapter.call(
+            return await self._sse_adapter.call(
                 server=server,
                 tool_name=tool_name,
                 arguments=arguments,
@@ -182,34 +167,6 @@ def validate_mcp_url(url: str, *, egress_policy: EgressUrlPolicy, transport: str
             f"{transport.upper()} MCP server url is invalid",
             code="mcp_server_url_invalid",
         ) from exc
-
-
-def call_remote_mcp(
-    *,
-    url: str,
-    headers: dict[str, str],
-    tool_name: str,
-    arguments: dict[str, object],
-    timeout_seconds: int,
-    circuit_key: str,
-    transport: str,
-) -> dict[str, object]:
-    return retry_with_circuit(
-        key=circuit_key,
-        func=lambda: run_async(
-            lambda: call_remote_mcp_async(
-                url=url,
-                headers=headers,
-                tool_name=tool_name,
-                arguments=arguments,
-                timeout_seconds=timeout_seconds,
-                transport=transport,
-            )
-        ),
-        max_attempts=MCP_REMOTE_CALL_MAX_ATTEMPTS,
-        circuit_config=MCP_REMOTE_CALL_CIRCUIT_CONFIG,
-        should_retry=is_retryable_mcp_error,
-    )
 
 
 async def call_remote_mcp_async(
@@ -274,29 +231,6 @@ async def _call_tool(
     return _result_payload(result)
 
 
-def run_async(factory: Callable[[], Coroutine[Any, Any, T]]) -> T:
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(factory())
-
-    result_queue: Queue[tuple[T | None, BaseException | None]] = Queue(maxsize=1)
-
-    def target() -> None:
-        try:
-            result_queue.put((asyncio.run(factory()), None))
-        except BaseException as exc:
-            result_queue.put((None, exc))
-
-    thread = Thread(target=target, daemon=True)
-    thread.start()
-    thread.join()
-    result, error = result_queue.get()
-    if error is not None:
-        raise error
-    return result  # type: ignore[return-value]
-
-
 def _result_payload(result: CallToolResult) -> dict[str, object]:
     if result.isError:
         raise McpExecutionError("Remote MCP tool failed", code="mcp_remote_error")
@@ -317,14 +251,9 @@ def _result_payload(result: CallToolResult) -> dict[str, object]:
 def _normalize_remote_exception(exc: Exception, *, transport: str) -> McpExecutionError:
     status_code = getattr(getattr(exc, "response", None), "status_code", None)
     if isinstance(status_code, int):
-        code = (
-            f"mcp_{transport}_retryable_status_error"
-            if status_code == 408 or status_code == 429 or status_code >= 500
-            else f"mcp_{transport}_status_error"
-        )
         return McpExecutionError(
             f"{transport.upper()} MCP server returned status {status_code}",
-            code=code,
+            code=f"mcp_{transport}_status_error",
         )
     if isinstance(exc, TimeoutError) or exc.__class__.__name__ in {
         "TimeoutException",
@@ -339,26 +268,3 @@ def _normalize_remote_exception(exc: Exception, *, transport: str) -> McpExecuti
         f"{transport.upper()} MCP server request failed",
         code=f"mcp_{transport}_request_failed",
     )
-
-
-def is_retryable_mcp_error(exc: Exception) -> bool:
-    return isinstance(exc, McpExecutionError) and exc.code in {
-        "mcp_http_request_failed",
-        "mcp_http_timeout",
-        "mcp_http_retryable_status_error",
-        "mcp_sse_request_failed",
-        "mcp_sse_timeout",
-        "mcp_sse_retryable_status_error",
-    }
-
-
-def mcp_circuit_key(url: str, *, transport: str) -> str:
-    try:
-        parsed = urlparse(url)
-    except ValueError:
-        host = "invalid-url"
-        path = ""
-    else:
-        host = parsed.netloc or "missing-host"
-        path = parsed.path or "/"
-    return f"mcp:{transport}:{host}:{path}"

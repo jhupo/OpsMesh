@@ -42,7 +42,7 @@ class DockerRuntimeStdioMcpToolAdapter:
         self._secret_service = secret_service
         self._working_dir = working_dir
 
-    def call(
+    async def call(
         self,
         *,
         server: McpServer,
@@ -52,7 +52,7 @@ class DockerRuntimeStdioMcpToolAdapter:
         timeout_seconds: int,
     ) -> dict[str, object]:
         command = stdio_command(server.connection)
-        self.assert_sdk_ready(workspace_id=server.workspace_id)
+        await self.assert_sdk_ready(workspace_id=server.workspace_id)
         request = stdio_sdk_request(
             command=command,
             tool_name=tool_name,
@@ -63,7 +63,7 @@ class DockerRuntimeStdioMcpToolAdapter:
                 secret_service=self._secret_service,
             ),
         )
-        record = self._runtime_manager.execute_command(
+        record = await self._runtime_manager.execute_command_async(
             workspace_id=server.workspace_id,
             runtime=self._runtime,
             command=[
@@ -88,11 +88,11 @@ class DockerRuntimeStdioMcpToolAdapter:
             )
         return result_from_sdk_output(record.stdout)
 
-    def assert_sdk_ready(self, *, workspace_id: UUID) -> None:
+    async def assert_sdk_ready(self, *, workspace_id: UUID) -> None:
         cached_report = (self._runtime.capabilities or {}).get("mcp_stdio_sdk")
         if _sdk_report_is_ready(cached_report):
             return
-        record = self._runtime_manager.execute_command(
+        record = await self._runtime_manager.execute_command_async(
             workspace_id=workspace_id,
             runtime=self._runtime,
             command=[
@@ -138,7 +138,7 @@ class SelfHostedStdioMcpToolAdapter:
         self._runtime = runtime
         self._agent_run_id = agent_run_id
 
-    def call(
+    async def call(
         self,
         *,
         server: McpServer,

@@ -1,3 +1,5 @@
+import asyncio
+
 from backend.app.capabilities.execution import McpToolExecutionService
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
 from backend.app.capabilities.mcp_execution_types import McpExecutionRequest
@@ -28,18 +30,20 @@ class McpToolExecutionJobHandler:
             or job.resource_id
         )
 
-        McpToolExecutionService(
-            self._context.session,
-            self._context.mcp_adapter or McpAdapterResolver(),
-            settings=self._context.settings,
-        ).execute(
-            McpExecutionRequest(
-                workspace_id=job.workspace_id,
-                agent_run_id=agent_run_id,
-                mcp_server_id=server_id,
-                tool_name=tool_name,
-                arguments=arguments,
-                runtime_allowed_tools=runtime_allowed_tools,
+        asyncio.run(
+            McpToolExecutionService(
+                self._context.session,
+                self._context.mcp_adapter or McpAdapterResolver(),
+                settings=self._context.settings,
+            ).execute(
+                McpExecutionRequest(
+                    workspace_id=job.workspace_id,
+                    agent_run_id=agent_run_id,
+                    mcp_server_id=server_id,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    runtime_allowed_tools=runtime_allowed_tools,
+                )
             )
         )
         self._context.session.commit()

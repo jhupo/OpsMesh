@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from subprocess import TimeoutExpired
 from uuid import UUID
@@ -43,20 +44,35 @@ class RuntimeCommandExecutor:
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
     ) -> RuntimeCommand:
-        if runtime.workspace_id != workspace_id:
-            raise PermissionError("Runtime does not belong to workspace")
-        require_container(runtime)
-        record = RuntimeCommand(
+        record = self._create_command_record(
             workspace_id=workspace_id,
-            workspace_runtime_id=runtime.id,
-            runtime_space_id=runtime.runtime_space_id,
+            runtime=runtime,
             command=command,
-            status="running",
-            started_at=datetime.now(UTC),
         )
-        self._session.add(record)
-        self._session.flush()
         return self.execute_existing_command(
+            workspace_id=workspace_id,
+            runtime=runtime,
+            record=record,
+            command=command,
+            input_file=input_file,
+            working_dir=working_dir,
+        )
+
+    async def execute_command_async(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime: WorkspaceRuntime,
+        command: list[str],
+        input_file: RuntimeCommandInputFile | None = None,
+        working_dir: str | None = None,
+    ) -> RuntimeCommand:
+        record = self._create_command_record(
+            workspace_id=workspace_id,
+            runtime=runtime,
+            command=command,
+        )
+        return await self.execute_existing_command_async(
             workspace_id=workspace_id,
             runtime=runtime,
             record=record,
@@ -75,6 +91,99 @@ class RuntimeCommandExecutor:
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
     ) -> RuntimeCommand:
+        timeout_seconds = self._prepare_execution(
+            workspace_id=workspace_id,
+            runtime=runtime,
+            record=record,
+            command=command,
+        )
+        try:
+            result = self._execute_docker_command(
+                runtime=runtime,
+                command=command,
+                timeout_seconds=timeout_seconds,
+                input_file=input_file,
+                working_dir=working_dir,
+            )
+        except Exception as exc:
+            self._record_execution_error(
+                runtime=runtime,
+                record=record,
+                command=command,
+                timeout_seconds=timeout_seconds,
+                error=exc,
+            )
+        else:
+            self._record_execution_result(runtime, record, command, result)
+        return self._persist_result(record)
+
+    async def execute_existing_command_async(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime: WorkspaceRuntime,
+        record: RuntimeCommand,
+        command: list[str],
+        input_file: RuntimeCommandInputFile | None = None,
+        working_dir: str | None = None,
+    ) -> RuntimeCommand:
+        timeout_seconds = self._prepare_execution(
+            workspace_id=workspace_id,
+            runtime=runtime,
+            record=record,
+            command=command,
+        )
+        try:
+            result = await asyncio.to_thread(
+                self._execute_docker_command,
+                runtime=runtime,
+                command=command,
+                timeout_seconds=timeout_seconds,
+                input_file=input_file,
+                working_dir=working_dir,
+            )
+        except Exception as exc:
+            self._record_execution_error(
+                runtime=runtime,
+                record=record,
+                command=command,
+                timeout_seconds=timeout_seconds,
+                error=exc,
+            )
+        else:
+            self._record_execution_result(runtime, record, command, result)
+        return self._persist_result(record)
+
+    def _create_command_record(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime: WorkspaceRuntime,
+        command: list[str],
+    ) -> RuntimeCommand:
+        if runtime.workspace_id != workspace_id:
+            raise PermissionError("Runtime does not belong to workspace")
+        require_container(runtime)
+        record = RuntimeCommand(
+            workspace_id=workspace_id,
+            workspace_runtime_id=runtime.id,
+            runtime_space_id=runtime.runtime_space_id,
+            command=command,
+            status="running",
+            started_at=datetime.now(UTC),
+        )
+        self._session.add(record)
+        self._session.flush()
+        return record
+
+    def _prepare_execution(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime: WorkspaceRuntime,
+        record: RuntimeCommand,
+        command: list[str],
+    ) -> int:
         if runtime.workspace_id != workspace_id:
             raise PermissionError("Runtime does not belong to workspace")
         require_container(runtime)
@@ -84,20 +193,52 @@ class RuntimeCommandExecutor:
         record.status = "running"
         record.started_at = datetime.now(UTC)
         self._session.flush()
+        return timeout_seconds
 
-        try:
-            arguments: dict[str, object] = {}
-            if input_file is not None:
-                arguments["input_file"] = input_file
-            if working_dir is not None:
-                arguments["working_dir"] = working_dir
-            result = self._docker.exec_command(
-                runtime.docker_container_id or "",
+    def _execute_docker_command(
+        self,
+        *,
+        runtime: WorkspaceRuntime,
+        command: list[str],
+        timeout_seconds: int,
+        input_file: RuntimeCommandInputFile | None,
+        working_dir: str | None,
+    ) -> RuntimeCommandResult:
+        container_id = runtime.docker_container_id or ""
+        if input_file is not None and working_dir is not None:
+            return self._docker.exec_command(
+                container_id,
                 command,
                 timeout_seconds,
-                **arguments,
+                input_file=input_file,
+                working_dir=working_dir,
             )
-        except TimeoutExpired as exc:
+        if input_file is not None:
+            return self._docker.exec_command(
+                container_id,
+                command,
+                timeout_seconds,
+                input_file=input_file,
+            )
+        if working_dir is not None:
+            return self._docker.exec_command(
+                container_id,
+                command,
+                timeout_seconds,
+                working_dir=working_dir,
+            )
+        return self._docker.exec_command(container_id, command, timeout_seconds)
+
+    def _record_execution_error(
+        self,
+        *,
+        runtime: WorkspaceRuntime,
+        record: RuntimeCommand,
+        command: list[str],
+        timeout_seconds: int,
+        error: Exception,
+    ) -> None:
+        if isinstance(error, TimeoutExpired):
             self._fail_command(
                 record,
                 status="timeout",
@@ -108,24 +249,33 @@ class RuntimeCommandExecutor:
                 runtime,
                 "runtime.command.timeout",
                 " ".join(command),
-                metadata=command_failure_metadata(record, "timeout", str(exc)),
+                metadata=command_failure_metadata(record, "timeout", str(error)),
             )
-        except Exception as exc:
-            self._fail_command(
-                record,
-                status="failed",
-                exit_code=None,
-                stderr=bounded_error(exc),
-            )
-            self._events.append(
-                runtime,
-                "runtime.command.failed",
-                " ".join(command),
-                metadata=command_failure_metadata(record, "docker_exec_failed", str(exc)),
-            )
-        else:
-            self._complete_command(runtime, record, result)
-            self._events.append(runtime, "runtime.command.completed", " ".join(command))
+            return
+        self._fail_command(
+            record,
+            status="failed",
+            exit_code=None,
+            stderr=bounded_error(error),
+        )
+        self._events.append(
+            runtime,
+            "runtime.command.failed",
+            " ".join(command),
+            metadata=command_failure_metadata(record, "docker_exec_failed", str(error)),
+        )
+
+    def _record_execution_result(
+        self,
+        runtime: WorkspaceRuntime,
+        record: RuntimeCommand,
+        command: list[str],
+        result: RuntimeCommandResult,
+    ) -> None:
+        self._complete_command(runtime, record, result)
+        self._events.append(runtime, "runtime.command.completed", " ".join(command))
+
+    def _persist_result(self, record: RuntimeCommand) -> RuntimeCommand:
         self._session.commit()
         self._session.refresh(record)
         return record

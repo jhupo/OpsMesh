@@ -68,12 +68,14 @@ class BackendToolExecutor:
             storage=storage,
         )
 
-    def execute_tool(
+    async def execute_tool(
         self,
         *,
         context: AgentRuntimeContext,
         tool_name: str,
         arguments: dict[str, object],
+        tool_call_id: str | None = None,
+        approval_granted: bool = False,
     ) -> AgentRuntimeToolResult:
         gateway = AgentToolGateway(self._session)
         try:
@@ -93,12 +95,58 @@ class BackendToolExecutor:
                     tool_kind="blocked",
                 ),
             )
-        return self._execute_prepared(
-            context=context,
-            tool_name=tool_name,
-            prepared=prepared,
-            approval_granted=False,
+        if not approval_granted or self._secret_service is None:
+            return await self._execute_prepared(
+                context=context,
+                tool_name=tool_name,
+                prepared=prepared,
+                approval_granted=approval_granted,
+            )
+        if tool_call_id is None:
+            raise ValueError("Approved tool execution requires a provider tool call ID")
+        pending = PendingToolInvocationService(self._session, self._secret_service)
+        invocation = pending.by_run_call(
+            workspace_id=context.workspace_id,
+            run_id=context.run_id,
+            tool_call_id=tool_call_id,
         )
+        if invocation is None:
+            return await self._execute_prepared(
+                context=context,
+                tool_name=tool_name,
+                prepared=prepared,
+                approval_granted=True,
+            )
+        try:
+            invocation, stored = pending.claim_execution(
+                workspace_id=context.workspace_id,
+                run_id=context.run_id,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+        except ValueError as exc:
+            return AgentRuntimeToolResult(
+                status="failed",
+                error={"code": "approved_tool_call_invalid", "message": str(exc)},
+            )
+        if stored is not None:
+            return _tool_result_from_payload(stored)
+        try:
+            result = await self._execute_prepared(
+                context=context,
+                tool_name=tool_name,
+                prepared=prepared,
+                approval_granted=True,
+            )
+        except Exception as exc:
+            result = AgentRuntimeToolResult(
+                status="failed",
+                error=normalize_agent_error(exc).as_dict(),
+                metadata={"idempotency_key": invocation.idempotency_key},
+            )
+        pending.complete_execution(invocation, _tool_result_payload(result))
+        return result
 
     def review_tool_call(
         self,
@@ -147,71 +195,7 @@ class BackendToolExecutor:
             )
         return decision.approval_payload()
 
-    def execute_sdk_tool(
-        self,
-        *,
-        context: AgentRuntimeContext,
-        tool_name: str,
-        arguments: dict[str, object],
-        tool_call_id: str,
-    ) -> AgentRuntimeToolResult:
-        prepared = AgentToolGateway(self._session).prepare(
-            context=context,
-            tool_name=tool_name,
-            arguments=arguments,
-        )
-        if self._secret_service is None:
-            return self._execute_prepared(
-                context=context,
-                tool_name=tool_name,
-                prepared=prepared,
-                approval_granted=True,
-            )
-        pending = PendingToolInvocationService(self._session, self._secret_service)
-        invocation = pending.by_run_call(
-            workspace_id=context.workspace_id,
-            run_id=context.run_id,
-            tool_call_id=tool_call_id,
-        )
-        if invocation is None:
-            return self._execute_prepared(
-                context=context,
-                tool_name=tool_name,
-                prepared=prepared,
-                approval_granted=True,
-            )
-        try:
-            invocation, stored = pending.claim_execution(
-                workspace_id=context.workspace_id,
-                run_id=context.run_id,
-                tool_call_id=tool_call_id,
-                tool_name=tool_name,
-                arguments=arguments,
-            )
-        except ValueError as exc:
-            return AgentRuntimeToolResult(
-                status="failed",
-                error={"code": "approved_tool_call_invalid", "message": str(exc)},
-            )
-        if stored is not None:
-            return _tool_result_from_payload(stored)
-        try:
-            result = self._execute_prepared(
-                context=context,
-                tool_name=tool_name,
-                prepared=prepared,
-                approval_granted=True,
-            )
-        except Exception as exc:
-            result = AgentRuntimeToolResult(
-                status="failed",
-                error=normalize_agent_error(exc).as_dict(),
-                metadata={"idempotency_key": invocation.idempotency_key},
-            )
-        pending.complete_execution(invocation, _tool_result_payload(result))
-        return result
-
-    def _execute_prepared(
+    async def _execute_prepared(
         self,
         *,
         context: AgentRuntimeContext,
@@ -253,7 +237,7 @@ class BackendToolExecutor:
             docker_client=self._docker_client,
             secret_service=self._secret_service,
         )
-        result = McpToolExecutionService(
+        result = await McpToolExecutionService(
             self._session,
             resolver,
             settings=self._settings,
@@ -295,12 +279,27 @@ class BackendToolExecutor:
 
 
 class DisabledToolExecutor:
-    def execute_tool(
+    def review_tool_call(
         self,
         *,
         context: AgentRuntimeContext,
         tool_name: str,
         arguments: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            "decision": "deny",
+            "risk_level": "high",
+            "reasons": ["tool.executor.unavailable"],
+        }
+
+    async def execute_tool(
+        self,
+        *,
+        context: AgentRuntimeContext,
+        tool_name: str,
+        arguments: dict[str, object],
+        tool_call_id: str | None = None,
+        approval_granted: bool = False,
     ) -> AgentRuntimeToolResult:
         return AgentRuntimeToolResult(
             status="failed",
