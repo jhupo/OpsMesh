@@ -91,7 +91,7 @@ class TeamExecutionLoopService:
             return None
         runtime_status = _runtime_status(team)
         if runtime_status in {TEAM_RUNTIME_PAUSED, TEAM_RUNTIME_STOPPED}:
-            summary = {
+            summary: dict[str, object] = {
                 "runtime_status": runtime_status,
                 "reason": "team_runtime_not_running",
             }

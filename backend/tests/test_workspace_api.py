@@ -5298,11 +5298,15 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     body = applied.json()
     assert body["status"] == "advanced"
     assert body["summary"]["applied_action_count"] >= 1
-    assert body["summary"]["scheduled_run_count"] >= 1
+    assert body["summary"]["scheduled_run_count"] == 0
     assert body["summary"]["finalized_task_count"] == 1
-    assert body["command_center_actions"]["scheduled_run_count"] >= 1
+    assert body["command_center_actions"]["scheduled_run_count"] == 0
+    assert body["command_center_actions"]["scheduled_run_blocked_steps"]
+    assert all(
+        item["blocked_details"]["code"] == "runtime_unavailable"
+        for item in body["command_center_actions"]["scheduled_run_blocked_steps"]
+    )
     assert body["finalization"]["finalized_task_count"] == 1
-    assert queue_redis.llen(RedisKeyBuilder("opsmesh").queue("agent_runs")) >= 1
     serialized = str(body)
     assert "sk-loop-run" not in serialized
     assert "sk-loop-manager" not in serialized
@@ -5316,14 +5320,6 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     stored_approved = session.get(Task, approved_task.id)
     assert stored_approved is not None
     assert stored_approved.status == "completed"
-    scheduled_runs = session.scalars(
-        select(AgentRun).where(
-            AgentRun.workspace_id == workspace.id,
-            AgentRun.task_id == handoff_task.id,
-            AgentRun.status == RunStatus.QUEUED.value,
-        )
-    ).all()
-    assert len(scheduled_runs) >= 1
     created_runtime = session.scalar(
         select(WorkspaceRuntime).where(
             WorkspaceRuntime.workspace_id == workspace.id,
@@ -5342,6 +5338,23 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     assert created_runtime.connection_status == "online"
     assert len(docker.created_requests) == 1
     assert docker.started == ["container-1", "container-1"]
+    scheduled = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/command-center/actions/apply",
+        headers=_headers(owner.id),
+        json={"dry_run": False, "enqueue_runs": True, "actions": []},
+    )
+    assert scheduled.status_code == 200
+    assert scheduled.json()["scheduled_run_count"] >= 1
+    assert scheduled.json()["scheduled_run_blocked_steps"] == []
+    session.expire_all()
+    scheduled_runs = session.scalars(
+        select(AgentRun).where(
+            AgentRun.workspace_id == workspace.id,
+            AgentRun.task_id == handoff_task.id,
+            AgentRun.status == RunStatus.QUEUED.value,
+        )
+    ).all()
+    assert len(scheduled_runs) >= 1
     assert {run.runtime_id for run in scheduled_runs} == {created_runtime.id}
     queued_jobs = queue.peek()
     assert queued_jobs

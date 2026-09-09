@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.core.typing import dict_list, int_or_zero
+from backend.app.core.typing import dict_list, dict_or_empty, int_or_zero
 from backend.app.tasks.models import Task, TaskMessage
 
 
@@ -78,6 +78,7 @@ def _without_finalizable_review_actions(
     action_plan = dict_list(command_center.get("action_plan"))
     filtered_actions: list[dict[str, object]] = []
     suppressed = 0
+    changed = False
     for item in action_plan:
         action = item.get("action")
         task_ids = _object_list(item.get("task_ids"))
@@ -88,23 +89,21 @@ def _without_finalizable_review_actions(
         kept_task_ids = [
             task_id for task_id in task_ids if str(task_id) not in finalizable_task_ids
         ]
+        changed = changed or kept_task_ids != task_ids
         if not kept_task_ids and not _object_list(item.get("task_step_ids")):
             suppressed += 1
             continue
 
         adjusted = {**item, "task_ids": kept_task_ids}
-        if isinstance(adjusted.get("count"), int):
-            adjusted["count"] = min(int(adjusted["count"]), len(kept_task_ids))
+        count = adjusted.get("count")
+        if isinstance(count, int):
+            adjusted["count"] = min(count, len(kept_task_ids))
         filtered_actions.append(adjusted)
 
-    if suppressed == 0 and len(filtered_actions) == len(action_plan):
+    if not changed:
         return command_center
 
-    summary = (
-        dict(command_center["summary"])
-        if isinstance(command_center.get("summary"), dict)
-        else {}
-    )
+    summary = dict_or_empty(command_center.get("summary"))
     summary["action_plan_count"] = len(filtered_actions)
     summary["action_plan_source_counts"] = _action_source_counts(filtered_actions)
     summary["suppressed_finalization_action_count"] = suppressed

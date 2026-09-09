@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.core.typing import dict_or_empty, dict_or_none, optional_string
 from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.execution_loop_finalization import TeamExecutionFinalizationService
 from backend.app.teams.execution_loop_payloads import (
@@ -13,6 +15,16 @@ from backend.app.teams.execution_loop_payloads import (
     _without_finalizable_review_actions,
 )
 from backend.app.teams.execution_loop_repository import TeamExecutionLoopRepository
+
+
+class ExecutionLoopStatusSummary(TypedDict):
+    team_status: str | None
+    delivery_health: dict[str, object] | None
+    action_plan_count: int
+    needs_attention_tasks: int
+    finalizable_task_count: int
+    scanned_task_count: int
+    queue_truncated: bool
 
 
 class TeamExecutionLoopStatusService:
@@ -69,15 +81,11 @@ class TeamExecutionLoopStatusService:
 def _status_summary(
     command_center: dict[str, object],
     finalization: dict[str, object],
-) -> dict[str, object]:
-    command_center_summary = (
-        command_center.get("summary")
-        if isinstance(command_center.get("summary"), dict)
-        else {}
-    )
+) -> ExecutionLoopStatusSummary:
+    command_center_summary = dict_or_empty(command_center.get("summary"))
     return {
-        "team_status": command_center_summary.get("team_status"),
-        "delivery_health": command_center_summary.get("delivery_health"),
+        "team_status": optional_string(command_center_summary.get("team_status")),
+        "delivery_health": dict_or_none(command_center_summary.get("delivery_health")),
         "action_plan_count": _int_from(command_center_summary, "action_plan_count"),
         "needs_attention_tasks": _int_from(command_center_summary, "needs_attention_tasks"),
         "finalizable_task_count": len(_finalizable_task_ids(finalization)),
@@ -86,7 +94,7 @@ def _status_summary(
     }
 
 
-def _status(summary: dict[str, object]) -> str:
+def _status(summary: ExecutionLoopStatusSummary) -> str:
     if summary["action_plan_count"] > 0:
         return "needs_attention"
     if summary["finalizable_task_count"] > 0:
