@@ -48,6 +48,11 @@ path are explicitly unrestricted; custom automation tokens should use the narrow
 scope. Workspace listing is filtered to the token's workspace IDs, and every workspace dependency
 rechecks both token scope and current membership.
 
+Local passwords use `pwdlib`'s recommended Argon2id hasher. Login performs one Argon2 verification
+for active, inactive, and unknown accounts by substituting a non-account dummy hash when no usable
+credential exists. The removed PBKDF2 format is not accepted; deployments upgrading from that
+format must reset local passwords instead of retaining a legacy verifier.
+
 Users can update their own display name, rotate an active token, and revoke one or all of their
 tokens. Rotation preserves the old token's scope ceiling and atomically revokes the old secret.
 Changing a password immediately revokes every active user token. Platform administrators can list,

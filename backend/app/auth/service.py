@@ -1,11 +1,11 @@
-from base64 import b64decode, b64encode
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from hashlib import pbkdf2_hmac, sha256
-from hmac import compare_digest
-from secrets import token_bytes, token_urlsafe
+from hashlib import sha256
+from secrets import token_urlsafe
 from uuid import UUID
 
+from pwdlib import PasswordHash
+from pwdlib.exceptions import UnknownHashError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -21,9 +21,8 @@ from backend.app.core.errors import ConflictError
 from backend.app.identity.models import User, UserAPIToken
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
-PASSWORD_HASH_ALGORITHM = "pbkdf2_sha256"
-PASSWORD_HASH_ITERATIONS = 260_000
-PASSWORD_SALT_BYTES = 16
+_PASSWORD_HASH = PasswordHash.recommended()
+_DUMMY_PASSWORD_HASH = _PASSWORD_HASH.hash("opsmesh-dummy-authentication-password")
 
 
 @dataclass(frozen=True)
@@ -77,9 +76,18 @@ class AuthorizationService:
         token_name: str = "password login",
     ) -> CreatedUserAPIToken:
         user = self._session.scalar(select(User).where(User.email == self.normalize_email(email)))
-        if user is None or user.status != "active" or not user.password_hash:
-            raise AuthenticationError("Invalid email or password")
-        if not self.verify_password(password, user.password_hash):
+        active_hash = (
+            user.password_hash
+            if user is not None and user.status == "active" and user.password_hash
+            else _DUMMY_PASSWORD_HASH
+        )
+        password_matches = self.verify_password(password, active_hash)
+        if (
+            user is None
+            or user.status != "active"
+            or not user.password_hash
+            or not password_matches
+        ):
             raise AuthenticationError("Invalid email or password")
         return self.create_user_api_token(
             user_id=user.id,
@@ -393,35 +401,14 @@ class AuthorizationService:
 
     @staticmethod
     def hash_password(password: str) -> str:
-        salt = token_bytes(PASSWORD_SALT_BYTES)
-        digest = pbkdf2_hmac(
-            "sha256",
-            password.encode("utf-8"),
-            salt,
-            PASSWORD_HASH_ITERATIONS,
-        )
-        return "$".join(
-            (
-                PASSWORD_HASH_ALGORITHM,
-                str(PASSWORD_HASH_ITERATIONS),
-                b64encode(salt).decode("ascii"),
-                b64encode(digest).decode("ascii"),
-            )
-        )
+        return _PASSWORD_HASH.hash(password)
 
     @staticmethod
     def verify_password(password: str, encoded_hash: str) -> bool:
         try:
-            algorithm, iterations_raw, salt_raw, digest_raw = encoded_hash.split("$", 3)
-            iterations = int(iterations_raw)
-            salt = b64decode(salt_raw.encode("ascii"), validate=True)
-            expected = b64decode(digest_raw.encode("ascii"), validate=True)
-        except (ValueError, TypeError):
+            return _PASSWORD_HASH.verify(password, encoded_hash)
+        except (UnknownHashError, ValueError):
             return False
-        if algorithm != PASSWORD_HASH_ALGORITHM or iterations <= 0:
-            return False
-        actual = pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-        return compare_digest(actual, expected)
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

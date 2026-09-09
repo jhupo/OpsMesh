@@ -1,6 +1,7 @@
 from collections.abc import Generator
 from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
@@ -9,6 +10,8 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.auth.errors import AuthenticationError
+from backend.app.auth.service import AuthorizationService
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
@@ -41,8 +44,43 @@ def test_register_creates_user_with_password_hash_and_does_not_leak_hash() -> No
     assert stored is not None
     assert stored.password_hash is not None
     assert stored.password_hash != "correct horse battery staple"
+    assert stored.password_hash.startswith("$argon2id$")
     assert stored.password_hash not in response.text
     assert "correct horse battery staple" not in response.text
+
+
+def test_password_verifier_rejects_removed_pbkdf2_format() -> None:
+    legacy_hash = "pbkdf2_sha256$260000$c2FsdA==$ZGlnZXN0"
+
+    assert AuthorizationService.verify_password("password", legacy_hash) is False
+
+
+def test_missing_user_login_still_runs_password_verification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, session = _client()
+    calls: list[tuple[str, str]] = []
+
+    def record_verification(password: str, encoded_hash: str) -> bool:
+        calls.append((password, encoded_hash))
+        return False
+
+    monkeypatch.setattr(
+        AuthorizationService,
+        "verify_password",
+        staticmethod(record_verification),
+    )
+
+    with pytest.raises(AuthenticationError, match="Invalid email or password"):
+        AuthorizationService(session).login_with_password(
+            email="missing@example.com",
+            password="wrong-password",
+            settings=Settings(environment="test"),
+        )
+
+    assert len(calls) == 1
+    assert calls[0][0] == "wrong-password"
+    assert calls[0][1].startswith("$argon2id$")
 
 
 def test_register_rejects_duplicate_email() -> None:
@@ -385,9 +423,7 @@ def test_restricted_user_token_enforces_account_and_workspace_scopes() -> None:
         ).status_code
         == 403
     )
-    assert (
-        client.get(f"/api/v1/workspaces/{workspace.id}", headers=headers).status_code == 200
-    )
+    assert client.get(f"/api/v1/workspaces/{workspace.id}", headers=headers).status_code == 200
     assert (
         client.get(f"/api/v1/workspaces/{other_workspace.id}", headers=headers).status_code == 403
     )
