@@ -6,7 +6,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.typing import string_list, string_or_default, uuid_or_none
+from backend.app.core.typing import (
+    dict_list,
+    dict_or_empty,
+    string_list,
+    string_or_default,
+    uuid_or_none,
+)
 from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.planning.org_structure import build_org_structure
 from backend.app.tasks.models import Task
@@ -165,12 +171,9 @@ def _manager_diagnostics(
     plan: dict[str, object] | None,
     snapshot: dict[str, object] | None,
 ) -> dict[str, object]:
-    manager_agent_profile_id = None
-    if isinstance(snapshot, dict) and isinstance(snapshot.get("team"), dict):
-        manager_agent_profile_id = uuid_or_none(snapshot["team"].get("manager_agent_profile_id"))
-    packages = []
-    if isinstance(plan, dict) and isinstance(plan.get("work_packages"), list):
-        packages = [item for item in plan["work_packages"] if isinstance(item, dict)]
+    team = dict_or_empty(dict_or_empty(snapshot).get("team"))
+    manager_agent_profile_id = uuid_or_none(team.get("manager_agent_profile_id"))
+    packages = dict_list(dict_or_empty(plan).get("work_packages"))
     package_ids = {
         package.get("package_id")
         for package in packages
@@ -184,7 +187,7 @@ def _manager_diagnostics(
     }
 
 
-def _dependency_graph(nodes: list[_PackageNode]) -> dict[str, object]:
+def _dependency_graph(nodes: list[_PackageNode]) -> dict[str, list[str]]:
     package_ids = {node.package_id for node in nodes}
     unknown_dependencies = sorted(
         {
@@ -234,7 +237,7 @@ def _cycle_package_ids(nodes: list[_PackageNode]) -> set[str]:
 def _plan_blocked_reasons(
     *,
     package_diagnostics: list[dict[str, object]],
-    graph: dict[str, object],
+    graph: dict[str, list[str]],
     manager: dict[str, object],
     org_health: dict[str, object],
 ) -> list[str]:
@@ -330,4 +333,3 @@ def _snapshot_agent_ids(snapshot: dict[str, object] | None) -> set[str]:
 
 def _string_or_none(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
-

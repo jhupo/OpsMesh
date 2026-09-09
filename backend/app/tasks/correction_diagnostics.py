@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.artifacts.models import Artifact
+from backend.app.core.typing import dict_or_empty, uuid_or_none
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.security.redaction import redact_sensitive_payload
@@ -70,13 +71,13 @@ class TaskCorrectionDiagnosticsService:
         artifacts_by_step_id: dict[UUID, list[Artifact]],
     ) -> dict[str, object]:
         payload = message.payload if isinstance(message.payload, dict) else {}
-        created_step_id = _uuid_or_none(payload.get("created_step_id"))
+        created_step_id = uuid_or_none(payload.get("created_step_id"))
         step = step_by_id.get(created_step_id) if created_step_id is not None else None
         runs = runs_by_step_id.get(step.id, []) if step is not None else []
         artifacts = artifacts_by_step_id.get(step.id, []) if step is not None else []
         mode = str(payload.get("mode") or "")
-        target = payload.get("target") if isinstance(payload.get("target"), dict) else {}
-        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        target = dict_or_empty(payload.get("target"))
+        metadata = dict_or_empty(payload.get("metadata"))
         blocked_reasons = _blocked_reasons(
             task=task,
             mode=mode,
@@ -97,7 +98,7 @@ class TaskCorrectionDiagnosticsService:
             "target": redact_sensitive_payload(target),
             "instruction": message.body,
             "metadata": redact_sensitive_payload(metadata),
-            "actor_user_id": _uuid_or_none(payload.get("actor_user_id")),
+            "actor_user_id": uuid_or_none(payload.get("actor_user_id")),
             "created_step": _step_payload(step),
             "runs": [_run_payload(run) for run in runs],
             "artifacts": [_artifact_payload(artifact) for artifact in artifacts],
@@ -274,11 +275,3 @@ def _artifact_payload(artifact: Artifact) -> dict[str, object]:
         "work_package_id": artifact.work_package_id,
     }
 
-
-def _uuid_or_none(value: object | None) -> UUID | None:
-    if value is None:
-        return None
-    try:
-        return UUID(str(value))
-    except (TypeError, ValueError):
-        return None

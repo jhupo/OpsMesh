@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from backend.app.planning.project_plan_members import (
     execution_members,
     executive_members,
@@ -22,7 +24,7 @@ class PlanningContext:
         members: list[dict[str, object]],
         executives: list[dict[str, object]],
         manager: dict[str, object] | None,
-        manager_planner_id: object,
+        manager_planner_id: UUID | None,
         leads: list[dict[str, object]],
         execution_members_: list[dict[str, object]],
     ) -> None:
@@ -74,7 +76,7 @@ class PlanningContext:
         )
 
     @property
-    def planner_agent_profile_id(self) -> object:
+    def planner_agent_profile_id(self) -> UUID | None:
         return self.manager_planner_id or first_member_agent_profile_id(
             self.executives or self.leads or self.execution_members,
         )
