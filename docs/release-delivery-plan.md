@@ -79,3 +79,7 @@ contracts. A separate giant CLI framework is not needed.
   A migration-chain regression check now enforces the length limit; all 11 delivery tests pass.
   Hosted migration acceptance must be rerun after this fix. Public API access is rate-limited and
   downloading complete Actions logs requires GitHub authentication.
+- The next hosted run exposed oversized explicit foreign-key names in migration 0063; scanning
+  the migration chain found the same defect in 0064. Both upgrade and downgrade now use Alembic
+  `op.f` so PostgreSQL names match SQLAlchemy's deterministic naming convention. All 12 delivery
+  tests pass, including a chain-wide explicit-identifier regression check. Hosted rerun pending.

@@ -36,7 +36,7 @@ def upgrade() -> None:
         ondelete="SET NULL",
     )
     op.create_foreign_key(
-        "fk_artifacts_workspace_project_output_id_workspace_project_outputs",
+        op.f("fk_artifacts_workspace_project_output_id_workspace_project_outputs"),
         "artifacts",
         "workspace_project_outputs",
         ["workspace_project_output_id"],
@@ -115,7 +115,7 @@ def downgrade() -> None:
     op.drop_constraint("uq_artifacts_run_project_output", "artifacts", type_="unique")
     op.drop_index("ix_artifacts_workspace_project_output", table_name="artifacts")
     op.drop_constraint(
-        "fk_artifacts_workspace_project_output_id_workspace_project_outputs",
+        op.f("fk_artifacts_workspace_project_output_id_workspace_project_outputs"),
         "artifacts",
         type_="foreignkey",
     )

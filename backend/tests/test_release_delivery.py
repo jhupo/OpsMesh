@@ -1,3 +1,4 @@
+import ast
 import tarfile
 from pathlib import Path
 
@@ -18,6 +19,22 @@ def test_migration_chain_fits_alembic_version_column() -> None:
     assert len(scripts.get_heads()) == 1
     for revision in scripts.walk_revisions():
         assert len(revision.revision) <= 32, revision.revision
+
+
+def test_long_explicit_constraint_names_use_alembic_naming() -> None:
+    for path in (ROOT / "backend/migrations/versions").glob("*.py"):
+        tree = ast.parse(path.read_text("utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            if node.value.startswith(("fk_", "ck_", "uq_", "pk_", "ix_")) and len(node.value) > 63:
+                assert any(
+                    isinstance(parent, ast.Call)
+                    and isinstance(parent.func, ast.Attribute)
+                    and parent.func.attr == "f"
+                    and node in parent.args
+                    for parent in ast.walk(tree)
+                ), f"{path.name}:{node.lineno}: use op.f for {node.value}"
 
 
 def test_release_versions_are_aligned() -> None:

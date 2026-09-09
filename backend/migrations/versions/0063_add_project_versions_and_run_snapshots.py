@@ -94,7 +94,7 @@ def upgrade() -> None:
     )
     op.alter_column("workspace_project_files", "version", nullable=False, server_default="1")
     op.create_foreign_key(
-        "fk_workspace_project_files_supersedes_project_file_id_workspace_project_files",
+        op.f("fk_workspace_project_files_supersedes_project_file_id_workspace_project_files"),
         "workspace_project_files",
         "workspace_project_files",
         ["supersedes_project_file_id"],
@@ -164,7 +164,7 @@ def downgrade() -> None:
         type_="unique",
     )
     op.drop_constraint(
-        "fk_workspace_project_files_supersedes_project_file_id_workspace_project_files",
+        op.f("fk_workspace_project_files_supersedes_project_file_id_workspace_project_files"),
         "workspace_project_files",
         type_="foreignkey",
     )
