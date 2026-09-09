@@ -60,8 +60,9 @@ bridge; `SessionStore` mirrors the transcript into the existing Postgres-backed 
 `output_format` and `ResultMessage.structured_output` own structured output; SDK hooks plus
 `deferred_tool_use` own provider-side lifecycle and approval pause state; Claude owns automatic
 context compaction. The adapter retains product
-authorization, input/output guardrail policy, approval records, redaction, retry/circuit state,
-audit events, usage normalization, and workspace scope.
+authorization, input/output guardrail policy, approval records, redaction, durable retry policy,
+audit events, usage normalization, and workspace scope. A provider adapter never replays a complete
+Agent SDK run in memory because model turns and tools may already have produced side effects.
 
 The Claude wheel bundles the Claude Code CLI and is materially larger than a protocol-only client
 (about 99 MB on Windows for the currently pinned release). That footprint is accepted because the

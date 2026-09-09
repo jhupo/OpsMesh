@@ -60,7 +60,7 @@ class RunExecutionService:
 
     def __post_init__(self) -> None:
         self.settings = self.settings or get_settings()
-        self.agent_runner = self.agent_runner or build_agent_runtime_registry(self.settings)
+        self.agent_runner = self.agent_runner or build_agent_runtime_registry()
 
     async def run_agent(self, job: JobPayload) -> AgentRun:
         run = self.session.get(AgentRun, job.resource_id)

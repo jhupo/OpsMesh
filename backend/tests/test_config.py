@@ -36,9 +36,6 @@ def test_settings_defaults_are_local_development_friendly() -> None:
     assert settings.audit_event_retention_days is None
     assert settings.audit_event_worm_enabled is True
     assert settings.storage_backend == "local"
-    assert settings.external_call_max_attempts == 2
-    assert settings.external_call_circuit_failure_threshold == 5
-    assert settings.external_call_circuit_reset_seconds == 60
     assert settings.auth_rate_limit_requests == 20
     assert settings.admin_rate_limit_requests == 120
     assert settings.trusted_proxy_hops == 0
@@ -208,9 +205,6 @@ def test_settings_redacted_summary_hides_secrets() -> None:
     assert summary["audit_event_worm_enabled"] is True
     assert summary["storage_backend"] == "local"
     assert summary["mcp_health_check_stale_after_seconds"] == 86_400
-    assert summary["external_call_max_attempts"] == 2
-    assert summary["external_call_circuit_failure_threshold"] == 5
-    assert summary["external_call_circuit_reset_seconds"] == 60
     assert summary["tracing_enabled"] is True
     assert summary["credential_encryption_key_id"] == "current-key"
     assert summary["credential_encryption_previous_key_ids"] == ["old-key", "older-key"]

@@ -5,7 +5,6 @@ import json
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Protocol
-from urllib.parse import urlparse
 from uuid import UUID, uuid5
 
 from claude_agent_sdk import (
@@ -57,12 +56,9 @@ from backend.app.agent_runtime.guardrails import (
     validated_structured_output,
 )
 from backend.app.agent_runtime.usage import runtime_usage
-from backend.app.core.resilience import CircuitBreakerConfig
 from backend.app.model_providers.model_api import ANTHROPIC_MESSAGES_API
-from backend.app.model_providers.provider_keys import canonical_model_provider
 from backend.app.security.redaction import redact_sensitive_payload
 
-DEFAULT_MODEL_PROVIDER_CIRCUIT_CONFIG = CircuitBreakerConfig()
 _SDK_TOOL_PREFIX = "mcp__opsmesh__"
 _SESSION_NAMESPACE = UUID("6bd4b8b9-8a4b-49db-9b6c-d0b7d7da4be6")
 
@@ -161,11 +157,8 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
     def __init__(
         self,
         *,
-        max_attempts: int = 1,
-        circuit_config: CircuitBreakerConfig = DEFAULT_MODEL_PROVIDER_CIRCUIT_CONFIG,
         client_factory: Callable[[ClaudeAgentOptions], _ClaudeClient] = ClaudeSDKClient,
     ) -> None:
-        super().__init__(max_attempts=max_attempts, circuit_config=circuit_config)
         self._client_factory = client_factory
 
     def _validate_request(self, request: AgentRunRequest) -> None:
@@ -187,9 +180,6 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             )
         if request.resume_state is not None and request.resume_state.provider != "claude_agent_sdk":
             raise ValueError("Claude Agent SDK runner cannot restore another provider's state")
-
-    def _provider_circuit_key(self, request: AgentRunRequest) -> str:
-        return _model_provider_circuit_key(request)
 
     async def _run_once(
         self,
@@ -886,21 +876,6 @@ def _rejected_result(request: AgentRunRequest) -> AgentRunResult:
         ),
         capabilities=ClaudeAgentSDKRunner.capabilities,
     )
-
-
-def _model_provider_circuit_key(request: AgentRunRequest) -> str:
-    provider = canonical_model_provider(request.provider or "anthropic")
-    host = "anthropic-default"
-    if request.base_url:
-        parsed = urlparse(request.base_url)
-        host = parsed.netloc or parsed.path or host
-    credential = (
-        str(request.model_provider_credential_id)
-        if request.model_provider_credential_id
-        else "no-credential"
-    )
-    model = request.model or request.agent_profile.model
-    return f"model-provider:{provider}:{host}:{credential}:{ANTHROPIC_MESSAGES_API}:{model}"
 
 
 def _string_setting(settings: dict[str, object], key: str) -> str | None:

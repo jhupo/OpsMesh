@@ -103,9 +103,6 @@ class Settings(BaseSettings):
             "text/yaml",
         ]
     )
-    external_call_max_attempts: int = Field(default=2, ge=1, le=5)
-    external_call_circuit_failure_threshold: int = Field(default=5, ge=1, le=100)
-    external_call_circuit_reset_seconds: int = Field(default=60, ge=1, le=3_600)
     api_rate_limit_enabled: bool = Field(default=False)
     api_rate_limit_requests: int = Field(default=600, ge=1)
     api_rate_limit_window_seconds: int = Field(default=60, ge=1)
@@ -245,11 +242,6 @@ class Settings(BaseSettings):
             "otel_exporter_otlp_insecure": self.otel_exporter_otlp_insecure,
             "otel_exporter_otlp_header_names": sorted(self.otel_exporter_otlp_headers),
             "otel_trace_sample_ratio": self.otel_trace_sample_ratio,
-            "external_call_max_attempts": self.external_call_max_attempts,
-            "external_call_circuit_failure_threshold": (
-                self.external_call_circuit_failure_threshold
-            ),
-            "external_call_circuit_reset_seconds": self.external_call_circuit_reset_seconds,
             "api_rate_limit_enabled": self.api_rate_limit_enabled,
             "api_rate_limit_requests": self.api_rate_limit_requests,
             "api_rate_limit_window_seconds": self.api_rate_limit_window_seconds,

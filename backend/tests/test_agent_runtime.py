@@ -3,12 +3,10 @@ import json
 import os
 from uuid import uuid4
 
-import httpx
 import pytest
 from agents import OpenAIResponsesCompactionSession, RunContextWrapper
 
 import backend.app.agent_runtime.openai_agents as openai_runtime
-from backend.app.agent_runtime.claude_agent import ClaudeAgentSDKRunner, _model_provider_circuit_key
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -38,7 +36,6 @@ from backend.app.agent_runtime.openai_results import (
 from backend.app.agent_runtime.openai_tools import OpenAIToolBridge, runtime_allowed_tools
 from backend.app.agent_runtime.sessions import PersistentAgentSessionRef, SQLAlchemyAgentSession
 from backend.app.agents.models import AgentProfile
-from backend.app.core.config import Settings
 from backend.app.model_providers.base_url import normalize_openai_compatible_base_url
 
 
@@ -75,6 +72,43 @@ def test_openai_agents_runner_requires_explicit_provider_api_key() -> None:
 
     with pytest.raises(ValueError, match="explicit provider API key"):
         OpenAIAgentsRunner()._build_agent(request)
+
+
+def test_openai_agents_runner_does_not_replay_a_failed_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    async def failing_run(*args: object, **kwargs: object) -> object:
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(openai_runtime.Runner, "run", failing_run)
+    profile = AgentProfile(
+        workspace_id=uuid4(),
+        name="Researcher",
+        role="researcher",
+        instructions="Research carefully.",
+        model="gpt-4.1",
+        model_settings={},
+    )
+    request = AgentRunRequest(
+        agent_profile=profile,
+        input_text="Find market trends",
+        context=AgentRuntimeContext(
+            workspace_id=profile.workspace_id,
+            task_id=None,
+            run_id=uuid4(),
+        ),
+        provider="openai-compatible",
+        api_key="sk-test",
+    )
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        asyncio.run(OpenAIAgentsRunner().run(request))
+
+    assert attempts == 1
 
 
 def test_openai_agents_runner_builds_agent_from_explicit_provider() -> None:
@@ -198,56 +232,10 @@ def test_openai_agents_runner_normalizes_openai_compatible_base_url() -> None:
         api_key="sk-test",
     )
 
-    circuit_key = openai_runtime._model_provider_circuit_key(request)
     agent = OpenAIAgentsRunner()._build_agent(request)
 
     assert agent.model != profile.model
     assert agent.model._client.base_url == "https://llm.example.test/v1/"
-    assert circuit_key.startswith("model-provider:openai-compatible:llm.example.test:")
-
-
-def test_openai_agents_runner_circuit_key_separates_provider_aliases() -> None:
-    profile = AgentProfile(
-        workspace_id=uuid4(),
-        name="Researcher",
-        role="researcher",
-        instructions="Research carefully.",
-        model="gpt-4.1-mini",
-        model_settings={},
-    )
-    context = AgentRuntimeContext(
-        workspace_id=profile.workspace_id,
-        task_id=None,
-        run_id=uuid4(),
-    )
-    openai_request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Find market trends",
-        context=context,
-        model="gpt-4.1-mini",
-        provider="openai",
-        base_url="https://llm.example.test/v1",
-        api_key="sk-test",
-    )
-    compatible_request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Find market trends",
-        context=context,
-        model="gpt-4.1-mini",
-        provider="openai-compatible",
-        base_url="https://llm.example.test/v1",
-        api_key="sk-test",
-    )
-
-    assert openai_runtime._model_provider_circuit_key(openai_request).startswith(
-        "model-provider:openai:"
-    )
-    assert openai_runtime._model_provider_circuit_key(compatible_request).startswith(
-        "model-provider:openai-compatible:"
-    )
-    assert openai_runtime._model_provider_circuit_key(
-        openai_request
-    ) != openai_runtime._model_provider_circuit_key(compatible_request)
 
 
 def test_openai_agents_runner_uses_only_canonical_model_api_values() -> None:
@@ -257,36 +245,6 @@ def test_openai_agents_runner_uses_only_canonical_model_api_values() -> None:
     assert openai_runtime._use_responses_api("chat-completions") is None
     assert openai_runtime._use_responses_api("chat_completions") is False
     assert openai_runtime._use_responses_api("future-api") is None
-
-
-def test_openai_agents_runner_circuit_key_uses_canonical_model_api() -> None:
-    profile = AgentProfile(
-        workspace_id=uuid4(),
-        name="Researcher",
-        role="researcher",
-        instructions="Research carefully.",
-        model="gpt-4.1-mini",
-        model_settings={},
-    )
-    context = AgentRuntimeContext(
-        workspace_id=profile.workspace_id,
-        task_id=None,
-        run_id=uuid4(),
-    )
-    chat_underscore_request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Find market trends",
-        context=context,
-        model="gpt-4.1-mini",
-        provider="openai-compatible",
-        base_url="https://llm.example.test/v1",
-        api_key="sk-test",
-        model_api="chat_completions",
-    )
-
-    assert ":chat_completions:" in openai_runtime._model_provider_circuit_key(
-        chat_underscore_request
-    )
 
 
 def test_openai_agents_runner_registers_allowed_mcp_tools() -> None:
@@ -384,7 +342,7 @@ def test_deterministic_test_runner_returns_deterministic_output() -> None:
 
 def test_agent_runner_factory_builds_provider_adapter_registry() -> None:
     assert isinstance(
-        build_agent_runtime_registry(Settings(environment="test")),
+        build_agent_runtime_registry(),
         ProviderAgentRuntimeRegistry,
     )
 
@@ -492,7 +450,7 @@ def test_provider_adapter_registry_accepts_formal_provider_keys() -> None:
 
 
 def test_provider_adapter_registry_rejects_unsupported_request_capabilities() -> None:
-    registry = build_agent_runtime_registry(Settings(environment="test"))
+    registry = build_agent_runtime_registry()
     profile = AgentProfile(
         workspace_id=uuid4(),
         name="Claude",
@@ -510,9 +468,7 @@ def test_provider_adapter_registry_rejects_unsupported_request_capabilities() ->
         ),
         provider="anthropic",
         api_key="anthropic-test",
-        handoffs=(
-            AgentRuntimeHandoff(target=AgentRuntimeAgentRef(name="Specialist")),
-        ),
+        handoffs=(AgentRuntimeHandoff(target=AgentRuntimeAgentRef(name="Specialist")),),
     )
 
     with pytest.raises(AgentRuntimeCapabilityError) as caught:
@@ -523,445 +479,6 @@ def test_provider_adapter_registry_rejects_unsupported_request_capabilities() ->
     assert caught.value.metadata["missing"] == ["handoffs"]
     assert normalize_agent_error(caught.value).retryable is False
 
-
-def test_claude_agent_runner_circuit_key_uses_formal_provider_and_separates_hosts() -> None:
-    profile = AgentProfile(
-        workspace_id=uuid4(),
-        name="Claude",
-        role="researcher",
-        instructions="Research.",
-        model="claude-sonnet-4-6",
-    )
-    context = AgentRuntimeContext(
-        workspace_id=profile.workspace_id,
-        task_id=None,
-        run_id=uuid4(),
-    )
-    canonical_request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Summarize.",
-        context=context,
-        provider="anthropic",
-        base_url="https://api.anthropic.com/v1",
-        api_key="anthropic-key",
-    )
-    router_request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Summarize.",
-        context=context,
-        provider="anthropic",
-        base_url="https://claude-router.example.test/private",
-        api_key="anthropic-key",
-    )
-
-    canonical_key = _model_provider_circuit_key(canonical_request)
-    router_key = _model_provider_circuit_key(router_request)
-
-    assert canonical_key.startswith(
-        "model-provider:anthropic:api.anthropic.com:no-credential:"
-        "anthropic_messages:claude-sonnet-4-6"
-    )
-    assert router_key != canonical_key
-    assert "private" not in canonical_key
-    assert "private" not in router_key
-
-
-@pytest.mark.skip(
-    reason="Legacy direct Anthropic HTTP test replaced by Claude Agent SDK adapter tests"
-)
-def test_anthropic_messages_runner_sends_native_messages_request() -> None:
-    calls: list[dict[str, object]] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(
-            {
-                "url": str(request.url),
-                "headers": dict(request.headers),
-                "json": json_from_request(request),
-            }
-        )
-        return httpx.Response(
-            200,
-            json={
-                "id": "msg_123",
-                "type": "message",
-                "role": "assistant",
-                "content": [{"type": "text", "text": "claude-ok"}],
-                "usage": {"input_tokens": 10, "output_tokens": 3},
-                "metadata": {
-                    "api_key": "anthropic-key",
-                    "base_url": "https://api.anthropic.com/private",
-                    "note": "visible",
-                },
-            },
-        )
-
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    profile = AgentProfile(
-        workspace_id=uuid4(),
-        name="Claude",
-        role="researcher",
-        instructions="Use careful reasoning.",
-        model="claude-sonnet-4-5",
-        model_settings={"temperature": 0.1, "max_tokens": 256},
-    )
-    credential_id = uuid4()
-    request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Summarize.",
-        context=AgentRuntimeContext(
-            workspace_id=profile.workspace_id,
-            task_id=None,
-            run_id=uuid4(),
-        ),
-        provider="anthropic",
-        model="claude-opus-4-6",
-        api_key="anthropic-key",
-        base_url="https://api.anthropic.com",
-        model_api="responses",
-        model_provider_credential_id=credential_id,
-    )
-
-    result = asyncio.run(
-        ClaudeAgentSDKRunner(query_fn=lambda **_: _unexpected_legacy_query()).run(request)
-    )
-    asyncio.run(client.aclose())
-
-    assert result.final_output == "claude-ok"
-    assert result.events[0].event_type == "model.usage"
-    assert calls[0]["url"] == "https://api.anthropic.com/v1/messages"
-    assert calls[0]["headers"]["x-api-key"] == "anthropic-key"
-    assert calls[0]["json"]["model"] == "claude-opus-4-6"
-    assert calls[0]["json"]["system"] == "Use careful reasoning."
-    assert calls[0]["json"]["max_tokens"] == 256
-    assert calls[0]["json"]["temperature"] == 0.1
-    assert result.raw_output == {
-        "provider": "anthropic",
-        "model": "claude-opus-4-6",
-        "model_api": "anthropic_messages",
-        "model_provider_credential_id": str(credential_id),
-        "trace": None,
-        "response": {
-            "id": "msg_123",
-            "type": "message",
-            "role": "assistant",
-            "content": [{"type": "text", "text": "claude-ok"}],
-            "usage": {"input_tokens": 10, "output_tokens": 3},
-            "metadata": {
-                "api_key": "[redacted]",
-                "base_url": "[redacted]",
-                "note": "visible",
-            },
-        },
-    }
-    assert result.events[1].event_type == "model.request"
-    assert result.events[1].payload == {
-        "model_provider": {
-            "provider": "anthropic",
-            "model": "claude-opus-4-6",
-            "model_api": "anthropic_messages",
-            "credential_id": str(credential_id),
-        },
-        "trace": None,
-    }
-    assert "anthropic-key" not in str(result.raw_output)
-    assert "api.anthropic.com" not in str(result.raw_output)
-
-
-@pytest.mark.skip(
-    reason="Legacy direct Anthropic HTTP test replaced by Claude Agent SDK adapter tests"
-)
-def test_anthropic_messages_runner_executes_tool_use_loop() -> None:
-    calls: list[dict[str, object]] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        payload = json_from_request(request)
-        calls.append(payload)
-        if len(calls) == 1:
-            return httpx.Response(
-                200,
-                json={
-                    "id": "msg_tool",
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [
-                        {
-                            "type": "tool_use",
-                            "id": "toolu_123",
-                            "name": "search_docs",
-                            "input": {"query": "runtime"},
-                        }
-                    ],
-                    "usage": {"input_tokens": 20, "output_tokens": 5},
-                },
-            )
-        return httpx.Response(
-            200,
-            json={
-                "id": "msg_final",
-                "type": "message",
-                "role": "assistant",
-                "content": [{"type": "text", "text": "tool-result-ok"}],
-                "usage": {"input_tokens": 30, "output_tokens": 7},
-            },
-        )
-
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    profile = AgentProfile(
-        workspace_id=uuid4(),
-        name="Claude",
-        role="researcher",
-        instructions="Use tools.",
-        model="claude-sonnet-4-5",
-        model_settings={"tool_choice": "search_docs"},
-    )
-    executor = RecordingToolExecutor(output={"answer": "tool-result-ok"})
-    request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Search docs.",
-        context=AgentRuntimeContext(
-            workspace_id=profile.workspace_id,
-            task_id=None,
-            run_id=uuid4(),
-            allowed_tools=("search_docs",),
-            tool_definitions=(_runtime_tool("search_docs"),),
-        ),
-        provider="anthropic",
-        api_key="anthropic-key",
-        tool_executor=executor,
-    )
-
-    result = asyncio.run(
-        ClaudeAgentSDKRunner(query_fn=lambda **_: _unexpected_legacy_query()).run(request)
-    )
-    asyncio.run(client.aclose())
-
-    assert result.final_output == "tool-result-ok"
-    assert executor.calls == ["search_docs"]
-    assert calls[0]["tools"][0]["name"] == "search_docs"
-    assert calls[0]["tool_choice"] == {"type": "tool", "name": "search_docs"}
-    assert calls[1]["messages"][1]["content"][0]["name"] == "search_docs"
-    assert calls[1]["messages"][2]["content"][0]["tool_use_id"] == "toolu_123"
-    assert [event.event_type for event in result.events] == [
-        "model.usage",
-        "tool.completed",
-        "model.usage",
-        "model.request",
-    ]
-    assert result.events[0].payload == {"usage": {"input_tokens": 20, "output_tokens": 5}}
-    assert result.events[1].payload == {
-        "tool_name": "search_docs",
-        "tool_call_id": "toolu_123",
-        "status": "completed",
-        "metadata": {"executor": "recording"},
-    }
-
-
-@pytest.mark.skip(
-    reason="Legacy direct Anthropic HTTP test replaced by Claude Agent SDK adapter tests"
-)
-def test_anthropic_messages_runner_records_trace_and_tool_provenance() -> None:
-    calls: list[dict[str, object]] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        payload = json_from_request(request)
-        calls.append(payload)
-        if len(calls) == 1:
-            return httpx.Response(
-                200,
-                json={
-                    "id": "msg_tool",
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [
-                        {
-                            "type": "tool_use",
-                            "id": "toolu_trace",
-                            "name": "search_docs",
-                            "input": {"query": "provenance"},
-                        }
-                    ],
-                },
-            )
-        return httpx.Response(
-            200,
-            json={
-                "id": "msg_final",
-                "type": "message",
-                "role": "assistant",
-                "content": [{"type": "text", "text": "trace-ok"}],
-                "metadata": {"api_key": "anthropic-response-secret"},
-            },
-        )
-
-    credential_id = uuid4()
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    profile = AgentProfile(
-        workspace_id=uuid4(),
-        name="Claude Trace",
-        role="researcher",
-        instructions="Trace tools.",
-        model="claude-sonnet-4-5",
-    )
-    request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Search docs.",
-        context=AgentRuntimeContext(
-            workspace_id=profile.workspace_id,
-            task_id=None,
-            run_id=uuid4(),
-            allowed_tools=("search_docs",),
-            tool_definitions=(_runtime_tool("search_docs"),),
-        ),
-        provider="anthropic",
-        api_key="anthropic-key",
-        base_url="https://api.anthropic.com/private",
-        model_provider_credential_id=credential_id,
-        tool_executor=RecordingToolExecutor(),
-        tracing=AgentRunTracing(
-            workflow_name="opsmesh.team_agent_run",
-            trace_id="trace_anthropic",
-            group_id="workspace:team_agent:team-1:agent-1",
-            metadata={
-                "team": {"team_id": "team-1"},
-                "persistent_session_key": "workspace:team_agent:team-1:agent-1",
-                "api_key": "sk-trace-secret",
-                "base_url": "https://trace.example.test/private",
-            },
-            disabled=True,
-        ),
-    )
-
-    result = asyncio.run(
-        ClaudeAgentSDKRunner(query_fn=lambda **_: _unexpected_legacy_query()).run(request)
-    )
-    asyncio.run(client.aclose())
-
-    assert result.final_output == "trace-ok"
-    assert result.raw_output["trace"] == {
-        "workflow_name": "opsmesh.team_agent_run",
-        "trace_id": "trace_anthropic",
-        "group_id": "workspace:team_agent:team-1:agent-1",
-        "metadata": {
-            "team": {"team_id": "team-1"},
-            "persistent_session_key": "workspace:team_agent:team-1:agent-1",
-            "api_key": "[redacted]",
-            "base_url": "[redacted]",
-        },
-        "disabled": True,
-        "include_sensitive_data": False,
-    }
-    assert result.raw_output["model_provider_credential_id"] == str(credential_id)
-    assert result.events[0].event_type == "tool.completed"
-    assert result.events[0].payload["metadata"] == {"executor": "recording"}
-    assert result.events[1].event_type == "model.request"
-    assert result.events[1].payload == {
-        "model_provider": {
-            "provider": "anthropic",
-            "model": "claude-sonnet-4-5",
-            "model_api": "anthropic_messages",
-            "credential_id": str(credential_id),
-        },
-        "trace": {
-            "workflow_name": "opsmesh.team_agent_run",
-            "trace_id": "trace_anthropic",
-            "group_id": "workspace:team_agent:team-1:agent-1",
-            "metadata": {
-                "team": {"team_id": "team-1"},
-                "persistent_session_key": "workspace:team_agent:team-1:agent-1",
-                "api_key": "[redacted]",
-                "base_url": "[redacted]",
-            },
-            "disabled": True,
-        },
-    }
-    serialized = json.dumps(result.raw_output)
-    assert "sk-trace-secret" not in serialized
-    assert "trace.example.test/private" not in serialized
-    assert "anthropic-response-secret" not in serialized
-
-
-@pytest.mark.skip(
-    reason="Legacy direct Anthropic HTTP test replaced by Claude Agent SDK adapter tests"
-)
-def test_anthropic_messages_runner_uses_persistent_session_history() -> None:
-    calls: list[dict[str, object]] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        payload = json_from_request(request)
-        calls.append(payload)
-        return httpx.Response(
-            200,
-            json={
-                "id": "msg_123",
-                "type": "message",
-                "role": "assistant",
-                "content": [{"type": "text", "text": "continued"}],
-            },
-        )
-
-    class RecordingSession:
-        session_id = "workspace:team_agent:team-1:claude"
-        session_settings = None
-
-        def __init__(self) -> None:
-            self.added: list[dict[str, object]] = []
-
-        async def get_items(self, limit: int | None = None) -> list[dict[str, object]]:
-            return [
-                {"role": "user", "content": "previous question"},
-                {"role": "assistant", "content": "previous answer"},
-            ]
-
-        async def add_items(self, items: list[dict[str, object]]) -> None:
-            self.added.extend(items)
-
-        async def pop_item(self) -> dict[str, object] | None:
-            return None
-
-        async def clear_session(self) -> None:
-            return None
-
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    session = RecordingSession()
-    profile = AgentProfile(
-        workspace_id=uuid4(),
-        name="Claude",
-        role="researcher",
-        instructions="Continue.",
-        model="claude-sonnet-4-5",
-    )
-    request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="next question",
-        context=AgentRuntimeContext(
-            workspace_id=profile.workspace_id,
-            task_id=None,
-            run_id=uuid4(),
-        ),
-        provider="anthropic",
-        api_key="anthropic-key",
-        session=session,
-    )
-
-    result = asyncio.run(
-        ClaudeAgentSDKRunner(query_fn=lambda **_: _unexpected_legacy_query()).run(request)
-    )
-    asyncio.run(client.aclose())
-
-    assert result.final_output == "continued"
-    assert calls[0]["messages"] == [
-        {"role": "user", "content": "previous question"},
-        {"role": "assistant", "content": "previous answer"},
-        {"role": "user", "content": "next question"},
-    ]
-    assert session.added == [
-        {"role": "user", "content": "next question"},
-        {"role": "assistant", "content": "continued"},
-    ]
-
-
-def test_openai_agents_runner_raw_output_is_json_safe() -> None:
     class Usage:
         def model_dump(self, mode: str) -> dict[str, object]:
             assert mode == "json"
@@ -1414,9 +931,7 @@ def test_openai_agents_runner_tools_include_provenance_guardrail() -> None:
     assert tool.description == "Execute generate_image."
     assert tool.params_json_schema == _runtime_tool("generate_image").input_schema
     assert tool.tool_input_guardrails is not None
-    assert tool.tool_input_guardrails[0].name == (
-        "generate_image:runtime_allowed_tool_provenance"
-    )
+    assert tool.tool_input_guardrails[0].name == ("generate_image:runtime_allowed_tool_provenance")
 
 
 def test_openai_tool_bridge_maps_dynamic_sdk_approval_interruption() -> None:
@@ -1502,9 +1017,10 @@ def test_openai_tool_bridge_maps_dynamic_sdk_approval_interruption() -> None:
 
 
 def test_openai_agents_runner_tool_provenance_accepts_restored_mapping_context() -> None:
-    assert runtime_allowed_tools(
-        {"allowed_tools": ["generate_image", "write_artifact"]}
-    ) == ("generate_image", "write_artifact")
+    assert runtime_allowed_tools({"allowed_tools": ["generate_image", "write_artifact"]}) == (
+        "generate_image",
+        "write_artifact",
+    )
 
 
 @pytest.mark.openai_smoke
@@ -1517,9 +1033,7 @@ def test_openai_agents_runner_real_sdk_smoke_preserves_boundary_configuration() 
         workspace_id=uuid4(),
         name="Smoke Runner",
         role="tester",
-        instructions=(
-            "Return exactly: smoke-ok. Do not call tools unless the user asks for one."
-        ),
+        instructions=("Return exactly: smoke-ok. Do not call tools unless the user asks for one."),
         model=os.getenv("OPENAI_SMOKE_MODEL", "gpt-4.1-nano"),
         model_settings={"temperature": 0, "store": False, "include_usage": True},
     )
@@ -1749,14 +1263,3 @@ def _openai_smoke_base_url() -> str | None:
 
 def _openai_smoke_model_api() -> str | None:
     return os.getenv("OPENAI_SMOKE_MODEL_API")
-
-
-def json_from_request(request: httpx.Request) -> dict[str, object]:
-    payload = json.loads(request.content.decode("utf-8"))
-    assert isinstance(payload, dict)
-    return payload
-
-
-async def _unexpected_legacy_query(**_: object):
-    raise AssertionError("legacy direct HTTP test must remain skipped")
-    yield  # pragma: no cover

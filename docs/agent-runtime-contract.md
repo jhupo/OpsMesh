@@ -29,8 +29,8 @@ The Python boundary deliberately uses a hybrid object model:
 - `AgentRuntimeExecutor` is the minimal structural protocol consumed by orchestration and workers.
 - `AgentRuntimeAdapter` adds the capability contract required from provider implementations.
 - `BaseSDKAgentRuntimeAdapter` is the template base for SDK-backed adapters and owns validation,
-  cancellation checkpoints, retry/circuit behavior, lifecycle observation, stream finalization, and
-  result capability attachment.
+  cancellation checkpoints, lifecycle observation, stream finalization, and result capability
+  attachment.
 - `OpenAIAgentsRunner` and `ClaudeAgentSDKRunner` implement only provider SDK construction,
   invocation, and result mapping.
 - `ProviderAgentRuntimeRegistry` selects an adapter by canonical provider family and publishes its
@@ -191,6 +191,11 @@ policy error, produces a durable `agent.guardrail.blocked` or `agent.output.inva
 activate provider fallback, and does not penalize provider health or the circuit breaker. Evidence
 contains only rule identifiers, counts, limits, and failed validator names, never the evaluated
 input, output, or matched term.
+
+The adapter never retries an entire Agent SDK run. A run can already have written session items,
+called tools, or requested approval, so replaying it inside a process is not safe. Provider SDKs may
+retry their own request-level operations; durable run recovery and any cross-provider retry remain
+explicit product workflow transitions with persisted state and idempotency evidence.
 
 ## Tool Mapping
 

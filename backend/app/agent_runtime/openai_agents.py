@@ -1,7 +1,6 @@
 import json
 from dataclasses import replace
 from typing import Any
-from urllib.parse import urlparse
 
 from agents import (
     Agent,
@@ -56,7 +55,6 @@ from backend.app.agent_runtime.openai_settings import OpenAIModelSettingsMapper
 from backend.app.agent_runtime.openai_streaming import run_openai_streamed
 from backend.app.agent_runtime.openai_tools import OpenAIToolBridge
 from backend.app.agent_runtime.usage import runtime_usage
-from backend.app.core.resilience import CircuitBreakerConfig
 from backend.app.model_providers.base_url import normalize_openai_compatible_base_url
 from backend.app.model_providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
@@ -65,10 +63,7 @@ from backend.app.model_providers.model_api import (
 )
 from backend.app.model_providers.provider_keys import (
     is_openai_compatible_provider,
-    model_provider_key,
 )
-
-DEFAULT_MODEL_PROVIDER_CIRCUIT_CONFIG = CircuitBreakerConfig()
 
 
 class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
@@ -94,13 +89,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         unsupported_reasons={},
     )
 
-    def __init__(
-        self,
-        *,
-        max_attempts: int = 1,
-        circuit_config: CircuitBreakerConfig = DEFAULT_MODEL_PROVIDER_CIRCUIT_CONFIG,
-    ) -> None:
-        super().__init__(max_attempts=max_attempts, circuit_config=circuit_config)
+    def __init__(self) -> None:
         self._settings_mapper = OpenAIModelSettingsMapper()
         self._tool_bridge = OpenAIToolBridge()
         self._result_mapper = OpenAIAgentsResultMapper()
@@ -203,9 +192,6 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
 
     def _validate_request(self, request: AgentRunRequest) -> None:
         self._validate_agent_tools(request)
-
-    def _provider_circuit_key(self, request: AgentRunRequest) -> str:
-        return _model_provider_circuit_key(request)
 
     async def _runner_input(
         self,
@@ -703,27 +689,6 @@ def _agent_tool_events(
         for call in calls
     ]
 
-
-
-def _model_provider_circuit_key(request: AgentRunRequest) -> str:
-    provider = model_provider_key(request.provider) or "openai"
-    base_url = normalize_openai_compatible_base_url(request.base_url) or "openai-default"
-    try:
-        parsed = urlparse(base_url)
-    except ValueError:
-        host = "invalid-url"
-    else:
-        host = parsed.netloc or parsed.path or "openai-default"
-    credential = (
-        str(request.model_provider_credential_id)
-        if request.model_provider_credential_id is not None
-        else "no-credential"
-    )
-    model_api = canonical_model_api(request.model_api) or "unspecified"
-    return (
-        f"model-provider:{provider}:{host}:{credential}:{model_api}:"
-        f"{request.model or request.agent_profile.model}"
-    )
 
 
 def _use_responses_api(model_api: str | None) -> bool | None:

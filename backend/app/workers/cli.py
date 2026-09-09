@@ -75,7 +75,7 @@ def _build_runner(settings: Settings, config: WorkerRunnerConfig) -> WorkerRunne
         queue=build_default_queue(redis_client, settings),
         session_factory=SessionLocal,
         config=config,
-        agent_runner=build_agent_runtime_registry(settings),
+        agent_runner=build_agent_runtime_registry(),
         settings=settings,
     )
 
