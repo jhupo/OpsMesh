@@ -27,8 +27,9 @@ product contract.
 
 Release delivery is being upgraded to attested GHCR images, a lightweight `opsmesh` CLI and a
 durable host updater. See [delivery operations](docs/delivery-operations.md) and the
-[implementation/validation ledger](docs/release-delivery-plan.md). It is not yet production-accepted:
-signed publication, installation and cross-version upgrade acceptance remain release blockers.
+[implementation/validation ledger](docs/release-delivery-plan.md). Signed wheel/image publication
+passes; native standalone distribution acceptance is being added. Managed installation and
+cross-version upgrade acceptance remain blockers for declaring the complete delivery system ready.
 Backend CI and real Linux/PostgreSQL backup restoration now pass.
 
 | Area | Status |
@@ -429,11 +430,8 @@ curl http://localhost:8000/api/v1/health/ready
 
 When API documentation is enabled, OpenAPI is available at `http://localhost:8000/docs`.
 
-Before creating a release tag, run the complete suite:
-
-```bash
-uv run pytest
-```
+The pushed release tag triggers the complete suite in CI. Normal development uses focused tests;
+do not duplicate the full release gate locally.
 
 Run only the API during development:
 
@@ -442,6 +440,12 @@ uv run uvicorn backend.app.main:create_app --factory --reload --host 0.0.0.0 --p
 ```
 
 ## Deployment
+
+Ready-to-run release artifacts and their tested platforms are described in
+[Standalone Distributions](docs/standalone-distributions.md). Native CLI archives include Python;
+the Linux amd64 server archive includes CPython and locked production dependencies. Developer
+`.whl`/source packages are separate assets. Follow [Delivery Operations](docs/delivery-operations.md)
+for signature verification and managed installation.
 
 The current production model runs API and worker processes on a VPS through systemd. The worker
 uses Docker for isolated task runtimes, while a separate root-owned systemd unit manages the pinned

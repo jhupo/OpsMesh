@@ -28,6 +28,8 @@ def host_platform() -> str:
 def archive_tree(directory: Path, output: Path) -> None:
     """Emit regular files only; dereference contained library links at build time."""
     paths = sorted(path for path in directory.rglob("*") if path.is_file())
+    if len(paths) > 50_000 or sum(path.stat().st_size for path in paths) > 1_000_000_000:
+        raise ValueError("Distribution exceeds the operator's archive extraction limits")
     for path in paths:
         if not path.resolve().is_relative_to(directory.resolve()):
             raise ValueError("Distribution contains a link outside its build root")

@@ -12,7 +12,7 @@ from filelock import FileLock
 
 from opsmesh_operator.commands import run_command
 from opsmesh_operator.deployments import ComposeDeployment, deployment_for
-from opsmesh_operator.files import atomic_write, require_install_root
+from opsmesh_operator.files import atomic_write, require_install_root, sync_directory
 from opsmesh_operator.installation import Installation
 from opsmesh_operator.releases import ReleaseSource
 
@@ -152,6 +152,7 @@ def provision_updater(directory: Path, target: Path) -> None:
         raise ValueError("Interrupted updater staging requires operator inspection")
     shutil.copytree(directory, staging, ignore=shutil.ignore_patterns(".env", "__pycache__"))
     staging.rename(target)
+    sync_directory(target.parent)
 
 
 def _service_accounts(installation: Installation) -> None:

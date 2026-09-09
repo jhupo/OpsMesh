@@ -6,6 +6,10 @@ The native operator CLI uses PyInstaller onedir builds on each native runner (Li
 Windows amd64, macOS amd64/arm64). It bundles Python and operator host dependencies, but not the
 backend or model SDK dependency trees. Host administration still requires Linux; desktop CLIs
 provide remote administration. Archives retain dependency metadata and licensing information.
+The native test runners are Ubuntu 22.04 amd64, Ubuntu 24.04 arm64, Windows Server 2022 amd64,
+macOS 15 Intel and macOS 14 Apple Silicon. Older OS versions are not claimed as tested. GitHub
+attestations authenticate every archive; these are not Windows Authenticode or Apple notarization
+certificates. Local OS security prompts may therefore still apply.
 
 The server distribution supports the existing Linux amd64/glibc deployment. It contains CPython
 3.12.14 from uv's python-build-standalone distribution, locked production wheels, migrations and
