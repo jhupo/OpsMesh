@@ -3,10 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.teams.execution_loop_jobs import enqueue_team_execution_loop_job
 from backend.app.teams.execution_loop_runtime_candidates import (
+    TeamLoopCandidate,
     _increment_skip_reason,
     _record_runtime_scheduler_scan,
     _scheduler_scan_candidate,
@@ -25,7 +27,7 @@ class TeamExecutionLoopQueueDispatcher:
         self,
         *,
         queue: RedisQueue,
-        candidates: list[dict[str, object]],
+        candidates: list[TeamLoopCandidate],
         limit: int,
         window: int,
         generated_at: datetime,
@@ -59,7 +61,7 @@ class TeamExecutionLoopQueueDispatcher:
         self,
         *,
         queue: RedisQueue,
-        candidate: dict[str, object],
+        candidate: TeamLoopCandidate,
         window: int,
     ) -> bool:
         return enqueue_team_execution_loop_job(
@@ -72,7 +74,7 @@ class TeamExecutionLoopQueueDispatcher:
             routing={
                 "source": "worker_maintenance",
                 "trigger": candidate["trigger"],
-                **dict(candidate.get("routing") or {}),
+                **candidate["routing"],
                 "task_id": (
                     str(candidate["task_id"]) if candidate["task_id"] is not None else None
                 ),
@@ -81,13 +83,18 @@ class TeamExecutionLoopQueueDispatcher:
 
     def _record_enqueued_runtime_scan(
         self,
-        candidate: dict[str, object],
+        candidate: TeamLoopCandidate,
         generated_at: datetime,
         window: int,
     ) -> None:
         if candidate["task_id"] is not None:
             return
-        team = self._session.get(AgentTeam, candidate["team_id"])
+        team = self._session.scalar(
+            select(AgentTeam).where(
+                AgentTeam.workspace_id == candidate["workspace_id"],
+                AgentTeam.id == candidate["team_id"],
+            )
+        )
         if team is not None:
             _record_runtime_scheduler_scan(
                 team,
@@ -100,13 +107,18 @@ class TeamExecutionLoopQueueDispatcher:
 
     def _record_duplicate_runtime_scan(
         self,
-        candidate: dict[str, object],
+        candidate: TeamLoopCandidate,
         generated_at: datetime,
         window: int,
     ) -> None:
         if candidate["task_id"] is not None:
             return
-        team = self._session.get(AgentTeam, candidate["team_id"])
+        team = self._session.scalar(
+            select(AgentTeam).where(
+                AgentTeam.workspace_id == candidate["workspace_id"],
+                AgentTeam.id == candidate["team_id"],
+            )
+        )
         if team is not None:
             _record_runtime_scheduler_scan(
                 team,

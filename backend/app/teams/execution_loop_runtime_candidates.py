@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timedelta
+from typing import Literal, TypedDict
 from uuid import UUID
 
-from backend.app.core.typing import datetime_or_none, positive_int_or_default, uuid_or_none
+from backend.app.core.typing import datetime_or_none, positive_int_or_default
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.teams.execution_loop_constants import TEAM_RUNTIME_DEFAULT_LOOP_INTERVAL_SECONDS
 from backend.app.teams.models import AgentTeam
@@ -11,6 +13,32 @@ from backend.app.teams.runtime import (
     TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,
     TEAM_RUNTIME_STATUS_KEY,
 )
+
+
+class TeamLoopCandidate(TypedDict):
+    workspace_id: UUID
+    team_id: UUID
+    requested_by_user_id: UUID
+    priority: int
+    trigger: str
+    task_id: UUID | None
+    routing: dict[str, object]
+
+
+class ReadyRuntimeCandidate(TypedDict):
+    skip: Literal[False]
+    priority: int
+    trigger: str
+    runtime_health: str
+    workspace_runtime_id: str | None
+    last_heartbeat_at: str | None
+
+
+class BlockedRuntimeCandidate(TypedDict):
+    skip: Literal[True]
+    trigger: str
+    runtime_health: str
+    provider_readiness: dict[str, object]
 
 
 def _runtime_status(team: AgentTeam) -> str | None:
@@ -48,11 +76,11 @@ def _runtime_candidate_health(
     return "healthy"
 
 
-def _scheduled_runtime_candidate(
+def _scheduled_runtime_priority(
     *,
     runtime_metadata: dict[str, object],
     generated_at: datetime,
-) -> dict[str, object] | None:
+) -> int | None:
     scheduling_policy = _runtime_scheduling_policy(runtime_metadata)
     if scheduling_policy.get("scheduled_loop_enabled") is False:
         return None
@@ -67,9 +95,7 @@ def _scheduled_runtime_candidate(
         seconds=loop_interval_seconds
     ):
         return None
-    return {
-        "priority": positive_int_or_default(scheduling_policy.get("priority"), 5),
-    }
+    return positive_int_or_default(scheduling_policy.get("priority"), 5)
 
 
 def _runtime_scheduling_policy(runtime_metadata: dict[str, object]) -> dict[str, object]:
@@ -97,10 +123,11 @@ def _record_runtime_scheduler_scan(
     reason: str | None,
     scanned_at: datetime,
     window: int,
-    runtime_candidate: dict[str, object] | None = None,
+    runtime_candidate: Mapping[str, object] | None = None,
 ) -> None:
     policy = dict(team.default_task_policy or {})
-    runtime_metadata = dict(policy.get(TEAM_RUNTIME_STATUS_KEY) or {})
+    stored_runtime = policy.get(TEAM_RUNTIME_STATUS_KEY)
+    runtime_metadata = dict(stored_runtime) if isinstance(stored_runtime, dict) else {}
     scan: dict[str, object] = {
         "status": status,
         "scanned_at": scanned_at.isoformat(),
@@ -121,15 +148,11 @@ def _record_runtime_scheduler_scan(
     team.default_task_policy = policy
 
 
-def _scheduler_scan_candidate(candidate: dict[str, object]) -> dict[str, object]:
+def _scheduler_scan_candidate(candidate: TeamLoopCandidate) -> dict[str, object]:
     return {
-        "trigger": candidate.get("trigger"),
-        **dict(candidate.get("routing") or {}),
+        "trigger": candidate["trigger"],
+        **candidate["routing"],
     }
-
-
-def _runtime_candidate_is_skip(candidate: dict[str, object]) -> bool:
-    return candidate.get("skip") is True
 
 
 def _provider_readiness_blocks_runtime(provider_readiness: dict[str, object]) -> bool:
@@ -139,7 +162,7 @@ def _provider_readiness_blocks_runtime(provider_readiness: dict[str, object]) ->
 
 def _provider_blocked_runtime_candidate(
     provider_readiness: dict[str, object],
-) -> dict[str, object]:
+) -> BlockedRuntimeCandidate:
     return {
         "skip": True,
         "trigger": "scheduled_team_runtime",
@@ -161,14 +184,6 @@ def _increment_skip_reason(skipped_reasons: dict[str, int], reason: str) -> None
     skipped_reasons[reason] = skipped_reasons.get(reason, 0) + 1
 
 
-def _datetime_or_none(value: object) -> datetime | None:
-    return datetime_or_none(value)
-
-
-def _uuid_or_none(value: object) -> UUID | None:
-    return uuid_or_none(value)
-
-
 def _team_loop_candidate(
     *,
     workspace_id: UUID,
@@ -178,7 +193,7 @@ def _team_loop_candidate(
     trigger: str,
     task_id: UUID | None,
     routing: dict[str, object] | None = None,
-) -> dict[str, object]:
+) -> TeamLoopCandidate:
     return {
         "workspace_id": workspace_id,
         "team_id": team_id,

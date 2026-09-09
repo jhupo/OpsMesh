@@ -16,9 +16,9 @@ from backend.app.teams.execution_loop_queue_runtime import (
     TeamExecutionLoopRuntimeCandidateBuilder,
 )
 from backend.app.teams.execution_loop_runtime_candidates import (
+    TeamLoopCandidate,
     _increment_skip_reason,
     _record_runtime_scheduler_scan,
-    _runtime_candidate_is_skip,
     _team_loop_candidate,
 )
 from backend.app.workers.queue.redis_queue import RedisQueue
@@ -50,7 +50,7 @@ class TeamExecutionLoopQueueService:
     ) -> TeamExecutionLoopEnqueueSummary:
         window = int((now or datetime.now(UTC)).timestamp() // TEAM_EXECUTION_LOOP_WINDOW_SECONDS)
         generated_at = now or datetime.now(UTC)
-        candidates: list[dict[str, object]] = [
+        candidates: list[TeamLoopCandidate] = [
             _team_loop_candidate(
                 workspace_id=task.workspace_id,
                 team_id=task.agent_team_id,
@@ -81,7 +81,9 @@ class TeamExecutionLoopQueueService:
                         window=window,
                     )
                 continue
-            if skip_reason is not None and _runtime_candidate_is_skip(runtime_candidate):
+            if runtime_candidate["skip"]:
+                if skip_reason is None:
+                    raise ValueError("Blocked runtime candidate must include a skip reason")
                 skipped += 1
                 _increment_skip_reason(skipped_reasons, skip_reason)
                 _record_runtime_scheduler_scan(

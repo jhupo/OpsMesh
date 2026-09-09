@@ -632,6 +632,32 @@ def test_worker_maintenance_enqueues_running_team_runtime_without_tasks() -> Non
     assert job.job_type == JobType.TEAM_EXECUTION_LOOP
 
 
+def test_runtime_scheduler_scans_do_not_update_another_workspace_team() -> None:
+    from backend.app.teams.execution_loop_queue_dispatch import TeamExecutionLoopQueueDispatcher
+    from backend.app.teams.execution_loop_runtime_candidates import _team_loop_candidate
+
+    session_factory = _session_factory()
+    _, team_id, user_id = _seed_runtime_team(session_factory)
+    with session_factory() as session:
+        team = session.get(AgentTeam, team_id)
+        assert team is not None
+        original_policy = dict(team.default_task_policy)
+        candidate = _team_loop_candidate(
+            workspace_id=uuid4(),
+            team_id=team.id,
+            requested_by_user_id=user_id,
+            priority=5,
+            trigger="scheduled_team_runtime",
+            task_id=None,
+        )
+        dispatcher = TeamExecutionLoopQueueDispatcher(session)
+        dispatcher._record_enqueued_runtime_scan(candidate, datetime.now(UTC), 1)
+        dispatcher._record_duplicate_runtime_scan(candidate, datetime.now(UTC), 1)
+        session.commit()
+        session.refresh(team)
+        assert team.default_task_policy == original_policy
+
+
 def test_worker_maintenance_prioritizes_stale_team_runtime_recovery() -> None:
     session_factory = _session_factory()
     queue = _queue()

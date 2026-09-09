@@ -4,16 +4,17 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from backend.app.core.typing import datetime_or_none, uuid_or_none
 from backend.app.teams.execution_loop_queue_repository import (
     TeamExecutionLoopQueueRepository,
 )
 from backend.app.teams.execution_loop_runtime_candidates import (
-    _datetime_or_none,
+    BlockedRuntimeCandidate,
+    ReadyRuntimeCandidate,
     _provider_blocked_runtime_candidate,
     _provider_readiness_blocks_runtime,
     _runtime_candidate_health,
-    _scheduled_runtime_candidate,
-    _uuid_or_none,
+    _scheduled_runtime_priority,
 )
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.provider_readiness import TeamProviderReadinessService
@@ -43,7 +44,7 @@ class TeamExecutionLoopRuntimeCandidateBuilder:
         team: AgentTeam,
         *,
         generated_at: datetime,
-    ) -> tuple[dict[str, object] | None, str | None]:
+    ) -> tuple[ReadyRuntimeCandidate | BlockedRuntimeCandidate | None, str | None]:
         runtime_metadata = _runtime_metadata(team)
         if runtime_metadata is None:
             return None, None
@@ -64,7 +65,7 @@ class TeamExecutionLoopRuntimeCandidateBuilder:
                 "provider_readiness_blocked"
             )
 
-        workspace_runtime_id = _uuid_or_none(
+        workspace_runtime_id = uuid_or_none(
             runtime_metadata.get(TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY)
         )
         workspace_runtime = (
@@ -72,7 +73,7 @@ class TeamExecutionLoopRuntimeCandidateBuilder:
             if workspace_runtime_id is not None
             else None
         )
-        last_heartbeat_at = _datetime_or_none(runtime_metadata.get("last_heartbeat_at"))
+        last_heartbeat_at = datetime_or_none(runtime_metadata.get("last_heartbeat_at"))
         runtime_health = _runtime_candidate_health(
             runtime_metadata=runtime_metadata,
             workspace_runtime=workspace_runtime,
@@ -88,6 +89,7 @@ class TeamExecutionLoopRuntimeCandidateBuilder:
         if skip_reason is not None:
             return None, skip_reason
         return {
+            "skip": False,
             "priority": priority,
             "trigger": trigger,
             "runtime_health": runtime_health,
@@ -113,13 +115,13 @@ def _runtime_priority_and_trigger(
     generated_at: datetime,
 ) -> tuple[int, str, str | None]:
     if runtime_health == "healthy":
-        scheduled_candidate = _scheduled_runtime_candidate(
+        scheduled_priority = _scheduled_runtime_priority(
             runtime_metadata=runtime_metadata,
             generated_at=generated_at,
         )
-        if scheduled_candidate is None:
+        if scheduled_priority is None:
             return 0, "", "scheduled_team_runtime_not_due"
-        return int(scheduled_candidate["priority"]), "scheduled_team_runtime", None
+        return scheduled_priority, "scheduled_team_runtime", None
     if runtime_health == "degraded":
         return 20, "degraded_team_runtime", None
     if runtime_health == "stale":
