@@ -48,7 +48,9 @@ def handoff_chain(
             if follow_up_cycles
             else "not_required",
             "step_ids": [
-                step_id for cycle in follow_up_cycles for step_id in cycle["follow_up_step_ids"]
+                identifier
+                for cycle in follow_up_cycles
+                for identifier in cycle["follow_up_step_ids"]
             ],
             "blocked_reasons": follow_up_chain_blockers(
                 acceptance_messages,
@@ -114,9 +116,9 @@ def follow_up_cycles(
             [uuid_or_none(item) for item in raw_step_ids] if isinstance(raw_step_ids, list) else []
         )
         follow_up_steps = [
-            step_by_id[step_id]
-            for step_id in step_ids
-            if step_id is not None and step_id in step_by_id
+            step_by_id[identifier]
+            for identifier in step_ids
+            if identifier is not None and identifier in step_by_id
         ]
         review_steps = [
             step
