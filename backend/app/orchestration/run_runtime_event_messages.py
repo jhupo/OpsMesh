@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunResult
@@ -30,11 +31,9 @@ class RunRuntimeEventMessageMapper:
                 event.message,
                 {"runtime_event": event.payload},
             )
-            draft = (
-                mapper.map_event(event=event, run=run, step=step)
-                if run.task_id is not None
-                else None
-            )
+            if run.task_id is None:
+                continue
+            draft = mapper.map_event(event=event, run=run, step=step)
             if draft is None:
                 continue
             messages.append(
@@ -66,7 +65,10 @@ class RunRuntimeEventMessageMapper:
     def _step_for_run(self, run: AgentRun) -> TaskStep | None:
         if run.task_step_id is None:
             return None
-        step = self.session.get(TaskStep, run.task_step_id)
-        if step is None or step.workspace_id != run.workspace_id:
-            return None
-        return step
+        return self.session.scalar(
+            select(TaskStep).where(
+                TaskStep.workspace_id == run.workspace_id,
+                TaskStep.task_id == run.task_id,
+                TaskStep.id == run.task_step_id,
+            )
+        )

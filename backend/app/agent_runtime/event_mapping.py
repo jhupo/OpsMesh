@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import overload
 from uuid import UUID
 
 from backend.app.agent_runtime.contracts import AgentRuntimeEvent
 from backend.app.runs.models import AgentRun
+from backend.app.security.redaction import redact_sensitive_text
 from backend.app.tasks.models import TaskStep
 
 _SECRET_KEYS = {
@@ -50,7 +52,10 @@ class RuntimeEventTaskMessageMapper:
         )
         return TaskMessageDraft(
             message_type=message_type,
-            body=event.message or _default_body(message_type),
+            body=(
+                redact_sensitive_text(event.message)
+                if event.message else _default_body(message_type)
+            ),
             payload=payload,
         )
 
@@ -94,8 +99,18 @@ def _default_body(message_type: str) -> str:
     }.get(message_type, "Runtime event.")
 
 
+@overload
+def _sanitize(value: dict[str, object]) -> dict[str, object]: ...
+
+
+@overload
+def _sanitize(value: object) -> object: ...
+
+
 def _sanitize(value: object) -> object:
-    if value is None or isinstance(value, str | int | float | bool):
+    if isinstance(value, str):
+        return redact_sensitive_text(value)
+    if value is None or isinstance(value, int | float | bool):
         return value
     if isinstance(value, UUID):
         return str(value)
