@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from backend.app.core.typing import dict_list
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.teams.operations_console_runtime_payloads import (
     _runtime_blocked_step_suggested_actions,
@@ -18,13 +19,9 @@ def _controls_payload(
     runtime_blocking: dict[str, object],
 ) -> dict[str, object]:
     action_plan = (
-        list(command_center.get("action_plan") or []) if command_center is not None else []
+        dict_list(command_center.get("action_plan")) if command_center is not None else []
     )
-    provider_management_actions = [
-        item
-        for item in provider_management.get("suggested_actions", [])
-        if isinstance(item, dict)
-    ]
+    provider_management_actions = dict_list(provider_management.get("suggested_actions"))
     return {
         "can_start": runtime_state.status != "running",
         "can_pause": runtime_state.status == "running",
@@ -64,9 +61,8 @@ def _readiness_payload(
     stall_threshold = _positive_int(runtime_metadata.get("stall_threshold"), 3)
     stalled_at = runtime_metadata.get("stalled_at")
     provider_blocked = any(
-        isinstance(item, dict) and item.get("readiness_status") == "blocked"
-        for item in provider_management.get("agent_bindings", [])
-        if isinstance(item, dict)
+        item.get("readiness_status") == "blocked"
+        for item in dict_list(provider_management.get("agent_bindings"))
     )
     blocked_step_count = _int_value(
         _runtime_blocked_steps_payload(runtime_blocking).get("count")
@@ -76,9 +72,7 @@ def _readiness_payload(
         + _int_value(runtime_queue.get("scheduled_retry"))
         + _int_value(runtime_queue.get("dead_letter"))
     )
-    suggested_actions = [
-        item for item in controls.get("suggested_actions", []) if isinstance(item, dict)
-    ]
+    suggested_actions = dict_list(controls.get("suggested_actions"))
     suggested_actions.sort(
         key=lambda item: _int_value(item.get("priority")),
         reverse=True,

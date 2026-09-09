@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -84,12 +85,11 @@ def _default_model_api_payload(provider: object) -> str | None:
     return default_model_api(provider)
 
 
-def _active_credential_ids(credentials: object) -> list[UUID]:
+def _active_credential_ids(credentials: Iterable[ModelProviderCredential]) -> list[UUID]:
     return [
         credential.id
         for credential in credentials
-        if isinstance(credential, ModelProviderCredential)
-        and _credential_selectable(credential)
+        if _credential_selectable(credential)
     ]
 
 

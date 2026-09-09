@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from backend.app.core.typing import dict_list
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.teams.operations_console_utils import (
     _datetime_or_none,
@@ -172,11 +173,7 @@ def _runtime_queue_suggested_actions(runtime_queue: dict[str, object]) -> list[d
 
 
 def _runtime_blocked_steps_payload(runtime_blocking: dict[str, object]) -> dict[str, object]:
-    steps = [
-        item
-        for item in runtime_blocking.get("blocked_steps", [])
-        if isinstance(item, dict)
-    ]
+    steps = dict_list(runtime_blocking.get("blocked_steps"))
     return {
         "count": len(steps),
         "blocked_reasons": _dict(runtime_blocking.get("blocked_reasons")),
@@ -192,11 +189,7 @@ def _runtime_blocked_step_suggested_actions(
     count = _int_value(payload.get("count"))
     if count <= 0:
         return []
-    steps = [
-        item
-        for item in payload.get("latest", [])
-        if isinstance(item, dict)
-    ]
+    steps = dict_list(payload.get("latest"))
     return [
         {
             "source": "team_runtime",

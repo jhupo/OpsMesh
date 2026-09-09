@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.app.agent_runtime.session_views import PersistentSessionSummary
+from backend.app.core.typing import dict_list, dict_or_empty
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.operations_console_utils import (
@@ -40,23 +41,22 @@ def _command_center_payload(command_center: dict[str, object] | None) -> dict[st
         "workspace_id": command_center.get("workspace_id"),
         "team_id": command_center.get("team_id"),
         "generated_at": command_center.get("generated_at"),
-        "summary": redact_sensitive_payload(dict(command_center.get("summary") or {})),
-        "runtime": redact_sensitive_payload(dict(command_center.get("runtime") or {})),
+        "summary": redact_sensitive_payload(dict_or_empty(command_center.get("summary"))),
+        "runtime": redact_sensitive_payload(dict_or_empty(command_center.get("runtime"))),
         "provider_readiness": redact_sensitive_payload(
-            dict(command_center.get("provider_readiness") or {})
+            dict_or_empty(command_center.get("provider_readiness"))
         ),
         "operating_policy": redact_sensitive_payload(
-            dict(command_center.get("operating_policy") or {})
+            dict_or_empty(command_center.get("operating_policy"))
         ),
         "memory_summary": redact_sensitive_payload(
-            dict(command_center.get("memory_summary") or {})
+            dict_or_empty(command_center.get("memory_summary"))
         ),
-        "overview": redact_sensitive_payload(dict(command_center.get("overview") or {})),
-        "queues": redact_sensitive_payload(dict(command_center.get("queues") or {})),
+        "overview": redact_sensitive_payload(dict_or_empty(command_center.get("overview"))),
+        "queues": redact_sensitive_payload(dict_or_empty(command_center.get("queues"))),
         "action_plan": [
             redact_sensitive_payload(item)
-            for item in command_center.get("action_plan") or []
-            if isinstance(item, dict)
+            for item in dict_list(command_center.get("action_plan"))
         ],
     }
 
@@ -77,5 +77,4 @@ def _session_payload(summary: PersistentSessionSummary | None) -> dict[str, obje
         "latest_item_metadata": _redacted_dict_or_none(summary.latest_item_metadata),
         "updated_at": summary.updated_at,
     }
-
 
