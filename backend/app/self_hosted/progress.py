@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from uuid import UUID
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.self_hosted import ProgressEventRequest
@@ -24,12 +27,14 @@ class SelfHostedProgressService:
         self._session.refresh(event)
         return event
 
-    def _require_worker_run(self, auth: AuthenticatedWorker, agent_run_id) -> AgentRun:
-        run = self._session.get(AgentRun, agent_run_id)
-        if (
-            run is None
-            or run.workspace_id != auth.worker.workspace_id
-            or run.runtime_id != auth.runtime.id
-        ):
+    def _require_worker_run(self, auth: AuthenticatedWorker, agent_run_id: UUID) -> AgentRun:
+        run = self._session.scalar(
+            select(AgentRun).where(
+                AgentRun.id == agent_run_id,
+                AgentRun.workspace_id == auth.worker.workspace_id,
+                AgentRun.runtime_id == auth.runtime.id,
+            )
+        )
+        if run is None:
             raise ValueError("Agent run not found for worker")
         return run

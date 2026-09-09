@@ -164,7 +164,7 @@ class SelfHostedDispatchService:
         if job.status != "queued":
             raise ValueError("Self-hosted MCP job is not queued")
         now = datetime.now(UTC)
-        claimed = self._session.execute(
+        claimed_id = self._session.scalar(
             update(SelfHostedMcpJob)
             .where(
                 SelfHostedMcpJob.id == job.id,
@@ -173,8 +173,9 @@ class SelfHostedDispatchService:
                 SelfHostedMcpJob.status == "queued",
             )
             .values(status="claimed", worker_id=auth.worker.id, claimed_at=now)
+            .returning(SelfHostedMcpJob.id)
         )
-        if claimed.rowcount != 1:
+        if claimed_id is None:
             self._session.refresh(job)
             if job.status == "claimed" and job.worker_id == auth.worker.id:
                 return job

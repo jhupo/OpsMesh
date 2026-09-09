@@ -8,12 +8,13 @@ from backend.app.api.schemas.self_hosted import (
 from backend.app.self_hosted.models import SelfHostedWorker
 from backend.app.self_hosted.trust import WorkerTrustSnapshot
 from backend.app.self_hosted.types import (
+    CreatedEnrollmentToken,
     RegisteredRuntime,
     WorkerControlResult,
 )
 
 
-def enrollment_token_response(created) -> EnrollmentTokenCreateResponse:
+def enrollment_token_response(created: CreatedEnrollmentToken) -> EnrollmentTokenCreateResponse:
     return EnrollmentTokenCreateResponse(
         id=created.record.id,
         created_at=created.record.created_at,

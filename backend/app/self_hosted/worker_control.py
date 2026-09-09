@@ -84,7 +84,7 @@ class SelfHostedWorkerControlService:
         if runtime is not None:
             runtime.status = "revoked"
             runtime.connection_status = "offline"
-            event_metadata = {
+            event_metadata: dict[str, object] = {
                 "credential_id": str(credential.id),
                 "worker_id": str(worker.id) if worker else None,
                 "actor_user_id": str(actor_user_id) if actor_user_id is not None else None,
@@ -136,7 +136,7 @@ class SelfHostedWorkerControlService:
         normalized_action = action.strip().lower()
         affected_claims = 0
         affected_runs = 0
-        metadata = {
+        metadata: dict[str, object] = {
             "worker_id": str(worker.id),
             "actor_user_id": str(actor_user_id) if actor_user_id is not None else None,
             "reason": reason,

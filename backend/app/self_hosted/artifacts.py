@@ -1,3 +1,6 @@
+from uuid import UUID
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.self_hosted import ArtifactUploadRequest, LocalFileReferenceRequest
@@ -19,8 +22,12 @@ class SelfHostedArtifactService:
         data: LocalFileReferenceRequest,
     ) -> LocalFileReference:
         if data.task_id is not None:
-            task = self._session.get(Task, data.task_id)
-            if task is None or task.workspace_id != auth.worker.workspace_id:
+            task = self._session.scalar(
+                select(Task).where(
+                    Task.workspace_id == auth.worker.workspace_id, Task.id == data.task_id
+                )
+            )
+            if task is None:
                 raise ValueError("Task not found")
         reference = LocalFileReference(
             workspace_id=auth.worker.workspace_id,
@@ -49,7 +56,12 @@ class SelfHostedArtifactService:
     ) -> SelfHostedArtifactUpload:
         run = self._validate_worker_run(auth, data.agent_run_id)
         step = (
-            self._session.get(TaskStep, run.task_step_id)
+            self._session.scalar(
+                select(TaskStep).where(
+                    TaskStep.workspace_id == auth.worker.workspace_id,
+                    TaskStep.id == run.task_step_id,
+                )
+            )
             if run is not None and run.task_step_id is not None
             else None
         )
@@ -100,15 +112,17 @@ class SelfHostedArtifactService:
     def _validate_worker_run(
         self,
         auth: AuthenticatedWorker,
-        agent_run_id,
+        agent_run_id: UUID | None,
     ) -> AgentRun | None:
         if agent_run_id is None:
             return None
-        run = self._session.get(AgentRun, agent_run_id)
-        if (
-            run is None
-            or run.workspace_id != auth.worker.workspace_id
-            or run.runtime_id != auth.runtime.id
-        ):
+        run = self._session.scalar(
+            select(AgentRun).where(
+                AgentRun.id == agent_run_id,
+                AgentRun.workspace_id == auth.worker.workspace_id,
+                AgentRun.runtime_id == auth.runtime.id,
+            )
+        )
+        if run is None:
             raise ValueError("Run not found for self-hosted worker")
         return run
