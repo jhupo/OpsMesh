@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from backend.app.teams.execution_overview_contracts import (
+    ExecutionBottleneck,
+    OperatorIntervention,
+    SpecialistReassignment,
+    StaffingGap,
+    SummaryAction,
+)
 from backend.app.teams.execution_overview_utils import (
     dedupe_strings,
     severity_rank,
@@ -12,13 +19,13 @@ from backend.app.teams.execution_overview_utils import (
 
 def operator_intervention_plan(
     *,
-    recommended_actions: list[dict[str, object]],
-    bottlenecks: list[dict[str, object]],
-    staffing_gaps: list[dict[str, object]],
-    specialist_reassignments: list[dict[str, object]],
+    recommended_actions: list[SummaryAction],
+    bottlenecks: list[ExecutionBottleneck],
+    staffing_gaps: list[StaffingGap],
+    specialist_reassignments: list[SpecialistReassignment],
     task_items: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    grouped: dict[str, dict[str, object]] = {}
+) -> list[OperatorIntervention]:
+    grouped: dict[str, SummaryAction] = {}
     for item in recommended_actions:
         action = item.get("action")
         if not isinstance(action, str) or not action:
@@ -27,7 +34,7 @@ def operator_intervention_plan(
             continue
         grouped[action] = {
             "action": action,
-            "count": int(item.get("count") or 0),
+            "count": item["count"],
             "task_ids": uuid_list(item.get("task_ids")),
         }
     for bottleneck in bottlenecks:
@@ -37,12 +44,12 @@ def operator_intervention_plan(
         if action == "reassign_step":
             continue
         item = grouped.setdefault(action, {"action": action, "count": 0, "task_ids": []})
-        item["count"] = max(int(item["count"]), int(bottleneck.get("count") or 0))
-        task_ids = set(uuid_list(item.get("task_ids")))
-        task_ids.update(uuid_list(bottleneck.get("task_ids")))
-        item["task_ids"] = sorted(task_ids, key=str)
+        item["count"] = max(item["count"], bottleneck["count"])
+        merged_task_ids = set(item["task_ids"])
+        merged_task_ids.update(bottleneck["task_ids"])
+        item["task_ids"] = sorted(merged_task_ids, key=str)
 
-    plan: list[dict[str, object]] = []
+    plan: list[OperatorIntervention] = []
     for item in grouped.values():
         action = str(item["action"])
         task_ids = uuid_list(item.get("task_ids"))
@@ -66,8 +73,8 @@ def operator_intervention_plan(
                 "action": action,
                 "category": _intervention_category(action),
                 "severity": severity,
-                "priority": _intervention_priority(severity, int(item["count"])),
-                "count": int(item["count"]),
+                "priority": _intervention_priority(severity, item["count"]),
+                "count": item["count"],
                 "task_ids": task_ids,
                 "task_step_ids": task_step_ids,
                 "automation": _intervention_automation(action),
@@ -82,14 +89,14 @@ def operator_intervention_plan(
         )
     return sorted(
         [*plan, *_reassign_step_interventions(specialist_reassignments)],
-        key=lambda item: (-int(item["priority"]), str(item["action"])),
+        key=lambda item: (-item["priority"], item["action"]),
     )
 
 
 def _reassign_step_interventions(
-    specialist_reassignments: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    interventions: list[dict[str, object]] = []
+    specialist_reassignments: list[SpecialistReassignment],
+) -> list[OperatorIntervention]:
+    interventions: list[OperatorIntervention] = []
     for reassignment in specialist_reassignments:
         task_id = reassignment.get("task_id")
         task_step_id = reassignment.get("task_step_id")
@@ -149,7 +156,7 @@ def _reassign_step_interventions(
 
 def _intervention_step_ids(
     action: str,
-    staffing_gaps: list[dict[str, object]],
+    staffing_gaps: list[StaffingGap],
 ) -> list[UUID]:
     if action != "add_or_hire_team_member":
         return []
@@ -164,7 +171,7 @@ def _intervention_reason_codes(
     action: str,
     task_ids: list[UUID],
     task_items: list[dict[str, object]],
-    bottlenecks: list[dict[str, object]],
+    bottlenecks: list[ExecutionBottleneck],
 ) -> list[str]:
     task_id_set = set(task_ids)
     reasons = [

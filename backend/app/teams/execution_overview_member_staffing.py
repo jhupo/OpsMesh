@@ -6,6 +6,7 @@ from uuid import UUID
 from backend.app.agents.models import AgentProfile
 from backend.app.tasks.models import TaskStep
 from backend.app.teams.execution_overview_constants import ACTIVE_STEP_STATUSES
+from backend.app.teams.execution_overview_contracts import StaffingGap
 from backend.app.teams.execution_overview_utils import string_list
 from backend.app.teams.models import AgentTeamMember
 
@@ -14,7 +15,7 @@ def staffing_gaps(
     members: list[AgentTeamMember],
     agents: dict[UUID, AgentProfile],
     steps: list[TaskStep],
-) -> list[dict[str, object]]:
+) -> list[StaffingGap]:
     grouped_steps: dict[tuple[str | None, tuple[str, ...]], list[TaskStep]] = defaultdict(list)
     for step in steps:
         if not _is_unassigned_active_requirement(step):
@@ -90,7 +91,7 @@ def _sorted_gaps(
 def _staffing_gap_payload(
     key: tuple[str | None, tuple[str, ...]],
     gap_steps: list[TaskStep],
-) -> dict[str, object]:
+) -> StaffingGap:
     required_role, required_skills = key
     task_ids = sorted({step.task_id for step in gap_steps}, key=str)
     return {

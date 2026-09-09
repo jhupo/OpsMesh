@@ -7,6 +7,7 @@ from backend.app.tasks.models import TaskStep
 from backend.app.teams.execution_overview_constants import (
     REASSIGNABLE_SPECIALIST_STEP_STATUSES,
 )
+from backend.app.teams.execution_overview_contracts import SpecialistReassignment
 from backend.app.teams.execution_overview_utils import string_list
 from backend.app.teams.models import AgentTeamMember
 
@@ -15,8 +16,8 @@ def specialist_reassignments(
     members: list[AgentTeamMember],
     agents: dict[UUID, AgentProfile],
     steps: list[TaskStep],
-) -> list[dict[str, object]]:
-    reassignments: list[dict[str, object]] = []
+) -> list[SpecialistReassignment]:
+    reassignments: list[SpecialistReassignment] = []
     for step in steps:
         if not is_reassignable_specialist_step(step):
             continue
@@ -128,7 +129,7 @@ def _reassignment_payload(
     step: TaskStep,
     member: AgentTeamMember,
     agent: AgentProfile,
-) -> dict[str, object]:
+) -> SpecialistReassignment:
     return {
         "task_id": step.task_id,
         "task_step_id": step.id,

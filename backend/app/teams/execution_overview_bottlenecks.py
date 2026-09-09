@@ -5,6 +5,12 @@ from uuid import UUID
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import TaskStep
+from backend.app.teams.execution_overview_contracts import (
+    ExecutionBottleneck,
+    MemberWorkload,
+    SpecialistReassignment,
+    StaffingGap,
+)
 from backend.app.teams.execution_overview_utils import (
     dedupe_strings,
     severity_rank,
@@ -15,13 +21,13 @@ from backend.app.teams.execution_overview_utils import (
 def summary_bottlenecks(
     *,
     task_items: list[dict[str, object]],
-    member_items: list[dict[str, object]],
-    staffing_gaps: list[dict[str, object]],
-    specialist_reassignments: list[dict[str, object]],
+    member_items: list[MemberWorkload],
+    staffing_gaps: list[StaffingGap],
+    specialist_reassignments: list[SpecialistReassignment],
     steps: list[TaskStep],
     runs: list[AgentRun],
-) -> list[dict[str, object]]:
-    bottlenecks: list[dict[str, object]] = []
+) -> list[ExecutionBottleneck]:
+    bottlenecks: list[ExecutionBottleneck] = []
     if staffing_gaps:
         task_ids = sorted(
             {task_id for gap in staffing_gaps for task_id in uuid_list(gap.get("task_ids"))},
@@ -146,9 +152,9 @@ def summary_bottlenecks(
 def delivery_health(
     *,
     task_items: list[dict[str, object]],
-    member_items: list[dict[str, object]],
-    staffing_gaps: list[dict[str, object]],
-    bottlenecks: list[dict[str, object]],
+    member_items: list[MemberWorkload],
+    staffing_gaps: list[StaffingGap],
+    bottlenecks: list[ExecutionBottleneck],
     total_capacity: int,
     active_member_tasks: int,
     available_member_capacity: int,
@@ -213,7 +219,7 @@ def _bottleneck(
     count: int,
     task_ids: list[UUID],
     recommended_action: str,
-) -> dict[str, object]:
+) -> ExecutionBottleneck:
     return {
         "code": code,
         "severity": severity,

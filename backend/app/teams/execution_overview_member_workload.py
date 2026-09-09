@@ -11,6 +11,7 @@ from backend.app.teams.execution_overview_constants import (
     ACTIVE_RUN_STATUSES,
     ACTIVE_STEP_STATUSES,
 )
+from backend.app.teams.execution_overview_contracts import MemberWorkload
 from backend.app.teams.models import AgentTeamMember
 
 
@@ -22,7 +23,7 @@ def member_items(
     latest_events: dict[UUID, RunEvent],
     *,
     workspace_active_task_ids_by_agent: dict[UUID, set[UUID]],
-) -> list[dict[str, object]]:
+) -> list[MemberWorkload]:
     active_steps_by_agent = _active_steps_by_agent(steps)
     active_runs_by_agent = _active_runs_by_agent(runs)
 
@@ -50,7 +51,7 @@ def member_item(
     active_runs: list[AgentRun],
     latest_events: dict[UUID, RunEvent],
     workspace_active_task_ids: set[UUID],
-) -> dict[str, object]:
+) -> MemberWorkload:
     active_task_ids = {step.task_id for step in active_steps}
     utilization = (
         len(workspace_active_task_ids) / member.max_concurrent_tasks

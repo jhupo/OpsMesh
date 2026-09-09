@@ -10,6 +10,12 @@ from backend.app.teams.execution_overview_bottlenecks import (
     summary_bottlenecks,
 )
 from backend.app.teams.execution_overview_constants import RISK_LEVELS
+from backend.app.teams.execution_overview_contracts import (
+    MemberWorkload,
+    SpecialistReassignment,
+    StaffingGap,
+    SummaryAction,
+)
 from backend.app.teams.execution_overview_interventions import operator_intervention_plan
 from backend.app.teams.execution_overview_utils import (
     string_list,
@@ -22,21 +28,21 @@ def overview_summary(
     tasks: list[Task],
     steps: list[TaskStep],
     runs: list[AgentRun],
-    member_items: list[dict[str, object]],
+    member_items: list[MemberWorkload],
     task_items: list[dict[str, object]],
-    staffing_gaps: list[dict[str, object]],
-    specialist_reassignments: list[dict[str, object]],
+    staffing_gaps: list[StaffingGap],
+    specialist_reassignments: list[SpecialistReassignment],
 ) -> dict[str, object]:
     task_status_counts = Counter(task.status for task in tasks)
     step_status_counts = Counter(step.status for step in steps)
     run_status_counts = Counter(run.status for run in runs)
     risk_counts = Counter(str(item["risk_level"]) for item in task_items)
     total_capacity = sum(
-        int(item["max_concurrent_tasks"])
+        item["max_concurrent_tasks"]
         for item in member_items
         if item["status"] == "active" and item["accepts_tasks"] is True
     )
-    active_member_tasks = sum(int(item["workspace_active_task_count"]) for item in member_items)
+    active_member_tasks = sum(item["workspace_active_task_count"] for item in member_items)
     available_member_capacity = max(total_capacity - active_member_tasks, 0)
     bottlenecks = summary_bottlenecks(
         task_items=task_items,
@@ -80,7 +86,7 @@ def overview_summary(
         ),
         "overloaded_member_count": sum(1 for item in member_items if item["overloaded"]),
         "staffing_gap_count": len(staffing_gaps),
-        "staffing_gap_step_count": sum(int(item["step_count"]) for item in staffing_gaps),
+        "staffing_gap_step_count": sum(item["step_count"] for item in staffing_gaps),
         "specialist_reassignment_count": len(specialist_reassignments),
         "specialist_reassignments": specialist_reassignments,
         "total_member_capacity": total_capacity,
@@ -114,11 +120,11 @@ def _summary_phase_counts(task_items: list[dict[str, object]]) -> dict[str, int]
 def _summary_recommended_actions(
     *,
     task_items: list[dict[str, object]],
-    staffing_gaps: list[dict[str, object]],
-    member_items: list[dict[str, object]],
-    specialist_reassignments: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    grouped: dict[str, dict[str, object]] = {}
+    staffing_gaps: list[StaffingGap],
+    member_items: list[MemberWorkload],
+    specialist_reassignments: list[SpecialistReassignment],
+) -> list[SummaryAction]:
+    grouped: dict[str, SummaryAction] = {}
     for gap in staffing_gaps:
         _add_summary_action(
             grouped,
@@ -135,26 +141,25 @@ def _summary_recommended_actions(
         task_ids = [task_id] if isinstance(task_id, UUID) else []
         _add_summary_action(grouped, action="reassign_step", task_ids=task_ids)
     for task in task_items:
-        task_id = task.get("task_id")
-        task_ids = [task_id] if isinstance(task_id, UUID) else []
+        item_task_id = task.get("task_id")
+        task_ids = [item_task_id] if isinstance(item_task_id, UUID) else []
         for action in string_list(task.get("recommended_actions")):
             _add_summary_action(grouped, action=action, task_ids=task_ids)
 
     return sorted(
         grouped.values(),
-        key=lambda item: (-int(item["count"]), str(item["action"])),
+        key=lambda item: (-item["count"], item["action"]),
     )
 
 
 def _add_summary_action(
-    grouped: dict[str, dict[str, object]],
+    grouped: dict[str, SummaryAction],
     *,
     action: str,
     task_ids: list[UUID],
 ) -> None:
     item = grouped.setdefault(action, {"action": action, "count": 0, "task_ids": []})
-    item["count"] = int(item["count"]) + 1
-    existing = item["task_ids"] if isinstance(item["task_ids"], list) else []
-    merged = {task_id for task_id in existing if isinstance(task_id, UUID)}
+    item["count"] += 1
+    merged = set(item["task_ids"])
     merged.update(task_ids)
     item["task_ids"] = sorted(merged, key=str)
