@@ -3,11 +3,12 @@ from __future__ import annotations
 from uuid import UUID
 
 from backend.app.audit.service import AuditService
+from backend.app.scheduled_jobs.contracts import ScheduledJobStore
 from backend.app.scheduled_jobs.models import WorkspaceScheduledJob
 from backend.app.workspaces.models import Workspace
 
 
-class ScheduledJobAuditMixin:
+class ScheduledJobAuditMixin(ScheduledJobStore):
     def _record_created_audit(
         self,
         scheduled_job: WorkspaceScheduledJob,

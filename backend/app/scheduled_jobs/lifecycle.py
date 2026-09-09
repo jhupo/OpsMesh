@@ -4,13 +4,14 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from backend.app.scheduled_jobs.constants import ACTIVE_STATUS, COMPLETED_STATUS, PAUSED_STATUS
+from backend.app.scheduled_jobs.contracts import ScheduledJobStore
 from backend.app.scheduled_jobs.models import WorkspaceScheduledJob
 from backend.app.scheduled_jobs.schedule import next_run_at, utc_datetime
 from backend.app.scheduled_jobs.types import ScheduledJobCreate
 from backend.app.workspaces.models import Workspace
 
 
-class ScheduledJobLifecycleMixin:
+class ScheduledJobLifecycleMixin(ScheduledJobStore):
     def create(
         self,
         *,

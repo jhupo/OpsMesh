@@ -2,20 +2,22 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from backend.app.scheduled_jobs.contracts import ScheduledJobStore
 from backend.app.scheduled_jobs.dispatcher import increment_count
 from backend.app.scheduled_jobs.models import WorkspaceScheduledJobEvent
 from backend.app.scheduled_jobs.schedule import utc_datetime
+from backend.app.scheduled_jobs.types import ScheduledJobMaintenanceSummary
 from backend.app.workers.queue.redis_queue import RedisQueue
 
 
-class ScheduledJobMaintenanceMixin:
+class ScheduledJobMaintenanceMixin(ScheduledJobStore):
     def enqueue_due(
         self,
         *,
         queue: RedisQueue | None,
         limit: int = 100,
         now: datetime | None = None,
-    ) -> object:
+    ) -> ScheduledJobMaintenanceSummary:
         current_time = utc_datetime(now)
         due_jobs = self._due_jobs(limit=limit, now=current_time)
 
@@ -71,7 +73,7 @@ class ScheduledJobMaintenanceMixin:
 
         if due_jobs:
             self._session.commit()
-        return self._maintenance_summary(
+        return ScheduledJobMaintenanceSummary(
             enqueued=enqueued,
             recorded=recorded,
             skipped=skipped,

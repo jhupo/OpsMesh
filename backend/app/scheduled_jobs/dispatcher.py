@@ -4,12 +4,13 @@ from datetime import datetime
 from uuid import UUID
 
 from backend.app.scheduled_jobs.constants import RECORD_DUE_ACTION
+from backend.app.scheduled_jobs.contracts import ScheduledJobStore
 from backend.app.scheduled_jobs.models import WorkspaceScheduledJob
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue.redis_queue import RedisQueue
 
 
-class ScheduledJobDispatcherMixin:
+class ScheduledJobDispatcherMixin(ScheduledJobStore):
     def _apply_due_action(
         self,
         scheduled_job: WorkspaceScheduledJob,

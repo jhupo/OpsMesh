@@ -6,11 +6,12 @@ from sqlalchemy import select
 
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.scheduled_jobs.constants import QUEUE_JOB_ACTION, RECORD_DUE_ACTION
+from backend.app.scheduled_jobs.contracts import ScheduledJobStore
 from backend.app.scheduled_jobs.types import ScheduledJobCreate
 from backend.app.workers.jobs import JobType
 
 
-class ScheduledJobValidationMixin:
+class ScheduledJobValidationMixin(ScheduledJobStore):
     def _validate_create_data(self, workspace_id: UUID, data: ScheduledJobCreate) -> None:
         validate_action(data)
         self._validate_workspace_resource(workspace_id, data)

@@ -7,10 +7,11 @@ from sqlalchemy import Select, select
 
 from backend.app.db.pagination import page_scalars_by_offset
 from backend.app.scheduled_jobs.constants import ACTIVE_STATUS
+from backend.app.scheduled_jobs.contracts import ScheduledJobStore
 from backend.app.scheduled_jobs.models import WorkspaceScheduledJob
 
 
-class ScheduledJobQueryMixin:
+class ScheduledJobQueryMixin(ScheduledJobStore):
     def list_jobs(
         self,
         *,
