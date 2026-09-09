@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import overload
 from uuid import UUID
 
 
@@ -92,6 +93,14 @@ def string_list_or_single(value: object) -> list[str]:
 
 def string_or_default(value: object, default: str) -> str:
     return value if isinstance(value, str) and value else default
+
+
+@overload
+def json_safe_payload(value: dict[str, object]) -> dict[str, object]: ...
+
+
+@overload
+def json_safe_payload(value: object) -> object: ...
 
 
 def json_safe_payload(value: object) -> object:

@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.typing import json_safe_payload
+from backend.app.core.typing import dict_or_empty, json_safe_payload
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task, TaskStep
 
@@ -48,7 +48,7 @@ def scheduled_run_blocking_summary(
                     "runtime_space_id": step.runtime_space_id,
                     "blocked_reason": reason,
                     "blocked_details": redact_sensitive_payload(
-                        dict(dependencies.get("blocked_details") or {})
+                        dict_or_empty(dependencies.get("blocked_details"))
                     ),
                 }
             )

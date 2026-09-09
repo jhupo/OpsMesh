@@ -62,7 +62,7 @@ class TaskExecutionDiagnosticsService:
             for step in steps
         ]
         step_payload_by_id = {
-            step_payload["task_step_id"]: step_payload for step_payload in step_payloads
+            step.id: payload for step, payload in zip(steps, step_payloads, strict=True)
         }
         for step_payload in step_payloads:
             step_payload["handoff"] = handoff_state(
@@ -101,8 +101,12 @@ class TaskExecutionDiagnosticsService:
     ) -> dict[str, object]:
         statement = select(Task).where(Task.workspace_id == workspace_id)
         if team_id is not None:
-            team = self._session.get(AgentTeam, team_id)
-            if team is None or team.workspace_id != workspace_id:
+            team = self._session.scalar(
+                select(AgentTeam).where(
+                    AgentTeam.workspace_id == workspace_id, AgentTeam.id == team_id
+                )
+            )
+            if team is None:
                 raise ValueError("Team not found")
             statement = statement.where(Task.agent_team_id == team_id)
         if task_status is not None:

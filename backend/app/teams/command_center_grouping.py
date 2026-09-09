@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import TypedDict
 from uuid import UUID
 
 from backend.app.teams.command_center_constants import (
@@ -11,6 +12,17 @@ from backend.app.teams.command_center_utils import _int, _uuid_list, _uuid_value
 from backend.app.teams.operator_actions import TEAM_OPERATOR_ACTIONS
 
 
+class ActionGroup(TypedDict):
+    action: str
+    automation: str
+    agent_profile_id: UUID | None
+    sources: list[str]
+    task_ids: list[UUID]
+    task_step_ids: list[UUID]
+    candidate_count: int
+    max_priority: int
+
+
 def _group_applicable_actions(
     *,
     action_plan: list[object],
@@ -20,7 +32,7 @@ def _group_applicable_actions(
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     allowed_sources = set(sources or COMMAND_CENTER_ACTION_SOURCES)
     allowed_actions = set(actions or TEAM_OPERATOR_ACTIONS | RUNTIME_OPERATOR_ACTIONS)
-    grouped: dict[str, dict[str, object]] = {}
+    grouped: dict[str, ActionGroup] = {}
     skipped: list[dict[str, object]] = []
 
     for index, item in enumerate(action_plan):
@@ -83,15 +95,18 @@ def _group_applicable_actions(
                 "max_priority": 0,
             },
         )
-        _append_strings(group, "sources", source)
-        _extend_uuids(group, "task_ids", _uuid_list(item.get("task_ids")))
-        _extend_uuids(group, "task_step_ids", task_step_ids)
-        group["candidate_count"] = int(group["candidate_count"]) + 1
-        group["max_priority"] = max(int(group["max_priority"]), _int(item.get("priority")))
+        if source not in group["sources"]:
+            group["sources"].append(source)
+        group["task_ids"] = list(
+            dict.fromkeys([*group["task_ids"], *_uuid_list(item.get("task_ids"))])
+        )
+        group["task_step_ids"] = list(dict.fromkeys([*group["task_step_ids"], *task_step_ids]))
+        group["candidate_count"] += 1
+        group["max_priority"] = max(group["max_priority"], _int(item.get("priority")))
 
     ordered = sorted(
         grouped.values(),
-        key=lambda item: (-int(item["max_priority"]), str(item["action"])),
+        key=lambda item: (-item["max_priority"], item["action"]),
     )
     selected = ordered[:max_actions]
     for item in ordered[max_actions:]:
@@ -103,7 +118,7 @@ def _group_applicable_actions(
                 "reason": "max_actions_exceeded",
             }
         )
-    return selected, skipped
+    return [dict(item) for item in selected], skipped
 
 
 def _skip(index: int, reason: str, item: dict[str, object] | object) -> dict[str, object]:
@@ -132,22 +147,3 @@ def _runtime_action_result(
         "candidate_count": item["candidate_count"],
         "response": {"reason": reason},
     }
-
-
-def _append_strings(target: dict[str, object], key: str, value: str) -> None:
-    values = target.setdefault(key, [])
-    if not isinstance(values, list):
-        return
-    if value not in values:
-        values.append(value)
-
-
-def _extend_uuids(target: dict[str, object], key: str, values: list[UUID]) -> None:
-    target_values = target.setdefault(key, [])
-    if not isinstance(target_values, list):
-        return
-    existing = set(_uuid_list(target_values))
-    for value in values:
-        if value not in existing:
-            target_values.append(value)
-            existing.add(value)

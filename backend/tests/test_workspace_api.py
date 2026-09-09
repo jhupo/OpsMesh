@@ -1758,6 +1758,15 @@ def test_team_command_center_apply_reports_scheduler_blocked_reasons() -> None:
     manager = AgentProfile(workspace_id=workspace.id, name="PM", role="project_manager")
     developer = AgentProfile(workspace_id=workspace.id, name="Developer", role="developer")
     session.add_all([manager, developer])
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="Quota test runtime",
+        status="running",
+        connection_status="online",
+        docker_container_id="quota-test-container",
+        network_policy={"disabled": True},
+    )
+    session.add(runtime)
     session.flush()
     team = AgentTeam(
         workspace_id=workspace.id,
@@ -1767,7 +1776,7 @@ def test_team_command_center_apply_reports_scheduler_blocked_reasons() -> None:
         default_task_policy={
             "team_runtime": {
                 "status": "running",
-                "workspace_runtime_id": str(uuid4()),
+                "workspace_runtime_id": str(runtime.id),
                 "last_heartbeat_at": datetime.now(UTC).isoformat(),
             }
         },
