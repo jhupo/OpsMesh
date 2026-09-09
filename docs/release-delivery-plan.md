@@ -126,11 +126,12 @@ contracts. A separate giant CLI framework is not needed.
   permission to execute as a revoked member; tests cover both active and revoked membership.
 - Previously recorded WorkerRunner and self-hosted failures were revalidated and repaired locally:
   authorized queue fixtures, queue-producer/worker-consumer trace ancestry, async MCP adapters,
-  current runtime resource grants and project-limit trust summaries. Their final hosted validation
-  remains to be recorded after the next push.
+  current runtime resource grants and project-limit trust summaries. Final hosted Backend CI
+  [run 34348886244](https://github.com/jhupo/OpsMesh/actions/runs/34348886244) on `d09ce2d`
+  completed successfully, including strict type checks and the selected Worker/self-hosted tests.
 - Hosted Delivery Integration run `34340457352` on `97e7dab` also succeeded (2m 6s), confirming the
   previously recorded migration and fresh-container acceptance. This is not cross-version update
   or signed-publication evidence.
 - Signed release assets, cross-version upgrade, systemd installation and database restore remain
-  unaccepted; do not tag a
-  release or describe the complete delivery system as finished on this checkpoint alone.
+  unaccepted; do not tag a release or describe the complete delivery system as finished on this
+  checkpoint alone.
