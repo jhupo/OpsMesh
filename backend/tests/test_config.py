@@ -40,14 +40,10 @@ def test_settings_defaults_are_local_development_friendly() -> None:
     assert settings.admin_rate_limit_requests == 120
     assert settings.trusted_proxy_hops == 0
     assert settings.secret_vault_providers == {}
-    assert settings.release_dir is None
     assert settings.release_update_enabled is False
-    assert settings.release_update_manifest_url is None
-    assert settings.release_update_manifest_file is None
-    assert settings.release_update_bundle_url is None
-    assert settings.release_update_bundle_file is None
-    assert settings.release_update_checksum_url is None
-    assert settings.release_update_checksum_file is None
+    assert settings.release_update_timeout_seconds == 900
+    assert settings.release_update_github_api_url == "https://api.github.com"
+    assert settings.release_update_http_timeout_seconds == 10.0
     assert settings.release_update_repository == "jhupo/OpsMesh"
     assert settings.release_update_check_cache_seconds == 1_200
     assert settings.feature_flags == {}
@@ -246,25 +242,20 @@ def test_s3_storage_blank_optional_settings_are_unset() -> None:
     assert settings.s3_prefix == "dev"
 
 
-def test_release_update_blank_optional_settings_are_unset() -> None:
-    settings = Settings(
-        environment="test",
-        release_dir=" ",
-        release_update_manifest_url=" ",
-        release_update_manifest_file=" ",
-        release_update_bundle_url=" ",
-        release_update_bundle_file=" ",
-        release_update_checksum_url=" ",
-        release_update_checksum_file=" ",
-    )
-
-    assert settings.release_dir is None
-    assert settings.release_update_manifest_url is None
-    assert settings.release_update_manifest_file is None
-    assert settings.release_update_bundle_url is None
-    assert settings.release_update_bundle_file is None
-    assert settings.release_update_checksum_url is None
-    assert settings.release_update_checksum_file is None
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("release_update_timeout_seconds", 29),
+        ("release_update_timeout_seconds", 7_201),
+        ("release_update_check_cache_seconds", -1),
+        ("release_update_check_cache_seconds", 86_401),
+        ("release_update_http_timeout_seconds", 0),
+        ("release_update_http_timeout_seconds", 61),
+    ],
+)
+def test_release_update_settings_enforce_operational_bounds(field: str, value: int) -> None:
+    with pytest.raises(ValueError, match=field):
+        Settings(environment="test", **{field: value})
 
 
 def test_s3_storage_redacted_summary_hides_credentials() -> None:
@@ -344,6 +335,7 @@ def test_redis_client_uses_configured_connection_pool() -> None:
 
     assert client.connection_pool.max_connections == 7
     connection_kwargs = client.connection_pool.connection_kwargs
+    assert connection_kwargs["decode_responses"] is True
     assert connection_kwargs["socket_timeout"] == 1.5
     assert connection_kwargs["socket_connect_timeout"] == 2.5
     assert connection_kwargs["health_check_interval"] == 13

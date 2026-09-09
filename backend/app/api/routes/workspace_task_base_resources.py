@@ -26,7 +26,6 @@ from backend.app.orchestration.run_control import RunControlService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.tasks.events import RedisTaskEventBus, TaskEventBus
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.tasks.workspace_service import (
@@ -43,13 +42,6 @@ else:
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 STREAM_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
-
-
-def get_task_event_bus(
-    redis: Redis = Depends(get_redis_client),
-    settings: Settings = Depends(get_settings),
-) -> TaskEventBus:
-    return RedisTaskEventBus(redis=redis, key_prefix=settings.redis_key_prefix)
 
 
 @router.get("/tasks", response_model=PageResponse[TaskResponse])

@@ -23,7 +23,7 @@ STREAM_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
 
 
 def get_task_event_bus(
-    redis: Redis = Depends(get_redis_client),
+    redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> TaskEventBus:
     return RedisTaskEventBus(redis=redis, key_prefix=settings.redis_key_prefix)

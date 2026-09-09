@@ -14,11 +14,8 @@ from backend.app.api.schemas.tasks import (
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
-from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.planning.diagnostics import ProjectPlanDiagnosticsService
-from backend.app.redis.dependencies import get_redis_client
-from backend.app.tasks.events import RedisTaskEventBus, TaskEventBus
 from backend.app.tasks.plan_lifecycle import (
     TaskPlanLifecycleService,
     TaskPlanRegenerateCommand,
@@ -34,13 +31,6 @@ else:
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 STREAM_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
-
-
-def get_task_event_bus(
-    redis: Redis = Depends(get_redis_client),
-    settings: Settings = Depends(get_settings),
-) -> TaskEventBus:
-    return RedisTaskEventBus(redis=redis, key_prefix=settings.redis_key_prefix)
 
 
 @router.post("/tasks/{task_id}/plan/retry", response_model=TaskResponse)
@@ -122,5 +112,4 @@ async def get_task_plan_diagnostics(
     if diagnostics is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskPlanDiagnosticsResponse.model_validate(diagnostics)
-
 

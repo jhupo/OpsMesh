@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from redis import Redis
-from redis.connection import ConnectionPool
 
 from backend.app.core.config import Settings, get_settings
 
@@ -25,7 +24,7 @@ class RedisPoolSnapshot:
 
 
 def create_redis_client(settings: Settings) -> Redis[str]:
-    pool = ConnectionPool.from_url(
+    return Redis.from_url(
         settings.redis_url,
         decode_responses=True,
         max_connections=settings.redis_max_connections,
@@ -33,7 +32,6 @@ def create_redis_client(settings: Settings) -> Redis[str]:
         socket_connect_timeout=settings.redis_socket_connect_timeout_seconds,
         health_check_interval=settings.redis_health_check_interval_seconds,
     )
-    return Redis(connection_pool=pool)
 
 
 def close_redis_client(client: Redis[str]) -> None:

@@ -70,7 +70,7 @@ class TaskEventBus(Protocol):
 
 @dataclass(frozen=True)
 class RedisTaskEventBus:
-    redis: Redis
+    redis: Redis[str]
     key_prefix: str = "opsmesh"
     stream_maxlen: int = TASK_EVENT_STREAM_MAXLEN
 
