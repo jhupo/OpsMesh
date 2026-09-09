@@ -3,6 +3,12 @@ from __future__ import annotations
 from urllib.parse import urlparse, urlunparse
 
 
+def model_provider_base_url_host(base_url: str | None) -> str | None:
+    if not base_url:
+        return None
+    return urlparse(base_url).netloc or None
+
+
 def normalize_openai_compatible_base_url(base_url: str | None) -> str | None:
     if base_url is None:
         return None

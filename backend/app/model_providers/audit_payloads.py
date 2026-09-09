@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse
-
 from backend.app.model_providers.metadata import sanitize_budget_metadata
 from backend.app.model_providers.model_api import (
     default_model_api,
@@ -12,12 +10,6 @@ from backend.app.model_providers.model_api import (
 from backend.app.model_providers.models import ModelProviderCredential
 
 
-def base_url_host(base_url: str | None) -> str | None:
-    if not base_url:
-        return None
-    parsed = urlparse(base_url)
-    return parsed.netloc or None
-
 def model_api_audit_payload(credential: ModelProviderCredential) -> dict[str, object]:
     return {
         "model_api": model_api_for_provider(
@@ -27,6 +19,7 @@ def model_api_audit_payload(credential: ModelProviderCredential) -> dict[str, ob
         "model_apis": list(model_api_options_for_provider(credential.provider)),
         "default_model_api": default_model_api(credential.provider),
     }
+
 
 def budget_metadata_with_model_api(
     metadata: dict[str, object] | None,
@@ -47,4 +40,3 @@ def budget_metadata_with_model_api(
     else:
         sanitized["model_api"] = canonical
     return sanitized
-

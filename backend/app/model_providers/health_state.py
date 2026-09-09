@@ -60,10 +60,8 @@ def provider_health_audit_metadata(
     credential: ModelProviderCredential,
     result: ModelProviderHealthCheckResult,
 ) -> dict[str, object]:
-    from backend.app.model_providers.audit_payloads import (
-        base_url_host,
-        model_api_audit_payload,
-    )
+    from backend.app.model_providers.audit_payloads import model_api_audit_payload
+    from backend.app.model_providers.base_url import model_provider_base_url_host
     from backend.app.security.redaction import redact_sensitive_payload
 
     return {
@@ -74,23 +72,21 @@ def provider_health_audit_metadata(
         "status": result.status,
         "checks": [redact_sensitive_payload(check.as_dict()) for check in result.checks],
         "base_url_configured": bool(credential.base_url),
-        "base_url_host": base_url_host(credential.base_url),
+        "base_url_host": model_provider_base_url_host(credential.base_url),
     }
 
 
 def provider_credential_audit_metadata(
     credential: ModelProviderCredential,
 ) -> dict[str, object]:
-    from backend.app.model_providers.audit_payloads import (
-        base_url_host,
-        model_api_audit_payload,
-    )
+    from backend.app.model_providers.audit_payloads import model_api_audit_payload
+    from backend.app.model_providers.base_url import model_provider_base_url_host
 
     return {
         "name": credential.name,
         "provider": credential.provider,
         "base_url_configured": bool(credential.base_url),
-        "base_url_host": base_url_host(credential.base_url),
+        "base_url_host": model_provider_base_url_host(credential.base_url),
         "default_model": credential.default_model,
         **model_api_audit_payload(credential),
         "is_default": credential.is_default,

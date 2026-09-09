@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -9,6 +8,7 @@ from backend.app.model_providers.availability import (
     credential_is_selectable,
     credential_not_selectable_reasons,
 )
+from backend.app.model_providers.base_url import model_provider_base_url_host
 from backend.app.model_providers.capabilities import (
     list_model_capabilities,
     resolve_model_capability,
@@ -62,7 +62,7 @@ def _model_provider_credential_option_payload(
         "budget_exhausted": budget_is_exhausted(credential.budget_metadata),
         "is_default": credential.is_default,
         "base_url_configured": bool(credential.base_url),
-        "base_url_host": _base_url_host(credential.base_url),
+        "base_url_host": model_provider_base_url_host(credential.base_url),
         "api_key_fingerprint": credential.api_key_fingerprint,
         "last_health_check_at": model_provider_last_health_check_at(credential),
         "scheduled_health_check": schedule,
@@ -101,13 +101,6 @@ def _credential_not_selectable_reasons(
     credential: ModelProviderCredential,
 ) -> list[str]:
     return credential_not_selectable_reasons(credential)
-
-
-def _base_url_host(base_url: str | None) -> str | None:
-    if not base_url:
-        return None
-    parsed = urlparse(base_url)
-    return parsed.netloc or None
 
 
 def _empty_health_check_schedule_payload() -> dict[str, object]:

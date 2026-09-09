@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.agents import AgentProfileResponse
+from backend.app.model_providers.base_url import model_provider_base_url_host
 from backend.app.model_providers.capabilities import resolve_model_capability
 from backend.app.model_providers.metadata import budget_is_exhausted
 from backend.app.model_providers.model_api import (
@@ -70,7 +71,7 @@ def agent_model_provider_summary(
                 "credential_name": credential.name,
                 "provider": credential.provider,
                 "default_model": credential.default_model,
-                "base_url_host": _base_url_host(credential.base_url),
+                "base_url_host": model_provider_base_url_host(credential.base_url),
                 "base_url_configured": bool(credential.base_url),
                 "api_key_fingerprint": credential.api_key_fingerprint,
                 "is_default": credential.is_default,
@@ -214,15 +215,6 @@ def _selected_model(agent_model: str, credential: ModelProviderCredential) -> st
         if not agent_model or agent_model == "workspace-default"
         else agent_model
     )
-
-
-def _base_url_host(base_url: str | None) -> str | None:
-    if not base_url:
-        return None
-    from urllib.parse import urlparse
-
-    parsed = urlparse(base_url)
-    return parsed.netloc or parsed.path or None
 
 
 def _model_capability_payload(

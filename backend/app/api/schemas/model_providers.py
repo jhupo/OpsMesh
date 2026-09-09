@@ -1,10 +1,10 @@
 from datetime import datetime
-from urllib.parse import urlparse
 from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, computed_field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel
+from backend.app.model_providers.base_url import model_provider_base_url_host
 from backend.app.model_providers.capabilities import resolve_model_capability
 from backend.app.model_providers.metadata import sanitize_budget_metadata
 from backend.app.model_providers.model_api import model_api_for_provider
@@ -76,10 +76,7 @@ class ModelProviderCredentialResponse(ORMModel):
     @computed_field
     @property
     def base_url_host(self) -> str | None:
-        if not self.base_url:
-            return None
-        parsed = urlparse(self.base_url)
-        return parsed.netloc or None
+        return model_provider_base_url_host(self.base_url)
 
     @computed_field
     @property

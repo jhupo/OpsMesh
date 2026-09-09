@@ -1,11 +1,11 @@
 from dataclasses import dataclass
-from urllib.parse import urlparse
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.model_providers.availability import credential_is_selectable
+from backend.app.model_providers.base_url import model_provider_base_url_host
 from backend.app.model_providers.capabilities import resolve_model_capability
 from backend.app.model_providers.metadata import budget_is_exhausted
 from backend.app.model_providers.model_api import (
@@ -104,7 +104,11 @@ class ModelProviderResolutionService:
             credential_name=credential.name if credential is not None else None,
             provider=credential.provider if credential is not None else None,
             default_model=credential.default_model if credential is not None else None,
-            base_url_host=_base_url_host(credential.base_url) if credential is not None else None,
+            base_url_host=(
+                model_provider_base_url_host(credential.base_url)
+                if credential is not None
+                else None
+            ),
             base_url_configured=bool(credential and credential.base_url),
             api_key_fingerprint=credential.api_key_fingerprint if credential is not None else None,
             is_default=credential.is_default if credential is not None else None,
@@ -184,15 +188,6 @@ def _selected_model(agent_model: str, credential: ModelProviderCredential | None
     if not agent_model or agent_model == "workspace-default":
         return credential.default_model
     return agent_model
-
-
-def _base_url_host(base_url: str | None) -> str | None:
-    if not base_url:
-        return None
-    parsed = urlparse(base_url)
-    if parsed.netloc:
-        return parsed.netloc
-    return parsed.path or None
 
 
 def _is_selectable(credential: ModelProviderCredential | None) -> bool:
