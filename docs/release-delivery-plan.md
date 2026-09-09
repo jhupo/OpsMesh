@@ -14,8 +14,16 @@ Status: in progress. A green unit test is not deployment evidence.
   inventory, promotes image digests and publishes the draft last. Matching public releases are
   read-only no-ops; conflicting bytes fail closed. Retry failed jobs, not a fresh build of an
   existing version. These changes still require hosted release acceptance.
-- Full pytest root cause, signed installation, systemd and cross-version recovery acceptance remain
-  outstanding. Do not interpret this workflow repair as completion of all delivery stages.
+- `rc2` run `34355450949` retained diagnostics successfully: 1160 passed, 8 skipped, 5 failed.
+  Four failures were environment-dependent test fixtures (default settings and heartbeat token);
+  one was a Python 3.12 manager-diagnostics comprehension/name-shadowing error. Commits `d151dc0`
+  and `cbb4beb` repair them. All five affected tests pass locally, also with the release runner's
+  environment/token overrides. The previous broad local run overlapped workflow edits and is not
+  clean immutable-checkout acceptance evidence.
+- Signed publication/installation, systemd and cross-version recovery acceptance remain outstanding.
+  Both approved rc tags retain their original failed commits; fixes are on master. A new authorized
+  release version is needed to run the repaired publication chain, not a force-moved existing tag.
+  Do not interpret this workflow repair as completion of all delivery stages.
 
 ## Acceptance and sequence
 
