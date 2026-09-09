@@ -12,6 +12,7 @@ from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime import TeamRuntimeService
 
+from .context_budget import ContextFragment, ContextPriority
 from .task_step_review import is_pm_summary_step
 
 
@@ -26,45 +27,112 @@ class RunRequestPromptRenderer:
         allowed_tools: tuple[str, ...] = (),
         runtime_metadata: dict[str, object] | None = None,
     ) -> str:
+        fragments = self.context_fragments_for_run(
+            run,
+            allowed_tools=allowed_tools,
+            runtime_metadata=runtime_metadata,
+        )
+        return "\n\n".join(fragment.text for fragment in fragments if fragment.text).strip()
+
+    def context_fragments_for_run(
+        self,
+        run: AgentRun,
+        *,
+        allowed_tools: tuple[str, ...] = (),
+        runtime_metadata: dict[str, object] | None = None,
+    ) -> tuple[ContextFragment, ...]:
         task = self.session.get(Task, run.task_id) if run.task_id is not None else None
         if task is None:
-            return str(run.input)
+            return (
+                ContextFragment(
+                    key="run.input",
+                    text=str(run.input),
+                    priority=ContextPriority.CRITICAL,
+                    required=True,
+                ),
+            )
 
-        parts = [task.title, task.description]
+        fragments = [
+            ContextFragment(
+                key="task.objective",
+                text="\n".join(part for part in (task.title, task.description) if part),
+                priority=ContextPriority.CRITICAL,
+                required=True,
+            )
+        ]
         team_context_text = self.team_context_text_for_run(
             run,
             task,
             allowed_tools=allowed_tools,
         )
         if team_context_text:
-            parts.append(team_context_text)
+            fragments.append(
+                ContextFragment(
+                    key="team.summary",
+                    text=team_context_text,
+                    priority=ContextPriority.HIGH,
+                )
+            )
         if run.task_step_id is not None:
             step = self.session.get(TaskStep, run.task_step_id)
             if step is not None and step.workspace_id == run.workspace_id:
-                parts.append(f"Current step: {step.title}\n{step.description}".strip())
+                fragments.append(
+                    ContextFragment(
+                        key="step.objective",
+                        text=f"Current step: {step.title}\n{step.description}".strip(),
+                        priority=ContextPriority.CRITICAL,
+                        required=True,
+                    )
+                )
                 step_context_text = step_context_text_for_request(step)
                 if step_context_text:
-                    parts.append(step_context_text)
+                    fragments.append(
+                        ContextFragment(
+                            key="step.requirements",
+                            text=step_context_text,
+                            priority=ContextPriority.HIGH,
+                        )
+                    )
                 if is_pm_summary_step(step):
-                    parts.append(
-                        "PM acceptance output: return JSON with decision "
-                        "`approved`, `request_revision`, or `add_missing_work`; include "
-                        "`summary`, optional `reasons`, `revision_requests`, and "
-                        "`missing_work_packages`."
+                    fragments.append(
+                        ContextFragment(
+                            key="step.output_contract",
+                            text=(
+                                "PM acceptance output: return JSON with decision "
+                                "`approved`, `request_revision`, or `add_missing_work`; include "
+                                "`summary`, optional `reasons`, `revision_requests`, and "
+                                "`missing_work_packages`."
+                            ),
+                            priority=ContextPriority.CRITICAL,
+                            required=True,
+                            allow_truncation=False,
+                        )
                     )
                 previous_summaries = self.completed_step_summaries(
                     task.id,
                     before=step.order_index,
                 )
                 if previous_summaries:
-                    parts.append("Completed step summaries:\n" + "\n".join(previous_summaries))
+                    fragments.append(
+                        ContextFragment(
+                            key="task.completed_steps",
+                            text="Completed step summaries:\n" + "\n".join(previous_summaries),
+                            priority=ContextPriority.NORMAL,
+                        )
+                    )
         rendered_runtime_context = runtime_context_text(
             allowed_tools=allowed_tools,
             metadata=runtime_metadata or {},
         )
         if rendered_runtime_context:
-            parts.append(rendered_runtime_context)
-        return "\n\n".join(part for part in parts if part).strip()
+            fragments.append(
+                ContextFragment(
+                    key="runtime.capabilities",
+                    text=rendered_runtime_context,
+                    priority=ContextPriority.HIGH,
+                )
+            )
+        return tuple(fragments)
 
     def team_context_text_for_run(
         self,

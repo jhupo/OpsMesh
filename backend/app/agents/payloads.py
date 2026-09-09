@@ -5,6 +5,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from backend.app.agents.memory_policy import (
+    default_context_budget_policy,
+    normalized_memory_policy,
+)
 from backend.app.agents.models import AgentProfile
 
 AGENT_PROFILE_FIELDS = (
@@ -65,7 +69,7 @@ CREATE_DEFAULTS: dict[str, object] = {
     "skills": {},
     "tool_policy": {},
     "runtime_policy": {},
-    "memory_policy": {},
+    "memory_policy": {"context_budget": default_context_budget_policy()},
     "approval_policy": {},
 }
 
@@ -165,6 +169,8 @@ def copy_json_value(field: str, value: Any) -> Any:
             return {}
         if not isinstance(value, Mapping):
             raise ValueError(f"Agent profile {field} must be an object")
+        if field == "memory_policy":
+            return normalized_memory_policy(dict(value))
         return dict(value)
     if field == "model_provider_credential_id":
         return uuid_or_none(value)

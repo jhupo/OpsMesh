@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRuntimeExecutor
-from backend.app.agent_runtime.errors import AgentRuntimeCancelledError
+from backend.app.agent_runtime.errors import AgentRuntimeCancelledError, AgentRuntimePolicyError
 from backend.app.agent_runtime.factory import build_agent_runtime_registry
 from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
@@ -93,8 +93,11 @@ class RunExecutionService:
 
             try:
                 request = self._request_builder().build_agent_request(run, job)
-            except ModelProviderUnavailableError as exc:
-                self._events().append_model_provider_unavailable_event(run, exc)
+            except (ModelProviderUnavailableError, AgentRuntimePolicyError) as exc:
+                if isinstance(exc, ModelProviderUnavailableError):
+                    self._events().append_model_provider_unavailable_event(run, exc)
+                else:
+                    self._events().append_event(run, exc.event_type, exc.message, exc.metadata)
                 self._lifecycle().mark_run_failed(run, exc)
                 self._commit_and_refresh(run)
                 return run

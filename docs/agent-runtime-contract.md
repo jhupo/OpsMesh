@@ -371,12 +371,21 @@ Claude Agent SDK owns its automatic context compaction and mirrors the resulting
 through `SessionStore`. OpsMesh does not construct substitute summary messages or expose a second
 manual compaction API.
 
+Every new turn also passes through the product context-budget manager before either SDK is called.
+The manager resolves the model context window, reserves output and safety capacity, accounts for
+instructions and tool contracts, then includes or deterministically truncates typed context
+fragments by priority. It records component-level inclusion evidence without recording fragment
+content. UTF-8 byte length is used as a conservative cross-provider upper bound; provider-native
+compaction remains responsible for prior session history.
+
 Rules:
 
 - memory retrieval filters by `workspace_id`
 - memory write requires explicit product tool or post-run consolidation
 - memory entries record source task/run
 - agent cannot retrieve memory from other workspaces
+- fixed instructions and tool contracts that leave no safe task-input capacity fail closed
+- agents may lower their input budget but cannot bypass platform context budgeting
 
 ## Error Contract
 

@@ -15,6 +15,7 @@ from backend.app.agent_runtime.sessions import (
 )
 from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.agent_runtime.tools import BackendToolExecutor
+from backend.app.agents.memory_policy import context_budget_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
@@ -26,6 +27,7 @@ from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType
 
+from .context_budget import ContextBudgetManager
 from .run_agent_tool_authorization import hydrate_agent_tools
 from .run_cancellation import DatabaseRunCancellation
 from .run_request_authorization import (
@@ -170,6 +172,22 @@ class RunRequestBuilder:
             resolve_model_provider=self.resolve_model_provider,
         )
         output_schema, guardrails = runtime_controls_from_snapshot(authorization_snapshot)
+        context_budget = ContextBudgetManager().build(
+            fragments=self.prompt_renderer.context_fragments_for_run(
+                run,
+                allowed_tools=allowed_tools,
+                runtime_metadata=metadata,
+            ),
+            provider=model_provider["provider"],
+            model=model_provider["model"],
+            policy=context_budget_policy(authorization_snapshot.get("memory_policy")),
+            instructions=profile.instructions,
+            tool_definitions=tool_definitions,
+            continuations=continuations,
+            agent_tools=agent_tools,
+            output_schema=output_schema,
+        )
+        metadata["context_budget"] = context_budget.evidence()
         tracing = agent_run_tracing(
             run=run,
             task=task,
@@ -179,11 +197,7 @@ class RunRequestBuilder:
         )
         return AgentRunRequest(
             agent_profile=profile,
-            input_text=self.input_text_for_run(
-                run,
-                allowed_tools=allowed_tools,
-                runtime_metadata=metadata,
-            ),
+            input_text=context_budget.text,
             context=runtime_context,
             model=model_provider["model"],
             provider=model_provider["provider"],

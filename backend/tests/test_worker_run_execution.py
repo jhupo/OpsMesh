@@ -208,6 +208,10 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
     ]
     assert events[0].event_metadata["job"]["priority"] == 0
     assert events[2].event_metadata["allowed_tool_count"] == 0
+    assert events[2].event_metadata["context_budget"]["estimator"] == (
+        "utf8_bytes_upper_bound"
+    )
+    assert events[2].event_metadata["context_budget"]["included_tokens"] > 0
     assert events[3].event_metadata["model"] == "gpt-4.1"
     assert events[5].event_metadata["runtime_event_count"] == 0
 

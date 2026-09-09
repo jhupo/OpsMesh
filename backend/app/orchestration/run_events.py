@@ -81,6 +81,7 @@ class RunEventRecorder:
                 "agent_tool_count": len(request.agent_tools),
                 "continuation_count": len(request.continuations),
                 "has_tool_executor": request.tool_executor is not None,
+                "context_budget": metadata.get("context_budget", {}),
             },
         )
 

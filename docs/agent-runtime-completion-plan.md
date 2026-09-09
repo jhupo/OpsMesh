@@ -98,8 +98,8 @@ Goal: keep context bounded and make durable knowledge useful without crossing au
 
 | Order | Priority | Functional point | Status | Commit | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- |
-| 4.1 | P0 | Add token-aware context budgeting, priority classes, and deterministic truncation | Pending | `add-context-budget-manager` | Every request fits its model budget and records included/excluded context provenance |
-| 4.2 | P0 | Use provider-native semantic context compaction | Complete | `replace-custom-session-compaction-with-provider-sdk` | OpenAI Responses sessions use `OpenAIResponsesCompactionSession`; Claude uses its SDK auto-compaction, and the superseded preview-summary API is removed |
+| 4.1 | P0 | Add token-aware context budgeting, priority classes, and deterministic truncation | Done | `add-context-budget-manager` | Every request fits its model budget and records included/excluded context provenance |
+| 4.2 | P0 | Use provider-native semantic context compaction | Done | `replace-custom-session-compaction-with-provider-sdk` | OpenAI Responses sessions use `OpenAIResponsesCompactionSession`; Claude uses its SDK auto-compaction, and the superseded preview-summary API is removed |
 | 4.3 | P0 | Add working memory for current run state, plan, temporary facts, and tool results | Pending | `add-agent-working-memory` | Working memory is isolated to its run/session and expires or promotes explicitly |
 | 4.4 | P0 | Add episodic memory for tasks, runs, decisions, failures, and human feedback | Pending | `add-agent-episodic-memory` | Relevant prior episodes are searchable with task/run provenance |
 | 4.5 | P0 | Add semantic memory for workspace/team knowledge, configuration, and policy | Pending | `add-agent-semantic-memory` | Durable knowledge is versioned and scoped separately from transient history |
