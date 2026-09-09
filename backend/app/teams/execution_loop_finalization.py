@@ -86,7 +86,6 @@ class TeamExecutionFinalizationService:
             )
         )
 
-
     def _finalization_result(
         self,
         *,
@@ -125,7 +124,6 @@ class TeamExecutionFinalizationService:
         )
         return _result(task, "finalized", "ready", final_output=final_output)
 
-
     def _blocked_reason(self, task: Task) -> str | None:
         if task.status != TaskStatus.RUNNING.value:
             return "task_status_not_finalizable"
@@ -137,15 +135,9 @@ class TeamExecutionFinalizationService:
             workspace_id=task.workspace_id,
             task_id=task.id,
         )
-        summary = (
-            diagnostics.get("summary")
-            if isinstance(diagnostics, dict) and isinstance(diagnostics.get("summary"), dict)
-            else {}
-        )
-        if summary.get("status") != "healthy":
+        if diagnostics is None or diagnostics["summary"]["status"] != "healthy":
             return "manager_acceptance_not_healthy"
         return None
-
 
     def _has_incomplete_steps(self, task: Task) -> bool:
         count = self._session.scalar(
@@ -159,7 +151,6 @@ class TeamExecutionFinalizationService:
         )
         return count is not None
 
-
     def _has_active_runs(self, task: Task) -> bool:
         count = self._session.scalar(
             select(AgentRun.id)
@@ -171,7 +162,6 @@ class TeamExecutionFinalizationService:
             .limit(1)
         )
         return count is not None
-
 
     def _latest_approved_acceptance(self, task: Task) -> TaskMessage | None:
         messages = self._session.scalars(

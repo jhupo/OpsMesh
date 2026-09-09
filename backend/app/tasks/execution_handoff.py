@@ -2,6 +2,7 @@ from collections import Counter
 from uuid import UUID
 
 from backend.app.tasks.models import Task
+from backend.app.tasks.queue_actions import TeamQueueActionPlan, append_unique_uuid
 
 
 def handoff_queue_item(
@@ -51,10 +52,7 @@ def handoff_needs_attention(item: dict[str, object]) -> bool:
 def handoff_queue_summary(items: list[dict[str, object]]) -> dict[str, object]:
     status_counts = Counter(str(item["handoff_status"]) for item in items)
     action_counts = Counter(
-        action
-        for item in items
-        for action in item["recommended_actions"]
-        if isinstance(action, str)
+        action for item in items for action in string_values(item["recommended_actions"])
     )
     task_ids = {task_id for item in items if isinstance((task_id := item.get("task_id")), UUID)}
     return {
@@ -70,7 +68,7 @@ def handoff_queue_summary(items: list[dict[str, object]]) -> dict[str, object]:
 
 
 def handoff_queue_team_action_plan(items: list[dict[str, object]]) -> list[dict[str, object]]:
-    grouped: dict[tuple[UUID, str], dict[str, object]] = {}
+    grouped: dict[tuple[UUID, str], TeamQueueActionPlan] = {}
     for item in items:
         team_id = item.get("team_id")
         task_id = item.get("task_id")
@@ -95,33 +93,25 @@ def handoff_queue_team_action_plan(items: list[dict[str, object]]) -> list[dict[
                     "reason": "handoff_queue",
                 },
             )
-            plan["count"] = int(plan["count"]) + 1
-            append_uuid(plan, "task_ids", task_id)
+            plan["count"] += 1
+            append_unique_uuid(plan["task_ids"], task_id)
             if action == "schedule_downstream_steps" and isinstance(task_step_id, UUID):
-                append_uuid(plan, "task_step_ids", task_step_id)
+                append_unique_uuid(plan["task_step_ids"], task_step_id)
 
     plan_items = []
-    for item in grouped.values():
+    for action_plan in grouped.values():
         payload = {
-            "action": item["action"],
-            "task_ids": item["task_ids"],
-            "task_step_ids": item["task_step_ids"],
-            "reason": item["reason"],
+            "action": action_plan["action"],
+            "task_ids": action_plan["task_ids"],
+            "task_step_ids": action_plan["task_step_ids"],
+            "reason": action_plan["reason"],
             "metadata": {"source": "handoff_queue"},
         }
-        plan_items.append({**item, "payload_template": payload})
+        plan_items.append({**action_plan, "payload_template": payload})
     return sorted(
         plan_items,
         key=lambda item: (str(item["team_id"]), str(item["action"])),
     )
-
-
-def append_uuid(item: dict[str, object], key: str, value: UUID) -> None:
-    values = item[key] if isinstance(item.get(key), list) else []
-    existing = [entry for entry in values if isinstance(entry, UUID)]
-    if value not in existing:
-        existing.append(value)
-    item[key] = sorted(existing, key=str)
 
 
 def uuid_values(value: object) -> list[UUID]:

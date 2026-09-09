@@ -10,6 +10,7 @@ from backend.app.core.typing import dict_or_empty, int_or_zero, string_list
 from backend.app.tasks.control_state import task_control_state
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.live_status import TaskLiveStatusService
+from backend.app.tasks.manager_contracts import ManagerDiagnostics
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.tasks.models import Task
 from backend.app.tasks.timeline import TaskTimelineService
@@ -101,9 +102,7 @@ class TaskExecutionStatusService:
                 "runnable_step_count": int_or_zero(execution_summary.get("runnable_steps")),
                 "blocked_step_count": int_or_zero(execution_summary.get("blocked_steps")),
                 "manager_status": manager_summary.get("status"),
-                "latest_message_sequence": int_or_zero(
-                    live_summary.get("latest_message_sequence")
-                ),
+                "latest_message_sequence": int_or_zero(live_summary.get("latest_message_sequence")),
                 "poll_after_seconds": int_or_zero(live_summary.get("poll_after_seconds")),
                 "blocked_reason_count": len(blocked_reasons),
                 "recommended_action_count": len(recommended_actions),
@@ -191,7 +190,7 @@ def _blocked_reasons(
     *,
     control: dict[str, object],
     execution: dict[str, object],
-    manager: dict[str, object],
+    manager: ManagerDiagnostics,
 ) -> list[str]:
     reasons: list[str] = []
     if control.get("paused") is True:
@@ -208,7 +207,7 @@ def _recommended_actions(
     control: dict[str, object],
     live: dict[str, object],
     execution_summary: dict[str, object],
-    manager: dict[str, object],
+    manager: ManagerDiagnostics,
     blocked_reasons: list[str],
 ) -> list[dict[str, object]]:
     actions: list[dict[str, object]] = []
@@ -246,7 +245,7 @@ def _recommended_actions(
     return _dedupe_action_items(actions)
 
 
-def _manager_recommended_actions(manager: dict[str, object]) -> list[str]:
+def _manager_recommended_actions(manager: ManagerDiagnostics) -> list[str]:
     reasons = set(string_list(manager.get("blocked_reasons")))
     actions: list[str] = []
     if "missing_manager" in reasons:

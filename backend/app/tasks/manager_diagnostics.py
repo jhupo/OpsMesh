@@ -8,6 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.tasks.manager_contracts import (
+    ManagerAgent,
+    ManagerDiagnostics,
+    ManagerQueueItem,
+    ManagerSteps,
+)
 from backend.app.tasks.manager_lifecycle import (
     acceptance_payload,
     blocked_reasons,
@@ -29,7 +35,7 @@ class TaskManagerDiagnosticsService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def get_diagnostics(self, *, workspace_id: UUID, task_id: UUID) -> dict[str, object] | None:
+    def get_diagnostics(self, *, workspace_id: UUID, task_id: UUID) -> ManagerDiagnostics | None:
         task = self._session.scalar(
             select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
         )
@@ -125,7 +131,7 @@ class TaskManagerDiagnosticsService:
             )
         )
 
-        items: list[dict[str, object]] = []
+        items: list[ManagerQueueItem] = []
         for task in tasks:
             diagnostics = self.get_diagnostics(workspace_id=workspace_id, task_id=task.id)
             if diagnostics is None:
@@ -193,7 +199,7 @@ class TaskManagerDiagnosticsService:
         return {agent.id: agent for agent in agents}
 
 
-def _manager_steps(steps: list[TaskStep]) -> dict[str, object]:
+def _manager_steps(steps: list[TaskStep]) -> ManagerSteps:
     planning = next((step for step in steps if step.work_package_id == "manager-planning"), None)
     summaries = [
         step
@@ -223,7 +229,7 @@ def _review_mode(step: TaskStep) -> str | None:
     return mode if isinstance(mode, str) else None
 
 
-def _agent_payload(agent: AgentProfile | None) -> dict[str, object] | None:
+def _agent_payload(agent: AgentProfile | None) -> ManagerAgent | None:
     if agent is None:
         return None
     return {

@@ -2,13 +2,25 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import UTC, datetime
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import dict_list, string_list
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
+from backend.app.tasks.manager_contracts import ManagerDiagnostics
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
+
+
+class CollaborationParticipant(TypedDict):
+    agent_profile_id: UUID
+    name: object
+    role: object
+    collaboration_role: str
+    assigned_step_count: int
+    completed_step_count: int
+    active_step_count: int
 
 
 class TaskCollaborationStateService:
@@ -65,7 +77,7 @@ class TaskCollaborationStateService:
             "phases": phases,
             "handoffs": handoffs,
             "manager": {
-                "summary": manager.get("summary", {}),
+                "summary": manager["summary"],
                 "blocked_reasons": string_list(manager.get("blocked_reasons")),
                 "acceptance_decisions": manager.get("acceptance_decisions", []),
                 "follow_up_cycles": manager.get("follow_up_cycles", []),
@@ -196,14 +208,12 @@ def _handoff_items(steps: list[dict[str, object]]) -> list[dict[str, object]]:
 
 
 def _participants(
-    manager: dict[str, object],
+    manager: ManagerDiagnostics,
     steps: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    participants: dict[UUID, dict[str, object]] = {}
-    manager_payload = manager.get("manager") if isinstance(manager.get("manager"), dict) else {}
-    manager_agent = (
-        manager_payload.get("agent") if isinstance(manager_payload.get("agent"), dict) else None
-    )
+) -> list[CollaborationParticipant]:
+    participants: dict[UUID, CollaborationParticipant] = {}
+    manager_payload = manager["manager"]
+    manager_agent = manager_payload["agent"]
     manager_id = manager_payload.get("agent_profile_id")
     if isinstance(manager_id, UUID):
         participants[manager_id] = {
@@ -234,11 +244,11 @@ def _participants(
                 "active_step_count": 0,
             },
         )
-        participant["assigned_step_count"] = int(participant["assigned_step_count"]) + 1
+        participant["assigned_step_count"] += 1
         if step.get("status") == "completed":
-            participant["completed_step_count"] = int(participant["completed_step_count"]) + 1
+            participant["completed_step_count"] += 1
         elif step.get("status") in {"queued", "running"}:
-            participant["active_step_count"] = int(participant["active_step_count"]) + 1
+            participant["active_step_count"] += 1
     return sorted(
         participants.values(),
         key=lambda item: (str(item.get("collaboration_role")), str(item.get("name") or "")),
@@ -246,7 +256,7 @@ def _participants(
 
 
 def _blocked_reasons(
-    manager: dict[str, object],
+    manager: ManagerDiagnostics,
     handoffs: list[dict[str, object]],
     steps: list[dict[str, object]],
 ) -> list[str]:
@@ -264,7 +274,7 @@ def _blocked_reasons(
 
 
 def _recommended_actions(
-    manager: dict[str, object],
+    manager: ManagerDiagnostics,
     handoffs: list[dict[str, object]],
     blocked_reasons: list[str],
 ) -> list[str]:
@@ -279,7 +289,7 @@ def _recommended_actions(
         actions.append("inspect_blocked_downstream")
     for handoff in handoffs:
         actions.extend(string_list(handoff.get("recommended_actions")))
-    summary = manager.get("summary") if isinstance(manager.get("summary"), dict) else {}
+    summary = manager["summary"]
     if summary.get("status") == "healthy" and not actions:
         actions.append("monitor_delivery")
     return list(dict.fromkeys(actions))

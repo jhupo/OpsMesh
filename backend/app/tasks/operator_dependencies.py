@@ -50,15 +50,14 @@ def without_blocking_keys(dependencies: object) -> dict[str, object]:
     if not isinstance(dependencies, dict):
         return {}
     return {
-        key: value
-        for key, value in dependencies.items()
-        if key not in BLOCKING_DEPENDENCY_KEYS
+        key: value for key, value in dependencies.items() if key not in BLOCKING_DEPENDENCY_KEYS
     }
 
 
 def manager_agent_id(task: Task) -> UUID | None:
     snapshot = task.team_snapshot if isinstance(task.team_snapshot, dict) else {}
-    team = snapshot.get("team") if isinstance(snapshot.get("team"), dict) else {}
+    raw_team = snapshot.get("team")
+    team = raw_team if isinstance(raw_team, dict) else {}
     manager_id = team.get("manager_agent_profile_id")
     if isinstance(manager_id, str):
         try:

@@ -2,16 +2,18 @@ from collections import Counter
 from uuid import UUID
 
 from backend.app.core.typing import string_list
+from backend.app.tasks.manager_contracts import ManagerDiagnostics, ManagerInfo, ManagerQueueItem
 from backend.app.tasks.models import Task
+from backend.app.tasks.queue_actions import TeamQueueActionPlan, append_unique_uuid
 
 
-def manager_queue_item(task: Task, diagnostics: dict[str, object]) -> dict[str, object]:
-    manager = diagnostics.get("manager") if isinstance(diagnostics.get("manager"), dict) else {}
-    summary = diagnostics.get("summary") if isinstance(diagnostics.get("summary"), dict) else {}
-    blocked_reasons = string_list(diagnostics.get("blocked_reasons"))
-    manager_agent = manager.get("agent") if isinstance(manager.get("agent"), dict) else None
+def manager_queue_item(task: Task, diagnostics: ManagerDiagnostics) -> ManagerQueueItem:
+    manager = diagnostics["manager"]
+    summary = diagnostics["summary"]
+    blocked_reasons = diagnostics["blocked_reasons"]
+    manager_agent = manager["agent"]
     manager_status = manager_status_for_queue(manager)
-    summary_status = str(summary.get("status") or "unknown")
+    summary_status = summary["status"]
     needs_attention = summary_status != "healthy" or bool(blocked_reasons)
     return {
         "task_id": task.id,
@@ -20,22 +22,22 @@ def manager_queue_item(task: Task, diagnostics: dict[str, object]) -> dict[str, 
         "status": task.status,
         "priority": task.priority,
         "domain_type": task.domain_type,
-        "manager_agent_profile_id": manager.get("agent_profile_id"),
-        "manager_agent_name": manager_agent.get("name") if manager_agent is not None else None,
+        "manager_agent_profile_id": manager["agent_profile_id"],
+        "manager_agent_name": manager_agent["name"] if manager_agent is not None else None,
         "manager_status": manager_status,
         "summary_status": summary_status,
         "pending_phase": pending_manager_phase(diagnostics),
         "needs_attention": needs_attention,
         "blocked_reasons": blocked_reasons,
         "recommended_actions": recommended_manager_actions(blocked_reasons),
-        "acceptance_decisions": int(summary.get("acceptance_decisions") or 0),
-        "follow_up_cycles": int(summary.get("follow_up_cycles") or 0),
-        "step_status_counts": int_dict(summary.get("step_status_counts")),
+        "acceptance_decisions": summary["acceptance_decisions"],
+        "follow_up_cycles": summary["follow_up_cycles"],
+        "step_status_counts": summary["step_status_counts"],
         "last_activity_at": task.updated_at,
     }
 
 
-def manager_queue_summary(items: list[dict[str, object]]) -> dict[str, object]:
+def manager_queue_summary(items: list[ManagerQueueItem]) -> dict[str, object]:
     pending_phases = Counter(str(item["pending_phase"]) for item in items)
     manager_statuses = Counter(str(item["manager_status"]) for item in items)
     recommended_actions = Counter(
@@ -53,8 +55,8 @@ def manager_queue_summary(items: list[dict[str, object]]) -> dict[str, object]:
     }
 
 
-def manager_queue_team_action_plan(items: list[dict[str, object]]) -> list[dict[str, object]]:
-    grouped: dict[UUID, dict[str, object]] = {}
+def manager_queue_team_action_plan(items: list[ManagerQueueItem]) -> list[dict[str, object]]:
+    grouped: dict[UUID, TeamQueueActionPlan] = {}
     for item in items:
         team_id = item.get("team_id")
         task_id = item.get("task_id")
@@ -77,31 +79,23 @@ def manager_queue_team_action_plan(items: list[dict[str, object]]) -> list[dict[
                 "reason": "manager_queue",
             },
         )
-        plan["count"] = int(plan["count"]) + 1
-        append_uuid(plan, "task_ids", task_id)
+        plan["count"] += 1
+        append_unique_uuid(plan["task_ids"], task_id)
 
     plan_items = []
-    for item in grouped.values():
+    for action_plan in grouped.values():
         payload = {
-            "action": item["action"],
-            "task_ids": item["task_ids"],
+            "action": action_plan["action"],
+            "task_ids": action_plan["task_ids"],
             "task_step_ids": [],
-            "reason": item["reason"],
+            "reason": action_plan["reason"],
             "metadata": {"source": "manager_queue"},
         }
-        plan_items.append({**item, "payload_template": payload})
+        plan_items.append({**action_plan, "payload_template": payload})
     return sorted(plan_items, key=lambda item: str(item["team_id"]))
 
 
-def append_uuid(item: dict[str, object], key: str, value: UUID) -> None:
-    values = item[key] if isinstance(item.get(key), list) else []
-    existing = [entry for entry in values if isinstance(entry, UUID)]
-    if value not in existing:
-        existing.append(value)
-    item[key] = sorted(existing, key=str)
-
-
-def manager_status_for_queue(manager: dict[str, object]) -> str:
+def manager_status_for_queue(manager: ManagerInfo) -> str:
     if not manager.get("has_manager"):
         return "missing"
     agent = manager.get("agent")
@@ -111,7 +105,7 @@ def manager_status_for_queue(manager: dict[str, object]) -> str:
     return status if isinstance(status, str) else "unknown"
 
 
-def pending_manager_phase(diagnostics: dict[str, object]) -> str:
+def pending_manager_phase(diagnostics: ManagerDiagnostics) -> str:
     blocked_reasons = set(string_list(diagnostics.get("blocked_reasons")))
     if any(reason.startswith("missing_manager") for reason in blocked_reasons):
         return "manager_setup"

@@ -121,16 +121,9 @@ class TeamExecutionOverviewService:
             task_id=task.id,
         )
         blocked_reasons = (
-            string_list(diagnostics.get("blocked_reasons"))
-            if isinstance(diagnostics, dict)
-            else []
+            string_list(diagnostics.get("blocked_reasons")) if isinstance(diagnostics, dict) else []
         )
-        summary = diagnostics.get("summary") if isinstance(diagnostics, dict) else {}
-        summary_status = (
-            str(summary.get("status"))
-            if isinstance(summary, dict) and summary.get("status") is not None
-            else "unknown"
-        )
+        summary_status = diagnostics["summary"]["status"] if diagnostics is not None else "unknown"
         pending_phase = _pending_phase(diagnostics)
         active_run_count = sum(1 for run in runs if run.status in ACTIVE_RUN_STATUSES)
         active_run_phase_counts_result = active_run_phase_counts(runs, latest_events)
@@ -269,5 +262,3 @@ def _agent_summary(agent: AgentProfile | None) -> dict[str, object] | None:
         "role": agent.role,
         "status": agent.status,
     }
-
-

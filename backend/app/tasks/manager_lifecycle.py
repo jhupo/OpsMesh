@@ -1,15 +1,16 @@
 from uuid import UUID
 
 from backend.app.core.typing import dict_list, string_list
+from backend.app.tasks.manager_contracts import FollowUpCycle, ManagerSteps
 from backend.app.tasks.models import TaskMessage, TaskStep
 
 
 def handoff_chain(
     *,
-    manager_steps: dict[str, object],
+    manager_steps: ManagerSteps,
     specialist_steps: list[TaskStep],
     acceptance_messages: list[TaskMessage],
-    follow_up_cycles: list[dict[str, object]],
+    follow_up_cycles: list[FollowUpCycle],
 ) -> list[dict[str, object]]:
     planning_step = manager_steps["planning"]
     summaries = manager_steps["summaries"]
@@ -103,16 +104,20 @@ def acceptance_payload(
 def follow_up_cycles(
     steps: list[TaskStep],
     follow_up_messages: list[TaskMessage],
-) -> list[dict[str, object]]:
+) -> list[FollowUpCycle]:
     step_by_id = {step.id: step for step in steps}
-    cycles: list[dict[str, object]] = []
+    cycles: list[FollowUpCycle] = []
     for message in follow_up_messages:
         payload = message.payload if isinstance(message.payload, dict) else {}
         raw_step_ids = payload.get("follow_up_step_ids")
         step_ids = (
             [uuid_or_none(item) for item in raw_step_ids] if isinstance(raw_step_ids, list) else []
         )
-        follow_up_steps = [step_by_id[step_id] for step_id in step_ids if step_id in step_by_id]
+        follow_up_steps = [
+            step_by_id[step_id]
+            for step_id in step_ids
+            if step_id is not None and step_id in step_by_id
+        ]
         review_steps = [
             step
             for step in steps
@@ -149,10 +154,10 @@ def follow_up_cycles(
 def blocked_reasons(
     *,
     manager_agent_id: UUID | None,
-    manager_steps: dict[str, object],
+    manager_steps: ManagerSteps,
     specialist_steps: list[TaskStep],
     acceptance_messages: list[TaskMessage],
-    follow_up_cycles: list[dict[str, object]],
+    follow_up_cycles: list[FollowUpCycle],
 ) -> list[str]:
     reasons: list[str] = []
     if manager_agent_id is None:
@@ -211,7 +216,7 @@ def cycle_blockers(
 
 def follow_up_chain_blockers(
     acceptance_messages: list[TaskMessage],
-    follow_up_cycles: list[dict[str, object]],
+    follow_up_cycles: list[FollowUpCycle],
 ) -> list[str]:
     needs_follow_up = any(
         decision_from_message(message) in {"request_revision", "add_missing_work"}
