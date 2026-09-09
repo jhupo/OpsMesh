@@ -31,10 +31,16 @@ class TeamMemberCapacityResolver:
         if not steps:
             return contexts
 
+        workspace_id = steps[0].workspace_id
+        if any(step.workspace_id != workspace_id for step in steps):
+            raise ValueError("Team capacity batch must belong to one workspace")
         tasks_by_id = {
             task.id: task
             for task in self._session.scalars(
-                select(Task).where(Task.id.in_({step.task_id for step in steps}))
+                select(Task).where(
+                    Task.workspace_id == workspace_id,
+                    Task.id.in_({step.task_id for step in steps}),
+                )
             ).all()
         }
         active_task_ids_by_agent = self.active_task_ids_by_agent(
@@ -94,6 +100,8 @@ class TeamMemberCapacityResolver:
         manager_lookup: dict[UUID, AgentTeam | None],
         active_task_ids_by_agent: dict[UUID, set[UUID]],
     ) -> None:
+        if task.agent_team_id is None:
+            return
         if step.assigned_agent_profile_id is None:
             contexts[step.id] = "team_member_unassigned"
             return
@@ -144,6 +152,8 @@ class TeamMemberCapacityResolver:
         manager_lookup: dict[UUID, AgentTeam | None],
         active_task_ids_by_agent: dict[UUID, set[UUID]],
     ) -> MemberCapacityContext | str:
+        if task.agent_team_id is None:
+            return "team_member_unavailable"
         snapshot_context = snapshot_member_capacity_context(
             task,
             step,
@@ -190,7 +200,7 @@ def manager_capacity_context(
     step: TaskStep,
     active_task_ids_by_agent: dict[UUID, set[UUID]],
 ) -> MemberCapacityContext | None:
-    if team is None:
+    if team is None or team.manager_agent_profile_id is None:
         return None
     if team.manager_agent_profile_id != step.assigned_agent_profile_id:
         return None
