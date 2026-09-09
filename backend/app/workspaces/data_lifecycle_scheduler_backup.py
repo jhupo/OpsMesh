@@ -11,19 +11,20 @@ from backend.app.workspaces.data_lifecycle_schedule import (
     _scheduled_lifecycle_detail,
 )
 from backend.app.workspaces.data_lifecycle_settings import _backup_settings
+from backend.app.workspaces.data_lifecycle_store import LifecycleStore
 from backend.app.workspaces.data_lifecycle_summary import ScheduledLifecycleSummary
 from backend.app.workspaces.models import Workspace
 
 
-class ScheduledBackupMixin:
+class ScheduledBackupMixin(LifecycleStore):
     def _schedule_workspace_backup_if_due(
         self,
         workspace: Workspace,
         queue: RedisQueue,
     ) -> ScheduledLifecycleSummary:
         raw_policy = _backup_settings(workspace.settings)
-        latest_job = self._latest_export_job(workspace.id)
-        latest_success = self._latest_successful_archive_export(workspace.id)
+        latest_job = self._repo.latest_export_job(workspace.id)
+        latest_success = self._repo.latest_successful_archive_export(workspace.id)
         backup_policy = _backup_policy(
             workspace.settings,
             latest_job,
@@ -35,8 +36,8 @@ class ScheduledBackupMixin:
         if not due:
             return ScheduledLifecycleSummary()
 
-        if self._has_active_archive_export_job(workspace.id):
-            self._record_lifecycle_schedule_event(
+        if self._repo.has_active_archive_export_job(workspace.id):
+            self._repo.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.backup_skipped",
                 reason="archive_export_already_active",
@@ -58,7 +59,7 @@ class ScheduledBackupMixin:
         try:
             request = _scheduled_archive_export_request(raw_policy)
         except ValidationError as exc:
-            self._record_lifecycle_schedule_event(
+            self._repo.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.backup_skipped",
                 reason="invalid_archive_request",
@@ -88,7 +89,7 @@ class ScheduledBackupMixin:
             "scheduled_by": "workspace_data_lifecycle",
             "schedule_status": schedule_status,
         }
-        self._record_lifecycle_schedule_event(
+        self._repo.record_lifecycle_schedule_event(
             workspace=workspace,
             action="workspace.lifecycle.backup_enqueued",
             reason="backup_schedule_due",

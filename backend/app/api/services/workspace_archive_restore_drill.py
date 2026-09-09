@@ -60,7 +60,7 @@ class WorkspaceArchiveRestoreDrillService:
             storage=storage,
         )
         audit_metadata = _import_preview_audit_metadata(preview)
-        passed = int(audit_metadata["required_resolution_count"]) == 0
+        passed = audit_metadata["required_resolution_count"] == 0
         metadata = {
             "source_export_job_id": str(export_job.id),
             "source_export_completed_at": (

@@ -10,11 +10,12 @@ from backend.app.workspaces.data_lifecycle_settings import (
     _positive_int,
     _retention_settings,
 )
+from backend.app.workspaces.data_lifecycle_store import LifecycleStore
 from backend.app.workspaces.data_lifecycle_summary import ScheduledLifecycleSummary
 from backend.app.workspaces.models import Workspace
 
 
-class ScheduledRetentionMixin:
+class ScheduledRetentionMixin(LifecycleStore):
     def _run_workspace_retention_if_due(
         self,
         workspace: Workspace,
@@ -25,7 +26,7 @@ class ScheduledRetentionMixin:
 
         interval_hours = _backup_interval_hours(raw_policy)
         if interval_hours is None:
-            self._record_lifecycle_schedule_event(
+            self._repo.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.retention_skipped",
                 reason="retention_schedule_unrecognized",
@@ -44,7 +45,7 @@ class ScheduledRetentionMixin:
                 ],
             )
 
-        latest_run_at = self._latest_lifecycle_retention_run_at(workspace.id)
+        latest_run_at = self._repo.latest_lifecycle_retention_run_at(workspace.id)
         now = datetime.now(UTC)
         if latest_run_at is not None and latest_run_at + timedelta(hours=interval_hours) > now:
             return ScheduledLifecycleSummary()
@@ -68,7 +69,7 @@ class ScheduledRetentionMixin:
                 if response is not None and isinstance(response["blocked_reasons"], list)
                 else ["retention_response_missing"]
             )
-            self._record_lifecycle_schedule_event(
+            self._repo.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.retention_skipped",
                 reason="retention_blocked",

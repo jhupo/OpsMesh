@@ -12,11 +12,12 @@ from backend.app.workspaces.data_lifecycle_schedule import (
     _scheduled_restore_drill_request,
 )
 from backend.app.workspaces.data_lifecycle_settings import _restore_drill_settings
+from backend.app.workspaces.data_lifecycle_store import LifecycleStore
 from backend.app.workspaces.data_lifecycle_summary import ScheduledLifecycleSummary
 from backend.app.workspaces.models import Workspace
 
 
-class ScheduledRestoreDrillMixin:
+class ScheduledRestoreDrillMixin(LifecycleStore):
     def _run_workspace_restore_drill_if_due(
         self,
         workspace: Workspace,
@@ -29,7 +30,7 @@ class ScheduledRestoreDrillMixin:
 
         interval_hours = _backup_interval_hours(raw_policy)
         if interval_hours is None:
-            self._record_lifecycle_schedule_event(
+            self._repo.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
                 reason="restore_drill_schedule_unrecognized",
@@ -41,8 +42,8 @@ class ScheduledRestoreDrillMixin:
                 "restore_drill_schedule_unrecognized",
             )
 
-        latest_success = self._latest_successful_archive_export(workspace.id)
-        latest_drill = self._latest_restore_drill_event(workspace.id)
+        latest_success = self._repo.latest_successful_archive_export(workspace.id)
+        latest_drill = self._repo.latest_restore_drill_event(workspace.id)
         now = datetime.now(UTC)
         if not _restore_drill_due(
             raw_policy=raw_policy,
@@ -53,7 +54,7 @@ class ScheduledRestoreDrillMixin:
             return ScheduledLifecycleSummary()
 
         if latest_success is None:
-            self._record_lifecycle_schedule_event(
+            self._repo.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
                 reason="no_successful_archive_export",
@@ -65,8 +66,8 @@ class ScheduledRestoreDrillMixin:
                 "no_successful_archive_export",
             )
 
-        if self._has_active_archive_export_job(workspace.id):
-            self._record_lifecycle_schedule_event(
+        if self._repo.has_active_archive_export_job(workspace.id):
+            self._repo.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
                 reason="archive_export_already_active",
@@ -80,7 +81,7 @@ class ScheduledRestoreDrillMixin:
             )
 
         if storage is None:
-            self._record_lifecycle_schedule_event(
+            self._repo.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
                 reason="storage_unavailable",
@@ -96,7 +97,7 @@ class ScheduledRestoreDrillMixin:
         try:
             request = _scheduled_restore_drill_request(raw_policy)
         except ValidationError as exc:
-            self._record_lifecycle_schedule_event(
+            self._repo.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
                 reason="invalid_restore_drill_request",
@@ -121,7 +122,7 @@ class ScheduledRestoreDrillMixin:
                 storage=storage,
             )
         except (FileNotFoundError, ValueError) as exc:
-            self._record_lifecycle_schedule_event(
+            self._repo.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
                 reason="restore_drill_failed",
@@ -137,7 +138,7 @@ class ScheduledRestoreDrillMixin:
                 resource_id=latest_success.id,
             )
 
-        self._record_lifecycle_schedule_event(
+        self._repo.record_lifecycle_schedule_event(
             workspace=workspace,
             action="workspace.lifecycle.restore_drill_completed",
             reason="restore_drill_schedule_due",

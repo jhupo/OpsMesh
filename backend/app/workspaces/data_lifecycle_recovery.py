@@ -5,7 +5,7 @@ from backend.app.exports.models import WorkspaceExportJob
 from backend.app.exports.status import WorkspaceExportJobStatus
 from backend.app.workspaces.data_lifecycle_constants import RECOVERY_READINESS_APPLY_ACTIONS
 from backend.app.workspaces.data_lifecycle_policy import _age_days
-from backend.app.workspaces.data_lifecycle_settings import _safe_int, _unique_strings
+from backend.app.workspaces.data_lifecycle_settings import _safe_int, _string_list, _unique_strings
 
 
 def _restore_readiness(
@@ -54,7 +54,7 @@ def _restore_readiness(
         elif latest_check is not None and not latest_check_covers_archive:
             warnings.append("latest_archive_integrity_check_stale")
     latest_tested_at = restore_test_history.get("latest_tested_at")
-    if latest_tested_at is None:
+    if not isinstance(latest_tested_at, datetime):
         blocked_reasons.append("no_archive_import_test_recorded")
     elif (
         latest_success is not None
@@ -70,7 +70,7 @@ def _restore_readiness(
         warnings.append("backup_coverage_unknown")
     if _safe_int(import_conflict_history.get("required_resolution_count")) > 0:
         warnings.append("import_previews_have_required_resolutions")
-    if "backup_schedule_overdue" in backup_policy.get("warnings", []):
+    if "backup_schedule_overdue" in _string_list(backup_policy.get("warnings")):
         warnings.append("backup_schedule_overdue")
     return {
         "ready": not blocked_reasons,

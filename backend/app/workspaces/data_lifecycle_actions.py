@@ -1,8 +1,6 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy.orm import Session
-
 from backend.app.audit.service import AuditService
 from backend.app.files.storage import ObjectStorage
 from backend.app.workers.queue.redis_queue import RedisQueue
@@ -10,7 +8,6 @@ from backend.app.workspaces.data_lifecycle_action_archive import RecoveryArchive
 from backend.app.workspaces.data_lifecycle_action_integrity import (
     RecoveryArchiveIntegrityActionMixin,
 )
-from backend.app.workspaces.data_lifecycle_action_queries import RecoveryActionQueryMixin
 from backend.app.workspaces.data_lifecycle_action_restore import RecoveryRestoreDrillActionMixin
 from backend.app.workspaces.data_lifecycle_constants import RECOVERY_READINESS_APPLY_ACTIONS
 from backend.app.workspaces.data_lifecycle_recovery import _recovery_readiness_actions
@@ -23,14 +20,10 @@ from backend.app.workspaces.models import Workspace
 
 
 class WorkspaceRecoveryActionService(
-    RecoveryActionQueryMixin,
     RecoveryArchiveExportActionMixin,
     RecoveryRestoreDrillActionMixin,
     RecoveryArchiveIntegrityActionMixin,
 ):
-    def __init__(self, session: Session) -> None:
-        self._session = session
-
     def apply_recovery_readiness_actions(
         self,
         *,
@@ -128,7 +121,7 @@ class WorkspaceRecoveryActionService(
                 if item["action"] == "verify_latest_archive_integrity"
                 and item["status"] == "applied"
             ),
-            "active_archive_export_job_count": self._active_archive_export_job_count(
+            "active_archive_export_job_count": self._repo.active_archive_export_job_count(
                 workspace_id
             ),
             "metadata_keys": metadata_keys,

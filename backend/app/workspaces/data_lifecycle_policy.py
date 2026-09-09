@@ -8,6 +8,7 @@ from backend.app.workspaces.data_lifecycle_settings import (
     _ensure_utc_datetime,
     _positive_int,
     _retention_settings,
+    _string_list,
 )
 
 
@@ -50,7 +51,7 @@ def _backup_policy(
         latest_success=latest_success,
         generated_at=generated_at,
     )
-    warnings.extend(schedule_status["warnings"])
+    warnings.extend(_string_list(schedule_status["warnings"]))
     return {
         "enabled": enabled,
         "source": "workspace.settings.data_lifecycle.backup",
@@ -82,7 +83,10 @@ def _readiness(
     return {
         "ready": not blocked_reasons,
         "blocked_reasons": blocked_reasons,
-        "warnings": [*retention_policy["warnings"], *backup_policy["warnings"]],
+        "warnings": [
+            *_string_list(retention_policy["warnings"]),
+            *_string_list(backup_policy["warnings"]),
+        ],
     }
 
 
@@ -114,7 +118,7 @@ def _retention_warnings(
     policy: dict[str, object],
     candidates: list[dict[str, object]],
 ) -> list[str]:
-    warnings = list(policy["warnings"]) if isinstance(policy.get("warnings"), list) else []
+    warnings = _string_list(policy.get("warnings"))
     if any(candidate["action"] == "manual_review" for candidate in candidates):
         warnings.append("manual_review_candidates_present")
     return warnings

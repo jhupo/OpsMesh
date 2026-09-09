@@ -8,10 +8,11 @@ from backend.app.workspaces.data_lifecycle_recovery import (
     _recovery_action_result,
     _recovery_action_skipped,
 )
+from backend.app.workspaces.data_lifecycle_store import LifecycleStore
 from backend.app.workspaces.models import Workspace
 
 
-class RecoveryArchiveIntegrityActionMixin:
+class RecoveryArchiveIntegrityActionMixin(LifecycleStore):
     def _apply_recovery_archive_integrity_action(
         self,
         *,
@@ -25,7 +26,7 @@ class RecoveryArchiveIntegrityActionMixin:
         warnings: list[str],
     ) -> tuple[dict[str, object] | None, dict[str, object] | None]:
         action = "verify_latest_archive_integrity"
-        latest_success = self._latest_successful_archive_export(workspace.id)
+        latest_success = self._repo.latest_successful_archive_export(workspace.id)
         if latest_success is None:
             return None, _recovery_action_skipped(
                 action=action,
@@ -35,7 +36,7 @@ class RecoveryArchiveIntegrityActionMixin:
                 blocked_reasons=blocked_reasons,
             )
 
-        latest_integrity = self._latest_archive_integrity_event(workspace.id)
+        latest_integrity = self._repo.latest_archive_integrity_event(workspace.id)
         integrity_payload = _archive_integrity_payload(
             latest_integrity,
             latest_success=latest_success,

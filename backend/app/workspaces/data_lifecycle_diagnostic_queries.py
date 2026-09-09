@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -25,25 +27,40 @@ from backend.app.workspaces.data_lifecycle_payloads import (
 )
 from backend.app.workspaces.data_lifecycle_settings import _safe_count_map, _safe_int
 
-ARCHIVE_COVERAGE_MODELS = {
-    "agents": AgentProfile,
-    "teams": AgentTeam,
-    "team_members": AgentTeamMember,
-    "tasks": Task,
-    "task_steps": TaskStep,
-    "task_messages": TaskMessage,
-    "runs": AgentRun,
-    "run_events": RunEvent,
-    "files": WorkspaceFile,
-    "artifacts": Artifact,
-    "runtime_spaces": RuntimeSpace,
-    "runtime_space_quotas": RuntimeSpaceQuota,
-    "skill_installs": WorkspaceSkillInstall,
+ARCHIVE_COVERAGE_COLUMNS = {
+    "agents": (AgentProfile.id, AgentProfile.workspace_id),
+    "teams": (AgentTeam.id, AgentTeam.workspace_id),
+    "team_members": (AgentTeamMember.id, AgentTeamMember.workspace_id),
+    "tasks": (Task.id, Task.workspace_id),
+    "task_steps": (TaskStep.id, TaskStep.workspace_id),
+    "task_messages": (TaskMessage.id, TaskMessage.workspace_id),
+    "runs": (AgentRun.id, AgentRun.workspace_id),
+    "run_events": (RunEvent.id, RunEvent.workspace_id),
+    "files": (WorkspaceFile.id, WorkspaceFile.workspace_id),
+    "artifacts": (Artifact.id, Artifact.workspace_id),
+    "runtime_spaces": (RuntimeSpace.id, RuntimeSpace.workspace_id),
+    "runtime_space_quotas": (RuntimeSpaceQuota.id, RuntimeSpaceQuota.workspace_id),
+    "skill_installs": (WorkspaceSkillInstall.id, WorkspaceSkillInstall.workspace_id),
 }
 RESTORE_TEST_EVENT_ACTIONS = (
     "workspace.archive_import.created",
     "workspace.archive_restore_drill.completed",
 )
+
+
+class FileStats(TypedDict):
+    total_count: int
+    active_count: int
+    total_bytes: int
+    latest_uploaded_at: datetime | None
+
+
+class ArtifactStats(TypedDict):
+    total_count: int
+    total_bytes: int
+    versioned_count: int
+    superseded_count: int
+    latest_created_at: datetime | None
 
 
 class WorkspaceDataLifecycleDiagnosticQueries:
@@ -180,16 +197,16 @@ class WorkspaceDataLifecycleDiagnosticQueries:
 
     def archive_coverage_counts(self, workspace_id: UUID) -> dict[str, int]:
         counts: dict[str, int] = {}
-        for collection, model in ARCHIVE_COVERAGE_MODELS.items():
+        for collection, (id_column, workspace_column) in ARCHIVE_COVERAGE_COLUMNS.items():
             counts[collection] = int(
                 self._session.scalar(
-                    select(func.count(model.id)).where(model.workspace_id == workspace_id)
+                    select(func.count(id_column)).where(workspace_column == workspace_id)
                 )
                 or 0
             )
         return counts
 
-    def file_stats(self, workspace_id: UUID) -> dict[str, object]:
+    def file_stats(self, workspace_id: UUID) -> FileStats:
         count, total_bytes = self._session.execute(
             select(
                 func.count(WorkspaceFile.id),
@@ -214,7 +231,7 @@ class WorkspaceDataLifecycleDiagnosticQueries:
             "latest_uploaded_at": latest_upload,
         }
 
-    def artifact_stats(self, workspace_id: UUID) -> dict[str, object]:
+    def artifact_stats(self, workspace_id: UUID) -> ArtifactStats:
         count, total_bytes = self._session.execute(
             select(
                 func.count(Artifact.id),

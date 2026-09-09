@@ -1,12 +1,10 @@
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from backend.app.files.storage import ObjectStorage
 from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.data_lifecycle_scheduler_backup import ScheduledBackupMixin
-from backend.app.workspaces.data_lifecycle_scheduler_queries import ScheduledLifecycleQueryMixin
 from backend.app.workspaces.data_lifecycle_scheduler_restore import ScheduledRestoreDrillMixin
 from backend.app.workspaces.data_lifecycle_scheduler_retention import ScheduledRetentionMixin
 from backend.app.workspaces.data_lifecycle_summary import ScheduledLifecycleSummary
@@ -14,14 +12,10 @@ from backend.app.workspaces.models import Workspace
 
 
 class WorkspaceScheduledLifecycleService(
-    ScheduledLifecycleQueryMixin,
     ScheduledBackupMixin,
     ScheduledRetentionMixin,
     ScheduledRestoreDrillMixin,
 ):
-    def __init__(self, session: Session) -> None:
-        self._session = session
-
     def run_scheduled_lifecycle(
         self,
         *,

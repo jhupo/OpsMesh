@@ -34,6 +34,7 @@ from backend.app.workspaces.data_lifecycle_schedule import (
 from backend.app.workspaces.data_lifecycle_settings import (
     _restore_drill_settings,
     _retention_settings,
+    _string_list,
 )
 from backend.app.workspaces.models import Workspace
 
@@ -183,8 +184,8 @@ class WorkspaceLifecycleDiagnosticsService:
                 "retention_requires_successful_backup_by_default": True,
                 "protected_by_successful_archive": latest_success is not None,
                 "warnings": [
-                    *retention_policy["warnings"],
-                    *backup_policy["warnings"],
+                    *_string_list(retention_policy["warnings"]),
+                    *_string_list(backup_policy["warnings"]),
                 ],
             },
             "restore_readiness": restore_readiness,
