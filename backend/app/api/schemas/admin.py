@@ -70,44 +70,6 @@ class AdminSystemConfigurationResponse(BaseModel):
     redis_pool: dict[str, int | None]
 
 
-class AdminReleaseUpdateRequest(BaseModel):
-    tag: str
-    dry_run: bool = True
-    manifest_url: str | None = None
-    manifest_file: str | None = None
-    bundle_url: str | None = None
-    bundle_file: str | None = None
-    checksum_url: str | None = None
-    checksum_file: str | None = None
-    release_dir: str | None = None
-
-
-class AdminReleaseCommandResponse(BaseModel):
-    action: str
-    tag: str | None = None
-    manifest_url: str | None = None
-    manifest_file: str | None = None
-    bundle_url: str | None = None
-    bundle_file: str | None = None
-    checksum_url: str | None = None
-    checksum_file: str | None = None
-    release_dir: str | None = None
-    command: list[str]
-    dry_run: bool
-    started: bool
-    pid: int | None = None
-
-
-class AdminReleaseRestartRequest(BaseModel):
-    dry_run: bool = True
-    release_dir: str | None = None
-
-
-class AdminReleaseRollbackRequest(BaseModel):
-    dry_run: bool = True
-    release_dir: str | None = None
-
-
 class AdminReleaseAssetResponse(BaseModel):
     name: str
     browser_download_url: str

@@ -27,35 +27,3 @@ class ReleaseUpdateCheck:
     release_url: str | None
     assets: list[ReleaseAsset]
     cached: bool
-
-
-@dataclass(frozen=True)
-class ReleaseUpdatePlan:
-    action: str
-    tag: str | None
-    manifest_url: str | None
-    manifest_file: str | None
-    bundle_url: str | None
-    bundle_file: str | None
-    checksum_url: str | None
-    checksum_file: str | None
-    release_dir: str | None
-    command: list[str]
-    dry_run: bool
-
-
-@dataclass(frozen=True)
-class ReleaseUpdateStart:
-    action: str
-    tag: str | None
-    manifest_url: str | None
-    manifest_file: str | None
-    bundle_url: str | None
-    bundle_file: str | None
-    checksum_url: str | None
-    checksum_file: str | None
-    release_dir: str | None
-    command: list[str]
-    dry_run: bool
-    started: bool
-    pid: int | None

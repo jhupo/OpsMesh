@@ -1,14 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.app.admin.releases.models import ReleaseUpdateStart
 from backend.app.admin.releases.service import ReleaseUpdateService
 from backend.app.api.routes.admin.dependencies import RedisClient
 from backend.app.api.schemas.admin import (
-    AdminReleaseCommandResponse,
-    AdminReleaseRestartRequest,
-    AdminReleaseRollbackRequest,
     AdminReleaseUpdateCheckResponse,
-    AdminReleaseUpdateRequest,
     AdminReleaseVersionResponse,
     AdminSystemConfigurationResponse,
 )
@@ -69,7 +64,7 @@ async def admin_check_updates(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Update check failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail="Update check failed") from exc
     return AdminReleaseUpdateCheckResponse(
         current=AdminReleaseVersionResponse(**result.current.__dict__),
         latest=AdminReleaseVersionResponse(**result.latest.__dict__) if result.latest else None,
@@ -77,82 +72,4 @@ async def admin_check_updates(
         release_url=result.release_url,
         assets=[item.__dict__ for item in result.assets],
         cached=result.cached,
-    )
-
-
-@router.post("/system/update", response_model=AdminReleaseCommandResponse)
-async def admin_release_update(
-    request: AdminReleaseUpdateRequest,
-    settings: Settings = Depends(get_settings),
-) -> AdminReleaseCommandResponse:
-    try:
-        result = ReleaseUpdateService(settings).update(
-            request.tag,
-            dry_run=request.dry_run,
-            manifest_url=request.manifest_url,
-            manifest_file=request.manifest_file,
-            bundle_url=request.bundle_url,
-            bundle_file=request.bundle_file,
-            checksum_url=request.checksum_url,
-            checksum_file=request.checksum_file,
-            release_dir=request.release_dir,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=500, detail=f"Update script not found: {exc}") from exc
-    return _release_command_response(result)
-
-
-@router.post("/system/rollback", response_model=AdminReleaseCommandResponse)
-async def admin_release_rollback(
-    request: AdminReleaseRollbackRequest,
-    settings: Settings = Depends(get_settings),
-) -> AdminReleaseCommandResponse:
-    try:
-        result = ReleaseUpdateService(settings).rollback(
-            dry_run=request.dry_run,
-            release_dir=request.release_dir,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=500, detail=f"Update script not found: {exc}") from exc
-    return _release_command_response(result)
-
-
-@router.post("/system/restart", response_model=AdminReleaseCommandResponse)
-async def admin_release_restart(
-    request: AdminReleaseRestartRequest,
-    settings: Settings = Depends(get_settings),
-) -> AdminReleaseCommandResponse:
-    try:
-        result = ReleaseUpdateService(settings).restart(
-            dry_run=request.dry_run,
-            release_dir=request.release_dir,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=500, detail=f"Update script not found: {exc}") from exc
-    return _release_command_response(result)
-
-
-def _release_command_response(result: ReleaseUpdateStart) -> AdminReleaseCommandResponse:
-    return AdminReleaseCommandResponse(
-        action=result.action,
-        tag=result.tag,
-        manifest_url=result.manifest_url,
-        manifest_file=result.manifest_file,
-        bundle_url=result.bundle_url,
-        bundle_file=result.bundle_file,
-        checksum_url=result.checksum_url,
-        checksum_file=result.checksum_file,
-        release_dir=result.release_dir,
-        command=result.command,
-        dry_run=result.dry_run,
-        started=result.started,
-        pid=result.pid,
     )

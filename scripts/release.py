@@ -1,4 +1,5 @@
 """One packaging implementation for local validation and GitHub releases."""
+
 from __future__ import annotations
 
 import argparse
@@ -39,11 +40,22 @@ def build_bundle(output: Path, tag: str) -> Path:
         for directory in ("backend", "operator", "runtime", "deploy", "scripts"):
             for path in sorted((ROOT / directory).rglob("*")):
                 relative = path.relative_to(ROOT)
-                if any(part.startswith(".") or part in {"__pycache__", "build"}
-                       or part.endswith(".egg-info") for part in relative.parts):
+                if any(
+                    part.startswith(".")
+                    or part in {"__pycache__", "build"}
+                    or part.endswith(".egg-info")
+                    for part in relative.parts
+                ):
                     continue
-                if path.is_file() and path.suffix in {".py", ".toml", ".yml", ".json", ".sh",
-                                                      ".service", ".example"}:
+                if path.is_file() and path.suffix in {
+                    ".py",
+                    ".toml",
+                    ".yml",
+                    ".json",
+                    ".sh",
+                    ".service",
+                    ".example",
+                }:
                     archive.add(path, arcname=relative.as_posix())
     return bundle
 
@@ -67,12 +79,20 @@ def main() -> None:
     policy = json.loads((ROOT / "release-policy.json").read_text("utf-8"))
     revision = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini"))).get_current_head()
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    files = [file_record(path) for path in sorted(args.output.iterdir())
-             if path.is_file() and path.name != "release-manifest.json"]
+    files = [
+        file_record(path)
+        for path in sorted(args.output.iterdir())
+        if path.is_file() and path.name != "release-manifest.json"
+    ]
     manifest = ReleaseManifest(
-        tag=args.tag, commit=commit, repository=args.repository,
-        backend_digest=args.backend_digest, runtime_digest=args.runtime_digest,
-        database_revision=revision, files=files, **policy,
+        tag=args.tag,
+        commit=commit,
+        repository=args.repository,
+        backend_digest=args.backend_digest,
+        runtime_digest=args.runtime_digest,
+        database_revision=revision,
+        files=files,
+        **policy,
     )
     (args.output / "release-manifest.json").write_text(
         manifest.model_dump_json(indent=2) + "\n", encoding="utf-8"

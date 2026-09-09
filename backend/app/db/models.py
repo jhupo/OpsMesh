@@ -1,6 +1,11 @@
 """Import all SQLAlchemy models so relationship targets are registered."""
 
 from backend.app.admin.models import PlatformPolicy, PlatformPolicyEvent
+from backend.app.admin.updates.models import (
+    PlatformInstallation,
+    PlatformUpdateEvent,
+    PlatformUpdateJob,
+)
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.agent_runtime.sessions import (
     PersistentAgentSession,
@@ -94,6 +99,9 @@ from backend.app.workspaces.models import (
 )
 
 __all__ = [
+    "PlatformInstallation",
+    "PlatformUpdateEvent",
+    "PlatformUpdateJob",
     "AgentProfile",
     "AgentProfileVersion",
     "AgentMessage",

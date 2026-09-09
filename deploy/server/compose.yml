@@ -1,0 +1,74 @@
+name: opsmesh
+x-backend: &backend
+  image: ${OPSMESH_BACKEND_IMAGE:?Set an attested release image digest}
+  env_file: ${OPSMESH_ROOT:?Set installation root}/.env
+  environment: &environment
+    OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:?Set database password}@postgres:5432/opsmesh
+    OPSMESH_REDIS_URL: redis://redis:6379/0
+    OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
+    OPSMESH_RUN_MIGRATIONS: 'false'
+    OPSMESH_RUNTIME_ALLOWED_IMAGES: ${OPSMESH_RUNTIME_ALLOWED_IMAGES:?Set attested runtime images}
+  volumes:
+    - ${OPSMESH_ROOT}/data/storage:/app/.opsmesh-storage
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  pids_limit: 256
+  mem_limit: 2g
+  cpus: 2
+services:
+  api:
+    <<: *backend
+    environment:
+      <<: *environment
+      OPSMESH_SERVICE_NAME: opsmesh-api
+    ports: ['127.0.0.1:${OPSMESH_API_PORT:-8000}:8000']
+    healthcheck:
+      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/v1/health/ready", timeout=3).read()']
+      interval: 5s
+      timeout: 4s
+      retries: 24
+  worker:
+    <<: *backend
+    environment:
+      <<: *environment
+      OPSMESH_SERVICE_NAME: opsmesh-worker
+    command: [python, -m, backend.app.workers.cli]
+    # Only the runtime-management worker has daemon authority. Never expose this to API/runtimes.
+    group_add: ['${OPSMESH_DOCKER_GID:?Set Docker socket group}']
+    volumes:
+      - ${OPSMESH_ROOT}/data/storage:/app/.opsmesh-storage
+      - /var/run/docker.sock:/var/run/docker.sock
+  migrate:
+    <<: *backend
+    profiles: [maintenance]
+    restart: 'no'
+    command: [alembic, upgrade, head]
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg16-bookworm
+    environment:
+      POSTGRES_USER: opsmesh
+      POSTGRES_DB: opsmesh
+      POSTGRES_PASSWORD: ${OPSMESH_POSTGRES_PASSWORD}
+    ports: ['127.0.0.1:5432:5432']
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U opsmesh -d opsmesh']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes']
+    ports: ['127.0.0.1:6379:6379']
+    volumes: [redis_data:/data]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  postgres_data:
+  redis_data:

@@ -8,6 +8,7 @@ from backend.app.api.routes.admin.runtime_spaces import router as runtime_spaces
 from backend.app.api.routes.admin.runtimes import router as runtimes_router
 from backend.app.api.routes.admin.security_events import router as security_events_router
 from backend.app.api.routes.admin.system import router as system_router
+from backend.app.api.routes.admin.updates import router as updates_router
 from backend.app.api.routes.admin.users import router as users_router
 from backend.app.api.routes.admin.workers import router as workers_router
 from backend.app.auth.admin import require_platform_admin
@@ -26,4 +27,5 @@ router.include_router(runtimes_router)
 router.include_router(policies_router)
 router.include_router(security_events_router)
 router.include_router(system_router)
+router.include_router(updates_router)
 router.include_router(users_router)

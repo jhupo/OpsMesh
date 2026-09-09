@@ -1,6 +1,6 @@
 {
-  "upgrade_from_revisions": ["0070_memory_lifecycle"],
-  "rollback_database_revisions": ["0070_memory_lifecycle"],
+  "upgrade_from_revisions": ["0071_platform_delivery"],
+  "rollback_database_revisions": ["0071_platform_delivery"],
   "connector_protocol": 2,
   "platforms": ["linux/amd64"]
 }

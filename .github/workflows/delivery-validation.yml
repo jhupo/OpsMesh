@@ -1,0 +1,51 @@
+name: Delivery Integration
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths: ['operator/**', 'deploy/**', 'Dockerfile*', 'docker-compose.yml', 'backend/app/admin/updates/**', 'backend/migrations/**', '.github/workflows/**']
+  pull_request:
+    paths: ['operator/**', 'deploy/**', 'Dockerfile*', 'docker-compose.yml', 'backend/app/admin/updates/**', 'backend/migrations/**', '.github/workflows/**']
+permissions:
+  contents: read
+jobs:
+  delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg16-bookworm
+        env:
+          POSTGRES_DB: opsmesh
+          POSTGRES_USER: opsmesh
+          POSTGRES_PASSWORD: opsmesh
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U opsmesh" --health-interval 5s --health-retries 10
+    env:
+      OPSMESH_ENVIRONMENT: test
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:opsmesh@127.0.0.1:5432/opsmesh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --frozen --all-groups
+      - run: uv run mypy operator/opsmesh_operator backend/app/admin/updates backend/app/api/routes/admin/updates.py
+      - run: uv run pytest backend/tests/test_platform_updates.py backend/tests/test_operator_security.py backend/tests/test_release_delivery.py
+      - name: Real PostgreSQL migrations and delivery contracts
+        env:
+          OPSMESH_DELIVERY_POSTGRES_TEST: '1'
+        run: |
+          uv run alembic upgrade head
+          uv run pytest backend/tests/test_delivery_postgres.py
+      - name: Fresh container deployment and runtime probe
+        run: |
+          cp .env.example .env
+          docker compose up --build --wait --wait-timeout 180
+          curl --fail http://127.0.0.1:8000/api/v1/health/ready
+          docker build -f Dockerfile.runtime -t opsmesh-runtime:ci .
+          docker run --rm opsmesh-runtime:ci python -m opsmesh_runtime.mcp_stdio_client --check
+      - name: Tear down disposable CI deployment
+        if: always()
+        run: docker compose down --volumes

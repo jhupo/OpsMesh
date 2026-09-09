@@ -13,11 +13,15 @@ ARG BUILD_COMMIT
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/app/.venv/bin:$PATH" \
     OPSMESH_BUILD_COMMIT=${BUILD_COMMIT} OPSMESH_RUN_MIGRATIONS=false
 WORKDIR /app
-RUN addgroup --system opsmesh && adduser --system --ingroup opsmesh opsmesh \
+RUN addgroup --system --gid 10001 opsmesh && adduser --system --uid 10001 --ingroup opsmesh opsmesh \
     && mkdir -p /app/.opsmesh-storage && chown opsmesh:opsmesh /app/.opsmesh-storage
 COPY --from=builder /app/.venv /app/.venv
 COPY backend/migrations ./backend/migrations
 COPY alembic.ini ./
+COPY scripts/docker-entrypoint.sh /usr/local/bin/opsmesh-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/opsmesh-entrypoint \
+    && chmod 755 /usr/local/bin/opsmesh-entrypoint
 USER opsmesh
 EXPOSE 8000
+ENTRYPOINT ["/usr/local/bin/opsmesh-entrypoint"]
 CMD ["uvicorn", "backend.app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

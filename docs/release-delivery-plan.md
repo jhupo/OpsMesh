@@ -6,10 +6,10 @@ Status: in progress. A green unit test is not deployment evidence.
 
 | Stage | Scope | Status |
 | --- | --- | --- |
-| 1 | master CI, pre-tag release gate, locked image builds, packages, GHCR, signed manifest | In progress |
-| 2 | lightweight CLI, production Compose/systemd deployment, install and diagnostics | Pending |
-| 3 | durable platform update jobs, independent host updater, maintenance and audit | Pending |
-| 4 | verified backup, interruption recovery, constrained rollback and Linux end-to-end gate | Pending |
+| 1 | master CI, pre-tag release gate, locked image builds, packages, GHCR, signed manifest | Implemented; hosted execution pending |
+| 2 | lightweight CLI, production Compose/systemd deployment, install and diagnostics | Implemented; Linux installation acceptance pending |
+| 3 | durable platform update jobs, independent host updater, maintenance and audit | Implemented; focused contract tests pass |
+| 4 | verified backup, interruption recovery, constrained rollback and Linux integration gate | Implemented locally; real upgrade/restore acceptance pending |
 
 Each completed functional point is committed separately. No production tag or live deployment is
 created as a side effect of implementation. Linux installation and update evidence must be recorded
@@ -59,3 +59,17 @@ contracts. A separate giant CLI framework is not needed.
   partial DDL; its Python canonical JSON backfill still runs online. The release gate uses an actual
   Postgres connection, not an incomplete offline SQL script.
 - Normal development and PRs use focused tests. Full pytest is restricted to the pre-tag gate.
+- Baseline audit against detached `d264ffb`: mypy reports 721 existing errors. The first new run
+  reported 728; the seven additional diagnostics were operator package discovery, corrected with
+  an explicit mypy source path and `py.typed`. No type errors are suppressed to publish a release.
+- Broader worker/self-hosted checks: 11 failures are reproduced on `d264ffb` (missing authorization
+  fixtures and outdated contract assertions). The same 11 failures occur with the delivery change.
+- GitHub CLI exists but is not authenticated. No hosted workflow dispatch, release tag or production
+  update has been executed. These are validation blockers, not evidence of successful deployment.
+- Final focused set: 55 passing tests (delivery contracts, operator security, update state machine,
+  admin API, deployment assets). Ruff passes repository-wide. The 16 newly introduced/affected
+  operator, update-domain and route modules pass strict mypy. Alembic has one head:
+  `0071_platform_delivery`. Wheels and source distributions build for all three packages.
+- The Linux integration workflow exercises PostgreSQL migration/locking/WORM and fresh Docker
+  startup. A real released-version-to-released-version upgrade, systemd install and database restore
+  have NOT been executed on this Windows host. Do not report these acceptance items as complete.

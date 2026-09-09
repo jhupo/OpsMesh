@@ -1,4 +1,5 @@
 """Focused PR validation; the full suite belongs only to release-prepare.yml."""
+
 from __future__ import annotations
 
 import argparse
@@ -12,6 +13,15 @@ def select_tests(changed: list[str]) -> list[str]:
     candidates = list(Path("backend/tests").glob("test_*.py"))
     for name in changed:
         path = Path(name)
+        if name.startswith(("operator/", "backend/app/admin/updates/")):
+            tests.update(
+                {
+                    "backend/tests/test_operator_security.py",
+                    "backend/tests/test_platform_updates.py",
+                }
+            )
+        if name.startswith(("deploy/", "Dockerfile", "docker-compose", ".github/workflows/")):
+            tests.add("backend/tests/test_deployment_assets.py")
         if name.startswith("backend/tests/test_") and path.is_file():
             tests.add(path.as_posix())
         if name.startswith("backend/app/"):

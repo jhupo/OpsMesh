@@ -10,6 +10,13 @@ User and workspace isolation is mandatory. The product must enforce isolation ac
 
 ## System Layers
 
+Release delivery has a separate host-administration boundary: API routes persist platform update
+plans and approvals; a root-owned host updater verifies attested manifests, acquires maintenance
+ownership, drains worker/connector claims, snapshots data and switches deployments. The API never
+starts update subprocesses or receives Docker/systemd authority. Postgres owns intent and append-only
+update evidence; a protected fsynced host journal preserves checkpoints while services or the database
+are offline. See [delivery operations](delivery-operations.md) for support and acceptance limits.
+
 1. Application API
 
    Handles authentication, workspace membership, CRUD APIs, task creation, approvals, notifications, and API-facing queries.

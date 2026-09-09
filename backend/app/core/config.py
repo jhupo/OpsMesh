@@ -114,16 +114,8 @@ class Settings(BaseSettings):
     credential_encryption_previous_secrets: dict[str, str] = Field(default_factory=dict)
     secret_vault_providers: dict[str, dict[str, object]] = Field(default_factory=dict)
     runtime_allowed_images: list[str] = Field(default_factory=lambda: ["opsmesh-runtime:local"])
-    release_dir: str | None = Field(default=None)
     release_update_enabled: bool = Field(default=False)
-    release_update_script: str = Field(default="/opt/opsmesh/current/scripts/server-update.sh")
     release_update_timeout_seconds: int = Field(default=900, ge=30, le=7_200)
-    release_update_manifest_url: str | None = Field(default=None)
-    release_update_manifest_file: str | None = Field(default=None)
-    release_update_bundle_url: str | None = Field(default=None)
-    release_update_bundle_file: str | None = Field(default=None)
-    release_update_checksum_url: str | None = Field(default=None)
-    release_update_checksum_file: str | None = Field(default=None)
     release_update_repository: str = Field(default="jhupo/OpsMesh")
     release_update_check_cache_seconds: int = Field(default=1_200, ge=0, le=86_400)
     release_update_github_api_url: str = Field(default="https://api.github.com")
@@ -140,13 +132,6 @@ class Settings(BaseSettings):
             "s3_access_key_id",
             "s3_secret_access_key",
             "s3_session_token",
-            "release_dir",
-            "release_update_manifest_url",
-            "release_update_manifest_file",
-            "release_update_bundle_url",
-            "release_update_bundle_file",
-            "release_update_checksum_url",
-            "release_update_checksum_file",
             "otel_exporter_otlp_endpoint",
         ):
             value = getattr(self, field_name)
@@ -272,16 +257,8 @@ class Settings(BaseSettings):
             "secret_vault_providers": redact_secret_provider_configs(
                 self.secret_vault_providers
             ),
-            "release_dir": self.release_dir,
             "release_update_enabled": self.release_update_enabled,
-            "release_update_script": self.release_update_script,
             "release_update_timeout_seconds": self.release_update_timeout_seconds,
-            "release_update_manifest_url": self.release_update_manifest_url,
-            "release_update_manifest_file": self.release_update_manifest_file,
-            "release_update_bundle_url": self.release_update_bundle_url,
-            "release_update_bundle_file": self.release_update_bundle_file,
-            "release_update_checksum_url": self.release_update_checksum_url,
-            "release_update_checksum_file": self.release_update_checksum_file,
             "release_update_repository": self.release_update_repository,
             "release_update_check_cache_seconds": self.release_update_check_cache_seconds,
             "release_update_github_api_url": self.release_update_github_api_url,

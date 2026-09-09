@@ -1,4 +1,14 @@
 services:
+  migrate:
+    build:
+      context: .
+    image: opsmesh-backend:local
+    environment:
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
+    command: [alembic, upgrade, head]
+    depends_on:
+      postgres:
+        condition: service_healthy
   api:
     build:
       context: .
@@ -14,6 +24,8 @@ services:
     volumes:
       - opsmesh_storage:/app/.opsmesh-storage
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:

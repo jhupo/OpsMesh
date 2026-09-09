@@ -10,6 +10,7 @@ from typing import Protocol
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
+from backend.app.admin.updates.service import maintenance_enabled
 from backend.app.agent_runtime.contracts import AgentRuntimeExecutor
 from backend.app.capabilities.mcp_execution_adapters import (
     McpToolAdapter,
@@ -73,6 +74,10 @@ class WorkerRunner:
 
     def run_once(self) -> bool:
         with self._session_scope() as session:
+            # Hold the shared installation lock until the lease exists. The updater's exclusive
+            # maintenance transition must not race a dequeued-but-not-yet-leased job.
+            if maintenance_enabled(session):
+                return False
             capacity = WorkerCapacitySnapshotService(session).worker_capacity_snapshot(
                 self._config.worker_id,
                 default_max_jobs=self._config.max_jobs,
@@ -80,36 +85,37 @@ class WorkerRunner:
             if not capacity.accepting:
                 return False
             worker_capacity = capacity.capacity or {}
-        job = self._queue.dequeue_matching(
-            lambda candidate: worker_can_run_job(candidate, worker_capacity),
-            scan_limit=self._config.job_scan_limit,
-        )
-        if job is None:
-            return False
-        with self._job_log_context(job):
-            self._lease_reporter.start_lease(job)
-            try:
-                self._handle_job(job)
-            except Exception as exc:
-                failure_status = "retrying" if job.can_retry else "failed"
-                self._lease_reporter.finish_lease(
-                    job,
-                    status=failure_status,
-                    metadata={"error": str(exc)},
-                )
-                self._lease_reporter.record_team_execution_loop_failure(
-                    job,
-                    status=failure_status,
-                    error=exc,
-                )
-                self._queue.retry_or_dead_letter(
-                    job,
-                    error=exc,
-                    delay_seconds=self._retry_delay(job),
-                )
-                raise
-            self._lease_reporter.finish_lease(job, status="completed")
-            self._queue.ack(job)
+            job = self._queue.dequeue_matching(
+                lambda candidate: worker_can_run_job(candidate, worker_capacity),
+                scan_limit=self._config.job_scan_limit,
+            )
+            if job is None:
+                return False
+            with self._job_log_context(job):
+                self._lease_reporter.start_lease(job)
+                session.commit()  # release the admission lock before long-running execution
+                try:
+                    self._handle_job(job)
+                except Exception as exc:
+                    failure_status = "retrying" if job.can_retry else "failed"
+                    self._lease_reporter.finish_lease(
+                        job,
+                        status=failure_status,
+                        metadata={"error": str(exc)},
+                    )
+                    self._lease_reporter.record_team_execution_loop_failure(
+                        job,
+                        status=failure_status,
+                        error=exc,
+                    )
+                    self._queue.retry_or_dead_letter(
+                        job,
+                        error=exc,
+                        delay_seconds=self._retry_delay(job),
+                    )
+                    raise
+                self._lease_reporter.finish_lease(job, status="completed")
+                self._queue.ack(job)
         return True
 
     def _handle_job(self, job: JobPayload) -> None:

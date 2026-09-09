@@ -104,20 +104,7 @@ def test_deployment_docs_cover_processes_and_production_guards() -> None:
     assert "OPSMESH_AGENT_RUNNER_BACKEND" not in docs
     assert "OPSMESH_ENABLE_API_DOCS=false" in docs
     assert "OPSMESH_CREDENTIAL_ENCRYPTION_SECRET" in docs
-    assert "OPSMESH_RUN_MIGRATIONS=false" not in docs
 
-
-def test_server_docs_do_not_publish_backend_compose_deploy_path() -> None:
-    docs = read_repo_file("docs/backend-deployment.md")
-    update_script = read_repo_file("scripts/server-update.sh")
-    smoke_script = read_repo_file("scripts/server-smoke-test.sh")
-
-    for asset in (docs, update_script, smoke_script):
-        assert "docker-compose.backend.yml" not in asset
-        assert "OPSMESH_BACKEND_IMAGE" not in asset
-        assert "OPSMESH_BACKEND_NETWORK" not in asset
-    assert "docker compose --env-file" not in update_script
-    assert "docker compose --env-file" not in smoke_script
 
 
 def test_systemd_units_keep_api_out_of_docker_group() -> None:
@@ -147,7 +134,6 @@ def test_server_env_template_uses_shared_runtime_services() -> None:
     assert "OPSMESH_API_SERVICE=opsmesh-api" in env_example
     assert "OPSMESH_WORKER_SERVICE=opsmesh-worker" in env_example
     assert 'OPSMESH_UV_SYNC_ARGS="--frozen --no-dev"' in env_example
-    assert "OPSMESH_RELEASE_DIR=/opt/opsmesh/current" in env_example
     assert "OPSMESH_ENV_FILE=/opt/opsmesh/.env" in env_example
     assert "OPSMESH_MONITORING_DIR=/opt/opsmesh/current/deploy/server/monitoring" in env_example
     assert "OPSMESH_WORKER_HEARTBEAT_TOKEN=replace-with-random-token" in env_example
@@ -191,36 +177,6 @@ def test_server_smoke_script_checks_health_and_migrations() -> None:
     assert "opsmesh_model_usage_records_24h" in smoke_script
     assert 'query={service_name="opsmesh-api"}' in smoke_script
 
-
-def test_server_update_script_installs_verified_release_bundle() -> None:
-    update_script = read_repo_file("scripts/server-update.sh")
-
-    assert "#!/usr/bin/env sh" in update_script
-    assert "update | rollback | restart" in update_script
-    assert "--tag" in update_script
-    assert "--manifest-url" in update_script
-    assert "--manifest-file" in update_script
-    assert "--bundle-url" in update_script
-    assert "--bundle-file" in update_script
-    assert "--bundle-sha256" in update_script
-    assert "--image" not in update_script
-    assert "--dry-run" in update_script
-    assert "opsmesh-server-${tag}-manifest.json" in update_script
-    assert 'json_value "bundle.sha256"' in update_script
-    assert "sha256_file" in update_script
-    assert "Bundle sha256 mismatch" in update_script
-    assert "releases_dir" in update_script
-    assert "current_link" in update_script
-    assert "switch_current" in update_script
-    assert "tar -xzf" in update_script
-    assert "release-state.env" in update_script
-    assert "uv sync" in update_script
-    assert ".venv/bin/alembic upgrade head" in update_script
-    assert 'restart "${api_service}" "${worker_service}"' in update_script
-    assert 'restart "${observability_service}"' in update_script
-    assert "docker compose" not in update_script
-    assert "docker pull" not in update_script
-    assert "server-smoke-test.sh" in update_script
 
 
 def test_openai_gateway_smoke_script_uses_env_key_and_marker() -> None:

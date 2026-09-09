@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from agents import set_tracing_disabled
 from backend.app.api.services.resources import WorkspaceResourceService
+from backend.app.model_providers.service import ModelProviderCredentialService
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -20,7 +21,6 @@ from backend.app.api.schemas.tasks import TaskCreateRequest
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import SessionLocal
 from backend.app.identity.models import User
-from backend.app.model_providers.service import ModelProviderCredentialService
 from backend.app.redis.client import redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent

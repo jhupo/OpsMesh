@@ -187,83 +187,31 @@ in [Observability, Audit, and Cost Operations](observability-audit-and-costs.md)
 Compose file is Linux-specific: it uses host networking so Prometheus can scrape the API at
 `127.0.0.1:8000`, while every monitoring listener is also pinned to `127.0.0.1`.
 
-## Release Bundles and Server Updates
+## Verified Releases and Online Updates
 
-Pushing a tag such as `v1.2.3` runs the backend quality gate and creates a GitHub Release with VPS/systemd deployment assets:
+The official packaged deployment is a prebuilt GHCR backend image and a separate runtime image.
+The backend image is shared by the API, worker and explicit migration job. Production Compose is
+`deploy/server/compose.yml`; the root Compose file remains a source-build development environment.
+Neither API startup nor worker startup runs migrations automatically.
+The installer uses `uv sync --frozen --no-dev --no-editable` for the separate host updater and
+systemd application environment. Database migration remains an explicit `alembic upgrade head` step.
 
-- `opsmesh-server-v1.2.3-manifest.json`
-- `opsmesh-server-v1.2.3.tar.gz`
-- `opsmesh-server-v1.2.3.tar.gz.sha256`
+See [Delivery operations](delivery-operations.md) for installation, CLI commands, verification,
+upgrade approval, maintenance, backup verification and offline recovery. The old shell updater and
+PID-returning update endpoints have been removed. Do not use source-directory switching commands
+from earlier releases.
 
-The manifest records the bundle URL and bundle sha256. It does not reference a backend container image. The server updater downloads or reads the manifest, verifies the bundle sha256, unpacks it into `/opt/opsmesh/releases/<tag>`, switches `/opt/opsmesh/current`, runs `uv sync`, applies `alembic upgrade head`, restarts `opsmesh-api`, `opsmesh-worker`, and the enabled `opsmesh-observability` service, then runs the health smoke.
+A platform administrator submits a durable plan. A separate host updater verifies its release,
+records its fingerprint and waits for explicit approval. It then drains work, stops application
+services, verifies a backup by restoring it into a temporary database, applies migrations, switches
+the release, checks readiness and resumes admission. An ambiguous failure remains in maintenance
+and requires an explicit host recovery command. Database restoration is never an automatic image
+rollback.
 
-On the server, update by tag:
-
-```bash
-OPSMESH_ENV_FILE=/opt/opsmesh/.env \
-/opt/opsmesh/current/scripts/server-update.sh --tag v1.2.3
-```
-
-Use a manifest URL or local manifest file when mirroring release assets:
-
-```bash
-/opt/opsmesh/current/scripts/server-update.sh \
-  --manifest-url https://github.com/jhupo/OpsMesh/releases/download/v1.2.3/opsmesh-server-v1.2.3-manifest.json
-
-/opt/opsmesh/current/scripts/server-update.sh \
-  --manifest-file /opt/opsmesh/downloads/opsmesh-server-v1.2.3-manifest.json
-```
-
-Use a bundle URL or local bundle file with an explicit sha256 for direct deployment:
-
-```bash
-/opt/opsmesh/current/scripts/server-update.sh \
-  --bundle-url https://github.com/jhupo/OpsMesh/releases/download/v1.2.3/opsmesh-server-v1.2.3.tar.gz \
-  --bundle-sha256 "$(cut -d ' ' -f 1 /opt/opsmesh/downloads/opsmesh-server-v1.2.3.tar.gz.sha256)"
-
-/opt/opsmesh/current/scripts/server-update.sh \
-  --manifest-file /opt/opsmesh/downloads/opsmesh-server-v1.2.3-manifest.json \
-  --bundle-file /opt/opsmesh/downloads/opsmesh-server-v1.2.3.tar.gz \
-  --bundle-sha256 "$(cut -d ' ' -f 1 /opt/opsmesh/downloads/opsmesh-server-v1.2.3.tar.gz.sha256)"
-```
-
-Use dry-run before changing the symlink or services:
-
-```bash
-/opt/opsmesh/current/scripts/server-update.sh --tag v1.2.3 --dry-run
-```
-
-Rollback switches `/opt/opsmesh/current` back to the previously recorded release directory, runs `uv sync`, restarts the API and worker, and runs smoke checks. Restart keeps the current release and only restarts services:
-
-```bash
-/opt/opsmesh/current/scripts/server-update.sh rollback
-/opt/opsmesh/current/scripts/server-update.sh restart
-```
-
-The admin API exposes a sub2api-style system updater. It requires the platform admin bearer token and defaults command endpoints to dry-run. Real online updates are disabled unless `OPSMESH_RELEASE_UPDATE_ENABLED=true` is set for the API service:
-
-```bash
-curl -fsS http://127.0.0.1:8000/api/v1/admin/system/version \
-  -H "Authorization: Bearer ${OPSMESH_PLATFORM_ADMIN_TOKEN}"
-
-curl -fsS "http://127.0.0.1:8000/api/v1/admin/system/check-updates?force=true" \
-  -H "Authorization: Bearer ${OPSMESH_PLATFORM_ADMIN_TOKEN}"
-
-curl -fsS -X POST http://127.0.0.1:8000/api/v1/admin/system/update \
-  -H "Authorization: Bearer ${OPSMESH_PLATFORM_ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"tag":"v1.2.3","dry_run":true}'
-
-curl -fsS -X POST http://127.0.0.1:8000/api/v1/admin/system/rollback \
-  -H "Authorization: Bearer ${OPSMESH_PLATFORM_ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"dry_run":true}'
-
-curl -fsS -X POST http://127.0.0.1:8000/api/v1/admin/system/restart \
-  -H "Authorization: Bearer ${OPSMESH_PLATFORM_ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"dry_run":true}'
-```
+Existing VPS/systemd installations must perform a maintenance-window migration to the managed
+installation layout and preserve their database, storage and encryption keys. This is not an
+in-place adapter for the removed shell update format. The manual VPS setup above describes service
+boundaries; use the managed installer for the new release/update contract.
 
 ## Smoke Checks
 

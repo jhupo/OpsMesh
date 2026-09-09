@@ -25,6 +25,11 @@ product contract.
 
 ## Project Status
 
+Release delivery is being upgraded to attested GHCR images, a lightweight `opsmesh` CLI and a
+durable host updater. See [delivery operations](docs/delivery-operations.md) and the
+[implementation/validation ledger](docs/release-delivery-plan.md). It is not yet production-accepted:
+the existing repository-wide type/test baseline and hosted Linux acceptance are release blockers.
+
 | Area | Status |
 | --- | --- |
 | Backend API and control plane | Implemented and actively evolving |

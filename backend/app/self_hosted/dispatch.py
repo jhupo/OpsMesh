@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from backend.app.admin.updates.service import maintenance_enabled
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
@@ -62,6 +63,8 @@ class SelfHostedDispatchService:
         return None
 
     def claim_job(self, auth: AuthenticatedWorker, agent_run_id: UUID) -> SelfHostedJobClaim:
+        if maintenance_enabled(self._session):
+            raise ValueError("Platform is in maintenance; new claims are paused")
         self._policy_gate.require_enabled()
         auth = self._locks.locked_auth(auth)
         self._eligibility.require_accepting_jobs(auth)
@@ -144,6 +147,8 @@ class SelfHostedDispatchService:
         return next((job for job in jobs if self._eligibility.can_accept_mcp_job(auth, job)), None)
 
     def claim_mcp_job(self, auth: AuthenticatedWorker, mcp_job_id: UUID) -> SelfHostedMcpJob:
+        if maintenance_enabled(self._session):
+            raise ValueError("Platform is in maintenance; new claims are paused")
         self._policy_gate.require_enabled()
         auth = self._locks.locked_auth(auth)
         self._eligibility.require_accepting_jobs(auth)
