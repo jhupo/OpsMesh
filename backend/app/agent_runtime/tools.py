@@ -288,7 +288,9 @@ class BackendToolExecutor:
     ) -> None:
         raw_working = context.metadata.get("working_memory")
         raw_policy = raw_working.get("policy") if isinstance(raw_working, dict) else None
-        policy = working_memory_policy({"working_memory": raw_policy})
+        policy = working_memory_policy(
+            {"working_memory": raw_policy} if isinstance(raw_policy, dict) else {}
+        )
         AgentWorkingMemoryService(self._session).record_tool_result(
             context_workspace_id=context.workspace_id,
             run_id=context.run_id,

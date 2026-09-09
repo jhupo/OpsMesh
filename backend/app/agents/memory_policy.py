@@ -42,12 +42,21 @@ class EpisodicMemoryPolicy(BaseModel):
     default_importance: int = Field(default=30, ge=0, le=100)
 
 
+class SemanticMemoryPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    retrieval_enabled: bool = True
+    write_enabled: bool = True
+    max_results: int = Field(default=8, ge=1, le=50)
+
+
 class AgentMemoryPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     context_budget: ContextBudgetPolicy = Field(default_factory=ContextBudgetPolicy)
     working_memory: WorkingMemoryPolicy = Field(default_factory=WorkingMemoryPolicy)
     episodic_memory: EpisodicMemoryPolicy = Field(default_factory=EpisodicMemoryPolicy)
+    semantic_memory: SemanticMemoryPolicy = Field(default_factory=SemanticMemoryPolicy)
 
 
 def context_budget_policy(memory_policy: object) -> ContextBudgetPolicy:
@@ -68,6 +77,10 @@ def working_memory_policy(memory_policy: object) -> WorkingMemoryPolicy:
 
 def episodic_memory_policy(memory_policy: object) -> EpisodicMemoryPolicy:
     return agent_memory_policy(memory_policy).episodic_memory
+
+
+def semantic_memory_policy(memory_policy: object) -> SemanticMemoryPolicy:
+    return agent_memory_policy(memory_policy).semantic_memory
 
 
 def agent_memory_policy(value: object) -> AgentMemoryPolicy:

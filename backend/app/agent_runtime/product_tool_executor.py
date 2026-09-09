@@ -13,6 +13,7 @@ from backend.app.agent_runtime.tool_arguments import (
     bytes_argument,
     dict_argument,
     int_argument,
+    optional_int_argument,
     optional_str_argument,
     optional_str_set_argument,
     optional_uuid_argument,
@@ -297,35 +298,39 @@ def _execute_product_tool(
                 source_types=optional_str_set_argument(arguments, "source_types"),
                 allowed_source_types=_memory_source_types(resource_grants),
                 allowed_tags=_memory_tags(resource_grants),
+                allowed_scope_types=_memory_scope_types(resource_grants),
+                allowed_scope_ids=_memory_scope_ids(resource_grants),
             )
         }
-    if tool_name == "remember_workspace_memory":
+    if tool_name == "upsert_semantic_memory":
         return memory_entry_payload(
-            service.remember_workspace_memory(
+            service.upsert_semantic_memory(
                 context,
-                title=str_argument(arguments, "title", default="Untitled memory"),
+                scope_type=str_argument(arguments, "scope_type", default="workspace"),
+                scope_id=uuid_argument(arguments, "scope_id"),
+                memory_key=str_argument(arguments, "memory_key", default=""),
+                knowledge_type=str_argument(arguments, "knowledge_type", default="fact"),
+                title=str_argument(arguments, "title", default=""),
                 content=str_argument(arguments, "content", default=""),
-                entry_type=str_argument(arguments, "entry_type", default="note"),
                 tags=str_list_argument(arguments, "tags"),
-                source_type=optional_str_argument(arguments, "source_type"),
-                source_id=optional_str_argument(arguments, "source_id"),
-                visibility_scope=str_argument(
-                    arguments,
-                    "visibility_scope",
-                    default="workspace",
-                ),
-                importance=int_argument(arguments, "importance", default=0),
+                importance=int_argument(arguments, "importance", default=50),
                 metadata=dict_argument(arguments, "metadata"),
-                allowed_source_types=_memory_source_types(resource_grants),
+                expected_revision=optional_int_argument(arguments, "expected_revision"),
+                change_reason=optional_str_argument(arguments, "change_reason"),
+                allowed_scope_types=_memory_scope_types(resource_grants),
+                allowed_scope_ids=_memory_scope_ids(resource_grants),
                 allowed_tags=_memory_tags(resource_grants),
             )
         )
-    if tool_name == "archive_workspace_memory":
+    if tool_name == "archive_semantic_memory":
         return memory_entry_payload(
-            service.archive_workspace_memory(
+            service.archive_semantic_memory(
                 context,
                 memory_entry_id=uuid_argument(arguments, "memory_entry_id"),
-                allowed_source_types=_memory_source_types(resource_grants),
+                expected_revision=int_argument(arguments, "expected_revision", default=0),
+                change_reason=optional_str_argument(arguments, "change_reason"),
+                allowed_scope_types=_memory_scope_types(resource_grants),
+                allowed_scope_ids=_memory_scope_ids(resource_grants),
                 allowed_tags=_memory_tags(resource_grants),
             )
         )
@@ -400,6 +405,28 @@ def _memory_tags(grants: tuple[AgentRuntimeResourceGrant, ...]) -> set[str] | No
         item
         for grant in grants
         for item in _resource_locator_strings(grant, "tags")
+    }
+    return values or None
+
+
+def _memory_scope_types(
+    grants: tuple[AgentRuntimeResourceGrant, ...],
+) -> set[str] | None:
+    values = {
+        item
+        for grant in grants
+        for item in _resource_locator_strings(grant, "scope_types")
+    }
+    return values or None
+
+
+def _memory_scope_ids(
+    grants: tuple[AgentRuntimeResourceGrant, ...],
+) -> set[str] | None:
+    values = {
+        item
+        for grant in grants
+        for item in _resource_locator_strings(grant, "scope_ids")
     }
     return values or None
 

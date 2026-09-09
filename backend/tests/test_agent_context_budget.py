@@ -100,6 +100,11 @@ def test_agent_profiles_receive_a_complete_default_context_budget() -> None:
             "max_results": 8,
             "default_importance": 30,
         },
+        "semantic_memory": {
+            "retrieval_enabled": True,
+            "write_enabled": True,
+            "max_results": 8,
+        },
     }
 
 

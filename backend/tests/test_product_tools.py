@@ -289,7 +289,7 @@ def test_workspace_memory_search_falls_back_to_lexical_when_backend_has_no_hits(
     assert results[0]["search_backend"] == "lexical"
 
 
-def test_workspace_memory_entries_can_be_written_searched_and_archived() -> None:
+def test_semantic_memory_can_be_versioned_searched_and_archived() -> None:
     session = _session()
     user, workspace = _seed_workspace(session, slug="acme")
     _, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
@@ -303,9 +303,9 @@ def test_workspace_memory_entries_can_be_written_searched_and_archived() -> None
         agent_run_id=run.id,
         allowed_tools=frozenset(
             {
-                "remember_workspace_memory",
+                "upsert_semantic_memory",
                 "search_workspace_memory",
-                "archive_workspace_memory",
+                "archive_semantic_memory",
             }
         ),
     )
@@ -317,14 +317,15 @@ def test_workspace_memory_entries_can_be_written_searched_and_archived() -> None
     )
     service = ProductToolService(session)
 
-    entry = service.remember_workspace_memory(
+    entry = service.upsert_semantic_memory(
         context,
+        scope_type="workspace",
+        scope_id=workspace.id,
+        memory_key="customer-renewal-playbook",
+        knowledge_type="procedure",
         title="Customer renewal playbook",
         content="Enterprise customers with onboarding blockers need executive follow-up.",
-        entry_type="lesson",
         tags=["Customer", "Renewal", "customer"],
-        source_type="task",
-        source_id=str(task.id),
         importance=77,
         metadata={"segment": "enterprise"},
     )
@@ -332,7 +333,11 @@ def test_workspace_memory_entries_can_be_written_searched_and_archived() -> None
 
     results = service.search_workspace_memory(context, "renewal blockers")
     other_results = service.search_workspace_memory(other_context, "renewal blockers")
-    archived = service.archive_workspace_memory(context, entry.id)
+    archived = service.archive_semantic_memory(
+        context,
+        entry.id,
+        expected_revision=1,
+    )
     session.commit()
     archived_results = service.search_workspace_memory(context, "renewal blockers")
 
@@ -341,7 +346,7 @@ def test_workspace_memory_entries_can_be_written_searched_and_archived() -> None
     assert entry.importance == 77
     assert results[0]["source_type"] == "workspace_memory"
     assert results[0]["source_id"] == str(entry.id)
-    assert results[0]["metadata"]["entry_type"] == "lesson"
+    assert results[0]["metadata"]["entry_type"] == "semantic_procedure"
     assert other_results == []
     assert archived.status == "archived"
     assert all(item["source_id"] != str(entry.id) for item in archived_results)
@@ -489,8 +494,12 @@ def test_workspace_memory_write_requires_tool_permission() -> None:
     )
 
     try:
-        ProductToolService(session).remember_workspace_memory(
+        ProductToolService(session).upsert_semantic_memory(
             context,
+            scope_type="workspace",
+            scope_id=workspace.id,
+            memory_key="denied",
+            knowledge_type="fact",
             title="Nope",
             content="Should not be stored.",
         )

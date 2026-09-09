@@ -653,9 +653,10 @@ Acceptance:
 Current state:
 
 - `search_workspace_memory` now performs workspace-scoped lexical search across tasks, task steps, task messages, files, artifacts, and domain items.
-- Agents can write explicit durable workspace memory entries through `remember_workspace_memory`,
-  and archived entries stop appearing in search results.
-- It is intentionally lightweight and keeps a clean service boundary for later indexing/vector upgrades.
+- Agents use approval-gated `upsert_semantic_memory` and `archive_semantic_memory` tools for
+  versioned workspace, team, or agent knowledge; archived entries stop appearing in search results.
+- Search and writes enforce the memory-resource source, tag, and scope locators before returning or
+  mutating data, while the retrieval backend remains replaceable for the hybrid-search phase.
 
 Build:
 
@@ -675,7 +676,7 @@ API/data changes:
   visibility, tags, importance, and status.
 - [x] Add internal indexing jobs.
 - [x] Replace placeholder implementation with real search ranked by text relevance and recency.
-- [x] Add internal tool operations to create and archive explicit memory entries.
+- [x] Add internal tool operations to upsert and version-archive scoped semantic memory entries.
 - [x] Add product-tool controls for result limit and source-type filters.
 
 Tests:

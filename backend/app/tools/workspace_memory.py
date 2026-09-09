@@ -31,6 +31,8 @@ class WorkspaceMemorySearchService:
         limit: int = 10,
         source_types: set[str] | None = None,
         tags: set[str] | None = None,
+        scope_types: set[str] | None = None,
+        scope_ids: set[str] | None = None,
     ) -> list[dict[str, object]]:
         if limit <= 0:
             return []
@@ -40,7 +42,13 @@ class WorkspaceMemorySearchService:
             query=query,
             limit=limit,
             source_types=source_types,
-            documents=self._candidate_documents(workspace_id, source_types, tags),
+            documents=self._candidate_documents(
+                workspace_id,
+                source_types,
+                tags,
+                scope_types,
+                scope_ids,
+            ),
             tags=tags,
         )
         hits = self._backend.search(request)
@@ -53,6 +61,8 @@ class WorkspaceMemorySearchService:
         workspace_id: UUID,
         source_types: set[str] | None,
         tags: set[str] | None,
+        scope_types: set[str] | None,
+        scope_ids: set[str] | None,
     ) -> list[MemorySearchDocument]:
         indexed_sources = self._documents.indexed_sources(workspace_id)
         candidates: list[MemorySearchDocument] = []
@@ -64,6 +74,10 @@ class WorkspaceMemorySearchService:
                 not isinstance(candidate_tags, list)
                 or not tags.intersection(item for item in candidate_tags if isinstance(item, str))
             ):
+                continue
+            if scope_types is not None and candidate.metadata.get("scope_type") not in scope_types:
+                continue
+            if scope_ids is not None and candidate.metadata.get("scope_id") not in scope_ids:
                 continue
             if (
                 candidate.source_type,

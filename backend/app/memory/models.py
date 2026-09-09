@@ -9,6 +9,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -90,3 +91,50 @@ class WorkspaceMemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     access_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class WorkspaceMemoryVersion(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "workspace_memory_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "memory_entry_id",
+            "revision",
+            name="uq_workspace_memory_versions_entry_revision",
+        ),
+        Index(
+            "ix_workspace_memory_versions_workspace_entry",
+            "workspace_id",
+            "memory_entry_id",
+            "revision",
+        ),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    memory_entry_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspace_memory_entries.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    content_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    changed_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    changed_by_agent_profile_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    changed_by_agent_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    change_reason: Mapped[str | None] = mapped_column(String(1_000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )

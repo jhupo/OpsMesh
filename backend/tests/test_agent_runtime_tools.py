@@ -796,7 +796,22 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
         importance=3,
         status="active",
     )
-    session.add_all([task, agent, existing])
+    private_content = "multi-agent operations private agent note"
+    private_agent_memory = WorkspaceMemoryEntry(
+        workspace_id=workspace.id,
+        memory_layer="semantic",
+        scope_type="agent",
+        scope_id=str(agent.id),
+        entry_type="semantic_fact",
+        title="Private agent note",
+        content=private_content,
+        content_fingerprint=memory_content_fingerprint("Private agent note", private_content),
+        tags=["strategy"],
+        visibility_scope="agent",
+        importance=100,
+        status="active",
+    )
+    session.add_all([task, agent, existing, private_agent_memory])
     session.flush()
     memory_grant = _memory_resource_grant(session, workspace)
     run = AgentRun(
@@ -808,8 +823,8 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
                 "workspace_id": str(workspace.id),
                 "allowed_tools": [
                     "search_workspace_memory",
-                    "remember_workspace_memory",
-                    "archive_workspace_memory",
+                    "upsert_semantic_memory",
+                    "archive_semantic_memory",
                 ],
             }
         },
@@ -823,13 +838,13 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
         run_id=run.id,
         allowed_tools=(
             "search_workspace_memory",
-            "remember_workspace_memory",
-            "archive_workspace_memory",
+            "upsert_semantic_memory",
+            "archive_semantic_memory",
         ),
         tool_definitions=_product_definitions(
             "search_workspace_memory",
-            "remember_workspace_memory",
-            "archive_workspace_memory",
+            "upsert_semantic_memory",
+            "archive_semantic_memory",
         ),
         resource_grants=(memory_grant,),
     )
@@ -844,22 +859,45 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
     remembered = asyncio.run(
         executor.execute_tool(
             context=context,
-            tool_name="remember_workspace_memory",
+            tool_name="upsert_semantic_memory",
             arguments={
+                "scope_type": "workspace",
+                "scope_id": str(workspace.id),
+                "memory_key": "runtime-lesson",
+                "knowledge_type": "procedure",
                 "title": "Runtime lesson",
                 "content": "Use persistent sessions for team operations.",
-                "entry_type": "lesson",
                 "tags": ["runtime", "team"],
-                "importance": 7,
+                "importance": 70,
             },
+            approval_granted=True,
         )
     )
     assert remembered.output is not None
     archived = asyncio.run(
         executor.execute_tool(
             context=context,
-            tool_name="archive_workspace_memory",
-            arguments={"memory_entry_id": remembered.output["id"]},
+            tool_name="archive_semantic_memory",
+            arguments={
+                "memory_entry_id": remembered.output["id"],
+                "expected_revision": 1,
+            },
+            approval_granted=True,
+        )
+    )
+    denied = asyncio.run(
+        executor.execute_tool(
+            context=context,
+            tool_name="upsert_semantic_memory",
+            arguments={
+                "scope_type": "agent",
+                "scope_id": str(agent.id),
+                "memory_key": "unauthorized-agent-memory",
+                "knowledge_type": "fact",
+                "title": "Unauthorized",
+                "content": "Must not be written.",
+            },
+            approval_granted=True,
         )
     )
 
@@ -867,13 +905,17 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
     assert searched.status == "completed"
     assert searched.output is not None
     assert searched.output["items"][0]["title"] == "Launch positioning"
+    assert all(item["title"] != "Private agent note" for item in searched.output["items"])
     assert remembered.status == "completed"
     assert remembered.metadata["provenance"] == "backend_tool_executor"
     assert remembered.metadata["tool_kind"] == "product"
-    assert remembered.output["entry_type"] == "lesson"
+    assert remembered.output["entry_type"] == "semantic_procedure"
     assert archived.status == "completed"
     assert archived.output is not None
     assert archived.output["status"] == "archived"
+    assert denied.status == "failed"
+    assert denied.error is not None
+    assert denied.error["code"] == "memory_scope_type_not_in_resource_scope"
     assert stored is not None
     assert stored.created_by_agent_run_id == run.id
     assert stored.created_by_agent_profile_id == agent.id
@@ -1261,7 +1303,7 @@ def _memory_resource_grant(
         name="Workspace memory",
         resource_type="memory_collection",
         access_mode="read_write",
-        locator={},
+        locator={"scope_types": ["workspace"], "scope_ids": [str(workspace.id)]},
     )
     session.add(resource)
     session.flush()
@@ -1269,7 +1311,7 @@ def _memory_resource_grant(
         resource_id=resource.id,
         resource_type=resource.resource_type,
         access_mode=resource.access_mode,
-        locator={},
+        locator={"scope_types": ["workspace"], "scope_ids": [str(workspace.id)]},
         parameters={},
         version=resource.version,
     )

@@ -776,6 +776,11 @@ def test_talent_install_uses_frozen_public_snapshot_without_private_workspace_re
             "max_results": 8,
             "default_importance": 30,
         },
+        "semantic_memory": {
+            "retrieval_enabled": True,
+            "write_enabled": True,
+            "max_results": 8,
+        },
     }
     assert agent["approval_policy"] == {"mode": "default"}
     assert agent["model_settings"] == {"temperature": 0.2}

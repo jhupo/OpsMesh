@@ -14,7 +14,9 @@ RESOURCE_ACCESS_MODES = {
 
 RESOURCE_LOCATOR_KEYS = {
     "file_collection": frozenset({"file_ids"}),
-    "memory_collection": frozenset({"tags", "source_types"}),
+    "memory_collection": frozenset(
+        {"tags", "source_types", "scope_types", "scope_ids"}
+    ),
     "mcp_resource": frozenset({"mcp_server_id", "credential_reference_id", "uri"}),
     "runtime": frozenset({"runtime_space_id", "workspace_runtime_id"}),
     "external_service": frozenset(
@@ -41,11 +43,26 @@ def normalize_resource_locator(
     if resource_type == "file_collection":
         return {"file_ids": _uuid_list(locator.get("file_ids"), field="locator.file_ids")}
     if resource_type == "memory_collection":
-        return {
+        normalized = {
             key: _string_list(locator.get(key), field=f"locator.{key}")
-            for key in ("tags", "source_types")
+            for key in ("tags", "source_types", "scope_types")
             if key in locator
         }
+        if "scope_ids" in locator:
+            normalized["scope_ids"] = _uuid_list(
+                locator.get("scope_ids"),
+                field="locator.scope_ids",
+            )
+        invalid_scope_types = set(normalized.get("scope_types", [])) - {
+            "workspace",
+            "team",
+            "agent",
+        }
+        if invalid_scope_types:
+            raise ValueError("locator.scope_types contains unsupported memory scopes")
+        if "scope_types" in locator and not normalized["scope_types"]:
+            raise ValueError("locator.scope_types must be a non-empty array")
+        return normalized
     if resource_type == "mcp_resource":
         normalized: dict[str, object] = {
             "mcp_server_id": _uuid(locator.get("mcp_server_id"), field="locator.mcp_server_id"),

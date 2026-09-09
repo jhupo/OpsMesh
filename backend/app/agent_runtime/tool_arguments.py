@@ -84,6 +84,15 @@ def int_argument(arguments: dict[str, object], key: str, *, default: int) -> int
     raise ValueError(f"Invalid integer argument: {key}")
 
 
+def optional_int_argument(arguments: dict[str, object], key: str) -> int | None:
+    value = arguments.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"Invalid integer argument: {key}")
+    return value
+
+
 def bool_argument(arguments: dict[str, object], key: str, *, default: bool) -> bool:
     value = arguments.get(key, default)
     if isinstance(value, bool):

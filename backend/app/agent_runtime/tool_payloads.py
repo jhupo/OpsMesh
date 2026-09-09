@@ -11,12 +11,15 @@ def memory_entry_payload(entry: WorkspaceMemoryEntry) -> dict[str, object]:
         "id": str(entry.id),
         "memory_layer": entry.memory_layer,
         "scope_type": entry.scope_type,
+        "scope_id": entry.scope_id,
+        "memory_key": entry.memory_key,
         "entry_type": entry.entry_type,
         "title": entry.title,
         "status": entry.status,
         "visibility_scope": entry.visibility_scope,
         "importance": entry.importance,
         "revision": entry.revision,
+        "content_fingerprint": entry.content_fingerprint,
         "tags": list(entry.tags or []),
     }
 

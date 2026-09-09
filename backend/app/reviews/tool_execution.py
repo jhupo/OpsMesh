@@ -264,10 +264,10 @@ def _policy_requires_admin_review(policy: dict[str, object]) -> bool:
 
 def _product_tool_risk(tool_name: str) -> str:
     if tool_name in {
-        "archive_workspace_memory",
+        "archive_semantic_memory",
         "mark_agent_message_read",
         "promote_working_memory",
-        "remember_workspace_memory",
+        "upsert_semantic_memory",
         "send_agent_message",
         "write_artifact",
     }:
