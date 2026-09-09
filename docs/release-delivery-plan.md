@@ -6,10 +6,10 @@ Status: in progress. A green unit test is not deployment evidence.
 
 | Stage | Scope | Status |
 | --- | --- | --- |
-| 1 | master CI, pre-tag release gate, locked image builds, packages, GHCR, signed manifest | Implemented; Linux image build/start passes; tag publication blocked by baseline quality gate |
+| 1 | master CI, pre-tag release gate, locked image builds, packages, GHCR, signed manifest | Backend CI passes; actual pre-release publication and signature acceptance pending |
 | 2 | lightweight CLI, production Compose/systemd deployment, install and diagnostics | Implemented; Linux installation acceptance pending |
 | 3 | durable platform update jobs, independent host updater, maintenance and audit | Implemented; focused contract tests pass |
-| 4 | verified backup, interruption recovery, constrained rollback and Linux integration gate | Implemented locally; real upgrade/restore acceptance pending |
+| 4 | verified backup, interruption recovery, constrained rollback and Linux integration gate | Real Linux/PostgreSQL backup restoration passes; integrated upgrade/recovery acceptance pending |
 
 Each completed functional point is committed separately. No production tag or live deployment is
 created as a side effect of implementation. Linux installation and update evidence must be recorded
@@ -132,6 +132,22 @@ contracts. A separate giant CLI framework is not needed.
 - Hosted Delivery Integration run `34340457352` on `97e7dab` also succeeded (2m 6s), confirming the
   previously recorded migration and fresh-container acceptance. This is not cross-version update
   or signed-publication evidence.
-- Signed release assets, cross-version upgrade, systemd installation and database restore remain
-  unaccepted; do not tag a release or describe the complete delivery system as finished on this
-  checkpoint alone.
+- Signed release assets, cross-version upgrade and systemd installation remain unaccepted; do not
+  describe the complete delivery system as finished on this checkpoint alone.
+
+## Real backup recovery acceptance (2026-09-09)
+
+- Commit `8341378` adds an opt-in Linux administrator acceptance test using actual `pg_dump` and
+  `pg_restore`, not a mocked backup implementation. It creates and removes only a randomly named
+  disposable database, never the provided CI database.
+- [Delivery Integration 34349940656](https://github.com/jhupo/OpsMesh/actions/runs/34349940656)
+  passed the real backup/restoration step, PostgreSQL migration checks, fresh Compose deployment
+  and runtime image probe. Restored database rows, workspace files, configuration contents,
+  ownership and permissions are asserted. Post-backup files remain available for salvage;
+  missing data-loss acknowledgement and tampered dumps are rejected before restoration.
+- Fixed restoration replacing a systemd-readable configuration with a root-only file: atomic
+  replacement now retains the existing configuration owner, group and mode.
+- This proves backup-store restoration, not the entire interrupted-updater recovery workflow.
+  Final acceptance still needs two approved published versions, their attested assets, and actual
+  Compose/systemd install and upgrade runs. Proposed acceptance releases are `v0.1.0rc1` and
+  `v0.1.0rc2`; publication approval is pending. No release tags or production changes were made.

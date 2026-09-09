@@ -1,7 +1,8 @@
 # Delivery operations
 
 Implementation is not yet production-accepted: see [release delivery evidence](release-delivery-plan.md).
-The release gate deliberately remains closed while repository-wide baseline checks fail.
+Backend CI and real Linux backup restoration pass. Signed publication, installation and
+cross-version upgrade acceptance must still pass before delivery is declared complete.
 
 ## Supported topology and prerequisites
 
