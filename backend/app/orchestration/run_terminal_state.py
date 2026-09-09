@@ -2,6 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.memory.episodic import AgentEpisodicMemoryService
@@ -49,8 +50,14 @@ class RunTerminalStateService:
         )
         self.release_reservations(run, completed_at)
         if run.task_step_id is not None:
-            step = self.session.get(TaskStep, run.task_step_id)
-            if step is not None and step.workspace_id == run.workspace_id:
+            step = self.session.scalar(
+                select(TaskStep).where(
+                    TaskStep.workspace_id == run.workspace_id,
+                    TaskStep.task_id == run.task_id,
+                    TaskStep.id == run.task_step_id,
+                )
+            )
+            if step is not None:
                 TaskStepStateService().transition(step, TaskStepStatus.CANCELLED)
         AgentEpisodicMemoryService(self.session).capture_run_cancelled(run)
         self._expire_working_memory(run)
@@ -76,9 +83,14 @@ class RunTerminalStateService:
             },
         )
         self.append_event(run, "run.recovered_failed", event_message, None)
-        self.release_reservations(run, run.completed_at)
+        completed_at = run.completed_at
+        if completed_at is None:
+            raise ValueError("Recovered failed run must have a completion timestamp")
+        self.release_reservations(run, completed_at)
         if run.task_id is not None:
-            task = self.session.get(Task, run.task_id)
+            task = self.session.scalar(
+                select(Task).where(Task.workspace_id == run.workspace_id, Task.id == run.task_id)
+            )
             if task is not None and TaskStatus(task.status) not in TERMINAL_TASK_STATUSES:
                 TaskStateService().transition(
                     task,
@@ -86,8 +98,14 @@ class RunTerminalStateService:
                     completed_at=run.completed_at,
                 )
                 if run.task_step_id is not None:
-                    step = self.session.get(TaskStep, run.task_step_id)
-                    if step is not None and step.workspace_id == run.workspace_id:
+                    step = self.session.scalar(
+                        select(TaskStep).where(
+                            TaskStep.workspace_id == run.workspace_id,
+                            TaskStep.task_id == run.task_id,
+                            TaskStep.id == run.task_step_id,
+                        )
+                    )
+                    if step is not None:
                         TaskStepStateService().transition(step, TaskStepStatus.FAILED)
         AgentEpisodicMemoryService(self.session).capture_run_failed(
             run,

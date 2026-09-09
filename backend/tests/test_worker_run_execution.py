@@ -2052,7 +2052,10 @@ def test_pm_summary_acceptance_completes_task_with_structured_decision() -> None
     )
     lifecycle = _run_lifecycle(session)
     lifecycle.mark_run_started(run)
-    lifecycle.mark_run_completed(run, output, requested_by_user_id=user.id)
+    lifecycle.mark_run_completed(
+        run, AgentRunResult(final_output=output, raw_output=json.loads(output)),
+        requested_by_user_id=user.id,
+    )
     session.flush()
 
     session.refresh(task)
@@ -2104,7 +2107,10 @@ def test_pm_summary_revision_decision_materializes_follow_up_steps() -> None:
     )
     lifecycle = _run_lifecycle(session)
     lifecycle.mark_run_started(run)
-    lifecycle.mark_run_completed(run, output, requested_by_user_id=user.id)
+    lifecycle.mark_run_completed(
+        run, AgentRunResult(final_output=output, raw_output=json.loads(output)),
+        requested_by_user_id=user.id,
+    )
     session.flush()
 
     session.refresh(task)
@@ -2189,7 +2195,10 @@ def test_pm_summary_missing_work_matches_team_member_and_queues_follow_up() -> N
     )
     lifecycle = _run_lifecycle(session)
     lifecycle.mark_run_started(run)
-    lifecycle.mark_run_completed(run, output, requested_by_user_id=user.id)
+    lifecycle.mark_run_completed(
+        run, AgentRunResult(final_output=output, raw_output=json.loads(output)),
+        requested_by_user_id=user.id,
+    )
     session.flush()
 
     session.refresh(task)
@@ -2252,7 +2261,10 @@ def test_team_task_persists_auditable_task_messages() -> None:
     )
     lifecycle = _run_lifecycle(session)
     lifecycle.mark_run_started(run)
-    lifecycle.mark_run_completed(run, output, requested_by_user_id=user.id)
+    lifecycle.mark_run_completed(
+        run, AgentRunResult(final_output=output, raw_output=json.loads(output)),
+        requested_by_user_id=user.id,
+    )
     session.flush()
 
     messages = session.scalars(
@@ -6340,6 +6352,43 @@ def _run_agent_sync(
             lifecycle=_run_lifecycle(session),
         ),
     ).run_agent_sync(job)
+
+
+def test_run_lifecycle_does_not_transition_foreign_task_references() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, with_default_provider=False)
+    other_workspace = Workspace(owner_user_id=user.id, name="Other", slug="other-lifecycle")
+    session.add(other_workspace)
+    session.flush()
+    task = Task(
+        workspace_id=other_workspace.id, created_by_user_id=user.id,
+        title="Foreign task", status=TaskStatus.QUEUED.value,
+    )
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=other_workspace.id, task_id=task.id,
+        title="Foreign step", status="queued", order_index=1,
+    )
+    session.add(step)
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id, task_id=task.id, task_step_id=step.id,
+        status=RunStatus.QUEUED.value, input={},
+    )
+    session.add(run)
+    session.flush()
+    lifecycle = _run_lifecycle(session)
+    lifecycle.mark_run_started(run)
+    lifecycle.mark_run_waiting_approval(run)
+    lifecycle.mark_run_recovered_failed(run)
+    session.flush()
+    session.refresh(task)
+    session.refresh(step)
+    assert task.status == TaskStatus.QUEUED.value
+    assert task.completed_at is None
+    assert step.status == "queued"
+    assert session.scalar(select(TaskMessage).where(TaskMessage.task_id == task.id)) is None
 
 
 def _run_lifecycle(session: Session) -> RunLifecycleService:

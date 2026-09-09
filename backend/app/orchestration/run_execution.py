@@ -154,8 +154,9 @@ class RunExecutionService:
                 self._lifecycle().mark_run_waiting_approval(run)
                 self._commit_and_refresh(run)
                 return run
-            if self._agent_result_waiting_runtime(result) or self._run_has_waiting_runtime_event(
-                run
+            if (
+                self._lifecycle().agent_result_waiting_runtime(result)
+                or self._run_has_waiting_runtime_event(run)
             ):
                 self._lifecycle().mark_run_waiting_runtime(run)
                 self._commit_and_refresh(run)
@@ -273,9 +274,6 @@ class RunExecutionService:
                 self._settings(),
             )
         return self._project_io_service
-
-    def _agent_result_waiting_runtime(self, result: object) -> bool:
-        return self._lifecycle().agent_result_waiting_runtime(result)
 
     def _lock_for_run(self, run: AgentRun) -> AbstractContextManager[bool]:
         if self.queue is not None:

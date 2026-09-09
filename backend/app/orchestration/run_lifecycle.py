@@ -4,6 +4,7 @@ from datetime import datetime
 from types import TracebackType
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunResult
@@ -13,10 +14,7 @@ from backend.app.orchestration.pm_final_output import PmFinalOutputService
 from backend.app.orchestration.pm_follow_up_work import PmFollowUpWorkService
 from backend.app.orchestration.pm_step_payload import step_message_payload
 from backend.app.orchestration.run_memory_completion import RunMemoryCompletionService
-from backend.app.orchestration.run_result_payloads import (
-    coerce_agent_run_result,
-    run_output_payload,
-)
+from backend.app.orchestration.run_result_payloads import run_output_payload
 from backend.app.orchestration.run_step_completion import TaskStepCompletionService
 from backend.app.orchestration.run_task_progress import RunTaskProgressService
 from backend.app.orchestration.run_terminal_state import RunTerminalStateService
@@ -57,12 +55,20 @@ class RunLifecycleService:
         self.callbacks.append_event(run, "run.started", "Run started", None)
 
         if run.task_id is not None:
-            task = self.session.get(Task, run.task_id)
+            task = self.session.scalar(
+                select(Task).where(Task.workspace_id == run.workspace_id, Task.id == run.task_id)
+            )
             if task is not None:
                 TaskStateService().transition(task, TaskStatus.RUNNING)
         if run.task_step_id is not None:
-            step = self.session.get(TaskStep, run.task_step_id)
-            if step is not None and step.workspace_id == run.workspace_id:
+            step = self.session.scalar(
+                select(TaskStep).where(
+                    TaskStep.workspace_id == run.workspace_id,
+                    TaskStep.task_id == run.task_id,
+                    TaskStep.id == run.task_step_id,
+                )
+            )
+            if step is not None:
                 TaskStepStateService().transition(step, TaskStepStatus.RUNNING)
                 self.callbacks.append_event(run, "task_step.started", step.title, None)
                 self.append_task_message(
@@ -94,17 +100,18 @@ class RunLifecycleService:
             None,
         )
         if run.task_id is not None:
-            task = self.session.get(Task, run.task_id)
+            task = self.session.scalar(
+                select(Task).where(Task.workspace_id == run.workspace_id, Task.id == run.task_id)
+            )
             if task is not None and TaskStatus(task.status) == TaskStatus.RUNNING:
                 TaskStateService().transition(task, TaskStatus.WAITING_APPROVAL)
 
     def mark_run_completed(
         self,
         run: AgentRun,
-        result: AgentRunResult | str,
+        result: AgentRunResult,
         requested_by_user_id: UUID | None,
     ) -> None:
-        result = coerce_agent_run_result(result)
         final_output = result.final_output
         RunStateService().transition(
             run,
@@ -113,13 +120,18 @@ class RunLifecycleService:
         )
         self.callbacks.sync_provider_conversation_id(run)
         self.callbacks.append_event(run, "run.completed", "Run completed", None)
-        self.callbacks.release_reservations(run, run.completed_at)
+        completed_at = run.completed_at
+        if completed_at is None:
+            raise ValueError("Terminal run must have a completion timestamp")
+        self.callbacks.release_reservations(run, completed_at)
         self._memory_completion().capture(run, result)
         self._memory_completion().expire_working(run)
 
         if run.task_id is None:
             return
-        task = self.session.get(Task, run.task_id)
+        task = self.session.scalar(
+            select(Task).where(Task.workspace_id == run.workspace_id, Task.id == run.task_id)
+        )
         if task is None:
             return
 
@@ -194,10 +206,15 @@ class RunLifecycleService:
         error = normalize_agent_error(exc)
         RunStateService().transition(run, RunStatus.FAILED, error=error.as_dict())
         self.callbacks.append_event(run, "run.failed", error.message, None)
-        self.callbacks.release_reservations(run, run.completed_at)
+        completed_at = run.completed_at
+        if completed_at is None:
+            raise ValueError("Terminal run must have a completion timestamp")
+        self.callbacks.release_reservations(run, completed_at)
 
         if run.task_id is not None:
-            task = self.session.get(Task, run.task_id)
+            task = self.session.scalar(
+                select(Task).where(Task.workspace_id == run.workspace_id, Task.id == run.task_id)
+            )
             if task is not None:
                 TaskStateService().transition(
                     task,
@@ -205,8 +222,14 @@ class RunLifecycleService:
                     completed_at=run.completed_at,
                 )
         if run.task_step_id is not None:
-            step = self.session.get(TaskStep, run.task_step_id)
-            if step is not None and step.workspace_id == run.workspace_id:
+            step = self.session.scalar(
+                select(TaskStep).where(
+                    TaskStep.workspace_id == run.workspace_id,
+                    TaskStep.task_id == run.task_id,
+                    TaskStep.id == run.task_step_id,
+                )
+            )
+            if step is not None:
                 TaskStepStateService().transition(step, TaskStepStatus.FAILED)
         self._memory_completion().capture_failed(run, error.as_dict())
         self._memory_completion().expire_working(run)
