@@ -92,6 +92,7 @@ or cancellation.
 | Release version parsing and ordering | `packaging.Version` | Adopt; keep only the three-component release-tag policy |
 | Gateway and webhook rate limits | `limits` fixed-window strategy with Redis storage | Adopt; keep gateway identity, route policy, failure mode, audit, and response semantics |
 | Webhook HTTP transport | `httpx` streaming client | Adopt; keep signature generation, bounded response capture, redaction, retries, and durable delivery state |
+| Cache single-flight locking | Redis Python SDK `Lock` | Adopt SDK atomic ownership and release; keep cache namespaces, JSON payloads, TTL policy, and loader semantics |
 | Tracing and metrics | OpenTelemetry and Prometheus clients | Keep; product audit remains durable Postgres state |
 | Request retries | Provider SDK request retries and durable worker workflow retries | Never replay a complete agent run or MCP tool call in-process; retry only an explicitly idempotent transport or durable workflow step |
 | Sessions and memory | Product Postgres session/memory services, OpenAI Responses compaction session, Claude `SessionStore` bridge | Keep product ownership of storage and durable knowledge; use provider SDK transcript and compaction extension points |

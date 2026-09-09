@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
 
@@ -50,7 +52,7 @@ def test_cache_uses_default_and_explicit_ttl() -> None:
 
 
 def test_cache_get_or_set_only_calls_loader_on_miss() -> None:
-    redis = fakeredis.FakeRedis(decode_responses=True)
+    redis = _LockingFakeRedis(decode_responses=True)
     cache = RedisJsonCache(redis, RedisKeyBuilder("opsmesh"), namespace="operations")
     calls = 0
 
@@ -68,7 +70,7 @@ def test_cache_get_or_set_only_calls_loader_on_miss() -> None:
 
 
 def test_cache_get_or_set_single_flight_only_runs_loader_once_on_concurrent_miss() -> None:
-    redis = fakeredis.FakeRedis(decode_responses=True)
+    redis = _LockingFakeRedis(decode_responses=True)
     cache = RedisJsonCache(redis, RedisKeyBuilder("opsmesh"), namespace="operations")
     loader_started = Event()
     release_loader = Event()
@@ -98,7 +100,7 @@ def test_cache_get_or_set_single_flight_only_runs_loader_once_on_concurrent_miss
 
 
 def test_cache_get_or_set_releases_lock_and_does_not_cache_loader_exception() -> None:
-    redis = fakeredis.FakeRedis(decode_responses=True)
+    redis = _LockingFakeRedis(decode_responses=True)
     cache = RedisJsonCache(redis, RedisKeyBuilder("opsmesh"), namespace="operations")
     calls = 0
 
@@ -194,3 +196,33 @@ def test_cache_rejects_invalid_ttl_and_empty_keys() -> None:
 
     with pytest.raises(ValueError, match="cache key"):
         cache.get(" ")
+
+
+class _LockingFakeRedis(fakeredis.FakeRedis):
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self._local_locks: dict[str, Lock] = {}
+        self._local_locks_guard = Lock()
+
+    def lock(
+        self,
+        name: str,
+        *,
+        blocking_timeout: float,
+        **_: object,
+    ) -> _LocalLock:
+        with self._local_locks_guard:
+            mutex = self._local_locks.setdefault(name, Lock())
+        return _LocalLock(mutex, blocking_timeout=blocking_timeout)
+
+
+class _LocalLock:
+    def __init__(self, mutex: Lock, *, blocking_timeout: float) -> None:
+        self._mutex = mutex
+        self._blocking_timeout = blocking_timeout
+
+    def acquire(self) -> bool:
+        return self._mutex.acquire(timeout=self._blocking_timeout)
+
+    def release(self) -> None:
+        self._mutex.release()

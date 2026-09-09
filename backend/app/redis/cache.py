@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import time
-import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TypeAlias
@@ -96,42 +94,25 @@ class RedisJsonCache:
             lock_retry_interval_seconds=lock_retry_interval_seconds,
         )
 
-        deadline = time.monotonic() + lock_wait_timeout_seconds
         lock_key = self._lock_key(key)
-
-        while True:
+        lock = self._redis.lock(
+            lock_key,
+            timeout=lock_ttl_seconds,
+            sleep=lock_retry_interval_seconds,
+            blocking_timeout=lock_wait_timeout_seconds,
+        )
+        if not lock.acquire():
+            raise TimeoutError(f"cache loader lock timed out for key {self._storage_key(key)}")
+        try:
             cached = self.get(key)
             if cached.found:
                 return cached
 
-            lock_token = uuid.uuid4().hex
-            lock_acquired = self._redis.set(
-                lock_key,
-                lock_token,
-                nx=True,
-                ex=lock_ttl_seconds,
-            )
-            if lock_acquired:
-                try:
-                    cached = self.get(key)
-                    if cached.found:
-                        return cached
-
-                    value = loader()
-                    storage_key = self.set(key, value, ttl_seconds=ttl_seconds)
-                    return CachedValue(key=storage_key, found=True, value=value)
-                finally:
-                    self._release_lock(lock_key, lock_token)
-
-            cached = self.get(key)
-            if cached.found:
-                return cached
-
-            remaining_wait = deadline - time.monotonic()
-            if remaining_wait <= 0:
-                raise TimeoutError(f"cache loader lock timed out for key {cached.key}")
-
-            time.sleep(min(lock_retry_interval_seconds, remaining_wait))
+            value = loader()
+            storage_key = self.set(key, value, ttl_seconds=ttl_seconds)
+            return CachedValue(key=storage_key, found=True, value=value)
+        finally:
+            lock.release()
 
     def delete(self, key: str) -> int:
         return int(self._redis.delete(self._storage_key(key)))
@@ -176,13 +157,6 @@ class RedisJsonCache:
         if resolved_ttl <= 0:
             raise ValueError("ttl_seconds must be greater than zero")
         return resolved_ttl
-
-    def _release_lock(self, lock_key: str, lock_token: str) -> None:
-        current_token = self._redis.get(lock_key)
-        if isinstance(current_token, bytes):
-            current_token = current_token.decode()
-        if current_token == lock_token:
-            self._redis.delete(lock_key)
 
     def _validate_lock_options(
         self,
