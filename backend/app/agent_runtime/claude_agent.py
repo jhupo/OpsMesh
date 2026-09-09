@@ -4,7 +4,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID, uuid5
 
 from claude_agent_sdk import (
@@ -12,6 +12,7 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ResultMessage,
+    SdkMcpTool,
     StreamEvent,
     TextBlock,
     ToolResultBlock,
@@ -21,13 +22,20 @@ from claude_agent_sdk import (
 )
 from claude_agent_sdk import __version__ as claude_sdk_version
 from claude_agent_sdk.types import (
+    EffortLevel,
+    HookCallback,
     HookContext,
+    HookEvent,
     HookInput,
     HookJSONOutput,
     HookMatcher,
+    McpServerConfig,
     SessionKey,
+    SessionStore,
     SessionStoreEntry,
+    ThinkingConfig,
 )
+from pydantic import TypeAdapter, ValidationError
 
 from backend.app.agent_runtime.base import BaseSDKAgentRuntimeAdapter
 from backend.app.agent_runtime.cancellation import (
@@ -44,6 +52,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeGuardrailResult,
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
+    AgentRuntimeSession,
     AgentRuntimeStreamEvent,
     AgentRuntimeStructuredOutput,
     AgentRuntimeToolDefinition,
@@ -61,16 +70,20 @@ from backend.app.security.redaction import redact_sensitive_payload
 
 _SDK_TOOL_PREFIX = "mcp__opsmesh__"
 _SESSION_NAMESPACE = UUID("6bd4b8b9-8a4b-49db-9b6c-d0b7d7da4be6")
+_EFFORT_SETTING: TypeAdapter[EffortLevel] = TypeAdapter(EffortLevel)
+_THINKING_SETTING: TypeAdapter[ThinkingConfig] = TypeAdapter(ThinkingConfig)
 
 
 class ClaudeAgentSessionStore:
     """Mirror Claude's opaque JSONL transcript into the product session."""
 
-    def __init__(self, session: object, *, session_id: str) -> None:
+    def __init__(self, session: AgentRuntimeSession, *, session_id: str) -> None:
         self._session = session
         self._session_id = session_id
 
     async def append(self, key: SessionKey, entries: list[SessionStoreEntry]) -> None:
+        if key["session_id"] != self._session_id:
+            raise ValueError("Claude transcript key does not match the product session")
         if not entries:
             return
         await self._session.add_items(
@@ -87,6 +100,8 @@ class ClaudeAgentSessionStore:
         )
 
     async def load(self, key: SessionKey) -> list[SessionStoreEntry] | None:
+        if key["session_id"] != self._session_id:
+            raise ValueError("Claude transcript key does not match the product session")
         items = await self._session.get_items()
         entries: list[SessionStoreEntry] = []
         for item in items:
@@ -202,8 +217,8 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
 
         approval_state = _ApprovalState(reviews={}, deferred={}, active_calls={})
         if request.approval_decisions:
-            state_payload = json.loads(request.resume_state.serialized_state)
-            approval_state.active_calls[state_payload["tool_name"]] = state_payload["tool_call_id"]
+            for decision in request.approval_decisions:
+                approval_state.active_calls[decision.tool_name] = decision.tool_call_id
         observer.lifecycle(
             "agent.started",
             "Claude agent started.",
@@ -324,7 +339,7 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
     ) -> ClaudeAgentOptions:
         tool_defs = tuple(request.context.tool_definitions)
         sdk_tools = [_sdk_tool(definition, request, approval_state) for definition in tool_defs]
-        mcp_servers = {}
+        mcp_servers: dict[str, McpServerConfig] = {}
         if sdk_tools:
             mcp_servers["opsmesh"] = create_sdk_mcp_server(
                 name="opsmesh",
@@ -363,7 +378,9 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             hooks=_claude_hooks(request, approval_state, observer, bool(sdk_tools)),
             setting_sources=[],
             skills=[],
-            session_store=store,
+            # SDK requires only append/load; its Protocol also lists optional discovery/delete
+            # methods. Do not add fake implementations for those product-managed operations.
+            session_store=cast(SessionStore, store) if store is not None else None,
             session_store_flush="eager",
             env=env,
         )
@@ -598,7 +615,7 @@ def _sdk_tool(
     definition: AgentRuntimeToolDefinition,
     request: AgentRunRequest,
     approval_state: _ApprovalState,
-) -> object:
+) -> SdkMcpTool[dict[str, object]]:
     sdk_name = definition.name
 
     @tool(sdk_name, definition.description, dict(definition.input_schema))
@@ -645,8 +662,8 @@ def _claude_hooks(
     approval_state: _ApprovalState,
     observer: AgentRuntimeExecutionObserver,
     has_tools: bool,
-) -> dict[str, list[HookMatcher]]:
-    hooks: dict[str, list[HookMatcher]] = {
+) -> dict[HookEvent, list[HookMatcher]]:
+    hooks: dict[HookEvent, list[HookMatcher]] = {
         "Stop": [HookMatcher(hooks=[_claude_lifecycle_hook("agent.stop", request, observer)])]
     }
     if not has_tools:
@@ -679,7 +696,7 @@ def _claude_lifecycle_hook(
     event_type: str,
     request: AgentRunRequest,
     observer: AgentRuntimeExecutionObserver,
-) -> Callable[[HookInput, str | None, HookContext], object]:
+) -> HookCallback:
     async def record(
         input_data: HookInput,
         tool_use_id: str | None,
@@ -706,12 +723,14 @@ def _claude_lifecycle_hook(
 def _approval_hook(
     request: AgentRunRequest,
     approval_state: _ApprovalState,
-) -> Callable[[HookInput, str | None, HookContext], object]:
+) -> HookCallback:
     async def review(
         input_data: HookInput,
         tool_use_id: str | None,
         context: HookContext,
     ) -> HookJSONOutput:
+        if input_data["hook_event_name"] != "PreToolUse":
+            raise ValueError("Tool approval requires a PreToolUse hook event")
         tool_name = str(input_data.get("tool_name") or "")
         call_id = tool_use_id or str(input_data.get("tool_use_id") or "")
         product_name = _product_tool_name(tool_name)
@@ -735,7 +754,7 @@ def _approval_hook(
         review: object = executor.review_tool_call(
             context=request.context,
             tool_name=product_name,
-            arguments=dict(input_data.get("tool_input") or {}),
+            arguments=dict(input_data["tool_input"]),
         )
         if not isinstance(review, dict):
             return {
@@ -747,8 +766,7 @@ def _approval_hook(
             }
         decision = review.get("decision")
         approval_state.reviews[call_id] = dict(review)
-        if call_id:
-            approval_state.active_calls[product_name] = call_id
+        approval_state.active_calls.pop(product_name, None)
         if decision == "deny":
             return {
                 "hookSpecificOutput": {
@@ -759,7 +777,9 @@ def _approval_hook(
                     ),
                 }
             }
-        if decision != "require_approval":
+        if decision == "allow":
+            if call_id:
+                approval_state.active_calls[product_name] = call_id
             return {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
@@ -767,10 +787,18 @@ def _approval_hook(
                     "permissionDecisionReason": "Tool allowed by OpsMesh policy",
                 }
             }
+        if decision != "require_approval":
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": "Tool approval review returned an invalid decision",
+                }
+            }
         if call_id:
             approval_state.deferred[call_id] = {
                 "tool_name": product_name,
-                "arguments": redact_sensitive_payload(dict(input_data.get("tool_input") or {})),
+                "arguments": redact_sensitive_payload(dict(input_data["tool_input"])),
             }
         return {
             "hookSpecificOutput": {
@@ -811,12 +839,13 @@ def _resume_session_id(request: AgentRunRequest) -> str | None:
         payload = json.loads(request.resume_state.serialized_state)
     except json.JSONDecodeError as exc:
         raise ValueError("Stored Claude Agent SDK state is not valid JSON") from exc
-    if not isinstance(payload, dict) or not isinstance(payload.get("session_id"), str):
+    session_id = payload.get("session_id") if isinstance(payload, dict) else None
+    if not isinstance(session_id, str):
         raise ValueError("Stored Claude Agent SDK state is missing session_id")
     expected = _session_id(request)
-    if payload["session_id"] != expected:
+    if session_id != expected:
         raise ValueError("Stored Claude Agent SDK state does not match the product session")
-    return payload["session_id"]
+    return session_id
 
 
 def _is_rejected_resume(request: AgentRunRequest) -> bool:
@@ -857,22 +886,31 @@ def _string_setting(settings: dict[str, object], key: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _effort_setting(settings: dict[str, object]) -> str | None:
+def _effort_setting(settings: dict[str, object]) -> EffortLevel | None:
     value = settings.get("effort")
-    return value if value in {"low", "medium", "high", "xhigh", "max"} else None
+    if value is None:
+        return None
+    try:
+        return _EFFORT_SETTING.validate_python(value, strict=True)
+    except ValidationError:
+        raise ValueError("Invalid Claude SDK effort setting") from None
 
 
-def _thinking_setting(settings: dict[str, object]) -> dict[str, object] | None:
+def _thinking_setting(settings: dict[str, object]) -> ThinkingConfig | None:
     value = settings.get("thinking")
-    if isinstance(value, dict) and value.get("type") in {"adaptive", "enabled", "disabled"}:
-        return dict(value)
-    return None
+    if value is None:
+        return None
+    try:
+        return _THINKING_SETTING.validate_python(value, strict=True)
+    except ValidationError:
+        raise ValueError("Invalid Claude SDK thinking setting") from None
 
 
 def _stream_delta(event: dict[str, object]) -> str | None:
     delta = event.get("delta")
-    if isinstance(delta, dict) and isinstance(delta.get("text"), str):
-        return delta["text"]
+    text = delta.get("text") if isinstance(delta, dict) else None
+    if isinstance(text, str):
+        return text
     if isinstance(delta, str):
         return delta
     return None

@@ -377,6 +377,13 @@ Claude Agent SDK owns its automatic context compaction and mirrors the resulting
 through `SessionStore`. OpsMesh does not construct substitute summary messages or expose a second
 manual compaction API.
 
+Claude's SDK `SessionStore` documentation requires only `append`/`load`; its static protocol also
+includes optional discovery/deletion methods. The boundary therefore uses a narrow protocol cast
+instead of implementing fake discovery or deletion. Product retention and session listing remain
+product-owned. Transcript keys must match the bound product session. Claude hook, MCP, effort and
+thinking contracts use SDK types directly; unknown approval decisions deny execution, and malformed
+explicit model settings fail validation rather than silently reverting to defaults.
+
 Every new turn also passes through the product context-budget manager before either SDK is called.
 The manager resolves the model context window, reserves output and safety capacity, accounts for
 instructions and tool contracts, then includes or deterministically truncates typed context

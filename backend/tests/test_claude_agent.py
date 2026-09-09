@@ -3,12 +3,18 @@ import json
 from dataclasses import replace
 from uuid import uuid4
 
+import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
+from claude_agent_sdk.types import PreToolUseHookInput
 
 from backend.app.agent_runtime.claude_agent import (
     ClaudeAgentSDKRunner,
     ClaudeAgentSessionStore,
+    _approval_hook,
+    _ApprovalState,
+    _effort_setting,
     _session_id,
+    _thinking_setting,
 )
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
@@ -289,3 +295,52 @@ def test_claude_agent_session_store_mirrors_only_claude_entries() -> None:
 
     assert loaded == [{"type": "user", "uuid": "entry-1"}]
     assert session.items[0]["_opsmesh_runtime"] == "claude_agent_sdk"
+    foreign_key = {"project_key": "project", "session_id": "other-session"}
+    with pytest.raises(ValueError, match="does not match"):
+        asyncio.run(store.load(foreign_key))
+    with pytest.raises(ValueError, match="does not match"):
+        asyncio.run(store.append(foreign_key, [{"type": "user", "uuid": "entry-2"}]))
+    assert len(session.items) == 1
+
+
+@pytest.mark.parametrize(
+    ("decision", "expected"),
+    [(None, "deny"), ("unknown", "deny"), ("deny", "deny"),
+     ("allow", "allow"), ("require_approval", "defer")],
+)
+def test_claude_approval_hook_fails_closed_on_unknown_decision(
+    decision: str | None, expected: str
+) -> None:
+    class Executor(RecordingExecutor):
+        def review_tool_call(self, **_: object) -> dict[str, object]:
+            return {"decision": decision}
+
+    executor = Executor()
+    request = _request(tool_executor=executor)
+    state = _ApprovalState(reviews={}, deferred={}, active_calls={})
+    hook = _approval_hook(request, state)
+    hook_input: PreToolUseHookInput = {
+        "hook_event_name": "PreToolUse",
+        "session_id": _session_id(request),
+        "transcript_path": "unused.jsonl",
+        "cwd": ".",
+        "tool_name": "mcp__opsmesh__search_docs",
+        "tool_input": {"query": "sdk"},
+        "tool_use_id": "call-1",
+    }
+    result = asyncio.run(hook(hook_input, "call-1", {}))
+    assert result["hookSpecificOutput"]["permissionDecision"] == expected
+    assert executor.calls == []
+    assert state.active_calls == ({"search_docs": "call-1"} if expected == "allow" else {})
+
+
+def test_claude_model_settings_use_sdk_shapes_without_silent_fallback() -> None:
+    assert _effort_setting({"effort": "high"}) == "high"
+    assert _thinking_setting({"thinking": {"type": "enabled", "budget_tokens": 2048}}) == {
+        "type": "enabled", "budget_tokens": 2048,
+    }
+    assert _thinking_setting({}) is None
+    with pytest.raises(ValueError, match="Invalid Claude SDK effort"):
+        _effort_setting({"effort": ["high"]})
+    with pytest.raises(ValueError, match="Invalid Claude SDK thinking"):
+        _thinking_setting({"thinking": {"type": "enabled"}})
