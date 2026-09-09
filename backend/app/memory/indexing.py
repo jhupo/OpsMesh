@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -163,7 +164,7 @@ class WorkspaceMemoryIndexingService:
         source_id: UUID,
         title: str,
         text: str,
-        metadata: dict[str, object],
+        metadata: Mapping[str, object],
         source_updated_at: datetime | None,
     ) -> WorkspaceMemoryIndexResult:
         source_id_text = str(source_id)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from uuid import UUID
 
 from sqlalchemy import select
@@ -43,7 +44,7 @@ class ModelProviderCredentialQueryService:
         page: PageParams,
         *,
         action: str | None = None,
-    ) -> tuple[list[AuditEvent], int]:
+    ) -> tuple[builtins.list[AuditEvent], int]:
         allowed_actions = {
             "model_provider.used",
             "model_provider.request_failed",

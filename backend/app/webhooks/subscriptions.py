@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -78,7 +79,7 @@ class WebhookSubscriptionService:
         subscription_id: UUID,
         name: str | None = None,
         target_url: str | None = None,
-        event_types: list[str] | None = None,
+        event_types: builtins.list[str] | None = None,
     ) -> WebhookSubscription:
         subscription = self._require(
             workspace_id=workspace_id,

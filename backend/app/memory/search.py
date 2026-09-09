@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -553,7 +554,7 @@ def _recency_score(
     if value is None:
         return 0.0
     age_days = max((now - _as_utc(value)).total_seconds() / 86_400, 0)
-    return 0.5 ** (age_days / half_life_days)
+    return math.pow(0.5, age_days / half_life_days)
 
 
 def _datetime_or_none(value: object) -> datetime | None:
