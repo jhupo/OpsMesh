@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from backend.app.admin.releases.models import ReleaseAsset, ReleaseUpdateCheck, ReleaseVersion
-from backend.app.admin.releases.versioning import normalize_release_tag, version_tuple
+from backend.app.admin.releases.versioning import normalize_release_tag, release_version
 from backend.app.core.config import Settings
 
 
@@ -34,7 +34,7 @@ class GitHubReleaseClient:
         return ReleaseUpdateCheck(
             current=current,
             latest=latest,
-            update_available=version_tuple(latest.tag) > version_tuple(current.tag),
+            update_available=release_version(latest.tag) > release_version(current.tag),
             release_url=str(payload.get("html_url") or ""),
             assets=[_asset_from_payload(item) for item in payload.get("assets", [])],
             cached=False,

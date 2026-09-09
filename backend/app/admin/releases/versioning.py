@@ -1,22 +1,23 @@
 from __future__ import annotations
 
-import re
+from packaging.version import InvalidVersion, Version
 
-RELEASE_TAG_PATTERN = re.compile(
-    r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
-    r"(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
-)
+
+def release_version(tag: str) -> Version:
+    candidate = tag.strip().removeprefix("v")
+    try:
+        version = Version(candidate)
+    except InvalidVersion as exc:
+        raise ValueError("Release tag must be a version such as v1.2.3") from exc
+    if (
+        version.epoch != 0
+        or len(version.release) != 3
+        or version.post is not None
+        or version.dev is not None
+    ):
+        raise ValueError("Release tag must be a version such as v1.2.3")
+    return version
 
 
 def normalize_release_tag(tag: str) -> str:
-    candidate = tag.strip()
-    if not RELEASE_TAG_PATTERN.fullmatch(candidate):
-        raise ValueError("Release tag must be a semantic version such as v1.2.3")
-    return candidate if candidate.startswith("v") else f"v{candidate}"
-
-
-def version_tuple(tag: str) -> tuple[int, int, int]:
-    normalized = normalize_release_tag(tag).removeprefix("v")
-    core = normalized.split("-", 1)[0].split("+", 1)[0]
-    major, minor, patch = core.split(".")
-    return int(major), int(minor), int(patch)
+    return f"v{release_version(tag)}"
