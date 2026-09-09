@@ -6,7 +6,7 @@ Status: in progress. A green unit test is not deployment evidence.
 
 | Stage | Scope | Status |
 | --- | --- | --- |
-| 1 | master CI, pre-tag release gate, locked image builds, packages, GHCR, signed manifest | Implemented; hosted execution pending |
+| 1 | master CI, pre-tag release gate, locked image builds, packages, GHCR, signed manifest | Implemented; Linux image build/start passes; tag publication blocked by baseline quality gate |
 | 2 | lightweight CLI, production Compose/systemd deployment, install and diagnostics | Implemented; Linux installation acceptance pending |
 | 3 | durable platform update jobs, independent host updater, maintenance and audit | Implemented; focused contract tests pass |
 | 4 | verified backup, interruption recovery, constrained rollback and Linux integration gate | Implemented locally; real upgrade/restore acceptance pending |
@@ -82,4 +82,9 @@ contracts. A separate giant CLI framework is not needed.
 - The next hosted run exposed oversized explicit foreign-key names in migration 0063; scanning
   the migration chain found the same defect in 0064. Both upgrade and downgrade now use Alembic
   `op.f` so PostgreSQL names match SQLAlchemy's deterministic naming convention. All 12 delivery
-  tests pass, including a chain-wide explicit-identifier regression check. Hosted rerun pending.
+  tests pass, including a chain-wide explicit-identifier regression check.
+- Hosted Delivery Integration run `34332895713` on commit `9acf57e` succeeded in 2m 7s:
+  https://github.com/jhupo/OpsMesh/actions/runs/34332895713 . This verifies actual PostgreSQL
+  migrations, update locking/append-only audit contracts, fresh Docker Compose build/start/readiness
+  and the runtime image probe. It does not verify signed release publication, cross-version managed
+  upgrades, systemd installation, or backup restoration. Those remain outstanding acceptance work.
