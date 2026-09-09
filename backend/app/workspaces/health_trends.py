@@ -1,7 +1,16 @@
 from __future__ import annotations
 
+from typing import TypedDict
+
 from backend.app.core.typing import int_or_zero
 from backend.app.workspaces.models import WorkspaceHealthSnapshot
+
+
+class RiskCountChange(TypedDict):
+    code: str
+    previous_count: int
+    latest_count: int
+    delta: int
 
 
 def snapshot_payload(snapshot: WorkspaceHealthSnapshot | None) -> dict[str, object] | None:
@@ -58,7 +67,7 @@ def risk_changes(
     latest_risks = risk_counts(latest)
     previous_risks = risk_counts(previous)
     codes = sorted(set(latest_risks) | set(previous_risks))
-    changes = [
+    changes: list[RiskCountChange] = [
         {
             "code": code,
             "previous_count": previous_risks.get(code, 0),

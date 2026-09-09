@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy import select
@@ -33,6 +34,17 @@ from backend.app.workspaces.health_trends import (
 from backend.app.workspaces.models import Workspace, WorkspaceHealthSnapshot
 
 
+class WorkspaceHealthResult(TypedDict):
+    workspace_id: UUID
+    generated_at: datetime
+    status: str
+    score: int
+    summary: dict[str, object]
+    risk_items: list[dict[str, object]]
+    recommended_actions: list[str]
+    trend_basis: dict[str, object]
+
+
 @dataclass(frozen=True)
 class WorkspaceHealthSnapshotMaintenanceSummary:
     workspaces_scanned: int = 0
@@ -47,7 +59,7 @@ class WorkspaceHealthService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def get_health(self, workspace_id: UUID) -> dict[str, object]:
+    def get_health(self, workspace_id: UUID) -> WorkspaceHealthResult:
         collected = WorkspaceHealthCollector(self._session).collect(workspace_id)
         delivery = delivery_summary(collected.tasks, collected.steps, collected.artifacts)
         execution = execution_summary(collected.runs)
@@ -85,8 +97,8 @@ class WorkspaceHealthService:
         health = self.get_health(workspace_id)
         snapshot = WorkspaceHealthSnapshot(
             workspace_id=workspace_id,
-            status=str(health["status"]),
-            score=int(health["score"]),
+            status=health["status"],
+            score=health["score"],
             summary=dict_or_empty(health.get("summary")),
             risk_items=dict_list(health.get("risk_items")),
             recommended_actions=string_list(health.get("recommended_actions")),

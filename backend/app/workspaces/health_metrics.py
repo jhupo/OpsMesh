@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from uuid import UUID
 
 from backend.app.artifacts.models import Artifact
@@ -74,10 +75,10 @@ def delivery_summary(
 
 
 def risk_items(
-    task: dict[str, object],
-    execution: dict[str, object],
-    delivery: dict[str, object],
-    control: dict[str, object],
+    task: Mapping[str, object],
+    execution: Mapping[str, object],
+    delivery: Mapping[str, object],
+    control: Mapping[str, object],
 ) -> list[dict[str, object]]:
     risks: list[dict[str, object]] = []
     append_risk(
@@ -184,7 +185,7 @@ def recommended_actions(risks: list[dict[str, object]]) -> list[str]:
     return actions
 
 
-def counts(values: object) -> dict[str, int]:
+def counts(values: Iterable[str]) -> dict[str, int]:
     output: dict[str, int] = {}
     for value in values:
         output[str(value)] = output.get(str(value), 0) + 1
