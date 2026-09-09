@@ -5,11 +5,14 @@ from collections.abc import Callable
 from uuid import UUID
 
 from backend.app.workers.jobs import JobPayload
+from backend.app.workers.queue.contracts import QueueStorage
 from backend.app.workers.queue.scripts import LEASE_JOB_SCRIPT
 
 
 class QueueLeaseMixin:
-    def reclaim_expired(self, *, limit: int = 100, now: float | None = None) -> list[JobPayload]:
+    def reclaim_expired(
+        self: QueueStorage, *, limit: int = 100, now: float | None = None,
+    ) -> list[JobPayload]:
         if limit <= 0:
             return []
         processing_key = self._processing_key()
@@ -32,7 +35,7 @@ class QueueLeaseMixin:
         return reclaimed
 
     def _pop_best_matching(
-        self,
+        self: QueueStorage,
         predicate: Callable[[JobPayload], bool],
         *,
         scan_limit: int = 50,
@@ -49,11 +52,11 @@ class QueueLeaseMixin:
                 best = candidate
         if best is None:
             return None
-        _, _, raw_payload, job = best
-        return job if self._lease_raw_job(queue_key, raw_payload) else None
+        _, _, selected_payload, job = best
+        return job if self._lease_raw_job(queue_key, selected_payload) else None
 
     def _dequeue_with_optional_wait(
-        self,
+        self: QueueStorage,
         predicate: Callable[[JobPayload], bool],
         *,
         scan_limit: int = 50,
@@ -66,7 +69,7 @@ class QueueLeaseMixin:
                 return job
             time.sleep(min(0.05, max(0, deadline - time.time())))
 
-    def _lease_raw_job(self, queue_key: str, raw_payload: bytes | str) -> bool:
+    def _lease_raw_job(self: QueueStorage, queue_key: str, raw_payload: bytes | str) -> bool:
         processing_entry = self._serialize_processing_entry(raw_payload)
         processing_deadline = time.time() + self.visibility_timeout_seconds
         leased = self.redis.eval(  # type: ignore[no-untyped-call]
@@ -80,7 +83,7 @@ class QueueLeaseMixin:
         )
         return bool(leased)
 
-    def _remove_processing_job(self, job_id: UUID) -> JobPayload | None:
+    def _remove_processing_job(self: QueueStorage, job_id: UUID) -> JobPayload | None:
         for raw_entry in self.redis.zrange(self._processing_key(), 0, -1):
             entry = self._deserialize_processing_entry(raw_entry)
             job = entry["job"]

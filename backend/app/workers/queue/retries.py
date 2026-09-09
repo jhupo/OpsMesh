@@ -3,11 +3,12 @@ from __future__ import annotations
 import time
 
 from backend.app.workers.jobs import JobPayload
+from backend.app.workers.queue.contracts import QueueStorage
 
 
 class QueueRetryMixin:
     def retry_or_dead_letter(
-        self,
+        self: QueueStorage,
         job: JobPayload,
         *,
         error: BaseException | str | None = None,
@@ -31,7 +32,7 @@ class QueueRetryMixin:
         )
 
     def reclaim_due_retries(
-        self,
+        self: QueueStorage,
         *,
         limit: int = 100,
         now: float | None = None,
@@ -55,12 +56,12 @@ class QueueRetryMixin:
             reclaimed.append(self._deserialize(raw_job))
         return reclaimed
 
-    def _retry_delay(self, job: JobPayload, *, delay_seconds: float | None) -> float:
+    def _retry_delay(self: QueueStorage, job: JobPayload, *, delay_seconds: float | None) -> float:
         if delay_seconds is not None:
             return max(0.0, delay_seconds)
         if self.retry_base_delay_seconds <= 0:
             return 0.0
-        delay = self.retry_base_delay_seconds * (2 ** max(0, job.attempt))
+        delay = float(self.retry_base_delay_seconds * (2 ** max(0, job.attempt)))
         if self.retry_max_delay_seconds <= 0:
             return delay
         return min(delay, self.retry_max_delay_seconds)

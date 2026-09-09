@@ -3,12 +3,13 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 from backend.app.workers.jobs import JobPayload, JobType
+from backend.app.workers.queue.contracts import QueueStorage
 from backend.app.workers.queue.filters import matches_job_filters
 
 
 class QueueInspectionMixin:
     def list_dead_letters(
-        self,
+        self: QueueStorage,
         limit: int = 50,
         *,
         workspace_id: UUID | None = None,
@@ -30,7 +31,7 @@ class QueueInspectionMixin:
                 break
         return jobs
 
-    def count_queued(self, *, workspace_id: UUID | None = None) -> int:
+    def count_queued(self: QueueStorage, *, workspace_id: UUID | None = None) -> int:
         if workspace_id is None:
             return int(self.redis.llen(self.keys.queue(self.queue_name)))
         return sum(
@@ -39,7 +40,7 @@ class QueueInspectionMixin:
             if self._deserialize(raw_job).workspace_id == workspace_id
         )
 
-    def count_processing(self, *, workspace_id: UUID | None = None) -> int:
+    def count_processing(self: QueueStorage, *, workspace_id: UUID | None = None) -> int:
         if workspace_id is None:
             return int(self.redis.zcard(self._processing_key()))
         return sum(
@@ -48,7 +49,7 @@ class QueueInspectionMixin:
             if self._deserialize_processing_entry(raw_entry)["job"].workspace_id == workspace_id
         )
 
-    def count_scheduled_retries(self, *, workspace_id: UUID | None = None) -> int:
+    def count_scheduled_retries(self: QueueStorage, *, workspace_id: UUID | None = None) -> int:
         if workspace_id is None:
             return int(self.redis.zcard(self._retry_key()))
         return sum(
@@ -58,7 +59,7 @@ class QueueInspectionMixin:
         )
 
     def list_scheduled_retries(
-        self,
+        self: QueueStorage,
         limit: int = 50,
         *,
         workspace_id: UUID | None = None,
@@ -82,7 +83,7 @@ class QueueInspectionMixin:
                 break
         return jobs
 
-    def count_dead_letters(self, *, workspace_id: UUID | None = None) -> int:
+    def count_dead_letters(self: QueueStorage, *, workspace_id: UUID | None = None) -> int:
         if workspace_id is None:
             return int(self.redis.llen(self.keys.dead_letter_queue(self.queue_name)))
         return sum(
@@ -91,7 +92,7 @@ class QueueInspectionMixin:
             if self._deserialize(raw_job).workspace_id == workspace_id
         )
 
-    def peek(self, *, limit: int = 50) -> list[JobPayload]:
+    def peek(self: QueueStorage, *, limit: int = 50) -> list[JobPayload]:
         if limit <= 0:
             return []
         return [
@@ -100,7 +101,7 @@ class QueueInspectionMixin:
         ]
 
     def list_queued(
-        self,
+        self: QueueStorage,
         limit: int = 50,
         *,
         workspace_id: UUID | None = None,
@@ -125,7 +126,7 @@ class QueueInspectionMixin:
         return jobs
 
     def requeue_dead_letter(
-        self,
+        self: QueueStorage,
         job_id: UUID,
         *,
         workspace_id: UUID | None = None,
@@ -148,7 +149,7 @@ class QueueInspectionMixin:
         return None
 
     def remove_queued_job(
-        self,
+        self: QueueStorage,
         job_id: UUID,
         *,
         workspace_id: UUID | None = None,
