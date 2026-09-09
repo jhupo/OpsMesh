@@ -32,7 +32,7 @@ def select_tests(changed: list[str]) -> list[str]:
     return sorted(tests)
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", required=True)
     args = parser.parse_args()
@@ -43,8 +43,8 @@ def main() -> None:
     ).splitlines()
     tests = select_tests(changed)
     print("Focused test targets:", *tests, flush=True)
-    subprocess.run([sys.executable, "-m", "pytest", *tests], check=True)
+    return subprocess.run([sys.executable, "-m", "pytest", *tests], check=False).returncode
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
