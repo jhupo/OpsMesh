@@ -21,12 +21,7 @@ def test_key_builder_scopes_workspace_keys() -> None:
 
 def test_enqueue_is_idempotent_and_dequeue_round_trips_payload() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(
-        redis=redis,
-        keys=RedisKeyBuilder("opsmesh"),
-        queue_name="agent_runs",
-        tracing_enabled=False,
-    )
+    queue = _queue(redis)
     job = _job()
 
     assert queue.enqueue(job) is True
@@ -63,12 +58,7 @@ def test_enqueue_propagates_current_trace_context_to_job_payload() -> None:
 
 def test_dequeue_leases_job_until_processing_reclaim() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(
-        redis=redis,
-        keys=RedisKeyBuilder("opsmesh"),
-        queue_name="agent_runs",
-        visibility_timeout_seconds=1,
-    )
+    queue = _queue(redis, visibility_timeout_seconds=1)
     job = _job()
     queue.enqueue(job)
 
@@ -89,7 +79,7 @@ def test_dequeue_leases_job_until_processing_reclaim() -> None:
 
 def test_force_enqueue_preserves_retry_override_behavior() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("opsmesh"), queue_name="agent_runs")
+    queue = _queue(redis)
     job = _job()
 
     assert queue.enqueue(job) is True
@@ -102,7 +92,7 @@ def test_force_enqueue_preserves_retry_override_behavior() -> None:
 
 def test_dequeue_matching_skips_unmatched_head_job_without_dropping_it() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("opsmesh"), queue_name="agent_runs")
+    queue = _queue(redis)
     docker_job = _job(routing={"runtime_modes": ["docker"]})
     self_hosted_job = _job(routing={"runtime_modes": ["self_hosted"]})
     queue.enqueue(docker_job)
@@ -119,12 +109,7 @@ def test_dequeue_matching_skips_unmatched_head_job_without_dropping_it() -> None
 
 def test_blocking_dequeue_matching_does_not_fallback_to_incompatible_job() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(
-        redis=redis,
-        keys=RedisKeyBuilder("opsmesh"),
-        queue_name="agent_runs",
-        blocking_timeout_seconds=1,
-    )
+    queue = _queue(redis, blocking_timeout_seconds=1)
     docker_job = _job(routing={"runtime_modes": ["docker"]})
     queue.enqueue(docker_job)
 
@@ -139,7 +124,7 @@ def test_blocking_dequeue_matching_does_not_fallback_to_incompatible_job() -> No
 
 def test_dequeue_selects_highest_priority_job_and_preserves_fifo_ties() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("opsmesh"), queue_name="agent_runs")
+    queue = _queue(redis)
     low = _job(priority=1)
     first_high = _job(priority=42)
     second_high = _job(priority=42)
@@ -155,7 +140,7 @@ def test_dequeue_selects_highest_priority_job_and_preserves_fifo_ties() -> None:
 
 def test_peek_returns_jobs_without_removing_them() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("opsmesh"), queue_name="agent_runs")
+    queue = _queue(redis)
     first = _job(priority=1)
     second = _job(priority=2)
     queue.enqueue(first)
@@ -170,7 +155,7 @@ def test_peek_returns_jobs_without_removing_them() -> None:
 
 def test_dequeue_matching_selects_highest_priority_compatible_job() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("opsmesh"), queue_name="agent_runs")
+    queue = _queue(redis)
     low = _job(priority=1, routing={"runtime_modes": ["self_hosted"]})
     incompatible = _job(priority=99, routing={"runtime_modes": ["docker"]})
     high = _job(priority=10, routing={"runtime_modes": ["self_hosted"]})
@@ -189,7 +174,7 @@ def test_dequeue_matching_selects_highest_priority_compatible_job() -> None:
 
 def test_run_lock_allows_one_holder() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("opsmesh"), queue_name="agent_runs")
+    queue = _queue(redis)
 
     with (
         queue.run_lock("workspace-1", "run-1") as first_lock,
@@ -205,7 +190,7 @@ def test_run_lock_allows_one_holder() -> None:
 def test_consume_once_requeues_failed_job_then_dead_letters() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     keys = RedisKeyBuilder("opsmesh")
-    queue = RedisQueue(redis=redis, keys=keys, queue_name="agent_runs")
+    queue = _queue(redis, keys=keys)
     job = _job(max_attempts=2)
     queue.enqueue(job)
 
@@ -226,7 +211,7 @@ def test_consume_once_requeues_failed_job_then_dead_letters() -> None:
 
 def test_retry_can_be_delayed_and_reclaimed_with_error_metadata() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("opsmesh"), queue_name="agent_runs")
+    queue = _queue(redis)
     job = _job(max_attempts=2)
 
     queue.retry_or_dead_letter(
@@ -253,7 +238,7 @@ def test_retry_can_be_delayed_and_reclaimed_with_error_metadata() -> None:
 
 def test_consume_once_acks_successful_job() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("opsmesh"), queue_name="agent_runs")
+    queue = _queue(redis)
     job = _job()
     handled: list[JobPayload] = []
     queue.enqueue(job)
@@ -268,7 +253,7 @@ def test_consume_once_acks_successful_job() -> None:
 def test_dead_letter_jobs_can_be_listed_and_requeued() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     keys = RedisKeyBuilder("opsmesh")
-    queue = RedisQueue(redis=redis, keys=keys, queue_name="agent_runs")
+    queue = _queue(redis, keys=keys)
     job = _job(max_attempts=1)
     queue.retry_or_dead_letter(job)
 
@@ -285,7 +270,7 @@ def test_dead_letter_jobs_can_be_listed_and_requeued() -> None:
 
 def test_queue_list_views_filter_before_applying_limit() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("opsmesh"), queue_name="agent_runs")
+    queue = _queue(redis)
     workspace_id = uuid4()
     target_resource_id = uuid4()
     other_resource_id = uuid4()
@@ -369,4 +354,19 @@ def _job(
         max_attempts=max_attempts,
         routing=routing or {},
         priority=priority,
+    )
+
+
+def _queue(
+    redis,
+    *,
+    keys: RedisKeyBuilder | None = None,
+    **kwargs: object,
+) -> RedisQueue:
+    return RedisQueue(
+        redis=redis,
+        keys=keys or RedisKeyBuilder("opsmesh"),
+        queue_name="agent_runs",
+        tracing_enabled=False,
+        **kwargs,
     )
