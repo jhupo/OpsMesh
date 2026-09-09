@@ -35,7 +35,7 @@ product contract.
 | Files, artifacts, memory, approvals, and audit | Implemented |
 | Web Portal | Planned; intentionally not scaffolded yet |
 | Enterprise SSO and fine-grained authorization | Planned |
-| Knowledge registry and vector/hybrid retrieval | Partially implemented: three-layer memory and hybrid retrieval are complete; external knowledge-source registration and citations remain planned |
+| Knowledge registry and vector/hybrid retrieval | Partially implemented: three-layer memory, hybrid retrieval, and authorized context injection are complete; external knowledge-source registration and citations remain planned |
 | Logs, metrics, tracing, audit integrity, and cost accounting | Implemented |
 | Kubernetes and multi-region deployment | Future, driven by measured scale requirements |
 
@@ -54,7 +54,7 @@ The APIs and database model may change before the first stable release. See the
 | Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, call audit, runtime-resource placement, live revocation, explicit MCP connection reconfiguration, and credential rotation |
 | MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; the self-hosted connector now provides durable claim, execution, completion, and restart recovery |
 | Run isolation and workspace | Official Docker SDK and self-hosted control-plane contracts, frozen runtime bindings, runtime-space reservations, exact project snapshot staging, declared-output harvesting, and fail-closed stdio routing are implemented; a dedicated `opsmesh-runtime` image provides the isolated MCP SDK helper and connector CLI |
-| Knowledge service | Three-layer memory, Postgres full-text, pgvector/HNSW similarity, weighted hybrid ranking, lifecycle policy, and evidence are implemented; external source ingestion and citation contracts remain planned |
+| Knowledge service | Three-layer memory, Postgres full-text, pgvector/HNSW similarity, weighted hybrid ranking, grant-scoped context injection, lifecycle policy, and evidence are implemented; external source ingestion and citation contracts remain planned |
 | Observability and operations | Implemented for the VPS topology: OTLP logs and traces, official Prometheus metrics, Loki, Tempo, Grafana correlation, alerts, WORM audit verification, cost ledger, budgets, queue/runtime diagnostics, and recovery actions |
 | Infrastructure and scaling | Postgres, Redis, storage, VPS/systemd, Docker runtime, and remote validation assets exist; Kubernetes, multi-region, and microVM backends are future work |
 
@@ -89,13 +89,15 @@ flowchart LR
 
     subgraph Execution["Asynchronous execution plane"]
         Workers["Worker fleet<br/>claim / preflight / recovery / maintenance"]
+        MemoryContext["Authorized memory context<br/>grant prefilter / hybrid retrieval<br/>token budget evidence"]
         Agents["Agent runtime<br/>OpenAI Agents SDK<br/>provider adapters"]
         ToolBoundary["Agent execution gateway<br/>schema / parameters / resources<br/>approval / live revocation / audit"]
         RemoteMCP["Official MCP SDK<br/>HTTP / SSE"]
         Stdio["stdio MCP router"]
         Docker["Managed Docker runtimes<br/>official Docker SDK"]
         SelfHosted["Self-hosted connector runtimes"]
-        Workers --> Agents
+        Workers --> MemoryContext
+        MemoryContext --> Agents
         Agents --> ToolBoundary
         ToolBoundary --> RemoteMCP
         ToolBoundary --> Stdio
@@ -125,6 +127,7 @@ flowchart LR
     Orchestration --> Redis
     Redis --> Workers
     Workers --> Postgres
+    MemoryContext --> Postgres
     Docker -.->|explicit artifact collection| Storage
     SelfHosted -.->|authorized artifact upload| Storage
     RuntimeAuth --> ToolBoundary
@@ -154,6 +157,7 @@ sequenceDiagram
     participant Queue as Redis queue
     participant Catalog as Capability and runtime authorization
     participant Worker
+    participant Memory as Authorized memory context
     participant Agent as Agent runtime
     participant Policy as Agent execution gateway
     participant Runtime as MCP / Docker / self-hosted
@@ -171,7 +175,10 @@ sequenceDiagram
     Worker->>DB: Load workspace-scoped run and frozen configuration
     Worker->>Catalog: Verify snapshot, bound runtime, space, files, and live status
     Worker->>DB: Check provider readiness and matching cost budget
-    Worker->>Agent: Execute model turn with trace context
+    Worker->>Memory: Apply frozen memory grants and per-Agent retrieval policy
+    Memory->>DB: Search authorized episodic/semantic memory with hybrid ranking
+    Memory-->>Worker: Return bounded untrusted context and query-safe evidence
+    Worker->>Agent: Execute model turn with token-bounded context and trace context
 
     opt Model requests a tool
         Agent->>Policy: Submit typed tool request
@@ -319,7 +326,6 @@ recommended order, and boundaries that remain owned by OpsMesh.
 - Add policy-driven ephemeral sandbox creation, per-run file materialization, and selected artifact
   harvesting on top of the implemented frozen runtime binding.
 - Add knowledge-source registration, ingestion jobs, citations, and permission-aware retrieval.
-- Inject authorized hybrid memory results into Agent context construction within the token budget.
 
 ### 4. Add enterprise identity and policy integration
 

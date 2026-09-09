@@ -17,6 +17,7 @@ from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.memory.authorization import AuthorizedMemoryScope
 from backend.app.memory.configuration import (
     MemoryConfigurationConflictError,
     MemoryConfigurationUpdate,
@@ -52,6 +53,7 @@ from backend.app.memory.semantic import AgentSemanticMemoryService, SemanticMemo
 from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.secrets.service import SecretEncryptionService
+from backend.app.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.workers.job_handlers.memory_embedding import MemoryEmbeddingJobHandler
 from backend.app.workers.jobs import JobType
@@ -118,6 +120,54 @@ def test_hybrid_retrieval_uses_weighted_rrf_and_deduplicates_content() -> None:
     assert hits[0].ranking_details["deduplicated_count"] == 2
     assert all(item.request is not None for item in (full_text, vector, lexical))
     assert full_text.request.limit == 20
+
+
+def test_memory_candidates_are_prefiltered_by_each_resource_grant() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session, "scope")
+    team_a = uuid4()
+    team_b = uuid4()
+    entries = [
+        _scoped_memory(workspace.id, "Allowed A", team_a, "alpha"),
+        _scoped_memory(workspace.id, "Denied cross A", team_a, "beta"),
+        _scoped_memory(workspace.id, "Allowed B", team_b, "beta"),
+        _scoped_memory(workspace.id, "Denied cross B", team_b, "alpha"),
+    ]
+    session.add_all(entries)
+    session.commit()
+    backend = _AllCandidatesBackend()
+
+    results = WorkspaceMemorySearchService(session, ranker=backend).search(
+        workspace_id=workspace.id,
+        query="deployment memory",
+        limit=10,
+        memory_layers={"semantic"},
+        access_scopes=(
+            AuthorizedMemoryScope(
+                resource_id=uuid4(),
+                access_mode="read",
+                source_types=frozenset({"workspace_memory"}),
+                tags=frozenset({"alpha"}),
+                scope_types=frozenset({"team"}),
+                scope_ids=frozenset({str(team_a)}),
+            ),
+            AuthorizedMemoryScope(
+                resource_id=uuid4(),
+                access_mode="read",
+                source_types=frozenset({"workspace_memory"}),
+                tags=frozenset({"beta"}),
+                scope_types=frozenset({"team"}),
+                scope_ids=frozenset({str(team_b)}),
+            ),
+        ),
+    )
+
+    assert backend.request is not None
+    assert {document.title for document in backend.request.documents} == {
+        "Allowed A",
+        "Allowed B",
+    }
+    assert {item["title"] for item in results} == {"Allowed A", "Allowed B"}
 
 
 def test_embedding_configuration_schedules_and_completes_versioned_work(
@@ -373,6 +423,25 @@ class _StaticBackend:
         return self._hits[: request.limit]
 
 
+class _AllCandidatesBackend:
+    backend_name = "authorization_test"
+
+    def __init__(self) -> None:
+        self.request: MemorySearchRequest | None = None
+
+    def search(self, request: MemorySearchRequest) -> list[MemorySearchHit]:
+        self.request = request
+        return [
+            MemorySearchHit(
+                document=document,
+                score=1,
+                snippet=document.text,
+                backend_name=self.backend_name,
+            )
+            for document in request.documents
+        ]
+
+
 class _FakeEmbeddingProvider:
     provider_name = "openai"
     model = "text-embedding-3-small"
@@ -443,6 +512,33 @@ def _episode(
         memory_metadata={},
         access_count=access_count,
         expires_at=expires_at,
+    )
+
+
+def _scoped_memory(
+    workspace_id: UUID,
+    title: str,
+    scope_id: UUID,
+    tag: str,
+) -> WorkspaceMemoryEntry:
+    content = f"{title} deployment memory"
+    return WorkspaceMemoryEntry(
+        workspace_id=workspace_id,
+        source_type="semantic_memory",
+        source_id=str(uuid4()),
+        memory_layer="semantic",
+        scope_type="team",
+        scope_id=str(scope_id),
+        memory_key=title.lower().replace(" ", "-"),
+        entry_type="semantic_fact",
+        title=title,
+        content=content,
+        tags=[tag],
+        visibility_scope="team",
+        importance=50,
+        status="active",
+        content_fingerprint=memory_content_fingerprint(title, content),
+        memory_metadata={},
     )
 
 

@@ -50,6 +50,15 @@ class SemanticMemoryPolicy(BaseModel):
     max_results: int = Field(default=8, ge=1, le=50)
 
 
+class ContextMemoryRetrievalPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    max_results: int = Field(default=12, ge=1, le=50)
+    max_context_tokens: int = Field(default=4_096, ge=256, le=32_768)
+    query_max_tokens: int = Field(default=1_024, ge=128, le=8_192)
+
+
 class AgentMemoryPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -57,6 +66,9 @@ class AgentMemoryPolicy(BaseModel):
     working_memory: WorkingMemoryPolicy = Field(default_factory=WorkingMemoryPolicy)
     episodic_memory: EpisodicMemoryPolicy = Field(default_factory=EpisodicMemoryPolicy)
     semantic_memory: SemanticMemoryPolicy = Field(default_factory=SemanticMemoryPolicy)
+    context_retrieval: ContextMemoryRetrievalPolicy = Field(
+        default_factory=ContextMemoryRetrievalPolicy
+    )
 
 
 def context_budget_policy(memory_policy: object) -> ContextBudgetPolicy:
@@ -81,6 +93,10 @@ def episodic_memory_policy(memory_policy: object) -> EpisodicMemoryPolicy:
 
 def semantic_memory_policy(memory_policy: object) -> SemanticMemoryPolicy:
     return agent_memory_policy(memory_policy).semantic_memory
+
+
+def context_memory_retrieval_policy(memory_policy: object) -> ContextMemoryRetrievalPolicy:
+    return agent_memory_policy(memory_policy).context_retrieval
 
 
 def agent_memory_policy(value: object) -> AgentMemoryPolicy:

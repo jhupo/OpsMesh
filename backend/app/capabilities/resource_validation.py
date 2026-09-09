@@ -43,26 +43,39 @@ def normalize_resource_locator(
     if resource_type == "file_collection":
         return {"file_ids": _uuid_list(locator.get("file_ids"), field="locator.file_ids")}
     if resource_type == "memory_collection":
-        normalized = {
-            key: _string_list(locator.get(key), field=f"locator.{key}")
+        memory_locator: dict[str, object] = {
+            key: _normalized_memory_strings(
+                locator.get(key),
+                field=f"locator.{key}",
+            )
             for key in ("tags", "source_types", "scope_types")
             if key in locator
         }
         if "scope_ids" in locator:
-            normalized["scope_ids"] = _uuid_list(
+            memory_locator["scope_ids"] = _uuid_list(
                 locator.get("scope_ids"),
                 field="locator.scope_ids",
             )
-        invalid_scope_types = set(normalized.get("scope_types", [])) - {
+        scope_types = memory_locator.get("scope_types", [])
+        if not isinstance(scope_types, list):
+            raise ValueError("locator.scope_types is invalid")
+        invalid_scope_types = set(scope_types) - {
             "workspace",
             "team",
             "agent",
+            "task",
+            "run",
         }
         if invalid_scope_types:
             raise ValueError("locator.scope_types contains unsupported memory scopes")
-        if "scope_types" in locator and not normalized["scope_types"]:
-            raise ValueError("locator.scope_types must be a non-empty array")
-        return normalized
+        for key in ("tags", "source_types", "scope_types"):
+            if key in locator and not memory_locator[key]:
+                raise ValueError(f"locator.{key} must be a non-empty array")
+        if "scope_ids" in locator and len(scope_types) != 1:
+            raise ValueError(
+                "locator.scope_ids requires exactly one locator.scope_types value"
+            )
+        return memory_locator
     if resource_type == "mcp_resource":
         normalized: dict[str, object] = {
             "mcp_server_id": _uuid(locator.get("mcp_server_id"), field="locator.mcp_server_id"),
@@ -123,6 +136,13 @@ def _string_list(value: object, *, field: str) -> list[str]:
         if not isinstance(item, str) or not item.strip():
             raise ValueError(f"{field} must contain non-empty strings")
         normalized.append(item.strip())
+    if len(set(normalized)) != len(normalized):
+        raise ValueError(f"{field} must not contain duplicates")
+    return normalized
+
+
+def _normalized_memory_strings(value: object, *, field: str) -> list[str]:
+    normalized = [item.lower() for item in _string_list(value, field=field)]
     if len(set(normalized)) != len(normalized):
         raise ValueError(f"{field} must not contain duplicates")
     return normalized

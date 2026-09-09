@@ -11,8 +11,11 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.costs.service import CostAccountingService
-from backend.app.memory.configuration import EMBEDDING_DIMENSIONS
+from backend.app.costs.service import CostAccountingService, CostBudgetExceededError
+from backend.app.memory.configuration import (
+    EMBEDDING_DIMENSIONS,
+    WorkspaceMemoryConfigurationService,
+)
 from backend.app.memory.models import (
     WorkspaceMemoryConfiguration,
     WorkspaceMemoryEmbeddingEvent,
@@ -36,6 +39,13 @@ class MemoryEmbeddingError(RuntimeError):
 class MemoryEmbeddingResult:
     vector: list[float]
     input_tokens: int
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryQueryEmbedding:
+    vector: list[float] | None
+    model: str | None
+    evidence: dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,6 +200,84 @@ class WorkspaceMemoryEmbeddingProviderResolver:
             timeout_seconds=30,
             provider_name=credential.provider,
             client_factory=self._client_factory,
+        )
+
+
+class WorkspaceMemoryQueryEmbeddingService:
+    def __init__(
+        self,
+        session: Session,
+        secret_service: SecretEncryptionService | None,
+    ) -> None:
+        self._session = session
+        self._secret_service = secret_service
+
+    def generate(self, *, workspace_id: UUID, query: str) -> MemoryQueryEmbedding:
+        if not query.strip():
+            return MemoryQueryEmbedding(
+                vector=None,
+                model=None,
+                evidence={"status": "skipped", "reason_code": "empty_query"},
+            )
+        configuration = WorkspaceMemoryConfigurationService(self._session).get(workspace_id)
+        if configuration is None or not configuration.embedding_enabled:
+            return MemoryQueryEmbedding(
+                vector=None,
+                model=None,
+                evidence={"status": "disabled"},
+            )
+        if self._secret_service is None:
+            return MemoryQueryEmbedding(
+                vector=None,
+                model=None,
+                evidence={
+                    "status": "failed",
+                    "error_code": "embedding_secret_service_unavailable",
+                },
+            )
+        try:
+            provider = WorkspaceMemoryEmbeddingProviderResolver(
+                self._session,
+                self._secret_service,
+            ).resolve(
+                workspace_id=workspace_id,
+                configuration=configuration,
+            )
+            result = provider.embed(query)
+        except CostBudgetExceededError:
+            return MemoryQueryEmbedding(
+                vector=None,
+                model=None,
+                evidence={
+                    "status": "failed",
+                    "error_code": "embedding_cost_budget_exceeded",
+                },
+            )
+        except MemoryEmbeddingError as exc:
+            return MemoryQueryEmbedding(
+                vector=None,
+                model=None,
+                evidence={"status": "failed", "error_code": exc.code},
+            )
+        except Exception:
+            return MemoryQueryEmbedding(
+                vector=None,
+                model=None,
+                evidence={
+                    "status": "failed",
+                    "error_code": "embedding_provider_failed",
+                },
+            )
+        return MemoryQueryEmbedding(
+            vector=result.vector,
+            model=provider.model,
+            evidence={
+                "status": "completed",
+                "provider": provider.provider_name,
+                "model": provider.model,
+                "dimensions": provider.dimensions,
+                "input_tokens": result.input_tokens,
+            },
         )
 
 

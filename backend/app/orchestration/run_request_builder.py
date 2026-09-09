@@ -20,6 +20,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
 from backend.app.core.config import Settings
+from backend.app.memory.context import AgentMemoryContextService
 from backend.app.memory.working import AgentWorkingMemoryService, working_memory_context
 from backend.app.projects.runtime_context import project_runtime_context
 from backend.app.runs.models import AgentRun
@@ -138,6 +139,17 @@ class RunRequestBuilder:
             "entry_ids": [str(entry.id) for entry in working_entries],
             "policy": working_policy.model_dump(mode="json"),
         }
+        retrieved_memory = AgentMemoryContextService(
+            self.session,
+            self.mcp_secret_service(),
+        ).build(
+            run=run,
+            task=task,
+            profile=profile,
+            resource_grants=resource_grants,
+            memory_policy=authorization_snapshot.get("memory_policy"),
+        )
+        metadata["memory_retrieval"] = retrieved_memory.evidence
         persistent_session = self.persistent_session_for_run(
             run,
             task,
@@ -201,6 +213,14 @@ class RunRequestBuilder:
                     priority=ContextPriority.HIGH,
                 ),
             )
+        if retrieved_memory.text:
+            context_fragments += (
+                ContextFragment(
+                    key="memory.retrieved",
+                    text=retrieved_memory.text,
+                    priority=ContextPriority.NORMAL,
+                ),
+            )
         context_budget = ContextBudgetManager().build(
             fragments=context_fragments,
             provider=model_provider["provider"],
@@ -213,6 +233,25 @@ class RunRequestBuilder:
             output_schema=output_schema,
         )
         metadata["context_budget"] = context_budget.evidence()
+        retrieval_evidence = metadata["memory_retrieval"]
+        if isinstance(retrieval_evidence, dict):
+            retrieval_decision = next(
+                (item for item in context_budget.decisions if item.key == "memory.retrieved"),
+                None,
+            )
+            retrieval_evidence.update(
+                {
+                    "context_status": retrieval_decision.status
+                    if retrieval_decision is not None
+                    else "not_applicable",
+                    "context_estimated_tokens": retrieval_decision.estimated_tokens
+                    if retrieval_decision is not None
+                    else 0,
+                    "context_included_tokens": retrieval_decision.included_tokens
+                    if retrieval_decision is not None
+                    else 0,
+                }
+            )
         tracing = agent_run_tracing(
             run=run,
             task=task,

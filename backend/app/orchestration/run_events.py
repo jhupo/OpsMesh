@@ -82,6 +82,7 @@ class RunEventRecorder:
                 "continuation_count": len(request.continuations),
                 "has_tool_executor": request.tool_executor is not None,
                 "context_budget": metadata.get("context_budget", {}),
+                "memory_retrieval": metadata.get("memory_retrieval", {}),
             },
         )
 

@@ -3,12 +3,8 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.memory_policy import semantic_memory_policy
-from backend.app.costs.service import CostBudgetExceededError
-from backend.app.memory.configuration import WorkspaceMemoryConfigurationService
-from backend.app.memory.embeddings import (
-    MemoryEmbeddingError,
-    WorkspaceMemoryEmbeddingProviderResolver,
-)
+from backend.app.memory.authorization import AuthorizedMemoryScope
+from backend.app.memory.embeddings import WorkspaceMemoryQueryEmbeddingService
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
 from backend.app.memory.working import AgentWorkingMemoryService
@@ -32,10 +28,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
         *,
         limit: int = 10,
         source_types: set[str] | None = None,
-        allowed_source_types: set[str] | None = None,
-        allowed_tags: set[str] | None = None,
-        allowed_scope_types: set[str] | None = None,
-        allowed_scope_ids: set[str] | None = None,
+        access_scopes: tuple[AuthorizedMemoryScope, ...],
     ) -> list[dict[str, object]]:
         context.require_tool("search_workspace_memory")
         self._append_tool_event(context, "tool.called", "search_workspace_memory")
@@ -47,10 +40,8 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
             workspace_id=context.workspace_id,
             query=query,
             limit=limit,
-            source_types=_intersect_optional(source_types, allowed_source_types),
-            tags=allowed_tags,
-            scope_types=allowed_scope_types,
-            scope_ids=allowed_scope_ids,
+            source_types=source_types,
+            access_scopes=access_scopes,
             query_embedding=query_embedding,
             embedding_model=embedding_model,
             query_embedding_evidence=embedding_evidence,
@@ -65,44 +56,11 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
         workspace_id: UUID,
         query: str,
     ) -> tuple[list[float] | None, str | None, dict[str, object]]:
-        if not query.strip():
-            return None, None, {"status": "skipped", "reason_code": "empty_query"}
-        configuration = WorkspaceMemoryConfigurationService(self._session).get(workspace_id)
-        if configuration is None or not configuration.embedding_enabled:
-            return None, None, {"status": "disabled"}
-        if self._memory_embedding_secret_service is None:
-            return None, None, {
-                "status": "failed",
-                "error_code": "embedding_secret_service_unavailable",
-            }
-        try:
-            provider = WorkspaceMemoryEmbeddingProviderResolver(
-                self._session,
-                self._memory_embedding_secret_service,
-            ).resolve(
-                workspace_id=workspace_id,
-                configuration=configuration,
-            )
-            result = provider.embed(query)
-        except CostBudgetExceededError:
-            return None, None, {
-                "status": "failed",
-                "error_code": "embedding_cost_budget_exceeded",
-            }
-        except MemoryEmbeddingError as exc:
-            return None, None, {"status": "failed", "error_code": exc.code}
-        except Exception:
-            return None, None, {
-                "status": "failed",
-                "error_code": "embedding_provider_failed",
-            }
-        return result.vector, provider.model, {
-            "status": "completed",
-            "provider": provider.provider_name,
-            "model": provider.model,
-            "dimensions": provider.dimensions,
-            "input_tokens": result.input_tokens,
-        }
+        result = WorkspaceMemoryQueryEmbeddingService(
+            self._session,
+            self._memory_embedding_secret_service,
+        ).generate(workspace_id=workspace_id, query=query)
+        return result.vector, result.model, result.evidence
 
     def upsert_semantic_memory(
         self,
@@ -119,9 +77,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
         metadata: dict[str, object] | None = None,
         expected_revision: int | None = None,
         change_reason: str | None = None,
-        allowed_scope_types: set[str] | None = None,
-        allowed_scope_ids: set[str] | None = None,
-        allowed_tags: set[str] | None = None,
+        access_scopes: tuple[AuthorizedMemoryScope, ...],
     ) -> WorkspaceMemoryEntry:
         context.require_tool("upsert_semantic_memory")
         self._append_tool_event(context, "tool.called", "upsert_semantic_memory")
@@ -130,9 +86,12 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
             raise ValueError("Semantic memory writes require an agent run")
         self._require_semantic_write_policy(run)
         normalized_entry_tags = normalized_tags(tags)
-        _require_scope(scope_type, scope_id, allowed_scope_types, allowed_scope_ids)
-        if allowed_tags is not None and not set(normalized_entry_tags).issubset(allowed_tags):
-            raise ValueError("Memory tags are outside the authorized resource scope")
+        _require_memory_write(
+            scope_type=scope_type,
+            scope_id=scope_id,
+            tags=set(normalized_entry_tags),
+            access_scopes=access_scopes,
+        )
         entry = AgentSemanticMemoryService(self._session).upsert(
             SemanticMemoryUpsert(
                 workspace_id=context.workspace_id,
@@ -161,9 +120,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
         *,
         expected_revision: int,
         change_reason: str | None = None,
-        allowed_scope_types: set[str] | None = None,
-        allowed_scope_ids: set[str] | None = None,
-        allowed_tags: set[str] | None = None,
+        access_scopes: tuple[AuthorizedMemoryScope, ...],
     ) -> WorkspaceMemoryEntry:
         context.require_tool("archive_semantic_memory")
         self._append_tool_event(context, "tool.called", "archive_semantic_memory")
@@ -177,13 +134,14 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
         )
         if entry is None:
             raise ToolResourceNotFoundError("Semantic memory entry not found")
-        _require_scope(
-            entry.scope_type,
-            UUID(entry.scope_id),
-            allowed_scope_types,
-            allowed_scope_ids,
-        )
-        if allowed_tags is not None and not set(entry.tags).issubset(allowed_tags):
+        if not any(
+            scope.allows_write(
+                scope_type=entry.scope_type,
+                scope_id=entry.scope_id,
+                tags=set(entry.tags),
+            )
+            for scope in access_scopes
+        ):
             raise ToolResourceNotFoundError("Memory entry is outside the authorized resource scope")
         AgentSemanticMemoryService(self._session).archive(
             entry,
@@ -229,24 +187,19 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
             raise ValueError("Semantic memory writes are disabled for this agent run")
 
 
-def _intersect_optional(
-    requested: set[str] | None,
-    allowed: set[str] | None,
-) -> set[str] | None:
-    if allowed is None:
-        return requested
-    if requested is None:
-        return allowed
-    return requested & allowed
-
-
-def _require_scope(
+def _require_memory_write(
+    *,
     scope_type: str,
     scope_id: UUID,
-    allowed_scope_types: set[str] | None,
-    allowed_scope_ids: set[str] | None,
+    tags: set[str],
+    access_scopes: tuple[AuthorizedMemoryScope, ...],
 ) -> None:
-    if allowed_scope_types is not None and scope_type not in allowed_scope_types:
-        raise ValueError("Memory scope type is outside the authorized resource scope")
-    if allowed_scope_ids is not None and str(scope_id) not in allowed_scope_ids:
-        raise ValueError("Memory scope ID is outside the authorized resource scope")
+    if not any(
+        scope.allows_write(
+            scope_type=scope_type,
+            scope_id=str(scope_id),
+            tags=tags,
+        )
+        for scope in access_scopes
+    ):
+        raise ValueError("Memory write is outside the authorized resource scope")

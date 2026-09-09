@@ -380,12 +380,20 @@ compaction remains responsible for prior session history.
 
 Rules:
 
-- memory retrieval filters by `workspace_id`
+- memory retrieval filters by `workspace_id` and every frozen `memory_collection` read grant
+- resource locator fields remain conjunctive within each grant and are never unioned across grants
 - memory write requires explicit product tool or post-run consolidation
 - memory entries record source task/run
 - agent cannot retrieve memory from other workspaces
 - fixed instructions and tool contracts that leave no safe task-input capacity fail closed
 - agents may lower their input budget but cannot bypass platform context budgeting
+
+Episodic and semantic retrieval is enabled by default in the normalized Agent memory policy.
+Request construction derives a bounded query from the current task and task step, applies per-layer
+and total result limits, and supplies an embedding through the configured official provider SDK when
+available. Provider or budget failure degrades to authorized lexical/full-text retrieval; an absent
+read grant returns no memory. The rendered fragment is explicitly untrusted and its final included,
+truncated, or excluded token count is stored with the run context evidence.
 
 Working memory is a distinct Postgres-backed `working` layer. The runner initializes the current
 objective and execution plan under a run scope, the tool gateway records redacted tool outcomes,

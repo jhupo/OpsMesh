@@ -154,8 +154,8 @@ def test_decisions_failures_and_human_feedback_create_distinct_episodes() -> Non
         limit=5,
         source_types={"workspace_memory"},
     )
-    assert hits[0]["metadata"]["task"]["id"] == str(task.id)
-    assert hits[0]["metadata"]["run"]["id"] == str(run.id)
+    assert hits[0]["metadata"]["source_metadata"]["task"]["id"] == str(task.id)
+    assert hits[0]["metadata"]["source_metadata"]["run"]["id"] == str(run.id)
 
 
 def _session() -> Session:

@@ -105,6 +105,12 @@ def test_agent_profiles_receive_a_complete_default_context_budget() -> None:
             "write_enabled": True,
             "max_results": 8,
         },
+        "context_retrieval": {
+            "enabled": True,
+            "max_results": 12,
+            "max_context_tokens": 4_096,
+            "query_max_tokens": 1_024,
+        },
     }
 
 

@@ -206,18 +206,21 @@ All Redis keys that refer to workspace data must include `workspace_id`, for exa
 
 ## Agent Memory
 
-Memory should be workspace-scoped by default, with optional agent-scoped and user-scoped memory.
+Provider conversation state and transcript compaction belong to the OpenAI and Claude SDK session
+implementations. Product memory is durable Postgres state with three explicit layers:
 
-Suggested memory types:
+- `working`: run-scoped objective, plan, step, temporary fact, and tool-result state with TTL and
+  entry/token limits;
+- `episodic`: redacted task, run, failure, approval, correction, and human-feedback events with
+  provenance and retention policy;
+- `semantic`: versioned workspace, team, or agent facts, configuration, policies, and procedures.
 
-- task summary
-- project fact
-- user preference
-- tool lesson
-- failed approach
-- reusable workflow pattern
-
-Short-term conversation state can use Agents SDK sessions. Long-term memory should be explicitly written to Postgres and optionally indexed for retrieval.
+Each Agent request uses its frozen `memory_collection` read grants to prefilter long-term candidates
+before hybrid full-text/vector ranking. Separate grants stay separate: source, tag, scope type, and
+scope ID restrictions are evaluated together per grant and are never unioned into a wider Cartesian
+scope. Selected results are marked as untrusted historical references, bounded by both the memory
+policy and the model context budget, and recorded through query-safe fingerprints and inclusion
+evidence. Custom memory metadata is namespaced and cannot override authoritative scope fields.
 
 ## Human Approval
 

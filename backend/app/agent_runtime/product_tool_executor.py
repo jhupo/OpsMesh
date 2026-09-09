@@ -40,6 +40,7 @@ from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_NAMES as 
 from backend.app.core.config import Settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.files.storage import ObjectStorage, create_storage
+from backend.app.memory.authorization import memory_read_scopes, memory_write_scopes
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.redaction import redact_sensitive_text
 from backend.app.tools.context import ToolContext
@@ -298,16 +299,17 @@ def _execute_product_tool(
             message_id=uuid_argument(arguments, "message_id"),
         )
     if tool_name == "search_workspace_memory":
+        source_types = optional_str_set_argument(arguments, "source_types")
         return {
             "items": service.search_workspace_memory(
                 context,
                 query=str_argument(arguments, "query", default=""),
                 limit=int_argument(arguments, "limit", default=10),
-                source_types=optional_str_set_argument(arguments, "source_types"),
-                allowed_source_types=_memory_source_types(resource_grants),
-                allowed_tags=_memory_tags(resource_grants),
-                allowed_scope_types=_memory_scope_types(resource_grants),
-                allowed_scope_ids=_memory_scope_ids(resource_grants),
+                source_types=source_types,
+                access_scopes=memory_read_scopes(
+                    resource_grants,
+                    requested_source_types=source_types,
+                ),
             )
         }
     if tool_name == "upsert_semantic_memory":
@@ -325,9 +327,7 @@ def _execute_product_tool(
                 metadata=dict_argument(arguments, "metadata"),
                 expected_revision=optional_int_argument(arguments, "expected_revision"),
                 change_reason=optional_str_argument(arguments, "change_reason"),
-                allowed_scope_types=_memory_scope_types(resource_grants),
-                allowed_scope_ids=_memory_scope_ids(resource_grants),
-                allowed_tags=_memory_tags(resource_grants),
+                access_scopes=memory_write_scopes(resource_grants),
             )
         )
     if tool_name == "archive_semantic_memory":
@@ -337,9 +337,7 @@ def _execute_product_tool(
                 memory_entry_id=uuid_argument(arguments, "memory_entry_id"),
                 expected_revision=int_argument(arguments, "expected_revision", default=0),
                 change_reason=optional_str_argument(arguments, "change_reason"),
-                allowed_scope_types=_memory_scope_types(resource_grants),
-                allowed_scope_ids=_memory_scope_ids(resource_grants),
-                allowed_tags=_memory_tags(resource_grants),
+                access_scopes=memory_write_scopes(resource_grants),
             )
         )
     if tool_name == "promote_working_memory":
@@ -395,48 +393,6 @@ def _file_ids(
             except (TypeError, ValueError):
                 continue
     return ids & set(file_scope_ids) if file_scope_ids else ids
-
-
-def _memory_source_types(
-    grants: tuple[AgentRuntimeResourceGrant, ...],
-) -> set[str] | None:
-    values = {
-        item
-        for grant in grants
-        for item in _resource_locator_strings(grant, "source_types")
-    }
-    return values or None
-
-
-def _memory_tags(grants: tuple[AgentRuntimeResourceGrant, ...]) -> set[str] | None:
-    values = {
-        item
-        for grant in grants
-        for item in _resource_locator_strings(grant, "tags")
-    }
-    return values or None
-
-
-def _memory_scope_types(
-    grants: tuple[AgentRuntimeResourceGrant, ...],
-) -> set[str] | None:
-    values = {
-        item
-        for grant in grants
-        for item in _resource_locator_strings(grant, "scope_types")
-    }
-    return values or None
-
-
-def _memory_scope_ids(
-    grants: tuple[AgentRuntimeResourceGrant, ...],
-) -> set[str] | None:
-    values = {
-        item
-        for grant in grants
-        for item in _resource_locator_strings(grant, "scope_ids")
-    }
-    return values or None
 
 
 def _resource_locator_strings(

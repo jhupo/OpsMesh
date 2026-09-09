@@ -915,7 +915,7 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
     assert archived.output["status"] == "archived"
     assert denied.status == "failed"
     assert denied.error is not None
-    assert denied.error["code"] == "memory_scope_type_not_in_resource_scope"
+    assert denied.error["code"] == "memory_write_not_in_resource_scope"
     assert stored is not None
     assert stored.created_by_agent_run_id == run.id
     assert stored.created_by_agent_profile_id == agent.id

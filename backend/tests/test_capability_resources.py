@@ -110,7 +110,12 @@ def test_resource_rejects_foreign_locator_and_embedded_secret() -> None:
         storage_key=f"workspaces/{other_workspace.id}/private.txt",
         file_metadata={},
     )
-    session.add(foreign_file)
+    foreign_team = AgentTeam(
+        workspace_id=other_workspace.id,
+        name="Foreign memory team",
+        team_type="delivery",
+    )
+    session.add_all([foreign_file, foreign_team])
     session.commit()
 
     foreign = client.post(
@@ -137,11 +142,27 @@ def test_resource_rejects_foreign_locator_and_embedded_secret() -> None:
             },
         },
     )
+    foreign_memory = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/resources",
+        headers=_headers(owner.id),
+        json={
+            "key": "foreign.memory",
+            "name": "Foreign memory",
+            "resource_type": "memory_collection",
+            "access_mode": "read",
+            "locator": {
+                "scope_types": ["team"],
+                "scope_ids": [str(foreign_team.id)],
+            },
+        },
+    )
 
     assert foreign.status_code == 422
     assert foreign.json()["error"]["code"] == "capability_configuration_invalid"
     assert secret.status_code == 422
     assert "credential reference" in secret.json()["error"]["message"]
+    assert foreign_memory.status_code == 422
+    assert foreign_memory.json()["error"]["code"] == "capability_configuration_invalid"
 
 
 def test_viewer_can_read_but_cannot_manage_capability_resources() -> None:

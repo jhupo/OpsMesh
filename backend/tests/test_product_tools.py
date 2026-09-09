@@ -19,6 +19,7 @@ from backend.app.db.base import Base
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.storage import LocalStorage
 from backend.app.identity.models import User
+from backend.app.memory.authorization import AuthorizedMemoryScope
 from backend.app.memory.indexing import WorkspaceMemoryIndexingService
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.memory.search import MemorySearchHit, MemorySearchRequest
@@ -104,7 +105,11 @@ def test_product_tools_enforce_permissions_and_workspace_scope(tmp_path: Path) -
         content=b"hello",
         content_type="text/plain",
     )
-    assert service.search_workspace_memory(context, "customer notes") == []
+    assert service.search_workspace_memory(
+        context,
+        "customer notes",
+        access_scopes=_memory_access_scopes(workspace.id),
+    ) == []
     session.commit()
 
     events = session.scalars(
@@ -192,7 +197,11 @@ def test_workspace_memory_search_returns_workspace_scoped_matches() -> None:
         allowed_tools=frozenset({"search_workspace_memory"}),
     )
 
-    results = ProductToolService(session).search_workspace_memory(context, "customer notes")
+    results = ProductToolService(session).search_workspace_memory(
+        context,
+        "customer notes",
+        access_scopes=_memory_access_scopes(workspace.id),
+    )
 
     assert results
     assert {item["source_type"] for item in results} >= {
@@ -329,18 +338,32 @@ def test_semantic_memory_can_be_versioned_searched_and_archived() -> None:
         tags=["Customer", "Renewal", "customer"],
         importance=77,
         metadata={"segment": "enterprise"},
+        access_scopes=_memory_access_scopes(workspace.id),
     )
     session.commit()
 
-    results = service.search_workspace_memory(context, "renewal blockers")
-    other_results = service.search_workspace_memory(other_context, "renewal blockers")
+    results = service.search_workspace_memory(
+        context,
+        "renewal blockers",
+        access_scopes=_memory_access_scopes(workspace.id),
+    )
+    other_results = service.search_workspace_memory(
+        other_context,
+        "renewal blockers",
+        access_scopes=_memory_access_scopes(other_workspace.id),
+    )
     archived = service.archive_semantic_memory(
         context,
         entry.id,
         expected_revision=1,
+        access_scopes=_memory_access_scopes(workspace.id),
     )
     session.commit()
-    archived_results = service.search_workspace_memory(context, "renewal blockers")
+    archived_results = service.search_workspace_memory(
+        context,
+        "renewal blockers",
+        access_scopes=_memory_access_scopes(workspace.id),
+    )
 
     assert entry.workspace_id == workspace.id
     assert entry.tags == ["customer", "renewal"]
@@ -401,16 +424,23 @@ def test_workspace_memory_search_respects_limit_and_source_filters() -> None:
     )
     service = ProductToolService(session)
 
-    limited = service.search_workspace_memory(context, "renewal customer", limit=1)
+    limited = service.search_workspace_memory(
+        context,
+        "renewal customer",
+        limit=1,
+        access_scopes=_memory_access_scopes(workspace.id),
+    )
     files_only = service.search_workspace_memory(
         context,
         "renewal customer",
         source_types={"workspace_file"},
+        access_scopes=_memory_access_scopes(workspace.id),
     )
     none = service.search_workspace_memory(
         context,
         "renewal customer",
         source_types={"workspace_memory"},
+        access_scopes=_memory_access_scopes(workspace.id),
     )
 
     assert len(limited) == 1
@@ -457,11 +487,13 @@ def test_workspace_memory_indexing_refreshes_deterministic_chunks() -> None:
         context,
         "beta renewal",
         source_types={"task"},
+        access_scopes=_memory_access_scopes(workspace.id),
     )
     stale_results = ProductToolService(session).search_workspace_memory(
         context,
         "alpha",
         source_types={"task"},
+        access_scopes=_memory_access_scopes(workspace.id),
     )
     chunks = session.scalars(
         select(WorkspaceMemoryEntry).where(
@@ -503,6 +535,7 @@ def test_workspace_memory_write_requires_tool_permission() -> None:
             knowledge_type="fact",
             title="Nope",
             content="Should not be stored.",
+            access_scopes=_memory_access_scopes(workspace.id),
         )
     except ToolPermissionError as exc:
         assert "not allowed" in str(exc)
@@ -781,6 +814,15 @@ def _seed_workspace(
     session.add_all([user, workspace, membership])
     session.commit()
     return user, workspace
+
+
+def _memory_access_scopes(workspace_id: UUID) -> tuple[AuthorizedMemoryScope, ...]:
+    return (
+        AuthorizedMemoryScope(
+            resource_id=workspace_id,
+            access_mode="read_write",
+        ),
+    )
 
 
 class _RecordingMemoryBackend:

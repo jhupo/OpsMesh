@@ -7,9 +7,11 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import and_, func, literal_column, or_, select
+from sqlalchemy import and_, false, func, literal_column, or_, select, true
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
+from backend.app.memory.authorization import AuthorizedMemoryScope
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.memory.policy import HybridMemoryRetrievalPolicy, MemoryLifecyclePolicy
 
@@ -43,9 +45,9 @@ class MemorySearchRequest:
     limit: int
     source_types: set[str] | None
     documents: list[MemorySearchDocument]
-    tags: set[str] | None = None
-    scope_types: set[str] | None = None
-    scope_ids: set[str] | None = None
+    memory_layers: set[str] | None = None
+    access_scopes: tuple[AuthorizedMemoryScope, ...] | None = None
+    layer_limits: dict[str, int] = field(default_factory=dict)
     query_embedding: list[float] | None = None
     embedding_model: str | None = None
     query_embedding_evidence: dict[str, object] = field(default_factory=dict)
@@ -66,10 +68,7 @@ class LexicalMemorySearchBackend:
             return []
         results: list[tuple[int, MemorySearchDocument]] = []
         for document in request.documents:
-            if (
-                request.source_types is not None
-                and document.source_type not in request.source_types
-            ):
+            if not _document_matches_request(document, request):
                 continue
             score = lexical_score(document, terms, request.query)
             if score > 0:
@@ -91,7 +90,7 @@ class LexicalMemorySearchBackend:
                 backend_name=self.backend_name,
                 ranking_details={"lexical_score": score},
             )
-            for score, document in results[: request.limit]
+            for score, document in results[: _backend_result_limit(request)]
         ]
 
 
@@ -122,7 +121,7 @@ class PostgresFullTextMemorySearchBackend:
                 WorkspaceMemoryEntry.updated_at.desc(),
                 WorkspaceMemoryEntry.id.asc(),
             )
-            .limit(request.limit)
+            .limit(_backend_result_limit(request))
         )
         return [
             MemorySearchHit(
@@ -163,7 +162,7 @@ class PostgresVectorMemorySearchBackend:
                 WorkspaceMemoryEntry.embedding.is_not(None),
             )
             .order_by(distance.asc(), WorkspaceMemoryEntry.id.asc())
-            .limit(request.limit)
+            .limit(_backend_result_limit(request))
         )
         terms = query_terms(request.query)
         hits = []
@@ -276,7 +275,7 @@ class HybridMemorySearchBackend:
             ),
             reverse=True,
         )
-        return ranked[: request.limit]
+        return ranked[: _backend_result_limit(request)]
 
 
 @dataclass
@@ -344,8 +343,8 @@ def created_at_sort_key(value: datetime | None) -> float:
     return _as_utc(value).timestamp()
 
 
-def _memory_entry_filters(request: MemorySearchRequest) -> list[object]:
-    filters: list[object] = [
+def _memory_entry_filters(request: MemorySearchRequest) -> list[ColumnElement[bool]]:
+    filters: list[ColumnElement[bool]] = [
         WorkspaceMemoryEntry.workspace_id == request.workspace_id,
         WorkspaceMemoryEntry.status == "active",
         WorkspaceMemoryEntry.memory_layer.in_(("episodic", "semantic")),
@@ -354,26 +353,100 @@ def _memory_entry_filters(request: MemorySearchRequest) -> list[object]:
             WorkspaceMemoryEntry.expires_at > datetime.now(UTC),
         ),
     ]
+    if request.memory_layers is not None:
+        filters.append(WorkspaceMemoryEntry.memory_layer.in_(request.memory_layers))
     if request.source_types is not None:
-        source_conditions = []
-        if "workspace_memory" in request.source_types:
-            source_conditions.append(WorkspaceMemoryEntry.entry_type != "indexed_chunk")
-        indexed_types = request.source_types - {"workspace_memory"}
-        if indexed_types:
-            source_conditions.append(
-                and_(
-                    WorkspaceMemoryEntry.entry_type == "indexed_chunk",
-                    WorkspaceMemoryEntry.source_type.in_(indexed_types),
-                )
-            )
-        filters.append(or_(*source_conditions) if source_conditions else False)
-    if request.tags is not None:
-        filters.append(WorkspaceMemoryEntry.tags.op("?|")(sorted(request.tags)))
-    if request.scope_types is not None:
-        filters.append(WorkspaceMemoryEntry.scope_type.in_(request.scope_types))
-    if request.scope_ids is not None:
-        filters.append(WorkspaceMemoryEntry.scope_id.in_(request.scope_ids))
+        filters.append(_source_type_condition(request.source_types))
+    if request.access_scopes is not None:
+        filters.append(
+            or_(*(_access_scope_condition(scope) for scope in request.access_scopes))
+            if request.access_scopes
+            else false()
+        )
     return filters
+
+
+def _access_scope_condition(scope: AuthorizedMemoryScope) -> ColumnElement[bool]:
+    conditions: list[ColumnElement[bool]] = []
+    if scope.source_types is not None:
+        conditions.append(_source_type_condition(set(scope.source_types)))
+    if scope.tags is not None:
+        conditions.append(WorkspaceMemoryEntry.tags.op("?|")(sorted(scope.tags)))
+    if scope.scope_types is not None:
+        conditions.append(WorkspaceMemoryEntry.scope_type.in_(scope.scope_types))
+    if scope.scope_ids is not None:
+        conditions.append(WorkspaceMemoryEntry.scope_id.in_(scope.scope_ids))
+    return and_(*conditions) if conditions else true()
+
+
+def _source_type_condition(source_types: set[str]) -> ColumnElement[bool]:
+    conditions: list[ColumnElement[bool]] = []
+    if "workspace_memory" in source_types:
+        conditions.append(WorkspaceMemoryEntry.entry_type != "indexed_chunk")
+    indexed_types = source_types - {"workspace_memory"}
+    if indexed_types:
+        conditions.append(
+            and_(
+                WorkspaceMemoryEntry.entry_type == "indexed_chunk",
+                WorkspaceMemoryEntry.source_type.in_(indexed_types),
+            )
+        )
+    return or_(*conditions) if conditions else false()
+
+
+def _document_matches_request(
+    document: MemorySearchDocument,
+    request: MemorySearchRequest,
+) -> bool:
+    return memory_document_allowed(
+        document,
+        workspace_id=request.workspace_id,
+        source_types=request.source_types,
+        memory_layers=request.memory_layers,
+        access_scopes=request.access_scopes,
+    )
+
+
+def memory_document_allowed(
+    document: MemorySearchDocument,
+    *,
+    workspace_id: UUID,
+    source_types: set[str] | None,
+    memory_layers: set[str] | None,
+    access_scopes: tuple[AuthorizedMemoryScope, ...] | None,
+) -> bool:
+    if source_types is not None and document.source_type not in source_types:
+        return False
+    memory_layer = document.metadata.get("memory_layer")
+    normalized_layer = memory_layer if isinstance(memory_layer, str) else "semantic"
+    if memory_layers is not None and normalized_layer not in memory_layers:
+        return False
+    if access_scopes is None:
+        return True
+    tags = document.metadata.get("tags")
+    normalized_tags = {
+        item for item in tags if isinstance(item, str)
+    } if isinstance(tags, list) else set()
+    scope_type = document.metadata.get("scope_type")
+    normalized_scope_type = scope_type if isinstance(scope_type, str) else "workspace"
+    scope_id = document.metadata.get("scope_id")
+    normalized_scope_id = (
+        scope_id if isinstance(scope_id, str) else str(workspace_id)
+    )
+    return any(
+        scope.allows(
+            source_type=document.source_type,
+            tags=normalized_tags,
+            scope_type=normalized_scope_type,
+            scope_id=normalized_scope_id,
+        )
+        for scope in access_scopes
+    )
+
+
+def _backend_result_limit(request: MemorySearchRequest) -> int:
+    configured = sum(max(value, 0) for value in request.layer_limits.values())
+    return min(max(request.limit, configured), 200)
 
 
 def _entry_document(entry: WorkspaceMemoryEntry) -> MemorySearchDocument:
@@ -383,24 +456,38 @@ def _entry_document(entry: WorkspaceMemoryEntry) -> MemorySearchDocument:
         title=entry.title,
         text=entry.content,
         created_at=entry.created_at,
-        metadata={
-            "memory_entry_id": str(entry.id),
-            "content_fingerprint": entry.content_fingerprint,
-            "entry_type": entry.entry_type,
-            "memory_layer": entry.memory_layer,
-            "scope_type": entry.scope_type,
-            "scope_id": entry.scope_id,
-            "tags": entry.tags,
-            "visibility_scope": entry.visibility_scope,
-            "importance": entry.importance,
-            "access_count": entry.access_count,
-            "last_accessed_at": _dt_or_none(entry.last_accessed_at),
-            "updated_at": _dt_or_none(entry.updated_at),
-            "source_type": entry.source_type,
-            "source_id": entry.source_id,
-            **entry.memory_metadata,
-        },
+        metadata=memory_entry_document_metadata(entry),
     )
+
+
+def memory_entry_document_metadata(entry: WorkspaceMemoryEntry) -> dict[str, object]:
+    source_metadata = dict(entry.memory_metadata)
+    metadata: dict[str, object] = {
+        "memory_entry_id": str(entry.id),
+        "content_fingerprint": entry.content_fingerprint,
+        "entry_type": entry.entry_type,
+        "memory_layer": entry.memory_layer,
+        "scope_type": entry.scope_type,
+        "scope_id": entry.scope_id,
+        "tags": list(entry.tags),
+        "visibility_scope": entry.visibility_scope,
+        "importance": entry.importance,
+        "access_count": entry.access_count,
+        "last_accessed_at": _dt_or_none(entry.last_accessed_at),
+        "updated_at": _dt_or_none(entry.updated_at),
+        "source_type": entry.source_type,
+        "source_id": entry.source_id,
+        "source_metadata": source_metadata,
+    }
+    if entry.entry_type == "indexed_chunk":
+        metadata.update(
+            {
+                "indexed": True,
+                "chunk_index": source_metadata.get("chunk_index"),
+                "chunk_count": source_metadata.get("chunk_count"),
+            }
+        )
+    return metadata
 
 
 def _entry_source_type(entry: WorkspaceMemoryEntry) -> str:

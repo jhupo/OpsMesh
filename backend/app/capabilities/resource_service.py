@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.models import AgentProfile
 from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.capabilities.catalog import (
     CapabilityResourceCreateRequest,
@@ -25,8 +26,11 @@ from backend.app.capabilities.schema_validation import (
 from backend.app.core.errors import DomainError, NotFoundError
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.files.models import WorkspaceFile
+from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.models import RuntimeSpace
 from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.tasks.models import Task
+from backend.app.teams.models import AgentTeam
 
 
 class CapabilityResourceService:
@@ -225,6 +229,9 @@ class CapabilityResourceService:
             for file_id in file_ids:
                 self._require_owned(WorkspaceFile, workspace_id, UUID(str(file_id)), "file")
             return
+        if resource_type == "memory_collection":
+            self._validate_memory_scope_references(workspace_id, locator)
+            return
         if resource_type in {"mcp_resource", "external_service"}:
             server = self._require_owned(
                 McpServer,
@@ -259,6 +266,66 @@ class CapabilityResourceService:
                     workspace_id,
                     UUID(str(locator["workspace_runtime_id"])),
                     "workspace runtime",
+                )
+
+    def _validate_memory_scope_references(
+        self,
+        workspace_id: UUID,
+        locator: dict[str, object],
+    ) -> None:
+        raw_scope_ids = locator.get("scope_ids")
+        if raw_scope_ids is None:
+            return
+        raw_scope_types = locator.get("scope_types")
+        if (
+            not isinstance(raw_scope_ids, list)
+            or not isinstance(raw_scope_types, list)
+            or len(raw_scope_types) != 1
+            or not isinstance(raw_scope_types[0], str)
+        ):
+            raise _configuration_error("Memory scope locator is invalid")
+        scope_type = raw_scope_types[0]
+        for raw_scope_id in raw_scope_ids:
+            scope_id = UUID(str(raw_scope_id))
+            if scope_type == "workspace":
+                if scope_id != workspace_id:
+                    raise _configuration_error(
+                        "Referenced memory workspace scope was not found in this workspace"
+                    )
+                continue
+            if scope_type == "team":
+                owned_id = self._session.scalar(
+                    select(AgentTeam.id).where(
+                        AgentTeam.id == scope_id,
+                        AgentTeam.workspace_id == workspace_id,
+                    )
+                )
+            elif scope_type == "agent":
+                owned_id = self._session.scalar(
+                    select(AgentProfile.id).where(
+                        AgentProfile.id == scope_id,
+                        AgentProfile.workspace_id == workspace_id,
+                    )
+                )
+            elif scope_type == "task":
+                owned_id = self._session.scalar(
+                    select(Task.id).where(
+                        Task.id == scope_id,
+                        Task.workspace_id == workspace_id,
+                    )
+                )
+            elif scope_type == "run":
+                owned_id = self._session.scalar(
+                    select(AgentRun.id).where(
+                        AgentRun.id == scope_id,
+                        AgentRun.workspace_id == workspace_id,
+                    )
+                )
+            else:
+                raise _configuration_error("Memory scope type is unsupported")
+            if owned_id is None:
+                raise _configuration_error(
+                    f"Referenced memory {scope_type} scope was not found in this workspace"
                 )
 
     def _require_owned(

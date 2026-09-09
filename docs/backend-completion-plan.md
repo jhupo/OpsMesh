@@ -659,6 +659,9 @@ Current state:
 - Search and writes enforce the memory-resource source, tag, and scope locators before returning or
   mutating data. Postgres full-text, pgvector cosine search, and lexical candidates now feed a
   weighted reciprocal-rank fusion backend with fingerprint deduplication and deterministic decay.
+- Agent request construction automatically retrieves enabled episodic and semantic layers through
+  the frozen read grants, injects them as bounded untrusted context, and records final context-budget
+  inclusion evidence.
 
 Build:
 
@@ -684,6 +687,8 @@ API/data changes:
 - [x] Generate embeddings asynchronously through the official OpenAI SDK with generation and
   content-fingerprint guards.
 - [x] Expose query-safe retrieval, lifecycle, and embedding evidence APIs.
+- [x] Inject authorized long-term memory into every run request under the Agent memory policy and
+  final model context budget.
 
 Tests:
 
@@ -696,6 +701,9 @@ Tests:
 - [x] hybrid ranking deduplicates identical content and records deterministic rank evidence
 - [x] lifecycle maintenance archives expired entries and promotes only when explicitly enabled
 - [x] embedding retries and stale completions cannot overwrite newer content
+- [x] resource-grant fields cannot be combined across grants and custom metadata cannot forge a
+  memory scope
+- [x] automatic request context excludes other-team and other-workspace memory
 
 Acceptance:
 

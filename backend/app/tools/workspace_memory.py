@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.memory.authorization import AuthorizedMemoryScope
 from backend.app.memory.configuration import WorkspaceMemoryConfigurationService
 from backend.app.memory.models import WorkspaceMemoryEntry, WorkspaceMemoryRetrievalEvent
 from backend.app.memory.policy import (
@@ -23,6 +24,7 @@ from backend.app.memory.search import (
     MemorySearchRequest,
     PostgresFullTextMemorySearchBackend,
     PostgresVectorMemorySearchBackend,
+    memory_document_allowed,
     query_fingerprint,
     query_term_fingerprints,
 )
@@ -47,9 +49,9 @@ class WorkspaceMemorySearchService:
         query: str,
         limit: int = 10,
         source_types: set[str] | None = None,
-        tags: set[str] | None = None,
-        scope_types: set[str] | None = None,
-        scope_ids: set[str] | None = None,
+        memory_layers: set[str] | None = None,
+        access_scopes: tuple[AuthorizedMemoryScope, ...] | None = None,
+        layer_limits: dict[str, int] | None = None,
         query_embedding: list[float] | None = None,
         embedding_model: str | None = None,
         query_embedding_evidence: dict[str, object] | None = None,
@@ -66,13 +68,12 @@ class WorkspaceMemorySearchService:
             documents=self._candidate_documents(
                 workspace_id,
                 source_types,
-                tags,
-                scope_types,
-                scope_ids,
+                memory_layers,
+                access_scopes,
             ),
-            tags=tags,
-            scope_types=scope_types,
-            scope_ids=scope_ids,
+            memory_layers=memory_layers,
+            access_scopes=access_scopes,
+            layer_limits=dict(layer_limits or {}),
             query_embedding=query_embedding,
             embedding_model=embedding_model,
             query_embedding_evidence=query_embedding_evidence or {},
@@ -84,7 +85,7 @@ class WorkspaceMemorySearchService:
             HybridMemorySearchBackend.backend_name,
         }:
             hits = LexicalMemorySearchBackend().search(request)
-        selected_hits = hits[:limit]
+        selected_hits = _select_hits(hits, limit=limit, layer_limits=request.layer_limits)
         self._record_accesses(workspace_id, selected_hits)
         self._record_retrieval(
             request,
@@ -98,24 +99,21 @@ class WorkspaceMemorySearchService:
         self,
         workspace_id: UUID,
         source_types: set[str] | None,
-        tags: set[str] | None,
-        scope_types: set[str] | None,
-        scope_ids: set[str] | None,
+        memory_layers: set[str] | None,
+        access_scopes: tuple[AuthorizedMemoryScope, ...] | None,
     ) -> list[MemorySearchDocument]:
         indexed_sources = self._documents.indexed_sources(workspace_id)
         candidates: list[MemorySearchDocument] = []
         for candidate in self._documents.candidates(workspace_id):
             if source_types is not None and candidate.source_type not in source_types:
                 continue
-            candidate_tags = candidate.metadata.get("tags")
-            if tags is not None and (
-                not isinstance(candidate_tags, list)
-                or not tags.intersection(item for item in candidate_tags if isinstance(item, str))
+            if not memory_document_allowed(
+                candidate,
+                workspace_id=workspace_id,
+                source_types=source_types,
+                memory_layers=memory_layers,
+                access_scopes=access_scopes,
             ):
-                continue
-            if scope_types is not None and candidate.metadata.get("scope_type") not in scope_types:
-                continue
-            if scope_ids is not None and candidate.metadata.get("scope_id") not in scope_ids:
                 continue
             if (
                 candidate.source_type,
@@ -231,13 +229,13 @@ class WorkspaceMemorySearchService:
                     "source_types": sorted(request.source_types)
                     if request.source_types is not None
                     else None,
-                    "tags": sorted(request.tags) if request.tags is not None else None,
-                    "scope_types": sorted(request.scope_types)
-                    if request.scope_types is not None
+                    "memory_layers": sorted(request.memory_layers)
+                    if request.memory_layers is not None
                     else None,
-                    "scope_ids": sorted(request.scope_ids)
-                    if request.scope_ids is not None
+                    "access_scopes": [scope.evidence() for scope in request.access_scopes]
+                    if request.access_scopes is not None
                     else None,
+                    "layer_limits": request.layer_limits,
                 },
                 ranking_policy=ranking_policy,
                 backend_evidence=[
@@ -263,3 +261,26 @@ def _memory_entry_id(hit: MemorySearchHit) -> UUID | None:
         return UUID(str(raw)) if raw is not None else None
     except ValueError:
         return None
+
+
+def _select_hits(
+    hits: list[MemorySearchHit],
+    *,
+    limit: int,
+    layer_limits: dict[str, int],
+) -> list[MemorySearchHit]:
+    if not layer_limits:
+        return hits[:limit]
+    selected: list[MemorySearchHit] = []
+    counts: dict[str, int] = {}
+    for hit in hits:
+        raw_layer = hit.document.metadata.get("memory_layer")
+        layer = raw_layer if isinstance(raw_layer, str) else "semantic"
+        layer_limit = layer_limits.get(layer)
+        if layer_limit is not None and counts.get(layer, 0) >= layer_limit:
+            continue
+        selected.append(hit)
+        counts[layer] = counts.get(layer, 0) + 1
+        if len(selected) >= limit:
+            break
+    return selected

@@ -15,6 +15,7 @@ from backend.app.agent_runtime.contracts import (
 from backend.app.capabilities.models import CapabilityResource
 from backend.app.capabilities.schema_validation import validate_parameters
 from backend.app.core.trace_context import with_current_trace_metadata
+from backend.app.memory.authorization import memory_read_scopes, memory_write_scopes
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.runs.models import AgentRun
@@ -196,31 +197,22 @@ class AgentToolGateway:
                     "Workspace file is outside the run resource scope",
                 )
         if definition.name == "search_workspace_memory":
-            allowed_source_types = _memory_locator_values(grants, "source_types")
             requested_source_types = arguments.get("source_types")
-            if (
-                isinstance(requested_source_types, list)
-                and allowed_source_types
-                and any(item not in allowed_source_types for item in requested_source_types)
+            read_scopes = memory_read_scopes(grants)
+            if isinstance(requested_source_types, list) and any(
+                not any(
+                    scope.source_types is None or item in scope.source_types
+                    for scope in read_scopes
+                )
+                for item in requested_source_types
+                if isinstance(item, str)
             ):
                 raise ToolGatewayDenied(
                     "memory_source_type_not_in_resource_scope",
                     "Memory source type is outside the run resource scope",
                 )
         if definition.name == "upsert_semantic_memory":
-            self._require_memory_scope(arguments, grants)
-            allowed_tags = _memory_locator_values(grants, "tags")
-            requested_tags = arguments.get("tags")
-            if allowed_tags and (
-                not isinstance(requested_tags, list)
-                or not allowed_tags.intersection(
-                    item for item in requested_tags if isinstance(item, str)
-                )
-            ):
-                raise ToolGatewayDenied(
-                    "memory_tags_not_in_resource_scope",
-                    "Memory tags are outside the run resource scope",
-                )
+            self._require_memory_write(arguments, grants)
         if definition.name == "archive_semantic_memory":
             entry_id = arguments.get("memory_entry_id")
             try:
@@ -241,33 +233,44 @@ class AgentToolGateway:
                     "semantic_memory_not_found",
                     "Semantic memory is unavailable in the current workspace",
                 )
-            self._require_memory_scope(
-                {"scope_type": entry.scope_type, "scope_id": entry.scope_id},
+            self._require_memory_write(
+                {
+                    "scope_type": entry.scope_type,
+                    "scope_id": entry.scope_id,
+                    "tags": entry.tags,
+                },
                 grants,
             )
 
     @staticmethod
-    def _require_memory_scope(
+    def _require_memory_write(
         arguments: dict[str, object],
         grants: tuple[AgentRuntimeResourceGrant, ...],
     ) -> None:
         scope_type = arguments.get("scope_type")
         scope_id = arguments.get("scope_id")
-        allowed_scope_types = _memory_locator_values(grants, "scope_types")
-        allowed_scope_ids = _memory_locator_values(grants, "scope_ids")
-        if (
-            not isinstance(scope_type, str)
-            or allowed_scope_types
-            and scope_type not in allowed_scope_types
-        ):
+        raw_tags = arguments.get("tags", [])
+        tags = {
+            item.strip().lower()
+            for item in raw_tags
+            if isinstance(item, str) and item.strip()
+        } if isinstance(raw_tags, list) else set()
+        if not isinstance(scope_type, str):
             raise ToolGatewayDenied(
                 "memory_scope_type_not_in_resource_scope",
                 "Memory scope type is outside the run resource scope",
             )
-        if allowed_scope_ids and str(scope_id) not in allowed_scope_ids:
+        if not any(
+            scope.allows_write(
+                scope_type=scope_type,
+                scope_id=str(scope_id),
+                tags=tags,
+            )
+            for scope in memory_write_scopes(grants)
+        ):
             raise ToolGatewayDenied(
-                "memory_scope_id_not_in_resource_scope",
-                "Memory scope ID is outside the run resource scope",
+                "memory_write_not_in_resource_scope",
+                "Memory write is outside the run resource scope",
             )
 
 
@@ -283,17 +286,6 @@ def _allowed_file_ids(
     if context.file_scope_ids:
         allowed &= {str(file_id) for file_id in context.file_scope_ids}
     return allowed
-
-
-def _memory_locator_values(
-    grants: tuple[AgentRuntimeResourceGrant, ...],
-    key: str,
-) -> set[str]:
-    return {
-        item
-        for grant in grants
-        for item in _locator_strings(grant, key)
-    }
 
 
 def _locator_strings(grant: AgentRuntimeResourceGrant, key: str) -> tuple[str, ...]:

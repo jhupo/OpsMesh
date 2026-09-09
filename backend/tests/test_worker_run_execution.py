@@ -31,6 +31,7 @@ from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.models import AuditEvent
 from backend.app.capabilities.models import (
+    CapabilityResource,
     McpCredentialReference,
     McpServer,
     McpToolAllowlist,
@@ -41,7 +42,8 @@ from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.memory.content import memory_content_fingerprint
+from backend.app.memory.models import WorkspaceMemoryEntry, WorkspaceMemoryRetrievalEvent
 from backend.app.model_providers.credential_commands import (
     ModelProviderCredentialCommandService,
 )
@@ -212,6 +214,25 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
         "utf8_bytes_upper_bound"
     )
     assert events[2].event_metadata["context_budget"]["included_tokens"] > 0
+    assert events[2].event_metadata["memory_retrieval"] == {
+        "enabled": True,
+        "policy": {
+            "enabled": True,
+            "max_results": 12,
+            "max_context_tokens": 4_096,
+            "query_max_tokens": 1_024,
+        },
+        "access_scopes": [],
+        "status": "skipped",
+        "reason_code": "no_authorized_memory_resource",
+        "retrieved_count": 0,
+        "rendered_count": 0,
+        "rendered_tokens": 0,
+        "selected": [],
+        "context_status": "not_applicable",
+        "context_estimated_tokens": 0,
+        "context_included_tokens": 0,
+    }
     assert events[3].event_metadata["model"] == "gpt-4.1"
     assert events[5].event_metadata["runtime_event_count"] == 0
     working_entries = session.scalars(
@@ -5813,6 +5834,149 @@ def test_team_agent_runs_share_persistent_sdk_session_across_tasks() -> None:
     assert "Research Team" in first_request.input_text
 
 
+def test_agent_request_injects_only_resource_authorized_memory() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    foreign_user = User(email="foreign-memory@example.com", display_name="Foreign")
+    foreign_workspace = Workspace(
+        owner=foreign_user,
+        name="Foreign",
+        slug="foreign-memory",
+        settings={},
+    )
+    session.add_all(
+        [
+            foreign_user,
+            foreign_workspace,
+            WorkspaceMember(
+                workspace=foreign_workspace,
+                user=foreign_user,
+                role="owner",
+            ),
+        ]
+    )
+    session.flush()
+    memory_resource = CapabilityResource(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        key="team-runtime-memory",
+        name="Team runtime memory",
+        resource_type="memory_collection",
+        access_mode="read",
+        locator={
+            "source_types": ["workspace_memory"],
+            "tags": ["runtime"],
+            "scope_types": ["team"],
+            "scope_ids": [],
+        },
+    )
+    profile = AgentProfile(
+        workspace_id=workspace.id,
+        name="Runtime Builder",
+        role="builder",
+    )
+    team = AgentTeam(workspace_id=workspace.id, name="Runtime Team", team_type="delivery")
+    other_team = AgentTeam(
+        workspace_id=workspace.id,
+        name="Other Team",
+        team_type="delivery",
+    )
+    session.add_all([memory_resource, profile, team, other_team])
+    session.flush()
+    memory_resource.locator = {
+        **memory_resource.locator,
+        "scope_ids": [str(team.id)],
+    }
+    profile.capabilities = {"resource_ids": [str(memory_resource.id)]}
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        agent_team_id=team.id,
+        title="Deployment rollback procedure",
+        description="Recover a failed runtime deployment safely.",
+    )
+    session.add_all(
+        [
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=profile.id,
+                team_role="Builder",
+            ),
+            task,
+            _semantic_memory_entry(
+                workspace_id=workspace.id,
+                scope_id=team.id,
+                title="Authorized rollback memory",
+                content="Deployment rollback requires draining the runtime queue first.",
+                tags=["runtime"],
+            ),
+            _semantic_memory_entry(
+                workspace_id=workspace.id,
+                scope_id=other_team.id,
+                title="Other team rollback memory",
+                content="Other team deployment rollback material must remain private.",
+                tags=["runtime"],
+                metadata={
+                    "scope_type": "team",
+                    "scope_id": str(team.id),
+                    "tags": ["runtime"],
+                },
+            ),
+            _semantic_memory_entry(
+                workspace_id=foreign_workspace.id,
+                scope_id=uuid4(),
+                title="Foreign workspace rollback memory",
+                content="Foreign deployment rollback material must remain private.",
+                tags=["runtime"],
+            ),
+        ]
+    )
+    session.flush()
+    snapshot = RunAuthorizationSnapshotService(
+        session,
+        RunRequestBuilder(session, None),
+    ).build_authorization_snapshot(task, None, profile)
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=profile.id,
+        input={"authorization_snapshot": snapshot},
+    )
+    session.add(run)
+    session.commit()
+
+    request = _build_agent_request(
+        session,
+        run,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=user.id,
+            idempotency_key="authorized-memory-context",
+        ),
+    )
+
+    assert "Authorized memory context" in request.input_text
+    assert "Authorized rollback memory" in request.input_text
+    assert "Other team rollback memory" not in request.input_text
+    assert "Foreign workspace rollback memory" not in request.input_text
+    evidence = request.context.metadata["memory_retrieval"]
+    assert isinstance(evidence, dict)
+    assert evidence["status"] == "completed"
+    assert evidence["rendered_count"] == 1
+    assert evidence["context_status"] == "included"
+    assert evidence["context_included_tokens"] > 0
+    assert evidence["selected"][0]["scope_id"] == str(team.id)
+    retrieval = session.scalars(select(WorkspaceMemoryRetrievalEvent)).one()
+    assert retrieval.workspace_id == workspace.id
+    assert retrieval.agent_run_id == run.id
+    assert retrieval.scope_filters["access_scopes"][0]["resource_id"] == str(
+        memory_resource.id
+    )
+
+
 def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
@@ -6321,6 +6485,35 @@ def _seed_summary_ready_task(
     session.add_all([research_step, summary_step])
     session.flush()
     return task, summary_step, manager
+
+
+def _semantic_memory_entry(
+    *,
+    workspace_id: UUID,
+    scope_id: UUID,
+    title: str,
+    content: str,
+    tags: list[str],
+    metadata: dict[str, object] | None = None,
+) -> WorkspaceMemoryEntry:
+    return WorkspaceMemoryEntry(
+        workspace_id=workspace_id,
+        source_type="semantic_memory",
+        source_id=str(uuid4()),
+        memory_layer="semantic",
+        scope_type="team",
+        scope_id=str(scope_id),
+        memory_key=title.lower().replace(" ", "-"),
+        entry_type="semantic_procedure",
+        title=title,
+        content=content,
+        tags=tags,
+        visibility_scope="team",
+        importance=80,
+        status="active",
+        content_fingerprint=memory_content_fingerprint(title, content),
+        memory_metadata=metadata or {},
+    )
 
 
 def _patch_portable_types_for_sqlite() -> None:

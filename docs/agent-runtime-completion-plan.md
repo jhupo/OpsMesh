@@ -104,7 +104,7 @@ Goal: keep context bounded and make durable knowledge useful without crossing au
 | 4.4 | P0 | Add episodic memory for tasks, runs, decisions, failures, and human feedback | Done | `add-agent-episodic-memory` | Relevant prior episodes are searchable with task/run provenance |
 | 4.5 | P0 | Add semantic memory for workspace/team knowledge, configuration, and policy | Done | `add-agent-semantic-memory` | Durable knowledge is versioned and scoped separately from transient history |
 | 4.6 | P1 | Add hybrid retrieval, ranking, deduplication, promotion, decay, and archive rules | Done | `complete-memory-lifecycle` | Postgres full-text, pgvector cosine search, and lexical candidates use weighted reciprocal-rank fusion, fingerprint deduplication, deterministic importance/recency decay, and versioned workspace lifecycle policy; background embedding, retrieval, promotion, and archive decisions retain query-safe evidence |
-| 4.7 | P0 | Inject authorized memory retrieval into context construction | Pending | `integrate-memory-context-retrieval` | Relevant memories are selected automatically within budget and cannot cross workspace/team grants |
+| 4.7 | P0 | Inject authorized memory retrieval into context construction | Done | `integrate-memory-context-retrieval` | Every run request applies the default-enabled retrieval policy to its frozen `memory_collection` read grants, prefilters each grant as one conjunctive authorization scope, retrieves only enabled long-term layers, and records both selected-memory and final context-budget inclusion evidence without raw content or queries |
 
 Phase acceptance gate:
 
@@ -131,6 +131,14 @@ weights, decay, retention, and opt-in episodic promotion. Durable worker jobs ge
 generation and content-fingerprint guards, while retrieval, embedding, and lifecycle evidence stores
 stable hashes, ranks, policy versions, and error codes without raw queries, credentials, or provider
 exceptions.
+
+Agent request construction now derives a bounded retrieval query from the authorized task and step,
+applies episodic and semantic per-layer limits, and injects the selected results as explicitly
+untrusted normal-priority context. Resource grants remain independent conjunctions, so the tag,
+source, scope type, and scope ID from separate grants cannot be combined into broader access.
+Workspace ownership is validated when resources are configured, authoritative memory scope fields
+cannot be overridden by custom metadata, and run evidence distinguishes retrieved, rendered,
+included, truncated, and excluded context without persisting query or memory content.
 
 ## Phase 5: Task And Agent Orchestration
 

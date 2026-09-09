@@ -26,6 +26,7 @@ from backend.app.db.session import get_db_session
 from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.model_providers import health_service as model_provider_health_service_module
 from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
@@ -2775,36 +2776,56 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
             ),
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
+                scope_type="workspace",
+                scope_id=str(workspace.id),
                 created_by_user_id=owner.id,
                 entry_type="operating_note",
                 title="Customer escalation rule",
                 content="Escalate enterprise renewal blockers before implementation starts.",
+                content_fingerprint=memory_content_fingerprint(
+                    "Customer escalation rule",
+                    "Escalate enterprise renewal blockers before implementation starts.",
+                ),
                 tags=["operating-policy", "renewal"],
                 visibility_scope="company",
                 importance=7,
             ),
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
+                scope_type="workspace",
+                scope_id=str(workspace.id),
                 created_by_user_id=owner.id,
                 entry_type="operating_note",
                 title="Workspace deployment preference",
                 content="Prefer staged deploys for workspace-wide releases.",
+                content_fingerprint=memory_content_fingerprint(
+                    "Workspace deployment preference",
+                    "Prefer staged deploys for workspace-wide releases.",
+                ),
                 tags=["workspace"],
                 visibility_scope="workspace",
                 importance=6,
             ),
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
+                scope_type="workspace",
+                scope_id=str(workspace.id),
                 created_by_user_id=owner.id,
                 entry_type="operating_note",
                 title="Shared incident runbook",
                 content="Shared scope memories are available to every team in the workspace.",
+                content_fingerprint=memory_content_fingerprint(
+                    "Shared incident runbook",
+                    "Shared scope memories are available to every team in the workspace.",
+                ),
                 tags=["shared"],
                 visibility_scope="shared",
                 importance=5,
             ),
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
+                scope_type="team",
+                scope_id=str(team.id),
                 created_by_user_id=owner.id,
                 source_type="agent_team",
                 source_id=str(team.id),
@@ -2813,6 +2834,11 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
                 content=(
                     "Memory Team ships behind flags and records rollout owners. "
                     "Do not expose sk-memory-content-secret or token=plain-token-secret."
+                ),
+                content_fingerprint=memory_content_fingerprint(
+                    "Team release ritual",
+                    "Memory Team ships behind flags and records rollout owners. "
+                    "Do not expose sk-memory-content-secret or token=plain-token-secret.",
                 ),
                 tags=["team-memory", f"team:{team.id}"],
                 visibility_scope="team",
@@ -2825,10 +2851,16 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
             ),
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
+                scope_type="team",
+                scope_id=str(team.id),
                 created_by_user_id=owner.id,
                 entry_type="team_memory",
                 title="Metadata team memory",
                 content="Team metadata uses the canonical agent_team_id identifier.",
+                content_fingerprint=memory_content_fingerprint(
+                    "Metadata team memory",
+                    "Team metadata uses the canonical agent_team_id identifier.",
+                ),
                 tags=["team-memory"],
                 visibility_scope="team",
                 importance=8,
@@ -2836,12 +2868,18 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
             ),
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
+                scope_type="team",
+                scope_id=str(other_team.id),
                 created_by_user_id=owner.id,
                 source_type="agent_team",
                 source_id=str(other_team.id),
                 entry_type="team_memory",
                 title="Other team private memory",
                 content="This other team detail must not enter the Memory Team runtime.",
+                content_fingerprint=memory_content_fingerprint(
+                    "Other team private memory",
+                    "This other team detail must not enter the Memory Team runtime.",
+                ),
                 tags=["team-memory", f"team:{other_team.id}"],
                 visibility_scope="team",
                 importance=10,
@@ -2849,9 +2887,15 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
             ),
             WorkspaceMemoryEntry(
                 workspace_id=other_workspace.id,
+                scope_type="workspace",
+                scope_id=str(other_workspace.id),
                 entry_type="operating_note",
                 title="Foreign workspace memory",
                 content="This foreign workspace detail must not be visible.",
+                content_fingerprint=memory_content_fingerprint(
+                    "Foreign workspace memory",
+                    "This foreign workspace detail must not be visible.",
+                ),
                 tags=["foreign"],
                 visibility_scope="company",
                 importance=10,
@@ -2862,12 +2906,18 @@ def test_team_runtime_and_command_center_expose_policy_and_memory_summary() -> N
         [
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
+                scope_type="team",
+                scope_id=str(other_team.id),
                 created_by_user_id=owner.id,
                 source_type="agent_team",
                 source_id=str(other_team.id),
                 entry_type="team_memory",
                 title=f"Other team private memory {index}",
                 content="This high-priority other team detail must not displace visible memory.",
+                content_fingerprint=memory_content_fingerprint(
+                    f"Other team private memory {index}",
+                    "This high-priority other team detail must not displace visible memory.",
+                ),
                 tags=["team-memory", f"team:{other_team.id}"],
                 visibility_scope="team",
                 importance=100 + index,
@@ -3250,18 +3300,26 @@ def test_team_project_space_exposes_runtime_capacity_and_outputs() -> None:
             ),
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
+                scope_type="team",
+                scope_id=str(team.id),
                 created_by_user_id=owner.id,
                 source_type="agent_team",
                 source_id=str(team.id),
                 entry_type="team_memory",
                 title="Team project-space ritual",
                 content="Outputs land in the project space.",
+                content_fingerprint=memory_content_fingerprint(
+                    "Team project-space ritual",
+                    "Outputs land in the project space.",
+                ),
                 visibility_scope="team",
                 importance=9,
                 memory_metadata={"agent_team_id": str(team.id)},
             ),
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
+                scope_type="task",
+                scope_id=str(task.id),
                 created_by_agent_profile_id=developer.id,
                 created_by_agent_run_id=run.id,
                 source_type="agent_run",
@@ -3269,28 +3327,44 @@ def test_team_project_space_exposes_runtime_capacity_and_outputs() -> None:
                 entry_type="run_summary",
                 title="Build summary",
                 content="Implemented aggregation.",
+                content_fingerprint=memory_content_fingerprint(
+                    "Build summary",
+                    "Implemented aggregation.",
+                ),
                 visibility_scope="team",
                 importance=7,
                 memory_metadata={"task_id": str(task.id)},
             ),
             WorkspaceMemoryEntry(
                 workspace_id=workspace.id,
+                scope_type="team",
+                scope_id=str(other_team.id),
                 source_type="agent_team",
                 source_id=str(other_team.id),
                 entry_type="team_memory",
                 title="Foreign team memory",
                 content="Must not leak.",
+                content_fingerprint=memory_content_fingerprint(
+                    "Foreign team memory",
+                    "Must not leak.",
+                ),
                 visibility_scope="team",
                 importance=100,
                 memory_metadata={"agent_team_id": str(other_team.id)},
             ),
             WorkspaceMemoryEntry(
                 workspace_id=other_workspace.id,
+                scope_type="workspace",
+                scope_id=str(other_workspace.id),
                 source_type="agent_team",
                 source_id=str(team.id),
                 entry_type="team_memory",
                 title="Foreign workspace memory",
                 content="Must not leak.",
+                content_fingerprint=memory_content_fingerprint(
+                    "Foreign workspace memory",
+                    "Must not leak.",
+                ),
                 visibility_scope="team",
                 importance=100,
             ),
@@ -3705,10 +3779,16 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     session.add(
         WorkspaceMemoryEntry(
             workspace_id=workspace.id,
+            scope_type="workspace",
+            scope_id=str(workspace.id),
             created_by_user_id=owner.id,
             entry_type="operating_note",
             title="Console company policy",
             content="Company-level memory is visible in the operations console.",
+            content_fingerprint=memory_content_fingerprint(
+                "Console company policy",
+                "Company-level memory is visible in the operations console.",
+            ),
             tags=["company"],
             visibility_scope="company",
             importance=3,
