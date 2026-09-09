@@ -50,7 +50,7 @@ async def operations_scheduler(
         ),
         ttl_seconds=10,
     )
-    return OperationsSchedulerResponse(**cached.value)
+    return OperationsSchedulerResponse.model_validate(cached.value)
 
 
 @router.get("/blocked-steps", response_model=PageResponse[BlockedStepExplanationResponse])

@@ -68,7 +68,7 @@ async def operations_overview(
         ),
         ttl_seconds=10,
     )
-    return OperationsOverviewResponse(**cached.value)
+    return OperationsOverviewResponse.model_validate(cached.value)
 
 
 @router.get("/control-plane", response_model=OperationsControlPlaneResponse)
@@ -99,7 +99,7 @@ async def operations_control_plane(
         ),
         ttl_seconds=10,
     )
-    return OperationsControlPlaneResponse(**cached.value)
+    return OperationsControlPlaneResponse.model_validate(cached.value)
 
 
 @router.get("/capacity", response_model=OperationsCapacityResponse)
@@ -125,7 +125,7 @@ async def operations_capacity(
         ),
         ttl_seconds=10,
     )
-    return OperationsCapacityResponse(**cached.value)
+    return OperationsCapacityResponse.model_validate(cached.value)
 
 
 @router.get("/runtime-capacity", response_model=OperationsRuntimeCapacityResponse)
@@ -150,7 +150,7 @@ async def operations_runtime_capacity(
         ),
         ttl_seconds=10,
     )
-    return OperationsRuntimeCapacityResponse(**cached.value)
+    return OperationsRuntimeCapacityResponse.model_validate(cached.value)
 
 
 @router.get("/worker-lifecycle", response_model=OperationsWorkerLifecycleResponse)
@@ -176,7 +176,7 @@ async def operations_worker_lifecycle(
         ),
         ttl_seconds=10,
     )
-    return OperationsWorkerLifecycleResponse(**cached.value)
+    return OperationsWorkerLifecycleResponse.model_validate(cached.value)
 
 
 @router.get("/run-activity", response_model=OperationsRunActivityResponse)
@@ -201,7 +201,7 @@ async def operations_run_activity(
         ),
         ttl_seconds=5,
     )
-    return OperationsRunActivityResponse(**cached.value)
+    return OperationsRunActivityResponse.model_validate(cached.value)
 
 
 @router.get("/mcp-jobs", response_model=OperationsMcpJobsResponse)
@@ -220,7 +220,7 @@ async def operations_mcp_jobs(
         ),
         ttl_seconds=10,
     )
-    return OperationsMcpJobsResponse(**cached.value)
+    return OperationsMcpJobsResponse.model_validate(cached.value)
 
 
 @router.get("/self-hosted-machines", response_model=OperationsSelfHostedMachinesResponse)
@@ -243,7 +243,7 @@ async def operations_self_hosted_machines(
         ),
         ttl_seconds=10,
     )
-    return OperationsSelfHostedMachinesResponse(**cached.value)
+    return OperationsSelfHostedMachinesResponse.model_validate(cached.value)
 
 
 @router.get("/outcomes", response_model=OperationsOutcomesResponse)
@@ -266,4 +266,4 @@ async def operations_outcomes(
         ),
         ttl_seconds=10,
     )
-    return OperationsOutcomesResponse(**cached.value)
+    return OperationsOutcomesResponse.model_validate(cached.value)

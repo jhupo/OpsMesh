@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import cast
 from uuid import UUID
 
 from backend.app.api.schemas.operation_queue import StaleRunRecoveryItemResponse
@@ -61,7 +60,7 @@ class StaleRunRecoveryActionExecutor:
         counts.items.append(
             StaleRunRecoveryItemResponse(
                 run_id=run.id,
-                previous_status=cast(RunStatus, RunStatus(previous_status)).value,
+                previous_status=RunStatus(previous_status).value,
                 action="failed_closed",
             )
         )
