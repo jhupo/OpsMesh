@@ -105,15 +105,17 @@ class WorkspaceQuotaService:
         return WorkspaceReservationResult(reservation=reservation)
 
     def _try_increment_quota(self, quota: WorkspaceQuota, amount: int) -> bool:
-        result = self._session.execute(
+        reserved_id = self._session.scalar(
             update(WorkspaceQuota)
             .where(
                 WorkspaceQuota.id == quota.id,
+                WorkspaceQuota.workspace_id == quota.workspace_id,
                 WorkspaceQuota.reserved_value + amount <= WorkspaceQuota.limit_value,
             )
             .values(reserved_value=WorkspaceQuota.reserved_value + amount)
+            .returning(WorkspaceQuota.id)
         )
-        if result.rowcount != 1:
+        if reserved_id is None:
             return False
         self._session.expire(quota, ["reserved_value"])
         return True

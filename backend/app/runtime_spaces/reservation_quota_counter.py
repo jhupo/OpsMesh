@@ -9,15 +9,17 @@ class RuntimeSpaceQuotaCounter:
         self._session = session
 
     def try_increment(self, quota: RuntimeSpaceQuota, amount: int) -> bool:
-        result = self._session.execute(
+        reserved_id = self._session.scalar(
             update(RuntimeSpaceQuota)
             .where(
                 RuntimeSpaceQuota.id == quota.id,
+                RuntimeSpaceQuota.workspace_id == quota.workspace_id,
                 RuntimeSpaceQuota.reserved_value + amount <= RuntimeSpaceQuota.limit_value,
             )
             .values(reserved_value=RuntimeSpaceQuota.reserved_value + amount)
+            .returning(RuntimeSpaceQuota.id)
         )
-        if result.rowcount != 1:
+        if reserved_id is None:
             return False
         self._session.expire(quota, ["reserved_value"])
         return True

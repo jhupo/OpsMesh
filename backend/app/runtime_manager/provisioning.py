@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.runtime_manager.contracts import RuntimeLimits
 from backend.app.runtime_manager.manager_factory import RuntimeManagerFactory
-from backend.app.runtime_manager.runtime_policy import limits_metadata
+from backend.app.runtime_manager.runtime_policy import RuntimePolicyResolution, limits_metadata
 from backend.app.runtime_manager.safety import RuntimeSafetyPolicy
 from backend.app.runtime_manager.template_guard import RuntimeTemplateGuard
 from backend.app.runtimes.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
@@ -169,7 +169,7 @@ class RuntimeProvisioningService:
         limits: RuntimeLimits | None,
         network_disabled: bool,
         runtime_space_id: UUID | None,
-    ) -> tuple[RuntimeTemplate, object] | None:
+    ) -> tuple[RuntimeTemplate, RuntimePolicyResolution] | None:
         guard = RuntimeTemplateGuard(self._session, self._safety)
         template = guard.validated_template(
             workspace_id=workspace_id,

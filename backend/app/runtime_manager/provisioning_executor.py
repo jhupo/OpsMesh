@@ -5,12 +5,14 @@ from sqlalchemy.orm import Session
 from backend.app.runtime_manager.contracts import (
     DockerRuntimeClient,
     RuntimeCreateRequest,
+    RuntimeHardeningPolicy,
     RuntimeLimits,
     RuntimeMount,
 )
 from backend.app.runtime_manager.events import RuntimeEventLog
 from backend.app.runtime_manager.leases import RuntimeLeaseStore, RuntimeSpaceReservationStore
 from backend.app.runtime_manager.metadata import (
+    RuntimeIsolationMetadata,
     default_runtime_hardening_policy,
     runtime_hardening_metadata,
     runtime_isolation_metadata,
@@ -177,8 +179,8 @@ class RuntimeProvisioningExecutor:
         runtime_space_id: UUID | None,
         limits: RuntimeLimits,
         network_disabled: bool,
-        isolation_metadata: dict[str, object],
-        hardening_policy: dict[str, object],
+        isolation_metadata: RuntimeIsolationMetadata,
+        hardening_policy: RuntimeHardeningPolicy,
     ) -> str:
         return self._docker.create_container(
             RuntimeCreateRequest(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import TypedDict
 from uuid import UUID
 
 from backend.app.runtime_manager.contracts import (
@@ -7,6 +9,21 @@ from backend.app.runtime_manager.contracts import (
     RuntimeLimits,
 )
 from backend.app.runtimes.models import WorkspaceRuntime
+
+
+class WorkspaceMountMetadata(TypedDict):
+    type: str
+    docker_volume: str
+    target: str
+    mode: str
+
+
+class RuntimeIsolationMetadata(TypedDict):
+    workspace_id: str
+    runtime_id: str
+    runtime_space_id: str | None
+    workspace_mount: WorkspaceMountMetadata
+    network: dict[str, object]
 
 
 def runtime_space_reservation_key(runtime: WorkspaceRuntime) -> str:
@@ -28,7 +45,7 @@ def runtime_isolation_metadata(
     runtime_id: UUID,
     runtime_space_id: UUID | None,
     network_disabled: bool,
-) -> dict[str, object]:
+) -> RuntimeIsolationMetadata:
     volume_name = _runtime_volume_name(workspace_id, runtime_id)
     return {
         "workspace_id": str(workspace_id),
@@ -54,7 +71,7 @@ def default_runtime_hardening_policy() -> RuntimeHardeningPolicy:
 def runtime_hardening_metadata(
     policy: RuntimeHardeningPolicy,
     *,
-    isolation_metadata: dict[str, object],
+    isolation_metadata: Mapping[str, object],
 ) -> dict[str, object]:
     writable_paths: list[dict[str, object]] = []
     workspace_mount = isolation_metadata.get("workspace_mount")

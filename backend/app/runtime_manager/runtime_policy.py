@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import NotRequired, TypedDict
 from uuid import UUID
 
 from sqlalchemy import select
@@ -17,6 +18,17 @@ class RuntimePolicyResolution:
     limits: RuntimeLimits
     network_disabled: bool
     metadata: dict[str, object]
+
+
+class RuntimePolicyMetadata(TypedDict):
+    template_id: str
+    limits_source: str
+    requested: dict[str, object]
+    effective: dict[str, object]
+    sources: list[str]
+    limit_reductions: list[dict[str, object]]
+    runtime_space: NotRequired[dict[str, object]]
+    team: NotRequired[dict[str, object]]
 
 
 class RuntimePolicyResolver:
@@ -45,7 +57,7 @@ class RuntimePolicyResolver:
     ) -> RuntimePolicyResolution:
         limits = requested_limits or self.limits_from_template(template)
         network_disabled = requested_network_disabled
-        metadata: dict[str, object] = {
+        metadata: RuntimePolicyMetadata = {
             "template_id": str(template.id),
             "limits_source": "request" if requested_limits is not None else "template",
             "requested": {
@@ -78,7 +90,7 @@ class RuntimePolicyResolver:
         return RuntimePolicyResolution(
             limits=limits,
             network_disabled=network_disabled,
-            metadata=metadata,
+            metadata=dict(metadata),
         )
 
     def _apply_runtime_space_policy(
@@ -86,7 +98,7 @@ class RuntimePolicyResolver:
         *,
         workspace_id: UUID,
         runtime_space: RuntimeSpace,
-        metadata: dict[str, object],
+        metadata: RuntimePolicyMetadata,
         limits: RuntimeLimits,
         network_disabled: bool,
     ) -> tuple[RuntimeLimits, bool]:
@@ -194,7 +206,7 @@ def apply_limit_caps(
     caps = limit_caps(policy)
     if not caps:
         return limits, []
-    values: dict[str, object] = {
+    values: dict[str, int | float] = {
         "cpu_count": limits.cpu_count,
         "memory_mb": limits.memory_mb,
         "disk_mb": limits.disk_mb,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -134,7 +135,7 @@ class RuntimeSpaceReservationReleaseService:
         *,
         workspace_id: UUID,
         agent_run_id: UUID,
-    ) -> list[RuntimeSpaceReservation]:
+    ) -> Sequence[RuntimeSpaceReservation]:
         return self._session.scalars(
             select(RuntimeSpaceReservation)
             .where(
@@ -147,12 +148,12 @@ class RuntimeSpaceReservationReleaseService:
 
     def _release_reservations(
         self,
-        reservations: list[RuntimeSpaceReservation],
+        reservations: Sequence[RuntimeSpaceReservation],
         *,
         release_time: datetime,
-        event_message,
-        event_metadata,
-        runtime_space_for,
+        event_message: Callable[[RuntimeSpaceReservation], str] | None,
+        event_metadata: Callable[[RuntimeSpaceReservation], dict[str, object]] | None,
+        runtime_space_for: Callable[[RuntimeSpaceReservation], RuntimeSpace | None],
     ) -> None:
         quotas = self._quotas_for(reservations)
         for reservation in reservations:
@@ -178,7 +179,7 @@ class RuntimeSpaceReservationReleaseService:
 
     def _quotas_for(
         self,
-        reservations: list[RuntimeSpaceReservation],
+        reservations: Sequence[RuntimeSpaceReservation],
     ) -> dict[tuple[UUID, str], RuntimeSpaceQuota]:
         quota_keys = {
             quota_key
@@ -204,12 +205,15 @@ class RuntimeSpaceReservationReleaseService:
 
     def _runtime_spaces_for(
         self,
-        reservations: list[RuntimeSpaceReservation],
+        reservations: Sequence[RuntimeSpaceReservation],
     ) -> dict[UUID, RuntimeSpace]:
         runtime_space_ids = {reservation.runtime_space_id for reservation in reservations}
         return {
             runtime_space.id: runtime_space
             for runtime_space in self._session.scalars(
-                select(RuntimeSpace).where(RuntimeSpace.id.in_(runtime_space_ids))
+                select(RuntimeSpace).where(
+                    RuntimeSpace.workspace_id == reservations[0].workspace_id,
+                    RuntimeSpace.id.in_(runtime_space_ids),
+                )
             ).all()
         }

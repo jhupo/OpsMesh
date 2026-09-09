@@ -4,9 +4,24 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from shutil import rmtree
+from typing import NotRequired, TypedDict
 
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.runtimes.models import WorkspaceRuntime
+
+
+class CleanupDetails(TypedDict):
+    action: str
+    container_id: str | None
+    success: bool
+    checked_at: str
+    container_removed: NotRequired[bool]
+    host_resources: NotRequired[list[dict[str, object]]]
+    error: NotRequired[str]
+
+
+class CleanupEvidence(TypedDict):
+    cleanup: CleanupDetails
 
 
 class RuntimeResourceCleaner:
@@ -41,7 +56,7 @@ class RuntimeResourceCleaner:
         )
         evidence["cleanup"]["container_removed"] = container_removed
         evidence["cleanup"]["host_resources"] = host_resource_results
-        return evidence
+        return dict(evidence)
 
     def _cleanup_host_resources(self, runtime: WorkspaceRuntime) -> list[dict[str, object]]:
         managed_resources = runtime.capabilities.get("managed_resources")
@@ -130,8 +145,8 @@ def cleanup_evidence(
     container_id: str | None,
     success: bool,
     error: str | None = None,
-) -> dict[str, object]:
-    evidence: dict[str, object] = {
+) -> CleanupEvidence:
+    evidence: CleanupEvidence = {
         "cleanup": {
             "action": action,
             "container_id": container_id,

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from backend.app.runtime_spaces.models import RuntimeSpaceQuota, RuntimeSpaceReservation
 
 RUN_CAPACITY_QUOTA_KEY = "active_runs"
 
 
-def normalize_reservation_usage(resource_usage: dict[str, int] | None) -> dict[str, int]:
+def normalize_reservation_usage(resource_usage: Mapping[str, object] | None) -> dict[str, int]:
     usage = {
         key: value
         for key, value in (resource_usage or {}).items()
