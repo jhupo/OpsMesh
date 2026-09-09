@@ -3755,7 +3755,7 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
         task_step_id=step.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, task, agent, step=step),
     )
     session.add(run)
     session.commit()
@@ -3897,7 +3897,7 @@ def test_worker_persists_structured_task_progress_from_agent_output() -> None:
         task_step_id=step.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, task, agent, step=step),
     )
     session.add(run)
     session.commit()
@@ -3973,7 +3973,7 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         role="designer",
         instructions="Design assets.",
         model_settings={"model_api": "chat_completions"},
-        tool_policy={"mcp_tools": ["generate_image", 42, "write_artifact"]},
+        tool_policy={"allowed_tools": ["send_agent_message", "write_artifact"]},
     )
     session.add_all([task, agent])
     session.flush()
@@ -3982,7 +3982,7 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, task, agent),
     )
     session.add(run)
     session.commit()
@@ -3996,14 +3996,11 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
     )
     request = _build_agent_request(session, run, job)
 
-    assert request.context.allowed_tools == ("generate_image", "write_artifact")
+    assert request.context.allowed_tools == ("send_agent_message", "write_artifact")
     assert request.model_api == "chat_completions"
     provider_credential_id = request.context.metadata["model_provider_credential_id"]
     assert isinstance(provider_credential_id, str)
-    assert request.context.metadata | {
-        "persistent_session_key": None,
-        "persistent_session_mode": None,
-    } == {
+    expected_metadata = {
         "agent_profile_id": str(agent.id),
         "agent_role": "designer",
         "run_model": agent.model,
@@ -4014,7 +4011,7 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         "authorized_workspace_id": str(workspace.id),
         "authorized_task_id": str(task.id),
         "tool_policy_source": "agent_profile",
-        "authorization_snapshot_version": None,
+        "authorization_snapshot_version": 2,
         "agent_mailbox": {
             "scope": {"task_id": str(task.id)},
             "thread_count": 0,
@@ -4023,9 +4020,11 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
             "pending_count": 0,
             "latest_unread_messages": [],
         },
-        "persistent_session_key": None,
-        "persistent_session_mode": None,
     }
+    assert request.context.metadata | expected_metadata == request.context.metadata
+    assert request.context.metadata["authorization_snapshot_fingerprint"] == (
+        run.input["authorization_snapshot"]["fingerprint"]
+    )
     assert request.context.metadata["persistent_session_mode"] == "sdk_session"
     assert isinstance(request.context.metadata["persistent_session_key"], str)
 
@@ -4072,7 +4071,7 @@ def test_agent_request_includes_unread_mailbox_context() -> None:
         task_id=task.id,
         agent_profile_id=recipient.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, task, recipient),
     )
     session.add_all([message, run])
     session.commit()
@@ -4171,7 +4170,7 @@ def test_agent_request_mailbox_context_is_scoped_to_current_task() -> None:
         task_id=current_task.id,
         agent_profile_id=recipient.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, current_task, recipient),
     )
     session.add_all([current_message, other_message, run])
     session.commit()
@@ -4273,7 +4272,7 @@ def test_team_agent_mailbox_context_is_scoped_to_runtime_thread() -> None:
         task_id=task.id,
         agent_profile_id=recipient.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, task, recipient),
     )
     session.add_all([runtime_message, other_message, run])
     session.commit()
@@ -4310,7 +4309,7 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
         name="Designer",
         role="designer",
         instructions="Design assets.",
-        tool_policy={"allowed_tools": ["generate_image", "write_artifact"]},
+        tool_policy={"allowed_tools": ["send_agent_message", "write_artifact"]},
     )
     session.add_all([task, agent])
     session.flush()
@@ -4338,7 +4337,7 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
         task_step_id=step.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, task, agent, step=step),
     )
     session.add(run)
     session.commit()
@@ -4352,7 +4351,7 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
     )
     request = _build_agent_request(session, run, job)
 
-    assert request.context.allowed_tools == ("generate_image", "write_artifact")
+    assert request.context.allowed_tools == ("send_agent_message", "write_artifact")
     expected_metadata = {
         "agent_profile_id": str(agent.id),
         "agent_role": "designer",
@@ -4364,7 +4363,7 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
         "authorized_workspace_id": str(workspace.id),
         "authorized_task_id": str(task.id),
         "tool_policy_source": "agent_profile",
-        "authorization_snapshot_version": None,
+        "authorization_snapshot_version": 2,
         "context_scope": "task_step",
         "task_step_id": str(step.id),
         "work_package_id": "visual-design",
@@ -4395,7 +4394,7 @@ def test_agent_request_allows_snapshot_to_narrow_agent_tools() -> None:
         workspace_id=workspace.id,
         name="Designer",
         role="designer",
-        tool_policy={"allowed_tools": ["generate_image", "write_artifact"]},
+        tool_policy={"allowed_tools": ["write_artifact"]},
     )
     session.add_all([task, agent])
     session.flush()
@@ -4404,16 +4403,9 @@ def test_agent_request_allows_snapshot_to_narrow_agent_tools() -> None:
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={
-            "authorization_snapshot": {
-                "version": 1,
-                "workspace_id": str(workspace.id),
-                "task_id": str(task.id),
-                "agent_profile_id": str(agent.id),
-                "allowed_tools": ["write_artifact"],
-            }
-        },
+        input=_authorized_run_input(session, task, agent),
     )
+    agent.tool_policy = {"allowed_tools": ["send_agent_message", "write_artifact"]}
     session.add(run)
     session.commit()
 
@@ -4470,7 +4462,7 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
         instructions="Write.",
         model="workspace-default",
         model_provider_credential_id=credential.id,
-        model_settings={"model_api": "responses"},
+        model_settings={"model_api": "anthropic_messages"},
     )
     session.add_all([task, agent])
     session.flush()
@@ -4479,7 +4471,7 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, task, agent, settings=settings),
     )
     session.add(run)
     session.commit()
@@ -4564,7 +4556,7 @@ def test_agent_request_model_api_overrides_credential_default_protocol() -> None
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, task, agent, settings=settings),
     )
     session.add(run)
     session.commit()
@@ -4648,7 +4640,12 @@ def test_agent_request_fails_closed_when_workspace_default_snapshot_becomes_unhe
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={"authorization_snapshot": {"model_provider": snapshot}},
+        input={
+            "authorization_snapshot": _v2_authorization_snapshot(
+                workspace_id=str(workspace.id), task_id=str(task.id),
+                agent_profile_id=str(agent.id), model_provider=snapshot,
+            )
+        },
     )
     session.add(run)
     session.commit()
@@ -4747,7 +4744,12 @@ def test_agent_request_does_not_fallback_explicit_inactive_provider_override() -
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={"authorization_snapshot": {"model_provider": snapshot}},
+        input={
+            "authorization_snapshot": _v2_authorization_snapshot(
+                workspace_id=str(workspace.id), task_id=str(task.id),
+                agent_profile_id=str(agent.id), model_provider=snapshot,
+            )
+        },
     )
     session.add(run)
     session.commit()
@@ -4856,7 +4858,7 @@ def test_worker_fails_closed_without_model_provider_fallback() -> None:
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, task, agent, settings=settings),
     )
     session.add(run)
     session.commit()
@@ -5007,7 +5009,7 @@ def test_worker_falls_back_across_model_provider_vendors() -> None:
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, task, agent, settings=settings),
     )
     session.add(run)
     session.commit()
@@ -5171,7 +5173,7 @@ def test_worker_ignores_budget_exhausted_model_provider_fallback_policy() -> Non
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, task, agent, settings=settings),
     )
     session.add(run)
     session.commit()
@@ -5299,7 +5301,7 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input=_authorized_run_input(session, task, agent, settings=settings),
     )
     session.add(run)
     session.commit()
@@ -5447,7 +5449,12 @@ def test_agent_request_rejects_task_step_from_another_task() -> None:
         task_step_id=step.id,
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
-        input={},
+        input={
+            "authorization_snapshot": _v2_authorization_snapshot(
+                workspace_id=str(workspace.id), task_id=str(task.id),
+                task_step_id=str(step.id), agent_profile_id=str(agent.id),
+            )
+        },
     )
     session.add(run)
     session.commit()
@@ -5503,6 +5510,37 @@ def test_agent_request_rejects_worker_job_scope_mismatch() -> None:
         assert "resource does not match" in str(exc)
     else:
         raise AssertionError("Expected worker job resource mismatch to be rejected")
+
+
+@pytest.mark.parametrize(
+    ("snapshot", "message"),
+    [({}, "Authorization snapshot is required"),
+     ({"version": 1}, "Authorization snapshot version is unsupported")],
+)
+def test_agent_request_rejects_missing_or_obsolete_authorization_snapshot(
+    snapshot: dict[str, object], message: str,
+) -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Denied run")
+    agent = AgentProfile(workspace_id=workspace.id, name="Writer", role="writer")
+    session.add_all([task, agent])
+    session.flush()
+    run = AgentRun(
+        workspace_id=workspace.id, task_id=task.id, agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value, input={"authorization_snapshot": snapshot},
+    )
+    session.add(run)
+    session.flush()
+    with pytest.raises(ValueError, match=message):
+        _build_agent_request(
+            session, run,
+            JobPayload(
+                workspace_id=workspace.id, job_type=JobType.AGENT_RUN,
+                resource_id=run.id, requested_by_user_id=user.id,
+                idempotency_key="invalid-authorization-snapshot",
+            ),
+        )
 
 
 def test_agent_request_rejects_authorization_snapshot_scope_mismatch() -> None:
@@ -6107,9 +6145,9 @@ def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
         ),
     )
     assert planner_request.context.allowed_tools == (
-        "send_agent_message",
         "get_agent_inbox",
         "mark_agent_message_read",
+        "send_agent_message",
     )
     assert planner_request.session is not None
     send_result = asyncio.run(
@@ -6342,6 +6380,20 @@ def _build_agent_request(
         run,
         job,
     )
+
+
+def _authorized_run_input(
+    session: Session,
+    task: Task,
+    profile: AgentProfile,
+    *,
+    step: TaskStep | None = None,
+    settings: Settings | None = None,
+) -> dict[str, object]:
+    snapshot = RunAuthorizationSnapshotService(
+        session, RunRequestBuilder(session, settings or Settings(environment="test")),
+    ).build_authorization_snapshot(task, step, profile)
+    return {"authorization_snapshot": snapshot}
 
 
 def _v2_authorization_snapshot(**values: object) -> dict[str, object]:
