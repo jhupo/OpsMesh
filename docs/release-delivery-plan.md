@@ -2,6 +2,23 @@
 
 Status: in progress. A green unit test is not deployment evidence.
 
+## rc4 publication checkpoint
+
+- [Release run 34366081003](https://github.com/jhupo/OpsMesh/actions/runs/34366081003)
+  passed the complete gate, exact-digest image probes and fresh production Compose acceptance.
+  Its first publication attempt created a draft but immediately failed to find it in list results.
+  Retrying only the failed publication job reused the tested packages/images and published all
+  eight assets successfully. The creation path now consumes the official API creation response
+  directly instead of rediscovering the new ID through a potentially stale list.
+- The operator's actual public-download path verified the rc4 manifest signature against the
+  repository, workflow, tag and commit; all seven package downloads matched declared size/SHA256.
+  Publication now also runs public download and provenance checks for every package and both OCI
+  images before the workflow may report success. The new creation path requires a fresh tag run.
+- [Delivery Integration 34365800771](https://github.com/jhupo/OpsMesh/actions/runs/34365800771)
+  passed real PostgreSQL schema-drift checks, the 0071/0072 downgrade/upgrade roundtrip, Compose
+  startup and backup restoration. Systemd installation and managed cross-version recovery remain
+  separate outstanding acceptance items.
+
 ## rc3 verification checkpoint
 
 - Run `34363744943` passes full pytest: 1165 passed, 8 skipped. It then rejects ORM/schema drift

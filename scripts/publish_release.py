@@ -55,18 +55,20 @@ def publish(tag: str, repository: str, directory: Path) -> None:
     ))
     existing = [release for page in pages for release in page if release["tag_name"] == tag]
     if not existing:
-        command(
-            "gh", "release", "create", tag, "--repo", repository, "--verify-tag", "--draft",
-            "--generate-notes", f"--prerelease={'true' if 'rc' in tag else 'false'}",
-        )
-        # Drafts are visible through the authenticated API, but not public download URLs.
-        pages = json.loads(command(
-            "gh", "api", f"repos/{repository}/releases?per_page=100", "--paginate", "--slurp"
-        ))
-        existing = [release for page in pages for release in page if release["tag_name"] == tag]
+        # Require an existing remote tag; creating a release must never create one implicitly.
+        command("gh", "api", f"repos/{repository}/git/ref/tags/{tag}")
+        # The creation response owns the new ID. List results can lag behind a successful POST.
+        existing = [json.loads(command(
+            "gh", "api", f"repos/{repository}/releases", "--method", "POST",
+            "--raw-field", f"tag_name={tag}", "--field", "draft=true",
+            "--field", "generate_release_notes=true",
+            "--field", f"prerelease={'true' if 'rc' in tag else 'false'}",
+        ))]
     if len(existing) != 1:
         raise ValueError("Expected exactly one release for the tag")
     release = existing[0]
+    if release["tag_name"] != tag:
+        raise ValueError("Release response tag mismatch")
     endpoint = f"repos/{repository}/releases/{release['id']}/assets?per_page=100"
     assets = [asset for page in json.loads(command(
         "gh", "api", endpoint, "--paginate", "--slurp"

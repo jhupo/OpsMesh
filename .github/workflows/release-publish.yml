@@ -134,3 +134,6 @@ jobs:
       - name: Publish complete release only
         run: |
           uv run python -m scripts.publish_release --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY"
+      - name: Verify public downloads and signed provenance
+        run: |
+          uv run python -m scripts.check_release --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY"
