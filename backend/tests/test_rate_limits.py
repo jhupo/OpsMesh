@@ -1,16 +1,15 @@
-import fakeredis
 from fastapi.testclient import TestClient
+from limits.storage import MemoryStorage
 from starlette.requests import Request
 
 from backend.app.core.client_ip import resolve_client_ip
 from backend.app.core.config import Settings
 from backend.app.main import create_app_with_dependencies
-from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
+from backend.app.rate_limits.service import FixedWindowRateLimiter
 
 
-def test_redis_fixed_window_limiter_blocks_after_limit() -> None:
-    redis = fakeredis.FakeRedis(decode_responses=True)
-    limiter = RedisFixedWindowRateLimiter(redis, key_prefix="opsmesh", clock=lambda: 120.0)
+def test_fixed_window_limiter_blocks_after_limit() -> None:
+    limiter = FixedWindowRateLimiter(MemoryStorage())
 
     first = limiter.check(identifier="client-1", limit=2, window_seconds=60)
     second = limiter.check(identifier="client-1", limit=2, window_seconds=60)
@@ -26,7 +25,6 @@ def test_redis_fixed_window_limiter_blocks_after_limit() -> None:
 
 
 def test_rate_limit_middleware_returns_429_with_headers() -> None:
-    redis = fakeredis.FakeRedis(decode_responses=True)
     app = create_app_with_dependencies(
         settings=Settings(
             environment="test",
@@ -35,7 +33,7 @@ def test_rate_limit_middleware_returns_429_with_headers() -> None:
             api_rate_limit_requests=1,
             api_rate_limit_window_seconds=60,
         ),
-        rate_limiter=RedisFixedWindowRateLimiter(redis, key_prefix="opsmesh"),
+        rate_limiter=FixedWindowRateLimiter(MemoryStorage()),
     )
     client = TestClient(app)
 
@@ -54,7 +52,7 @@ def test_rate_limit_middleware_returns_429_with_headers() -> None:
 
 
 def test_rate_limiter_fails_open_when_redis_is_unavailable() -> None:
-    limiter = RedisFixedWindowRateLimiter(BrokenRedis(), key_prefix="opsmesh")
+    limiter = FixedWindowRateLimiter(BrokenStorage())
 
     decision = limiter.check(identifier="client-1", limit=1, window_seconds=60)
 
@@ -70,7 +68,7 @@ def test_sensitive_gateway_routes_fail_closed_when_redis_is_unavailable() -> Non
             log_format="text",
             api_rate_limit_enabled=True,
         ),
-        rate_limiter=RedisFixedWindowRateLimiter(BrokenRedis(), key_prefix="opsmesh"),
+        rate_limiter=FixedWindowRateLimiter(BrokenStorage()),
     )
     client = TestClient(app)
 
@@ -104,6 +102,6 @@ def test_client_ip_ignores_forwarded_header_until_proxy_trust_is_configured() ->
     assert resolve_client_ip(request, trusted_proxy_hops=2) == "203.0.113.10"
 
 
-class BrokenRedis:
-    def incr(self, key: str) -> int:
+class BrokenStorage(MemoryStorage):
+    def incr(self, key: str, expiry: float, amount: int = 1) -> int:
         raise ConnectionError("redis down")

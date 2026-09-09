@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
+from backend.app.rate_limits.service import FixedWindowRateLimiter
 from backend.app.webhooks.constants import (
     WEBHOOK_REPLAY_COOLDOWN_SECONDS,
     WEBHOOK_REPLAY_WORKSPACE_LIMIT,
@@ -30,8 +30,9 @@ class WebhookDeliveryReplayRateLimitError(WebhookDeliveryReplayError):
 
 
 class WebhookDeliveryReplayService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, rate_limiter: FixedWindowRateLimiter) -> None:
         self._session = session
+        self._rate_limiter = rate_limiter
 
     def replay_attempt(
         self,
@@ -58,7 +59,7 @@ class WebhookDeliveryReplayService:
         if attempt.status != "queued":
             now = datetime.now(UTC)
             self._enforce_replay_cooldown(attempt=attempt, now=now)
-            self._enforce_workspace_replay_rate_limit(queue=queue, workspace_id=workspace_id)
+            self._enforce_workspace_replay_rate_limit(workspace_id=workspace_id)
             self._reset_attempt(attempt, now=now)
             WebhookDeliveryScheduler(self._session).enqueue_attempt(
                 queue=queue,
@@ -141,13 +142,9 @@ class WebhookDeliveryReplayService:
     def _enforce_workspace_replay_rate_limit(
         self,
         *,
-        queue: RedisQueue,
         workspace_id: UUID,
     ) -> None:
-        decision = RedisFixedWindowRateLimiter(
-            queue.redis,
-            key_prefix=queue.keys.prefix,
-        ).check(
+        decision = self._rate_limiter.check(
             identifier=f"webhook-replay:{workspace_id}",
             limit=WEBHOOK_REPLAY_WORKSPACE_LIMIT,
             window_seconds=WEBHOOK_REPLAY_WORKSPACE_WINDOW_SECONDS,

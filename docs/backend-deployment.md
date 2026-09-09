@@ -363,7 +363,9 @@ OPSMESH_ADMIN_RATE_LIMIT_REQUESTS=120
 OPSMESH_TRUSTED_PROXY_HOPS=1
 ```
 
-Rate limits use Redis fixed windows and fail open if Redis is temporarily unavailable, so cache instability does not take down the API.
+Rate limits use the `limits` fixed-window strategy with Redis storage. Authentication and platform
+administration fail closed if Redis is unavailable; ordinary API traffic fails open so a cache
+incident does not take down the entire service.
 
 Hosted MCP health checks are treated as stale after `OPSMESH_MCP_HEALTH_CHECK_STALE_AFTER_SECONDS` seconds, defaulting to `86400`. Stale or missing MCP health results fail closed, so the platform will avoid using hosted MCP credentials until a fresh healthy check is recorded.
 

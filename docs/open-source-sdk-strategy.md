@@ -90,6 +90,7 @@ or cancellation.
 | MCP protocol and transports | Official MCP Python SDK | Keep; no custom JSON-RPC replacement |
 | Schema validation | `jsonschema` | Keep; product adds workspace/resource policy |
 | Release version parsing and ordering | `packaging.Version` | Adopt; keep only the three-component release-tag policy |
+| Gateway and webhook rate limits | `limits` fixed-window strategy with Redis storage | Adopt; keep gateway identity, route policy, failure mode, audit, and response semantics |
 | Tracing and metrics | OpenTelemetry and Prometheus clients | Keep; product audit remains durable Postgres state |
 | Request retries | Provider SDK request retries and durable worker workflow retries | Never replay a complete agent run or MCP tool call in-process; retry only an explicitly idempotent transport or durable workflow step |
 | Sessions and memory | Product Postgres session/memory services, OpenAI Responses compaction session, Claude `SessionStore` bridge | Keep product ownership of storage and durable knowledge; use provider SDK transcript and compaction extension points |

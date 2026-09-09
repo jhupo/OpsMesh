@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
+from math import ceil
 from time import time
 
+from limits import RateLimitItemPerSecond
+from limits.storage import RedisStorage, Storage
+from limits.strategies import FixedWindowRateLimiter as LimitsFixedWindowRateLimiter
 from redis import Redis
 
 logger = logging.getLogger(__name__)
@@ -19,17 +22,25 @@ class RateLimitDecision:
     reset_epoch_seconds: int
 
 
-class RedisFixedWindowRateLimiter:
-    def __init__(
-        self,
+class FixedWindowRateLimiter:
+    def __init__(self, storage: Storage, *, namespace: str = "opsmesh:rate-limit") -> None:
+        self._strategy = LimitsFixedWindowRateLimiter(storage)
+        self._namespace = namespace
+
+    @classmethod
+    def from_redis(
+        cls,
         redis: Redis[str],
         *,
         key_prefix: str,
-        clock: Callable[[], float] = time,
-    ) -> None:
-        self._redis = redis
-        self._key_prefix = key_prefix
-        self._clock = clock
+    ) -> FixedWindowRateLimiter:
+        storage = RedisStorage(
+            "redis://",
+            connection_pool=redis.connection_pool,
+            key_prefix=f"{key_prefix}:rate-limit",
+            wrap_exceptions=True,
+        )
+        return cls(storage, namespace="opsmesh")
 
     def check(
         self,
@@ -38,15 +49,14 @@ class RedisFixedWindowRateLimiter:
         limit: int,
         window_seconds: int,
     ) -> RateLimitDecision:
-        now = int(self._clock())
-        window_id = now // window_seconds
-        reset = (window_id + 1) * window_seconds
-        key = f"{self._key_prefix}:rate-limit:{identifier}:{window_id}"
-
+        item = RateLimitItemPerSecond(
+            limit,
+            multiples=window_seconds,
+            namespace=self._namespace,
+        )
         try:
-            count = int(self._redis.incr(key))
-            if count == 1:
-                self._redis.expire(key, window_seconds + 1)
+            allowed = self._strategy.hit(item, identifier)
+            window = self._strategy.get_window_stats(item, identifier)
         except Exception:
             logger.warning("Rate limiter failed open", exc_info=True)
             return RateLimitDecision(
@@ -54,14 +64,15 @@ class RedisFixedWindowRateLimiter:
                 backend_available=False,
                 limit=limit,
                 remaining=limit,
-                reset_epoch_seconds=reset,
+                reset_epoch_seconds=int(time()) + window_seconds,
             )
-
-        remaining = max(limit - count, 0)
         return RateLimitDecision(
-            allowed=count <= limit,
+            allowed=allowed,
             backend_available=True,
             limit=limit,
-            remaining=remaining,
-            reset_epoch_seconds=reset,
+            remaining=max(window.remaining, 0),
+            reset_epoch_seconds=ceil(window.reset_time),
         )
+
+
+__all__ = ["FixedWindowRateLimiter", "RateLimitDecision"]

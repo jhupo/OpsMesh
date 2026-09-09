@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.rate_limits.service import FixedWindowRateLimiter
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.webhooks.constants import (
     WEBHOOK_DELIVERY_MAX_ATTEMPTS,
@@ -83,8 +84,9 @@ class WebhookDeliveryService:
         subscription_id: UUID,
         delivery_attempt_id: UUID,
         queue: RedisQueue,
+        rate_limiter: FixedWindowRateLimiter,
     ) -> WebhookDeliveryAttempt:
-        return WebhookDeliveryReplayService(self._session).replay_attempt(
+        return WebhookDeliveryReplayService(self._session, rate_limiter).replay_attempt(
             workspace_id=workspace_id,
             subscription_id=subscription_id,
             delivery_attempt_id=delivery_attempt_id,

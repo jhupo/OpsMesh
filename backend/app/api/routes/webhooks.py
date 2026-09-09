@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageParams, PageResponse, pagination_params
@@ -172,6 +172,7 @@ async def list_webhook_delivery_attempts(
     response_model=WebhookDeliveryAttemptResponse,
 )
 async def replay_webhook_delivery_attempt(
+    request: Request,
     subscription_id: UUID,
     delivery_attempt_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -184,6 +185,7 @@ async def replay_webhook_delivery_attempt(
             subscription_id=subscription_id,
             delivery_attempt_id=delivery_attempt_id,
             queue=queue,
+            rate_limiter=request.app.state.rate_limiter,
         )
     except WebhookDeliveryReplayRateLimitError as exc:
         raise HTTPException(

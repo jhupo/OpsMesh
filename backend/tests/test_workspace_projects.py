@@ -19,7 +19,7 @@ from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.main import create_app_with_dependencies
 from backend.app.projects.policy import validate_project_configuration
-from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
+from backend.app.rate_limits.service import FixedWindowRateLimiter
 from backend.app.runs.models import AgentRun
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
@@ -346,7 +346,10 @@ def _client() -> tuple[TestClient, Session]:
     )
     app = create_app_with_dependencies(
         settings=settings,
-        rate_limiter=RedisFixedWindowRateLimiter(redis, key_prefix=settings.redis_key_prefix),
+        rate_limiter=FixedWindowRateLimiter.from_redis(
+            redis,
+            key_prefix=settings.redis_key_prefix,
+        ),
         redis_client=redis,
     )
 

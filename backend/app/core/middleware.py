@@ -29,7 +29,7 @@ from backend.app.core.trace_context import (
     trace_context_from_headers,
     traceparent_header,
 )
-from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
+from backend.app.rate_limits.service import FixedWindowRateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +137,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         app: ASGIApp,
         *,
         settings: Settings,
-        limiter: RedisFixedWindowRateLimiter,
+        limiter: FixedWindowRateLimiter,
     ) -> None:
         super().__init__(app)
         self._settings = settings

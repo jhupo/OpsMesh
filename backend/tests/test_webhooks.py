@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 import fakeredis
 import pytest
 from fastapi.testclient import TestClient
+from limits.storage import MemoryStorage
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -20,6 +21,7 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.rate_limits.service import FixedWindowRateLimiter
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.secrets.service import SecretEncryptionService
@@ -362,6 +364,7 @@ def test_webhook_delivery_attempt_replay_rejects_disabled_and_cross_workspace() 
             subscription_id=subscription.id,
             delivery_attempt_id=attempt.id,
             queue=queue,
+            rate_limiter=FixedWindowRateLimiter(MemoryStorage()),
         )
     assert queue.count_queued(workspace_id=workspace.id) == 0
 
@@ -586,6 +589,7 @@ def _client_with_queue() -> tuple[TestClient, Session, RedisQueue]:
     redis = fakeredis.FakeRedis(decode_responses=True)
     settings = _settings(database_url="sqlite+pysqlite:///:memory:")
     app = create_app(settings)
+    app.state.rate_limiter = FixedWindowRateLimiter(MemoryStorage())
 
     def override_db_session() -> Generator[Session, None, None]:
         request_session = session_factory()

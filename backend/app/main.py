@@ -15,7 +15,7 @@ from backend.app.core.middleware import (
     SecurityHeadersMiddleware,
 )
 from backend.app.db.session import engine
-from backend.app.rate_limits.service import RedisFixedWindowRateLimiter
+from backend.app.rate_limits.service import FixedWindowRateLimiter
 from backend.app.redis.client import close_redis_client, create_redis_client
 from backend.app.telemetry.tracing import configure_api_telemetry
 
@@ -23,7 +23,7 @@ from backend.app.telemetry.tracing import configure_api_telemetry
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
     redis_client = create_redis_client(app_settings)
-    limiter = RedisFixedWindowRateLimiter(
+    limiter = FixedWindowRateLimiter.from_redis(
         redis_client,
         key_prefix=app_settings.redis_key_prefix,
     )
@@ -37,7 +37,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 def create_app_with_dependencies(
     *,
     settings: Settings,
-    rate_limiter: RedisFixedWindowRateLimiter,
+    rate_limiter: FixedWindowRateLimiter,
     redis_client: object | None = None,
 ) -> FastAPI:
     app_settings = settings
@@ -53,6 +53,7 @@ def create_app_with_dependencies(
     )
     app.state.settings = app_settings
     app.state.redis_client = redis_client
+    app.state.rate_limiter = rate_limiter
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.add_middleware(
         RateLimitMiddleware,
