@@ -347,8 +347,12 @@ class AgentWorkingMemoryService:
                     "id": str(step.id),
                     "title": redact_sensitive_text(step.title),
                     "description": redact_sensitive_text(step.description),
-                    "acceptance_criteria": redact_sensitive_payload(step.acceptance_criteria),
-                    "expected_artifacts": redact_sensitive_payload(step.expected_artifacts),
+                    "acceptance_criteria": [
+                        redact_sensitive_text(item) for item in step.acceptance_criteria
+                    ],
+                    "expected_artifacts": [
+                        redact_sensitive_text(item) for item in step.expected_artifacts
+                    ],
                 }
         return plan
 

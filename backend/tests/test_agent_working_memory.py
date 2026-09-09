@@ -14,7 +14,7 @@ from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.memory.working import AgentWorkingMemoryService, working_memory_context
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.models import Task
+from backend.app.tasks.models import Task, TaskStep
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 
@@ -41,9 +41,17 @@ def test_working_memory_is_run_scoped_versioned_redacted_and_expirable() -> None
     )
     session.add_all([profile, task])
     session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id, task_id=task.id, title="Build", description="Package",
+        acceptance_criteria=["Tests pass", "token=criteria-secret"],
+        expected_artifacts=["package.whl", "password=artifact-secret"],
+    )
+    session.add(step)
+    session.flush()
     run = AgentRun(
         workspace_id=workspace.id,
         task_id=task.id,
+        task_step_id=step.id,
         agent_profile_id=profile.id,
         status="running",
         input={},
@@ -91,6 +99,11 @@ def test_working_memory_is_run_scoped_versioned_redacted_and_expirable() -> None
     assert len(updated) == 2
     assert updated[0].revision == 2
     assert "objective-secret" not in updated[0].content
+    plan_content = " ".join(entry.content for entry in updated)
+    assert "Tests pass" in plan_content
+    assert "package.whl" in plan_content
+    assert "criteria-secret" not in plan_content
+    assert "artifact-secret" not in plan_content
     assert tool_entry is not None
     assert "tool-secret" not in tool_entry.content
     assert len(service.active_for_run(workspace_id=workspace.id, run_id=run.id)) == 3
