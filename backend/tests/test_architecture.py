@@ -73,7 +73,7 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
         ),
         (
             "core/pagination.py",
-            "from backend.app.agents.service import AgentProfileService",
+            "from backend.app.agents.service import AgentManagementService",
             "Shared infrastructure cannot depend on the API even indirectly",
         ),
         (
