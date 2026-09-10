@@ -25,13 +25,13 @@ product contract.
 
 ## Project Status
 
-Release delivery is being upgraded to attested GHCR images, a lightweight `opsmesh` CLI and a
-durable host updater. See [delivery operations](docs/delivery-operations.md) and the
-[implementation/validation ledger](docs/release-delivery-plan.md). Signed native CLI/server archives,
-developer packages and images pass release and public-download acceptance in `v0.1.0rc6`.
-Managed installation and cross-version upgrade acceptance remain blockers for declaring the
-complete delivery system ready.
-Backend CI and real Linux/PostgreSQL backup restoration now pass.
+Release delivery provides attested GHCR images, native CLI/server archives and a durable host
+updater. In `v0.1.0rc9`, both Compose and systemd pass real managed installation, cross-version
+upgrade/rollback, killed-updater recovery, startup-failure rollback, and acknowledged restoration
+after loss of the application database, followed by another successful upgrade. See
+[delivery operations](docs/delivery-operations.md) and the
+[acceptance evidence](docs/release-delivery-plan.md). This acceptance covers the supported single-host
+Linux amd64/Postgres 16/local-storage maintenance-window topology, not rolling or multi-host upgrades.
 
 | Area | Status |
 | --- | --- |

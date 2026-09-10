@@ -13,8 +13,8 @@ attempts with jittered waits and the same repository/workflow/tag/commit constra
 rejection still fails closed; no artifact is executed without a successful official verification.
 This retry applies only to read-only provenance verification, never migrations or restoration.
 
-Accepted in [v0.1.0rc6](https://github.com/jhupo/OpsMesh/releases/tag/v0.1.0rc6):
-[native matrix, server startup and public provenance verification](https://github.com/jhupo/OpsMesh/actions/runs/34375776121).
+Accepted in [v0.1.0rc9](https://github.com/jhupo/OpsMesh/releases/tag/v0.1.0rc9):
+[native matrix, public provenance and both managed deployment/recovery modes](https://github.com/jhupo/OpsMesh/actions/runs/34429198774).
 
 ## Decision and scope
 

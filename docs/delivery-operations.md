@@ -1,9 +1,10 @@
 # Delivery operations
 
-Implementation is not yet production-accepted: see [release delivery evidence](release-delivery-plan.md).
-Backend CI, real Linux backup restoration and rc6 native archive/image publication verification pass.
-Managed installation and cross-version upgrade acceptance must still pass before delivery is
-declared complete.
+The supported managed delivery lifecycle is accepted in `v0.1.0rc9`: see
+[release delivery evidence](release-delivery-plan.md). Signed native installation, cross-version
+upgrade/rollback, process interruption recovery, startup failure and offline application-database
+restoration pass on real disposable Linux hosts for both Compose and systemd. This remains a
+pre-1.0 release; validate your own configuration and off-host disaster-recovery policy before use.
 
 ## Supported topology and prerequisites
 
@@ -76,13 +77,13 @@ Download the native CLI archive for your host from the release, and verify befor
 For Linux amd64 (replace the tag with your approved version):
 
 ```sh
-gh attestation verify opsmesh-cli-v0.1.0rc6-linux-amd64.tar.gz --repo jhupo/OpsMesh \
+gh attestation verify opsmesh-cli-v0.1.0rc9-linux-amd64.tar.gz --repo jhupo/OpsMesh \
   --signer-workflow jhupo/OpsMesh/.github/workflows/release-publish.yml \
-  --source-ref refs/tags/v0.1.0rc6 --deny-self-hosted-runners
+  --source-ref refs/tags/v0.1.0rc9 --deny-self-hosted-runners
 mkdir opsmesh-cli
-tar -xzf opsmesh-cli-v0.1.0rc6-linux-amd64.tar.gz -C opsmesh-cli
+tar -xzf opsmesh-cli-v0.1.0rc9-linux-amd64.tar.gz -C opsmesh-cli
 ./opsmesh-cli/opsmesh doctor
-sudo ./opsmesh-cli/opsmesh --root /opt/opsmesh install --version v0.1.0rc6 --origin https://opsmesh.example.com
+sudo ./opsmesh-cli/opsmesh --root /opt/opsmesh install --version v0.1.0rc9 --origin https://opsmesh.example.com
 ```
 
 Keep the CLI executable and its bundled libraries together. Python developer wheels remain

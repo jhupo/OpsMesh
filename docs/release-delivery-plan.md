@@ -1,8 +1,43 @@
 # Release delivery implementation
 
-Status: in progress. A green unit test is not deployment evidence.
+Status: accepted for the documented single-host topology in v0.1.0rc9.
 
-## Managed update completion (active)
+## Final managed delivery acceptance (2026-09-10)
+
+[Release Publish 34429198774](https://github.com/jhupo/OpsMesh/actions/runs/34429198774), tag
+[v0.1.0rc9](https://github.com/jhupo/OpsMesh/releases/tag/v0.1.0rc9), commit `1efd9b7`, passes the
+complete release and managed acceptance pipeline. Full gate: **1186 passed, 10 skipped**;
+Ruff, strict mypy, actual PostgreSQL migration/schema checks, all five native CLI builds,
+self-contained server acceptance, both candidate image probes, signing and public downloads pass.
+The release contains all 14 expected assets, including the 216442111-byte self-contained server.
+
+Both [Compose job 102724096485](https://github.com/jhupo/OpsMesh/actions/runs/34429198774/job/102724096485)
+and [systemd job 102724096493](https://github.com/jhupo/OpsMesh/actions/runs/34429198774/job/102724096493)
+pass these real hosted checks, using the published signed native CLI and bundles:
+
+- Fresh managed install with production configuration and API/worker readiness.
+- Approved rc9-to-rc6 rollback and rc6-to-rc9 upgrade, with unchanged independent updater identity.
+- SIGKILL of the actual updater after a fsynced backup checkpoint, durable interruption
+  classification, explicit resume and restored service readiness.
+- Actual API port occupation causing deployment/startup failure, followed by explicit application
+  rollback to the declared schema-compatible previous version.
+- Another updater interruption, denial of restoration without acknowledgement, destruction of
+  the disposable application database, and successful acknowledged database/configuration/file
+  restoration through the protected host journal while the application database is unavailable.
+- Original database/file canaries restored, post-backup files retained for salvage, maintenance
+  released, and another successful upgrade to rc9 after recovery.
+
+The backup integration additionally verifies shared storage permissions, configuration ownership
+and tamper denial. Unit checks cover a crash after terminal journal persistence without replaying
+deployment/restoration, plus invalid recovery denial before stopping services. No production host
+or user database was touched; all destructive drills ran on dedicated disposable CI hosts.
+
+This closes stages 1-4 below. Support is Linux amd64, one Postgres 16 database, Redis, local storage
+and maintenance windows with Compose or systemd. Rolling upgrades, multi-host coordination, S3
+snapshot restoration, database-major upgrades and automatic replacement of the privileged updater
+are not part of this contract. Earlier checkpoints below are historical, not current blockers.
+
+## Managed update implementation checkpoints (historical)
 
 The remaining acceptance boundary is a real managed install, an approved cross-version rollback
 and upgrade, killed-updater recovery, failed-start rollback, and acknowledged database/filesystem
@@ -159,10 +194,10 @@ The following checkpoints record repairs; final hosted/public evidence is in the
 
 | Stage | Scope | Status |
 | --- | --- | --- |
-| 1 | master CI, tag-triggered release gate, locked image builds, native archives, packages, GHCR, signed manifest | Accepted: rc6 native matrix, self-contained server, public downloads and provenance pass |
-| 2 | lightweight CLI, production Compose/systemd deployment, install and diagnostics | Implemented; Linux installation acceptance pending |
-| 3 | durable platform update jobs, independent host updater, maintenance and audit | Implemented; focused contract tests pass |
-| 4 | verified backup, interruption recovery, constrained rollback and Linux integration gate | Real Linux/PostgreSQL backup restoration passes; integrated upgrade/recovery acceptance pending |
+| 1 | master CI, tag-triggered release gate, locked image builds, native archives, packages, GHCR, signed manifest | Accepted in rc9: native matrix, public artifacts and provenance |
+| 2 | lightweight CLI, production Compose/systemd deployment, install and diagnostics | Accepted in rc9: both real managed installations |
+| 3 | durable platform update jobs, independent host updater, maintenance and audit | Accepted in rc9: approved cross-version operations and interrupted-updater recovery |
+| 4 | verified backup, interruption recovery, constrained rollback and Linux integration gate | Accepted in rc9: startup-failure rollback, offline DB restoration, file salvage and subsequent upgrade |
 
 Each completed functional point is committed separately. No production tag or live deployment is
 created as a side effect of implementation. Linux installation and update evidence must be recorded
