@@ -185,7 +185,8 @@ def test_host_workflow_is_durable_and_never_replays_interrupted_work(
     job = session.get(PlatformUpdateJob, job.id)
     assert job.status == ("recovery_required" if health_failure else "succeeded")
     assert maintenance_enabled(session) is health_failure
-    assert deployment.calls[-5:] == ["stop", "migrate", "switch", "start", "healthy"]
+    assert deployment.calls[-4:] == ["stop", "switch", "start", "healthy"]
+    assert "migrate" not in deployment.calls  # Already at the target schema; do not replay it.
     before = list(deployment.calls)
     updater.tick()
     assert deployment.calls == before
@@ -213,3 +214,59 @@ def test_journal_preserves_recovery_plan(tmp_path: Path) -> None:
     )
     assert restored == advanced
     assert restored.plan.fingerprint() == plan.fingerprint()
+
+
+@pytest.mark.parametrize("strategy", ["invalid", "restore", "rollback", "resume"])
+def test_recovery_rejects_unsafe_request_before_stopping_services(tmp_path, monkeypatch, strategy):
+    _, session, _ = _client()
+    monkeypatch.setattr(daemon, "SessionLocal", sessionmaker(bind=session.get_bind()))
+    deployment = FakeDeployment()
+    monkeypatch.setattr(daemon, "deployment_for", lambda _: deployment)
+    updater = daemon.HostUpdater(Installation(root=tmp_path, mode="systemd"))
+    plan = UpdatePlan(
+        action="update",
+        target=manifest("v0.2.0"),
+        previous=manifest(),
+        database_revision="0071_platform_delivery",
+        configuration_sha256="e" * 64,
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    job = UpdateService(session).request(tag="v0.2.0", action="update", key="recovery-denial")
+    job.status, job.plan_sha256 = "recovery_required", plan.fingerprint()
+    session.commit()
+    Journal(job_id=job.id, plan=plan, phase="starting").save(tmp_path)
+    monkeypatch.setattr(updater, "revision", lambda: "unknown-schema")
+    with pytest.raises(ValueError):
+        updater.recover(job.id, strategy)
+    assert deployment.calls == []
+
+
+@pytest.mark.parametrize("phase", ["rolled_back", "backup_restored", "succeeded"])
+def test_crash_after_terminal_journal_reconciles_without_replaying_io(tmp_path, monkeypatch, phase):
+    _, session, _ = _client()
+    monkeypatch.setattr(daemon, "SessionLocal", sessionmaker(bind=session.get_bind()))
+    deployment = FakeDeployment()
+    monkeypatch.setattr(daemon, "deployment_for", lambda _: deployment)
+    updater = daemon.HostUpdater(Installation(root=tmp_path, mode="systemd"))
+    plan = UpdatePlan(
+        action="update",
+        target=manifest("v0.2.0"),
+        previous=manifest(),
+        database_revision="0071_platform_delivery",
+        configuration_sha256="e" * 64,
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    job = UpdateService(session).request(tag="v0.2.0", action="update", key="terminal-reconcile")
+    job.status, job.plan_sha256 = "running", plan.fingerprint()
+    session.get(PlatformInstallation, 1).maintenance = True
+    session.commit()
+    journal = Journal(job_id=job.id, plan=plan, phase="starting").advance(tmp_path, phase)
+    updater.tick()
+    session.expire_all()
+    state = session.get(PlatformInstallation, 1)
+    assert not state.maintenance
+    assert state.release_manifest["tag"] == ("v0.2.0" if phase == "succeeded" else "v0.1.0")
+    assert session.get(PlatformUpdateJob, job.id).active_slot is None
+    assert session.get(PlatformUpdateEvent, journal.history[-1].id) is not None
+    updater.tick()
+    assert deployment.calls == []

@@ -99,6 +99,8 @@ def install(installation: Installation, tag: str, origin: str) -> None:
         storage.mkdir(parents=True, exist_ok=True)
         os.chown(storage, 10001, 10001)
         storage.chmod(0o2770)
+        os.chown(storage.parent, 0, 10001)
+        storage.parent.chmod(0o750)
         directory = deployment.stage(manifest)
         if isinstance(deployment, ComposeDeployment):
             deployment.infrastructure(manifest)

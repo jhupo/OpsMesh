@@ -78,6 +78,9 @@ def test_real_backup_restore_preserves_data_configuration_and_ownership(tmp_path
             assert stat.S_IMODE(config.stat().st_mode) == 0o640
             assert config.stat().st_gid == 10001
             assert artifact.stat().st_uid == 10001
+            assert stat.S_IMODE(storage.stat().st_mode) == 0o2770
+            assert stat.S_IMODE(artifact.parent.stat().st_mode) == 0o2770
+            assert stat.S_IMODE(artifact.stat().st_mode) == 0o660
             preserved = list((tmp_path / "data").glob("before-restore-*/workspace/artifact.txt"))
             assert len(preserved) == 1
             assert preserved[0].read_text() == "post-backup artifact"

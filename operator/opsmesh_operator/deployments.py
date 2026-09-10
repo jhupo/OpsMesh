@@ -61,12 +61,15 @@ class Deployment(ABC):
             if file.name == f"opsmesh-server-{manifest.tag}-linux-amd64.tar.gz"
         )
         archive = source.download_file(manifest, record, cache)
+        source.verify(archive, manifest.tag, commit=manifest.commit)
         staging = self.root / "releases" / f".{manifest.tag}.staging"
         # An interrupted stage is quarantined, never recursively deleted or reused.
         if staging.exists():
             raise RuntimeError("Interrupted staging directory requires operator inspection")
         extract_bundle(archive, staging)
-        atomic_write(staging / "release-manifest.json", manifest.model_dump_json(indent=2))
+        atomic_write(
+            staging / "release-manifest.json", manifest.model_dump_json(indent=2), mode=0o644
+        )
         runtime_images = {manifest.image("runtime")}
         for path in (self.root / "releases").glob("v*/release-manifest.json"):
             retained = ReleaseManifest.model_validate_json(path.read_bytes())
@@ -77,7 +80,14 @@ class Deployment(ABC):
             f"OPSMESH_RUNTIME_IMAGE={manifest.image('runtime')}\n"
             f"OPSMESH_RUNTIME_ALLOWED_IMAGES={json.dumps(sorted(runtime_images))}\n"
             f"OPSMESH_BUILD_COMMIT={manifest.commit}\n",
+            mode=0o644,
         )
+        # The root updater uses UMask=0077. Release code is public and must remain readable
+        # by the unprivileged API/worker; secrets and writable state stay outside this tree.
+        staging.chmod(0o755)
+        staging.parent.chmod(0o755)
+        for path in staging.rglob("*"):
+            path.chmod(0o755 if path.is_dir() or path.stat().st_mode & 0o111 else 0o644)
         staging.rename(target)
         sync_directory(target.parent)
         self.prepare(target, manifest)

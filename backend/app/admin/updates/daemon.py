@@ -67,8 +67,12 @@ class HostUpdater:
                     journal = (
                         Journal.model_validate_json(path.read_bytes()) if path.exists() else None
                     )
-                    if journal is not None and journal.phase == "succeeded":
-                        self.complete(job_id, journal.plan)
+                    if journal is not None and journal.phase in {
+                        "succeeded",
+                        "rolled_back",
+                        "backup_restored",
+                    }:
+                        self.reconcile_terminal(job_id, journal)
                     elif journal is None and not self.maintenance_active():
                         self.mark(job_id, "failed", "interrupted_before_execution")
                     else:
@@ -161,7 +165,8 @@ class HostUpdater:
         plan = journal.plan
         if plan.action == "update":
             journal = self.checkpoint(job_id, journal, "migrating")
-            self.deployment.migrate(plan.target)
+            if self.revision() != plan.target.database_revision:
+                self.deployment.migrate(plan.target)
             if self.revision() != plan.target.database_revision:
                 raise ValueError("Database migration did not reach the declared revision")
         if plan.action != "backup":
@@ -173,6 +178,36 @@ class HostUpdater:
         self.deployment.healthy()
         self.checkpoint(job_id, journal, "succeeded")
         self.complete(job_id, plan)
+
+    def reconcile_terminal(self, job_id: UUID, journal: Journal) -> None:
+        """Finalize a durable outcome without repeating deployment or database restoration."""
+        if journal.job_id != job_id:
+            raise ValueError("Host journal job identity mismatch")
+        with SessionLocal.begin() as session:
+            service = UpdateService(session)
+            job = service.get(job_id, lock=True)
+            if journal.plan.fingerprint() != job.plan_sha256:
+                raise ValueError("Host journal does not match approved plan")
+            installation = session.get(PlatformInstallation, 1, with_for_update=True)
+            if installation is None:
+                raise ValueError("Missing installation state")
+            for event in journal.history:
+                if session.get(PlatformUpdateEvent, event.id) is None:
+                    service.event(
+                        job,
+                        event.phase,
+                        "host_journal_recovery",
+                        event_id=event.id,
+                        created_at=event.created_at,
+                    )
+            succeeded = journal.phase == "succeeded"
+            manifest = journal.plan.target if succeeded else journal.plan.previous
+            installation.maintenance = False
+            installation.release_manifest = manifest.model_dump(mode="json")
+            job.status, job.active_slot = "succeeded" if succeeded else "failed", None
+            job.backup_id = journal.backup_id
+            job.error_code = None if succeeded else journal.phase
+            job.phase = journal.phase
 
     def checkpoint(
         self,
@@ -251,10 +286,16 @@ class HostUpdater:
             service.event(job, status)
 
     def recover(self, job_id: UUID, strategy: str, *, acknowledge_data_loss: bool = False) -> None:
+        if strategy not in {"resume", "rollback", "restore"}:
+            raise ValueError("Invalid recovery strategy")
+        if strategy == "restore" and not acknowledge_data_loss:
+            raise ValueError("Database restoration requires explicit data-loss acknowledgement")
         with FileLock(self.installation.root / "operator.lock", timeout=0):
             journal = Journal.model_validate_json(
                 (self.installation.root / "updates" / f"{job_id}.json").read_bytes()
             )
+            if journal.job_id != job_id:
+                raise ValueError("Host journal job identity mismatch")
             database_available = True
             try:
                 with SessionLocal() as session:
@@ -269,6 +310,25 @@ class HostUpdater:
                 # Explicit root recovery can use its protected journal while the application DB
                 # is unavailable. The verified backup proves admission had drained before stop.
                 database_available = False
+            if journal.phase in {"succeeded", "rolled_back", "backup_restored"}:
+                self.reconcile_terminal(job_id, journal)
+                return
+            if database_available:
+                revision = self.revision()
+                if (
+                    strategy == "rollback"
+                    and revision not in journal.plan.previous.rollback_database_revisions
+                ):
+                    raise ValueError(
+                        "Previous app cannot run on this schema; restore requires consent"
+                    )
+                if strategy == "resume" and revision not in {
+                    journal.plan.database_revision,
+                    journal.plan.target.database_revision,
+                }:
+                    raise ValueError("Unknown database state; refusing migration replay")
+            if strategy == "restore" and not journal.backup_id:
+                raise ValueError("No verified backup checkpoint to restore")
             if journal.backup_id:
                 self.backups.verify(journal.backup_id)
             if database_available:
@@ -300,9 +360,8 @@ class HostUpdater:
                 self.deployment.switch(journal.plan.previous)
                 self.deployment.start(journal.plan.previous)
                 self.deployment.healthy()
-                self.maintenance(False)
-                journal.advance(self.installation.root, "backup_restored")
-                self.mark(job_id, "failed", "backup_restored")
+                journal = journal.advance(self.installation.root, "backup_restored")
+                self.reconcile_terminal(job_id, journal)
             elif strategy == "rollback":
                 if self.revision() not in journal.plan.previous.rollback_database_revisions:
                     raise ValueError(
@@ -311,9 +370,8 @@ class HostUpdater:
                 self.deployment.switch(journal.plan.previous)
                 self.deployment.start(journal.plan.previous)
                 self.deployment.healthy()
-                self.maintenance(False)
-                journal.advance(self.installation.root, "rolled_back")
-                self.mark(job_id, "failed", "application_rolled_back")
+                journal = journal.advance(self.installation.root, "rolled_back")
+                self.reconcile_terminal(job_id, journal)
             else:
                 if self.revision() not in {
                     journal.plan.database_revision,

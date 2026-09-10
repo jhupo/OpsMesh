@@ -2,6 +2,17 @@
 
 Status: in progress. A green unit test is not deployment evidence.
 
+## Managed update completion (active)
+
+The remaining acceptance boundary is a real managed install, an approved cross-version rollback
+and upgrade, killed-updater recovery, failed-start rollback, and acknowledged database/filesystem
+restoration on disposable Linux hosts for both Compose and systemd. Publication alone is not enough.
+Current repairs authenticate staged archives, normalize public release permissions independently
+of the root updater's restrictive umask, preserve shared storage access after restore, reject invalid
+recovery before service interruption, and reconcile terminal host journals without replaying I/O.
+Focused update/security checks: 26 passed; strict operator/updater typing passes. Hosted acceptance
+is still pending and will be recorded below only after actual runs succeed.
+
 ## rc6 standalone publication acceptance (2026-09-10)
 
 - [Release Publish 34375776121](https://github.com/jhupo/OpsMesh/actions/runs/34375776121)

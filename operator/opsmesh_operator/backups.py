@@ -222,8 +222,10 @@ class BackupStore:
         storage.rename(root / "data" / ("before-restore-" + uuid4().hex))
         staging.rename(storage)
         os.chown(storage, 10001, 10001)
+        storage.chmod(0o2770)
         for path in storage.rglob("*"):
             os.chown(path, 10001, 10001)
+            path.chmod(0o2770 if path.is_dir() else 0o660)
         config = root / ".env"
         identity = config.stat()
         atomic_write(
