@@ -6438,6 +6438,7 @@ def test_api_team_task_e2e_runs_workers_and_accepts_delivery(
             "description": "Produce a concise market analysis.",
             "priority": 7,
             "input": {
+                "planning_mode": "deterministic",
                 "work_packages": [
                     {
                         "package_id": "market-research",
