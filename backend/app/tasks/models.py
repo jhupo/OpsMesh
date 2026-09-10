@@ -26,6 +26,7 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_tasks_workspace_domain", "workspace_id", "domain_type"),
         Index("ix_tasks_workspace_runtime_space", "workspace_id", "runtime_space_id"),
         Index("ix_tasks_workspace_project", "workspace_id", "workspace_project_id"),
+        Index("ix_tasks_workspace_owner", "workspace_id", "owner_agent_profile_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -175,8 +176,8 @@ class TaskTransfer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         default=dict,
     )
-    accepted_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    rejected_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(String(1_000), nullable=True)
 
     task: Mapped[Task] = relationship(back_populates="transfers")
