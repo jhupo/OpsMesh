@@ -268,6 +268,44 @@ class PlanFeasibilityService:
             _reject("plan_tool_unavailable")
         if any(resource_id not in resources for resource_id in required_resource_ids):
             _reject("plan_resource_unavailable")
+        self._validate_mcp_tools(package, catalog)
+
+    def _validate_mcp_tools(
+        self,
+        package: dict[str, object],
+        catalog: EffectiveCapabilityCatalogResponse,
+    ) -> None:
+        raw_tools = package.get("required_mcp_tools", [])
+        if not isinstance(raw_tools, list):
+            _reject("plan_capability_policy_invalid")
+        descriptors = [
+            item.descriptor
+            for item in catalog.tools
+            if item.descriptor.source == "mcp"
+        ]
+        seen: set[tuple[UUID, UUID | None, str]] = set()
+        for raw_tool in raw_tools:
+            if not isinstance(raw_tool, dict):
+                _reject("plan_capability_policy_invalid")
+            server_id = _uuid_or_none(raw_tool.get("mcp_server_id"))
+            allowlist_id = _uuid_or_none(raw_tool.get("mcp_tool_allowlist_id"))
+            tool_name = raw_tool.get("tool_name")
+            if server_id is None or not isinstance(tool_name, str) or not tool_name.strip():
+                _reject("plan_capability_policy_invalid")
+            identity = (server_id, allowlist_id, tool_name.strip())
+            if identity in seen:
+                _reject("plan_capability_policy_invalid")
+            seen.add(identity)
+            if not any(
+                descriptor.name == tool_name.strip()
+                and descriptor.mcp_server_id == server_id
+                and (
+                    allowlist_id is None
+                    or descriptor.mcp_tool_allowlist_id == allowlist_id
+                )
+                for descriptor in descriptors
+            ):
+                _reject("plan_mcp_tool_unavailable")
 
     def _scheduler_policy(
         self,

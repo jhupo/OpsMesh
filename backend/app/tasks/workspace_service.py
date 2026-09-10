@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.audit.service import AuditService
 from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
+from backend.app.orchestration.definitions import OrchestrationDefinitionService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.projects.models import WorkspaceProject
@@ -29,6 +30,8 @@ class TaskCreateCommand:
     input: dict[str, object] = field(default_factory=dict)
     generic_state: dict[str, object] = field(default_factory=dict)
     domain_state: dict[str, object] = field(default_factory=dict)
+    orchestration_definition_id: UUID | None = None
+    orchestration_version: int | None = None
 
 
 class WorkspaceTaskService:
@@ -83,7 +86,14 @@ class WorkspaceTaskService:
         self._session.add(task)
         self._session.flush()
 
-        if task.agent_team_id is not None:
+        if task.orchestration_definition_id is not None:
+            OrchestrationDefinitionService(self._session).apply_to_task(
+                task,
+                task.orchestration_definition_id,
+                task.orchestration_version,
+                created_by_user_id,
+            )
+        elif task.agent_team_id is not None:
             TaskPlanningAttemptService(self._session).ensure_initial_plan(task)
 
         initial_run = None
@@ -193,6 +203,8 @@ def _task_payload(command: TaskCreateCommand) -> dict[str, object]:
         "input": command.input,
         "generic_state": command.generic_state,
         "domain_state": command.domain_state,
+        "orchestration_definition_id": command.orchestration_definition_id,
+        "orchestration_version": command.orchestration_version,
     }
 
 

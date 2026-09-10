@@ -3,8 +3,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from redis import Redis
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.api.schemas.orchestration import OrchestrationApplyRequest
 from backend.app.api.schemas.tasks import (
     TaskPlanDiagnosticsResponse,
     TaskPlanMutationRequest,
@@ -16,12 +18,18 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.session import get_db_session
+from backend.app.orchestration.definitions import (
+    OrchestrationDefinitionError,
+    OrchestrationDefinitionService,
+)
+from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.diagnostics import ProjectPlanDiagnosticsService
 from backend.app.planning.future_plan_mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,
     TaskPlanMutationService,
 )
+from backend.app.tasks.models import Task
 from backend.app.tasks.plan_lifecycle import (
     TaskPlanLifecycleService,
     TaskPlanRegenerateCommand,
@@ -37,6 +45,54 @@ else:
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 STREAM_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
+
+
+@router.post("/tasks/{task_id}/plan/apply-orchestration", response_model=TaskResponse)
+async def apply_orchestration_to_task(
+    task_id: UUID,
+    request: OrchestrationApplyRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> TaskResponse:
+    task = session.scalar(
+        select(Task).where(
+            Task.workspace_id == context.workspace.id,
+            Task.id == task_id,
+        )
+    )
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    try:
+        OrchestrationDefinitionService(session).apply_to_task(
+            task,
+            request.orchestration_definition_id,
+            request.orchestration_version,
+            context.user.user_id,
+        )
+        orchestration = RunOrchestrationService(session, queue=queue)
+        run = orchestration.create_queued_run_for_task(task)
+        if run is not None and request.enqueue and queue is not None:
+            orchestration.enqueue_run(
+                run,
+                context.user.user_id,
+            )
+        session.commit()
+        session.refresh(task)
+    except OrchestrationDefinitionError as exc:
+        session.rollback()
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if exc.code == "orchestration_not_found"
+            else status.HTTP_409_CONFLICT
+            if exc.code.startswith("orchestration_task_")
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(
+            status_code=code,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    return TaskResponse.model_validate(task)
 
 
 @router.post("/tasks/{task_id}/plan/retry", response_model=TaskResponse)

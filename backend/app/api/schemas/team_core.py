@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from backend.app.api.schemas.capabilities.catalog import CapabilityTeamPolicy
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
@@ -17,6 +17,25 @@ class AgentTeamCreateRequest(BaseModel):
     coordination_rules: dict[str, object] = Field(default_factory=dict)
     default_task_policy: dict[str, object] = Field(default_factory=dict)
     capability_policy: CapabilityTeamPolicy = Field(default_factory=CapabilityTeamPolicy)
+
+
+class AgentTeamUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    team_type: str | None = Field(default=None, min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=2_000)
+    manager_agent_profile_id: UUID | None = None
+    runtime_space_id: UUID | None = None
+    coordination_rules: dict[str, object] | None = None
+    default_task_policy: dict[str, object] | None = None
+    status: str | None = Field(default=None, pattern="^(active|archived)$")
+
+    @model_validator(mode="after")
+    def _require_change(self) -> AgentTeamUpdateRequest:
+        if not self.model_fields_set:
+            raise ValueError("At least one team field is required")
+        return self
+
+    model_config = {"from_attributes": True}
 
 
 class AgentTeamResponse(TimestampedModel):

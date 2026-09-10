@@ -20,6 +20,8 @@ class TaskCreateRequest(BaseModel):
     input: dict[str, object] = Field(default_factory=dict)
     generic_state: dict[str, object] = Field(default_factory=dict)
     domain_state: dict[str, object] = Field(default_factory=dict)
+    orchestration_definition_id: UUID | None = None
+    orchestration_version: int | None = Field(default=None, ge=1)
 
 
 class TaskFeedbackRequest(BaseModel):
@@ -38,6 +40,8 @@ class TaskResponse(TimestampedModel):
     agent_team_id: UUID | None
     owner_agent_profile_id: UUID | None
     owner_version: int
+    orchestration_definition_id: UUID | None
+    orchestration_version: int | None
     runtime_space_id: UUID | None
     workspace_project_id: UUID | None
     domain_type: str

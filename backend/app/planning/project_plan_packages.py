@@ -123,6 +123,15 @@ def requested_package(
     matched_member: dict[str, object] | None,
     dependencies: tuple[str, ...],
 ) -> ProjectWorkPackage:
+    raw_mcp_tools = request.get("required_mcp_tools", [])
+    raw_resource_ids = request.get("required_resource_ids", [])
+    raw_estimated_cost = request.get("estimated_cost_usd")
+    estimated_cost = (
+        float(raw_estimated_cost)
+        if isinstance(raw_estimated_cost, int | float)
+        and not isinstance(raw_estimated_cost, bool)
+        else 0.0
+    )
     return ProjectWorkPackage(
         package_id=package_id,
         title=string_or_default(request.get("title"), f"{role} execution"),
@@ -145,7 +154,29 @@ def requested_package(
             request.get("review_policy"),
             {"reviewer": "manager", "mode": "manager_review"},
         ),
+        condition=dict_or_default(request.get("condition"), {}),
+        required_tools=tuple(string_list(request.get("required_tools"))),
+        required_mcp_tools=tuple(_dict_items(raw_mcp_tools)),
+        required_resource_ids=tuple(
+            resource_id
+            for item in _list_items(raw_resource_ids)
+            if (resource_id := uuid_or_none(item)) is not None
+        ),
+        resource_requirements={
+            str(key): value
+            for key, value in dict_or_default(request.get("resource_requirements"), {}).items()
+            if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool)
+        },
+        estimated_cost_usd=estimated_cost,
     )
+
+
+def _list_items(value: object) -> list[object]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _dict_items(value: object) -> list[dict[str, object]]:
+    return [item for item in _list_items(value) if isinstance(item, dict)]
 
 
 def lead_review_package(

@@ -27,6 +27,11 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_tasks_workspace_runtime_space", "workspace_id", "runtime_space_id"),
         Index("ix_tasks_workspace_project", "workspace_id", "workspace_project_id"),
         Index("ix_tasks_workspace_owner", "workspace_id", "owner_agent_profile_id"),
+        Index(
+            "ix_tasks_workspace_orchestration",
+            "workspace_id",
+            "orchestration_definition_id",
+        ),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -50,6 +55,11 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
     )
     owner_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    orchestration_definition_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("orchestration_definitions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    orchestration_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     runtime_space_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
         nullable=True,

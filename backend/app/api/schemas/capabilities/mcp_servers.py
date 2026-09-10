@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from backend.app.api.schemas.capabilities.mcp_redaction import redacted_connection
 from backend.app.api.schemas.common import TimestampedModel
@@ -54,6 +54,29 @@ class McpToolAllowRequest(BaseModel):
     requires_approval: bool = False
     risk_level: str = Field(default="low", max_length=32)
     policy: dict[str, object] = Field(default_factory=dict)
+
+
+class McpToolAllowUpdateRequest(BaseModel):
+    tool_name: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=2_000)
+    input_schema: dict[str, object] | None = None
+    capability_key: str | None = Field(default=None, max_length=120)
+    requires_approval: bool | None = None
+    risk_level: str | None = Field(default=None, max_length=32)
+    policy: dict[str, object] | None = None
+
+    @model_validator(mode="after")
+    def require_change(self) -> "McpToolAllowUpdateRequest":
+        if not self.model_fields_set:
+            raise ValueError("At least one MCP tool field is required")
+        null_fields = sorted(
+            field
+            for field in self.model_fields_set
+            if getattr(self, field) is None and field != "capability_key"
+        )
+        if null_fields:
+            raise ValueError(f"MCP tool fields cannot be null: {', '.join(null_fields)}")
+        return self
 
 
 class McpToolAllowResponse(TimestampedModel):

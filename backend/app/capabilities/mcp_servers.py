@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.capabilities.mcp_servers import (
@@ -10,6 +11,7 @@ from backend.app.api.schemas.capabilities.mcp_servers import (
     McpServerHealthCheckRequest,
     McpServerUpdateRequest,
     McpToolAllowRequest,
+    McpToolAllowUpdateRequest,
 )
 from backend.app.audit.service import AuditService
 from backend.app.capabilities.mcp_catalog import McpCatalogServer
@@ -265,6 +267,115 @@ class McpServerService:
         if commit:
             commit_or_raise_conflict(self._session, "MCP tool is already allowed for this server")
             self._session.refresh(allow)
+        return allow
+
+    def update_mcp_tool(
+        self,
+        workspace_id: UUID,
+        mcp_server_id: UUID,
+        allowlist_id: UUID,
+        data: McpToolAllowUpdateRequest,
+        actor_user_id: UUID | None = None,
+    ) -> McpToolAllowlist:
+        server = require_mcp_server(self._session, workspace_id, mcp_server_id)
+        allow = self._session.scalar(
+            select(McpToolAllowlist).where(
+                McpToolAllowlist.workspace_id == workspace_id,
+                McpToolAllowlist.mcp_server_id == mcp_server_id,
+                McpToolAllowlist.id == allowlist_id,
+            )
+        )
+        if allow is None:
+            raise ValueError("MCP tool allowlist entry not found")
+        changes = data.model_dump(exclude_unset=True)
+        next_input_schema = (
+            data.input_schema if data.input_schema is not None else allow.input_schema
+        )
+        next_policy = data.policy if data.policy is not None else allow.policy
+        try:
+            normalized_schema = normalize_object_schema(next_input_schema)
+            reject_embedded_secrets(normalized_schema, path="input_schema")
+            reject_embedded_secrets(next_policy, path="policy")
+        except ValueError as exc:
+            raise DomainError(str(exc), code="mcp_tool_schema_invalid", status_code=422) from exc
+        next_tool_name = data.tool_name or allow.tool_name
+        next_requires_approval = (
+            data.requires_approval
+            if data.requires_approval is not None
+            else allow.requires_approval
+        )
+        next_risk_level = data.risk_level or allow.risk_level
+        review = ResourcePolicyReviewBuilder(
+            self._session,
+            self._settings,
+        ).review_mcp_tool_allowlist(
+            workspace_id=workspace_id,
+            visibility=server.visibility,
+            tool_name=next_tool_name,
+            requires_approval=next_requires_approval,
+            risk_level=next_risk_level,
+            policy=next_policy,
+        )
+        before = {
+            "tool_name": allow.tool_name,
+            "description": allow.description,
+            "capability_key": allow.capability_key,
+            "requires_approval": allow.requires_approval,
+            "risk_level": allow.risk_level,
+            "policy": dict(allow.policy),
+            "status": allow.status,
+        }
+        for field_name, value in changes.items():
+            setattr(allow, field_name, value)
+        allow.input_schema = normalized_schema
+        allow.policy = dict(next_policy)
+        if review.required:
+            allow.status = RESOURCE_STATUS_PENDING_APPROVAL
+            ResourceReviewApprovalService(self._session).request_resource_review(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                approval_type=REVIEW_TYPE_MCP_TOOL_ALLOWLIST,
+                target_type="mcp_tool_allowlist",
+                target_id=allow.id,
+                target_name=allow.tool_name,
+                review=review,
+                snapshot={
+                    "id": str(allow.id),
+                    "mcp_server_id": str(allow.mcp_server_id),
+                    "tool_name": allow.tool_name,
+                    "description": allow.description,
+                    "input_schema": dict(allow.input_schema),
+                    "capability_key": allow.capability_key,
+                    "requires_approval": allow.requires_approval,
+                    "risk_level": allow.risk_level,
+                    "policy": dict(allow.policy),
+                    "status": allow.status,
+                },
+            )
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="mcp_tool.review_requested" if review.required else "mcp_tool.updated",
+                target_type="mcp_tool_allowlist",
+                target_id=allow.id,
+                metadata={
+                    "mcp_server_id": str(mcp_server_id),
+                    "changed_fields": sorted(changes),
+                    "before": before,
+                    "after": {
+                        "tool_name": allow.tool_name,
+                        "description": allow.description,
+                        "capability_key": allow.capability_key,
+                        "requires_approval": allow.requires_approval,
+                        "risk_level": allow.risk_level,
+                        "status": allow.status,
+                    },
+                    "review_required": review.required,
+                },
+            )
+        commit_or_raise_conflict(self._session, "MCP tool is already allowed for this server")
+        self._session.refresh(allow)
         return allow
 
     def disable_mcp_server(

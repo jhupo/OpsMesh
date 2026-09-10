@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -5,10 +7,13 @@ from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.capabilities.base import (
     CapabilityCreateRequest,
     CapabilityResponse,
+    CapabilityUpdateRequest,
     SkillCreateRequest,
     SkillResponse,
+    SkillUpdateRequest,
     ToolGroupCreateRequest,
     ToolGroupResponse,
+    ToolGroupUpdateRequest,
 )
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
@@ -99,4 +104,81 @@ async def create_tool_group(
         group = CapabilityService(session).create_tool_group(request)
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    return ToolGroupResponse.model_validate(group)
+
+
+@router.patch("/{capability_id}", response_model=CapabilityResponse)
+async def update_capability(
+    capability_id: UUID,
+    request: CapabilityUpdateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> CapabilityResponse:
+    try:
+        capability = CapabilityService(session).update_capability(
+            capability_id,
+            request,
+            context.workspace.id,
+            context.user.user_id,
+        )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    except ValueError as exc:
+        message = str(exc)
+        error_status = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=error_status, detail=message) from exc
+    return CapabilityResponse.model_validate(capability)
+
+
+@router.patch("/skills/{skill_id}", response_model=SkillResponse)
+async def update_skill(
+    skill_id: UUID,
+    request: SkillUpdateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> SkillResponse:
+    try:
+        skill = CapabilityService(session).update_skill(
+            skill_id,
+            request,
+            context.workspace.id,
+            context.user.user_id,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        error_status = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=error_status, detail=message) from exc
+    return SkillResponse.model_validate(skill)
+
+
+@router.patch("/tool-groups/{group_id}", response_model=ToolGroupResponse)
+async def update_tool_group(
+    group_id: UUID,
+    request: ToolGroupUpdateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> ToolGroupResponse:
+    try:
+        group = CapabilityService(session).update_tool_group(
+            group_id,
+            request,
+            context.workspace.id,
+            context.user.user_id,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        error_status = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=error_status, detail=message) from exc
     return ToolGroupResponse.model_validate(group)

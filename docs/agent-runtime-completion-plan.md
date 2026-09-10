@@ -154,6 +154,7 @@ Goal: move from a deterministic organization template to validated, adaptive age
 
 | Order | Priority | Functional point | Status | Commit | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- |
+| 5.0 | P0 | Persist user-authored orchestration definitions with expert/tool/MCP/resource selection and conditional branches | Done | pending commit | Workspace APIs support draft, validation, publish, archive, versioned edits, task application, audit evidence, and a bounded data-only condition DSL; targeted orchestration tests cover admission and false/pending branches |
 | 5.1 | P0 | Generate a structured task DAG with a planner agent and retain deterministic planning only as explicit fallback | Done | `638bf87` | Tool-free worker planner, SDK structured output, scoped DAG admission, duplicate-delivery denial, durable failure/cancel/retry, explicit deterministic mode; PostgreSQL and Backend CI accepted |
 | 5.2 | P0 | Validate schema, cycles, authorization, capability availability, cost, and resource feasibility | Done | `1c30501` | Invalid plans cannot enqueue work; stable failure codes cover stale roster/policy, role/skill, tool/resource, runtime/workspace quota, provider, and cost gates |
 | 5.3 | P0 | Replan by adding, splitting, merging, cancelling, or reassigning future work | Done | `a86f7cf` | `TaskPlanMutationService` and `POST /tasks/{task_id}/plan/mutate` apply task-row-locked, idempotent mutations; DAG/feasibility gates, step projection reconciliation, manager-summary coverage, cancellation history, and active-side-effect protection are covered by focused service/API tests and Backend CI |
@@ -202,6 +203,16 @@ hash-chained audit event. The handoff package is redacted and reference-only for
 memory, while owner/version fields are frozen into new authorization snapshots and checked before
 execution. Focused database, planning, workspace API, runtime authorization, import-linter, and
 Backend CI checks passed; the real PostgreSQL and Delivery Integration gates are recorded above.
+
+User-authored orchestration definitions are workspace-scoped durable plans. A definition is edited
+as a draft, validated against active agent profiles, capability resources, MCP servers and
+allowlisted tools, then published before a task can apply it. Applying a definition snapshots its
+version into the task plan and planning attempt; later edits do not rewrite that task snapshot.
+Nodes can select an exact expert or use the frozen team roster matcher, request product tools,
+MCP allowlist entries, resources, resource limits, expected artifacts, review policy, and estimated
+cost. Conditional branches use only bounded JSON data paths such as `task.input`, task state,
+final output, and terminal step status/result summaries. Unsupported expressions, cycles, foreign
+references, embedded secrets, and unallowlisted MCP tools are rejected before materialization.
 
 A project can be planned, validated, executed in parallel, replanned after failure, transferred
 between agents, corrected by a human, reviewed by a manager, and assembled into one final delivery.

@@ -18,6 +18,18 @@ def requested_member_match(
     request: dict[str, object],
     matcher_agent_profile_id: UUID | None,
 ) -> dict[str, object] | None:
+    if "assigned_agent_profile_id" in request:
+        requested_agent_id = _requested_agent_id(request)
+        if requested_agent_id is None:
+            return None
+        return next(
+            (
+                member
+                for member in members
+                if member_agent_profile_id(member) == requested_agent_id
+            ),
+            None,
+        )
     if matcher_agent_profile_id is not None:
         for member in members:
             if member_agent_profile_id(member) == matcher_agent_profile_id:
@@ -27,6 +39,16 @@ def requested_member_match(
         role=role,
         required_skills=required_skills,
     )
+
+
+def _requested_agent_id(request: dict[str, object]) -> UUID | None:
+    raw_id = request.get("assigned_agent_profile_id")
+    if raw_id is None:
+        return None
+    try:
+        return UUID(str(raw_id))
+    except (TypeError, ValueError):
+        return None
 
 
 def request_department(request: dict[str, object]) -> str | None:

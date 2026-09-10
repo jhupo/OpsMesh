@@ -22,6 +22,7 @@ User
           -> WorkspaceFile
           -> MemoryEntry
           -> WorkspaceRuntime
+          -> OrchestrationDefinition
           -> AuditEvent
 ```
 
@@ -135,6 +136,33 @@ Key fields:
 - `is_required`
 - `created_at`
 
+### OrchestrationDefinition
+
+Workspace-owned, versioned user plan for assembling a task DAG from the workspace's experts,
+product tools, MCP allowlist entries, capability resources, runtime requirements, review policy, and
+bounded conditional branches.
+
+Key fields:
+
+- `id`
+- `workspace_id`
+- `created_by_user_id`
+- `key`
+- `name`
+- `description`
+- `definition`
+- `version`
+- `status` (`draft`, `published`, `archived`)
+- `published_at`
+- `created_at`
+- `updated_at`
+
+Published definitions are immutable from a task's perspective: applying one copies the definition
+version and the resolved plan into the task's durable planning attempt. Updating a definition creates
+a new draft version and never mutates an existing task plan. Node conditions are data-only and are
+evaluated by the scheduler as `true`, `false`, or `pending`; arbitrary code and provider-specific
+workflow expressions are not accepted.
+
 ## Tasks And Runs
 
 ### Task
@@ -148,6 +176,8 @@ Key fields:
 - `created_by_user_id`
 - `created_by_agent_run_id`
 - `agent_team_id`
+- `orchestration_definition_id`
+- `orchestration_version`
 - `owner_agent_profile_id`
 - `owner_version`
 - `domain_type`

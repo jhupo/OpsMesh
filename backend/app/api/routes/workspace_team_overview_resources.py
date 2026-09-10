@@ -19,6 +19,7 @@ from backend.app.api.schemas.teams import (
     AgentTeamOrgChartResponse,
     AgentTeamProjectSpaceResponse,
     AgentTeamResponse,
+    AgentTeamUpdateRequest,
     WorkspaceTeamCommandCenterResponse,
 )
 from backend.app.auth.context import WorkspaceContext
@@ -38,6 +39,7 @@ from backend.app.teams.project_space import TeamProjectSpaceService
 from backend.app.teams.workspace_command_center import WorkspaceCommandCenterService
 from backend.app.teams.workspace_service import (
     TeamCreateCommand,
+    TeamUpdateCommand,
     WorkspaceTeamService,
 )
 from backend.app.workers.dependencies import get_worker_queue
@@ -101,6 +103,31 @@ async def create_team(
             else status.HTTP_400_BAD_REQUEST
         )
         raise HTTPException(status_code=code, detail=message) from exc
+    return AgentTeamResponse.model_validate(team)
+
+
+@router.patch("/teams/{team_id}", response_model=AgentTeamResponse)
+async def update_team(
+    team_id: UUID,
+    request: AgentTeamUpdateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> AgentTeamResponse:
+    try:
+        team = WorkspaceTeamService(session).update_team(
+            context.workspace.id,
+            team_id,
+            TeamUpdateCommand(changes=request.model_dump(exclude_unset=True)),
+            context.user.user_id,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        error_status = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=error_status, detail=message) from exc
     return AgentTeamResponse.model_validate(team)
 
 

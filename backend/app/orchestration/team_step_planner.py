@@ -38,7 +38,12 @@ class TeamStepPlanner:
             ):
                 raise ValueError("Existing task work requires explicit replanning")
             assert task.project_plan is not None
-            return ProjectPlanStepMaterializer(self.session).materialize(task, task.project_plan)
+            ProjectPlanStepMaterializer(self.session).materialize(task, task.project_plan)
+            eligible = RunEligibilityService(self.session).next_eligible_steps(
+                task.id,
+                task.workspace_id,
+            )
+            return eligible[0] if eligible else None
         existing = self.session.scalar(
             select(TaskStep.id)
             .where(
@@ -54,4 +59,9 @@ class TeamStepPlanner:
             return steps[0] if steps else None
         if task.project_plan is None:
             raise ValueError("Team work requires an admitted plan or queued planner attempt")
-        return ProjectPlanStepMaterializer(self.session).materialize(task, task.project_plan)
+        ProjectPlanStepMaterializer(self.session).materialize(task, task.project_plan)
+        eligible = RunEligibilityService(self.session).next_eligible_steps(
+            task.id,
+            task.workspace_id,
+        )
+        return eligible[0] if eligible else None

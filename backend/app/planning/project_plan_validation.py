@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from graphlib import CycleError, TopologicalSorter
 
+from backend.app.orchestration.conditions import ConditionValidationError, validate_condition
 from backend.app.planning.project_plan_members import snapshot_agent_ids
 
 
@@ -39,6 +40,13 @@ def _validate_package_shape(packages: list[object], allowed_agent_ids: set[str])
         package_ids.add(package_id)
         required_string(raw_package, "title")
         required_string(raw_package, "required_role")
+
+        condition = raw_package.get("condition")
+        if condition not in (None, {}):
+            try:
+                validate_condition(condition, path=f"work_packages[{package_id}].condition")
+            except ConditionValidationError as exc:
+                raise ProjectPlanValidationError(str(exc), code=exc.code) from exc
 
         agent_id = raw_package.get("assigned_agent_profile_id")
         if agent_id is not None and str(agent_id) not in allowed_agent_ids:

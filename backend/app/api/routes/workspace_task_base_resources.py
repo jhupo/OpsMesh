@@ -188,4 +188,6 @@ def _task_create_command(request: TaskCreateRequest) -> TaskCreateCommand:
         input=request.input,
         generic_state=request.generic_state,
         domain_state=request.domain_state,
+        orchestration_definition_id=request.orchestration_definition_id,
+        orchestration_version=request.orchestration_version,
     )

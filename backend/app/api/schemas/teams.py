@@ -9,6 +9,7 @@ from backend.app.api.schemas.team_core import (
     AgentTeamOrgChartResponse,
     AgentTeamOrgMemberNode,
     AgentTeamResponse,
+    AgentTeamUpdateRequest,
 )
 from backend.app.api.schemas.team_execution import (
     AgentTeamCommandCenterResponse,
@@ -64,6 +65,7 @@ __all__ = [
     "AgentTeamCommandCenterApplyResponse",
     "AgentTeamCommandCenterResponse",
     "AgentTeamCreateRequest",
+    "AgentTeamUpdateRequest",
     "AgentTeamExecutionLoopEnqueueRequest",
     "AgentTeamExecutionLoopEnqueueResponse",
     "AgentTeamExecutionLoopFinalizeRequest",

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.service import AgentManagementService
 from backend.app.audit.service import AuditService
+from backend.app.capabilities.schema_validation import reject_embedded_secrets
 from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 from backend.app.runtime_spaces.service import RuntimeSpaceService
@@ -24,6 +25,11 @@ class TeamCreateCommand:
     coordination_rules: dict[str, object] = field(default_factory=dict)
     default_task_policy: dict[str, object] = field(default_factory=dict)
     capability_policy: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class TeamUpdateCommand:
+    changes: dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +111,68 @@ class WorkspaceTeamService:
         return self._session.scalar(
             select(AgentTeam).where(AgentTeam.workspace_id == workspace_id, AgentTeam.id == team_id)
         )
+
+    def update_team(
+        self,
+        workspace_id: UUID,
+        team_id: UUID,
+        command: TeamUpdateCommand,
+        actor_user_id: UUID | None = None,
+    ) -> AgentTeam:
+        team = self._session.scalar(
+            select(AgentTeam)
+            .where(AgentTeam.workspace_id == workspace_id, AgentTeam.id == team_id)
+            .with_for_update()
+        )
+        if team is None:
+            raise ValueError("Team not found")
+        changes = dict(command.changes)
+        if not changes:
+            raise ValueError("At least one team field is required")
+        manager_id = changes.get("manager_agent_profile_id")
+        if manager_id is not None:
+            if not isinstance(manager_id, UUID):
+                raise ValueError("Manager agent profile ID must be a UUID")
+            self._require_agent(workspace_id, manager_id)
+        runtime_space_id = changes.get("runtime_space_id")
+        if runtime_space_id is not None:
+            if not isinstance(runtime_space_id, UUID):
+                raise ValueError("Runtime space ID must be a UUID")
+            RuntimeSpaceService(self._session).require_runtime_space_for_target(
+                workspace_id=workspace_id,
+                runtime_space_id=runtime_space_id,
+                target_type="workspace",
+                target_id=workspace_id,
+            )
+        for key in ("coordination_rules", "default_task_policy"):
+            if key in changes:
+                value = changes[key]
+                if not isinstance(value, dict):
+                    raise ValueError(f"{key} must be an object")
+                try:
+                    reject_embedded_secrets(value, path=key)
+                except ValueError as exc:
+                    raise ValueError(str(exc)) from exc
+        before = _team_snapshot(team, changes)
+        for field_name, value in changes.items():
+            setattr(team, field_name, value)
+        self._session.flush([team])
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="team.updated",
+                target_type="agent_team",
+                target_id=team.id,
+                metadata={
+                    "changed_fields": sorted(changes),
+                    "before": before,
+                    "after": _team_snapshot(team, changes),
+                },
+            )
+        self._session.commit()
+        self._session.refresh(team)
+        return team
 
     def list_team_members(
         self,
@@ -313,6 +381,17 @@ def _team_member_payload(command: TeamMemberCreateCommand) -> dict[str, object]:
     }
 
 
+def _team_snapshot(team: AgentTeam, fields: dict[str, object]) -> dict[str, object]:
+    return {
+        field: (
+            str(getattr(team, field))
+            if isinstance(getattr(team, field), UUID)
+            else getattr(team, field)
+        )
+        for field in fields
+    }
+
+
 def _team_member_update_snapshot(
     member: AgentTeamMember,
     fields: dict[str, object],
@@ -324,4 +403,3 @@ def _serializable_team_member_value(value: object) -> object:
     if isinstance(value, UUID):
         return str(value)
     return value
-

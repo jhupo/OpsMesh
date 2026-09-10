@@ -18,6 +18,7 @@ from backend.app.api.schemas.capabilities.mcp_servers import (
     McpServerUpdateRequest,
     McpToolAllowRequest,
     McpToolAllowResponse,
+    McpToolAllowUpdateRequest,
 )
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
@@ -150,6 +151,39 @@ async def disable_mcp_server(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return McpServerResponse.model_validate(server)
+
+
+@router.patch(
+    "/mcp-servers/{mcp_server_id}/tools/{allowlist_id}",
+    response_model=McpToolAllowResponse,
+)
+async def update_mcp_tool(
+    mcp_server_id: UUID,
+    allowlist_id: UUID,
+    request: McpToolAllowUpdateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> McpToolAllowResponse:
+    try:
+        allow = McpServerService(session, settings=settings).update_mcp_tool(
+            context.workspace.id,
+            mcp_server_id,
+            allowlist_id,
+            request,
+            context.user.user_id,
+        )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    except ValueError as exc:
+        message = str(exc)
+        error_status = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=error_status, detail=message) from exc
+    return McpToolAllowResponse.model_validate(allow)
 
 
 @router.post("/mcp-servers/{mcp_server_id}/health-check", response_model=McpServerResponse)
