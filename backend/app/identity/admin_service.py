@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams
+from backend.app.core.pagination import PageParams
 from backend.app.identity.models import User, UserAPIToken
 
 

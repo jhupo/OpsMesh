@@ -106,7 +106,7 @@ from sqlalchemy import create_engine
 
 import backend.app.telemetry.tracing as tracing
 from backend.app.core.config import Settings
-from backend.app.core.middleware import RequestContextMiddleware
+from backend.app.api.middleware import RequestContextMiddleware
 
 exporter = InMemorySpanExporter()
 tracing.OTLPSpanExporter = lambda **_: exporter

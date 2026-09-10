@@ -6,7 +6,6 @@ from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.marketplace import (
     MarketplaceInstallRequest,
     MarketplaceListingCreateRequest,
@@ -14,6 +13,7 @@ from backend.app.api.schemas.marketplace import (
 from backend.app.audit.service import AuditService
 from backend.app.capabilities.models import McpServer, Skill
 from backend.app.core.config import Settings
+from backend.app.core.pagination import PageParams
 from backend.app.db.errors import (
     DatabaseConflictError,
     commit_or_raise_conflict,

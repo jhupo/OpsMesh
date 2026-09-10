@@ -5,15 +5,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.errors import register_error_handlers
-from backend.app.api.router import api_router
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.executors import shutdown_blocking_executor
-from backend.app.core.logging import configure_logging
-from backend.app.core.middleware import (
+from backend.app.api.middleware import (
     RateLimitMiddleware,
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
+from backend.app.api.router import api_router
+from backend.app.core.config import Settings, get_settings
+from backend.app.core.executors import shutdown_blocking_executor
+from backend.app.core.logging import configure_logging
 from backend.app.db.session import engine
 from backend.app.rate_limits.service import FixedWindowRateLimiter
 from backend.app.redis.client import close_redis_client, create_redis_client

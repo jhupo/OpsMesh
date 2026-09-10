@@ -1,3 +1,5 @@
+"""HTTP transport policies composed by the API entry point, not shared infrastructure."""
+
 import logging
 import re
 import time

@@ -3,13 +3,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.app.admin.runtime_control import AdminRuntimeService
-from backend.app.api.pagination import PageParams, PageResponse, pagination_params
+from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.admin.dependencies import admin_runtime_service
 from backend.app.api.routes.admin.responses import page_response
 from backend.app.api.schemas.admin import (
     AdminForceStopRuntimeRequest,
     AdminWorkspaceRuntimeResponse,
 )
+from backend.app.core.pagination import PageParams
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue.redis_queue import RedisQueue
 

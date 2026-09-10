@@ -19,7 +19,6 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeResumeState,
 )
 from backend.app.agent_runtime.state_store import AgentRunStateStore
-from backend.app.api.pagination import PageParams
 from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
 from backend.app.approvals.decisions import ApprovalDecisionService
 from backend.app.approvals.lifecycle import AgentToolApprovalLifecycleService
@@ -33,6 +32,7 @@ from backend.app.approvals.service import ApprovalService
 from backend.app.audit.models import AuditEvent
 from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.pagination import PageParams
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session

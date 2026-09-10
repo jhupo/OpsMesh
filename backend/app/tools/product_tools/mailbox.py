@@ -5,12 +5,12 @@ from sqlalchemy import select
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.agent_messages.service import AgentMailboxService
 from backend.app.agents.models import AgentProfile
-from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.agent_messages import (
     AgentMessageCreateRequest,
     AgentMessageResponse,
     AgentMessageThreadCreateRequest,
 )
+from backend.app.core.pagination import PageParams
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.tools.context import ToolContext

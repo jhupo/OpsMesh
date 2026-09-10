@@ -5,7 +5,8 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from backend.app.api.pagination import PageParams, PageResponse
+from backend.app.api.pagination import PageResponse
+from backend.app.core.pagination import PageParams
 
 ResponseT = TypeVar("ResponseT", bound=BaseModel)
 

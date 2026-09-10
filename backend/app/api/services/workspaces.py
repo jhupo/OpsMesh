@@ -6,7 +6,6 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.workspaces import WorkspaceCreateRequest, WorkspaceUpdateRequest
 from backend.app.api.services.workspace_invites import WorkspaceInviteService
 from backend.app.api.services.workspace_settings import (
@@ -17,6 +16,7 @@ from backend.app.api.services.workspace_settings import (
 from backend.app.audit.service import AuditService
 from backend.app.auth.permissions import WorkspaceRole
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict
 from backend.app.db.pagination import page_scalars
 from backend.app.memory.models import WorkspaceMemoryConfiguration

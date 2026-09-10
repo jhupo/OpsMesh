@@ -4,8 +4,8 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
-from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.notifications import NotificationCreateRequest
+from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 from backend.app.notifications.models import WorkspaceNotification
 

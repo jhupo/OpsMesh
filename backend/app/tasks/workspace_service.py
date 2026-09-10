@@ -4,8 +4,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams
 from backend.app.audit.service import AuditService
+from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.attempts import TaskPlanningAttemptService

@@ -4,8 +4,8 @@ from uuid import UUID
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams
 from backend.app.approvals.models import Approval
+from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 
 T = TypeVar("T")

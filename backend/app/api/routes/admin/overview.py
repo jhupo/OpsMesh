@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, Query
 
 from backend.app.admin.overview import AdminOverviewService
-from backend.app.api.pagination import PageParams, PageResponse, pagination_params
+from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.admin.dependencies import admin_overview_service
 from backend.app.api.routes.admin.responses import page_response
 from backend.app.api.schemas.admin import AdminOverviewResponse, AdminWorkspaceResponse
+from backend.app.core.pagination import PageParams
 
 router = APIRouter()
 

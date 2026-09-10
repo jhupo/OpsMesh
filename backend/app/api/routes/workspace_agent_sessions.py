@@ -9,7 +9,7 @@ from backend.app.agent_runtime.session_management import (
     PersistentAgentSessionManagementService,
 )
 from backend.app.agents.service import AgentManagementService
-from backend.app.api.pagination import PageParams, PageResponse, pagination_params
+from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.agents import (
     AgentSessionClearResponse,
     AgentSessionDetailResponse,
@@ -18,6 +18,7 @@ from backend.app.api.schemas.agents import (
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
+from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
 
 router = APIRouter(

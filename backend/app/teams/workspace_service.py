@@ -5,8 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.service import AgentManagementService
-from backend.app.api.pagination import PageParams
 from backend.app.audit.service import AuditService
+from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.teams.models import AgentTeam, AgentTeamMember

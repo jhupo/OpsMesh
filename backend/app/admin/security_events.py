@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from backend.app.admin.base import AdminSessionService
-from backend.app.api.pagination import PageParams
+from backend.app.core.pagination import PageParams
 from backend.app.security.models import SecurityEvent
 
 

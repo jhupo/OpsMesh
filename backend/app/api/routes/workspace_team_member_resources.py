@@ -17,7 +17,7 @@ from backend.app.api.idempotency import (
     IdempotencyService,
     run_idempotent_create,
 )
-from backend.app.api.pagination import PageParams, PageResponse, pagination_params
+from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.agent_errors import agent_management_http_error
 from backend.app.api.schemas.agents import (
     AgentProfileResponse,
@@ -33,6 +33,7 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
 from backend.app.model_providers.model_api import configured_model_api, require_known_model_api
 from backend.app.redis.dependencies import get_redis_client

@@ -7,7 +7,6 @@ from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.pagination import PageParams
 from backend.app.capabilities.agent_tool_policy import agent_allowed_mcp_tool_names
 from backend.app.capabilities.mcp_catalog import (
     McpCatalogServer,
@@ -34,6 +33,7 @@ from backend.app.capabilities.models import (
     McpToolCallLog,
 )
 from backend.app.core.config import Settings
+from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 
 T = TypeVar("T")

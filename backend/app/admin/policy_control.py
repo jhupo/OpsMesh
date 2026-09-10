@@ -16,7 +16,7 @@ from backend.app.admin.worker_policy_values import (
     default_worker_control_policy_value,
     normalize_worker_control_policy_value,
 )
-from backend.app.api.pagination import PageParams
+from backend.app.core.pagination import PageParams
 
 
 class AdminPolicyService(AdminSessionService):

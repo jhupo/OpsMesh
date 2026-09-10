@@ -3,10 +3,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 
 from backend.app.admin.security_events import AdminSecurityEventService
-from backend.app.api.pagination import PageParams, PageResponse, pagination_params
+from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.admin.dependencies import admin_security_event_service
 from backend.app.api.routes.admin.responses import page_response
 from backend.app.api.schemas.admin import AdminSecurityEventResponse
+from backend.app.core.pagination import PageParams
 
 router = APIRouter()
 

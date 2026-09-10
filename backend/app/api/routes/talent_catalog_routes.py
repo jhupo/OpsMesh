@@ -3,12 +3,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams, PageResponse, pagination_params
+from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.marketplace import (
     TalentListingMetricsResponse,
     TalentListingResponse,
     TalentListingReviewResponse,
 )
+from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
 from backend.app.marketplace.responses import review_response
 from backend.app.marketplace.talent_catalog import TalentCatalogService

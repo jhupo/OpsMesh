@@ -48,6 +48,7 @@ packaging = ["pyinstaller==6.22.2"]
 dev = [
     "boto3-stubs[s3]==1.43.23",
     "fakeredis[lua]>=2.35.1",
+    "import-linter>=2.11,<3.0",
     "mypy>=1.17.0,<2.0.0",
     "pytest>=8.4.0,<9.0.0",
     "pyyaml>=6.0",
@@ -109,3 +110,56 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 files = ["backend/app"]
+
+[tool.importlinter]
+root_package = "backend"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+id = "http-transport"
+name = "HTTP transport is only composed by the API entry point"
+type = "protected"
+protected_modules = ["backend.app.api.routes", "backend.app.api.middleware"]
+allowed_importers = ["backend.app.api", "backend.app.main"]
+
+[[tool.importlinter.contracts]]
+id = "infrastructure-no-api"
+name = "Shared infrastructure cannot depend on the API even indirectly"
+type = "forbidden"
+source_modules = ["backend.app.core", "backend.app.db", "backend.app.redis"]
+forbidden_modules = ["backend.app.api"]
+
+[[tool.importlinter.contracts]]
+id = "pagination-no-transport"
+name = "Pagination inputs have no HTTP or database dependency"
+type = "forbidden"
+source_modules = ["backend.app.core.pagination"]
+forbidden_modules = ["backend.app.api", "fastapi", "starlette", "sqlalchemy"]
+
+[[tool.importlinter.contracts]]
+id = "production-no-test-framework"
+name = "Production code cannot depend on the test framework"
+type = "forbidden"
+source_modules = ["backend.app"]
+forbidden_modules = ["pytest"]
+
+[[tool.importlinter.contracts]]
+id = "docker-sdk-boundary"
+name = "Docker daemon access stays in its infrastructure adapter"
+type = "protected"
+protected_modules = ["docker"]
+allowed_importers = ["backend.app.runtime_manager.docker_client"]
+
+[[tool.importlinter.contracts]]
+id = "s3-sdk-boundary"
+name = "S3 SDK access stays in its storage adapter"
+type = "protected"
+protected_modules = ["boto3"]
+allowed_importers = ["backend.app.files.storage"]
+
+[[tool.importlinter.contracts]]
+id = "provider-neutral-contracts"
+name = "Agent runtime contracts do not depend on vendor SDKs or HTTP transport"
+type = "forbidden"
+source_modules = ["backend.app.agent_runtime.contracts"]
+forbidden_modules = ["agents", "openai", "anthropic", "claude_agent_sdk", "backend.app.api"]

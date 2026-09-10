@@ -3,7 +3,7 @@ from typing import TypeVar
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams
+from backend.app.core.pagination import PageParams
 
 T = TypeVar("T")
 

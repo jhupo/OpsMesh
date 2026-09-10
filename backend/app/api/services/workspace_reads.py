@@ -4,10 +4,10 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams
 from backend.app.audit.models import AuditEvent
 from backend.app.audit.service import AuditService
 from backend.app.core.config import Settings
+from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.runs.models import AgentRun, RunEvent

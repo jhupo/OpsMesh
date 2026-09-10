@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams, PageResponse, pagination_params
+from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.capabilities.catalog import (
     CapabilityResourceCreateRequest,
     CapabilityResourceResponse,
@@ -20,6 +20,7 @@ from backend.app.capabilities.catalog_service import WorkspaceCapabilityCatalogS
 from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalogService
 from backend.app.capabilities.policy_service import TeamCapabilityPolicyService
 from backend.app.capabilities.resource_service import CapabilityResourceService
+from backend.app.core.pagination import PageParams
 from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
 

@@ -2,6 +2,11 @@
 
 ## Goal
 
+The currently enforced module rules and their limits are documented in
+[Backend Architecture Gates](architecture-gates.md). Shared pagination inputs live in core; HTTP
+middleware lives in API. The linter verifies infrastructure independence and SDK adapter boundaries
+on every CI run; it does not imply that every proposed domain boundary below is already enforced.
+
 The backend should be split into clear responsibility domains. The API service should not directly execute long-running agent work. Workers should execute runs asynchronously, communicate through queues and persisted state, and use the runtime manager for Docker-backed execution.
 
 ## Three Backend Domains

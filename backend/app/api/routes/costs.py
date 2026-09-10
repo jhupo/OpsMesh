@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams, PageResponse, pagination_params
+from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.costs import (
     CostSummaryResponse,
     ModelPricingRuleCreateRequest,
@@ -19,6 +19,7 @@ from backend.app.api.schemas.costs import (
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
+from backend.app.core.pagination import PageParams
 from backend.app.costs.models import WorkspaceCostBudget
 from backend.app.costs.service import CostAccountingService
 from backend.app.db.session import get_db_session

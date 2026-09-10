@@ -6,6 +6,12 @@ Frontend remains out of scope. The goal is to make the backend feel like a matur
 
 ## Current Completion Snapshot
 
+The post-delivery architecture-gate stage is implemented: seven upstream Import Linter contracts,
+transport-independent pagination, API-owned HTTP middleware, complete application package discovery,
+and negative gate tests. See [architecture gates](architecture-gates.md) for exact coverage and
+remaining service/DTO coupling. Knowledge-source ingestion and citations are the next product stage,
+not part of this acceptance.
+
 Completed foundation:
 
 - user/workspace isolation and RBAC

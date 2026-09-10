@@ -7,7 +7,6 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.capabilities.mcp_observability import McpToolCallLogRequest
 from backend.app.capabilities.agent_tool_policy import agent_allowed_mcp_tool_names
 from backend.app.capabilities.mcp_payloads import (
@@ -17,6 +16,7 @@ from backend.app.capabilities.mcp_payloads import (
 )
 from backend.app.capabilities.mcp_server_helpers import require_mcp_server
 from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
+from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 from backend.app.runs.models import AgentRun
 

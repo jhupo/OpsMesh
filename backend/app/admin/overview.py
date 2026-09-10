@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from backend.app.admin.base import AdminSessionService
-from backend.app.api.pagination import PageParams
+from backend.app.core.pagination import PageParams
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.runtime_spaces.models import RuntimeSpace
 from backend.app.runtimes.models import WorkspaceRuntime

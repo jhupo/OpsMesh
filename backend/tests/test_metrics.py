@@ -17,10 +17,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
+from backend.app.api.middleware import _metrics_path
 from backend.app.audit.models import AuditIntegrityCheck
 from backend.app.core.config import Settings
 from backend.app.core.metrics import MetricsRegistry, metrics_registry
-from backend.app.core.middleware import _metrics_path
 from backend.app.costs.models import ModelPricingRule, ModelUsageRecord, WorkspaceCostBudget
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base

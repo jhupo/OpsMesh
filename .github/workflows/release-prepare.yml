@@ -45,6 +45,8 @@ jobs:
       - run: uv sync --frozen --all-groups
       - run: uv run python -m scripts.release validate --tag "$RELEASE_TAG"
       - run: uv run ruff check . && uv run mypy
+      - name: Architecture contracts
+        run: uv run python scripts/ci_command.py uv run lint-imports --no-cache
       # Full-suite validation is restricted to tag-triggered release publication.
       - run: uv run python scripts/ci_command.py uv run pytest
         env:

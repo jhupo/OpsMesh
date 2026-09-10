@@ -122,6 +122,7 @@ def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
         "uv run pytest",
         "uv run ruff check .",
         "uv run mypy",
+        "uv run lint-imports --no-cache",
         "uv run alembic upgrade head",
         "uv run alembic check",
         "uv build --all-packages",
@@ -137,6 +138,7 @@ def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
     assert "candidate-${{ github.run_id }}-${{ github.run_attempt }}" in publish
     ci = (ROOT / ".github/workflows/backend-ci.yml").read_text("utf-8")
     assert "branches: [master]" in ci
+    assert "uv run lint-imports --no-cache" in ci
     assert "uv run pytest\n" not in ci
 
 

@@ -5,7 +5,6 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.capabilities.mcp_credentials import (
     McpCredentialReferenceCreateRequest,
     McpCredentialReferenceRotateRequest,
@@ -15,6 +14,7 @@ from backend.app.audit.service import AuditService
 from backend.app.capabilities.mcp_server_helpers import require_mcp_server
 from backend.app.capabilities.models import McpCredentialReference
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.db.pagination import page_scalars
 from backend.app.reviews.approval_service import ResourceReviewApprovalService

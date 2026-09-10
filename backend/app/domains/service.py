@@ -4,13 +4,13 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.domains import (
     DomainItemCreateRequest,
     DomainProjectCreateRequest,
     ReviewCommentCreateRequest,
     RevisionRequestCreateRequest,
 )
+from backend.app.core.pagination import PageParams
 from backend.app.db.base import Base
 from backend.app.db.pagination import page_scalars
 from backend.app.domains.models import (

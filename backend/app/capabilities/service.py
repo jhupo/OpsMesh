@@ -4,7 +4,6 @@ from uuid import UUID
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.capabilities.base import (
     CapabilityCreateRequest,
     SkillCreateRequest,
@@ -16,6 +15,7 @@ from backend.app.capabilities.models import (
     ToolGroup,
 )
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.db.pagination import page_scalars
 from backend.app.reviews.approval_service import ResourceReviewApprovalService

@@ -312,7 +312,11 @@ recommended order, and boundaries that remain owned by OpsMesh.
 
 - Keep Ruff, mypy, and migrations green after the current modularization. Run focused tests during
   development; reserve the complete suite for the release-tag gate.
-- Add architecture and import-boundary checks for public service facades.
+- Enforce the implemented seven import-boundary contracts in CI: HTTP transport ownership,
+  infrastructure independence, transport-free pagination, production/test separation, Docker/S3
+  adapter access, and provider-neutral Agent contracts. See [architecture gates](docs/architecture-gates.md).
+  Public service-facade consolidation remains separate work; the gate does not claim all domain
+  dependencies are acyclic.
 - Reduce oversized modules without creating chains of pass-through wrappers.
 - Establish coverage expectations for tenant denial paths and isolated execution.
 

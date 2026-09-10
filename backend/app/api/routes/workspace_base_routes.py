@@ -9,7 +9,7 @@ from backend.app.api.idempotency import (
     IdempotencyService,
     run_idempotent_create,
 )
-from backend.app.api.pagination import PageParams, PageResponse, pagination_params
+from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.workspaces import (
     WorkspaceCreateRequest,
     WorkspaceResponse,
@@ -24,6 +24,7 @@ from backend.app.auth.dependencies import (
 )
 from backend.app.auth.permissions import AccountAction, WorkspaceAction
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.pagination import PageParams
 from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
 from backend.app.redis.dependencies import get_redis_client

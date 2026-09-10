@@ -2,6 +2,11 @@
 
 ## Purpose
 
+Latest completed increment (2026-09-10): [backend architecture gates](architecture-gates.md),
+following rc9 delivery acceptance. Seven enforced contracts, corrected pagination/middleware
+ownership, package-discovery coverage, and deliberate violation tests are implemented. Next product
+increment: knowledge-source registry, durable ingestion, authorized retrieval, and citations.
+
 This document breaks the backend roadmap into actionable engineering tasks, from the basic framework to complete backend capabilities.
 
 Use it as the implementation checklist after the planning phase.

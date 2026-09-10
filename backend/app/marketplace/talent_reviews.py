@@ -5,12 +5,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.marketplace import (
     TalentListingMetricsResponse,
     TalentListingReviewCreateRequest,
 )
 from backend.app.audit.service import AuditService
+from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict
 from backend.app.db.pagination import page_scalars
 from backend.app.marketplace.models import TalentListingReview

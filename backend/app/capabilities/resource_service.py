@@ -7,7 +7,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.capabilities.catalog import (
     CapabilityResourceCreateRequest,
     CapabilityResourceUpdateRequest,
@@ -25,6 +24,7 @@ from backend.app.capabilities.schema_validation import (
     validate_parameters,
 )
 from backend.app.core.errors import DomainError, NotFoundError
+from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.files.models import WorkspaceFile
 from backend.app.runs.models import AgentRun

@@ -27,7 +27,6 @@ from backend.app.agents.payloads import (
 from backend.app.agents.profile_commands import AgentProfileCommandService
 from backend.app.agents.queries import AgentProfileQueryService
 from backend.app.agents.versions import AgentVersionRecorder
-from backend.app.api.pagination import PageParams
 from backend.app.api.schemas.agents import (
     AgentProfileCloneRequest,
     AgentProfileCreateRequest,
@@ -35,6 +34,7 @@ from backend.app.api.schemas.agents import (
     AgentProfileUpdateRequest,
 )
 from backend.app.core.config import Settings
+from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 
 

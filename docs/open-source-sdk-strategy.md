@@ -273,6 +273,13 @@ process restart.
 
 ## Architecture Spikes
 
+### Adopted: Import Linter for development architecture gates
+
+Use the upstream static graph and built-in protected/forbidden contracts rather than building an
+import parser. The dev-only dependency adds no production service or SDK execution path. Seven
+product-owned rules and negative CLI tests cover the accepted boundary baseline; see
+[architecture gates](architecture-gates.md) for evaluation, scope, and explicit limits.
+
 ### Temporal Python SDK
 
 **Candidate:** [temporalio/sdk-python](https://github.com/temporalio/sdk-python)

@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams, PageResponse, pagination_params
+from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.workspace_task_streaming import (
     _message_sequence,
     _read_task_bus_events,
@@ -28,6 +28,7 @@ from backend.app.api.services.workspace_reads import WorkspaceReadService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
+from backend.app.core.pagination import PageParams
 from backend.app.core.trace_context import current_trace_metadata
 from backend.app.db.session import get_db_session
 from backend.app.tasks.events import TaskEventBus

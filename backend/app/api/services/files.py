@@ -6,9 +6,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageParams
 from backend.app.artifacts.models import Artifact
 from backend.app.audit.service import AuditService
+from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.files.runtime_policy import validate_file_runtime_policy
