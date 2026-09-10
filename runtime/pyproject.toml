@@ -1,6 +1,6 @@
 [project]
 name = "opsmesh-runtime"
-version = "0.1.0rc8"
+version = "0.1.0rc9"
 description = "Isolated runtime helpers for OpsMesh agent workloads."
 requires-python = ">=3.11"
 dependencies = [

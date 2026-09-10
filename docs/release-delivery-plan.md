@@ -20,6 +20,12 @@ is still pending and will be recorded below only after actual runs succeed.
   an existing or missing application database. Storage/configuration identity, data restoration
   and tamper denial pass. The missing-database repair is newer than immutable rc7 and requires
   the next release before final packaged acceptance.
+- `34428496560` validates both actual Compose and systemd installation, rc6/rc7 rollback and
+  upgrade, killed-updater classification/resume and real port-bind failure/application rollback.
+  Its final missing-database restoration reproduces the known rc7 defect fixed by `cee8656`.
+  Systemd's initial fixture used a forbidden default DB password; `c273ebe` replaces it with a
+  masked random password, retaining production validation. rc9 includes that fixture correction
+  in the immutable release workflow as well as the rc8 operator fixes; existing tags are not moved.
 
 ## rc6 standalone publication acceptance (2026-09-10)
 
