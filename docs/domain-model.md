@@ -14,6 +14,7 @@ User
           -> AgentTeam
           -> Task
               -> TaskStep
+              -> TaskTransfer
               -> AgentRun
                   -> RunEvent
                   -> Approval
@@ -147,6 +148,8 @@ Key fields:
 - `created_by_user_id`
 - `created_by_agent_run_id`
 - `agent_team_id`
+- `owner_agent_profile_id`
+- `owner_version`
 - `domain_type`
 - `title`
 - `description`
@@ -190,6 +193,41 @@ Key fields:
 - `result_summary`
 - `created_at`
 - `updated_at`
+
+### TaskTransfer
+
+Durable ownership-transfer request for a team task. The handoff package is captured at request
+time and contains redacted objective, task state, plan steps, recent messages and runs, artifact
+references, and three-layer memory references. It never contains artifact bytes, storage keys, or
+credentials.
+
+Key fields:
+
+- `id`
+- `workspace_id`
+- `task_id`
+- `source_agent_profile_id`
+- `target_agent_profile_id`
+- `requested_by_user_id`
+- `accepted_by_user_id`
+- `idempotency_key`
+- `status`
+- `revision`
+- `source_owner_version`
+- `target_owner_version`
+- `reason`
+- `package`
+- `accepted_at`
+- `rejected_at`
+- `rejection_reason`
+- `created_at`
+- `updated_at`
+
+Transfer acceptance locks the task, verifies the source owner and version have not changed, updates
+the owner and platform-owned planning/integration steps, records task/audit events, and optionally
+queues the next run. Active execution must be stopped before a transfer can be requested or
+accepted; stale authorization snapshots and scheduler checks reject the previous owner after the
+version changes.
 
 ### AgentRun
 

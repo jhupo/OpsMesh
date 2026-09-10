@@ -146,8 +146,9 @@ Active stage (2026-09-10): continue this sequence before knowledge-source work. 
 validates the live team roster, profile versions, roles, skills, capability catalog, runtime-space
 placement, scheduler limits, workspace/runtime quotas, provider readiness, and projected model cost
 before any generated work step is materialized. Dynamic future-work replanning is now admitted
-through an audited, task-row-locked mutation service; this phase remains open until ownership
-transfer, human continuation, and final delivery acceptance are complete.
+through an audited, task-row-locked mutation service. Ownership transfer is now durable and
+version-guarded; this phase remains open until human continuation and final delivery acceptance
+are complete.
 
 Goal: move from a deterministic organization template to validated, adaptive agent planning.
 
@@ -156,7 +157,7 @@ Goal: move from a deterministic organization template to validated, adaptive age
 | 5.1 | P0 | Generate a structured task DAG with a planner agent and retain deterministic planning only as explicit fallback | Done | `638bf87` | Tool-free worker planner, SDK structured output, scoped DAG admission, duplicate-delivery denial, durable failure/cancel/retry, explicit deterministic mode; PostgreSQL and Backend CI accepted |
 | 5.2 | P0 | Validate schema, cycles, authorization, capability availability, cost, and resource feasibility | Done | `1c30501` | Invalid plans cannot enqueue work; stable failure codes cover stale roster/policy, role/skill, tool/resource, runtime/workspace quota, provider, and cost gates |
 | 5.3 | P0 | Replan by adding, splitting, merging, cancelling, or reassigning future work | Done | `a86f7cf` | `TaskPlanMutationService` and `POST /tasks/{task_id}/plan/mutate` apply task-row-locked, idempotent mutations; DAG/feasibility gates, step projection reconciliation, manager-summary coverage, cancellation history, and active-side-effect protection are covered by focused service/API tests and Backend CI |
-| 5.4 | P0 | Transfer tasks between agents with objective, context, artifacts, state, and ownership | Pending | `complete-agent-task-transfer` | Target accepts a durable handoff package and the source can no longer act as owner |
+| 5.4 | P0 | Transfer tasks between agents with objective, context, artifacts, state, and ownership | Done | `f69305b` | `TaskTransferService` and task transfer endpoints capture redacted objective/state/steps/messages/runs/artifact and memory references; task-row ownership/version locks, active-run denial, idempotency, audit/message evidence, platform-step reassignment, scheduler checks, and stale authorization rejection are covered by focused transfer tests |
 | 5.5 | P0 | Support human pause, context correction, reassignment, and in-place continuation | Pending | `complete-human-agent-intervention` | Human changes are versioned, audited, and applied before the resumed action |
 | 5.6 | P0 | Close manager acceptance, revision, missing-work, and final integration loops | Pending | `complete-agent-delivery-workflow` | Delivery completes only after criteria are satisfied or an explicit authorized override |
 
@@ -178,15 +179,29 @@ quota services. Evidence for 5.3: `test_agent_planning.py` exercises add, split,
 reassign, immutable completed history, and active side-effect denial; `test_workspace_api.py`
 covers the workspace mutation endpoint and audit event. No new SDK/framework dependency was
 introduced: schema-constrained generation remains owned by the provider SDK, while plan
-authorization, mutation, and scheduling remain product policy. Ownership transfer, human
-continuation, and final delivery gates below remain open.
+authorization, mutation, and scheduling remain product policy. Human continuation and final
+delivery gates below remain open.
 
-Accepted code: `a86f7cf` (5.3), on top of `1c30501`, `638bf87`, `f455fa5` and the prerequisite fixes
-`e03bb48` (pgvector test fixture initialization) and `32047c7` (dependency recheck under the
-scheduling lock). Both jobs in [Backend CI 34445031128](https://github.com/jhupo/OpsMesh/actions/runs/34445031128)
-passed. The PostgreSQL test verifies concurrent planning requests produce one durable attempt and
-remains separate from SQLite metadata-patching tests; the Backend job also ran the focused planning
-and workspace API regressions. Phase 5.4 through 5.6 remain open.
+Accepted code: `a86f7cf` (5.3), `f69305b` (5.4), and `f0ba331` (migration contract fix), on top of
+`1c30501`, `638bf87`, `f455fa5` and the prerequisite fixes `e03bb48` (pgvector test fixture
+initialization) and `32047c7` (dependency recheck under the scheduling lock). Backend CI
+[34449010461](https://github.com/jhupo/OpsMesh/actions/runs/34449010461) passed for the transfer
+implementation and [34449729516](https://github.com/jhupo/OpsMesh/actions/runs/34449729516) passed
+after the migration contract fix. Delivery Integration
+[34449858792](https://github.com/jhupo/OpsMesh/actions/runs/34449858792) also passed its real
+PostgreSQL migration, container deployment/runtime probe, backup restoration, and tamper-denial
+checks. The PostgreSQL planning test verifies concurrent planning requests produce one durable
+attempt and remains separate from SQLite metadata-patching tests; the Backend job also ran the
+focused planning, transfer, and workspace API regressions. Phase 5.5 through 5.6 remain open.
+
+Evidence for 5.4: `test_task_transfer.py` covers durable package capture, response serialization,
+idempotent requests, active-run denial, acceptance, owner-version increment, and platform-step
+reassignment. `TaskTransferService` exposes scoped request/list/accept/reject endpoints under
+`/workspaces/{workspace_id}/tasks/{task_id}/transfers`; every mutation appends a task message and
+hash-chained audit event. The handoff package is redacted and reference-only for artifacts and
+memory, while owner/version fields are frozen into new authorization snapshots and checked before
+execution. Focused database, planning, workspace API, runtime authorization, import-linter, and
+Backend CI checks passed; the real PostgreSQL and Delivery Integration gates are recorded above.
 
 A project can be planned, validated, executed in parallel, replanned after failure, transferred
 between agents, corrected by a human, reviewed by a manager, and assembled into one final delivery.
