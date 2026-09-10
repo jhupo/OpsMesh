@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from graphlib import CycleError, TopologicalSorter
+
 from backend.app.planning.project_plan_members import snapshot_agent_ids
 
 
 class ProjectPlanValidationError(ValueError):
-    pass
+    def __init__(self, message: str, *, code: str = "plan_invalid") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def validate_project_plan(
@@ -16,6 +20,8 @@ def validate_project_plan(
     packages = plan.get("work_packages")
     if not isinstance(packages, list) or not packages:
         raise ProjectPlanValidationError("Project plan must include work packages")
+    if len(packages) > 256:
+        raise ProjectPlanValidationError("Plan exceeds 256 work packages", code="plan_too_large")
 
     allowed_agent_ids = snapshot_agent_ids(team_snapshot)
     package_ids = _validate_package_shape(packages, allowed_agent_ids)
@@ -41,19 +47,33 @@ def _validate_package_shape(packages: list[object], allowed_agent_ids: set[str])
 
 
 def _validate_dependencies(packages: list[object], package_ids: set[str]) -> None:
+    graph: dict[str, list[str]] = {}
     for raw_package in packages:
         if not isinstance(raw_package, dict):
             continue
         depends_on = raw_package.get("depends_on", [])
         if not isinstance(depends_on, list):
             raise ProjectPlanValidationError("Work package dependencies must be a list")
+        if any(not isinstance(item, str) or not item for item in depends_on):
+            raise ProjectPlanValidationError("Dependency IDs must be nonempty strings")
+        if len(set(depends_on)) != len(depends_on):
+            raise ProjectPlanValidationError("Duplicate dependency", code="plan_duplicate_edge")
         for dependency in depends_on:
-            if str(dependency) not in package_ids:
-                raise ProjectPlanValidationError(f"Unknown work package dependency: {dependency}")
+            if dependency not in package_ids:
+                raise ProjectPlanValidationError(
+                    "Unknown work package dependency", code="plan_missing_dependency"
+                )
+        graph[required_string(raw_package, "package_id")] = depends_on
+    try:
+        TopologicalSorter(graph).prepare()
+    except CycleError as exc:
+        raise ProjectPlanValidationError(
+            "Work package dependency cycle", code="plan_dependency_cycle"
+        ) from exc
 
 
 def required_string(value: dict[str, object], key: str) -> str:
     raw_value = value.get(key)
-    if not isinstance(raw_value, str) or not raw_value:
+    if not isinstance(raw_value, str) or not raw_value.strip():
         raise ProjectPlanValidationError(f"Work package missing required field: {key}")
     return raw_value

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import dict_or_empty, optional_string, string_list, uuid_or_none
+from backend.app.planning.project_plan_validation import validate_project_plan
 from backend.app.tasks.models import Task, TaskStep
 
 STEP_STATUS_QUEUED = "queued"
@@ -13,6 +14,7 @@ class ProjectPlanStepMaterializer:
     session: Session
 
     def materialize(self, task: Task, project_plan: dict[str, object]) -> TaskStep | None:
+        validate_project_plan(project_plan, task.team_snapshot)
         raw_packages = project_plan.get("work_packages", [])
         if not isinstance(raw_packages, list):
             return None
@@ -23,7 +25,6 @@ class ProjectPlanStepMaterializer:
             if not isinstance(package, dict):
                 continue
             package_id = str(package.get("package_id") or f"package-{index}")
-            after_step_ids = after_step_ids_for_package(package, created_steps_by_package_id)
             step = TaskStep(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
@@ -42,7 +43,7 @@ class ProjectPlanStepMaterializer:
                 status=STEP_STATUS_QUEUED,
                 order_index=index * 100,
                 dependencies={
-                    "after_step_ids": after_step_ids,
+                    "after_step_ids": [],
                     "work_package_id": package_id,
                     "required_role": package.get("required_role"),
                     "required_skills": package.get("required_skills", []),
@@ -54,8 +55,18 @@ class ProjectPlanStepMaterializer:
             self.session.add(step)
             self.session.flush([step])
             created_steps_by_package_id[package_id] = step
-            if first_step is None and not after_step_ids:
+            if first_step is None and not package.get("depends_on"):
                 first_step = step
+
+        # Allocate every ID before resolving edges; model output need not be topologically ordered.
+        for package in raw_packages:
+            if not isinstance(package, dict):
+                continue
+            step = created_steps_by_package_id[str(package["package_id"])]
+            step.dependencies = {
+                **step.dependencies,
+                "after_step_ids": after_step_ids_for_package(package, created_steps_by_package_id),
+            }
 
         self.session.flush()
         return first_step
@@ -74,5 +85,4 @@ def after_step_ids_for_package(
     return [
         str(created_steps_by_package_id[dependency].id)
         for dependency in dependencies
-        if dependency in created_steps_by_package_id
     ]

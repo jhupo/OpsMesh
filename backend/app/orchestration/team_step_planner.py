@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import positive_int_or_default, uuid_or_none
+from backend.app.orchestration.step_dependencies import dependencies_satisfied
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.snapshots import build_team_snapshot
@@ -309,25 +310,6 @@ class TeamStepPlanner:
         )
         self.session.add(step)
         return step
-
-def dependencies_satisfied(session: Session, step: TaskStep) -> bool:
-    dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
-    raw_step_ids = dependencies.get("after_step_ids", [])
-    if not isinstance(raw_step_ids, list) or not raw_step_ids:
-        return True
-
-    dependency_ids = [parsed for item in raw_step_ids if (parsed := uuid_or_none(item))]
-    if len(dependency_ids) != len(raw_step_ids):
-        return False
-    incomplete_count = session.scalar(
-        select(func.count(TaskStep.id)).where(
-            TaskStep.workspace_id == step.workspace_id,
-            TaskStep.id.in_(dependency_ids),
-            TaskStep.status != "completed",
-        )
-    )
-    return int(incomplete_count or 0) == 0
-
 
 def string_list_from_mapping_keys(value: object) -> list[str]:
     if not isinstance(value, dict):

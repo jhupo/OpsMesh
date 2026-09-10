@@ -142,6 +142,12 @@ included, truncated, and excluded context without persisting query or memory con
 
 ## Phase 5: Task And Agent Orchestration
 
+Active stage (2026-09-10): resume this sequence before knowledge-source work. The first prerequisite
+repair validates DAG cycles through Python's `graphlib`, materializes forward references in two
+passes, and shares a fail-closed scheduler dependency predicate. Every dependency must exist and be
+completed in the same workspace **and task**. This repairs concrete admission defects for 5.2; it
+does not by itself complete provider planning, capability/cost feasibility, or the phase gate.
+
 Goal: move from a deterministic organization template to validated, adaptive agent planning.
 
 | Order | Priority | Functional point | Status | Commit | Acceptance evidence |

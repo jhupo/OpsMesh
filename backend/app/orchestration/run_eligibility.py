@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
+from backend.app.orchestration.step_dependencies import dependencies_satisfied
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.status import TaskStatus
@@ -106,26 +107,7 @@ class RunEligibilityService:
         return int(active_runs or 0) > 0
 
     def dependencies_satisfied(self, step: TaskStep) -> bool:
-        dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
-        raw_step_ids = dependencies.get("after_step_ids", [])
-        if not isinstance(raw_step_ids, list) or not raw_step_ids:
-            return True
-
-        dependency_ids: list[UUID] = []
-        for raw_step_id in raw_step_ids:
-            try:
-                dependency_ids.append(UUID(str(raw_step_id)))
-            except ValueError:
-                return False
-
-        incomplete_count = self.session.scalar(
-            select(func.count(TaskStep.id)).where(
-                TaskStep.workspace_id == step.workspace_id,
-                TaskStep.id.in_(dependency_ids),
-                TaskStep.status != STEP_STATUS_COMPLETED,
-            )
-        )
-        return int(incomplete_count or 0) == 0
+        return dependencies_satisfied(self.session, step)
 
     def completed_step_summaries(self, task_id: UUID, *, before: int) -> list[str]:
         completed_steps = self.session.scalars(
