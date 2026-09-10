@@ -168,6 +168,32 @@ def test_unconditional_nodes_publish_and_revisions_survive_draft_edits() -> None
         )
 
 
+def test_authored_plan_cannot_be_replaced_by_automatic_regeneration() -> None:
+    from backend.app.tasks.plan_lifecycle import TaskPlanLifecycleService, TaskPlanRegenerateCommand
+
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    team = AgentTeam(workspace_id=workspace.id, name="Authored team")
+    session.add(team)
+    session.flush()
+    task = Task(
+        workspace_id=workspace.id,
+        agent_team_id=team.id,
+        title="Authored",
+        project_plan={"strategy": "user_authored", "work_packages": []},
+    )
+    session.add(task)
+    session.commit()
+    with pytest.raises(ValueError, match="explicit plan mutation"):
+        TaskPlanLifecycleService(session).regenerate_task_plan(
+            workspace.id,
+            task.id,
+            user.id,
+            TaskPlanRegenerateCommand(),
+        )
+    assert task.project_plan["strategy"] == "user_authored"
+
+
 def test_branch_skip_propagates_and_selected_join_becomes_ready() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
