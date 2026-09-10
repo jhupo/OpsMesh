@@ -55,9 +55,18 @@ class Acceptance:
         self.database: dict[str, str] = {}
 
     def command(self, *args: str) -> str:
-        return run_command(
-            [str(self.cli), "--root", str(ROOT), *args], env=self.environment, timeout=1800
+        result = subprocess.run(
+            [str(self.cli), "--root", str(ROOT), *args],
+            env=self.environment,
+            timeout=1800,
+            check=False,
+            capture_output=True,
+            text=True,
         )
+        if result.returncode:
+            # Public CLI errors are sanitized; never print command environments.
+            raise RuntimeError(f"Native CLI failed: {result.stderr[-2000:]}")
+        return result.stdout
 
     def connect(self) -> psycopg.Connection:
         return psycopg.connect(**self.database, autocommit=True)

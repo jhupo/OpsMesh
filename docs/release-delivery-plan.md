@@ -13,6 +13,14 @@ recovery before service interruption, and reconcile terminal host journals witho
 Focused update/security checks: 26 passed; strict operator/updater typing passes. Hosted acceptance
 is still pending and will be recorded below only after actual runs succeed.
 
+- `34426347483` / `v0.1.0rc7` passes the release gate: 1181 passed, 9 skipped, strict typing,
+  lint and real migrations. All five native CLI builds, the server archive and candidate images
+  pass. Managed acceptance is not yet complete at this checkpoint.
+- `34426504623` / `cee8656` passes Delivery Integration, including two real backup cases with
+  an existing or missing application database. Storage/configuration identity, data restoration
+  and tamper denial pass. The missing-database repair is newer than immutable rc7 and requires
+  the next release before final packaged acceptance.
+
 ## rc6 standalone publication acceptance (2026-09-10)
 
 - [Release Publish 34375776121](https://github.com/jhupo/OpsMesh/actions/runs/34375776121)
