@@ -152,7 +152,7 @@ Goal: move from a deterministic organization template to validated, adaptive age
 
 | Order | Priority | Functional point | Status | Commit | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- |
-| 5.1 | P0 | Generate a structured task DAG with a planner agent and retain deterministic planning only as explicit fallback | Implemented; CI acceptance pending | `add-agent-driven-task-planning` | Tool-free worker planner, SDK structured output, scoped DAG admission, duplicate-delivery denial, durable failure/cancel/retry, explicit deterministic mode |
+| 5.1 | P0 | Generate a structured task DAG with a planner agent and retain deterministic planning only as explicit fallback | Done | `638bf87` | Tool-free worker planner, SDK structured output, scoped DAG admission, duplicate-delivery denial, durable failure/cancel/retry, explicit deterministic mode; PostgreSQL and Backend CI accepted |
 | 5.2 | P0 | Validate schema, cycles, authorization, capability availability, cost, and resource feasibility | Pending | `add-agent-plan-validation` | Invalid plans cannot enqueue work and return stable correction reasons |
 | 5.3 | P0 | Replan by adding, splitting, merging, cancelling, or reassigning future work | Pending | `add-dynamic-task-replanning` | Replanning preserves completed history and never mutates active side effects silently |
 | 5.4 | P0 | Transfer tasks between agents with objective, context, artifacts, state, and ownership | Pending | `complete-agent-task-transfer` | Target accepts a durable handoff package and the source can no longer act as owner |
@@ -174,6 +174,12 @@ dedicated `test_agent_planning_postgres.py` CI job. No new SDK/framework depende
 schema-constrained generation remains owned by the provider SDK, while plan authorization and
 scheduling remain product policy. Cost/resource feasibility, dynamic revisions, ownership transfer,
 human continuation and final delivery gates below are not claimed complete by this increment.
+
+Accepted code: `f455fa5`, including `e03bb48` (pgvector test fixture initialization) and `32047c7`
+(dependency recheck under the scheduling lock). Both jobs in
+[Backend CI 34437132216](https://github.com/jhupo/OpsMesh/actions/runs/34437132216) passed.
+The PostgreSQL test verifies concurrent planning requests produce one durable attempt; it is run
+separately from SQLite metadata-patching tests. Phase 5.2 through 5.6 remain open.
 
 A project can be planned, validated, executed in parallel, replanned after failure, transferred
 between agents, corrected by a human, reviewed by a manager, and assembled into one final delivery.
