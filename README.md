@@ -313,8 +313,9 @@ Active implementation is Phase 5, task and agent orchestration, in the
 tool-free planner run using the provider SDK structured-output contract. The worker validates the
 returned DAG against the live team roster, capability catalog, runtime/workspace quotas, provider
 readiness, and projected cost before creating execution steps; `input.planning_mode: "deterministic"`
-explicitly selects the template planner. Dynamic replanning, ownership transfer and delivery gates
-remain tracked separately in that plan; the whole phase is not yet complete.
+explicitly selects the template planner. Dynamic future-work replanning (add, split, merge, cancel,
+and reassign) is implemented; ownership transfer, human continuation, and delivery gates remain
+tracked separately in that plan, so the whole phase is not yet complete.
 
 ### 1. Restore and protect the quality baseline
 
