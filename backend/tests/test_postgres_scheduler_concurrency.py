@@ -177,13 +177,14 @@ class _temporary_postgres_schema:
         quoted_schema = _quote_identifier(self._schema)
         self._admin_engine = create_engine(database_url, future=True)
         with self._admin_engine.begin() as connection:
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public"))
             connection.execute(text(f"CREATE SCHEMA {quoted_schema}"))
         self._schema_engine = create_engine(
             database_url,
             future=True,
             pool_size=4,
             max_overflow=0,
-            connect_args={"options": f"-csearch_path={self._schema}"},
+            connect_args={"options": f"-csearch_path={self._schema},public"},
         )
         return self._schema_engine
 
