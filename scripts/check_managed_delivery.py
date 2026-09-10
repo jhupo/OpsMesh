@@ -23,6 +23,7 @@ from opsmesh_operator.commands import run_command
 from opsmesh_operator.files import atomic_write
 from opsmesh_operator.installation import Installation
 from opsmesh_operator.releases import ReleaseSource
+from psycopg import sql
 
 ROOT = Path("/opt/opsmesh-acceptance")
 
@@ -243,6 +244,16 @@ class Acceptance:
             )
             if denied.returncode == 0:
                 raise AssertionError("Restore without data-loss acknowledgement was accepted")
+            # Also exercise recovery when the application DB cannot admit any SQL session.
+            # This database belongs exclusively to this newly created disposable installation.
+            with psycopg.connect(
+                **{**self.database, "dbname": "postgres"}, autocommit=True
+            ) as admin:
+                admin.execute(
+                    sql.SQL("DROP DATABASE {} WITH (FORCE)").format(
+                        sql.Identifier(self.database["dbname"])
+                    )
+                )
         arguments = ["update", "recover", "--plan", job_id, "--strategy", strategy]
         if strategy == "restore":
             arguments.append("--ack-data-loss")
