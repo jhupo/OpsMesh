@@ -21,7 +21,10 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_real_backup_restore_preserves_data_configuration_and_ownership(tmp_path: Path) -> None:
+@pytest.mark.parametrize("database_missing", [False, True])
+def test_real_backup_restore_preserves_data_configuration_and_ownership(
+    tmp_path: Path, database_missing: bool
+) -> None:
     assert os.geteuid() == 0, "Run only on a disposable Linux runner as administrator"
     assert os.environ.get("OPSMESH_ENVIRONMENT") == "test"
     source = make_url(os.environ["OPSMESH_DATABASE_URL"])
@@ -70,6 +73,10 @@ def test_real_backup_restore_preserves_data_configuration_and_ownership(tmp_path
             with pytest.raises(ValueError, match="data-loss acknowledgement"):
                 backups.restore(backup_id, acknowledge_data_loss=False)
             assert artifact.read_text() == "post-backup artifact"
+            if database_missing:
+                admin.execute(
+                    sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(database))
+                )
             backups.restore(backup_id, acknowledge_data_loss=True)
             with psycopg.connect(**connection_options, dbname=database) as connection:
                 assert connection.execute("SELECT value FROM canary").fetchone() == ("before",)

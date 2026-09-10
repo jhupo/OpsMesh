@@ -13,7 +13,7 @@ from urllib.parse import unquote, urlsplit
 from uuid import UUID, uuid4
 
 from opsmesh_operator.commands import run_command
-from opsmesh_operator.files import atomic_write
+from opsmesh_operator.files import atomic_write, sync_directory
 from opsmesh_operator.installation import Installation
 
 
@@ -75,6 +75,8 @@ class BackupStore:
                     raise ValueError("Storage backup refuses symlinks")
                 if path.is_file():
                     archive.add(path, arcname=path.relative_to(storage).as_posix())
+        with archive_path.open("rb") as stream:
+            os.fsync(stream.fileno())
         config = directory / "configuration.env"
         atomic_write(config, (self.installation.root / ".env").read_text("utf-8"))
         metadata = {
@@ -86,6 +88,7 @@ class BackupStore:
         }
         atomic_write(directory / "backup.json", json.dumps(metadata, indent=2))
         self.verify(backup_id, restore_check=True)
+        sync_directory(directory.parent)
         return backup_id
 
     def _check_capacity(self) -> None:
@@ -201,7 +204,7 @@ class BackupStore:
             autocommit=True,
         ) as connection:
             connection.execute(
-                sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(database))
+                sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(database))
             )
             connection.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database)))
         run_command(
