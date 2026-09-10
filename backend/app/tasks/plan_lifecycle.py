@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.audit.service import AuditService
 from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.planning.agent_plan import is_agent_planning_step
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.models import TaskPlanningAttempt
@@ -101,6 +102,7 @@ class TaskPlanLifecycleService:
         if task.agent_team_id is None:
             raise ValueError("Task is not team-backed")
 
+        self._require_regeneration_safe(task)
         completed_work_package_ids = self._completed_work_package_ids(workspace_id, task.id)
         if command.input is not None:
             task.input = command.input
@@ -218,6 +220,42 @@ class TaskPlanLifecycleService:
             )
         ).all()
         return {str(step.work_package_id) for step in steps if step.work_package_id}
+
+    def _require_regeneration_safe(self, task: Task) -> None:
+        active_runs = self._session.scalars(
+            select(AgentRun).where(
+                AgentRun.workspace_id == task.workspace_id,
+                AgentRun.task_id == task.id,
+                AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES),
+            )
+        ).all()
+        if not active_runs:
+            return
+        steps = {
+            step.id: step
+            for step in self._session.scalars(
+                select(TaskStep).where(
+                    TaskStep.workspace_id == task.workspace_id,
+                    TaskStep.task_id == task.id,
+                )
+            ).all()
+        }
+        side_effecting_statuses = {
+            RunStatus.RUNNING.value,
+            RunStatus.WAITING_RUNTIME.value,
+            RunStatus.WAITING_APPROVAL.value,
+        }
+        if any(
+            run.status in side_effecting_statuses
+            and (
+                run.task_step_id is None
+                or steps.get(run.task_step_id) is None
+                or steps[run.task_step_id].status
+                not in {"completed", "failed", "cancelled"}
+            )
+            for run in active_runs
+        ):
+            raise ValueError("Cannot regenerate while task work has active side effects")
 
     def _sync_latest_planning_attempt_output(
         self,

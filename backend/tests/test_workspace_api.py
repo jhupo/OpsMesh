@@ -6816,6 +6816,112 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
     assert queue.count_queued(workspace_id=workspace.id) == initial_queue_depth
 
 
+def test_mutate_task_plan_endpoint_adds_future_work_and_audits() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    manager = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={
+            "name": "PM",
+            "role": "project_manager",
+            "skills": {"planning": 1, "coordination": 1, "review": 1, "synthesis": 1},
+        },
+    )
+    developer = client.post(
+        f"/api/v1/workspaces/{workspace.id}/agents",
+        headers=_headers(owner.id),
+        json={"name": "Developer", "role": "developer"},
+    )
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=_headers(owner.id),
+        json={
+            "name": "Product Team",
+            "team_type": "software",
+            "manager_agent_profile_id": manager.json()["id"],
+        },
+    )
+    client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": manager.json()["id"],
+            "team_role": "project_manager",
+            "skill_weights": {"planning": 1, "coordination": 1, "review": 1, "synthesis": 1},
+        },
+    )
+    client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/members",
+        headers=_headers(owner.id),
+        json={
+            "agent_profile_id": developer.json()["id"],
+            "team_role": "developer",
+        },
+    )
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={
+            "title": "Plan follow-up",
+            "agent_team_id": team.json()["id"],
+            "input": {
+                "planning_mode": "deterministic",
+                "work_packages": [
+                    {
+                        "package_id": "initial-work",
+                        "title": "Initial work",
+                        "required_role": "developer",
+                    }
+                ],
+            },
+        },
+    )
+    task_id = created.json()["id"]
+    mutation = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/plan/mutate",
+        headers=_headers(owner.id),
+        json={
+            "mutation_id": "api-add-follow-up",
+            "reason": "Add an explicit follow-up",
+            "operations": [
+                {
+                    "operation": "add",
+                    "package": {
+                        "package_id": "follow-up",
+                        "title": "Follow-up",
+                        "description": "Complete the follow-up work.",
+                        "required_role": "project_manager",
+                        "required_skills": [],
+                        "assigned_agent_profile_id": manager.json()["id"],
+                        "depends_on": [],
+                        "expected_artifacts": [],
+                        "acceptance_criteria": ["Follow-up is complete."],
+                    },
+                }
+            ],
+        },
+    )
+    task = session.get(Task, UUID(task_id))
+    assert mutation.status_code == 200, mutation.text
+    assert task is not None
+    assert any(
+        package["package_id"] == "follow-up" for package in task.project_plan["work_packages"]
+    )
+    assert session.scalar(
+        select(TaskStep).where(
+            TaskStep.task_id == task.id,
+            TaskStep.work_package_id == "follow-up",
+        )
+    ) is not None
+    assert session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "task.plan_mutated",
+        )
+    ) is not None
+
+
 def test_create_task_rejects_foreign_team_reference() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")

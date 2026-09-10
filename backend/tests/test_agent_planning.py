@@ -13,6 +13,11 @@ from backend.app.agents.models import AgentProfile
 from backend.app.costs.models import WorkspaceCostBudget
 from backend.app.orchestration.planner_completion import PlannerCompletionService
 from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.planning.future_plan_mutation import (
+    TaskPlanMutationCommand,
+    TaskPlanMutationError,
+    TaskPlanMutationService,
+)
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
@@ -105,6 +110,29 @@ def result_for(
             validated=True,
         ),
     )
+
+
+def _mutation_package(agent: AgentProfile, package_id: str) -> dict[str, object]:
+    return {
+        "package_id": package_id,
+        "title": package_id.replace("-", " ").title(),
+        "description": "Complete the future follow-up work.",
+        "required_role": "manager",
+        "required_skills": [],
+        "assigned_agent_profile_id": str(agent.id),
+        "depends_on": [],
+        "expected_artifacts": [],
+        "acceptance_criteria": ["The follow-up is complete."],
+    }
+
+
+def _plan_package(task: Task, package_id: str) -> dict[str, object]:
+    assert isinstance(task.project_plan, dict)
+    packages = task.project_plan["work_packages"]
+    assert isinstance(packages, list)
+    package = next(item for item in packages if item["package_id"] == package_id)
+    assert isinstance(package, dict)
+    return package
 
 
 @pytest.mark.parametrize(
@@ -405,6 +433,162 @@ def test_planner_request_uses_frozen_sdk_schema_and_roster(planning) -> None:
     assert request.output_schema.name == "task_plan"
     assert str(agent.id) in request.input_text
     assert request.context.allowed_tools == ()
+
+
+def test_future_plan_mutation_reconciles_steps_and_preserves_history(planning) -> None:
+    session, task, agent, run = planning
+    assert PlannerCompletionService(session).apply(run, result_for(agent))
+    session.commit()
+
+    service = TaskPlanMutationService(session)
+    service.apply(
+        task.workspace_id,
+        task.id,
+        task.created_by_user_id,
+        TaskPlanMutationCommand(
+            operations=(
+                {
+                    "operation": "add",
+                    "package": _mutation_package(agent, "research"),
+                },
+            ),
+            reason="Add research follow-up",
+            mutation_id="mutation-add-research",
+        ),
+    )
+    session.refresh(task)
+    added = session.scalar(select(TaskStep).where(TaskStep.work_package_id == "research"))
+    assert added is not None
+    assert added.status == "queued"
+    assert "research" in _plan_package(task, "manager-summary")["depends_on"]
+
+    service.apply(
+        task.workspace_id,
+        task.id,
+        task.created_by_user_id,
+        TaskPlanMutationCommand(
+            operations=(
+                {
+                    "operation": "reassign",
+                    "package_id": "research",
+                    "assigned_agent_profile_id": str(agent.id),
+                },
+            ),
+            reason="Keep research with the manager",
+            mutation_id="mutation-reassign-research",
+        ),
+    )
+    service.apply(
+        task.workspace_id,
+        task.id,
+        task.created_by_user_id,
+        TaskPlanMutationCommand(
+            operations=(
+                {
+                    "operation": "split",
+                    "package_id": "research",
+                    "packages": [
+                        _mutation_package(agent, "research-sources"),
+                        _mutation_package(agent, "research-analysis"),
+                    ],
+                },
+            ),
+            reason="Split research into evidence and analysis",
+            mutation_id="mutation-split-research",
+        ),
+    )
+    session.refresh(added)
+    assert added.status == "cancelled"
+    assert session.scalar(select(TaskStep).where(TaskStep.work_package_id == "research-sources"))
+    assert session.scalar(select(TaskStep).where(TaskStep.work_package_id == "research-analysis"))
+
+    service.apply(
+        task.workspace_id,
+        task.id,
+        task.created_by_user_id,
+        TaskPlanMutationCommand(
+            operations=(
+                {
+                    "operation": "merge",
+                    "package_ids": ["research-sources", "research-analysis"],
+                    "package": _mutation_package(agent, "research-findings"),
+                },
+            ),
+            reason="Merge research outputs",
+            mutation_id="mutation-merge-research",
+        ),
+    )
+    merged = session.scalar(select(TaskStep).where(TaskStep.work_package_id == "research-findings"))
+    assert merged is not None
+    assert merged.status == "queued"
+    assert _plan_package(task, "research-sources")["mutation"]["state"] == "cancelled"
+
+    service.apply(
+        task.workspace_id,
+        task.id,
+        task.created_by_user_id,
+        TaskPlanMutationCommand(
+            operations=(
+                {"operation": "cancel", "package_id": "research-findings"},
+            ),
+            reason="Remove obsolete research",
+            mutation_id="mutation-cancel-research",
+        ),
+    )
+    session.refresh(merged)
+    assert merged.status == "cancelled"
+    assert _plan_package(task, "manager-summary")["depends_on"] == ["report"]
+    assert task.project_plan["plan_revision"] == 5
+    assert len(task.project_plan["mutation_history"]) == 5
+
+
+def test_future_plan_mutation_rejects_active_and_completed_side_effects(planning) -> None:
+    session, task, agent, run = planning
+    assert PlannerCompletionService(session).apply(run, result_for(agent))
+    session.commit()
+    report = session.scalar(select(TaskStep).where(TaskStep.work_package_id == "report"))
+    assert report is not None
+    active_run = AgentRun(
+        workspace_id=task.workspace_id,
+        task_id=task.id,
+        task_step_id=report.id,
+        agent_profile_id=agent.id,
+        status="running",
+        input={},
+    )
+    session.add(active_run)
+    session.flush()
+    with pytest.raises(TaskPlanMutationError) as active_error:
+        TaskPlanMutationService(session).apply(
+            task.workspace_id,
+            task.id,
+            task.created_by_user_id,
+            TaskPlanMutationCommand(
+                operations=(
+                    {"operation": "cancel", "package_id": "report"},
+                ),
+                reason="Cancel active report",
+            ),
+        )
+    assert active_error.value.code == "plan_mutation_active_side_effect"
+    session.rollback()
+
+    session.refresh(report)
+    report.status = "completed"
+    session.commit()
+    with pytest.raises(TaskPlanMutationError) as completed_error:
+        TaskPlanMutationService(session).apply(
+            task.workspace_id,
+            task.id,
+            task.created_by_user_id,
+            TaskPlanMutationCommand(
+                operations=(
+                    {"operation": "cancel", "package_id": "report"},
+                ),
+                reason="Cancel completed report",
+            ),
+        )
+    assert completed_error.value.code == "plan_mutation_completed_immutable"
 
 
 @pytest.mark.usefixtures("approve_resource_reviews_by_default")

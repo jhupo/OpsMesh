@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
@@ -18,6 +19,24 @@ class TaskPlanRegenerateRequest(BaseModel):
     input: dict[str, object] | None = None
     refresh_team_snapshot: bool = True
     enqueue: bool = False
+
+
+class TaskPlanMutationOperationRequest(BaseModel):
+    operation: Literal["add", "split", "merge", "cancel", "reassign"]
+    package_id: str | None = Field(default=None, min_length=1, max_length=120)
+    package_ids: list[str] = Field(default_factory=list, max_length=32)
+    package: dict[str, object] | None = None
+    packages: list[dict[str, object]] = Field(default_factory=list, max_length=32)
+    assigned_agent_profile_id: UUID | None = None
+    cascade: bool = False
+
+
+class TaskPlanMutationRequest(BaseModel):
+    operations: list[TaskPlanMutationOperationRequest] = Field(min_length=1, max_length=32)
+    reason: str = Field(min_length=1, max_length=1_000)
+    refresh_team_snapshot: bool = False
+    enqueue: bool = False
+    mutation_id: str | None = Field(default=None, min_length=1, max_length=120)
 
 
 class TaskManagerDiagnosticsResponse(BaseModel):
