@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from backend.app.api.schemas.redaction import redact_sensitive_payload
 
@@ -37,6 +37,46 @@ class TaskPlanMutationRequest(BaseModel):
     refresh_team_snapshot: bool = False
     enqueue: bool = False
     mutation_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+class TaskTransferCreateRequest(BaseModel):
+    target_agent_profile_id: UUID
+    source_agent_profile_id: UUID | None = None
+    reason: str = Field(min_length=1, max_length=1_000)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+class TaskTransferDecisionRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=1_000)
+    enqueue: bool = False
+
+
+class TaskTransferResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    workspace_id: UUID
+    task_id: UUID
+    source_agent_profile_id: UUID | None
+    target_agent_profile_id: UUID | None
+    requested_by_user_id: UUID | None
+    accepted_by_user_id: UUID | None
+    idempotency_key: str
+    status: str
+    revision: int
+    source_owner_version: int
+    target_owner_version: int | None
+    reason: str
+    handoff_package: dict[str, object]
+    accepted_at: datetime | None
+    rejected_at: datetime | None
+    rejection_reason: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    @field_serializer("handoff_package")
+    def _serialize_handoff_package(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class TaskManagerDiagnosticsResponse(BaseModel):

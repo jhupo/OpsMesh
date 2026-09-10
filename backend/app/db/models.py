@@ -87,7 +87,7 @@ from backend.app.self_hosted.models import (
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
-from backend.app.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep
+from backend.app.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep, TaskTransfer
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
 from backend.app.workspaces.models import (
@@ -160,6 +160,7 @@ __all__ = [
     "TaskMessage",
     "TaskPlanningAttempt",
     "TaskStep",
+    "TaskTransfer",
     "TalentListing",
     "TalentListingReview",
     "ToolGroup",

@@ -43,6 +43,9 @@ from backend.app.api.schemas.task_management import (
     TaskPlanPackageMatchResponse,
     TaskPlanRegenerateRequest,
     TaskPlanRetryRequest,
+    TaskTransferCreateRequest,
+    TaskTransferDecisionRequest,
+    TaskTransferResponse,
 )
 from backend.app.api.schemas.task_status import (
     TaskControlDiagnosticsResponse,
@@ -111,6 +114,9 @@ __all__ = [
     "TaskPlanRetryRequest",
     "TaskPlanningAttemptResponse",
     "TaskResponse",
+    "TaskTransferCreateRequest",
+    "TaskTransferDecisionRequest",
+    "TaskTransferResponse",
     "TaskTimelineAgent",
     "TaskTimelineEvent",
     "TaskTimelineResponse",

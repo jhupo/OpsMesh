@@ -20,6 +20,7 @@ from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.ownership import task_owner_can_execute_step
 
 STEP_STATUS_QUEUED = "queued"
 
@@ -52,6 +53,9 @@ class RunStepLauncher:
         *,
         authorization_snapshot: dict[str, object] | None = None,
     ) -> AgentRun:
+        self._refresh_task_owner(task)
+        if not task_owner_can_execute_step(task, step):
+            raise ValueError("Task owner does not match platform-owned task step")
         profile = (
             self.session.scalar(
                 select(AgentProfile).where(
@@ -117,6 +121,20 @@ class RunStepLauncher:
         if locked_step is None:
             return None
         step = locked_step
+        if not task_owner_can_execute_step(task, step):
+            self.mark_step_scheduling_blocked(
+                step,
+                "task_owner_changed",
+                {
+                    "task_owner_agent_profile_id": str(task.owner_agent_profile_id)
+                    if task.owner_agent_profile_id is not None
+                    else None,
+                    "assigned_agent_profile_id": str(step.assigned_agent_profile_id)
+                    if step.assigned_agent_profile_id is not None
+                    else None,
+                },
+            )
+            return None
         member_capacity_decision = self.scheduler().select_runnable_steps(
             workspace_id=task.workspace_id,
             candidate_steps=[step],
@@ -231,6 +249,7 @@ class RunStepLauncher:
         )
 
     def lock_step_for_scheduling(self, task: Task, step: TaskStep) -> TaskStep | None:
+        self._refresh_task_owner(task)
         locked_step = self.session.scalar(
             select(TaskStep)
             .where(
@@ -250,6 +269,16 @@ class RunStepLauncher:
         if self.step_has_active_run(locked_step):
             return None
         return locked_step
+
+    def _refresh_task_owner(self, task: Task) -> None:
+        owner = self.session.execute(
+            select(Task.owner_agent_profile_id, Task.owner_version).where(
+                Task.workspace_id == task.workspace_id,
+                Task.id == task.id,
+            )
+        ).one_or_none()
+        if owner is not None:
+            task.owner_agent_profile_id, task.owner_version = owner
 
     def scheduler(self) -> WorkspaceScheduler:
         return WorkspaceScheduler(self.session)

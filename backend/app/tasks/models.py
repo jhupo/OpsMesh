@@ -44,6 +44,11 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("agent_teams.id", ondelete="SET NULL"),
         nullable=True,
     )
+    owner_agent_profile_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    owner_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     runtime_space_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
         nullable=True,
@@ -65,6 +70,10 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     steps: Mapped[list["TaskStep"]] = relationship(
+        back_populates="task",
+        cascade="all, delete-orphan",
+    )
+    transfers: Mapped[list["TaskTransfer"]] = relationship(
         back_populates="task",
         cascade="all, delete-orphan",
     )
@@ -110,6 +119,67 @@ class TaskStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     result_summary: Mapped[str | None] = mapped_column(String, nullable=True)
 
     task: Mapped[Task] = relationship(back_populates="steps")
+
+
+class TaskTransfer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "task_transfers"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "idempotency_key",
+            name="uq_task_transfers_workspace_idempotency",
+        ),
+        UniqueConstraint(
+            "task_id",
+            "revision",
+            name="uq_task_transfers_task_revision",
+        ),
+        Index("ix_task_transfers_workspace_task", "workspace_id", "task_id"),
+        Index("ix_task_transfers_workspace_status", "workspace_id", "status"),
+        Index("ix_task_transfers_workspace_target", "workspace_id", "target_agent_profile_id"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    task_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_agent_profile_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    target_agent_profile_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    requested_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    accepted_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_owner_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_owner_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reason: Mapped[str] = mapped_column(String(1_000), nullable=False)
+    handoff_package: Mapped[dict[str, object]] = mapped_column(
+        "package",
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+    accepted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(String(1_000), nullable=True)
+
+    task: Mapped[Task] = relationship(back_populates="transfers")
 
 
 class TaskMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):

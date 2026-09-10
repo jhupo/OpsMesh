@@ -30,6 +30,7 @@ from backend.app.orchestration.run_runtime_authorization import (
 from backend.app.runs.models import AgentRun
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task, TaskStep
+from backend.app.tasks.ownership import task_owner_can_execute_step
 
 from .run_request_utils import dict_copy, expect_optional_uuid, string_list, uuid_or_none
 
@@ -81,6 +82,17 @@ class RunAuthorizationService:
         expect_optional_uuid(snapshot, "runtime_space_id", run.runtime_space_id)
         if task is not None and task.workspace_id != run.workspace_id:
             raise ValueError("Authorization snapshot task workspace mismatch")
+        if task is not None and "task_owner_agent_profile_id" in snapshot:
+            expected_owner = (
+                str(task.owner_agent_profile_id)
+                if task.owner_agent_profile_id is not None
+                else None
+            )
+            if snapshot.get("task_owner_agent_profile_id") != expected_owner:
+                raise ValueError("Authorization snapshot task owner changed")
+            expected_version = max(int(task.owner_version or 1), 1)
+            if snapshot.get("task_owner_version") != expected_version:
+                raise ValueError("Authorization snapshot task owner version changed")
         try:
             RunRuntimeAuthorizationService(self.session).validate_for_run(
                 run=run,
@@ -201,15 +213,29 @@ class RunAuthorizationService:
             raise ValueError("Run task step workspace mismatch")
         if run.task_id is not None and step.task_id != run.task_id:
             raise ValueError("Run task step does not belong to run task")
+        if run.task_id is not None:
+            task = self.session.get(Task, run.task_id)
+            if task is None or task.workspace_id != run.workspace_id:
+                raise ValueError("Run task workspace mismatch")
+            if not task_owner_can_execute_step(task, step):
+                raise ValueError("Task owner changed; run must be recreated")
         if (
             run.agent_profile_id is not None
             and step.assigned_agent_profile_id is not None
             and step.assigned_agent_profile_id != run.agent_profile_id
         ):
             raise ValueError("Run agent profile is not assigned to task step")
+        task_owner_agent_profile_id = (
+            str(task.owner_agent_profile_id)
+            if task is not None and task.owner_agent_profile_id is not None
+            else None
+        )
+        task_owner_version = max(int(task.owner_version or 1), 1) if task is not None else None
         return {
             "context_scope": "task_step",
             "task_step_id": str(step.id),
+            "task_owner_agent_profile_id": task_owner_agent_profile_id,
+            "task_owner_version": task_owner_version,
             "work_package_id": step.work_package_id,
             "required_role": step.required_role,
             "required_skills": step.required_skills,

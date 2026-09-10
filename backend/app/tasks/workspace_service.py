@@ -171,6 +171,8 @@ class WorkspaceTaskService:
                 target_type="agent_team",
                 target_id=team.id,
             )
+        if team.manager_agent_profile_id is not None:
+            payload["owner_agent_profile_id"] = team.manager_agent_profile_id
         payload["team_snapshot"] = build_team_snapshot(
             self._session,
             workspace_id=workspace_id,

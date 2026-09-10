@@ -114,6 +114,10 @@ class RunAuthorizationSnapshotService:
             "agent_profile_id": str(profile.id)
             if profile is not None and profile.id is not None
             else None,
+            "task_owner_agent_profile_id": str(task.owner_agent_profile_id)
+            if task.owner_agent_profile_id is not None
+            else None,
+            "task_owner_version": max(int(task.owner_version or 1), 1),
             "allowed_tools": allowed_tools,
             "capability_catalog": catalog_snapshot,
             "tool_policy": dict_copy(tool_policy),

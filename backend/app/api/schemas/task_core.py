@@ -36,6 +36,8 @@ class TaskResponse(TimestampedModel):
     created_by_user_id: UUID | None
     created_by_agent_run_id: UUID | None
     agent_team_id: UUID | None
+    owner_agent_profile_id: UUID | None
+    owner_version: int
     runtime_space_id: UUID | None
     workspace_project_id: UUID | None
     domain_type: str
