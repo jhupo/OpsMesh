@@ -8,6 +8,17 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  managed-acceptance:
+    needs: publish
+    uses: ./.github/workflows/managed-delivery.yml
+    permissions:
+      contents: read
+      attestations: read
+      packages: read
+    with:
+      tag: ${{ github.ref_name }}
+      # Explicit schema-compatible baseline; change deliberately with release migration policy.
+      previous: v0.1.0rc6
   gate:
     uses: ./.github/workflows/release-prepare.yml
     permissions:

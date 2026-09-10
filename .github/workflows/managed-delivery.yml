@@ -1,0 +1,63 @@
+name: Managed Delivery Acceptance
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      previous:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release containing the independent updater under test
+        required: true
+        type: string
+      previous:
+        description: Published schema-compatible previous release
+        required: true
+        default: v0.1.0rc6
+        type: string
+permissions:
+  contents: read
+  attestations: read
+  packages: read
+jobs:
+  managed:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [compose, systemd]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      PREVIOUS_TAG: ${{ inputs.previous }}
+      DEPLOYMENT_MODE: ${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --frozen --all-groups
+      - name: Prepare external infrastructure for systemd only
+        if: matrix.mode == 'systemd'
+        run: |
+          docker run -d --name acceptance-postgres -p 127.0.0.1:5432:5432 \
+            -e POSTGRES_DB=opsmesh -e POSTGRES_USER=opsmesh -e POSTGRES_PASSWORD=opsmesh \
+            --health-cmd 'pg_isready -U opsmesh' --health-interval 2s --health-retries 30 \
+            pgvector/pgvector:0.8.6-pg16-bookworm
+          docker run -d --name acceptance-redis -p 127.0.0.1:6379:6379 redis:7-alpine
+      - name: Signed native install, cross-version upgrade and real interruption recovery
+        run: |
+          sudo env "PATH=$PATH" "GH_TOKEN=$GH_TOKEN" GITHUB_ACTIONS=true \
+            .venv/bin/python scripts/ci_command.py .venv/bin/python scripts/check_managed_delivery.py \
+            --tag "$RELEASE_TAG" --previous "$PREVIOUS_TAG" --mode "$DEPLOYMENT_MODE"
+      - name: Redacted service diagnostics on failure
+        if: failure()
+        run: |
+          sudo .venv/bin/python scripts/ci_command.py journalctl \
+            -u opsmesh-updater -u opsmesh-api -u opsmesh-worker --no-pager -n 150
