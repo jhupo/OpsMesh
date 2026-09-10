@@ -99,6 +99,7 @@ def step_dependencies_for_package(
         "acceptance_criteria": package.get("acceptance_criteria", []),
         "review_policy": package.get("review_policy", {}),
         "condition": package.get("condition", {}),
+        "join_policy": package.get("join_policy", "all_success"),
         "required_tools": package.get("required_tools", []),
         "required_mcp_tools": package.get("required_mcp_tools", []),
         "required_resource_ids": package.get("required_resource_ids", []),

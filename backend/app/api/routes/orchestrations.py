@@ -12,9 +12,8 @@ from backend.app.api.idempotency import (
 )
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.orchestration import (
-    OrchestrationDefinitionCreateRequest,
     OrchestrationDefinitionResponse,
-    OrchestrationDefinitionUpdateRequest,
+    OrchestrationRevisionResponse,
     OrchestrationValidationResponse,
 )
 from backend.app.auth.context import WorkspaceContext
@@ -24,6 +23,10 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
+from backend.app.orchestration.definition_commands import (
+    OrchestrationDefinitionCreate,
+    OrchestrationDefinitionUpdate,
+)
 from backend.app.orchestration.definitions import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
@@ -60,7 +63,7 @@ async def list_orchestrations(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_orchestration(
-    request: OrchestrationDefinitionCreateRequest,
+    request: OrchestrationDefinitionCreate,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -116,7 +119,7 @@ async def get_orchestration(
 @router.patch("/{orchestration_definition_id}", response_model=OrchestrationDefinitionResponse)
 async def update_orchestration(
     orchestration_definition_id: UUID,
-    request: OrchestrationDefinitionUpdateRequest,
+    request: OrchestrationDefinitionUpdate,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> OrchestrationDefinitionResponse:
@@ -198,6 +201,47 @@ async def archive_orchestration(
     except OrchestrationDefinitionError as exc:
         raise _http_error(exc) from exc
     return OrchestrationDefinitionResponse.model_validate(definition)
+
+
+@router.get(
+    "/{orchestration_definition_id}/revisions",
+    response_model=PageResponse[OrchestrationRevisionResponse],
+)
+async def list_revisions(
+    orchestration_definition_id: UUID,
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[OrchestrationRevisionResponse]:
+    try:
+        items, total = OrchestrationDefinitionService(session).list_revisions(
+            context.workspace.id,
+            orchestration_definition_id,
+            page,
+        )
+    except OrchestrationDefinitionError as exc:
+        raise _http_error(exc) from exc
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get(
+    "/{orchestration_definition_id}/revisions/{version}",
+    response_model=OrchestrationRevisionResponse,
+)
+async def get_revision(
+    orchestration_definition_id: UUID,
+    version: int,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> OrchestrationRevisionResponse:
+    revision = OrchestrationDefinitionService(session).get_revision(
+        context.workspace.id,
+        orchestration_definition_id,
+        version,
+    )
+    if revision is None:
+        raise HTTPException(status_code=404, detail="Orchestration revision not found")
+    return OrchestrationRevisionResponse.model_validate(revision)
 
 
 def _http_error(exc: OrchestrationDefinitionError) -> HTTPException:

@@ -12,7 +12,7 @@ from backend.app.tasks.models import Task, TaskStep
 
 ConditionState = Literal["true", "false", "pending"]
 _MISSING = object()
-_TERMINAL_STEP_STATUSES = frozenset({"completed", "failed", "cancelled"})
+_TERMINAL_STEP_STATUSES = frozenset({"completed", "failed", "cancelled", "skipped"})
 _MAX_CONDITION_DEPTH = 8
 _MAX_CONDITION_NODES = 64
 _OPERATORS = frozenset(
@@ -49,6 +49,23 @@ def validate_condition(value: object, *, path: str = "condition") -> None:
     """Validate a condition without evaluating user-provided code."""
 
     _validate(value, path=path, depth=0, counter=[0])
+
+
+def condition_step_references(value: object) -> set[str]:
+    """Collect data dependencies after validating the bounded condition tree."""
+    if value in (None, {}):
+        return set()
+    validate_condition(value)
+    assert isinstance(value, dict)
+    path = value.get("path")
+    if isinstance(path, str) and path.startswith("steps."):
+        return {path[len("steps.") :].rsplit(".", 1)[0]}
+    references: set[str] = set()
+    for key in ("all", "any", "not"):
+        children = value.get(key, [])
+        for child in children if isinstance(children, list) else [children]:
+            references.update(condition_step_references(child))
+    return references
 
 
 def evaluate_task_step_condition(
@@ -104,10 +121,10 @@ def _validate(
         raise ConditionValidationError(f"{path} must be an object")
 
     variants = [key for key in ("all", "any", "not", "path") if key in value]
+    if set(value) - {"all", "any", "not", "path", "operator", "value"}:
+        raise ConditionValidationError(f"{path} contains unsupported fields")
     if len(variants) != 1:
-        raise ConditionValidationError(
-            f"{path} must contain exactly one of all, any, not, or path"
-        )
+        raise ConditionValidationError(f"{path} must contain exactly one of all, any, not, or path")
     variant = variants[0]
     if variant in {"all", "any"}:
         children = value[variant]
@@ -283,9 +300,12 @@ def _compare(actual: object, operator: str, expected: object) -> bool:
     if operator == "not_in":
         return isinstance(expected, list) and actual not in expected
     if operator in {"greater_than", "greater_than_or_equal", "less_than", "less_than_or_equal"}:
-        if not isinstance(actual, int | float) or isinstance(actual, bool) or not isinstance(
-            expected, int | float
-        ) or isinstance(expected, bool):
+        if (
+            not isinstance(actual, int | float)
+            or isinstance(actual, bool)
+            or not isinstance(expected, int | float)
+            or isinstance(expected, bool)
+        ):
             return False
         if operator == "greater_than":
             return actual > expected
@@ -316,9 +336,13 @@ def _valid_path(path: str) -> bool:
             part.replace("_", "").replace("-", "").isalnum() for part in parts[2:]
         )
     if parts[0] == "steps":
-        return len(parts) >= 3 and parts[-1] in {"status", "result_summary"} and all(
-            part.replace("_", "").replace("-", "").replace(".", "").isalnum()
-            for part in parts[1:-1]
+        return (
+            len(parts) >= 3
+            and parts[-1] in {"status", "result_summary"}
+            and all(
+                part.replace("_", "").replace("-", "").replace(".", "").isalnum()
+                for part in parts[1:-1]
+            )
         )
     return False
 

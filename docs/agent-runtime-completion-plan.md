@@ -214,6 +214,15 @@ cost. Conditional branches use only bounded JSON data paths such as `task.input`
 final output, and terminal step status/result summaries. Unsupported expressions, cycles, foreign
 references, embedded secrets, and unallowlisted MCP tools are rejected before materialization.
 
+The backend unification follow-up is tracked separately in [Workflow backend plan](workflow-backend-plan.md).
+Authored and generated nodes use `package_id`, `required_mcp_tools`, and the shared `WorkflowNode`
+contract. Draft PATCH requests require `expected_version`; published revisions are immutable service
+records with list/detail endpoints and can be applied while a newer draft is being edited. Archiving
+disables further application. Conditions include their step references in cycle validation. A false
+branch becomes `skipped`, not user-cancelled. `all_success` propagates skips; `all_selected` waits for
+all predecessors and runs when at least one completed. All-skipped workflows finish without a model
+run. These are agent-workflow capabilities, not a claim that arbitrary typed canvas nodes exist.
+
 A project can be planned, validated, executed in parallel, replanned after failure, transferred
 between agents, corrected by a human, reviewed by a manager, and assembled into one final delivery.
 

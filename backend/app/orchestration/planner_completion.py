@@ -78,7 +78,10 @@ class PlannerCompletionService:
             ):
                 raise ProjectPlanValidationError("Planner output schema does not match contract")
             proposal = AgentPlanProposal.model_validate(result.structured_output.value)
-            packages = [item.model_dump(mode="json") for item in proposal.work_packages]
+            packages = [
+                item.model_dump(mode="json", by_alias=True, exclude_none=True)
+                for item in proposal.work_packages
+            ]
             if any(
                 item["package_id"] in {"manager-planning", "manager-summary"} for item in packages
             ):
@@ -94,6 +97,7 @@ class PlannerCompletionService:
                     "required_skills": [],
                     "assigned_agent_profile_id": str(run.agent_profile_id),
                     "depends_on": [item.package_id for item in proposal.work_packages],
+                    "join_policy": "all_selected",
                     "expected_artifacts": [],
                     "acceptance_criteria": ["All delivery criteria met."],
                     "review_policy": {"reviewer": "user", "mode": "final_acceptance"},

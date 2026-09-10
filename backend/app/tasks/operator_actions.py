@@ -26,7 +26,7 @@ TASK_OPERATOR_ACTIONS = {
     "request_manager_review",
     "schedule_downstream_steps",
 }
-TERMINAL_STEP_STATUSES = {"completed", "cancelled"}
+TERMINAL_STEP_STATUSES = {"completed", "cancelled", "skipped"}
 TERMINAL_TASK_STATUSES = {"completed", "cancelled"}
 class TaskOperatorActionService:
     """Apply user/operator actions that turn task diagnostics into runnable work."""

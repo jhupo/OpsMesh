@@ -40,6 +40,7 @@ FINAL_STEP_STATUSES = frozenset(
         TaskStepStatus.COMPLETED.value,
         TaskStepStatus.FAILED.value,
         TaskStepStatus.CANCELLED.value,
+        TaskStepStatus.SKIPPED.value,
     }
 )
 MAX_MUTATION_OPERATIONS = 32
@@ -718,10 +719,7 @@ class TaskPlanMutationService:
     ) -> AgentRun | None:
         if not enqueue_run:
             return None
-        if not any(
-            step.status == TaskStepStatus.QUEUED.value
-            for step in state.steps.values()
-        ):
+        if not any(step.status == TaskStepStatus.QUEUED.value for step in state.steps.values()):
             return None
         if self._active_task_run_exists(task):
             return None
@@ -813,7 +811,9 @@ class TaskPlanMutationService:
         if not isinstance(raw_package, dict):
             self._reject("plan_mutation_package_invalid", "Work package must be an object")
         try:
-            package = PlannedWork.model_validate(raw_package).model_dump(mode="json")
+            package = PlannedWork.model_validate(raw_package).model_dump(
+                mode="json", by_alias=True, exclude_none=True
+            )
         except ValidationError:
             self._reject(
                 "plan_mutation_package_invalid",
@@ -821,7 +821,8 @@ class TaskPlanMutationService:
             )
         if not package["depends_on"] and inherited_dependencies:
             package["depends_on"] = list(inherited_dependencies)
-        package["review_policy"] = {"reviewer": "manager", "mode": "manager_review"}
+        if not package["review_policy"]:
+            package["review_policy"] = {"reviewer": "manager", "mode": "manager_review"}
         return package
 
     def _ensure_mutable_package_identity(self, package: dict[str, object]) -> None:
@@ -850,10 +851,7 @@ class TaskPlanMutationService:
         *,
         excluded: set[str],
     ) -> None:
-        existing_ids = {
-            str(package.get("package_id"))
-            for package in existing_packages
-        }
+        existing_ids = {str(package.get("package_id")) for package in existing_packages}
         new_ids: set[str] = set()
         for package in packages:
             package_id = str(package["package_id"])

@@ -8,11 +8,12 @@ from sqlalchemy.orm import Session
 from backend.app.audit.service import AuditService
 from backend.app.orchestration.conditions import evaluate_task_step_condition
 from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.orchestration.step_dependencies import dependencies_satisfied
+from backend.app.orchestration.step_dependencies import dependencies_satisfied, dependency_decision
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskStep
-from backend.app.tasks.status import TaskStatus
+from backend.app.tasks.service import TaskStateService
+from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.tasks.step_service import TaskStepStateService
 from backend.app.tasks.step_status import TaskStepStatus
 
@@ -34,6 +35,8 @@ class RunEligibilityService:
                 TaskStep.status == STEP_STATUS_QUEUED,
             )
             .order_by(TaskStep.order_index.asc())
+            .with_for_update(of=TaskStep, skip_locked=True)
+            .execution_options(populate_existing=True)
         ).all()
         return self._eligible_with_conditions(queued_steps)
 
@@ -54,6 +57,8 @@ class RunEligibilityService:
                 ),
             )
             .order_by(Task.priority.desc(), TaskStep.order_index.asc())
+            .with_for_update(of=TaskStep, skip_locked=True)
+            .execution_options(populate_existing=True)
         ).all()
         return self._eligible_with_conditions(queued_steps)
 
@@ -75,6 +80,8 @@ class RunEligibilityService:
                 ),
             )
             .order_by(Task.priority.desc(), TaskStep.order_index.asc())
+            .with_for_update(of=TaskStep, skip_locked=True)
+            .execution_options(populate_existing=True)
         ).all()
         return self._eligible_with_conditions(queued_steps)
 
@@ -93,7 +100,13 @@ class RunEligibilityService:
             select(func.count(TaskStep.id)).where(
                 TaskStep.workspace_id == task.workspace_id,
                 TaskStep.task_id == task.id,
-                TaskStep.status.in_([STEP_STATUS_QUEUED, STEP_STATUS_RUNNING]),
+                TaskStep.status.in_(
+                    [
+                        STEP_STATUS_QUEUED,
+                        STEP_STATUS_RUNNING,
+                        TaskStepStatus.BLOCKED.value,
+                    ]
+                ),
             )
         )
         if int(incomplete_steps or 0) > 0:
@@ -114,8 +127,13 @@ class RunEligibilityService:
     def _eligible_with_conditions(self, steps: Sequence[TaskStep]) -> list[TaskStep]:
         eligible: list[TaskStep] = []
         task_cache: dict[UUID, Task | None] = {}
-        for step in steps:
-            if not self.dependencies_satisfied(step) or self.step_has_active_run(step):
+        pending = list(steps)
+        while pending:
+            step = pending.pop(0)
+            if step.status != STEP_STATUS_QUEUED or self.step_has_active_run(step):
+                continue
+            dependency = dependency_decision(self.session, step)
+            if dependency == "waiting":
                 continue
             task = task_cache.get(step.task_id)
             if step.task_id not in task_cache:
@@ -129,14 +147,60 @@ class RunEligibilityService:
             if task is None:
                 continue
             decision = evaluate_task_step_condition(self.session, task, step)
-            if decision.state == "false":
-                self._cancel_conditionally_skipped_step(task, step, decision.reason)
+            if dependency == "skip" or decision.state == "false":
+                reason = (
+                    "Required predecessor was skipped" if dependency == "skip" else decision.reason
+                )
+                self._skip_step(task, step, reason)
+                self.session.flush()
+                pending = [
+                    candidate
+                    for candidate in steps
+                    if candidate.status == STEP_STATUS_QUEUED and candidate not in eligible
+                ]
                 continue
             if decision.state == "true":
                 eligible.append(step)
+        for task in task_cache.values():
+            if task is not None:
+                self._complete_empty_selection(task)
         return eligible
 
-    def _cancel_conditionally_skipped_step(
+    def _complete_empty_selection(self, task: Task) -> None:
+        if task.status in TERMINAL_TASK_STATUSES or self.task_has_open_team_work(task):
+            return
+        statuses = self.session.scalars(
+            select(TaskStep.status).where(
+                TaskStep.workspace_id == task.workspace_id,
+                TaskStep.task_id == task.id,
+            )
+        ).all()
+        if not statuses or any(status != TaskStepStatus.SKIPPED for status in statuses):
+            return
+        states = TaskStateService()
+        if task.status == TaskStatus.DRAFT:
+            states.transition(task, TaskStatus.QUEUED)
+        states.transition(task, TaskStatus.RUNNING)
+        states.transition(
+            task,
+            TaskStatus.COMPLETED,
+            final_output={"summary": "No workflow branch selected.", "all_nodes_skipped": True},
+        )
+        TaskMessageAppendService(self.session).append_for_task(
+            task,
+            message_type="orchestration.empty_selection_completed",
+            body="All workflow nodes were skipped; no agent run was needed.",
+            payload={"all_nodes_skipped": True},
+        )
+        AuditService(self.session).record_system_action(
+            workspace_id=task.workspace_id,
+            action="orchestration.empty_selection_completed",
+            target_type="task",
+            target_id=task.id,
+            metadata={"all_nodes_skipped": True},
+        )
+
+    def _skip_step(
         self,
         task: Task,
         step: TaskStep,
@@ -148,14 +212,14 @@ class RunEligibilityService:
             dependencies["condition_reason"] = reason[:500]
         TaskStepStateService().transition(
             step,
-            TaskStepStatus.CANCELLED,
+            TaskStepStatus.SKIPPED,
             dependencies=dependencies,
-            result_summary="Skipped because its orchestration condition evaluated false.",
+            result_summary="Skipped by orchestration condition or dependency policy.",
         )
         TaskMessageAppendService(self.session).append_for_task(
             task,
             message_type="orchestration.step_skipped",
-            body="A user-authored orchestration step was skipped by its condition.",
+            body="An orchestration step was skipped by condition or dependency policy.",
             task_step_id=step.id,
             payload={
                 "work_package_id": step.work_package_id,

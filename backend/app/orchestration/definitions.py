@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
 from graphlib import CycleError, TopologicalSorter
 from uuid import UUID, uuid4
@@ -11,19 +12,22 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.schemas.orchestration import (
-    OrchestrationDefinitionCreateRequest,
-    OrchestrationDefinitionUpdateRequest,
-    OrchestrationNode,
-)
 from backend.app.audit.service import AuditService
 from backend.app.capabilities.models import CapabilityResource, McpServer, McpToolAllowlist
 from backend.app.capabilities.schema_validation import reject_embedded_secrets
 from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.db.pagination import page_scalars
-from backend.app.orchestration.conditions import ConditionValidationError, validate_condition
-from backend.app.orchestration.models import OrchestrationDefinition
+from backend.app.orchestration.conditions import (
+    ConditionValidationError,
+    condition_step_references,
+    validate_condition,
+)
+from backend.app.orchestration.definition_commands import (
+    OrchestrationDefinitionCreate,
+    OrchestrationDefinitionUpdate,
+)
+from backend.app.orchestration.models import OrchestrationDefinition, OrchestrationRevision
 from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.orchestration.team_step_project_plan import ProjectPlanStepMaterializer
 from backend.app.planning.member_matching import MemberMatchingService
@@ -33,6 +37,7 @@ from backend.app.planning.project_plan_validation import (
     ProjectPlanValidationError,
     validate_project_plan,
 )
+from backend.app.planning.workflow_contracts import WorkflowNode
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskStep
@@ -85,7 +90,7 @@ class OrchestrationDefinitionService:
     def create_definition(
         self,
         workspace_id: UUID,
-        request: OrchestrationDefinitionCreateRequest,
+        request: OrchestrationDefinitionCreate,
         actor_user_id: UUID | None = None,
         *,
         commit: bool = True,
@@ -115,21 +120,58 @@ class OrchestrationDefinitionService:
             self._session.refresh(definition)
         return definition
 
+    def list_revisions(
+        self,
+        workspace_id: UUID,
+        definition_id: UUID,
+        page: PageParams,
+    ) -> tuple[list[OrchestrationRevision], int]:
+        if self.get_definition(workspace_id, definition_id) is None:
+            raise OrchestrationDefinitionError(
+                "Orchestration definition not found", code="orchestration_not_found"
+            )
+        return page_scalars(
+            self._session,
+            select(OrchestrationRevision)
+            .where(
+                OrchestrationRevision.workspace_id == workspace_id,
+                OrchestrationRevision.definition_id == definition_id,
+            )
+            .order_by(OrchestrationRevision.version.desc()),
+            page,
+        )
+
+    def get_revision(
+        self,
+        workspace_id: UUID,
+        definition_id: UUID,
+        version: int,
+    ) -> OrchestrationRevision | None:
+        return self._session.scalar(
+            select(OrchestrationRevision).where(
+                OrchestrationRevision.workspace_id == workspace_id,
+                OrchestrationRevision.definition_id == definition_id,
+                OrchestrationRevision.version == version,
+            )
+        )
+
     def update_definition(
         self,
         workspace_id: UUID,
         orchestration_definition_id: UUID,
-        request: OrchestrationDefinitionUpdateRequest,
+        request: OrchestrationDefinitionUpdate,
         actor_user_id: UUID | None = None,
         *,
         commit: bool = True,
     ) -> OrchestrationDefinition:
         definition = self._require_definition(workspace_id, orchestration_definition_id)
         changes = request.model_dump(exclude_unset=True)
+        if request.expected_version != definition.version:
+            raise OrchestrationDefinitionError(
+                "Definition changed; reload before editing", code="orchestration_version_mismatch"
+            )
         next_nodes = (
-            request.nodes
-            if request.nodes is not None
-            else self._nodes_from_definition(definition)
+            request.nodes if request.nodes is not None else self._nodes_from_definition(definition)
         )
         serialized_nodes = self._validate_nodes(workspace_id, next_nodes)
         before_version = definition.version
@@ -184,6 +226,22 @@ class OrchestrationDefinitionService:
     ) -> OrchestrationDefinition:
         definition = self._require_definition(workspace_id, orchestration_definition_id)
         self._validate_nodes(workspace_id, self._nodes_from_definition(definition))
+        if definition.status == "archived":
+            raise OrchestrationDefinitionError(
+                "Edit the archived definition before publishing a new revision",
+                code="orchestration_archived",
+            )
+        if definition.status == "published":
+            return definition
+        self._session.add(
+            OrchestrationRevision(
+                workspace_id=workspace_id,
+                definition_id=definition.id,
+                version=definition.version,
+                name=definition.name,
+                definition=deepcopy(definition.definition),
+            )
+        )
         definition.status = "published"
         definition.published_at = datetime.now(UTC)
         self._session.flush([definition])
@@ -230,6 +288,18 @@ class OrchestrationDefinitionService:
         orchestration_version: int | None = None,
         actor_user_id: UUID | None = None,
     ) -> Task:
+        self._session.flush([task])
+        locked_task = self._session.scalar(
+            select(Task)
+            .where(Task.workspace_id == task.workspace_id, Task.id == task.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if locked_task is None:
+            raise OrchestrationDefinitionError(
+                "Task not found", code="orchestration_task_not_found"
+            )
+        task = locked_task
         if task.agent_team_id is None:
             raise OrchestrationDefinitionError(
                 "A team is required to apply an orchestration",
@@ -240,39 +310,56 @@ class OrchestrationDefinitionService:
                 "Terminal tasks cannot receive a new orchestration",
                 code="orchestration_task_terminal",
             )
-        if self._session.scalar(
-            select(TaskStep.id)
-            .where(TaskStep.workspace_id == task.workspace_id, TaskStep.task_id == task.id)
-            .limit(1)
-        ) is not None:
+        if (
+            self._session.scalar(
+                select(TaskStep.id)
+                .where(TaskStep.workspace_id == task.workspace_id, TaskStep.task_id == task.id)
+                .limit(1)
+            )
+            is not None
+        ):
             raise OrchestrationDefinitionError(
                 "Task already has materialized work; use explicit plan mutation",
                 code="orchestration_task_has_steps",
             )
-        if self._session.scalar(
-            select(AgentRun.id)
-            .where(
-                AgentRun.workspace_id == task.workspace_id,
-                AgentRun.task_id == task.id,
-                AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES),
+        if (
+            self._session.scalar(
+                select(AgentRun.id)
+                .where(
+                    AgentRun.workspace_id == task.workspace_id,
+                    AgentRun.task_id == task.id,
+                    AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES),
+                )
+                .limit(1)
             )
-            .limit(1)
-        ) is not None:
+            is not None
+        ):
             raise OrchestrationDefinitionError(
                 "Task has an active run",
                 code="orchestration_task_active_run",
             )
 
         definition = self._require_definition(task.workspace_id, orchestration_definition_id)
-        if definition.status != "published":
+        if definition.status == "archived":
             raise OrchestrationDefinitionError(
-                "Only published orchestrations can be applied",
+                "Archived orchestrations cannot be applied",
                 code="orchestration_not_published",
             )
-        if orchestration_version is not None and orchestration_version != definition.version:
+        revision_query = select(OrchestrationRevision).where(
+            OrchestrationRevision.workspace_id == task.workspace_id,
+            OrchestrationRevision.definition_id == definition.id,
+        )
+        if orchestration_version is not None:
+            revision_query = revision_query.where(
+                OrchestrationRevision.version == orchestration_version
+            )
+        revision = self._session.scalar(
+            revision_query.order_by(OrchestrationRevision.version.desc()).limit(1)
+        )
+        if revision is None:
             raise OrchestrationDefinitionError(
-                "Requested orchestration version is not current",
-                code="orchestration_version_mismatch",
+                "Published orchestration version not found",
+                code="orchestration_not_published",
             )
         if not isinstance(task.team_snapshot, dict):
             task.team_snapshot = build_team_snapshot(
@@ -280,7 +367,7 @@ class OrchestrationDefinitionService:
                 workspace_id=task.workspace_id,
                 team_id=task.agent_team_id,
             )
-        plan = self._build_plan(task, definition)
+        plan = self._build_plan(task, definition, revision)
         try:
             validate_project_plan(plan, task.team_snapshot)
             PlanFeasibilityService(self._session).validate(task=task, plan=plan)
@@ -290,7 +377,7 @@ class OrchestrationDefinitionService:
         ProjectPlanStepMaterializer(self._session).materialize(task, plan)
         task.project_plan = plan
         task.orchestration_definition_id = definition.id
-        task.orchestration_version = definition.version
+        task.orchestration_version = revision.version
         attempt = TaskPlanningAttempt(
             workspace_id=task.workspace_id,
             task_id=task.id,
@@ -300,7 +387,7 @@ class OrchestrationDefinitionService:
             strategy="user_authored",
             input_snapshot={
                 "orchestration_definition_id": str(definition.id),
-                "orchestration_version": definition.version,
+                "orchestration_version": revision.version,
             },
             output_snapshot=plan,
             validation_errors=[],
@@ -320,7 +407,7 @@ class OrchestrationDefinitionService:
                 "attempt_id": str(attempt.id),
                 "strategy": "user_authored",
                 "orchestration_definition_id": str(definition.id),
-                "orchestration_version": definition.version,
+                "orchestration_version": revision.version,
                 "work_package_count": work_package_count,
             },
         )
@@ -331,7 +418,7 @@ class OrchestrationDefinitionService:
             target_id=task.id,
             metadata={
                 "orchestration_definition_id": str(definition.id),
-                "orchestration_version": definition.version,
+                "orchestration_version": revision.version,
                 "work_package_count": work_package_count,
             },
         )
@@ -342,8 +429,9 @@ class OrchestrationDefinitionService:
         self,
         task: Task,
         definition: OrchestrationDefinition,
+        revision: OrchestrationRevision,
     ) -> dict[str, object]:
-        raw_nodes = self._nodes_from_definition(definition)
+        raw_nodes = self._nodes_from_definition(revision)
         team = self._session.scalar(
             select(AgentTeam).where(
                 AgentTeam.workspace_id == task.workspace_id,
@@ -369,49 +457,22 @@ class OrchestrationDefinitionService:
                 )
             if assigned_id is None:
                 raise OrchestrationDefinitionError(
-                    f"No team agent matches orchestration node {node.node_id}",
+                    f"No team agent matches orchestration node {node.package_id}",
                     code="orchestration_agent_unavailable",
                 )
-            packages.append(
-                {
-                    "package_id": node.node_id,
-                    "title": node.title,
-                    "description": node.description,
-                    "required_role": node.required_role,
-                    "required_skills": list(node.required_skills),
-                    "assigned_agent_profile_id": str(assigned_id),
-                    "depends_on": list(node.depends_on),
-                    "required_tools": list(node.required_tools),
-                    "required_mcp_tools": [
-                        item.model_dump(mode="json") for item in node.mcp_tools
-                    ],
-                    "required_resource_ids": [str(item) for item in node.required_resource_ids],
-                    "resource_requirements": dict(node.resource_requirements),
-                    "expected_artifacts": list(node.expected_artifacts),
-                    "acceptance_criteria": list(node.acceptance_criteria),
-                    "review_policy": dict(node.review_policy),
-                    "condition": (
-                        node.condition.model_dump(
-                            mode="json",
-                            by_alias=True,
-                            exclude_none=True,
-                        )
-                        if node.condition is not None
-                        else {}
-                    ),
-                    "estimated_cost_usd": node.estimated_cost_usd,
-                }
-            )
+            package = node.model_dump(mode="json", by_alias=True, exclude_none=True)
+            package["assigned_agent_profile_id"] = str(assigned_id)
+            packages.append(package)
         planner_id = task.owner_agent_profile_id or team.manager_agent_profile_id
         return {
             "plan_version": 1,
-            "plan_id": f"orchestration:{definition.id}:{definition.version}:{uuid4()}",
+            "plan_id": f"orchestration:{definition.id}:{revision.version}:{uuid4()}",
             "objective": task.title,
             "planner_agent_profile_id": str(planner_id) if planner_id is not None else None,
             "generated_at": datetime.now(UTC).isoformat(),
             "strategy": "user_authored",
             "orchestration_definition_id": str(definition.id),
-            "orchestration_version": definition.version,
+            "orchestration_version": revision.version,
             "work_packages": packages,
         }
 
@@ -420,15 +481,19 @@ class OrchestrationDefinitionService:
         task: Task,
         team: AgentTeam,
         matcher: MemberMatchingService,
-        node: OrchestrationNode,
+        node: WorkflowNode,
     ) -> UUID | None:
-        if node.required_role.strip().lower().replace("-", "_") in {
-            "project_manager",
-            "product_manager",
-            "program_manager",
-            "manager",
-            "pm",
-        } and team.manager_agent_profile_id is not None:
+        if (
+            node.required_role.strip().lower().replace("-", "_")
+            in {
+                "project_manager",
+                "product_manager",
+                "program_manager",
+                "manager",
+                "pm",
+            }
+            and team.manager_agent_profile_id is not None
+        ):
             return team.manager_agent_profile_id
         assert isinstance(task.team_snapshot, dict)
         match = matcher.match(
@@ -442,14 +507,14 @@ class OrchestrationDefinitionService:
     def _validate_nodes(
         self,
         workspace_id: UUID,
-        nodes: list[OrchestrationNode],
+        nodes: list[WorkflowNode],
     ) -> list[dict[str, object]]:
         if not nodes or len(nodes) > 128:
             raise OrchestrationDefinitionError(
                 "Orchestration must contain 1 to 128 nodes",
                 code="orchestration_node_count_invalid",
             )
-        node_ids = [node.node_id for node in nodes]
+        node_ids = [node.package_id for node in nodes]
         if len(set(node_ids)) != len(node_ids):
             raise OrchestrationDefinitionError(
                 "Orchestration node IDs must be unique",
@@ -461,7 +526,7 @@ class OrchestrationDefinitionService:
                 "Orchestration node ID is reserved",
                 code="orchestration_reserved_node",
             )
-        graph = {node.node_id: list(node.depends_on) for node in nodes}
+        graph = {node.package_id: list(node.depends_on) for node in nodes}
         for node in nodes:
             for field_name, values in (
                 ("depends_on", node.depends_on),
@@ -472,63 +537,68 @@ class OrchestrationDefinitionService:
             ):
                 if any(not isinstance(value, str) or not value.strip() for value in values):
                     raise OrchestrationDefinitionError(
-                        f"Node {node.node_id} contains an empty {field_name} item",
+                        f"Node {node.package_id} contains an empty {field_name} item",
                         code="orchestration_node_item_invalid",
                     )
             if len(set(node.depends_on)) != len(node.depends_on):
                 raise OrchestrationDefinitionError(
-                    f"Node {node.node_id} contains duplicate dependencies",
+                    f"Node {node.package_id} contains duplicate dependencies",
                     code="orchestration_duplicate_dependency",
                 )
             missing = sorted(set(node.depends_on) - set(node_ids))
             if missing:
                 raise OrchestrationDefinitionError(
-                    f"Node {node.node_id} references unknown dependencies: {', '.join(missing)}",
+                    f"Node {node.package_id} references unknown dependencies: {', '.join(missing)}",
                     code="orchestration_missing_dependency",
                 )
             if len(node.required_tools) != len(set(node.required_tools)):
                 raise OrchestrationDefinitionError(
-                    f"Node {node.node_id} contains duplicate tools",
+                    f"Node {node.package_id} contains duplicate tools",
                     code="orchestration_duplicate_tool",
                 )
             if len(node.required_skills) != len(set(node.required_skills)):
                 raise OrchestrationDefinitionError(
-                    f"Node {node.node_id} contains duplicate skills",
+                    f"Node {node.package_id} contains duplicate skills",
                     code="orchestration_duplicate_skill",
                 )
             if len(node.required_resource_ids) != len(set(node.required_resource_ids)):
                 raise OrchestrationDefinitionError(
-                    f"Node {node.node_id} contains duplicate resources",
+                    f"Node {node.package_id} contains duplicate resources",
                     code="orchestration_duplicate_resource",
                 )
             mcp_tool_keys = {
-                (item.mcp_server_id, item.tool_name)
-                for item in node.mcp_tools
+                (item.mcp_server_id, item.tool_name) for item in node.required_mcp_tools
             }
-            if len(mcp_tool_keys) != len(node.mcp_tools):
+            if len(mcp_tool_keys) != len(node.required_mcp_tools):
                 raise OrchestrationDefinitionError(
-                    f"Node {node.node_id} contains duplicate MCP tools",
+                    f"Node {node.package_id} contains duplicate MCP tools",
                     code="orchestration_duplicate_mcp_tool",
                 )
             for key, amount in node.resource_requirements.items():
                 if not key.strip() or isinstance(amount, bool) or amount <= 0:
                     raise OrchestrationDefinitionError(
-                        f"Node {node.node_id} has an invalid resource requirement",
+                        f"Node {node.package_id} has an invalid resource requirement",
                         code="orchestration_resource_requirement_invalid",
                     )
             try:
                 if node.condition is not None:
+                    references = condition_step_references(
+                        node.condition.model_dump(mode="json", by_alias=True, exclude_none=True)
+                    )
+                    if references - set(node_ids):
+                        raise ConditionValidationError("Condition references unknown node")
+                    graph[node.package_id] = list(set(graph[node.package_id]) | references)
                     validate_condition(
                         node.condition.model_dump(
                             mode="json",
                             by_alias=True,
                             exclude_none=True,
                         ),
-                        path=f"nodes[{node.node_id}].condition",
+                        path=f"nodes[{node.package_id}].condition",
                     )
                 reject_embedded_secrets(
                     node.review_policy,
-                    path=f"nodes[{node.node_id}].review_policy",
+                    path=f"nodes[{node.package_id}].review_policy",
                 )
             except (ConditionValidationError, ValueError) as exc:
                 code = getattr(exc, "code", "orchestration_definition_invalid")
@@ -575,7 +645,7 @@ class OrchestrationDefinitionService:
                     code="orchestration_resource_reference_invalid",
                 )
 
-        server_ids = {item.mcp_server_id for node in nodes for item in node.mcp_tools}
+        server_ids = {item.mcp_server_id for node in nodes for item in node.required_mcp_tools}
         servers: dict[UUID, McpServer] = {}
         if server_ids:
             servers = {
@@ -594,7 +664,7 @@ class OrchestrationDefinitionService:
                 code="orchestration_mcp_server_reference_invalid",
             )
         for node in nodes:
-            for item in node.mcp_tools:
+            for item in node.required_mcp_tools:
                 allowlist = self._session.scalar(
                     select(McpToolAllowlist).where(
                         McpToolAllowlist.workspace_id == workspace_id,
@@ -612,26 +682,12 @@ class OrchestrationDefinitionService:
                         code="orchestration_mcp_tool_reference_invalid",
                     )
 
-        return [
-            node.model_dump(mode="json", by_alias=True, exclude_none=True)
-            | {
-                "condition": (
-                    node.condition.model_dump(
-                        mode="json",
-                        by_alias=True,
-                        exclude_none=True,
-                    )
-                    if node.condition is not None
-                    else {}
-                )
-            }
-            for node in nodes
-        ]
+        return [node.model_dump(mode="json", by_alias=True, exclude_none=True) for node in nodes]
 
     def _nodes_from_definition(
         self,
-        definition: OrchestrationDefinition,
-    ) -> list[OrchestrationNode]:
+        definition: OrchestrationDefinition | OrchestrationRevision,
+    ) -> list[WorkflowNode]:
         raw_definition = definition.definition
         raw_nodes = raw_definition.get("nodes") if isinstance(raw_definition, dict) else None
         if not isinstance(raw_nodes, list):
@@ -640,7 +696,7 @@ class OrchestrationDefinitionService:
                 code="orchestration_definition_invalid",
             )
         try:
-            return [OrchestrationNode.model_validate(item) for item in raw_nodes]
+            return [WorkflowNode.model_validate(item) for item in raw_nodes]
         except ValidationError as exc:
             raise OrchestrationDefinitionError(
                 "Stored orchestration node is invalid",
@@ -652,7 +708,15 @@ class OrchestrationDefinitionService:
         workspace_id: UUID,
         orchestration_definition_id: UUID,
     ) -> OrchestrationDefinition:
-        definition = self.get_definition(workspace_id, orchestration_definition_id)
+        definition = self._session.scalar(
+            select(OrchestrationDefinition)
+            .where(
+                OrchestrationDefinition.workspace_id == workspace_id,
+                OrchestrationDefinition.id == orchestration_definition_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         if definition is None:
             raise OrchestrationDefinitionError(
                 "Orchestration definition not found",

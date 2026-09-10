@@ -3,18 +3,18 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.schemas.orchestration import (
-    OrchestrationCondition,
-    OrchestrationDefinitionCreateRequest,
-    OrchestrationNode,
-)
 from backend.app.orchestration.conditions import (
     evaluate_task_step_condition,
     validate_condition,
 )
+from backend.app.orchestration.definition_commands import (
+    OrchestrationDefinitionCreate,
+    OrchestrationDefinitionUpdate,
+)
 from backend.app.orchestration.definitions import OrchestrationDefinitionService
 from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.planning.models import TaskPlanningAttempt
+from backend.app.planning.workflow_contracts import WorkflowCondition, WorkflowNode
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.tests.test_capability_resources import (
@@ -57,12 +57,12 @@ def test_user_orchestration_can_publish_and_apply_to_a_team_task() -> None:
     )
     session.flush()
 
-    request = OrchestrationDefinitionCreateRequest(
+    request = OrchestrationDefinitionCreate(
         key="release-flow",
         name="Release flow",
         nodes=[
-            OrchestrationNode(
-                node_id="implement",
+            WorkflowNode(
+                package_id="implement",
                 title="Implement",
                 required_role="developer",
                 required_skills=["python"],
@@ -79,6 +79,12 @@ def test_user_orchestration_can_publish_and_apply_to_a_team_task() -> None:
     definition = service.create_definition(workspace.id, request, user.id)
     assert definition.status == "draft"
     service.publish_definition(workspace.id, definition.id, user.id)
+    service.update_definition(
+        workspace.id,
+        definition.id,
+        OrchestrationDefinitionUpdate(expected_version=1, name="Unpublished changes"),
+        user.id,
+    )
 
     task = Task(
         workspace_id=workspace.id,
@@ -89,11 +95,12 @@ def test_user_orchestration_can_publish_and_apply_to_a_team_task() -> None:
     )
     session.add(task)
     session.flush()
-    service.apply_to_task(task, definition.id, actor_user_id=user.id)
+    service.apply_to_task(task, definition.id, orchestration_version=1, actor_user_id=user.id)
     session.commit()
 
     assert task.project_plan is not None
     assert task.project_plan["strategy"] == "user_authored"
+
     assert task.orchestration_definition_id == definition.id
     assert task.orchestration_version == 1
     step = session.scalar(select(TaskStep).where(TaskStep.task_id == task.id))
@@ -105,6 +112,133 @@ def test_user_orchestration_can_publish_and_apply_to_a_team_task() -> None:
     )
     assert attempt is not None
     assert attempt.strategy == "user_authored"
+
+
+def test_all_skipped_nodes_finish_without_an_agent_run() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, title="Nothing selected", input={})
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Optional",
+        dependencies={"condition": {"path": "task.input.flag", "operator": "exists"}},
+    )
+    session.add(step)
+    session.flush()
+    assert RunEligibilityService(session).next_eligible_steps(task.id, workspace.id) == []
+    assert step.status == "skipped"
+    assert task.status == "completed"
+    assert task.final_output["all_nodes_skipped"] is True
+
+
+def test_unconditional_nodes_publish_and_revisions_survive_draft_edits() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = OrchestrationDefinitionService(session)
+    definition = service.create_definition(
+        workspace.id,
+        OrchestrationDefinitionCreate(
+            key="plain", name="Plain", nodes=[WorkflowNode(package_id="plain", title="Plain")]
+        ),
+        user.id,
+    )
+    service.publish_definition(workspace.id, definition.id, user.id)
+    from backend.app.orchestration.models import OrchestrationRevision
+
+    service.update_definition(
+        workspace.id,
+        definition.id,
+        OrchestrationDefinitionUpdate(expected_version=1, name="Draft two"),
+        user.id,
+    )
+    revision = session.scalar(select(OrchestrationRevision))
+    assert revision is not None
+    assert revision.version == 1
+    assert revision.name == "Plain"
+    assert "condition" not in revision.definition["nodes"][0]
+    with pytest.raises(ValueError, match="reload"):
+        service.update_definition(
+            workspace.id,
+            definition.id,
+            OrchestrationDefinitionUpdate(expected_version=1, name="Stale edit"),
+            user.id,
+        )
+
+
+def test_branch_skip_propagates_and_selected_join_becomes_ready() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Branches")
+    session.add(task)
+    session.flush()
+    source = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Selected",
+        status="completed",
+        dependencies={},
+    )
+    skipped = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Not selected",
+        status="skipped",
+        dependencies={},
+    )
+    session.add_all([source, skipped])
+    session.flush()
+    branch_child = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Branch child",
+        dependencies={"after_step_ids": [str(skipped.id)]},
+        order_index=20,
+    )
+    session.add(branch_child)
+    session.flush()
+    join = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Join",
+        order_index=0,
+        dependencies={
+            "after_step_ids": [str(source.id), str(branch_child.id)],
+            "join_policy": "all_selected",
+        },
+    )
+    session.add(join)
+    session.flush()
+    assert RunEligibilityService(session).next_eligible_steps(task.id, workspace.id) == [join]
+    assert branch_child.status == "skipped"
+
+
+@pytest.mark.parametrize("target", ["missing", "self"])
+def test_condition_reference_rejects_missing_and_self_dependencies(target: str) -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    with pytest.raises(ValueError):
+        OrchestrationDefinitionService(session).create_definition(
+            workspace.id,
+            OrchestrationDefinitionCreate(
+                key="invalid",
+                name="Invalid",
+                nodes=[
+                    WorkflowNode(
+                        package_id="self",
+                        title="Self",
+                        condition={
+                            "path": f"steps.{target}.status",
+                            "operator": "equals",
+                            "value": "completed",
+                        },
+                    )
+                ],
+            ),
+            user.id,
+        )
 
 
 def test_condition_scheduler_skips_false_nodes_and_keeps_audit_message() -> None:
@@ -150,19 +284,22 @@ def test_condition_scheduler_skips_false_nodes_and_keeps_audit_message() -> None
     eligible = RunEligibilityService(session).next_eligible_steps(task.id, workspace.id)
 
     assert [step.work_package_id for step in eligible] == ["safe-path"]
-    assert skipped.status == "cancelled"
+    assert skipped.status == "skipped"
     assert skipped.dependencies["condition_result"] == "false"
-    assert session.scalar(
-        select(TaskMessage).where(
-            TaskMessage.task_id == task.id,
-            TaskMessage.message_type == "orchestration.step_skipped",
+    assert (
+        session.scalar(
+            select(TaskMessage).where(
+                TaskMessage.task_id == task.id,
+                TaskMessage.message_type == "orchestration.step_skipped",
+            )
         )
-    ) is not None
+        is not None
+    )
 
 
 def test_condition_language_is_bounded_and_reports_pending_step_state() -> None:
     with pytest.raises(ValidationError):
-        OrchestrationCondition(
+        WorkflowCondition(
             path="task.input.flag",
             operator="exists",
             value=False,
@@ -221,7 +358,7 @@ def test_orchestration_api_supports_draft_publish_edit_and_archive() -> None:
         "name": "Review flow",
         "nodes": [
             {
-                "node_id": "review",
+                "package_id": "review",
                 "title": "Review",
                 "required_role": "reviewer",
                 "condition": {
@@ -239,7 +376,7 @@ def test_orchestration_api_supports_draft_publish_edit_and_archive() -> None:
     edited = client.patch(
         f"{path}/{created.json()['id']}",
         headers=headers,
-        json={"name": "Review flow v2"},
+        json={"name": "Review flow v2", "expected_version": 1},
     )
     archived = client.post(f"{path}/{created.json()['id']}/archive", headers=headers)
 
@@ -249,6 +386,12 @@ def test_orchestration_api_supports_draft_publish_edit_and_archive() -> None:
     assert validated.json()["valid"] is True
     assert published.status_code == 200
     assert published.json()["status"] == "published"
+    history = client.get(f"{path}/{created.json()['id']}/revisions", headers=headers)
+    revision = client.get(f"{path}/{created.json()['id']}/revisions/1", headers=headers)
+    assert history.status_code == 200
+    assert history.json()["total"] == 1
+    assert revision.status_code == 200
+    assert revision.json()["name"] == "Review flow"
     assert edited.status_code == 200
     assert edited.json()["version"] == 2
     assert edited.json()["status"] == "draft"
@@ -357,12 +500,12 @@ def test_task_api_can_apply_a_published_orchestration_without_queueing() -> None
     definition_service = OrchestrationDefinitionService(session)
     definition = definition_service.create_definition(
         workspace.id,
-        OrchestrationDefinitionCreateRequest(
+        OrchestrationDefinitionCreate(
             key="apply-flow",
             name="Apply flow",
             nodes=[
-                OrchestrationNode(
-                    node_id="manager-review",
+                WorkflowNode(
+                    package_id="manager-review",
                     title="Manager review",
                     required_role="project_manager",
                     condition={

@@ -2,33 +2,46 @@
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.tasks.models import TaskStep
 
 
 def dependencies_satisfied(session: Session, step: TaskStep) -> bool:
+    return dependency_decision(session, step) == "ready"
+
+
+def dependency_decision(session: Session, step: TaskStep) -> str:
     if not isinstance(step.dependencies, dict):
-        return False
+        return "waiting"
     raw_ids = step.dependencies.get("after_step_ids", [])
     if not isinstance(raw_ids, list):
-        return False
+        return "waiting"
     if not raw_ids:
-        return True
+        return "ready"
     try:
         ids = [UUID(str(value)) for value in raw_ids]
     except (ValueError, TypeError):
-        return False
+        return "waiting"
     if len(set(ids)) != len(ids) or step.id in ids:
-        return False
-    completed_count = session.scalar(
-        select(func.count(TaskStep.id)).where(
-            TaskStep.workspace_id == step.workspace_id,
-            TaskStep.task_id == step.task_id,
-            TaskStep.id.in_(ids),
-            TaskStep.status == "completed",
+        return "waiting"
+    statuses = list(
+        session.scalars(
+            select(TaskStep.status).where(
+                TaskStep.workspace_id == step.workspace_id,
+                TaskStep.task_id == step.task_id,
+                TaskStep.id.in_(ids),
+            )
         )
     )
-    # Counting missing/incomplete rows as zero would incorrectly authorize missing or foreign IDs.
-    return completed_count == len(ids)
+    if len(statuses) != len(ids):
+        return "waiting"
+    if any(status not in {"completed", "skipped"} for status in statuses):
+        return "waiting"
+    policy = step.dependencies.get("join_policy", "all_success")
+    if policy == "all_selected":
+        return "ready" if "completed" in statuses else "skip"
+    if policy == "all_success":
+        return "skip" if "skipped" in statuses else "ready"
+    return "waiting"

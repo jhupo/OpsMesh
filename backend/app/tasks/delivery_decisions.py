@@ -23,7 +23,7 @@ ACTIVE_RUN_STATUSES = {
     RunStatus.WAITING_RUNTIME.value,
     RunStatus.WAITING_APPROVAL.value,
 }
-FINAL_STEP_STATUSES = {"completed", "cancelled"}
+FINAL_STEP_STATUSES = {"completed", "cancelled", "skipped"}
 
 
 class TaskDeliveryDecisionService:

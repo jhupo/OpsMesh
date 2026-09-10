@@ -37,3 +37,22 @@ class OrchestrationDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OrchestrationRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Immutable published content; tasks may pin any retained revision."""
+
+    __tablename__ = "orchestration_revisions"
+    __table_args__ = (
+        UniqueConstraint("definition_id", "version", name="uq_orchestration_revision_version"),
+        Index("ix_orchestration_revisions_workspace", "workspace_id", "definition_id"),
+    )
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    definition_id: Mapped[UUID] = mapped_column(
+        ForeignKey("orchestration_definitions.id", ondelete="CASCADE"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    definition: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from graphlib import CycleError, TopologicalSorter
 
-from backend.app.orchestration.conditions import ConditionValidationError, validate_condition
+from backend.app.orchestration.conditions import (
+    ConditionValidationError,
+    condition_step_references,
+    validate_condition,
+)
 from backend.app.planning.project_plan_members import snapshot_agent_ids
 
 
@@ -71,7 +75,15 @@ def _validate_dependencies(packages: list[object], package_ids: set[str]) -> Non
                 raise ProjectPlanValidationError(
                     "Unknown work package dependency", code="plan_missing_dependency"
                 )
-        graph[required_string(raw_package, "package_id")] = depends_on
+        try:
+            references = condition_step_references(raw_package.get("condition"))
+        except ConditionValidationError as exc:
+            raise ProjectPlanValidationError(str(exc), code=exc.code) from exc
+        if references - package_ids:
+            raise ProjectPlanValidationError(
+                "Condition references unknown work", code="plan_condition_reference_invalid"
+            )
+        graph[required_string(raw_package, "package_id")] = list(set(depends_on) | references)
     try:
         TopologicalSorter(graph).prepare()
     except CycleError as exc:

@@ -8,17 +8,20 @@ class TaskStepStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    SKIPPED = "skipped"
 
 
 FINAL_STEP_STATUSES = {
     TaskStepStatus.COMPLETED,
     TaskStepStatus.FAILED,
     TaskStepStatus.CANCELLED,
+    TaskStepStatus.SKIPPED,
 }
 
 
 ALLOWED_STEP_TRANSITIONS: dict[TaskStepStatus, set[TaskStepStatus]] = {
     TaskStepStatus.QUEUED: {
+        TaskStepStatus.SKIPPED,
         TaskStepStatus.RUNNING,
         TaskStepStatus.BLOCKED,
         TaskStepStatus.CANCELLED,
@@ -38,6 +41,7 @@ ALLOWED_STEP_TRANSITIONS: dict[TaskStepStatus, set[TaskStepStatus]] = {
     TaskStepStatus.COMPLETED: set(),
     TaskStepStatus.FAILED: {TaskStepStatus.QUEUED},
     TaskStepStatus.CANCELLED: set(),
+    TaskStepStatus.SKIPPED: set(),
 }
 
 

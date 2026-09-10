@@ -251,7 +251,7 @@ class TaskPlanLifecycleService:
                 run.task_step_id is None
                 or steps.get(run.task_step_id) is None
                 or steps[run.task_step_id].status
-                not in {"completed", "failed", "cancelled"}
+                not in {"completed", "failed", "cancelled", "skipped"}
             )
             for run in active_runs
         ):
