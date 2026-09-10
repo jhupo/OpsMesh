@@ -71,6 +71,35 @@ class Acceptance:
     def connect(self) -> psycopg.Connection:
         return psycopg.connect(**self.database, autocommit=True)
 
+    def diagnostics(self) -> None:
+        directory = self.installation.release_dir(self.tag)
+        executable = directory / "opsmesh-server"
+        print(
+            f"Installation diagnostics: staged={directory.exists()}, "
+            f"prepared={(directory / '.prepared').exists()}, "
+            f"selected={(ROOT / 'current').exists()}",
+            flush=True,
+        )
+        if executable.exists():
+            for frozen in (False, True):
+                env = dict(os.environ)
+                if frozen:
+                    env["LD_LIBRARY_PATH"] = str(ROOT / "client/_internal")
+                result = subprocess.run(
+                    [str(executable), "check"],
+                    cwd=directory,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=60,
+                )
+                print(
+                    f"Server check with frozen_libraries={frozen}: exit={result.returncode}",
+                    flush=True,
+                )
+                print(result.stderr[-3000:], flush=True)
+
     def install(self) -> None:
         if ROOT.exists():
             raise ValueError("Acceptance refuses to reuse an installation directory")
@@ -321,7 +350,11 @@ def main() -> None:
     if os.environ.get("GITHUB_ACTIONS") != "true" or os.geteuid() != 0 or os.name != "posix":
         raise ValueError("Run only as root on a fresh disposable GitHub Linux runner")
     acceptance = Acceptance(args.mode, args.tag, args.previous)
-    acceptance.install()
+    try:
+        acceptance.install()
+    except Exception:
+        acceptance.diagnostics()
+        raise
     acceptance.normal(args.previous, "rollback")
     acceptance.normal(args.tag, "plan")
     acceptance.normal(args.previous, "rollback")
