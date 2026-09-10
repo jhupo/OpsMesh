@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import UTC, datetime
-from graphlib import CycleError, TopologicalSorter
 from uuid import UUID, uuid4
 
 from pydantic import ValidationError
@@ -14,15 +13,9 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.audit.service import AuditService
 from backend.app.capabilities.models import CapabilityResource, McpServer, McpToolAllowlist
-from backend.app.capabilities.schema_validation import reject_embedded_secrets
 from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.db.pagination import page_scalars
-from backend.app.orchestration.conditions import (
-    ConditionValidationError,
-    condition_step_references,
-    validate_condition,
-)
 from backend.app.orchestration.definition_commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
@@ -36,6 +29,7 @@ from backend.app.planning.plan_feasibility import PlanFeasibilityService
 from backend.app.planning.project_plan_validation import (
     ProjectPlanValidationError,
     validate_project_plan,
+    validate_workflow_graph,
 )
 from backend.app.planning.workflow_contracts import WorkflowNode
 from backend.app.runs.models import AgentRun
@@ -526,90 +520,13 @@ class OrchestrationDefinitionService:
                 "Orchestration node ID is reserved",
                 code="orchestration_reserved_node",
             )
-        graph = {node.package_id: list(node.depends_on) for node in nodes}
-        for node in nodes:
-            for field_name, values in (
-                ("depends_on", node.depends_on),
-                ("required_skills", node.required_skills),
-                ("required_tools", node.required_tools),
-                ("expected_artifacts", node.expected_artifacts),
-                ("acceptance_criteria", node.acceptance_criteria),
-            ):
-                if any(not isinstance(value, str) or not value.strip() for value in values):
-                    raise OrchestrationDefinitionError(
-                        f"Node {node.package_id} contains an empty {field_name} item",
-                        code="orchestration_node_item_invalid",
-                    )
-            if len(set(node.depends_on)) != len(node.depends_on):
-                raise OrchestrationDefinitionError(
-                    f"Node {node.package_id} contains duplicate dependencies",
-                    code="orchestration_duplicate_dependency",
-                )
-            missing = sorted(set(node.depends_on) - set(node_ids))
-            if missing:
-                raise OrchestrationDefinitionError(
-                    f"Node {node.package_id} references unknown dependencies: {', '.join(missing)}",
-                    code="orchestration_missing_dependency",
-                )
-            if len(node.required_tools) != len(set(node.required_tools)):
-                raise OrchestrationDefinitionError(
-                    f"Node {node.package_id} contains duplicate tools",
-                    code="orchestration_duplicate_tool",
-                )
-            if len(node.required_skills) != len(set(node.required_skills)):
-                raise OrchestrationDefinitionError(
-                    f"Node {node.package_id} contains duplicate skills",
-                    code="orchestration_duplicate_skill",
-                )
-            if len(node.required_resource_ids) != len(set(node.required_resource_ids)):
-                raise OrchestrationDefinitionError(
-                    f"Node {node.package_id} contains duplicate resources",
-                    code="orchestration_duplicate_resource",
-                )
-            mcp_tool_keys = {
-                (item.mcp_server_id, item.tool_name) for item in node.required_mcp_tools
-            }
-            if len(mcp_tool_keys) != len(node.required_mcp_tools):
-                raise OrchestrationDefinitionError(
-                    f"Node {node.package_id} contains duplicate MCP tools",
-                    code="orchestration_duplicate_mcp_tool",
-                )
-            for key, amount in node.resource_requirements.items():
-                if not key.strip() or isinstance(amount, bool) or amount <= 0:
-                    raise OrchestrationDefinitionError(
-                        f"Node {node.package_id} has an invalid resource requirement",
-                        code="orchestration_resource_requirement_invalid",
-                    )
-            try:
-                if node.condition is not None:
-                    references = condition_step_references(
-                        node.condition.model_dump(mode="json", by_alias=True, exclude_none=True)
-                    )
-                    if references - set(node_ids):
-                        raise ConditionValidationError("Condition references unknown node")
-                    graph[node.package_id] = list(set(graph[node.package_id]) | references)
-                    validate_condition(
-                        node.condition.model_dump(
-                            mode="json",
-                            by_alias=True,
-                            exclude_none=True,
-                        ),
-                        path=f"nodes[{node.package_id}].condition",
-                    )
-                reject_embedded_secrets(
-                    node.review_policy,
-                    path=f"nodes[{node.package_id}].review_policy",
-                )
-            except (ConditionValidationError, ValueError) as exc:
-                code = getattr(exc, "code", "orchestration_definition_invalid")
-                raise OrchestrationDefinitionError(str(exc), code=code) from exc
         try:
-            TopologicalSorter(graph).prepare()
-        except CycleError as exc:
-            raise OrchestrationDefinitionError(
-                "Orchestration dependency cycle",
-                code="orchestration_dependency_cycle",
-            ) from exc
+            validate_workflow_graph(
+                [node.model_dump(mode="json", by_alias=True, exclude_none=True) for node in nodes],
+                set(node_ids),
+            )
+        except ProjectPlanValidationError as exc:
+            raise OrchestrationDefinitionError(str(exc), code=exc.code) from exc
 
         profile_ids = {
             node.assigned_agent_profile_id

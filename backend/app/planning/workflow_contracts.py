@@ -7,6 +7,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, StrictInt, model_validator
 
+from backend.app.capabilities.schema_validation import reject_embedded_secrets
+from backend.app.orchestration.conditions import validate_condition
+
 ConditionOperator = Literal[
     "equals",
     "not_equals",
@@ -101,4 +104,35 @@ class WorkflowNode(BaseModel):
     review_policy: dict[str, object] = Field(default_factory=dict)
     condition: WorkflowCondition | None = None
     join_policy: Literal["all_success", "all_selected"] = "all_success"
+    locked: bool = False
     estimated_cost_usd: FiniteFloat = Field(default=0, ge=0, le=1_000_000)
+
+    @model_validator(mode="after")
+    def validate_node_policy(self) -> WorkflowNode:
+        for name in (
+            "depends_on",
+            "required_skills",
+            "required_tools",
+            "expected_artifacts",
+            "acceptance_criteria",
+        ):
+            values = getattr(self, name)
+            if any(not item.strip() for item in values):
+                raise ValueError(f"{name} cannot contain empty items")
+        for name in ("depends_on", "required_skills", "required_tools", "required_resource_ids"):
+            values = getattr(self, name)
+            if len(values) != len(set(values)):
+                raise ValueError(f"{name} cannot contain duplicates")
+        mcp_keys = {(item.mcp_server_id, item.tool_name) for item in self.required_mcp_tools}
+        if len(mcp_keys) != len(self.required_mcp_tools):
+            raise ValueError("MCP tool identities cannot contain duplicates")
+        if any(
+            not key.strip() or amount <= 0 for key, amount in self.resource_requirements.items()
+        ):
+            raise ValueError("Resource requirements must have names and positive amounts")
+        if self.condition is not None:
+            validate_condition(
+                self.condition.model_dump(mode="json", by_alias=True, exclude_none=True)
+            )
+        reject_embedded_secrets(self.review_policy, path="review_policy")
+        return self

@@ -106,7 +106,7 @@ def result_for(
         structured_output=AgentRuntimeStructuredOutput(
             value=proposal,
             schema_name="task_plan",
-            schema_version="2",
+            schema_version="3",
             validated=True,
         ),
     )
@@ -446,6 +446,7 @@ def test_future_plan_mutation_reconciles_steps_and_preserves_history(planning) -
         task.id,
         task.created_by_user_id,
         TaskPlanMutationCommand(
+            expected_revision=(task.project_plan or {}).get("plan_revision", 0),
             operations=(
                 {
                     "operation": "add",
@@ -467,6 +468,7 @@ def test_future_plan_mutation_reconciles_steps_and_preserves_history(planning) -
         task.id,
         task.created_by_user_id,
         TaskPlanMutationCommand(
+            expected_revision=(task.project_plan or {}).get("plan_revision", 0),
             operations=(
                 {
                     "operation": "reassign",
@@ -483,6 +485,7 @@ def test_future_plan_mutation_reconciles_steps_and_preserves_history(planning) -
         task.id,
         task.created_by_user_id,
         TaskPlanMutationCommand(
+            expected_revision=(task.project_plan or {}).get("plan_revision", 0),
             operations=(
                 {
                     "operation": "split",
@@ -507,6 +510,7 @@ def test_future_plan_mutation_reconciles_steps_and_preserves_history(planning) -
         task.id,
         task.created_by_user_id,
         TaskPlanMutationCommand(
+            expected_revision=(task.project_plan or {}).get("plan_revision", 0),
             operations=(
                 {
                     "operation": "merge",
@@ -528,9 +532,8 @@ def test_future_plan_mutation_reconciles_steps_and_preserves_history(planning) -
         task.id,
         task.created_by_user_id,
         TaskPlanMutationCommand(
-            operations=(
-                {"operation": "cancel", "package_id": "research-findings"},
-            ),
+            expected_revision=(task.project_plan or {}).get("plan_revision", 0),
+            operations=({"operation": "cancel", "package_id": "research-findings"},),
             reason="Remove obsolete research",
             mutation_id="mutation-cancel-research",
         ),
@@ -540,6 +543,40 @@ def test_future_plan_mutation_reconciles_steps_and_preserves_history(planning) -
     assert _plan_package(task, "manager-summary")["depends_on"] == ["report"]
     assert task.project_plan["plan_revision"] == 5
     assert len(task.project_plan["mutation_history"]) == 5
+
+
+def test_mutation_rejects_stale_revision_and_locked_incident_edges(planning) -> None:
+    session, task, agent, run = planning
+    assert PlannerCompletionService(session).apply(run, result_for(agent))
+    plan = dict(task.project_plan)
+    plan["work_packages"] = [
+        {**package, "locked": package["package_id"] == "report"}
+        for package in plan["work_packages"]
+    ]
+    task.project_plan = plan
+    session.commit()
+    for revision, package, expected_code in [
+        (9, _mutation_package(agent, "extra"), "plan_revision_mismatch"),
+        (
+            0,
+            {**_mutation_package(agent, "extra"), "depends_on": ["report"]},
+            "plan_mutation_locked_region",
+        ),
+    ]:
+        with pytest.raises(TaskPlanMutationError) as rejected:
+            TaskPlanMutationService(session).apply(
+                task.workspace_id,
+                task.id,
+                task.created_by_user_id,
+                TaskPlanMutationCommand(
+                    expected_revision=revision,
+                    reason="Edit",
+                    operations=({"operation": "add", "package": package},),
+                ),
+            )
+        assert rejected.value.code == expected_code
+        session.rollback()
+    assert task.project_plan == plan
 
 
 def test_future_plan_mutation_rejects_active_and_completed_side_effects(planning) -> None:
@@ -564,9 +601,8 @@ def test_future_plan_mutation_rejects_active_and_completed_side_effects(planning
             task.id,
             task.created_by_user_id,
             TaskPlanMutationCommand(
-                operations=(
-                    {"operation": "cancel", "package_id": "report"},
-                ),
+                expected_revision=(task.project_plan or {}).get("plan_revision", 0),
+                operations=({"operation": "cancel", "package_id": "report"},),
                 reason="Cancel active report",
             ),
         )
@@ -582,9 +618,8 @@ def test_future_plan_mutation_rejects_active_and_completed_side_effects(planning
             task.id,
             task.created_by_user_id,
             TaskPlanMutationCommand(
-                operations=(
-                    {"operation": "cancel", "package_id": "report"},
-                ),
+                expected_revision=(task.project_plan or {}).get("plan_revision", 0),
+                operations=({"operation": "cancel", "package_id": "report"},),
                 reason="Cancel completed report",
             ),
         )

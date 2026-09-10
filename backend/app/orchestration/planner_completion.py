@@ -8,7 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunResult
-from backend.app.planning.agent_plan import AgentPlanProposal, is_agent_planning_step
+from backend.app.planning.agent_plan import (
+    AgentPlanProposal,
+    is_agent_planning_step,
+    planner_output_schema,
+)
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.planning.plan_feasibility import PlanFeasibilityService
@@ -72,9 +76,10 @@ class PlannerCompletionService:
         try:
             if result.structured_output is None or not result.structured_output.validated:
                 raise ProjectPlanValidationError("Planner requires SDK structured output")
+            schema = planner_output_schema()
             if (result.structured_output.schema_name, result.structured_output.schema_version) != (
-                "task_plan",
-                "2",
+                schema.name,
+                schema.version,
             ):
                 raise ProjectPlanValidationError("Planner output schema does not match contract")
             proposal = AgentPlanProposal.model_validate(result.structured_output.value)

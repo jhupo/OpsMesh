@@ -6,7 +6,7 @@ share the canonical node contract, admission policy, durable execution and mutat
 
 | Deliverable | Status | Acceptance |
 | --- | --- | --- |
-| Shared agent node contract | In progress | Authored, generated and mutated plans retain conditions, MCP identity and joins |
+| Shared agent node contract | Done | Authored, agent-generated, deterministic and mutated plans share WorkflowNode and graph validation; conditions, MCP identity and joins are retained |
 | Branch correctness | Done | Explicit skipped state, skip propagation, selected-branch join, reference cycle denial; empty selection completes without a run |
 | Immutable publication | Done | Historical versions remain executable and queryable; draft edits use optimistic concurrency; application locks task |
 | Typed executable node catalog | Pending | Agent, direct tool/MCP, branch, join, approval, subworkflow, start and end have real execution handlers |

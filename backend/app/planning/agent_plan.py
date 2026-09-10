@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.agent_runtime.contracts import AgentRuntimeOutputSchema
 from backend.app.planning.project_plan_context import PlanningContext
-from backend.app.planning.project_plan_models import ProjectPlan, ProjectWorkPackage
+from backend.app.planning.project_plan_models import ProjectPlan
 from backend.app.planning.project_plan_validation import ProjectPlanValidationError
 from backend.app.planning.workflow_contracts import WorkflowNode
 from backend.app.tasks.models import Task, TaskStep
@@ -28,7 +28,7 @@ class AgentPlanProposal(BaseModel):
 
 def planner_output_schema() -> AgentRuntimeOutputSchema:
     return AgentRuntimeOutputSchema(
-        name="task_plan", schema=AgentPlanProposal.model_json_schema(), version="2"
+        name="task_plan", schema=AgentPlanProposal.model_json_schema(), version="3"
     )
 
 
@@ -55,7 +55,7 @@ def bootstrap_plan(task: Task, attempt_id: UUID) -> dict[str, object]:
         generated_at=datetime.now(UTC).isoformat(),
         strategy="agent_planning_pending",
         work_packages=(
-            ProjectWorkPackage(
+            WorkflowNode(
                 package_id="manager-planning",
                 title="Manager planning",
                 description=(

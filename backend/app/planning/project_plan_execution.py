@@ -8,7 +8,6 @@ from backend.app.planning.project_plan_members import (
     member_agent_profile_id,
     requested_member_match,
 )
-from backend.app.planning.project_plan_models import ProjectWorkPackage
 from backend.app.planning.project_plan_packages import member_execution_package, requested_package
 from backend.app.planning.project_plan_utils import (
     execution_dependencies,
@@ -19,6 +18,7 @@ from backend.app.planning.project_plan_utils import (
     string_tuple,
     unique_package_id,
 )
+from backend.app.planning.workflow_contracts import WorkflowNode
 from backend.app.tasks.models import Task
 
 
@@ -29,7 +29,7 @@ class ExecutionPackageAppender:
     def append(
         self,
         *,
-        work_packages: list[ProjectWorkPackage],
+        work_packages: list[WorkflowNode],
         task: Task,
         context: PlanningContext,
         lead_package_ids: dict[str, str],
@@ -59,7 +59,7 @@ class ExecutionPackageAppender:
     def _append_member_execution_packages(
         self,
         *,
-        work_packages: list[ProjectWorkPackage],
+        work_packages: list[WorkflowNode],
         members: list[dict[str, object]],
         leads: list[dict[str, object]],
         lead_package_ids: dict[str, str],
@@ -102,7 +102,7 @@ class ExecutionPackageAppender:
         lead_package_ids: dict[str, str],
         manager_package_id: str | None,
         executive_alignment_ids: list[str],
-    ) -> ProjectWorkPackage | None:
+    ) -> WorkflowNode | None:
         agent_profile_id = member_agent_profile_id(member)
         if agent_profile_id is None:
             return None
@@ -129,7 +129,7 @@ class ExecutionPackageAppender:
     def _append_requested_packages(
         self,
         *,
-        work_packages: list[ProjectWorkPackage],
+        work_packages: list[WorkflowNode],
         task: Task,
         context: PlanningContext,
         lead_package_ids: dict[str, str],

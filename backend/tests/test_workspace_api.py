@@ -6883,6 +6883,7 @@ def test_mutate_task_plan_endpoint_adds_future_work_and_audits() -> None:
         headers=_headers(owner.id),
         json={
             "mutation_id": "api-add-follow-up",
+            "expected_revision": 0,
             "reason": "Add an explicit follow-up",
             "operations": [
                 {

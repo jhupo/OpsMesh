@@ -175,6 +175,7 @@ async def mutate_task_plan(
             task_id=task_id,
             actor_user_id=context.user.user_id,
             command=TaskPlanMutationCommand(
+                expected_revision=request.expected_revision,
                 operations=tuple(
                     operation.model_dump(mode="json") for operation in request.operations
                 ),

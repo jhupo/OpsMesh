@@ -1,10 +1,11 @@
 from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.planning.project_plan_builder import MatureOrgProjectPlanBuilder
-from backend.app.planning.project_plan_models import ProjectPlan, ProjectWorkPackage
+from backend.app.planning.project_plan_models import ProjectPlan
 from backend.app.planning.project_plan_validation import (
     ProjectPlanValidationError,
     validate_project_plan,
 )
+from backend.app.planning.workflow_contracts import WorkflowNode
 from backend.app.tasks.models import Task
 
 
@@ -20,6 +21,6 @@ __all__ = [
     "ProjectPlanningService",
     "ProjectPlanValidationError",
     "ProjectPlan",
-    "ProjectWorkPackage",
+    "WorkflowNode",
     "validate_project_plan",
 ]

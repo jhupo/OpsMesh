@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.approvals.service import ApprovalService
 from backend.app.planning.agent_plan import bootstrap_plan, is_agent_planning_step, planning_mode
 from backend.app.planning.models import TaskPlanningAttempt
+from backend.app.planning.ownership import require_automatic_plan_ownership
 from backend.app.planning.project_plans import (
     ProjectPlanningService,
     ProjectPlanValidationError,
@@ -44,6 +45,7 @@ class TaskPlanningAttemptService:
         )
         if task.project_plan is not None:
             return task.project_plan
+        require_automatic_plan_ownership(task)
         if transition_to_planning:
             TaskStateService().transition(task, TaskStatus.PLANNING)
         attempt = self._create_attempt(task, retry_count=self._next_retry_count(task))

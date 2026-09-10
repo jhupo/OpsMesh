@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from backend.app.planning.project_plan_members import member_agent_profile_id, member_role
-from backend.app.planning.project_plan_models import ProjectWorkPackage
 from backend.app.planning.project_plan_utils import (
     dict_or_default,
     expected_artifacts_for_role,
@@ -10,6 +9,7 @@ from backend.app.planning.project_plan_utils import (
     string_or_default,
     uuid_or_none,
 )
+from backend.app.planning.workflow_contracts import WorkflowNode
 
 
 def executive_alignment_package(
@@ -17,8 +17,8 @@ def executive_alignment_package(
     package_id: str,
     role: str,
     agent_profile_id: object,
-) -> ProjectWorkPackage:
-    return ProjectWorkPackage(
+) -> WorkflowNode:
+    return WorkflowNode(
         package_id=package_id,
         title=f"{role} alignment",
         description=(
@@ -43,8 +43,8 @@ def manager_planning_package(
     package_id: str,
     manager_planner_id: object,
     executive_alignment_ids: list[str],
-) -> ProjectWorkPackage:
-    return ProjectWorkPackage(
+) -> WorkflowNode:
+    return WorkflowNode(
         package_id=package_id,
         title="Manager planning",
         description="Clarify the goal, split responsibilities, and prepare the team plan.",
@@ -65,8 +65,8 @@ def lead_breakdown_package(
     department: str,
     planning_dependencies: tuple[str, ...],
     agent_profile_id: object,
-) -> ProjectWorkPackage:
-    return ProjectWorkPackage(
+) -> WorkflowNode:
+    return WorkflowNode(
         package_id=package_id,
         title=f"{department} breakdown",
         description=(
@@ -96,8 +96,8 @@ def member_execution_package(
     role: str,
     agent_profile_id: object,
     dependencies: tuple[str, ...],
-) -> ProjectWorkPackage:
-    return ProjectWorkPackage(
+) -> WorkflowNode:
+    return WorkflowNode(
         package_id=package_id,
         title=f"{role} execution",
         description=f"Complete the assigned {role} work package for the task.",
@@ -122,7 +122,7 @@ def requested_package(
     required_skills: list[str],
     matched_member: dict[str, object] | None,
     dependencies: tuple[str, ...],
-) -> ProjectWorkPackage:
+) -> WorkflowNode:
     raw_mcp_tools = request.get("required_mcp_tools", [])
     raw_resource_ids = request.get("required_resource_ids", [])
     raw_estimated_cost = request.get("estimated_cost_usd")
@@ -132,7 +132,7 @@ def requested_package(
         and not isinstance(raw_estimated_cost, bool)
         else 0.0
     )
-    return ProjectWorkPackage(
+    return WorkflowNode(
         package_id=package_id,
         title=string_or_default(request.get("title"), f"{role} execution"),
         description=string_or_default(
@@ -154,7 +154,8 @@ def requested_package(
             request.get("review_policy"),
             {"reviewer": "manager", "mode": "manager_review"},
         ),
-        condition=dict_or_default(request.get("condition"), {}),
+        condition=request.get("condition"),
+        join_policy=request.get("join_policy", "all_success"),
         required_tools=tuple(string_list(request.get("required_tools"))),
         required_mcp_tools=tuple(_dict_items(raw_mcp_tools)),
         required_resource_ids=tuple(
@@ -188,10 +189,11 @@ def lead_review_package(
     execution_ids: list[str],
     has_manager: bool,
     has_executives: bool,
-) -> ProjectWorkPackage:
-    return ProjectWorkPackage(
+) -> WorkflowNode:
+    return WorkflowNode(
         package_id=package_id,
         title=f"{department} review",
+        join_policy="all_selected",
         description="Review department execution, resolve defects, and summarize readiness.",
         required_role=member_role(lead, "team_lead"),
         required_skills=("review", "quality"),
@@ -215,10 +217,11 @@ def manager_summary_package(
     manager_planner_id: object,
     dependencies: list[str],
     has_executives: bool,
-) -> ProjectWorkPackage:
-    return ProjectWorkPackage(
+) -> WorkflowNode:
+    return WorkflowNode(
         package_id=package_id,
         title="Manager summary",
+        join_policy="all_selected",
         description="Review team outputs, reconcile issues, and prepare the delivery summary.",
         required_role="project_manager",
         required_skills=("review", "synthesis"),
@@ -239,8 +242,8 @@ def executive_approval_package(
     role: str,
     agent_profile_id: object,
     dependencies: tuple[str, ...],
-) -> ProjectWorkPackage:
-    return ProjectWorkPackage(
+) -> WorkflowNode:
+    return WorkflowNode(
         package_id=package_id,
         title=f"{role} approval",
         description=(

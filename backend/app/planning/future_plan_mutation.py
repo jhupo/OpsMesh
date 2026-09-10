@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.audit.service import AuditService
+from backend.app.orchestration.conditions import condition_step_references
 from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.orchestration.team_step_project_plan import (
     ProjectPlanStepMaterializer,
@@ -57,6 +58,7 @@ class TaskPlanMutationError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class TaskPlanMutationCommand:
+    expected_revision: int
     operations: tuple[dict[str, object], ...]
     reason: str
     refresh_team_snapshot: bool = False
@@ -95,13 +97,6 @@ class TaskPlanMutationService:
             return None
         self._require_task(task)
         plan = self._copy_plan(task.project_plan)
-        if command.refresh_team_snapshot:
-            assert task.agent_team_id is not None
-            task.team_snapshot = build_team_snapshot(
-                self._session,
-                workspace_id=task.workspace_id,
-                team_id=task.agent_team_id,
-            )
         try:
             validate_project_plan(plan, task.team_snapshot)
         except ProjectPlanValidationError as exc:
@@ -112,6 +107,16 @@ class TaskPlanMutationService:
             self._session.commit()
             self._session.refresh(task)
             return task
+
+        if command.expected_revision != self._next_revision(plan):
+            self._reject("plan_revision_mismatch", "Plan changed; reload before editing")
+        if command.refresh_team_snapshot:
+            assert task.agent_team_id is not None
+            task.team_snapshot = build_team_snapshot(
+                self._session,
+                workspace_id=task.workspace_id,
+                team_id=task.agent_team_id,
+            )
 
         state = _MutationState(
             packages=[dict(package) for package in _raw_packages(plan)],
@@ -137,6 +142,7 @@ class TaskPlanMutationService:
             active_new_work,
             command.reason,
         )
+        self._require_locked_regions_unchanged(_raw_packages(plan), state.packages)
         next_plan = self._build_next_plan(plan, state.packages, command, actor_user_id, mutation_id)
         self._validate_next_plan(task, next_plan, state)
         self._sync_steps(task, state, command.reason)
@@ -553,6 +559,34 @@ class TaskPlanMutationService:
         state.packages.append(summary_package)
         state.created_package_ids.add(candidate_id)
         state.changed_package_ids.add(candidate_id)
+
+    def _require_locked_regions_unchanged(
+        self,
+        before: list[dict[str, object]],
+        after: list[dict[str, object]],
+    ) -> None:
+        after_by_id = self._package_map(after)
+        for node in before:
+            if not node.get("locked"):
+                continue
+            package_id = str(node["package_id"])
+            before_dependents = {
+                str(item["package_id"])
+                for item in before
+                if package_id
+                in set(self._dependencies(item)) | condition_step_references(item.get("condition"))
+            }
+            after_dependents = {
+                str(item["package_id"])
+                for item in after
+                if package_id
+                in set(self._dependencies(item)) | condition_step_references(item.get("condition"))
+            }
+            if node != after_by_id.get(package_id) or before_dependents != after_dependents:
+                self._reject(
+                    "plan_mutation_locked_region",
+                    "Locked nodes and their incident edges cannot be changed in a running plan",
+                )
 
     def _build_next_plan(
         self,

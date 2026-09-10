@@ -7,8 +7,9 @@ from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.planning.project_plan_context import PlanningContext
 from backend.app.planning.project_plan_execution import ExecutionPackageAppender
 from backend.app.planning.project_plan_leadership import LeadershipPackageAppender
-from backend.app.planning.project_plan_models import ProjectPlan, ProjectWorkPackage
+from backend.app.planning.project_plan_models import ProjectPlan
 from backend.app.planning.project_plan_validation import validate_project_plan
+from backend.app.planning.workflow_contracts import WorkflowNode
 from backend.app.tasks.models import Task
 
 
@@ -22,7 +23,7 @@ class MatureOrgProjectPlanBuilder:
         if context is None:
             return None
 
-        work_packages: list[ProjectWorkPackage] = []
+        work_packages: list[WorkflowNode] = []
         executive_alignment_ids = self._leadership.append_executive_alignment(
             work_packages=work_packages,
             executives=context.executives,
@@ -74,7 +75,7 @@ class MatureOrgProjectPlanBuilder:
         self,
         task: Task,
         context: PlanningContext,
-        work_packages: list[ProjectWorkPackage],
+        work_packages: list[WorkflowNode],
     ) -> dict[str, object]:
         plan = ProjectPlan(
             plan_id=str(uuid4()),

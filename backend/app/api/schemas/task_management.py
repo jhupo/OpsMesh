@@ -32,6 +32,7 @@ class TaskPlanMutationOperationRequest(BaseModel):
 
 
 class TaskPlanMutationRequest(BaseModel):
+    expected_revision: int = Field(ge=0)
     operations: list[TaskPlanMutationOperationRequest] = Field(min_length=1, max_length=32)
     reason: str = Field(min_length=1, max_length=1_000)
     refresh_team_snapshot: bool = False
@@ -342,6 +343,13 @@ class TaskPlanPackageMatchResponse(BaseModel):
 
 
 class TaskPlanPackageDiagnosticResponse(BaseModel):
+    task_step_id: UUID | None
+    execution_status: str | None
+    result_summary: str | None
+    attempt_count: int
+    condition_dependencies: list[str]
+    join_policy: str
+    locked: bool
     package_id: str | None
     title: str
     required_role: str

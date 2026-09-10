@@ -6,7 +6,6 @@ from backend.app.planning.project_plan_members import (
     member_key,
     member_role,
 )
-from backend.app.planning.project_plan_models import ProjectWorkPackage
 from backend.app.planning.project_plan_packages import (
     executive_alignment_package,
     executive_approval_package,
@@ -16,13 +15,14 @@ from backend.app.planning.project_plan_packages import (
     manager_summary_package,
 )
 from backend.app.planning.project_plan_utils import slug, unique_package_id
+from backend.app.planning.workflow_contracts import WorkflowNode
 
 
 class LeadershipPackageAppender:
     def append_executive_alignment(
         self,
         *,
-        work_packages: list[ProjectWorkPackage],
+        work_packages: list[WorkflowNode],
         executives: list[dict[str, object]],
     ) -> list[str]:
         package_ids: list[str] = []
@@ -48,7 +48,7 @@ class LeadershipPackageAppender:
     def append_manager_planning(
         self,
         *,
-        work_packages: list[ProjectWorkPackage],
+        work_packages: list[WorkflowNode],
         manager_planner_id: object,
         executive_alignment_ids: list[str],
     ) -> str | None:
@@ -67,7 +67,7 @@ class LeadershipPackageAppender:
     def append_lead_breakdown(
         self,
         *,
-        work_packages: list[ProjectWorkPackage],
+        work_packages: list[WorkflowNode],
         leads: list[dict[str, object]],
         manager_package_id: str | None,
         executive_alignment_ids: list[str],
@@ -101,7 +101,7 @@ class LeadershipPackageAppender:
     def append_lead_review(
         self,
         *,
-        work_packages: list[ProjectWorkPackage],
+        work_packages: list[WorkflowNode],
         leads: list[dict[str, object]],
         lead_package_ids: dict[str, str],
         execution_ids_by_lead: dict[str, list[str]],
@@ -140,7 +140,7 @@ class LeadershipPackageAppender:
     def append_manager_summary(
         self,
         *,
-        work_packages: list[ProjectWorkPackage],
+        work_packages: list[WorkflowNode],
         manager_planner_id: object,
         dependencies: list[str],
         has_executives: bool,
@@ -161,7 +161,7 @@ class LeadershipPackageAppender:
     def append_executive_approval(
         self,
         *,
-        work_packages: list[ProjectWorkPackage],
+        work_packages: list[WorkflowNode],
         executives: list[dict[str, object]],
         manager_summary_id: str | None,
         fallback_dependencies: list[str],

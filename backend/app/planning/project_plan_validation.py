@@ -30,7 +30,7 @@ def validate_project_plan(
 
     allowed_agent_ids = snapshot_agent_ids(team_snapshot)
     package_ids = _validate_package_shape(packages, allowed_agent_ids)
-    _validate_dependencies(packages, package_ids)
+    validate_workflow_graph(packages, package_ids)
 
 
 def _validate_package_shape(packages: list[object], allowed_agent_ids: set[str]) -> set[str]:
@@ -58,7 +58,7 @@ def _validate_package_shape(packages: list[object], allowed_agent_ids: set[str])
     return package_ids
 
 
-def _validate_dependencies(packages: list[object], package_ids: set[str]) -> None:
+def validate_workflow_graph(packages: list[object], package_ids: set[str]) -> None:
     graph: dict[str, list[str]] = {}
     for raw_package in packages:
         if not isinstance(raw_package, dict):
