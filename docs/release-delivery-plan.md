@@ -26,6 +26,10 @@ is still pending and will be recorded below only after actual runs succeed.
   Systemd's initial fixture used a forbidden default DB password; `c273ebe` replaces it with a
   masked random password, retaining production validation. rc9 includes that fixture correction
   in the immutable release workflow as well as the rc8 operator fixes; existing tags are not moved.
+- `34428270345` / rc8 completes signed publication/public download verification and the entire
+  Compose managed lifecycle, including deletion of the application database, explicit restoration
+  and a subsequent successful upgrade. Its systemd job retains the known old credential fixture;
+  final two-mode acceptance is running under rc9 with that fixture corrected.
 
 ## rc6 standalone publication acceptance (2026-09-10)
 
