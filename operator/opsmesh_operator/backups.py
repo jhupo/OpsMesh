@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 from uuid import UUID, uuid4
 
-from opsmesh_operator.commands import run_command
+from opsmesh_operator.commands import host_environment, run_command
 from opsmesh_operator.files import atomic_write, sync_directory
 from opsmesh_operator.installation import Installation
 
@@ -57,7 +57,7 @@ class BackupStore:
         with dump.open("wb") as stream:
             result = subprocess.run(
                 ["pg_dump", "--format=custom", "--no-owner", "--no-acl"],
-                env=postgres_env(self.installation),
+                env=host_environment(postgres_env(self.installation)),
                 stdout=stream,
                 stderr=subprocess.PIPE,
                 timeout=1800,

@@ -1,5 +1,10 @@
 # Self-contained release distributions
 
+The operator subprocess boundary restores the host library search path when running as a frozen
+Linux CLI, following [PyInstaller's external-program guidance](https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html#launching-external-programs-from-the-frozen-application).
+Host `systemctl`, PostgreSQL tools and the separate server runtime must not inherit CLI library
+overrides. This does not change the running CLI's own environment or add another command runner.
+
 Accepted in [v0.1.0rc6](https://github.com/jhupo/OpsMesh/releases/tag/v0.1.0rc6):
 [native matrix, server startup and public provenance verification](https://github.com/jhupo/OpsMesh/actions/runs/34375776121).
 

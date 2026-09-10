@@ -2,7 +2,20 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
+
+
+def host_environment(env: dict[str, str] | None = None) -> dict[str, str]:
+    """External host programs must not load the frozen CLI's bundled shared libraries."""
+    result = dict(os.environ if env is None else env)
+    if getattr(sys, "frozen", False) and sys.platform == "linux":
+        original = result.pop("LD_LIBRARY_PATH_ORIG", None)
+        if original is None:
+            result.pop("LD_LIBRARY_PATH", None)
+        else:
+            result["LD_LIBRARY_PATH"] = original
+    return result
 
 
 def run_command(
@@ -17,7 +30,7 @@ def run_command(
         result = subprocess.run(
             argv,
             cwd=cwd,
-            env=env if env is not None else os.environ.copy(),
+            env=host_environment(env),
             timeout=timeout,
             check=False,
             capture_output=True,
