@@ -122,7 +122,10 @@ class Acceptance:
             values = {
                 "OPSMESH_ROOT": str(ROOT),
                 "OPSMESH_ENVIRONMENT": "production",
-                "OPSMESH_DATABASE_URL": "postgresql+psycopg://opsmesh:opsmesh@127.0.0.1:5432/opsmesh",
+                "OPSMESH_DATABASE_URL": (
+                    f"postgresql+psycopg://opsmesh:{os.environ['ACCEPTANCE_POSTGRES_PASSWORD']}"
+                    "@127.0.0.1:5432/opsmesh"
+                ),
                 "OPSMESH_REDIS_URL": "redis://127.0.0.1:6379/0",
                 "OPSMESH_STORAGE_ROOT": str(ROOT / "data/storage"),
                 "OPSMESH_RELEASE_UPDATE_ENABLED": "true",

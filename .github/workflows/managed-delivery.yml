@@ -46,14 +46,18 @@ jobs:
       - name: Prepare external infrastructure for systemd only
         if: matrix.mode == 'systemd'
         run: |
+          acceptance_pg_password=$(openssl rand -hex 32)
+          echo "::add-mask::$acceptance_pg_password"
+          printf 'ACCEPTANCE_POSTGRES_PASSWORD=%s\n' "$acceptance_pg_password" >> "$GITHUB_ENV"
           docker run -d --name acceptance-postgres -p 127.0.0.1:5432:5432 \
-            -e POSTGRES_DB=opsmesh -e POSTGRES_USER=opsmesh -e POSTGRES_PASSWORD=opsmesh \
+            -e POSTGRES_DB=opsmesh -e POSTGRES_USER=opsmesh -e "POSTGRES_PASSWORD=$acceptance_pg_password" \
             --health-cmd 'pg_isready -U opsmesh' --health-interval 2s --health-retries 30 \
             pgvector/pgvector:0.8.6-pg16-bookworm
           docker run -d --name acceptance-redis -p 127.0.0.1:6379:6379 redis:7-alpine
       - name: Signed native install, cross-version upgrade and real interruption recovery
         run: |
           sudo env "PATH=$PATH" "GH_TOKEN=$GH_TOKEN" GITHUB_ACTIONS=true \
+            "ACCEPTANCE_POSTGRES_PASSWORD=${ACCEPTANCE_POSTGRES_PASSWORD:-}" \
             .venv/bin/python scripts/ci_command.py .venv/bin/python scripts/check_managed_delivery.py \
             --tag "$RELEASE_TAG" --previous "$PREVIOUS_TAG" --mode "$DEPLOYMENT_MODE"
       - name: Redacted service diagnostics on failure
