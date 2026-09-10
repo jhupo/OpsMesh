@@ -51,6 +51,13 @@ maintenance procedure; an application update does not hot-replace the executing 
    package and both image attestations against the repository, workflow, tag and commit. These
    post-publication checks must also pass before the workflow reports success. No manual workflow
    dispatch or previously successful workflow run is required.
+   The same workflow then runs **Managed Delivery Acceptance** on separate disposable Compose
+   and systemd hosts. Its explicitly selected previous-release baseline must remain schema-compatible
+   with `release-policy.json`; do not replace it with a mutable latest-version lookup. It uses the
+   publicly signed native CLI, not the checkout installer, and tests managed installation, approved
+   cross-version changes, a killed updater, an occupied API port, explicit resume/rollback, and
+   acknowledged database/filesystem restoration. Publication is not update acceptance until both
+   deployment jobs pass. The workflow can also be dispatched against existing immutable releases.
 4. Operators discover a version through `update check`; this does not approve or install it.
 
 The workflows use minimal job permissions and pinned Action SHAs. No mutable `latest` reference
@@ -147,18 +154,31 @@ If API is offline, host status remains available:
 
 ```sh
 sudo opsmesh --root /opt/opsmesh update status <plan-id> --local
+sudo systemctl stop opsmesh-updater
 sudo opsmesh --root /opt/opsmesh update recover --plan <plan-id> --strategy resume
 sudo opsmesh --root /opt/opsmesh update recover --plan <plan-id> --strategy rollback
 sudo opsmesh --root /opt/opsmesh update recover --plan <plan-id> --strategy restore --ack-data-loss
+sudo systemctl start opsmesh-updater
 ```
 
 Do not run all recovery commands: select the appropriate one after inspecting the checkpoint.
+Stop the idle/recovery-required updater service before the selected local recovery command so its
+polling does not compete for the host lock; restart it after successful recovery. Do not kill an
+actively executing production update merely because the CLI has not returned yet.
 Resume checks that the database is at the approved source or target revision. Application rollback
 checks that the previous release explicitly supports the live database revision. Restore uses the
 verified pre-upgrade backup and discards database writes since its timestamp; it preserves the
 post-backup storage directory under `data/before-restore-*` for manual salvage. Database restoration
 requires PostgreSQL's administrative database to remain reachable. A destroyed host/database
 cluster needs disaster recovery, not an online update retry.
+
+Recovery validates the strategy, backup requirement, journal/job identity and supported schema
+before stopping application services. A durable terminal journal is reconciled into Postgres
+without replaying migration, switching, or restoring a database. If the target schema is already
+present, resume does not rerun Alembic. Successful rollback/restoration records the previous release,
+clears maintenance and releases the active update slot in one database transaction. Release files
+remain root-owned and service-readable; restored local storage remains writable by both service
+identities through the reserved shared group.
 
 If no verified backup checkpoint exists, resume is allowed only while the database is still at the
 approved source revision; it first creates and verifies a new backup. The updater does not
