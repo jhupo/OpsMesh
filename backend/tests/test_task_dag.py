@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.run_eligibility import RunEligibilityService
+from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.orchestration.step_dependencies import dependencies_satisfied
 from backend.app.orchestration.team_step_project_plan import ProjectPlanStepMaterializer
 from backend.app.planning.project_plan_validation import (
@@ -97,3 +98,28 @@ def test_missing_and_foreign_dependencies_never_authorize_work(session: Session,
     )
     assert not dependencies_satisfied(session, step)
     assert not RunEligibilityService(session).dependencies_satisfied(step)
+
+
+def test_launch_rechecks_dependencies_after_candidate_selection(session: Session) -> None:
+    _, workspace = _seed_workspace(session)
+    task = Task(
+        workspace_id=workspace.id,
+        title="DAG",
+        status="running",
+        team_snapshot={"team": {}, "members": []},
+    )
+    session.add(task)
+    session.flush()
+    ProjectPlanStepMaterializer(session).materialize(
+        task, {"work_packages": [package("before", []), package("after", ["before"])]}
+    )
+    steps = {step.work_package_id: step for step in session.scalars(select(TaskStep))}
+    steps["before"].status = "completed"
+    session.flush()
+    assert RunEligibilityService(session).next_eligible_steps(task.id, workspace.id) == [
+        steps["after"]
+    ]
+    steps["before"].status = "failed"
+    session.flush()
+    launcher = RunOrchestrationService(session)._run_step_launcher()
+    assert launcher.lock_step_for_scheduling(task, steps["after"]) is None

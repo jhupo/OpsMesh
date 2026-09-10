@@ -15,6 +15,7 @@ from backend.app.orchestration.run_runtime_authorization import (
     runtime_binding_for_snapshot,
 )
 from backend.app.orchestration.scheduler import WorkspaceScheduler
+from backend.app.orchestration.step_dependencies import dependencies_satisfied
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
@@ -243,6 +244,8 @@ class RunStepLauncher:
         if locked_step is None:
             return None
         if locked_step.status != STEP_STATUS_QUEUED:
+            return None
+        if not dependencies_satisfied(self.session, locked_step):
             return None
         if self.step_has_active_run(locked_step):
             return None
