@@ -142,18 +142,19 @@ included, truncated, and excluded context without persisting query or memory con
 
 ## Phase 5: Task And Agent Orchestration
 
-Active stage (2026-09-10): resume this sequence before knowledge-source work. The first prerequisite
-repair validates DAG cycles through Python's `graphlib`, materializes forward references in two
-passes, and shares a fail-closed scheduler dependency predicate. Every dependency must exist and be
-completed in the same workspace **and task**. This repairs concrete admission defects for 5.2; it
-does not by itself complete provider planning, capability/cost feasibility, or the phase gate.
+Active stage (2026-09-10): continue this sequence before knowledge-source work. Agent planning now
+validates the live team roster, profile versions, roles, skills, capability catalog, runtime-space
+placement, scheduler limits, workspace/runtime quotas, provider readiness, and projected model cost
+before any generated work step is materialized. The next open increment is dynamic future-work
+replanning; this phase remains open until ownership transfer, human continuation, and final
+delivery acceptance are complete.
 
 Goal: move from a deterministic organization template to validated, adaptive agent planning.
 
 | Order | Priority | Functional point | Status | Commit | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- |
 | 5.1 | P0 | Generate a structured task DAG with a planner agent and retain deterministic planning only as explicit fallback | Done | `638bf87` | Tool-free worker planner, SDK structured output, scoped DAG admission, duplicate-delivery denial, durable failure/cancel/retry, explicit deterministic mode; PostgreSQL and Backend CI accepted |
-| 5.2 | P0 | Validate schema, cycles, authorization, capability availability, cost, and resource feasibility | Pending | `add-agent-plan-validation` | Invalid plans cannot enqueue work and return stable correction reasons |
+| 5.2 | P0 | Validate schema, cycles, authorization, capability availability, cost, and resource feasibility | Done | `1c30501` | Invalid plans cannot enqueue work; stable failure codes cover stale roster/policy, role/skill, tool/resource, runtime/workspace quota, provider, and cost gates |
 | 5.3 | P0 | Replan by adding, splitting, merging, cancelling, or reassigning future work | Pending | `add-dynamic-task-replanning` | Replanning preserves completed history and never mutates active side effects silently |
 | 5.4 | P0 | Transfer tasks between agents with objective, context, artifacts, state, and ownership | Pending | `complete-agent-task-transfer` | Target accepts a durable handoff package and the source can no longer act as owner |
 | 5.5 | P0 | Support human pause, context correction, reassignment, and in-place continuation | Pending | `complete-human-agent-intervention` | Human changes are versioned, audited, and applied before the resumed action |
@@ -169,17 +170,21 @@ then appends a platform-owned final acceptance step. Plain text never silently b
 that choice in planning evidence. SDK execution failures and expired workers close the attempt and
 block for review; initial retry preserves failed attempts and cannot replace active work.
 
-Evidence: `test_agent_planning.py`, `test_task_dag.py`, focused worker/API regressions, and the
-dedicated `test_agent_planning_postgres.py` CI job. No new SDK/framework dependency was introduced:
-schema-constrained generation remains owned by the provider SDK, while plan authorization and
-scheduling remain product policy. Cost/resource feasibility, dynamic revisions, ownership transfer,
-human continuation and final delivery gates below are not claimed complete by this increment.
+Evidence for 5.1: `test_agent_planning.py`, `test_task_dag.py`, focused worker/API regressions,
+and the dedicated `test_agent_planning_postgres.py` CI job. Evidence for 5.2: the same planning
+regressions cover live authorization, capability, resource, quota, provider, and cost denial paths;
+`PlanFeasibilityService` reuses the existing effective catalog, provider resolution, scheduler, and
+quota services. No new SDK/framework dependency was introduced: schema-constrained generation
+remains owned by the provider SDK, while plan authorization and scheduling remain product policy.
+Dynamic revisions, ownership transfer, human continuation and final delivery gates below remain
+open.
 
-Accepted code: `f455fa5`, including `e03bb48` (pgvector test fixture initialization) and `32047c7`
-(dependency recheck under the scheduling lock). Both jobs in
-[Backend CI 34437132216](https://github.com/jhupo/OpsMesh/actions/runs/34437132216) passed.
-The PostgreSQL test verifies concurrent planning requests produce one durable attempt; it is run
-separately from SQLite metadata-patching tests. Phase 5.2 through 5.6 remain open.
+Accepted code: `1c30501` (5.2), on top of `638bf87`, `f455fa5` and the prerequisite fixes
+`e03bb48` (pgvector test fixture initialization) and `32047c7` (dependency recheck under the
+scheduling lock). The focused planning checks are green locally; the pushed commit is awaiting its
+Backend CI run before the phase evidence is closed. The PostgreSQL test verifies concurrent
+planning requests produce one durable attempt and remains separate from SQLite metadata-patching
+tests. Phase 5.3 through 5.6 remain open.
 
 A project can be planned, validated, executed in parallel, replanned after failure, transferred
 between agents, corrected by a human, reviewed by a manager, and assembled into one final delivery.
