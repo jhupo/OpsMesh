@@ -5,6 +5,14 @@ Linux CLI, following [PyInstaller's external-program guidance](https://pyinstall
 Host `systemctl`, PostgreSQL tools and the separate server runtime must not inherit CLI library
 overrides. This does not change the running CLI's own environment or add another command runner.
 
+GitHub proof-service failures observed during rc7 justify a bounded verification retry, delegated
+to [Tenacity](https://github.com/jd/tenacity) (Apache-2.0, small Python-only dependency), the project's
+preferred retry library. HTTPX transport retries do not cover the official `gh` subprocess;
+a hand-written loop or another workflow framework is unnecessary. Verification makes at most three
+attempts with jittered waits and the same repository/workflow/tag/commit constraints. Permanent
+rejection still fails closed; no artifact is executed without a successful official verification.
+This retry applies only to read-only provenance verification, never migrations or restoration.
+
 Accepted in [v0.1.0rc6](https://github.com/jhupo/OpsMesh/releases/tag/v0.1.0rc6):
 [native matrix, server startup and public provenance verification](https://github.com/jhupo/OpsMesh/actions/runs/34375776121).
 

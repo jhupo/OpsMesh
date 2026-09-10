@@ -9,6 +9,7 @@ import time
 from pathlib import Path, PurePosixPath
 
 import httpx
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_random_exponential
 
 from opsmesh_operator.commands import run_command
 from opsmesh_operator.contracts import ReleaseFile, ReleaseManifest, require_tag
@@ -36,6 +37,12 @@ class ReleaseSource:
             atomic_write(directory / path.name, manifest.model_dump_json(indent=2))
         return manifest
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_random_exponential(min=2, max=8),
+        retry=retry_if_exception_type(RuntimeError),
+        reraise=True,
+    )
     def verify(self, path: Path, tag: str, *, commit: str | None = None) -> None:
         command = [
             "gh",
