@@ -181,10 +181,9 @@ open.
 
 Accepted code: `1c30501` (5.2), on top of `638bf87`, `f455fa5` and the prerequisite fixes
 `e03bb48` (pgvector test fixture initialization) and `32047c7` (dependency recheck under the
-scheduling lock). The focused planning checks are green locally; the pushed commit is awaiting its
-Backend CI run before the phase evidence is closed. The PostgreSQL test verifies concurrent
-planning requests produce one durable attempt and remains separate from SQLite metadata-patching
-tests. Phase 5.3 through 5.6 remain open.
+scheduling lock). Both jobs in [Backend CI 34441745211](https://github.com/jhupo/OpsMesh/actions/runs/34441745211)
+passed. The PostgreSQL test verifies concurrent planning requests produce one durable attempt and
+remains separate from SQLite metadata-patching tests. Phase 5.3 through 5.6 remain open.
 
 A project can be planned, validated, executed in parallel, replanned after failure, transferred
 between agents, corrected by a human, reviewed by a manager, and assembled into one final delivery.
