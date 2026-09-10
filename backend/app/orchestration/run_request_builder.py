@@ -504,6 +504,3 @@ class RunRequestBuilder:
         workspace_id: UUID,
     ) -> list[dict[str, object]]:
         return self.authorization.mcp_credential_reference_snapshots(workspace_id)
-
-    def completed_step_summaries(self, task_id: UUID, *, before: int) -> list[str]:
-        return self.prompt_renderer.completed_step_summaries(task_id, before=before)

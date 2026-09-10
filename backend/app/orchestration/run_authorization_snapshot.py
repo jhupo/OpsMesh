@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from uuid import UUID
 
 from sqlalchemy import select
@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.guardrails import runtime_controls_snapshot
 from backend.app.agents.models import AgentProfile
-from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalogService
+from backend.app.capabilities.effective_catalog import (
+    EffectiveCapabilityCatalogService,
+    effective_catalog_fingerprint,
+)
 from backend.app.model_providers.metadata import budget_is_exhausted
 from backend.app.model_providers.model_api import (
     canonical_model_api,
@@ -25,6 +28,7 @@ from backend.app.orchestration.run_request_utils import dict_copy, uuid_or_none
 from backend.app.orchestration.run_runtime_authorization import (
     RunRuntimeAuthorizationService,
 )
+from backend.app.planning.agent_plan import is_agent_planning_step, planner_output_schema
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task, TaskStep
 
@@ -51,6 +55,9 @@ class RunAuthorizationSnapshotService:
             if profile is not None
             else None
         )
+        if is_agent_planning_step(step) and effective_catalog is not None:
+            effective_catalog.tools = []
+            effective_catalog.fingerprint = effective_catalog_fingerprint(effective_catalog)
         catalog_snapshot = (
             effective_catalog.model_dump(mode="json") if effective_catalog is not None else None
         )
@@ -73,22 +80,28 @@ class RunAuthorizationSnapshotService:
             model_settings=profile.model_settings if profile is not None else {},
             runtime_policy=frozen_runtime_policy,
         )
+        if is_agent_planning_step(step):
+            runtime_controls["output_schema"] = asdict(planner_output_schema())
         runtime_binding = RunRuntimeAuthorizationService(self.session).resolve_for_snapshot(
             task=task,
             step=step,
             capability_catalog=catalog_snapshot,
             runtime_policy=frozen_runtime_policy,
         )
-        agent_tools = AgentToolAuthorizationSnapshotService(self.session).build(
-            task=task,
-            source_profile=profile,
-            source_catalog=catalog_snapshot,
-            source_model_provider=model_provider,
-            file_scope_ids=runtime_binding.allowed_file_ids,
-            model_provider_snapshot=lambda target: self.model_provider_snapshot(
-                task.workspace_id,
-                target,
-            ),
+        agent_tools = (
+            []
+            if is_agent_planning_step(step)
+            else AgentToolAuthorizationSnapshotService(self.session).build(
+                task=task,
+                source_profile=profile,
+                source_catalog=catalog_snapshot,
+                source_model_provider=model_provider,
+                file_scope_ids=runtime_binding.allowed_file_ids,
+                model_provider_snapshot=lambda target: self.model_provider_snapshot(
+                    task.workspace_id,
+                    target,
+                ),
+            )
         )
         snapshot: dict[str, object] = {
             "version": 2,

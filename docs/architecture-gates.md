@@ -72,6 +72,6 @@ under `api/services`. This stage does **not** assert universal domain independen
 dependencies, or complete facade consolidation. Moving every DTO/service is a distinct architectural
 migration, not an ignored-import workaround.
 
-After this bounded gate is accepted, the next product subsystem is knowledge-source registration,
-durable ingestion, permission-aware retrieval, and citations, reusing existing workspace files,
-memory indexing, pgvector, worker recovery, resource grants, and audit. Those features remain planned.
+After this bounded gate, active work returns to Phase 5 of the
+[Agent runtime completion plan](agent-runtime-completion-plan.md): task and agent orchestration.
+Knowledge-source registration, ingestion and citations remain later planned work.

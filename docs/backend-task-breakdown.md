@@ -4,8 +4,8 @@
 
 Latest completed increment (2026-09-10): [backend architecture gates](architecture-gates.md),
 following rc9 delivery acceptance. Seven enforced contracts, corrected pagination/middleware
-ownership, package-discovery coverage, and deliberate violation tests are implemented. Next product
-increment: knowledge-source registry, durable ingestion, authorized retrieval, and citations.
+ownership, package-discovery coverage, and deliberate violation tests are implemented. Active product
+increment: [Phase 5 task and agent orchestration](agent-runtime-completion-plan.md#phase-5-task-and-agent-orchestration).
 
 This document breaks the backend roadmap into actionable engineering tasks, from the basic framework to complete backend capabilities.
 

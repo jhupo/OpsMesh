@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunResult
 from backend.app.agent_runtime.errors import normalize_agent_error
+from backend.app.orchestration.planner_completion import PlannerCompletionService
 from backend.app.orchestration.pm_acceptance import PmAcceptanceService
 from backend.app.orchestration.pm_final_output import PmFinalOutputService
 from backend.app.orchestration.pm_follow_up_work import PmFollowUpWorkService
@@ -18,6 +19,8 @@ from backend.app.orchestration.run_result_payloads import run_output_payload
 from backend.app.orchestration.run_step_completion import TaskStepCompletionService
 from backend.app.orchestration.run_task_progress import RunTaskProgressService
 from backend.app.orchestration.run_terminal_state import RunTerminalStateService
+from backend.app.planning.attempts import TaskPlanningAttemptService
+from backend.app.planning.project_plan_validation import ProjectPlanValidationError
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
@@ -34,6 +37,8 @@ SyncConversation = Callable[[AgentRun], None]
 CreateNextRuns = Callable[[Task, UUID | None], list[AgentRun]]
 ScheduleWorkspaceSteps = Callable[[UUID, UUID | None], list[AgentRun]]
 TaskHasOpenTeamWork = Callable[[Task], bool]
+
+
 @dataclass(slots=True)
 class RunLifecycleCallbacks:
     append_event: AppendEvent
@@ -113,6 +118,13 @@ class RunLifecycleService:
         requested_by_user_id: UUID | None,
     ) -> None:
         final_output = result.final_output
+        if not PlannerCompletionService(self.session).apply(run, result):
+            self.mark_run_failed(
+                run,
+                ProjectPlanValidationError("Agent plan rejected"),
+                task_status=TaskStatus.BLOCKED,
+            )
+            return
         RunStateService().transition(
             run,
             RunStatus.COMPLETED,
@@ -202,8 +214,14 @@ class RunLifecycleService:
                 append_task_message=self.append_task_message,
             )
 
-    def mark_run_failed(self, run: AgentRun, exc: Exception) -> None:
+    def mark_run_failed(
+        self, run: AgentRun, exc: Exception, *, task_status: TaskStatus = TaskStatus.FAILED
+    ) -> None:
         error = normalize_agent_error(exc)
+        if TaskPlanningAttemptService(self.session).finish_unsuccessful_run(
+            run, code="planner_execution_failed"
+        ):
+            task_status = TaskStatus.BLOCKED
         RunStateService().transition(run, RunStatus.FAILED, error=error.as_dict())
         self.callbacks.append_event(run, "run.failed", error.message, None)
         completed_at = run.completed_at
@@ -218,7 +236,7 @@ class RunLifecycleService:
             if task is not None:
                 TaskStateService().transition(
                     task,
-                    TaskStatus.FAILED,
+                    task_status,
                     completed_at=run.completed_at,
                 )
         if run.task_step_id is not None:

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.memory.episodic import AgentEpisodicMemoryService
 from backend.app.memory.working import AgentWorkingMemoryService
+from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
@@ -28,6 +29,9 @@ class RunTerminalStateService:
     release_reservations: ReleaseRunReservations
 
     def mark_run_cancelled(self, run: AgentRun, *, completed_at: datetime) -> int:
+        TaskPlanningAttemptService(self.session).finish_unsuccessful_run(
+            run, code="planner_cancelled", cancelled=True
+        )
         RunStateService().transition(
             run,
             RunStatus.CANCELLED,
@@ -72,6 +76,9 @@ class RunTerminalStateService:
         retryable: bool = True,
         event_message: str = "Marked failed after worker lease expired",
     ) -> None:
+        planning_failed = TaskPlanningAttemptService(self.session).finish_unsuccessful_run(
+            run, code="planner_worker_lost"
+        )
         RunStateService().transition(
             run,
             RunStatus.FAILED,
@@ -94,7 +101,7 @@ class RunTerminalStateService:
             if task is not None and TaskStatus(task.status) not in TERMINAL_TASK_STATUSES:
                 TaskStateService().transition(
                     task,
-                    TaskStatus.FAILED,
+                    TaskStatus.BLOCKED if planning_failed else TaskStatus.FAILED,
                     completed_at=run.completed_at,
                 )
                 if run.task_step_id is not None:

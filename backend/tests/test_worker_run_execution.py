@@ -846,6 +846,7 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
         title="Q2 market analysis",
         description="Produce a concise market analysis.",
     )
+    task.input = {**(task.input or {}), "planning_mode": "deterministic"}
     session.add(task)
     session.flush()
 
@@ -1005,6 +1006,7 @@ def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> N
         title="Q2 market analysis",
         description="Produce a concise market analysis.",
     )
+    task.input = {**(task.input or {}), "planning_mode": "deterministic"}
     session.add(task)
     session.flush()
     queue = RedisQueue(
@@ -1368,6 +1370,7 @@ def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
         title="Q2 market analysis",
         description="Produce a concise market analysis.",
     )
+    task.input = {**(task.input or {}), "planning_mode": "deterministic"}
     session.add(task)
     session.flush()
 
@@ -1466,6 +1469,7 @@ def test_workspace_run_quota_limits_parallel_specialist_scheduling() -> None:
         agent_team_id=team.id,
         title="Q2 market analysis",
     )
+    task.input = {**(task.input or {}), "planning_mode": "deterministic"}
     session.add(task)
     session.flush()
 
@@ -2448,6 +2452,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
         },
         title="Design launch image",
     )
+    task.input = {**(task.input or {}), "planning_mode": "deterministic"}
     session.add(task)
     session.flush()
 
@@ -3344,6 +3349,7 @@ def test_team_task_orchestration_uses_frozen_team_snapshot(member_revoked: bool)
         },
         title="Build dashboard",
     )
+    task.input = {**(task.input or {}), "planning_mode": "deterministic"}
     original_member.status = "inactive" if member_revoked else "active"
     original_member.team_role = "backend_engineer"
     original_member.order_index = 5
@@ -3441,6 +3447,7 @@ def test_invalid_project_plan_records_attempt_and_blocks_task_for_review() -> No
             ]
         },
     )
+    task.input = {**(task.input or {}), "planning_mode": "deterministic"}
     session.add(task)
     session.flush()
 

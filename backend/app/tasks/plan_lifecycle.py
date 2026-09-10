@@ -6,8 +6,11 @@ from sqlalchemy.orm import Session
 
 from backend.app.audit.service import AuditService
 from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.planning.agent_plan import is_agent_planning_step
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.models import TaskPlanningAttempt
+from backend.app.runs.models import AgentRun
+from backend.app.runs.status import RunStatus
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
@@ -46,11 +49,10 @@ class TaskPlanLifecycleService:
             return None
         if task.agent_team_id is None:
             raise ValueError("Task is not team-backed")
+        self._require_initial_retry(task)
         if command.input is not None:
             task.input = command.input
-        self._refresh_team_snapshot(
-            task, task.agent_team_id, refresh=command.refresh_team_snapshot
-        )
+        self._refresh_team_snapshot(task, task.agent_team_id, refresh=command.refresh_team_snapshot)
         task.project_plan = None
         if task.status in {"blocked", "failed"}:
             TaskStateService().reset_to_draft(task)
@@ -102,9 +104,7 @@ class TaskPlanLifecycleService:
         completed_work_package_ids = self._completed_work_package_ids(workspace_id, task.id)
         if command.input is not None:
             task.input = command.input
-        self._refresh_team_snapshot(
-            task, task.agent_team_id, refresh=command.refresh_team_snapshot
-        )
+        self._refresh_team_snapshot(task, task.agent_team_id, refresh=command.refresh_team_snapshot)
 
         previous_plan = task.project_plan
         task.project_plan = None
@@ -158,8 +158,41 @@ class TaskPlanLifecycleService:
 
     def _get_task(self, workspace_id: UUID, task_id: UUID) -> Task | None:
         return self._session.scalar(
-            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+            select(Task)
+            .where(Task.workspace_id == workspace_id, Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
+
+    def _require_initial_retry(self, task: Task) -> None:
+        if task.status not in {"blocked", "failed"}:
+            raise ValueError("Only failed or blocked initial planning can be retried")
+        active = self._session.scalar(
+            select(AgentRun.id)
+            .where(
+                AgentRun.workspace_id == task.workspace_id,
+                AgentRun.task_id == task.id,
+                AgentRun.status.not_in(
+                    [
+                        RunStatus.COMPLETED.value,
+                        RunStatus.FAILED.value,
+                        RunStatus.CANCELLED.value,
+                    ]
+                ),
+            )
+            .limit(1)
+        )
+        steps = self._session.scalars(
+            select(TaskStep).where(
+                TaskStep.workspace_id == task.workspace_id,
+                TaskStep.task_id == task.id,
+            )
+        ).all()
+        if active is not None or any(
+            not is_agent_planning_step(step) or step.status not in {"failed", "cancelled"}
+            for step in steps
+        ):
+            raise ValueError("Existing task work requires explicit replanning")
 
     def _refresh_team_snapshot(
         self,

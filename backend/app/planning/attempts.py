@@ -7,14 +7,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.approvals.service import ApprovalService
+from backend.app.planning.agent_plan import bootstrap_plan, is_agent_planning_step, planning_mode
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.planning.project_plans import (
     ProjectPlanningService,
     ProjectPlanValidationError,
     validate_project_plan,
 )
+from backend.app.runs.models import AgentRun
 from backend.app.tasks.message_append import TaskMessageAppendService
-from backend.app.tasks.models import Task, TaskMessage
+from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
 
@@ -34,12 +36,33 @@ class TaskPlanningAttemptService:
         *,
         transition_to_planning: bool = True,
     ) -> dict[str, object] | None:
+        self._session.scalar(
+            select(Task)
+            .where(Task.workspace_id == task.workspace_id, Task.id == task.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         if task.project_plan is not None:
             return task.project_plan
         if transition_to_planning:
             TaskStateService().transition(task, TaskStatus.PLANNING)
         attempt = self._create_attempt(task, retry_count=self._next_retry_count(task))
+        plan: dict[str, object] | None
         try:
+            if planning_mode(task) == "agent":
+                plan = bootstrap_plan(task, attempt.id)
+                attempt.strategy = "agent_sdk"
+                attempt.status = "queued"
+                attempt.planner_agent_profile_id = UUID(str(plan["planner_agent_profile_id"]))
+                task.project_plan = plan
+                self._append_message(
+                    task,
+                    message_type="planning.requested",
+                    body="Agent planning queued.",
+                    payload={"attempt_id": str(attempt.id), "strategy": "agent_sdk"},
+                )
+                self._session.flush([attempt, task])
+                return plan
             plan = self._planner.create_initial_plan(task)
             if plan is not None:
                 validate_project_plan(plan, task.team_snapshot)
@@ -47,7 +70,7 @@ class TaskPlanningAttemptService:
             self._mark_failed(task, attempt, [str(exc)])
             return None
         except Exception as exc:
-            self._mark_failed(task, attempt, [f"{exc.__class__.__name__}: {exc}"])
+            self._mark_failed(task, attempt, [f"planning_failed:{exc.__class__.__name__}"])
             return None
 
         now = datetime.now(UTC)
@@ -62,10 +85,61 @@ class TaskPlanningAttemptService:
             payload={
                 "attempt_id": str(attempt.id),
                 "work_package_count": _work_package_count(plan),
+                "strategy": "deterministic_team_snapshot_v1",
+                "explicit_fallback": True,
             },
         )
         self._session.flush([attempt, task])
         return plan
+
+    def reject_agent_plan(self, task: Task, attempt: TaskPlanningAttempt, *, code: str) -> None:
+        self._mark_failed(task, attempt, [code])
+
+    def finish_unsuccessful_run(self, run: AgentRun, *, code: str, cancelled: bool = False) -> bool:
+        step = self._session.scalar(
+            select(TaskStep).where(
+                TaskStep.workspace_id == run.workspace_id,
+                TaskStep.task_id == run.task_id,
+                TaskStep.id == run.task_step_id,
+            )
+        )
+        if not is_agent_planning_step(step):
+            return False
+        assert step is not None
+        task = self._session.scalar(
+            select(Task)
+            .where(
+                Task.workspace_id == run.workspace_id,
+                Task.id == run.task_id,
+            )
+            .with_for_update()
+        )
+        attempt = self._session.scalar(
+            select(TaskPlanningAttempt)
+            .where(
+                TaskPlanningAttempt.workspace_id == run.workspace_id,
+                TaskPlanningAttempt.task_id == run.task_id,
+                TaskPlanningAttempt.id == UUID(str(step.review_policy["attempt_id"])),
+            )
+            .with_for_update()
+        )
+        if task is None or attempt is None:
+            raise ValueError("Planning run has no scoped attempt")
+        if (task.project_plan or {}).get("plan_id") != str(attempt.id):
+            return False
+        if attempt.status in {"queued", "running"}:
+            if cancelled:
+                attempt.status = "cancelled"
+                attempt.completed_at = datetime.now(UTC)
+                self._append_message(
+                    task,
+                    message_type="planning.cancelled",
+                    body="Agent planning cancelled.",
+                    payload={"attempt_id": str(attempt.id)},
+                )
+            else:
+                self._mark_failed(task, attempt, [code])
+        return attempt.status == "failed"
 
     def _create_attempt(self, task: Task, *, retry_count: int) -> TaskPlanningAttempt:
         attempt = TaskPlanningAttempt(

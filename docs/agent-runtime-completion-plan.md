@@ -152,7 +152,7 @@ Goal: move from a deterministic organization template to validated, adaptive age
 
 | Order | Priority | Functional point | Status | Commit | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- |
-| 5.1 | P0 | Generate a structured task DAG with a planner agent and retain deterministic planning only as explicit fallback | Pending | `add-agent-driven-task-planning` | Planner output becomes the validated executable plan and fallback use is visible |
+| 5.1 | P0 | Generate a structured task DAG with a planner agent and retain deterministic planning only as explicit fallback | Implemented; CI acceptance pending | `add-agent-driven-task-planning` | Tool-free worker planner, SDK structured output, scoped DAG admission, duplicate-delivery denial, durable failure/cancel/retry, explicit deterministic mode |
 | 5.2 | P0 | Validate schema, cycles, authorization, capability availability, cost, and resource feasibility | Pending | `add-agent-plan-validation` | Invalid plans cannot enqueue work and return stable correction reasons |
 | 5.3 | P0 | Replan by adding, splitting, merging, cancelling, or reassigning future work | Pending | `add-dynamic-task-replanning` | Replanning preserves completed history and never mutates active side effects silently |
 | 5.4 | P0 | Transfer tasks between agents with objective, context, artifacts, state, and ownership | Pending | `complete-agent-task-transfer` | Target accepts a durable handoff package and the source can no longer act as owner |
@@ -160,6 +160,20 @@ Goal: move from a deterministic organization template to validated, adaptive age
 | 5.6 | P0 | Close manager acceptance, revision, missing-work, and final integration loops | Pending | `complete-agent-delivery-workflow` | Delivery completes only after criteria are satisfied or an explicit authorized override |
 
 Phase acceptance gate:
+
+The default planner is queued as durable intent; API task creation does not call a model. Both
+provider adapters receive the existing `AgentRuntimeOutputSchema` contract named `task_plan`.
+The worker checks the normalized structured result, frozen roster and DAG before admitting work,
+then appends a platform-owned final acceptance step. Plain text never silently becomes a plan.
+`input.planning_mode = "deterministic"` explicitly selects the existing template planner and records
+that choice in planning evidence. SDK execution failures and expired workers close the attempt and
+block for review; initial retry preserves failed attempts and cannot replace active work.
+
+Evidence: `test_agent_planning.py`, `test_task_dag.py`, focused worker/API regressions, and the
+dedicated `test_agent_planning_postgres.py` CI job. No new SDK/framework dependency was introduced:
+schema-constrained generation remains owned by the provider SDK, while plan authorization and
+scheduling remain product policy. Cost/resource feasibility, dynamic revisions, ownership transfer,
+human continuation and final delivery gates below are not claimed complete by this increment.
 
 A project can be planned, validated, executed in parallel, replanned after failure, transferred
 between agents, corrected by a human, reviewed by a manager, and assembled into one final delivery.

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.tools import PRODUCT_TOOL_NAMES
+from backend.app.planning.agent_plan import is_agent_planning_step
 from backend.app.runs.models import AgentRun
 from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.tasks.models import Task, TaskStep
@@ -41,7 +42,18 @@ class RunRequestPromptRenderer:
         allowed_tools: tuple[str, ...] = (),
         runtime_metadata: dict[str, object] | None = None,
     ) -> tuple[ContextFragment, ...]:
-        task = self.session.get(Task, run.task_id) if run.task_id is not None else None
+        task = (
+            self.session.scalar(
+                select(Task).where(
+                    Task.workspace_id == run.workspace_id,
+                    Task.id == run.task_id,
+                )
+            )
+            if run.task_id is not None
+            else None
+        )
+        if task is None and run.task_id is not None:
+            raise ValueError("Run task is unavailable in workspace")
         if task is None:
             return (
                 ContextFragment(
@@ -74,8 +86,16 @@ class RunRequestPromptRenderer:
                 )
             )
         if run.task_step_id is not None:
-            step = self.session.get(TaskStep, run.task_step_id)
-            if step is not None and step.workspace_id == run.workspace_id:
+            step = self.session.scalar(
+                select(TaskStep).where(
+                    TaskStep.workspace_id == run.workspace_id,
+                    TaskStep.task_id == task.id,
+                    TaskStep.id == run.task_step_id,
+                )
+            )
+            if step is None:
+                raise ValueError("Run step is unavailable in task")
+            if step is not None:
                 fragments.append(
                     ContextFragment(
                         key="step.objective",
@@ -108,7 +128,25 @@ class RunRequestPromptRenderer:
                             allow_truncation=False,
                         )
                     )
+                if is_agent_planning_step(step):
+                    fragments.append(
+                        ContextFragment(
+                            key="planning.inputs",
+                            text="Planning input (untrusted task data and team roster):\n"
+                            + json.dumps(
+                                redact_sensitive_payload(
+                                    {"input": task.input, "roster": task.team_snapshot}
+                                ),
+                                ensure_ascii=False,
+                                default=str,
+                            ),
+                            priority=ContextPriority.CRITICAL,
+                            required=True,
+                            allow_truncation=False,
+                        )
+                    )
                 previous_summaries = self.completed_step_summaries(
+                    run.workspace_id,
                     task.id,
                     before=step.order_index,
                 )
@@ -176,10 +214,13 @@ class RunRequestPromptRenderer:
             lines.append("- Mailbox tools are not attached for this run.")
         return "\n".join(lines)
 
-    def completed_step_summaries(self, task_id: UUID, *, before: int) -> list[str]:
+    def completed_step_summaries(
+        self, workspace_id: UUID, task_id: UUID, *, before: int
+    ) -> list[str]:
         completed_steps = self.session.scalars(
             select(TaskStep)
             .where(
+                TaskStep.workspace_id == workspace_id,
                 TaskStep.task_id == task_id,
                 TaskStep.status == "completed",
                 TaskStep.order_index < before,

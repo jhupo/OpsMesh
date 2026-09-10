@@ -73,7 +73,7 @@ class RunExecutionService:
             if not acquired:
                 raise RuntimeError("Agent run is already locked")
 
-            if self._run_cancelled_before_execution(run):
+            if self._run_should_skip_execution(run):
                 self._commit_and_refresh(run)
                 return run
 
@@ -183,13 +183,13 @@ class RunExecutionService:
     def run_agent_sync(self, job: JobPayload) -> AgentRun:
         return asyncio.run(self.run_agent(job))
 
-    def _run_cancelled_before_execution(self, run: AgentRun) -> bool:
+    def _run_should_skip_execution(self, run: AgentRun) -> bool:
         self.session.refresh(run)
         status = RunStatus(run.status)
         if status == RunStatus.CANCELLED:
             return True
         if status in TERMINAL_RUN_STATUSES:
-            return False
+            return True
         if not self._linked_task_cancelled(run):
             return False
         self._lifecycle().mark_run_cancelled(run, completed_at=datetime.now(UTC))

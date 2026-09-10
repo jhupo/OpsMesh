@@ -6226,10 +6226,9 @@ def test_create_task_with_team_captures_workspace_team_snapshot() -> None:
     assert project_plan["planner_agent_profile_id"] == manager.json()["id"]
     assert [package["package_id"] for package in project_plan["work_packages"]] == [
         "manager-planning",
-        "frontend_engineer-1",
-        "manager-summary",
     ]
-    assert project_plan["work_packages"][1]["required_skills"] == ["react"]
+    assert project_plan["strategy"] == "agent_planning_pending"
+    assert project_plan["work_packages"][0]["review_policy"]["mode"] == "agent_planning"
 
 
 def test_create_task_matches_requested_work_packages_to_team_members() -> None:
@@ -6285,6 +6284,7 @@ def test_create_task_matches_requested_work_packages_to_team_members() -> None:
             "title": "Build landing page",
             "agent_team_id": team.json()["id"],
             "input": {
+                "planning_mode": "deterministic",
                 "work_packages": [
                     {
                         "package_id": "ui-design",
@@ -6569,6 +6569,7 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
             "title": "Build dashboard",
             "agent_team_id": team.json()["id"],
             "input": {
+                "planning_mode": "deterministic",
                 "work_packages": [
                     {
                         "package_id": "build-ui",
@@ -6591,6 +6592,7 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
         json={
             "enqueue": True,
             "input": {
+                "planning_mode": "deterministic",
                 "work_packages": [
                     {
                         "package_id": "build-ui",
@@ -6743,6 +6745,7 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
             "title": "Build dashboard",
             "agent_team_id": team.json()["id"],
             "input": {
+                "planning_mode": "deterministic",
                 "work_packages": [
                     {
                         "package_id": "frontend-build",
@@ -6772,6 +6775,7 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
         json={
             "enqueue": True,
             "input": {
+                "planning_mode": "deterministic",
                 "work_packages": [
                     {
                         "package_id": "frontend-build-v2",

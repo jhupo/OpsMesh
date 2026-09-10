@@ -26,10 +26,11 @@ from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.tasks.models import Task
+from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeam
+from backend.app.teams.snapshots import build_team_snapshot
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue.redis_queue import RedisQueue
 
@@ -54,6 +55,12 @@ class RunOrchestrationService:
             return existing_run
 
         if self._requires_initial_project_plan(task):
+            if task.team_snapshot is None and task.agent_team_id is not None:
+                task.team_snapshot = build_team_snapshot(
+                    self._session,
+                    workspace_id=task.workspace_id,
+                    team_id=task.agent_team_id,
+                )
             TaskPlanningAttemptService(self._session).ensure_initial_plan(task)
             if task.project_plan is None:
                 self._session.flush()
@@ -62,6 +69,8 @@ class RunOrchestrationService:
         first_team_step = self._team_step_planner().create_team_step_plan(task)
         run: AgentRun | None
         if first_team_step is None:
+            if task.agent_team_id is not None:
+                return None
             authorization_snapshot = self._authorization_snapshots().build_authorization_snapshot(
                 task,
                 None,
@@ -268,18 +277,22 @@ class RunOrchestrationService:
         return RunEligibilityService(self._session)
 
     def _team_step_planner(self) -> TeamStepPlanner:
-        return TeamStepPlanner(
-            self._session,
-            step_has_active_run=self._eligibility().step_has_active_run,
-        )
+        return TeamStepPlanner(self._session)
 
     def _requires_initial_project_plan(self, task: Task) -> bool:
         if task.agent_team_id is None or task.project_plan is not None:
             return False
-        if isinstance(task.team_snapshot, dict):
-            return True
-        task_input = task.input if isinstance(task.input, dict) else {}
-        return isinstance(task_input.get("work_packages"), list)
+        return (
+            self._session.scalar(
+                select(TaskStep.id)
+                .where(
+                    TaskStep.workspace_id == task.workspace_id,
+                    TaskStep.task_id == task.id,
+                )
+                .limit(1)
+            )
+            is None
+        )
 
     def _run_step_launcher(self) -> RunStepLauncher:
         return RunStepLauncher(
