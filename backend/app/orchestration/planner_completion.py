@@ -11,6 +11,7 @@ from backend.app.agent_runtime.contracts import AgentRunResult
 from backend.app.planning.agent_plan import AgentPlanProposal, is_agent_planning_step
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.models import TaskPlanningAttempt
+from backend.app.planning.plan_feasibility import PlanFeasibilityService
 from backend.app.planning.project_plan_validation import (
     ProjectPlanValidationError,
     validate_project_plan,
@@ -73,7 +74,7 @@ class PlannerCompletionService:
                 raise ProjectPlanValidationError("Planner requires SDK structured output")
             if (result.structured_output.schema_name, result.structured_output.schema_version) != (
                 "task_plan",
-                "1",
+                "2",
             ):
                 raise ProjectPlanValidationError("Planner output schema does not match contract")
             proposal = AgentPlanProposal.model_validate(result.structured_output.value)
@@ -109,6 +110,7 @@ class PlannerCompletionService:
                 "work_packages": packages,
             }
             validate_project_plan(plan, task.team_snapshot)
+            PlanFeasibilityService(self.session).validate(task=task, plan=plan, planner_run=run)
         except (ValidationError, ProjectPlanValidationError) as exc:
             TaskPlanningAttemptService(self.session).reject_agent_plan(
                 task,

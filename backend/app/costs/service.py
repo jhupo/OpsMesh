@@ -161,6 +161,41 @@ class CostAccountingService:
                 f"workspace model cost budget exhausted for {budget.currency}"
             )
 
+    def assert_projected_budget_available(
+        self,
+        workspace_id: UUID,
+        *,
+        estimated_cost: Decimal,
+        currency: str = "USD",
+        now: datetime | None = None,
+    ) -> None:
+        """Reject a project whose admitted model estimate would exceed a blocking budget."""
+        if estimated_cost < 0:
+            raise ValueError("estimated_cost must not be negative")
+        normalized_currency = _currency(currency)
+        budget = self._session.scalar(
+            select(WorkspaceCostBudget).where(
+                WorkspaceCostBudget.workspace_id == workspace_id,
+                WorkspaceCostBudget.currency == normalized_currency,
+                WorkspaceCostBudget.enabled.is_(True),
+                WorkspaceCostBudget.enforcement == "block",
+            )
+        )
+        if budget is None:
+            return
+        status = self.budget_status(
+            workspace_id,
+            currency=normalized_currency,
+            now=now,
+        )
+        if (
+            status.monthly_limit is not None
+            and status.spent + estimated_cost > status.monthly_limit
+        ):
+            raise CostBudgetExceededError(
+                f"workspace projected model cost exceeds {normalized_currency} budget"
+            )
+
     def create_pricing_rule(
         self,
         *,

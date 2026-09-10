@@ -50,6 +50,10 @@ class ProjectPlanStepMaterializer:
                     "expected_artifacts": package.get("expected_artifacts", []),
                     "acceptance_criteria": package.get("acceptance_criteria", []),
                     "review_policy": package.get("review_policy", {}),
+                    "required_tools": package.get("required_tools", []),
+                    "required_resource_ids": package.get("required_resource_ids", []),
+                    "resource_requirements": package.get("resource_requirements", {}),
+                    "estimated_cost_usd": package.get("estimated_cost_usd", 0),
                 },
             )
             self.session.add(step)
@@ -82,7 +86,4 @@ def after_step_ids_for_package(
         if isinstance(raw_dependencies, list)
         else []
     )
-    return [
-        str(created_steps_by_package_id[dependency].id)
-        for dependency in dependencies
-    ]
+    return [str(created_steps_by_package_id[dependency].id) for dependency in dependencies]

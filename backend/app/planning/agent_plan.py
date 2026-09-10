@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, StrictInt
 
 from backend.app.agent_runtime.contracts import AgentRuntimeOutputSchema
 from backend.app.planning.project_plan_context import PlanningContext
@@ -14,6 +14,13 @@ from backend.app.tasks.models import Task, TaskStep
 
 Name = Annotated[str, Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")]
 ShortText = Annotated[str, Field(min_length=1, max_length=240)]
+ToolName = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=160,
+    ),
+]
 
 
 class PlannedWork(BaseModel):
@@ -28,6 +35,10 @@ class PlannedWork(BaseModel):
     depends_on: list[Name] = Field(max_length=128)
     expected_artifacts: list[ShortText] = Field(max_length=32)
     acceptance_criteria: list[ShortText] = Field(min_length=1, max_length=32)
+    required_tools: list[ToolName] = Field(default_factory=list, max_length=32)
+    required_resource_ids: list[UUID] = Field(default_factory=list, max_length=32)
+    resource_requirements: dict[str, StrictInt] = Field(default_factory=dict, max_length=32)
+    estimated_cost_usd: FiniteFloat = Field(default=0, ge=0, le=1_000_000)
 
 
 class AgentPlanProposal(BaseModel):
@@ -39,7 +50,7 @@ class AgentPlanProposal(BaseModel):
 
 def planner_output_schema() -> AgentRuntimeOutputSchema:
     return AgentRuntimeOutputSchema(
-        name="task_plan", schema=AgentPlanProposal.model_json_schema(), version="1"
+        name="task_plan", schema=AgentPlanProposal.model_json_schema(), version="2"
     )
 
 
