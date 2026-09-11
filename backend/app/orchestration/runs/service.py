@@ -11,10 +11,10 @@ from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_job_routing import RunJobRoutingService
 from backend.app.orchestration.run_lifecycle import RunLifecycleCallbacks, RunLifecycleService
 from backend.app.orchestration.run_request.builder import RunRequestBuilder
-from backend.app.orchestration.run_resource_reservations import RunResourceReservationService
+from backend.app.orchestration.runs.resources import RunResourceReservationService
 from backend.app.orchestration.runtime.authorization import runtime_binding_for_snapshot
 from backend.app.orchestration.scheduler.main import WorkspaceScheduler
-from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
+from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.orchestration.steps.launcher import RunStepLauncher
 from backend.app.orchestration.steps.scheduling_state import (
     mark_step_scheduling_blocked,
