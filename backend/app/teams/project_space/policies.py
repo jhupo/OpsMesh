@@ -1,5 +1,5 @@
 
-from backend.app.orchestration.statuses import ACTIVE_RUN_STATUSES as _ACTIVE_RUN_STATUSES
+from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUSES as _ACTIVE_RUN_STATUSES
 
 ACTIVE_RUN_STATUSES = _ACTIVE_RUN_STATUSES
 ACTIVE_RESERVATION_STATUSES = {"active", "reserved"}

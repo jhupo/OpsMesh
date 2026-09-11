@@ -18,7 +18,7 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
-from backend.app.runtime_manager.core.contracts import RuntimeLimits
+from backend.app.runtime_manager.contracts import RuntimeLimits
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError
 from backend.app.runtime_manager.safety import RuntimeSafetyError
 from backend.app.runtime_manager.service import RuntimeControlService

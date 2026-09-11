@@ -34,7 +34,7 @@ from backend.app.notifications.models import WorkspaceNotification
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runtime_manager.core.contracts import (
+from backend.app.runtime_manager.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,

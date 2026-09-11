@@ -12,8 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.audit.service import AuditService
-from backend.app.orchestration.conditions import condition_step_references
-from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
+from backend.app.orchestration.policies.conditions import condition_step_references
+from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.orchestration.team_step_project_plan import (
     ProjectPlanStepMaterializer,
     after_step_ids_for_package,

@@ -19,7 +19,7 @@ from backend.app.capabilities.mcp.stdio_credentials import (
 from backend.app.capabilities.mcp.unsupported_adapter import UnsupportedMcpToolAdapter
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.runtime_manager.core.contracts import (
+from backend.app.runtime_manager.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
 )

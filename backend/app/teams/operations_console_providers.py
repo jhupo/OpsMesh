@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.orchestration.statuses import ACTIVE_RUN_STATUSES
+from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUSES
 from backend.app.runs.models import AgentRun
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task

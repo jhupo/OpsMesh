@@ -6,7 +6,7 @@ from backend.app.capabilities.mcp.adapters import (
     McpToolAdapterResolver,
 )
 from backend.app.core.config import Settings
-from backend.app.runtime_manager.core.contracts import DockerRuntimeClient
+from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.workers.job_handlers import (
     AgentRunJobHandler,
     AuditIntegrityJobHandler,

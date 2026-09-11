@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
+from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task
 

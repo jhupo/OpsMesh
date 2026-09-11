@@ -32,7 +32,7 @@ from backend.app.memory.working import AgentWorkingMemoryService, working_memory
 from backend.app.projects.runtime_context import project_runtime_context
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_manager.backends.registry import build_runtime_backend_registry
-from backend.app.runtime_manager.core.contracts import DockerRuntimeClient
+from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task

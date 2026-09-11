@@ -21,7 +21,7 @@ from backend.app.orchestration.workflows.definition_commands import (
     OrchestrationDefinitionUpdate,
 )
 from backend.app.orchestration.models import OrchestrationDefinition, OrchestrationRevision
-from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
+from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.orchestration.planning.team_project_plan import ProjectPlanStepMaterializer
 from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.planning.models import TaskPlanningAttempt

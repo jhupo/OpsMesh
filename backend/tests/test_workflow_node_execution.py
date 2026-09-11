@@ -9,7 +9,7 @@ from backend.app.agent_runtime.core.contracts import (
     AgentRuntimeToolResult,
 )
 from backend.app.agents.models import AgentProfile
-from backend.app.orchestration.conditions import evaluate_task_step_condition
+from backend.app.orchestration.policies.conditions import evaluate_task_step_condition
 from backend.app.orchestration.models import SubworkflowInvocation
 from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.orchestration.runs.execution import RunExecutionDependencies, RunExecutionService

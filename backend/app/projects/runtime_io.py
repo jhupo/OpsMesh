@@ -25,7 +25,7 @@ from backend.app.projects.runtime_staging import ProjectInputArchiveBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.backends.registry import build_runtime_backend_registry
-from backend.app.runtime_manager.core.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
+from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.tasks.models import Task
 

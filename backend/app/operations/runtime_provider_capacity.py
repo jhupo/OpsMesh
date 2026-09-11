@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.operation_capacity import RuntimeProviderCapacityResponse
 from backend.app.operations.utils import capacity_slots_from_metadata
-from backend.app.orchestration.statuses import CAPACITY_CONSUMING_RUN_STATUS_VALUES
+from backend.app.orchestration.policies.statuses import CAPACITY_CONSUMING_RUN_STATUS_VALUES
 from backend.app.runs.models import AgentRun
 from backend.app.runtimes.models import WorkspaceRuntime
 

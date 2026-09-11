@@ -18,7 +18,7 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.runtime_manager.core.contracts import (
+from backend.app.runtime_manager.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,

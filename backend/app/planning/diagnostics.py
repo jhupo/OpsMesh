@@ -13,7 +13,7 @@ from backend.app.core.typing import (
     string_or_default,
     uuid_or_none,
 )
-from backend.app.orchestration.conditions import condition_step_references
+from backend.app.orchestration.policies.conditions import condition_step_references
 from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.planning.org_structure import build_org_structure
 from backend.app.planning.project_plan_members import snapshot_agent_ids

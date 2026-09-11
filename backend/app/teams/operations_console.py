@@ -11,7 +11,7 @@ from backend.app.agent_runtime.session_management import (
 )
 from backend.app.agent_runtime.session_views import PersistentSessionSummary
 from backend.app.agents.models import AgentProfile
-from backend.app.orchestration.statuses import ACTIVE_RUN_STATUSES
+from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUSES
 from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.operations_console_controls import (

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.core.contracts import RuntimeCommandInputFile, RuntimeCommandResult
+from backend.app.runtime_manager.contracts import RuntimeCommandInputFile, RuntimeCommandResult
 from backend.app.runtime_manager.run_environment import RunRuntimeEnvironmentService
 from backend.app.runtimes.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
 from backend.app.workspaces.models import Workspace

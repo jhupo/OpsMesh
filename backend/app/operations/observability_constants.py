@@ -1,4 +1,4 @@
-from backend.app.orchestration.statuses import ACTIVE_RUN_STATUSES
+from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUSES
 
 PROMETHEUS_WORKER_STALE_AFTER_SECONDS = 300
 PROMETHEUS_QUEUE_SCAN_LIMIT = 1_000

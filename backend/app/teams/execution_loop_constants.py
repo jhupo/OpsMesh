@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.orchestration.statuses import ACTIVE_RUN_STATUSES as _ACTIVE_RUN_STATUSES
+from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUSES as _ACTIVE_RUN_STATUSES
 
 ACTIVE_RUN_STATUSES = _ACTIVE_RUN_STATUSES
 COMPLETED_STEP_STATUSES = {"completed", "cancelled", "skipped"}

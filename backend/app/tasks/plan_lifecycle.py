@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.audit.service import AuditService
 from backend.app.orchestration.runs import RunOrchestrationService
-from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
+from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.planning.agent_plan import is_agent_planning_step
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.models import TaskPlanningAttempt

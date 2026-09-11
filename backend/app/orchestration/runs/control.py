@@ -11,7 +11,7 @@ from backend.app.approvals.models import PendingToolInvocation
 from backend.app.audit.service import AuditService
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_terminal_state import RunTerminalStateService
-from backend.app.orchestration.statuses import (
+from backend.app.orchestration.policies.statuses import (
     ACTIVE_RUN_STATUS_VALUES,
     STALE_RECOVERABLE_RUN_STATUS_VALUES,
 )
