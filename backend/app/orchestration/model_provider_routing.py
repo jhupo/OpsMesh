@@ -14,8 +14,8 @@ from backend.app.model_providers.service_models import ModelProviderUnavailableE
 from backend.app.orchestration.model_provider_audit import ModelProviderAuditService
 from backend.app.orchestration.model_request_reviewing import model_provider_fallback_policy
 from backend.app.orchestration.run_events import RunEventRecorder
-from backend.app.orchestration.run_request_builder import RunRequestBuilder
-from backend.app.orchestration.run_request_utils import effective_resolved_model_api
+from backend.app.orchestration.run_request.builder import RunRequestBuilder
+from backend.app.orchestration.run_request.utils import effective_resolved_model_api
 from backend.app.runs.models import AgentRun
 from backend.app.workers.jobs import JobPayload
 from backend.app.workspaces.models import Workspace

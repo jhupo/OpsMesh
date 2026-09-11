@@ -34,7 +34,7 @@ from backend.app.orchestration.run_authorization_snapshot import (
     RunAuthorizationSnapshotService,
 )
 from backend.app.orchestration.run_events import RunEventRecorder
-from backend.app.orchestration.run_request_builder import RunRequestBuilder
+from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.orchestration.run_result_payloads import run_output_payload
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task

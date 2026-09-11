@@ -12,7 +12,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
-from backend.app.agent_runtime import openai_agents as openai_runtime
+from backend.app.agent_runtime.adapters import openai_agents as openai_runtime
 from backend.app.agent_runtime.core.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -66,7 +66,7 @@ from backend.app.orchestration.run_execution import (
     RunExecutionService,
 )
 from backend.app.orchestration.run_lifecycle import RunLifecycleCallbacks, RunLifecycleService
-from backend.app.orchestration.run_request_builder import RunRequestBuilder
+from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.orchestration.run_resource_reservations import RunResourceReservationService
 from backend.app.orchestration.run_step_launcher import RunStepLauncher
 from backend.app.orchestration.runs import (

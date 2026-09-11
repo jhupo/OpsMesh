@@ -32,7 +32,7 @@ from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.ownership import task_owner_can_execute_step
 
-from .run_request_utils import dict_copy, expect_optional_uuid, string_list, uuid_or_none
+from .utils import dict_copy, expect_optional_uuid, string_list, uuid_or_none
 
 
 @dataclass(slots=True)

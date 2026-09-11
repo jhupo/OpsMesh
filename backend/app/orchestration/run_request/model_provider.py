@@ -11,8 +11,8 @@ from backend.app.model_providers.resolution_service import ModelProviderResoluti
 from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
 
-from .run_request_authorization import RunAuthorizationService
-from .run_request_utils import effective_resolved_model_api, model_api_from_settings, uuid_or_none
+from .authorization import RunAuthorizationService
+from .utils import effective_resolved_model_api, model_api_from_settings, uuid_or_none
 
 
 @dataclass(slots=True)

@@ -17,7 +17,7 @@ from backend.app.orchestration.run_authorization_snapshot import RunAuthorizatio
 from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_lifecycle import RunLifecycleCallbacks, RunLifecycleService
-from backend.app.orchestration.run_request_builder import RunRequestBuilder
+from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.orchestration.run_resource_reservations import RunResourceReservationService
 from backend.app.orchestration.run_step_launcher import RunStepLauncher
 from backend.app.orchestration.runs import RunOrchestrationService

@@ -11,7 +11,7 @@ from backend.app.files.runtime_policy import runtime_file_denial_code
 from backend.app.orchestration.run_authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
-from backend.app.orchestration.run_request_authorization import RunAuthorizationService
+from backend.app.orchestration.run_request.authorization import RunAuthorizationService
 from backend.app.orchestration.run_runtime_authorization import (
     RunRuntimeAuthorizationError,
     runtime_binding_for_snapshot,

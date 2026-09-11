@@ -14,7 +14,7 @@ from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task
 
-from .run_request_utils import uuid_or_none
+from .utils import uuid_or_none
 
 
 @dataclass(slots=True)

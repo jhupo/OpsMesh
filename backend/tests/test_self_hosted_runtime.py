@@ -22,7 +22,7 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
-from backend.app.orchestration.run_request_builder import RunRequestBuilder
+from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import (
     RuntimeSpace,

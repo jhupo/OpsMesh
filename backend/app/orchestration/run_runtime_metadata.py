@@ -2,8 +2,8 @@ from typing import Any
 
 from backend.app.agents.models import AgentProfile
 from backend.app.core.trace_context import current_trace_metadata
-from backend.app.orchestration.run_request_authorization import RunAuthorizationService
-from backend.app.orchestration.run_request_context import RunRequestContextProvider
+from backend.app.orchestration.run_request.authorization import RunAuthorizationService
+from backend.app.orchestration.run_request.context import RunRequestContextProvider
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task
 

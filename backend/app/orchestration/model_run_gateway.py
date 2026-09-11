@@ -20,7 +20,7 @@ from backend.app.orchestration.model_provider_audit import ModelProviderAuditSer
 from backend.app.orchestration.model_provider_routing import ModelProviderRoutingService
 from backend.app.orchestration.model_request_approval import ModelRequestApprovalService
 from backend.app.orchestration.run_events import RunEventRecorder
-from backend.app.orchestration.run_request_builder import RunRequestBuilder
+from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.workers.jobs import JobPayload
 

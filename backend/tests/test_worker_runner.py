@@ -32,7 +32,7 @@ from backend.app.model_providers.credential_commands import ModelProviderCredent
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsService
 from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
-from backend.app.orchestration.run_request_builder import RunRequestBuilder
+from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.model_request import ModelRequestReview

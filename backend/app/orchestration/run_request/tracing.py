@@ -4,7 +4,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task
 
-from .run_request_utils import json_safe
+from .utils import json_safe
 
 
 def agent_run_tracing(

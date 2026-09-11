@@ -33,7 +33,7 @@ from backend.app.model_providers.service_models import ModelProviderUnavailableE
 from backend.app.orchestration.model_run_gateway import ModelRunGateway
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_lifecycle import RunLifecycleService
-from backend.app.orchestration.run_request_builder import RunRequestBuilder
+from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.orchestration.run_runtime_event_messages import RunRuntimeEventMessageMapper
 from backend.app.orchestration.subworkflows import SubworkflowExecutionService
 from backend.app.orchestration.workflow_data import resolve_workflow_inputs
