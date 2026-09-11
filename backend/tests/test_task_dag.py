@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.orchestration.run_eligibility import RunEligibilityService
+from backend.app.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.orchestration.steps.dependencies import dependencies_satisfied
 from backend.app.orchestration.planning.team_project_plan import ProjectPlanStepMaterializer
