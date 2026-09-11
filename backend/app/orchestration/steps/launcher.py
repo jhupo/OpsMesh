@@ -15,7 +15,7 @@ from backend.app.orchestration.runtime.authorization import (
     runtime_binding_for_snapshot,
 )
 from backend.app.orchestration.scheduler.main import WorkspaceScheduler
-from backend.app.orchestration.step_dependencies import dependencies_satisfied
+from backend.app.orchestration.steps.dependencies import dependencies_satisfied
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus

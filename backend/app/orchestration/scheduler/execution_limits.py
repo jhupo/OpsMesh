@@ -10,7 +10,7 @@ from backend.app.orchestration.scheduler.team_capacity import (
     TeamMemberCapacityResolver,
     member_blocked_reason,
 )
-from backend.app.orchestration.step_scheduling_state import set_blocked_resource_keys
+from backend.app.orchestration.steps.scheduling_state import set_blocked_resource_keys
 from backend.app.tasks.models import TaskStep
 
 

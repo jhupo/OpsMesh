@@ -14,7 +14,7 @@ from backend.app.orchestration.scheduler.policy import (
     WorkspaceSchedulerPolicy,
 )
 from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.orchestration.step_scheduling_state import (
+from backend.app.orchestration.steps.scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )

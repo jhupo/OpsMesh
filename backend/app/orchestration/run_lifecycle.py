@@ -18,9 +18,9 @@ from backend.app.orchestration.pm_follow_up_work import PmFollowUpWorkService
 from backend.app.orchestration.pm_step_payload import step_message_payload
 from backend.app.orchestration.run_memory_completion import RunMemoryCompletionService
 from backend.app.orchestration.run_result_payloads import run_output_payload
-from backend.app.orchestration.run_step_completion import TaskStepCompletionService
 from backend.app.orchestration.run_task_progress import RunTaskProgressService
 from backend.app.orchestration.run_terminal_state import RunTerminalStateService
+from backend.app.orchestration.steps.completion import TaskStepCompletionService
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.planning.project_plan_validation import ProjectPlanValidationError
 from backend.app.runs.models import AgentRun, RunEvent
