@@ -19,6 +19,7 @@ class RuntimeCreateRequest:
     workspace_id: str
     limits: RuntimeLimits
     network_disabled: bool = True
+    network_policy: dict[str, object] = field(default_factory=dict)
     runtime_id: str | None = None
     runtime_space_id: str | None = None
     labels: dict[str, str] = field(default_factory=dict)

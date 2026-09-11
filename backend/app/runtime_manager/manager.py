@@ -76,7 +76,10 @@ class RuntimeManager:
                 "max_output_bytes": limits.max_output_bytes,
                 "max_processes": limits.max_processes,
             },
-            network_policy={"disabled": network_disabled},
+            network_policy=_network_policy_from_metadata(
+                network_disabled=network_disabled,
+                policy_metadata=policy_metadata,
+            ),
             capabilities={},
         )
         self._session.add(runtime)
@@ -284,3 +287,19 @@ class RuntimeManager:
             input_file=input_file,
             working_dir=working_dir,
         )
+
+
+def _network_policy_from_metadata(
+    *,
+    network_disabled: bool,
+    policy_metadata: dict[str, object] | None,
+) -> dict[str, object]:
+    effective = policy_metadata.get("effective") if isinstance(policy_metadata, dict) else None
+    egress = effective.get("egress") if isinstance(effective, dict) else None
+    if isinstance(egress, dict):
+        return {"disabled": network_disabled, **egress}
+    return {
+        "disabled": network_disabled,
+        "mode": "none" if network_disabled else "internet",
+        "enforcement": "docker_network_none" if network_disabled else "docker_bridge",
+    }

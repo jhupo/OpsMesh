@@ -47,6 +47,7 @@ class RuntimeTemplateGuard:
         self._safety.assert_network_allowed(
             template,
             network_disabled=policy.network_disabled,
+            egress_policy=policy.egress_policy,
         )
         return template
 

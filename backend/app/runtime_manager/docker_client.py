@@ -57,7 +57,8 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
                 mem_limit=f"{request.limits.memory_mb}m",
                 pids_limit=request.limits.max_processes,
                 storage_opt={"size": f"{request.limits.disk_mb}m"},
-                network_mode="none" if request.network_disabled else "bridge",
+                network_mode=_docker_network_mode(request),
+                environment=_docker_network_environment(request),
                 cap_drop=list(request.hardening.cap_drop),
                 security_opt=list(request.hardening.security_opt),
                 read_only=request.hardening.read_only_rootfs,
@@ -202,6 +203,36 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
 
 def _create_docker_client(timeout_seconds: int) -> DockerClient:
     return docker.from_env(timeout=timeout_seconds)
+
+
+def _docker_network_mode(request: RuntimeCreateRequest) -> str:
+    policy = request.network_policy
+    mode = policy.get("mode")
+    if request.network_disabled or mode in {None, "none"}:
+        return "none"
+    if mode == "internet":
+        return "bridge"
+    if mode == "restricted":
+        gateway_network = policy.get("gateway_network")
+        if not isinstance(gateway_network, str) or not gateway_network.strip():
+            raise ValueError("Restricted runtime egress requires a gateway network")
+        return gateway_network.strip()
+    raise ValueError("Runtime egress mode is unsupported")
+
+
+def _docker_network_environment(request: RuntimeCreateRequest) -> dict[str, str] | None:
+    policy = request.network_policy
+    if policy.get("mode") != "restricted":
+        return None
+    proxy_url = policy.get("proxy_url")
+    if not isinstance(proxy_url, str) or not proxy_url:
+        return None
+    return {
+        "HTTP_PROXY": proxy_url,
+        "HTTPS_PROXY": proxy_url,
+        "ALL_PROXY": proxy_url,
+        "NO_PROXY": "localhost,127.0.0.1",
+    }
 
 
 def _exec(

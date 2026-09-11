@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from backend.app.admin.risky_policy_values import RiskyExecutionPolicy
+from backend.app.runtime_manager.egress import RuntimeEgressPolicy
 from backend.app.runtimes.models import RuntimeTemplate
 
 
@@ -33,6 +34,7 @@ class RuntimeSafetyPolicy:
         template: RuntimeTemplate,
         *,
         network_disabled: bool,
+        egress_policy: RuntimeEgressPolicy | None = None,
     ) -> None:
         if network_disabled:
             return
@@ -41,9 +43,16 @@ class RuntimeSafetyPolicy:
                 "runtime_network_globally_disabled",
                 "Runtime network access is disabled by platform safety policy",
             )
-        if template.default_network_policy.get("allow_network") is True:
+        if template.default_network_policy.get("allow_network") is not True:
+            raise RuntimeSafetyError(
+                "runtime_network_not_allowed",
+                "Runtime network access is disabled by default for personal safety",
+            )
+        if egress_policy is not None and egress_policy.mode == "restricted":
+            if egress_policy.gateway_network is None:
+                raise RuntimeSafetyError(
+                    "runtime_egress_gateway_required",
+                    "Restricted runtime egress requires a managed Docker gateway network",
+                )
             return
-        raise RuntimeSafetyError(
-            "runtime_network_not_allowed",
-            "Runtime network access is disabled by default for personal safety",
-        )
+        return

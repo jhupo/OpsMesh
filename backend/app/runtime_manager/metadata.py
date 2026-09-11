@@ -45,6 +45,7 @@ def runtime_isolation_metadata(
     runtime_id: UUID,
     runtime_space_id: UUID | None,
     network_disabled: bool,
+    network_policy: Mapping[str, object] | None = None,
 ) -> RuntimeIsolationMetadata:
     volume_name = _runtime_volume_name(workspace_id, runtime_id)
     return {
@@ -58,8 +59,13 @@ def runtime_isolation_metadata(
             "mode": "rw",
         },
         "network": {
+            **dict(network_policy or {}),
             "disabled": network_disabled,
-            "mode": "none" if network_disabled else "bridge",
+            "mode": (
+                str((network_policy or {}).get("mode"))
+                if isinstance((network_policy or {}).get("mode"), str)
+                else "none" if network_disabled else "internet"
+            ),
         },
     }
 

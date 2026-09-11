@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.runtime_manager.contracts import RuntimeLimits
+from backend.app.runtime_manager.egress import RuntimeEgressPolicy, resolve_egress_policy
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceBinding
 from backend.app.runtimes.models import RuntimeTemplate
 from backend.app.teams.models import AgentTeam
@@ -17,6 +18,7 @@ from backend.app.teams.models import AgentTeam
 class RuntimePolicyResolution:
     limits: RuntimeLimits
     network_disabled: bool
+    egress_policy: RuntimeEgressPolicy
     metadata: dict[str, object]
 
 
@@ -56,7 +58,10 @@ class RuntimePolicyResolver:
         requested_network_disabled: bool,
     ) -> RuntimePolicyResolution:
         limits = requested_limits or self.limits_from_template(template)
-        network_disabled = requested_network_disabled
+        network_disabled = requested_network_disabled or policy_disables_network(
+            {"network": template.default_network_policy}
+        )
+        egress_source = dict(template.default_network_policy or {})
         metadata: RuntimePolicyMetadata = {
             "template_id": str(template.id),
             "limits_source": "request" if requested_limits is not None else "template",
@@ -76,6 +81,10 @@ class RuntimePolicyResolver:
                 )
             )
             if runtime_space is not None:
+                egress_source = _merge_egress_source(
+                    egress_source,
+                    runtime_space_policy_payload(runtime_space),
+                )
                 limits, network_disabled = self._apply_runtime_space_policy(
                     workspace_id=workspace_id,
                     runtime_space=runtime_space,
@@ -83,13 +92,26 @@ class RuntimePolicyResolver:
                     limits=limits,
                     network_disabled=network_disabled,
                 )
+                team = self._team_for_runtime_space(workspace_id, runtime_space)
+                if team is not None:
+                    egress_source = _merge_egress_source(
+                        egress_source,
+                        team_runtime_policy(team),
+                    )
+        egress_policy = resolve_egress_policy(
+            egress_source,
+            forced_disabled=network_disabled,
+        )
+        network_disabled = egress_policy.disabled
         metadata["effective"] = {
             "network_disabled": network_disabled,
             "limits": limits_metadata(limits),
+            "egress": egress_policy.as_dict(),
         }
         return RuntimePolicyResolution(
             limits=limits,
             network_disabled=network_disabled,
+            egress_policy=egress_policy,
             metadata=dict(metadata),
         )
 
@@ -286,3 +308,15 @@ def limits_metadata(limits: RuntimeLimits) -> dict[str, object]:
 
 def dict_value(value: object) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
+
+
+def _merge_egress_source(
+    source: dict[str, object],
+    policy: dict[str, object],
+) -> dict[str, object]:
+    network = policy.get("network")
+    if not isinstance(network, dict):
+        return source
+    merged = dict(source)
+    merged.update(network)
+    return merged

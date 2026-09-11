@@ -54,11 +54,13 @@ class RuntimeProvisioningExecutor:
         workspace_id = runtime.workspace_id
         runtime_space_id = runtime.runtime_space_id
         RuntimeQuotaPolicy(self._session).assert_can_create_runtime(workspace_id, limits)
+        network_policy = dict(runtime.network_policy)
         isolation_metadata = runtime_isolation_metadata(
             workspace_id=workspace_id,
             runtime_id=runtime.id,
             runtime_space_id=runtime_space_id,
             network_disabled=network_disabled,
+            network_policy=network_policy,
         )
         hardening_policy = default_runtime_hardening_policy()
         hardening_metadata = runtime_hardening_metadata(
@@ -91,6 +93,7 @@ class RuntimeProvisioningExecutor:
                 runtime_space_id=runtime_space_id,
                 limits=limits,
                 network_disabled=network_disabled,
+                network_policy=dict(runtime.network_policy),
                 isolation_metadata=isolation_metadata,
                 hardening_policy=hardening_policy,
             )
@@ -179,6 +182,7 @@ class RuntimeProvisioningExecutor:
         runtime_space_id: UUID | None,
         limits: RuntimeLimits,
         network_disabled: bool,
+        network_policy: dict[str, object],
         isolation_metadata: RuntimeIsolationMetadata,
         hardening_policy: RuntimeHardeningPolicy,
     ) -> str:
@@ -191,6 +195,7 @@ class RuntimeProvisioningExecutor:
                 runtime_space_id=str(runtime_space_id) if runtime_space_id else None,
                 limits=limits,
                 network_disabled=network_disabled,
+                network_policy=network_policy,
                 labels=runtime_labels(runtime),
                 mounts=(
                     RuntimeMount(

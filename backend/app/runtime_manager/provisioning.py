@@ -81,7 +81,7 @@ class RuntimeProvisioningService:
             status="queued",
             connection_status="offline",
             limits=limits_metadata(policy.limits),
-            network_policy={"disabled": policy.network_disabled},
+            network_policy=_network_policy(policy),
             capabilities={
                 "provisioning": {
                     "status": "queued",
@@ -143,7 +143,7 @@ class RuntimeProvisioningService:
         runtime.status = "provisioning"
         runtime.connection_status = "offline"
         runtime.limits = limits_metadata(policy.limits)
-        runtime.network_policy = {"disabled": policy.network_disabled}
+        runtime.network_policy = _network_policy(policy)
         runtime.capabilities = {
             **dict(runtime.capabilities or {}),
             "provisioning": {
@@ -187,3 +187,7 @@ class RuntimeProvisioningService:
             requested_limits=limits,
             requested_network_disabled=network_disabled,
         )
+
+
+def _network_policy(policy: RuntimePolicyResolution) -> dict[str, object]:
+    return policy.egress_policy.as_dict()
