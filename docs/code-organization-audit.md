@@ -94,3 +94,14 @@ API route groups with distinct authentication or deployment policy. `teams/proje
 files to remain subpackages; they should only be flattened after a dependency review, not by
 directory-count alone. These areas represent real security, protocol, lifecycle, or operational
 boundaries.
+
+## Completed consolidation batches
+
+- Runtime contracts and runtime models are owned by `runtime_manager`.
+- Runtime spaces are under `runtime_manager/spaces`.
+- Runtime lifecycle, pool, and backend registry layers no longer use one-file subpackages.
+- Audit, cost, and tracing implementations are owned by `observability`.
+- Artifact models and persistence are owned by `files`; export models and status are owned by
+  `projects`.
+- Agent Runtime contracts, base adapter, and errors are owned by `agent_runtime`; provider
+  implementations are under `agent_runtime/providers`.
