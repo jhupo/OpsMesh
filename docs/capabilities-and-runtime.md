@@ -88,12 +88,14 @@ Examples:
 
 - application backend process
 - OpenAI hosted tool environment
-- per-run Docker sandbox
+- isolated per-run Docker sandbox
+- pooled Docker sandbox with run-scoped workspace
 - persistent workspace sandbox
 - external MCP server
 - remote sandbox provider such as E2B, Daytona, Modal, or Runloop
 
-Runtime is a system decision, not something most users should manage directly.
+Runtime mode is an explicit resource setting for operators and advanced users; the control plane
+still validates that the selected mode satisfies the task's security policy.
 
 ## Recommendation: Persistent Isolation, Not Bare Server Execution
 
@@ -113,12 +115,17 @@ Reasons:
 Recommended default:
 
 - Create teams and agents as database configuration.
-- Create or attach an isolated runtime when a task/run actually needs executable capabilities.
-- Prefer short-lived per-run sandboxes for general safety and predictability.
-- Offer persistent workspace runtimes only as an explicit advanced mode.
+- Create or attach a managed runtime when a task/run actually needs executable capabilities.
+- Prefer `pooled` runtimes for ordinary runs to amortize container startup cost while retaining
+  run-scoped workspaces and leases.
+- Use `isolated` for untrusted code, cross-boundary risk, or when reset guarantees are insufficient.
+- Offer `persistent` workspace runtimes only as an explicit advanced mode.
 - Persist outputs, memory, artifacts, and optional snapshots outside the container.
 - Reuse or resume sandboxes only when the task explicitly requires continuity.
 - Never fall back to executing user or agent commands on the host server.
+
+See [Runtime Execution Modes](runtime-execution-modes.md) for the current lifecycle, pool membership,
+lease, reset, and API contract.
 
 ## Runtime Modes
 
@@ -502,7 +509,8 @@ It may use:
 - git diff tool
 - workspace artifact output
 
-Default runtime should be per-task or per-run Docker sandbox, depending on task complexity.
+Default runtime should be a pooled Docker sandbox for ordinary executable tasks, with isolated mode
+selected for untrusted or high-risk work and persistent mode reserved for explicit continuity.
 
 ## Example: Research Agent
 

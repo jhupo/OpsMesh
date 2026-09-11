@@ -157,6 +157,28 @@ class RuntimeCleanupService:
         self._session.commit()
         return completed, failed
 
+    def cleanup_orphaned_pool_leases(
+        self,
+        *,
+        docker_client: DockerRuntimeClient | None,
+        workspace_id: UUID | None = None,
+        stale_after_seconds: int = 600,
+        limit: int = 100,
+    ) -> tuple[int, int]:
+        """Reclaim pool members left leased by a terminal or lost worker run."""
+        if docker_client is None:
+            return 0, limit
+        result = RunRuntimeEnvironmentService(
+            self._session,
+            docker_client,
+        ).reclaim_orphaned_pool_leases(
+            workspace_id=workspace_id,
+            stale_after_seconds=stale_after_seconds,
+            limit=limit,
+        )
+        self._session.commit()
+        return result
+
     def _stale_runtimes(
         self,
         *,
@@ -168,6 +190,7 @@ class RuntimeCleanupService:
             WorkspaceRuntime.connection_status == "online",
             WorkspaceRuntime.last_heartbeat_at.is_not(None),
             WorkspaceRuntime.last_heartbeat_at < cutoff,
+            WorkspaceRuntime.execution_run_id.is_(None),
         )
         if workspace_id is not None:
             statement = statement.where(WorkspaceRuntime.workspace_id == workspace_id)

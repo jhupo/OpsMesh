@@ -71,6 +71,11 @@ class RuntimeProvisioningExecutor:
             **dict(runtime.capabilities or {}),
             "isolation": isolation_metadata,
             "hardening": hardening_metadata,
+            "execution": {
+                "mode": runtime.execution_mode,
+                "pool_key": runtime.pool_key,
+                "pool_member": runtime.execution_mode == "pooled",
+            },
             "policy_resolution": dict(policy_metadata or {}),
             "managed_resources": {
                 "docker_volumes": [isolation_metadata["workspace_mount"]["docker_volume"]],

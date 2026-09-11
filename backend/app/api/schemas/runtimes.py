@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, computed_field, field_serializer
@@ -36,6 +37,8 @@ class RuntimeCreateRequest(BaseModel):
     runtime_space_id: UUID | None = None
     limits: RuntimeLimitsRequest | None = None
     network_disabled: bool = True
+    execution_mode: Literal["none", "isolated", "pooled", "persistent"] = "pooled"
+    pool_key: str | None = Field(default=None, min_length=1, max_length=160)
 
 
 class WorkspaceRuntimeResponse(TimestampedModel):
@@ -44,6 +47,8 @@ class WorkspaceRuntimeResponse(TimestampedModel):
     runtime_space_id: UUID | None
     runtime_provider: str
     runtime_type: str
+    execution_mode: Literal["none", "isolated", "pooled", "persistent"]
+    pool_key: str | None
     name: str
     status: str
     connection_status: str

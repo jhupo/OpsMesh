@@ -32,6 +32,7 @@ class OperationsOverviewQueryService:
             .where(
                 WorkspaceRuntime.workspace_id == workspace_id,
                 WorkspaceRuntime.connection_status == "offline",
+                WorkspaceRuntime.execution_run_id.is_(None),
             )
         )
 

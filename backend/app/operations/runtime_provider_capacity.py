@@ -22,7 +22,10 @@ class RuntimeProviderCapacityService:
     ) -> list[RuntimeProviderCapacityResponse]:
         runtimes = self._session.scalars(
             select(WorkspaceRuntime)
-            .where(WorkspaceRuntime.workspace_id == workspace_id)
+            .where(
+                WorkspaceRuntime.workspace_id == workspace_id,
+                WorkspaceRuntime.execution_run_id.is_(None),
+            )
             .order_by(WorkspaceRuntime.runtime_provider.asc(), WorkspaceRuntime.runtime_type.asc())
         ).all()
         active_runs_by_runtime = self._active_runs_by_runtime(workspace_id)

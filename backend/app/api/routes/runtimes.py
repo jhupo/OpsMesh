@@ -60,6 +60,8 @@ async def create_runtime(
             limits=limits,
             runtime_space_id=request.runtime_space_id,
             network_disabled=request.network_disabled,
+            execution_mode=request.execution_mode,
+            pool_key=request.pool_key,
             requested_by_user_id=context.user.user_id,
         )
     except ValueError as exc:
@@ -96,6 +98,8 @@ async def create_runtime(
                 else None,
                 "limits": _limits_routing(limits),
                 "network_disabled": request.network_disabled,
+                "execution_mode": request.execution_mode,
+                "pool_key": request.pool_key,
             },
         ),
     )

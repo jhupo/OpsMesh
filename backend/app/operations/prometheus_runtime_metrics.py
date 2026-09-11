@@ -32,7 +32,9 @@ class RuntimePrometheusMetrics:
             .all()
         )
         grouped: dict[tuple[str, str], dict[str, int]] = {}
-        for runtime in self._session.scalars(select(WorkspaceRuntime)).all():
+        for runtime in self._session.scalars(
+            select(WorkspaceRuntime).where(WorkspaceRuntime.execution_run_id.is_(None))
+        ).all():
             key = (runtime.runtime_provider, runtime.runtime_type)
             bucket = grouped.setdefault(key, {"capacity_slots": 0, "active_runs": 0})
             bucket["capacity_slots"] += capacity_slots_from_metadata(runtime.capabilities)

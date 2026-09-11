@@ -96,7 +96,9 @@ Runtime Manager is a backend service module used by workers and admin APIs.
 
 Responsibilities:
 
-- create Docker containers
+- provision Docker containers and pre-warmed pool members
+- lease pooled containers with run-scoped workspaces and reset them before reuse
+- bind persistent runtimes for explicitly continuous sessions
 - start and stop runtimes
 - enforce resource limits
 - enforce network policy
@@ -235,14 +237,14 @@ Workers must re-load all resource data from Postgres. Job payloads are not trust
 6. Worker acquires run lock.
 7. Worker loads workspace, task, team, agent profile, tools, skills, and policy.
 8. Worker chooses runtime mode.
-9. Worker asks Runtime Manager to create or attach runtime if needed.
+9. Worker asks Runtime Manager to apply the selected isolated, pooled, or persistent mode.
 10. Worker builds SDK Agent and Runner config.
 11. Worker starts OpenAI Agents SDK run.
 12. Tool calls are routed to hosted tools, MCP, product tools, or Docker runtime.
 13. Worker streams and persists run events.
 14. If approval is needed, worker marks run `waiting_approval` and exits.
 15. If complete, worker stores final output and artifacts.
-16. Worker updates task state and releases lock.
+16. Worker updates task state, releases the runtime lease, and releases the run lock.
 
 ## Approval Resume Flow
 

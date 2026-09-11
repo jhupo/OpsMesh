@@ -1,6 +1,6 @@
 from backend.app.operations.runtime_cleanup import RuntimeCleanupService
 from backend.app.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
-from backend.app.runtime_manager.contracts import RuntimeLimits
+from backend.app.runtime_manager.contracts import RuntimeLimits, validate_runtime_execution_mode
 from backend.app.runtime_manager.service import RuntimeControlService
 from backend.app.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.workers.job_routing import (
@@ -62,6 +62,17 @@ class RuntimeCleanupJobHandler:
                 context=RUNTIME_CLEANUP_JOB,
             ),
         )
+        cleanup.cleanup_orphaned_pool_leases(
+            docker_client=self._context.docker_client(),
+            workspace_id=job.workspace_id,
+            stale_after_seconds=stale_after_seconds,
+            limit=positive_int(
+                routing.get("limit"),
+                default=100,
+                key="limit",
+                context=RUNTIME_CLEANUP_JOB,
+            ),
+        )
         WorkerLeaseMaintenanceService(self._context.session).expire_stale_worker_leases(
             workspace_id=job.workspace_id,
             stale_after_seconds=stale_lease_after_seconds,
@@ -109,6 +120,21 @@ class RuntimeControlJobHandler:
             True,
             context=RUNTIME_CONTROL_JOB,
         )
+        execution_mode_value = required_string(
+            job.routing,
+            "execution_mode",
+            context=RUNTIME_CONTROL_JOB,
+        )
+        pool_key_value = job.routing.get("pool_key")
+        pool_key = pool_key_value if isinstance(pool_key_value, str) else None
+        if pool_key_value is not None and pool_key is None:
+            raise ValueError("Runtime control job pool_key is invalid")
+        if pool_key is not None and (not pool_key.strip() or len(pool_key) > 160):
+            raise ValueError("Runtime control job pool_key is invalid")
+        execution_mode = validate_runtime_execution_mode(
+            execution_mode_value,
+            pool_key,
+        )
         runtime = service.complete_queued_runtime_create(
             workspace_id=job.workspace_id,
             runtime_id=job.resource_id,
@@ -117,6 +143,8 @@ class RuntimeControlJobHandler:
             limits=_runtime_limits(job.routing.get("limits")),
             runtime_space_id=runtime_space_id,
             network_disabled=network_disabled,
+            execution_mode=execution_mode,
+            pool_key=pool_key,
         )
         if runtime is None:
             raise ValueError("Queued runtime not found")

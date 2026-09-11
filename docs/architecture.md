@@ -40,11 +40,13 @@ are offline. See [delivery operations](delivery-operations.md) for support and a
 6. Runtime Control Plane
 
    API services persist runtime intent and enqueue runtime-control work. Workers provision and
-   operate Docker-backed isolated runtimes, apply hardening and limits, enforce frozen placement
-   and network policy, route approved stdio MCP calls, and record lifecycle and cleanup evidence.
+   operate Docker-backed isolated, pooled, or persistent runtimes, apply hardening and limits,
+   enforce frozen placement and network policy, route approved stdio MCP calls, and record
+   lifecycle and cleanup evidence.
    Workspace file bytes remain behind the product gateway unless an explicit staging workflow
    copies them into a controlled runtime root. See
-   [Runtime Control Plane](backend-runtime-control-plane.md).
+   [Runtime Control Plane](backend-runtime-control-plane.md) and
+   [Runtime Execution Modes](runtime-execution-modes.md).
 
 7. Cloud Control Plane
 

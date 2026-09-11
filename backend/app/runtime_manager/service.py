@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session
 from backend.app.admin.policy_reader import PlatformPolicyService
 from backend.app.core.config import Settings
 from backend.app.runtime_manager.commands import RuntimeCommandService
-from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeLimits
+from backend.app.runtime_manager.contracts import (
+    DockerRuntimeClient,
+    RuntimeExecutionMode,
+    RuntimeLimits,
+)
 from backend.app.runtime_manager.manager_factory import RuntimeManagerFactory
 from backend.app.runtime_manager.provisioning import RuntimeProvisioningService
 from backend.app.runtime_manager.queries import RuntimeControlQueryService
@@ -54,6 +58,8 @@ class RuntimeControlService:
         limits: RuntimeLimits | None,
         network_disabled: bool,
         runtime_space_id: UUID | None = None,
+        execution_mode: RuntimeExecutionMode = "pooled",
+        pool_key: str | None = None,
     ) -> WorkspaceRuntime | None:
         return self._provisioning().create_runtime(
             workspace_id=workspace_id,
@@ -62,6 +68,8 @@ class RuntimeControlService:
             limits=limits,
             network_disabled=network_disabled,
             runtime_space_id=runtime_space_id,
+            execution_mode=execution_mode,
+            pool_key=pool_key,
         )
 
     def queue_runtime_create(
@@ -74,6 +82,8 @@ class RuntimeControlService:
         network_disabled: bool,
         runtime_space_id: UUID | None = None,
         requested_by_user_id: UUID | None = None,
+        execution_mode: RuntimeExecutionMode = "pooled",
+        pool_key: str | None = None,
     ) -> WorkspaceRuntime | None:
         return self._provisioning().queue_runtime_create(
             workspace_id=workspace_id,
@@ -83,6 +93,8 @@ class RuntimeControlService:
             network_disabled=network_disabled,
             runtime_space_id=runtime_space_id,
             requested_by_user_id=requested_by_user_id,
+            execution_mode=execution_mode,
+            pool_key=pool_key,
         )
 
     def complete_queued_runtime_create(
@@ -95,6 +107,8 @@ class RuntimeControlService:
         limits: RuntimeLimits | None,
         network_disabled: bool,
         runtime_space_id: UUID | None = None,
+        execution_mode: RuntimeExecutionMode = "pooled",
+        pool_key: str | None = None,
     ) -> WorkspaceRuntime | None:
         runtime = self.get_runtime(workspace_id, runtime_id)
         if runtime is None:
@@ -107,6 +121,8 @@ class RuntimeControlService:
             limits=limits,
             network_disabled=network_disabled,
             runtime_space_id=runtime_space_id,
+            execution_mode=execution_mode,
+            pool_key=pool_key,
         )
 
     def list_runtimes(

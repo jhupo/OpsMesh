@@ -7,9 +7,10 @@ intent and enqueues jobs. Workers validate the frozen run contract and are the o
 processes allowed to operate managed Docker runtimes. Self-hosted connectors use the same
 workspace-scoped placement contract while polling outbound from user-owned machines.
 
-The current implementation supports explicit managed runtimes and self-hosted runtimes. It does
-not silently create a new container for every Agent run. A run that needs stdio MCP execution must
-resolve to an active, online concrete runtime before it can be scheduled.
+The current implementation supports explicit managed runtimes and self-hosted runtimes. Managed
+runtimes expose selectable `isolated`, `pooled`, and `persistent` execution modes. A run that needs
+stdio MCP execution must resolve to an active, online concrete runtime before it can be scheduled;
+the worker then applies the selected mode and records the concrete pool lease when applicable.
 
 ## Current Architecture
 
@@ -29,6 +30,7 @@ flowchart LR
     Gateway --> Remote[Remote MCP<br/>HTTP / SSE]
     Gateway --> Stdio[stdio MCP router]
     Stdio --> Docker[Managed Docker runtime]
+    Docker --> Pool[Pre-provisioned pool members<br/>run-scoped workspace / leases]
     Stdio --> SelfHosted[Self-hosted runtime]
 
     API --> DB[(Postgres)]
@@ -202,11 +204,9 @@ workspace or operator authorization before loading target objects.
 
 ## Deliberate Future Work
 
-- automatic ephemeral container creation for each qualifying run;
-- per-run file materialization and selected artifact harvesting;
 - higher-assurance microVM or managed sandbox backends;
-- enforced egress allowlists through a dedicated proxy;
-- Docker SDK migration behind the existing runtime client contract.
+- pool autoscaling and warm image pre-pull orchestration;
+- runtime snapshots and restore workflows for persistent sessions.
 
 These items are not described as current guarantees. Adding them must preserve the same frozen
 authorization, workspace isolation, audit, quota, and cleanup contracts.

@@ -1,5 +1,22 @@
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
+
+RuntimeExecutionMode = Literal["none", "isolated", "pooled", "persistent"]
+
+
+def validate_runtime_execution_mode(
+    execution_mode: str,
+    pool_key: str | None,
+) -> RuntimeExecutionMode:
+    if execution_mode not in {"none", "isolated", "pooled", "persistent"}:
+        raise ValueError("Runtime execution mode is unsupported")
+    if execution_mode == "none":
+        raise ValueError("Runtime resources cannot use the none execution mode")
+    if pool_key is not None and execution_mode != "pooled":
+        raise ValueError("Runtime pool key is only valid for pooled execution")
+    if pool_key is not None and (not pool_key.strip() or len(pool_key) > 160):
+        raise ValueError("Runtime pool key must contain between 1 and 160 characters")
+    return cast(RuntimeExecutionMode, execution_mode)
 
 
 @dataclass(frozen=True)

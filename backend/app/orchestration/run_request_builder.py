@@ -122,9 +122,12 @@ class RunRequestBuilder:
             model_provider=model_provider,
             authorization_snapshot=authorization_snapshot,
         )
-        if runtime_binding.execution_runtime_id is not None:
+        if (
+            runtime_binding.execution_runtime_id is not None
+            or _runtime_execution_mode(run) == "persistent"
+        ):
             metadata["runtime_execution"] = {
-                "mode": "per_run",
+                "mode": _runtime_execution_mode(run),
                 "execution_runtime_id": str(runtime_binding.execution_runtime_id),
                 "parent_runtime_id": (
                     str(runtime_binding.workspace_runtime_id)
@@ -335,9 +338,12 @@ class RunRequestBuilder:
             ),
             "node_execution": "direct_tool",
         }
-        if runtime_binding.execution_runtime_id is not None:
+        if (
+            runtime_binding.execution_runtime_id is not None
+            or _runtime_execution_mode(run) == "persistent"
+        ):
             metadata["runtime_execution"] = {
-                "mode": "per_run",
+                "mode": _runtime_execution_mode(run),
                 "execution_runtime_id": str(runtime_binding.execution_runtime_id),
                 "parent_runtime_id": (
                     str(runtime_binding.workspace_runtime_id)
@@ -564,3 +570,11 @@ class RunRequestBuilder:
         workspace_id: UUID,
     ) -> list[dict[str, object]]:
         return self.authorization.mcp_credential_reference_snapshots(workspace_id)
+
+
+def _runtime_execution_mode(run: AgentRun) -> str:
+    metadata = run.input.get("runtime_execution") if isinstance(run.input, dict) else None
+    if not isinstance(metadata, dict):
+        return "isolated"
+    mode = metadata.get("mode")
+    return mode if isinstance(mode, str) else "isolated"

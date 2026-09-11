@@ -123,6 +123,7 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
     assert created.json()["network_policy"]["disabled"] is True
     assert created.json()["runtime_space_id"] == str(runtime_space.id)
     assert created.json()["status"] == "queued"
+    assert created.json()["execution_mode"] == "pooled"
     assert created.json()["has_docker_container"] is False
     assert "docker_container_id" not in created.json()
     assert created.json()["limits"]["max_output_bytes"] == 1024

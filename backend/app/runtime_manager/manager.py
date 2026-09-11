@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.runtime_manager.cleanup import (
@@ -14,7 +15,9 @@ from backend.app.runtime_manager.command_output import lease_metadata
 from backend.app.runtime_manager.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
+    RuntimeExecutionMode,
     RuntimeLimits,
+    validate_runtime_execution_mode,
 )
 from backend.app.runtime_manager.events import RuntimeEventLog
 from backend.app.runtime_manager.leases import RuntimeLeaseStore, RuntimeSpaceReservationStore
@@ -24,6 +27,7 @@ from backend.app.runtime_manager.runtime_guards import require_container
 from backend.app.runtime_manager.security_events import RuntimeSecurityEventRecorder
 from backend.app.runtimes.models import (
     RuntimeCommand,
+    RuntimeLease,
     RuntimeTemplate,
     WorkspaceRuntime,
 )
@@ -61,13 +65,18 @@ class RuntimeManager:
         runtime_space_id: UUID | None = None,
         network_disabled: bool = True,
         policy_metadata: dict[str, object] | None = None,
+        execution_mode: RuntimeExecutionMode = "pooled",
+        pool_key: str | None = None,
     ) -> WorkspaceRuntime:
+        validate_runtime_execution_mode(execution_mode, pool_key)
         RuntimeQuotaPolicy(self._session).assert_can_create_runtime(workspace_id, limits)
         runtime = WorkspaceRuntime(
             workspace_id=workspace_id,
             runtime_template_id=template.id,
             runtime_space_id=runtime_space_id,
             name=name,
+            execution_mode=execution_mode,
+            pool_key=pool_key,
             limits={
                 "cpu_count": limits.cpu_count,
                 "memory_mb": limits.memory_mb,
@@ -100,7 +109,13 @@ class RuntimeManager:
         limits: RuntimeLimits,
         network_disabled: bool,
         policy_metadata: dict[str, object] | None = None,
+        execution_mode: RuntimeExecutionMode | None = None,
+        pool_key: str | None = None,
     ) -> WorkspaceRuntime:
+        if execution_mode is not None:
+            validate_runtime_execution_mode(execution_mode, pool_key)
+            runtime.execution_mode = execution_mode
+            runtime.pool_key = pool_key
         return RuntimeProvisioningExecutor(
             self._session,
             self._docker,
@@ -138,8 +153,15 @@ class RuntimeManager:
         self._session.refresh(runtime)
         return runtime
 
-    def delete_runtime(self, runtime: WorkspaceRuntime) -> None:
+    def delete_runtime(
+        self,
+        runtime: WorkspaceRuntime,
+        *,
+        allow_active_pool_lease: bool = False,
+    ) -> None:
         require_container(runtime)
+        if not allow_active_pool_lease:
+            self._require_pool_control_available(runtime)
         container_id = runtime.docker_container_id or ""
         try:
             self._docker.remove_container(container_id)
@@ -244,6 +266,7 @@ class RuntimeManager:
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
     ) -> RuntimeCommand:
+        self._require_pool_control_available(runtime)
         return self._commands.execute_command(
             workspace_id=workspace_id,
             runtime=runtime,
@@ -261,6 +284,7 @@ class RuntimeManager:
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
     ) -> RuntimeCommand:
+        self._require_pool_control_available(runtime)
         return await self._commands.execute_command_async(
             workspace_id=workspace_id,
             runtime=runtime,
@@ -279,6 +303,7 @@ class RuntimeManager:
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
     ) -> RuntimeCommand:
+        self._require_pool_control_available(runtime)
         return self._commands.execute_existing_command(
             workspace_id=workspace_id,
             runtime=runtime,
@@ -287,6 +312,21 @@ class RuntimeManager:
             input_file=input_file,
             working_dir=working_dir,
         )
+
+    def _require_pool_control_available(self, runtime: WorkspaceRuntime) -> None:
+        if runtime.execution_pool_member_id is not None:
+            return
+        if runtime.execution_mode not in {"pooled", "persistent"}:
+            return
+        lease = self._session.scalar(
+            select(RuntimeLease).where(
+                RuntimeLease.workspace_id == runtime.workspace_id,
+                RuntimeLease.workspace_runtime_id == runtime.id,
+                RuntimeLease.status == "leased",
+            )
+        )
+        if lease is not None:
+            raise ValueError("Runtime is leased by an active run")
 
 
 def _network_policy_from_metadata(

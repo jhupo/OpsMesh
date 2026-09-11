@@ -54,6 +54,7 @@ class RuntimeSpaceSaturationService:
                     WorkspaceRuntime.workspace_id == workspace_id,
                     WorkspaceRuntime.runtime_space_id.in_(space_ids),
                     WorkspaceRuntime.status.in_(["created", "running"]),
+                    WorkspaceRuntime.execution_run_id.is_(None),
                 )
                 .group_by(WorkspaceRuntime.runtime_space_id)
             ).all()

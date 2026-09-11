@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,6 +27,10 @@ class RuntimeTemplate(UUIDPrimaryKeyMixin, Base):
 class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "workspace_runtimes"
     __table_args__ = (
+        CheckConstraint(
+            "execution_mode in ('none', 'isolated', 'pooled', 'persistent')",
+            name="workspace_runtime_execution_mode_valid",
+        ),
         Index("ix_workspace_runtimes_workspace_status", "workspace_id", "status"),
         Index(
             "ix_workspace_runtimes_workspace_provider", "workspace_id", "runtime_provider", "status"
@@ -34,6 +38,18 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_workspace_runtimes_workspace_runtime_space", "workspace_id", "runtime_space_id"),
         Index("ix_workspace_runtimes_container", "docker_container_id"),
         Index("ix_workspace_runtimes_workspace_execution_run", "workspace_id", "execution_run_id"),
+        Index(
+            "ix_workspace_runtimes_workspace_pool",
+            "workspace_id",
+            "pool_key",
+            "execution_mode",
+            "status",
+        ),
+        Index(
+            "ix_workspace_runtimes_pool_member",
+            "workspace_id",
+            "execution_pool_member_id",
+        ),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -56,12 +72,23 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("agent_runs.id", ondelete="SET NULL"),
         nullable=True,
     )
+    execution_pool_member_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("workspace_runtimes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     runtime_provider: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
         default="cloud_docker",
     )
     runtime_type: Mapped[str] = mapped_column(String(32), nullable=False, default="docker")
+    execution_mode: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="pooled",
+        server_default="pooled",
+    )
+    pool_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="created")
     connection_status: Mapped[str] = mapped_column(String(32), nullable=False, default="offline")

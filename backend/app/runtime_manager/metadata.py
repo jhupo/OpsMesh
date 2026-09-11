@@ -129,9 +129,12 @@ def runtime_labels(runtime: WorkspaceRuntime) -> dict[str, str]:
         "opsmesh.managed": "true",
         "opsmesh.runtime_type": runtime.runtime_type,
         "opsmesh.runtime_provider": runtime.runtime_provider,
+        "opsmesh.execution_mode": runtime.execution_mode,
     }
     if runtime.runtime_space_id is not None:
         labels["opsmesh.runtime_space_id"] = str(runtime.runtime_space_id)
+    if runtime.pool_key is not None:
+        labels["opsmesh.pool_key"] = runtime.pool_key
     policy_resolution = runtime.capabilities.get("policy_resolution")
     if isinstance(policy_resolution, dict):
         team = policy_resolution.get("team")
