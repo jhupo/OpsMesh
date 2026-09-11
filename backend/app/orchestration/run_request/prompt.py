@@ -15,7 +15,7 @@ from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime import TeamRuntimeService
 
 from ..state.context_budget import ContextFragment, ContextPriority
-from ..task_step_review import is_pm_summary_step
+from ..planning.task_step_review import is_pm_summary_step
 
 
 @dataclass(slots=True)

@@ -3,15 +3,15 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 from backend.app.agents.models import AgentProfile
-from backend.app.orchestration.conditions import (
+from backend.app.orchestration.policies.conditions import (
     evaluate_task_step_condition,
     validate_condition,
 )
-from backend.app.orchestration.definition_commands import (
+from backend.app.orchestration.workflows.definition_commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
 )
-from backend.app.orchestration.definitions import OrchestrationDefinitionService
+from backend.app.orchestration.workflows.definitions import OrchestrationDefinitionService
 from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.planning.workflow_contracts import WorkflowCondition, WorkflowNode
