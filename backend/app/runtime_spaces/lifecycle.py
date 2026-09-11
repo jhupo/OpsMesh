@@ -10,7 +10,7 @@ from backend.app.runtime_spaces.quotas import RuntimeSpaceQuotaService
 from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.runtime_spaces.targets import RuntimeSpaceTargetService
 from backend.app.runtime_spaces.utils import non_empty_string_or_none
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 
 
 class RuntimeSpaceLifecycleService:

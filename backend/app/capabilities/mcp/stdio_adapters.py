@@ -23,7 +23,7 @@ from backend.app.capabilities.mcp.types import (
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.runtime_manager.contracts import RuntimeCommandInputFile
 from backend.app.runtime_manager.manager import RuntimeManager
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.self_hosted.mcp_jobs import SelfHostedMcpJobService
 

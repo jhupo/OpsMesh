@@ -29,7 +29,7 @@ from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.projects.runtime_io_state import ProjectIOStateService
 from backend.app.projects.runtime_staging import ProjectInputArchiveBuilder
 from backend.app.runs.models import AgentRun
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.self_hosted.models import SelfHostedJobClaim
 from backend.app.self_hosted.types import AuthenticatedWorker
 from backend.app.tasks.models import Task

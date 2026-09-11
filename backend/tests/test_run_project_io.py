@@ -41,7 +41,7 @@ from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.projects.serialization import sha256_json
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_manager.contracts import RuntimeCommandResult
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task
 from backend.app.workspaces.models import Workspace, WorkspaceMember

@@ -11,7 +11,7 @@ from backend.app.orchestration.run_authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.runs.models import AgentRun
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.tasks.models import Task
 
 

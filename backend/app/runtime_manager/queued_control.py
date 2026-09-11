@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings
 from backend.app.runtime_manager.contracts import RuntimeLimits
 from backend.app.runtime_manager.service import RuntimeControlService
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.queue.redis_queue import RedisQueue
 

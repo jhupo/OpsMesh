@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from backend.app.operations.utils import ensure_aware_utc
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime import (
     TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,

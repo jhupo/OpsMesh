@@ -2,7 +2,7 @@ from typing import Protocol
 from uuid import UUID
 
 from backend.app.runtime_manager.contracts import RuntimeLimits
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 
 
 class RuntimeLifecycleControl(Protocol):

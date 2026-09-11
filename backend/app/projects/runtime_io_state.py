@@ -14,7 +14,7 @@ from backend.app.projects.models import AgentRunProjectIOState, AgentRunProjectS
 from backend.app.projects.run_manifest import RunProjectManifest, parse_run_project_manifest
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.runs.models import AgentRun
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 
 

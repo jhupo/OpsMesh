@@ -8,7 +8,7 @@ from backend.app.approvals.waiting import ApprovalWaitingService
 from backend.app.core.config import Settings
 from backend.app.runs.event_writer import RunEventWriter
 from backend.app.runtime_manager.manager import RuntimeManager
-from backend.app.runtimes.models import RuntimeCommand, WorkspaceRuntime
+from backend.app.runtime_manager.models import RuntimeCommand, WorkspaceRuntime
 from backend.app.tools.context import ToolContext
 
 

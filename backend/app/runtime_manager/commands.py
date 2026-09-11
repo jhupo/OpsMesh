@@ -11,7 +11,7 @@ from backend.app.core.config import Settings
 from backend.app.runtime_manager.manager_factory import RuntimeManagerFactory
 from backend.app.runtime_manager.queries import RuntimeControlQueryService
 from backend.app.runtime_manager.security_events import RuntimeSecurityEventRecorder
-from backend.app.runtimes.models import RuntimeCommand, RuntimeEvent, WorkspaceRuntime
+from backend.app.runtime_manager.models import RuntimeCommand, RuntimeEvent, WorkspaceRuntime
 
 
 class RuntimeCommandService:

@@ -15,7 +15,7 @@ from backend.app.api.schemas.self_hosted import (
 )
 from backend.app.core.config import Settings
 from backend.app.runtime_spaces.models import RuntimeSpace
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.self_hosted.attestation import (
     CapabilityAttestationResult,
     evaluate_capability_attestation,

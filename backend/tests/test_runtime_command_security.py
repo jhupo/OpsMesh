@@ -17,7 +17,7 @@ from backend.app.runtime_manager.contracts import (
     RuntimeCreateRequest,
 )
 from backend.app.runtime_manager.service import RuntimeControlService
-from backend.app.runtimes.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime_manager.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.workspaces.models import Workspace
 

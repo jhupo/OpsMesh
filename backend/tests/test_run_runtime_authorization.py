@@ -32,7 +32,7 @@ from backend.app.orchestration.runtime.authorization import (
 )
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam

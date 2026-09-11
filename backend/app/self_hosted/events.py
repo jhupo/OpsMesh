@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app.runs.event_writer import RunEventWriter
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpaceEvent
-from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.runtime_manager.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.security.redaction import redact_sensitive_payload
 

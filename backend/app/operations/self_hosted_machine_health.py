@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.self_hosted.models import RuntimeCredential, SelfHostedWorker
 
 

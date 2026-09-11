@@ -1,4 +1,4 @@
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 
 
 def require_container(runtime: WorkspaceRuntime) -> None:

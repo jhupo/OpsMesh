@@ -30,7 +30,7 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.runtime_manager.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.models import SecurityEvent
 from backend.app.self_hosted.attestation import (

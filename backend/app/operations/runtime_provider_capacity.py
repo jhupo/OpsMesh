@@ -9,7 +9,7 @@ from backend.app.api.schemas.operation_capacity import RuntimeProviderCapacityRe
 from backend.app.operations.utils import capacity_slots_from_metadata
 from backend.app.orchestration.policies.statuses import CAPACITY_CONSUMING_RUN_STATUS_VALUES
 from backend.app.runs.models import AgentRun
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 
 
 class RuntimeProviderCapacityService:

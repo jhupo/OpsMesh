@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.schemas.self_hosted import McpJobCompleteRequest
 from backend.app.capabilities.models import McpServer
 from backend.app.runs.models import AgentRun
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.self_hosted.events import SelfHostedEventRecorder
 from backend.app.self_hosted.jobs import SelfHostedJobFinalizer
 from backend.app.self_hosted.models import SelfHostedMcpJob

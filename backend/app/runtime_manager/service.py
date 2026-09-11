@@ -17,7 +17,7 @@ from backend.app.runtime_manager.manager_factory import RuntimeManagerFactory
 from backend.app.runtime_manager.provisioning import RuntimeProvisioningService
 from backend.app.runtime_manager.queries import RuntimeControlQueryService
 from backend.app.runtime_manager.safety import RuntimeSafetyPolicy
-from backend.app.runtimes.models import (
+from backend.app.runtime_manager.models import (
     RuntimeCommand,
     RuntimeEvent,
     RuntimeTemplate,

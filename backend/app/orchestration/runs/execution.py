@@ -331,7 +331,7 @@ class RunExecutionService:
     def _runtime_timeout_seconds(self, run: AgentRun) -> int | None:
         if run.runtime_id is None:
             return None
-        from backend.app.runtimes.models import WorkspaceRuntime
+        from backend.app.runtime_manager.models import WorkspaceRuntime
 
         runtime = self.session.scalar(
             select(WorkspaceRuntime).where(

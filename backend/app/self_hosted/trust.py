@@ -13,7 +13,7 @@ from backend.app.capabilities.mcp.adapter_payloads import (
 )
 from backend.app.core.config import Settings
 from backend.app.core.typing import string_list
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.self_hosted.models import RuntimeCredential, SelfHostedWorker
 from backend.app.self_hosted.policy import positive_policy_int
 from backend.app.workspaces.models import Workspace

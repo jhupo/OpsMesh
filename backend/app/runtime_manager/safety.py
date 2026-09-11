@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from backend.app.admin.risky_policy_values import RiskyExecutionPolicy
 from backend.app.runtime_manager.egress import RuntimeEgressPolicy
-from backend.app.runtimes.models import RuntimeTemplate
+from backend.app.runtime_manager.models import RuntimeTemplate
 
 
 class RuntimeSafetyError(ValueError):

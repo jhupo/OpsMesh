@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.runtimes.models import RuntimeCommand, RuntimeEvent, WorkspaceRuntime
+from backend.app.runtime_manager.models import RuntimeCommand, RuntimeEvent, WorkspaceRuntime
 
 
 class RuntimeControlQueryService:

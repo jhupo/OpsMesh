@@ -11,7 +11,7 @@ from backend.app.audit.service import AuditService
 from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runtimes.models import RuntimeEvent
+from backend.app.runtime_manager.models import RuntimeEvent
 from backend.app.security.models import SecurityEvent
 
 T = TypeVar("T")

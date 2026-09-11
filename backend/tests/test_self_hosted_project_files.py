@@ -35,7 +35,7 @@ from backend.app.projects.models import (
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.projects.serialization import sha256_json
 from backend.app.runs.models import AgentRun
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.tasks.models import Task
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 from backend.tests.fixtures.project_authorization import authorize_project_run

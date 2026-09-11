@@ -54,7 +54,7 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtimes.models import RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime_manager.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.scheduled_jobs.models import WorkspaceScheduledJob
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.models import SecurityEvent

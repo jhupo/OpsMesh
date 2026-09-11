@@ -11,7 +11,7 @@ from backend.app.operations.timeline_utils import (
     team_runtime_team_id,
 )
 from backend.app.runs.models import AgentRun
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 

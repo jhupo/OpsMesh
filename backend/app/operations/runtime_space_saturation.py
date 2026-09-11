@@ -10,7 +10,7 @@ from backend.app.api.schemas.operation_capacity import (
     RuntimeSpaceSaturationResponse,
 )
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 
 
 class RuntimeSpaceSaturationService:

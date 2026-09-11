@@ -12,7 +12,7 @@ from backend.app.operations.team_runtime_health import (
     team_runtime_workspace_runtime_id,
 )
 from backend.app.operations.utils import non_negative_int
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.teams.models import AgentTeam
 
 

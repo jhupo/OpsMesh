@@ -7,7 +7,7 @@ from shutil import rmtree
 from typing import NotRequired, TypedDict
 
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 
 
 class CleanupDetails(TypedDict):

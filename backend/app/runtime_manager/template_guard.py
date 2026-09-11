@@ -12,7 +12,7 @@ from backend.app.runtime_manager.runtime_policy import (
 )
 from backend.app.runtime_manager.safety import RuntimeSafetyError, RuntimeSafetyPolicy
 from backend.app.runtime_spaces.service import RuntimeSpaceService
-from backend.app.runtimes.models import RuntimeTemplate
+from backend.app.runtime_manager.models import RuntimeTemplate
 
 
 class RuntimeTemplateGuard:

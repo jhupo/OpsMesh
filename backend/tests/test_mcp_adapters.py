@@ -23,7 +23,7 @@ from backend.app.runtime_manager.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
 )
-from backend.app.runtimes.models import RuntimeCommand, WorkspaceRuntime
+from backend.app.runtime_manager.models import RuntimeCommand, WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import EgressUrlPolicy
 

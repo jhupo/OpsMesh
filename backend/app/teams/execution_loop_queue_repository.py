@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES
 from backend.app.teams.models import AgentTeam

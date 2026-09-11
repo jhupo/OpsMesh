@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.runtimes.models import RuntimeCommand, RuntimeLease
+from backend.app.runtime_manager.models import RuntimeCommand, RuntimeLease
 
 
 def command_failure_metadata(

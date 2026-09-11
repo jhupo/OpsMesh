@@ -34,7 +34,7 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceReservation,
 )
 from backend.app.runtime_spaces.service import RuntimeSpaceService
-from backend.app.runtimes.models import (
+from backend.app.runtime_manager.models import (
     RuntimeCommand,
     RuntimeEvent,
     RuntimeLease,

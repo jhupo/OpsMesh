@@ -71,7 +71,7 @@ from backend.app.runtime_spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtimes.models import (
+from backend.app.runtime_manager.models import (
     RuntimeCommand,
     RuntimeEvent,
     RuntimeLease,

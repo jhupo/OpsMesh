@@ -11,7 +11,7 @@ from backend.app.files.models import WorkspaceFile
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_manager.runtime_policy import policy_disables_network
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceBinding
-from backend.app.runtimes.models import RuntimeLease, WorkspaceRuntime
+from backend.app.runtime_manager.models import RuntimeLease, WorkspaceRuntime
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime_refs import team_bound_runtime_id

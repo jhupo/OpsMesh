@@ -9,7 +9,7 @@ from backend.app.operations.timeline_models import TimelineEvent, TimelineFilter
 from backend.app.operations.timeline_team_context import TeamRuntimeTimelineContext
 from backend.app.operations.timeline_utils import apply_time_filters, aware_datetime
 from backend.app.runs.models import RunEvent
-from backend.app.runtimes.models import RuntimeEvent
+from backend.app.runtime_manager.models import RuntimeEvent
 
 
 class TeamRuntimeEventTimelineCollector:

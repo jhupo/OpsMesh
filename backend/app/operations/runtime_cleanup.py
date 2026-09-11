@@ -12,7 +12,7 @@ from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.runtime_manager.run_environment import RunRuntimeEnvironmentService
 from backend.app.runtime_spaces.models import RuntimeSpaceEvent
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 
 
 class RuntimeCleanupService:

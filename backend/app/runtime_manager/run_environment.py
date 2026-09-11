@@ -27,7 +27,7 @@ from backend.app.runtime_manager.metadata import (
     runtime_labels,
 )
 from backend.app.runtime_manager.pool.leases import RuntimeLeaseStore
-from backend.app.runtimes.models import RuntimeLease, RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime_manager.models import RuntimeLease, RuntimeTemplate, WorkspaceRuntime
 
 MANAGED_RUNTIME_PROVIDERS = frozenset({"docker", "cloud_docker"})
 _RUNTIME_WORKSPACE_ROOT = "/workspace"

@@ -20,7 +20,7 @@ from backend.app.projects.models import AgentRunProjectSnapshot
 from backend.app.projects.run_manifest import RunProjectManifest
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.runs.models import AgentRun
-from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.tasks.models import Task
 
 MAX_PROJECT_INPUT_FILES = 512
