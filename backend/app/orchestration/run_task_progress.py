@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task, TaskMessage
 
-from .task_progress import deep_merge_dict, task_progress_from_output
+from .state.task_progress import deep_merge_dict, task_progress_from_output
 
 AppendTaskMessage = Callable[..., TaskMessage]
 

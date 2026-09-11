@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.orchestration.resource_usage import scheduler_numeric_limits
+from backend.app.orchestration.state.resource_usage import scheduler_numeric_limits
 from backend.app.workspaces.models import Workspace
 
 
