@@ -16,7 +16,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
-from backend.app.agent_runtime.core.errors import AgentRuntimeCancelledError
+from backend.app.agent_runtime.errors import AgentRuntimeCancelledError
 from backend.app.agent_runtime.adapters.openai_agents import OpenAIAgentsRunner
 from backend.app.agents.models import AgentProfile
 from backend.app.db import models as registered_models  # noqa: F401

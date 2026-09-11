@@ -16,7 +16,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolExecutor,
     AgentRuntimeToolResult,
 )
-from backend.app.agent_runtime.core.errors import (
+from backend.app.agent_runtime.errors import (
     AgentRuntimeCancelledError,
     AgentRuntimePolicyError,
 )

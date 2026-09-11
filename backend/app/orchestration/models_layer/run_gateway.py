@@ -9,7 +9,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRunResult,
     AgentRuntimeExecutor,
 )
-from backend.app.agent_runtime.core.errors import (
+from backend.app.agent_runtime.errors import (
     AgentRuntimeCancelledError,
     AgentRuntimePolicyError,
 )

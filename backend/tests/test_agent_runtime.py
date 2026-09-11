@@ -22,7 +22,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolResult,
     AgentRunTracing,
 )
-from backend.app.agent_runtime.core.errors import (
+from backend.app.agent_runtime.errors import (
     AgentRuntimeCapabilityError,
     normalize_agent_error,
 )

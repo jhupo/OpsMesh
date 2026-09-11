@@ -1,6 +1,6 @@
 import pytest
 
-from backend.app.agent_runtime.core.errors import AgentRuntimePolicyError
+from backend.app.agent_runtime.errors import AgentRuntimePolicyError
 from backend.app.agent_runtime.token_estimation import estimate_token_upper_bound
 from backend.app.agents.memory_policy import ContextBudgetPolicy
 from backend.app.agents.payloads import normalize_create_payload

@@ -19,7 +19,7 @@ from agents.handoffs import handoff as sdk_handoff
 from agents.models.interface import Model
 from agents.models.openai_provider import OpenAIProvider
 
-from backend.app.agent_runtime.core.base import BaseSDKAgentRuntimeAdapter
+from backend.app.agent_runtime.base import BaseSDKAgentRuntimeAdapter
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -32,7 +32,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeEvent,
     AgentRuntimeGuardrailResult,
 )
-from backend.app.agent_runtime.core.errors import (
+from backend.app.agent_runtime.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimePolicyError,
     normalize_agent_error,

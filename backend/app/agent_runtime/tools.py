@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRuntimeContext, AgentRuntimeToolResult
-from backend.app.agent_runtime.core.errors import normalize_agent_error
+from backend.app.agent_runtime.errors import normalize_agent_error
 from backend.app.agent_runtime.product_tool_executor import (
     PRODUCT_TOOL_NAMES,
     ProductToolExecutor,

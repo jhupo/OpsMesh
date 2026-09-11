@@ -20,7 +20,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeGuardrails,
     AgentRuntimeOutputSchema,
 )
-from backend.app.agent_runtime.core.errors import (
+from backend.app.agent_runtime.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimeOutputValidationError,
     normalize_agent_error,

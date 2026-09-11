@@ -14,7 +14,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
 )
-from backend.app.agent_runtime.core.errors import AgentRuntimeCancelledError
+from backend.app.agent_runtime.errors import AgentRuntimeCancelledError
 from backend.app.agent_runtime.execution_observer import AgentRuntimeExecutionObserver
 from backend.app.agent_runtime.openai.results import runtime_stream_event_from_sdk_item
 

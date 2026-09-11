@@ -7,7 +7,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeAdapter,
     AgentRuntimeCapabilities,
 )
-from backend.app.agent_runtime.core.errors import AgentRuntimeCapabilityError
+from backend.app.agent_runtime.errors import AgentRuntimeCapabilityError
 from backend.app.model_providers.provider_keys import (
     is_anthropic_provider,
     is_openai_compatible_provider,

@@ -15,7 +15,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeOutputSchema,
     AgentRuntimeStructuredOutput,
 )
-from backend.app.agent_runtime.core.errors import (
+from backend.app.agent_runtime.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimeOutputValidationError,
 )

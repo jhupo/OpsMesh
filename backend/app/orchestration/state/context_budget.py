@@ -11,7 +11,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
 )
-from backend.app.agent_runtime.core.errors import AgentRuntimePolicyError
+from backend.app.agent_runtime.errors import AgentRuntimePolicyError
 from backend.app.agent_runtime.token_estimation import (
     estimate_token_upper_bound,
     truncate_to_token_bound,
