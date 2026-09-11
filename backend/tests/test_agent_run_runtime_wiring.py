@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from backend.app.core.config import Settings
-from backend.app.orchestration.run_execution import (
+from backend.app.orchestration.runs.execution import (
     RunExecutionDependencies,
     RunExecutionService,
 )

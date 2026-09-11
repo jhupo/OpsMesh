@@ -61,7 +61,7 @@ from backend.app.orchestration.run_authorization_snapshot import RunAuthorizatio
 from backend.app.orchestration.run_control import RunControlService
 from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.orchestration.run_events import RunEventRecorder
-from backend.app.orchestration.run_execution import (
+from backend.app.orchestration.runs.execution import (
     RunExecutionDependencies,
     RunExecutionService,
 )
