@@ -3,7 +3,8 @@
 from backend.app.agent_runtime.sandbox.contracts import (
     SandboxBackend,
     SandboxManifest,
+    SandboxMode,
     SandboxSession,
 )
 
-__all__ = ["SandboxBackend", "SandboxManifest", "SandboxSession"]
+__all__ = ["SandboxBackend", "SandboxManifest", "SandboxMode", "SandboxSession"]

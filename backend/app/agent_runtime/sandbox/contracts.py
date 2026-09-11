@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
+
+
+class SandboxMode(StrEnum):
+    NONE = "none"
+    ISOLATED = "isolated"
+    POOLED = "pooled"
+    PERSISTENT = "persistent"
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,7 +21,6 @@ class SandboxManifest:
     root: str
     files: tuple[str, ...] = ()
     environment: dict[str, str] = field(default_factory=dict)
-
 
 @dataclass(frozen=True, slots=True)
 class SandboxSession:
