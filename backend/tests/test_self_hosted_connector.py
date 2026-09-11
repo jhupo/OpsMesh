@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import stat
 import sys
@@ -263,7 +264,7 @@ def test_http_connector_api_uses_runtime_header_and_expected_endpoints() -> None
         credential="runtime-secret",
         transport=httpx.MockTransport(handler),
     ) as api:
-        api.heartbeat({})
+        api.heartbeat({}, {"protocol": "opsmesh.self_hosted.attestation.v1"})
         assert api.poll_mcp_job() == job
         api.claim_mcp_job(job.id)
         api.complete_mcp_job(job.id, McpJobCompletion.completed({"ok": True}))
@@ -278,6 +279,8 @@ def test_http_connector_api_uses_runtime_header_and_expected_endpoints() -> None
         request.headers["X-Runtime-Authorization"] == "Bearer runtime-secret"
         for request in requests
     )
+    heartbeat_payload = json.loads(requests[0].content)
+    assert heartbeat_payload["attestation"]["protocol"] == "opsmesh.self_hosted.attestation.v1"
 
 
 def test_http_connector_api_rejects_plaintext_remote_url() -> None:

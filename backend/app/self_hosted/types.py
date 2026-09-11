@@ -23,6 +23,8 @@ class RegisteredRuntime:
     workspace_runtime_id: UUID
     worker_id: UUID
     credential_token: str
+    capability_attestation_state: str
+    host_isolation_verified: bool
 
 
 @dataclass(frozen=True)

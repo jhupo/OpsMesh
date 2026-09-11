@@ -40,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
             or DEFAULT_STATE_PATH
         ).expanduser()
         capabilities = _capabilities(arguments.capabilities_file)
+        attestation = _attestation(arguments.attestation_file)
         state_path.parent.mkdir(parents=True, exist_ok=True)
     except (OSError, ValueError) as exc:
         print(f"Self-hosted connector configuration failed: {exc}", file=sys.stderr)
@@ -59,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
                 timeout_seconds=arguments.request_timeout_seconds,
             ) as api,
         ):
-            api.heartbeat(capabilities)
+            api.heartbeat(capabilities, attestation)
             connector = SelfHostedMcpConnector(api=api, state=state)
             if arguments.once:
                 outcome = connector.run_once()
@@ -69,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
                 api=api,
                 connector=connector,
                 capabilities=capabilities,
+                attestation=attestation,
                 poll_interval_seconds=arguments.poll_interval_seconds,
                 heartbeat_interval_seconds=arguments.heartbeat_interval_seconds,
             )
@@ -84,6 +86,7 @@ def _run_forever(
     api: HttpMcpJobApi,
     connector: SelfHostedMcpConnector,
     capabilities: dict[str, object],
+    attestation: dict[str, object] | None,
     poll_interval_seconds: float,
     heartbeat_interval_seconds: float,
 ) -> int:
@@ -92,7 +95,7 @@ def _run_forever(
         while True:
             try:
                 if time.monotonic() >= next_heartbeat:
-                    api.heartbeat(capabilities)
+                    api.heartbeat(capabilities, attestation)
                     next_heartbeat = time.monotonic() + heartbeat_interval_seconds
                 outcome = connector.run_once()
             except ConnectorApiError as exc:
@@ -110,14 +113,24 @@ def _run_forever(
 
 
 def _capabilities(path_value: str | None) -> dict[str, object]:
+    return _json_object_file(path_value, "Capabilities")
+
+
+def _attestation(path_value: str | None) -> dict[str, object] | None:
+    if not path_value:
+        return None
+    return _json_object_file(path_value, "Attestation")
+
+
+def _json_object_file(path_value: str | None, label: str) -> dict[str, object]:
     if not path_value:
         return {}
     try:
         payload = json.loads(Path(path_value).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise ValueError("Capabilities file must contain a JSON object") from exc
+        raise ValueError(f"{label} file must contain a JSON object") from exc
     if not isinstance(payload, dict):
-        raise ValueError("Capabilities file must contain a JSON object")
+        raise ValueError(f"{label} file must contain a JSON object")
     return payload
 
 
@@ -126,6 +139,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--api-url", help="OpsMesh API prefix, for example https://host/api/v1")
     parser.add_argument("--state-path")
     parser.add_argument("--capabilities-file")
+    parser.add_argument("--attestation-file")
     parser.add_argument("--poll-interval-seconds", type=_positive_float, default=2.0)
     parser.add_argument("--heartbeat-interval-seconds", type=_positive_float, default=30.0)
     parser.add_argument("--request-timeout-seconds", type=_positive_float, default=30.0)

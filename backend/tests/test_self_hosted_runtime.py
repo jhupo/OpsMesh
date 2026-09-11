@@ -32,6 +32,12 @@ from backend.app.runtime_spaces.models import (
 )
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
+from backend.app.security.models import SecurityEvent
+from backend.app.self_hosted.attestation import (
+    CAPABILITY_ATTESTATION_PROTOCOL,
+    attestation_signature,
+    capability_digest,
+)
 from backend.app.self_hosted.models import (
     RuntimeCredential,
     SelfHostedJobClaim,
@@ -1702,6 +1708,125 @@ def test_self_hosted_worker_trust_view_summarizes_machine_policy_and_state() -> 
     }
     assert "machine-secret" not in str(item)
     assert "Bearer hidden" not in str(item)
+
+
+def test_self_hosted_capability_attestation_is_untrusted_by_default() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "untrusted-node"},
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "untrusted-node",
+            "machine_id": "machine-untrusted",
+            "capabilities": {},
+        },
+    )
+    runtime_id = UUID(registered.json()["workspace_runtime_id"])
+    worker = session.query(SelfHostedWorker).one()
+    assert registered.status_code == 201
+    assert registered.json()["capability_attestation_state"] == "untrusted"
+    assert registered.json()["host_isolation_verified"] is False
+    assert worker.capability_attestation_state == "untrusted"
+    assert worker.host_isolation_verified is False
+
+    run = _agent_run_with_snapshot(
+        session=session,
+        workspace=workspace,
+        runtime_id=runtime_id,
+        model="gpt-5.4",
+        allowed_tools=[],
+        runtime_policy={
+            "provider": "self_hosted",
+            "requires_verified_isolation": True,
+        },
+    )
+    session.add(run)
+    session.commit()
+
+    denied = client.post(
+        f"/api/v1/self-hosted/jobs/{run.id}/claim",
+        headers=_runtime_headers(registered.json()["credential_token"]),
+    )
+
+    assert denied.status_code == 409
+    assert "platform-verified host isolation" in denied.json()["error"]["message"]
+    evidence = session.query(SecurityEvent).filter_by(
+        action="self_hosted.attestation.untrusted"
+    ).one()
+    assert evidence.event_metadata["runtime_id"] == str(runtime_id)
+    assert evidence.event_metadata["reason"] == "attestation_missing"
+
+
+def test_self_hosted_signed_capability_attestation_is_verified_but_not_host_isolation() -> None:
+    secret = "test-attestation-secret"
+    settings = Settings(
+        environment="test",
+        log_format="text",
+        internal_api_token=TOKEN,
+        self_hosted_attestation_secret=secret,
+    )
+    client, session = _client(settings)
+    owner, workspace = _seed_workspace(session)
+    enrollment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/self-hosted/enrollment-tokens",
+        headers=_headers(owner.id),
+        json={"name": "verified-node"},
+    )
+    machine_id = "machine-verified"
+    capabilities = {"supported_runtimes": ["self_hosted"]}
+    attestation = {
+        "protocol": CAPABILITY_ATTESTATION_PROTOCOL,
+        "workspace_id": str(workspace.id),
+        "machine_id": machine_id,
+        "isolation_mode": "docker",
+        "isolation_enforced": True,
+        "capabilities_sha256": capability_digest(capabilities),
+        "issued_at": datetime.now(UTC).isoformat(),
+        "nonce": "nonce-verified",
+        "key_id": "test-key",
+    }
+    attestation["signature"] = attestation_signature(
+        workspace_id=workspace.id,
+        machine_id=machine_id,
+        attestation=attestation,
+        secret=secret,
+    )
+    registered = client.post(
+        "/api/v1/self-hosted/register",
+        json={
+            "enrollment_token": enrollment.json()["token"],
+            "name": "verified-node",
+            "machine_id": machine_id,
+            "capabilities": capabilities,
+            "attestation": attestation,
+        },
+    )
+
+    assert registered.status_code == 201
+    assert registered.json()["capability_attestation_state"] == "verified"
+    assert registered.json()["host_isolation_verified"] is False
+    worker = session.query(SelfHostedWorker).one()
+    assert worker.capability_attestation_metadata["verification_method"] == "hmac-sha256"
+    assert worker.capability_attestation_metadata["host_isolation_verified"] is False
+
+    changed = client.post(
+        "/api/v1/self-hosted/heartbeat",
+        headers=_runtime_headers(registered.json()["credential_token"]),
+        json={
+            "status": "online",
+            "capabilities": {"supported_runtimes": ["self_hosted"], "gpu": True},
+        },
+    )
+    assert changed.status_code == 200
+    session.refresh(worker)
+    assert worker.capability_attestation_state == "untrusted"
+    assert worker.host_isolation_verified is False
 
 
 def test_self_hosted_worker_trust_view_reports_policy_diagnostics() -> None:

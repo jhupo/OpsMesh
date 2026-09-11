@@ -103,6 +103,7 @@ Set production values in `/opt/opsmesh/.env`, especially:
 - `OPSMESH_INTERNAL_API_TOKEN`
 - `OPSMESH_PLATFORM_ADMIN_TOKEN`
 - `OPSMESH_WORKER_HEARTBEAT_TOKEN`
+- `OPSMESH_SELF_HOSTED_ATTESTATION_SECRET` when the deployment needs signed self-hosted capability reports
 - `OPSMESH_TOKEN_HASH_PEPPER`
 - `OPSMESH_POSTGRES_PASSWORD` or the full `OPSMESH_DATABASE_URL`
 - `OPSMESH_REDIS_URL`
@@ -230,6 +231,7 @@ Before running with `OPSMESH_ENVIRONMENT=production`, set strong values for:
 - `OPSMESH_INTERNAL_API_TOKEN`
 - `OPSMESH_PLATFORM_ADMIN_TOKEN`
 - `OPSMESH_WORKER_HEARTBEAT_TOKEN`
+- `OPSMESH_SELF_HOSTED_ATTESTATION_SECRET` when signed self-hosted capability reports are enabled
 - `OPSMESH_TOKEN_HASH_PEPPER`
 - `OPSMESH_POSTGRES_PASSWORD` or the full `OPSMESH_DATABASE_URL`
 - `OPSMESH_ENABLE_API_DOCS=false`

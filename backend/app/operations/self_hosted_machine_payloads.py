@@ -21,6 +21,10 @@ from backend.app.operations.self_hosted_machine_repository import (
 )
 from backend.app.operations.utils import age_seconds
 from backend.app.self_hosted.models import SelfHostedWorker
+from backend.app.self_hosted.trust import (
+    worker_capability_attestation_state,
+    worker_host_isolation_verified,
+)
 
 
 class OperationsSelfHostedMachineService:
@@ -79,6 +83,11 @@ def _machine_response(
 
     credential = records.credentials.get(runtime.id)
     trust_state = self_hosted_trust_state(worker, runtime, credential)
+    capability_attestation_state = worker_capability_attestation_state(
+        worker,
+        runtime,
+        credential,
+    )
     heartbeat_age_seconds = age_seconds(now, worker.last_heartbeat_at)
     stale = _is_stale_machine(heartbeat_age_seconds, stale_after_seconds, trust_state)
     warning_code, warning_message = self_hosted_machine_warning(
@@ -93,6 +102,11 @@ def _machine_response(
         machine_id=worker.machine_id,
         version=worker.version,
         trust_state=trust_state,
+        capability_attestation_state=capability_attestation_state,
+        capability_attestation_fingerprint=worker.capability_attestation_fingerprint,
+        capability_attestation_metadata=dict(worker.capability_attestation_metadata or {}),
+        capability_attested_at=worker.capability_attested_at,
+        host_isolation_verified=worker_host_isolation_verified(worker, runtime, credential),
         worker_status=worker.status,
         runtime_status=runtime.status,
         connection_status=runtime.connection_status,

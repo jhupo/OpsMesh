@@ -36,6 +36,18 @@ curl -X POST https://opsmesh.example.com/api/v1/self-hosted/register \
       "allowed_tools": ["workspace.search"],
       "max_concurrent_mcp_jobs": 1,
       "max_project_bytes": 536870912
+    },
+    "attestation": {
+      "protocol": "opsmesh.self_hosted.attestation.v1",
+      "workspace_id": "workspace-id-from-enrollment",
+      "machine_id": "stable-machine-id",
+      "isolation_mode": "docker",
+      "isolation_enforced": true,
+      "capabilities_sha256": "sha256:<canonical-capabilities-digest>",
+      "issued_at": "2026-09-11T00:00:00+00:00",
+      "nonce": "deployment-generated-nonce",
+      "key_id": "deployment-key",
+      "signature": "<hmac-sha256-signature>"
     }
   }'
 ```
@@ -43,12 +55,33 @@ curl -X POST https://opsmesh.example.com/api/v1/self-hosted/register \
 Store the returned `credential_token` in the host secret manager. Do not put it in a command-line
 argument, repository file, connector capability file, or log.
 
+## Capability Attestation And Trust Boundary
+
+The registration and heartbeat contracts accept an optional capability attestation. Its canonical
+signed material is `workspace_id:machine_id:<JSON with sorted keys and compact separators>` using
+the fields shown in the example, and the control plane verifies it with
+`OPSMESH_SELF_HOSTED_ATTESTATION_SECRET`. Reports are time-bounded to ten minutes, bind the
+advertised capability digest, and are stored only as a fingerprint and redacted metadata; the
+signature and nonce are never persisted.
+
+No report can prove that an arbitrary user-owned host is isolated. Therefore a worker without a
+valid signed report is explicitly `untrusted`, and even a verified report has
+`host_isolation_verified=false`. A run whose frozen runtime policy sets
+`requires_verified_isolation=true` is rejected unless a future platform attestation provider has
+produced a host-isolation proof. Normal self-hosted runs remain available with the distinct
+untrusted boundary visible in the trust and operations APIs. Revoking the credential or worker
+immediately prevents new authentication, polling, claims, heartbeats, and uploads, and closes
+active claims with durable evidence.
+
 ## Run
 
 ```bash
 export OPSMESH_API_URL=https://opsmesh.example.com/api/v1
 export OPSMESH_RUNTIME_CREDENTIAL=ccwc_replace_with_runtime_credential
-opsmesh-self-hosted-worker --state-path /var/lib/opsmesh-connector/state.sqlite3
+opsmesh-self-hosted-worker \
+  --state-path /var/lib/opsmesh-connector/state.sqlite3 \
+  --capabilities-file /etc/opsmesh/connector-capabilities.json \
+  --attestation-file /etc/opsmesh/connector-attestation.json
 ```
 
 `OPSMESH_API_URL` includes the API prefix. HTTPS is mandatory except for loopback development. The
@@ -58,7 +91,8 @@ prevent two processes from sharing one recovery ledger.
 
 The optional `--capabilities-file` must contain the complete capability object. Omitting it sends an
 empty heartbeat object, which tells the control plane to preserve the capabilities established at
-registration.
+registration. The optional `--attestation-file` contains the signed capability report described
+below; omitting it keeps the worker explicitly `untrusted`.
 
 ## Agent Project File Contract
 

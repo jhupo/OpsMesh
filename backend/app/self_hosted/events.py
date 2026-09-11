@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -6,6 +7,8 @@ from backend.app.runs.event_writer import RunEventWriter
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpaceEvent
 from backend.app.runtimes.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.security.models import SecurityEvent
+from backend.app.security.redaction import redact_sensitive_payload
 
 
 class SelfHostedEventRecorder:
@@ -61,3 +64,31 @@ class SelfHostedEventRecorder:
                 created_at=datetime.now(UTC),
             )
         )
+
+    def append_security_event(
+        self,
+        *,
+        workspace_id: UUID,
+        action: str,
+        outcome: str,
+        severity: str,
+        reason: str,
+        metadata: dict[str, object] | None = None,
+    ) -> SecurityEvent:
+        event = SecurityEvent(
+            workspace_id=workspace_id,
+            user_id=None,
+            action=action,
+            outcome=outcome,
+            severity=severity,
+            source_ip=None,
+            user_agent=None,
+            request_id=None,
+            path="self_hosted",
+            method="SYSTEM",
+            reason=reason[:512],
+            event_metadata=redact_sensitive_payload(metadata or {}),
+            created_at=datetime.now(UTC),
+        )
+        self._session.add(event)
+        return event

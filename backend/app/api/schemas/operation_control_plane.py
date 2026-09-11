@@ -73,6 +73,11 @@ class OperationsSelfHostedMachineResponse(BaseModel):
     machine_id: str
     version: str
     trust_state: str
+    capability_attestation_state: str
+    capability_attestation_fingerprint: str | None
+    capability_attestation_metadata: dict[str, object]
+    capability_attested_at: datetime | None
+    host_isolation_verified: bool
     worker_status: str
     runtime_status: str
     connection_status: str
@@ -89,7 +94,11 @@ class OperationsSelfHostedMachineResponse(BaseModel):
     warning_message: str | None = None
     remediation_actions: list[dict[str, object]] = Field(default_factory=list)
 
-    @field_serializer("policy_summary", "capabilities")
+    @field_serializer(
+        "policy_summary",
+        "capabilities",
+        "capability_attestation_metadata",
+    )
     def _serialize_machine_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
 

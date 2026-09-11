@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -71,6 +71,26 @@ class SelfHostedWorker(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     version: Mapped[str] = mapped_column(String(80), nullable=False, default="")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="online")
     capabilities: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    capability_attestation_state: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="untrusted",
+    )
+    capability_attestation_fingerprint: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+    capability_attestation_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+    capability_attested_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    host_isolation_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 

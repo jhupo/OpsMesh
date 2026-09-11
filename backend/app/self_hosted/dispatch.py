@@ -76,6 +76,7 @@ class SelfHostedDispatchService:
         ):
             raise ValueError("Agent run not available for this worker")
         self._eligibility.require_run_authorized(run, full=True)
+        self._eligibility.require_verified_isolation(auth, run)
         if not self._eligibility.runtime_space_allowed(auth, run):
             raise ValueError("Agent run runtime space is not allowed for this worker")
         policy_decision = self._eligibility.job_policy_decision(auth, run)
@@ -155,6 +156,10 @@ class SelfHostedDispatchService:
         job = self._locks.locked_mcp_job(auth, mcp_job_id)
         if job is None:
             raise ValueError("Self-hosted MCP job not found")
+        run = self._session.get(AgentRun, job.agent_run_id)
+        if run is None or run.workspace_id != auth.worker.workspace_id:
+            raise ValueError("Self-hosted MCP job run is unavailable")
+        self._eligibility.require_verified_isolation(auth, run)
         if job.status == "claimed" and job.worker_id == auth.worker.id:
             return job
         if not self._capacity.allows_mcp_job(auth):

@@ -36,11 +36,21 @@ class HttpMcpJobApi:
             transport=transport,
         )
 
-    def heartbeat(self, capabilities: dict[str, object]) -> None:
+    def heartbeat(
+        self,
+        capabilities: dict[str, object],
+        attestation: dict[str, object] | None = None,
+    ) -> None:
+        heartbeat_payload: dict[str, object] = {
+            "status": "online",
+            "capabilities": capabilities,
+        }
+        if attestation is not None:
+            heartbeat_payload["attestation"] = attestation
         payload = self._request(
             "POST",
             "self-hosted/heartbeat",
-            json={"status": "online", "capabilities": capabilities},
+            json=heartbeat_payload,
         )
         if not isinstance(payload, dict) or payload.get("status") != "online":
             raise ConnectorApiError("Control plane returned an invalid heartbeat response")

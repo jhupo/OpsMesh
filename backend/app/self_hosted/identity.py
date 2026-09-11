@@ -16,6 +16,10 @@ from backend.app.api.schemas.self_hosted import (
 from backend.app.core.config import Settings
 from backend.app.runtime_spaces.models import RuntimeSpace
 from backend.app.runtimes.models import WorkspaceRuntime
+from backend.app.self_hosted.attestation import (
+    CapabilityAttestationResult,
+    evaluate_capability_attestation,
+)
 from backend.app.self_hosted.events import SelfHostedEventRecorder
 from backend.app.self_hosted.models import (
     RuntimeCredential,
@@ -66,6 +70,13 @@ class SelfHostedIdentityService:
             token.workspace_id,
             data.capabilities,
         )
+        attestation = evaluate_capability_attestation(
+            workspace_id=token.workspace_id,
+            machine_id=data.machine_id,
+            capabilities=capabilities,
+            attestation=data.attestation,
+            settings=self._settings,
+        )
         runtime_space_id = self.registration_runtime_space_id(token.workspace_id, capabilities)
         runtime = WorkspaceRuntime(
             workspace_id=token.workspace_id,
@@ -94,6 +105,11 @@ class SelfHostedIdentityService:
             machine_id=data.machine_id,
             version=data.version,
             capabilities=capabilities,
+            capability_attestation_state=attestation.state,
+            capability_attestation_fingerprint=attestation.fingerprint,
+            capability_attestation_metadata=attestation.metadata,
+            capability_attested_at=attestation.attested_at,
+            host_isolation_verified=attestation.host_isolation_verified,
             last_heartbeat_at=now,
         )
         token.status = "used"
@@ -105,6 +121,7 @@ class SelfHostedIdentityService:
             "self_hosted.registered",
             data.machine_id,
         )
+        self._record_attestation(runtime, attestation, event="registered")
         self._session.commit()
         self._session.refresh(runtime)
         self._session.refresh(worker)
@@ -113,6 +130,8 @@ class SelfHostedIdentityService:
             workspace_runtime_id=runtime.id,
             worker_id=worker.id,
             credential_token=credential_token,
+            capability_attestation_state=worker.capability_attestation_state,
+            host_isolation_verified=worker.host_isolation_verified,
         )
 
     def authenticate_worker(self, credential_token: str) -> AuthenticatedWorker:
@@ -132,6 +151,13 @@ class SelfHostedIdentityService:
         )
         if runtime is None or worker is None:
             raise ValueError("Runtime credential is orphaned")
+        if (
+            runtime.workspace_id != credential.workspace_id
+            or worker.workspace_id != credential.workspace_id
+        ):
+            raise ValueError("Runtime credential workspace binding is invalid")
+        if runtime.status in {"revoked", "disabled"} or worker.status in {"revoked", "disabled"}:
+            raise ValueError("Self-hosted runtime credential is revoked")
         credential.last_used_at = datetime.now(UTC)
         return AuthenticatedWorker(worker=worker, runtime=runtime, credential=credential)
 
@@ -141,15 +167,29 @@ class SelfHostedIdentityService:
         data: WorkerHeartbeatRequest,
     ) -> SelfHostedWorker:
         now = datetime.now(UTC)
+        if auth.worker.status in {"revoked", "disabled"} or auth.runtime.status in {
+            "revoked",
+            "disabled",
+        }:
+            raise ValueError("Revoked self-hosted workers cannot send heartbeats")
         if auth.worker.status == "quarantined" or auth.runtime.status == "quarantined":
             raise ValueError("Self-hosted worker is quarantined")
+        if data.status not in {"online", "offline", "degraded"}:
+            raise ValueError("Unsupported self-hosted heartbeat status")
+        next_capabilities = data.capabilities or auth.worker.capabilities
         capabilities = self.validated_capabilities(
             auth.worker.workspace_id,
-            data.capabilities or auth.worker.capabilities,
+            next_capabilities,
             bound_runtime_space_id=auth.runtime.runtime_space_id,
         )
+        attestation = self._heartbeat_attestation(auth, data, capabilities)
         auth.worker.status = data.status
         auth.worker.capabilities = capabilities
+        auth.worker.capability_attestation_state = attestation.state
+        auth.worker.capability_attestation_fingerprint = attestation.fingerprint
+        auth.worker.capability_attestation_metadata = attestation.metadata
+        auth.worker.capability_attested_at = attestation.attested_at
+        auth.worker.host_isolation_verified = attestation.host_isolation_verified
         auth.worker.last_heartbeat_at = now
         auth.runtime.connection_status = "online" if data.status == "online" else data.status
         auth.runtime.capabilities = capabilities
@@ -160,9 +200,65 @@ class SelfHostedIdentityService:
             "self_hosted.heartbeat",
             data.status,
         )
+        if data.attestation is not None or data.capabilities:
+            self._record_attestation(auth.runtime, attestation, event="heartbeat")
         self._session.commit()
         self._session.refresh(auth.worker)
         return auth.worker
+
+    def _heartbeat_attestation(
+        self,
+        auth: AuthenticatedWorker,
+        data: WorkerHeartbeatRequest,
+        capabilities: dict[str, object],
+    ) -> CapabilityAttestationResult:
+        if data.attestation is None and not data.capabilities:
+            return CapabilityAttestationResult(
+                state=auth.worker.capability_attestation_state or "untrusted",
+                fingerprint=auth.worker.capability_attestation_fingerprint,
+                metadata=dict(auth.worker.capability_attestation_metadata or {}),
+                host_isolation_verified=auth.worker.host_isolation_verified,
+                attested_at=auth.worker.capability_attested_at,
+            )
+        return evaluate_capability_attestation(
+            workspace_id=auth.worker.workspace_id,
+            machine_id=auth.worker.machine_id,
+            capabilities=capabilities,
+            attestation=data.attestation,
+            settings=self._settings,
+        )
+
+    def _record_attestation(
+        self,
+        runtime: WorkspaceRuntime,
+        attestation: CapabilityAttestationResult,
+        *,
+        event: str,
+    ) -> None:
+        metadata = {
+            "state": attestation.state,
+            "fingerprint": attestation.fingerprint,
+            "host_isolation_verified": attestation.host_isolation_verified,
+            "attested_at": (
+                attestation.attested_at.isoformat() if attestation.attested_at is not None else None
+            ),
+            "reason": attestation.metadata.get("reason"),
+        }
+        self._events.append_runtime_event(
+            runtime,
+            f"self_hosted.attestation_{event}",
+            attestation.state,
+            metadata,
+        )
+        if attestation.state != "verified":
+            self._events.append_security_event(
+                workspace_id=runtime.workspace_id,
+                action="self_hosted.attestation.untrusted",
+                outcome="untrusted",
+                severity="warning",
+                reason=str(attestation.metadata.get("reason") or "untrusted_attestation"),
+                metadata={"runtime_id": str(runtime.id), **metadata},
+            )
 
     def registration_runtime_space_id(
         self,

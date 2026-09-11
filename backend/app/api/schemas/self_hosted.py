@@ -27,6 +27,7 @@ class RuntimeRegistrationRequest(BaseModel):
     machine_id: str = Field(min_length=1, max_length=160)
     version: str = Field(default="", max_length=80)
     capabilities: dict[str, object] = Field(default_factory=dict)
+    attestation: dict[str, object] | None = None
 
 
 class RuntimeRegistrationResponse(BaseModel):
@@ -34,11 +35,14 @@ class RuntimeRegistrationResponse(BaseModel):
     workspace_runtime_id: UUID
     worker_id: UUID
     credential_token: str
+    capability_attestation_state: str
+    host_isolation_verified: bool
 
 
 class WorkerHeartbeatRequest(BaseModel):
     status: str = Field(default="online", max_length=32)
     capabilities: dict[str, object] = Field(default_factory=dict)
+    attestation: dict[str, object] | None = None
 
 
 class WorkerHeartbeatResponse(BaseModel):
@@ -46,6 +50,8 @@ class WorkerHeartbeatResponse(BaseModel):
     workspace_runtime_id: UUID
     status: str
     last_heartbeat_at: datetime
+    capability_attestation_state: str
+    host_isolation_verified: bool
 
 
 class SelfHostedWorkerCleanupResponse(BaseModel):
@@ -79,6 +85,11 @@ class SelfHostedWorkerTrustResponse(BaseModel):
     machine_id: str
     version: str
     trust_state: str
+    capability_attestation_state: str
+    capability_attestation_fingerprint: str | None
+    capability_attestation_metadata: dict[str, object]
+    capability_attested_at: datetime | None
+    host_isolation_verified: bool
     worker_status: str
     runtime_status: str
     connection_status: str
@@ -90,7 +101,11 @@ class SelfHostedWorkerTrustResponse(BaseModel):
     policy_diagnostics: list[dict[str, object]]
     capabilities: dict[str, object]
 
-    @field_serializer("policy_summary", "capabilities")
+    @field_serializer(
+        "policy_summary",
+        "capabilities",
+        "capability_attestation_metadata",
+    )
     def _serialize_worker_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
 

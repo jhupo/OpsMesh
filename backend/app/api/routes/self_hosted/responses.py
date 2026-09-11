@@ -36,6 +36,8 @@ def runtime_registration_response(
         workspace_runtime_id=registered.workspace_runtime_id,
         worker_id=registered.worker_id,
         credential_token=registered.credential_token,
+        capability_attestation_state=registered.capability_attestation_state,
+        host_isolation_verified=registered.host_isolation_verified,
     )
 
 
@@ -45,6 +47,8 @@ def heartbeat_response(worker: SelfHostedWorker) -> WorkerHeartbeatResponse:
         workspace_runtime_id=worker.workspace_runtime_id,
         status=worker.status,
         last_heartbeat_at=worker.last_heartbeat_at,
+        capability_attestation_state=worker.capability_attestation_state,
+        host_isolation_verified=worker.host_isolation_verified,
     )
 
 
@@ -71,6 +75,11 @@ def worker_trust_response(snapshot: WorkerTrustSnapshot) -> SelfHostedWorkerTrus
         machine_id=snapshot.worker.machine_id,
         version=snapshot.worker.version,
         trust_state=snapshot.trust_state,
+        capability_attestation_state=snapshot.capability_attestation_state,
+        capability_attestation_fingerprint=snapshot.capability_attestation_fingerprint,
+        capability_attestation_metadata=snapshot.capability_attestation_metadata,
+        capability_attested_at=snapshot.capability_attested_at,
+        host_isolation_verified=snapshot.host_isolation_verified,
         worker_status=snapshot.worker.status,
         runtime_status=snapshot.runtime.status,
         connection_status=snapshot.runtime.connection_status,

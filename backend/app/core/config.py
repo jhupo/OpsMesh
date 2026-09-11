@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     internal_api_token: str = Field(default="change-me-in-production")
     platform_admin_token: str | None = Field(default=None)
     worker_heartbeat_token: str | None = Field(default=None)
+    self_hosted_attestation_secret: str | None = Field(default=None)
     token_hash_pepper: str = Field(default="change-me-token-pepper")
     audit_event_retention_days: int | None = Field(default=None, ge=1)
     audit_event_worm_enabled: bool = Field(default=True)
@@ -133,6 +134,7 @@ class Settings(BaseSettings):
             "s3_secret_access_key",
             "s3_session_token",
             "otel_exporter_otlp_endpoint",
+            "self_hosted_attestation_secret",
         ):
             value = getattr(self, field_name)
             if value is not None:
@@ -267,6 +269,7 @@ class Settings(BaseSettings):
                 self.credential_encryption_previous_secrets
             ),
             "worker_heartbeat_token_configured": bool(self.worker_heartbeat_token),
+            "self_hosted_attestation_secret_configured": bool(self.self_hosted_attestation_secret),
             "cors_origins_count": len(self.cors_origins),
             "enabled_feature_flags": sorted(
                 key for key, value in self.feature_flags.items() if value

@@ -50,6 +50,16 @@ def evaluate_worker_job_policy(
     return WorkerJobPolicyDecision(allowed=True)
 
 
+def run_requires_verified_isolation(run: AgentRun) -> bool:
+    """Return the immutable run policy's explicit host-isolation requirement."""
+
+    snapshot = _authorization_snapshot(run)
+    runtime_policy = snapshot.get("runtime_policy")
+    return isinstance(runtime_policy, dict) and runtime_policy.get(
+        "requires_verified_isolation"
+    ) is True
+
+
 def _evaluate_allowed_tools(
     worker_capabilities: dict[str, object],
     snapshot: dict[str, object],

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from packaging.version import InvalidVersion, Version
@@ -24,6 +25,11 @@ class WorkerTrustSnapshot:
     runtime: WorkspaceRuntime
     credential: RuntimeCredential | None
     trust_state: str
+    capability_attestation_state: str
+    capability_attestation_fingerprint: str | None
+    capability_attestation_metadata: dict[str, object]
+    capability_attested_at: datetime | None
+    host_isolation_verified: bool
     policy_summary: dict[str, object]
     policy_diagnostics: list[dict[str, object]]
 
@@ -57,6 +63,21 @@ class SelfHostedTrustService:
                     runtime=runtime,
                     credential=credential,
                     trust_state=_worker_trust_state(worker, runtime, credential),
+                    capability_attestation_state=worker_capability_attestation_state(
+                        worker,
+                        runtime,
+                        credential,
+                    ),
+                    capability_attestation_fingerprint=worker.capability_attestation_fingerprint,
+                    capability_attestation_metadata=dict(
+                        worker.capability_attestation_metadata or {}
+                    ),
+                    capability_attested_at=worker.capability_attested_at,
+                    host_isolation_verified=worker_host_isolation_verified(
+                        worker,
+                        runtime,
+                        credential,
+                    ),
                     policy_summary=_worker_policy_summary(worker.capabilities),
                     policy_diagnostics=_worker_policy_diagnostics(
                         worker,
@@ -121,6 +142,7 @@ class SelfHostedTrustService:
                     "max_concurrent_mcp_jobs",
                     "max_artifact_bytes",
                     "max_project_bytes",
+                    "capability_attestation",
                 ],
                 "mcp_stdio": {
                     "contract_version": MCP_STDIO_CONTRACT_VERSION,
@@ -143,6 +165,16 @@ class SelfHostedTrustService:
                 "runtime_credential_transport": "authorization_bearer_token",
                 "returns_credentials": False,
                 "workspace_scoped": True,
+                "capability_attestation": {
+                    "protocol": "opsmesh.self_hosted.attestation.v1",
+                    "signature": "hmac-sha256",
+                    "verifier_configured": bool(self._settings.self_hosted_attestation_secret),
+                    "untrusted_default": True,
+                    "host_isolation_verified": False,
+                    "requires_verified_isolation_policy": (
+                        "runtime_policy.requires_verified_isolation"
+                    ),
+                },
             },
             "version_policy": {
                 key: value
@@ -188,6 +220,28 @@ def _worker_trust_state(
     if worker.status in {"offline", "disabled"} or runtime.connection_status == "offline":
         return "offline"
     return "active"
+
+
+def worker_capability_attestation_state(
+    worker: SelfHostedWorker,
+    runtime: WorkspaceRuntime,
+    credential: RuntimeCredential | None,
+) -> str:
+    if credential is not None and credential.status == "revoked":
+        return "revoked"
+    if worker.status == "revoked" or runtime.status == "revoked":
+        return "revoked"
+    return worker.capability_attestation_state or "untrusted"
+
+
+def worker_host_isolation_verified(
+    worker: SelfHostedWorker,
+    runtime: WorkspaceRuntime,
+    credential: RuntimeCredential | None,
+) -> bool:
+    if worker_capability_attestation_state(worker, runtime, credential) != "verified":
+        return False
+    return bool(worker.host_isolation_verified)
 
 
 def _worker_policy_summary(capabilities: dict[str, object]) -> dict[str, object]:

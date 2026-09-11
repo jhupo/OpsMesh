@@ -22,7 +22,11 @@ from backend.app.self_hosted.models import (
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
-from backend.app.self_hosted.policy import WorkerJobPolicyDecision, evaluate_worker_job_policy
+from backend.app.self_hosted.policy import (
+    WorkerJobPolicyDecision,
+    evaluate_worker_job_policy,
+    run_requires_verified_isolation,
+)
 from backend.app.self_hosted.types import AuthenticatedWorker
 from backend.app.tasks.models import Task
 from backend.app.workspaces.quotas import WorkspaceQuotaService
@@ -40,9 +44,22 @@ class SelfHostedWorkerEligibilityService:
         if auth.runtime.connection_status == "degraded":
             raise ValueError("Self-hosted runtime is degraded")
 
+    def require_verified_isolation(self, auth: AuthenticatedWorker, run: AgentRun) -> None:
+        if not run_requires_verified_isolation(run):
+            return
+        if (
+            auth.worker.capability_attestation_state != "verified"
+            or not auth.worker.host_isolation_verified
+        ):
+            raise ValueError(
+                "Agent run requires platform-verified host isolation, but this self-hosted "
+                "worker is untrusted"
+            )
+
     def can_accept_run(self, auth: AuthenticatedWorker, run: AgentRun) -> bool:
         try:
             self.require_run_authorized(run)
+            self.require_verified_isolation(auth, run)
         except ValueError:
             return False
         if not self.runtime_space_allowed(auth, run):
@@ -72,6 +89,13 @@ class SelfHostedWorkerEligibilityService:
         )
 
     def can_accept_mcp_job(self, auth: AuthenticatedWorker, job: SelfHostedMcpJob) -> bool:
+        run = self._session.get(AgentRun, job.agent_run_id)
+        if run is None:
+            return False
+        try:
+            self.require_verified_isolation(auth, run)
+        except ValueError:
+            return False
         allowed_tools = string_list(auth.worker.capabilities.get("allowed_tools"))
         return not allowed_tools or job.tool_name in allowed_tools
 
