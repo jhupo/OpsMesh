@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from agents.tool_context import ToolContext
 
-import backend.app.agent_runtime.adapters.openai_agents as openai_runtime
+import backend.app.agent_runtime.providers.openai_agents as openai_runtime
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeAgentDefinition,
@@ -17,7 +17,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolDefinition,
     AgentRuntimeToolResult,
 )
-from backend.app.agent_runtime.adapters.openai_agents import OpenAIAgentsRunner
+from backend.app.agent_runtime.providers.openai_agents import OpenAIAgentsRunner
 from backend.app.agents.models import AgentProfile
 from backend.app.core.config import Settings
 from backend.app.orchestration.run_authorization_snapshot import (

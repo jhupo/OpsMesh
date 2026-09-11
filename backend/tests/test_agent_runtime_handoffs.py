@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from agents.handoffs import HandoffInputData
 
-import backend.app.agent_runtime.adapters.openai_agents as openai_runtime
+import backend.app.agent_runtime.providers.openai_agents as openai_runtime
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeAgentDefinition,
@@ -14,7 +14,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeHandoff,
 )
-from backend.app.agent_runtime.adapters.openai_agents import OpenAIAgentsRunner
+from backend.app.agent_runtime.providers.openai_agents import OpenAIAgentsRunner
 from backend.app.agent_runtime.openai.results import OpenAIAgentsResultMapper
 from backend.app.agents.models import AgentProfile
 
