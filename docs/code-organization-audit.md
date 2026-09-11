@@ -89,5 +89,8 @@ The consolidation should proceed in this order, from lowest coupling to highest 
 
 The following areas are **not** over-split by default and should not be merged merely to reduce
 the directory count: `auth`, `identity`, `db`, `capabilities/mcp`, `secrets`, migrations, and
-API route groups with distinct authentication or deployment policy. They represent real security,
-protocol, or operational boundaries.
+API route groups with distinct authentication or deployment policy. `teams/project_space`,
+`workers/queue`, and `tools/product_tools` also currently have enough cohesive implementation
+files to remain subpackages; they should only be flattened after a dependency review, not by
+directory-count alone. These areas represent real security, protocol, lifecycle, or operational
+boundaries.
