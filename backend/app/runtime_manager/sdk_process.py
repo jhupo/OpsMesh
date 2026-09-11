@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import tarfile
 from dataclasses import dataclass
 
 from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeCommandResult
@@ -22,3 +24,21 @@ class RuntimeSdkProcess:
             timeout_seconds,
             working_dir=self.working_dir,
         )
+
+    def install_claude_cli_wrapper(self) -> str:
+        """Install a deterministic Claude CLI entrypoint inside the runtime container."""
+        path = "/opt/opsmesh/bin/claude"
+        script = b"#!/bin/sh\nexec claude \"$@\"\n"
+        archive = io.BytesIO()
+        with tarfile.open(fileobj=archive, mode="w") as tar:
+            info = tarfile.TarInfo("claude")
+            info.mode = 0o755
+            info.size = len(script)
+            tar.addfile(info, io.BytesIO(script))
+        self.client.copy_archive_to_container(
+            self.container_id,
+            "/opt/opsmesh/bin",
+            archive.getvalue(),
+            30,
+        )
+        return path
