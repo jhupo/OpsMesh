@@ -20,13 +20,13 @@ from backend.app.runtime_manager.core.contracts import (
     validate_runtime_execution_mode,
 )
 from backend.app.runtime_manager.events import RuntimeEventLog
-from backend.app.runtime_manager.leases import RuntimeLeaseStore
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtime_manager.metadata import (
     default_runtime_hardening_policy,
     runtime_isolation_metadata,
     runtime_labels,
 )
+from backend.app.runtime_manager.pool.leases import RuntimeLeaseStore
 from backend.app.runtimes.models import RuntimeLease, RuntimeTemplate, WorkspaceRuntime
 
 MANAGED_RUNTIME_PROVIDERS = frozenset({"docker", "cloud_docker"})
