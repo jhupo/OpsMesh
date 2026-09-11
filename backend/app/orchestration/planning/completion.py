@@ -24,7 +24,7 @@ from backend.app.runs.models import AgentRun
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskStep
 
-from .team_step_project_plan import ProjectPlanStepMaterializer
+from .team_project_plan import ProjectPlanStepMaterializer
 
 
 class PlannerCompletionService:

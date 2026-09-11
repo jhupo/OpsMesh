@@ -11,11 +11,11 @@ from sqlalchemy.orm import Session
 from backend.app.agent_runtime.core.contracts import AgentRunResult
 from backend.app.agent_runtime.core.errors import normalize_agent_error
 from backend.app.orchestration.models import SubworkflowInvocation
-from backend.app.orchestration.planner_completion import PlannerCompletionService
+from backend.app.orchestration.planning.completion import PlannerCompletionService
 from backend.app.orchestration.pm_acceptance import PmAcceptanceService
 from backend.app.orchestration.pm_final_output import PmFinalOutputService
 from backend.app.orchestration.pm_follow_up_work import PmFollowUpWorkService
-from backend.app.orchestration.pm_step_payload import step_message_payload
+from backend.app.orchestration.planning.step_payload import step_message_payload
 from backend.app.orchestration.run_memory_completion import RunMemoryCompletionService
 from backend.app.orchestration.run_result_payloads import run_output_payload
 from backend.app.orchestration.run_task_progress import RunTaskProgressService

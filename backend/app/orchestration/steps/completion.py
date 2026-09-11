@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.capabilities.schema_validation import validate_json_value
 from backend.app.orchestration.pm_acceptance import PmAcceptanceService
-from backend.app.orchestration.pm_step_payload import step_message_payload
+from backend.app.orchestration.planning.step_payload import step_message_payload
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import TaskMessage, TaskStep

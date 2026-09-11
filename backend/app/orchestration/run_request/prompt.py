@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.tools import PRODUCT_TOOL_NAMES
-from backend.app.orchestration.workflow_data import resolve_workflow_inputs
+from backend.app.orchestration.workflows.data import resolve_workflow_inputs
 from backend.app.planning.agent_plan import is_agent_planning_step
 from backend.app.runs.models import AgentRun
 from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text

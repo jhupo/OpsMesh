@@ -20,7 +20,7 @@ from backend.app.orchestration.steps.scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.orchestration.team_step_planner import TeamStepPlanner
+from backend.app.orchestration.planning.team_step_planner import TeamStepPlanner
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.redis.keys import RedisKeyBuilder

@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.orchestration.runs import RunOrchestrationService
-from backend.app.orchestration.step_dependencies import dependencies_satisfied
-from backend.app.orchestration.team_step_project_plan import ProjectPlanStepMaterializer
+from backend.app.orchestration.steps.dependencies import dependencies_satisfied
+from backend.app.orchestration.planning.team_project_plan import ProjectPlanStepMaterializer
 from backend.app.planning.project_plan_validation import (
     ProjectPlanValidationError,
     validate_project_plan,

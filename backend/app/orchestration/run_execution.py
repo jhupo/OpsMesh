@@ -35,8 +35,8 @@ from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_lifecycle import RunLifecycleService
 from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.orchestration.runtime.event_messages import RunRuntimeEventMessageMapper
-from backend.app.orchestration.subworkflows import SubworkflowExecutionService
-from backend.app.orchestration.workflow_data import resolve_workflow_inputs
+from backend.app.orchestration.workflows.subworkflows import SubworkflowExecutionService
+from backend.app.orchestration.workflows.data import resolve_workflow_inputs
 from backend.app.projects.runtime_io import RunProjectIOService
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.runs.models import AgentRun, RunEvent

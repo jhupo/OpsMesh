@@ -13,12 +13,12 @@ from backend.app.orchestration.conditions import evaluate_task_step_condition
 from backend.app.orchestration.models import SubworkflowInvocation
 from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.orchestration.run_execution import RunExecutionDependencies, RunExecutionService
-from backend.app.orchestration.run_step_completion import TaskStepCompletionService
-from backend.app.orchestration.subworkflows import (
+from backend.app.orchestration.steps.completion import TaskStepCompletionService
+from backend.app.orchestration.workflows.subworkflows import (
     SubworkflowExecutionError,
     SubworkflowExecutionService,
 )
-from backend.app.orchestration.workflow_data import (
+from backend.app.orchestration.workflows.data import (
     WorkflowDataBindingError,
     resolve_workflow_inputs,
 )
