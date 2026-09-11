@@ -22,7 +22,7 @@ from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.projects.runtime_io_queries import RunProjectIOQueryService
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 

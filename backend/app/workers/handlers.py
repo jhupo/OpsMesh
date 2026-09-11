@@ -25,7 +25,7 @@ from backend.app.workers.job_handlers import (
 from backend.app.workers.job_handlers.base import WorkerJobTypeHandler
 from backend.app.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 
 class WorkerJobHandler:

@@ -21,7 +21,7 @@ from backend.app.tasks.models import Task, TaskMessage, TaskStep, TaskTransfer
 from backend.app.tasks.ownership import is_platform_owned_step, owner_version
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.snapshots import build_team_snapshot
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 TRANSFER_PENDING = "pending"
 TRANSFER_ACCEPTED = "accepted"

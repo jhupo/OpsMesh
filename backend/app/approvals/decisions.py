@@ -14,7 +14,7 @@ from backend.app.reviews.resource_review_targets import ResourceReviewDecisionSe
 from backend.app.runs.models import AgentRunStateSnapshot
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 
 class ApprovalDecisionService:

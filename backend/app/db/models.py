@@ -80,10 +80,6 @@ from backend.app.runtime.spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.scheduled_jobs.models import (
-    WorkspaceScheduledJob,
-    WorkspaceScheduledJobEvent,
-)
 from backend.app.security.models import SecurityEvent
 from backend.app.self_hosted.models import (
     LocalFileReference,
@@ -99,6 +95,10 @@ from backend.app.storage.models import FileAccessEvent, WorkspaceFile
 from backend.app.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep, TaskTransfer
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
+from backend.app.workers.scheduled_models import (
+    WorkspaceScheduledJob,
+    WorkspaceScheduledJobEvent,
+)
 from backend.app.workspaces.models import (
     Workspace,
     WorkspaceInvite,

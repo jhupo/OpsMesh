@@ -29,6 +29,10 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         assert (app / name / "__init__.py").is_file(), name
     for name in (
         "runtime_manager",
+        "teams/project_space",
+        "workers/queue",
+        "tools/product_tools",
+        "scheduled_jobs",
         "runtime_spaces",
         "runtimes",
         "files",

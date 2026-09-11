@@ -17,7 +17,7 @@ from backend.app.api.services.workspace_export_builder import WorkspaceExportBui
 from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.storage.storage import ObjectStorage
 from backend.app.workers.jobs import JobPayload
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace
 
 

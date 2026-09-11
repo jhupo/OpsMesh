@@ -3,7 +3,7 @@ from uuid import UUID
 
 from backend.app.observability.audit_service import AuditService
 from backend.app.storage.storage import ObjectStorage
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workspaces.data_lifecycle_action_archive import RecoveryArchiveExportActionMixin
 from backend.app.workspaces.data_lifecycle_action_integrity import (
     RecoveryArchiveIntegrityActionMixin,

@@ -19,7 +19,7 @@ from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 TASK_PAUSED_REASON = control_execution.TASK_PAUSED_REASON
 

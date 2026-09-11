@@ -35,7 +35,7 @@ from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.execution_overview import TeamExecutionOverviewService
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.operations_console import TeamOperationsConsoleService
-from backend.app.teams.project_space import TeamProjectSpaceService
+from backend.app.teams.project_service import TeamProjectSpaceService
 from backend.app.teams.workspace_command_center import WorkspaceCommandCenterService
 from backend.app.teams.workspace_service import (
     TeamCreateCommand,
@@ -43,7 +43,7 @@ from backend.app.teams.workspace_service import (
     WorkspaceTeamService,
 )
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

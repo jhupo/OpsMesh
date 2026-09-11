@@ -22,7 +22,7 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobType
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "audit-integrity-api-token"

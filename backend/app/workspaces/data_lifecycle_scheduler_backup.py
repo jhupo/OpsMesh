@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from pydantic import ValidationError
 
 from backend.app.api.services.exports import WorkspaceExportService
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workspaces.data_lifecycle_policy import _backup_policy
 from backend.app.workspaces.data_lifecycle_schedule import (
     _scheduled_archive_export_request,

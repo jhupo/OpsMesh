@@ -21,7 +21,7 @@ from backend.app.orchestration.workflows.data import resolve_workflow_inputs
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.workspace_service import WorkspaceTaskService
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 
 class SubworkflowExecutionError(ValueError):

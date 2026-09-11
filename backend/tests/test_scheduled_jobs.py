@@ -27,16 +27,16 @@ from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.scheduled_jobs.models import (
-    WorkspaceScheduledJob,
-    WorkspaceScheduledJobEvent,
-)
-from backend.app.scheduled_jobs.service import WorkspaceScheduledJobService
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workers.runner import WorkerRunner, WorkerRunnerConfig
+from backend.app.workers.scheduled_jobs import WorkspaceScheduledJobService
+from backend.app.workers.scheduled_models import (
+    WorkspaceScheduledJob,
+    WorkspaceScheduledJobEvent,
+)
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"

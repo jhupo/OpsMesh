@@ -13,7 +13,7 @@ from backend.app.auth.permissions import WorkspaceAction, WorkspaceRole
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/approvals", tags=["approvals"])
 

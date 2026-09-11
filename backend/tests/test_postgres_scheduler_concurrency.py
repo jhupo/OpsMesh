@@ -22,15 +22,15 @@ from backend.app.runtime.spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.scheduled_jobs.models import (
-    WorkspaceScheduledJob,
-    WorkspaceScheduledJobEvent,
-)
-from backend.app.scheduled_jobs.service import WorkspaceScheduledJobService
-from backend.app.scheduled_jobs.types import ScheduledJobMaintenanceSummary
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.status import TaskStatus
 from backend.app.workers.jobs import JobPayload
+from backend.app.workers.scheduled_jobs import WorkspaceScheduledJobService
+from backend.app.workers.scheduled_models import (
+    WorkspaceScheduledJob,
+    WorkspaceScheduledJobEvent,
+)
+from backend.app.workers.scheduled_types import ScheduledJobMaintenanceSummary
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 POSTGRES_TEST_URL_ENV = "OPSMESH_TEST_POSTGRES_URL"

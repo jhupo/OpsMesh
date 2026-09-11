@@ -17,13 +17,13 @@ from backend.app.operations.worker_lease_maintenance import WorkerLeaseMaintenan
 from backend.app.orchestration.runs.control import RunControlService
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.runtime.dependencies import get_docker_runtime_client
-from backend.app.scheduled_jobs.service import WorkspaceScheduledJobService
 from backend.app.storage.storage import create_storage
 from backend.app.tasks.event_outbox import TaskEventOutboxPublisher
 from backend.app.tasks.events import RedisTaskEventBus
 from backend.app.teams.execution_loop import TeamExecutionLoopQueueService
 from backend.app.webhooks.service import WebhookDeliveryScheduler
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
+from backend.app.workers.scheduled_jobs import WorkspaceScheduledJobService
 from backend.app.workspaces.data_lifecycle import WorkspaceDataLifecycleService
 
 logger = logging.getLogger(__name__)

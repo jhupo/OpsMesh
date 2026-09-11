@@ -38,7 +38,7 @@ from backend.app.tasks.observation import TaskObservationService
 from backend.app.tasks.operator_actions import TaskOperatorActionService
 from backend.app.tasks.timeline import TaskTimelineService
 from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

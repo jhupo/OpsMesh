@@ -34,7 +34,7 @@ from backend.app.workers.maintenance import (
     WorkerMaintenanceService,
     WorkerMaintenanceSummary,
 )
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workers.run_state import WorkerRunState
 from backend.app.workers.runner_models import WorkerRunnerConfig, WorkerRunSummary
 

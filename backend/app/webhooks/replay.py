@@ -14,7 +14,7 @@ from backend.app.webhooks.constants import (
 from backend.app.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
 from backend.app.webhooks.scheduler import WebhookDeliveryScheduler
 from backend.app.webhooks.utils import _metadata_datetime
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 
 class WebhookDeliveryReplayError(ValueError):

@@ -57,7 +57,7 @@ from backend.app.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.workers.job_handlers.memory_embedding import MemoryEmbeddingJobHandler
 from backend.app.workers.jobs import JobType
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 

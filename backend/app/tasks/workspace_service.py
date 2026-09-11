@@ -16,7 +16,7 @@ from backend.app.runtime.spaces.service import RuntimeSpaceService
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.snapshots import build_team_snapshot
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 
 @dataclass(frozen=True, slots=True)

@@ -33,7 +33,7 @@ from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.step_service import TaskStepStateService
 from backend.app.tasks.step_status import TaskStepStatus
 from backend.app.teams.snapshots import build_team_snapshot
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 MUTABLE_STEP_STATUSES = frozenset({TaskStepStatus.QUEUED.value, TaskStepStatus.BLOCKED.value})
 FINAL_STEP_STATUSES = frozenset(

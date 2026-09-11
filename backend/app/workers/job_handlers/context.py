@@ -11,7 +11,7 @@ from backend.app.core.config import Settings
 from backend.app.runtime.contracts import DockerRuntimeClient
 from backend.app.runtime.dependencies import get_docker_runtime_client
 from backend.app.secrets.service import SecretEncryptionService
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 
 @dataclass(frozen=True, slots=True)

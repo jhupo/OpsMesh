@@ -12,7 +12,7 @@ from backend.app.operations.timeline_utils import (
 )
 from backend.app.security.redaction import redact_sensitive_payload_item, redact_text_fragments
 from backend.app.workers.jobs import JobType
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 
 class TeamRuntimeQueueTimelineCollector:

@@ -53,7 +53,6 @@ from backend.app.runtime.spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.scheduled_jobs.models import WorkspaceScheduledJob
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.models import SecurityEvent
 from backend.app.storage.artifact_models import Artifact
@@ -75,8 +74,9 @@ from backend.app.teams.operations_console import TeamOperationsConsoleService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue.consumer import consume_once
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.queue_consumer import consume_once
+from backend.app.workers.redis_queue import RedisQueue
+from backend.app.workers.scheduled_models import WorkspaceScheduledJob
 from backend.app.workspaces.models import (
     Workspace,
     WorkspaceInvite,

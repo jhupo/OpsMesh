@@ -14,7 +14,7 @@ from backend.app.storage.runtime_policy import (
 from backend.app.storage.security import validate_runtime_relative_path, validate_storage_key
 from backend.app.storage.storage import ObjectStorage, StorageObjectTooLargeError
 from backend.app.tools.context import ToolContext
-from backend.app.tools.product_tools.service import ProductToolService
+from backend.app.tools.product_service import ProductToolService
 
 
 class RuntimeFileService:

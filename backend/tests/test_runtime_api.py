@@ -29,7 +29,7 @@ from backend.app.runtime.models import RuntimeEvent, RuntimeTemplate, WorkspaceR
 from backend.app.runtime.spaces.models import RuntimeSpace
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobType
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"

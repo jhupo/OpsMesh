@@ -22,13 +22,26 @@ imports, dynamic patch targets, architecture gates and documentation together, w
 | Authorized request construction and provider gateway | orchestration/requests | Former run_request and models_layer; these are services, not database models. |
 | Orchestration database entities | orchestration/models.py | Kept as a module; creating a one-file models package would add needless depth. |
 
-## Retained boundaries, reviewed rather than flattened blindly
+## Edge-domain consolidation
 
-- teams/project_space has twelve implementation modules for assembling team projects, staffing,
-  resource matching and governance. It remains a cohesive application-service boundary.
-- workers/queue has nine implementation modules for queue contracts, Redis scripts, leases,
-  retries and consumption. It is an independently testable queue lifecycle.
-- tools/product_tools has six implementation modules for authorized product-tool dispatch.
+- Team project views are direct teams/project_* modules. Resource summaries now live with the
+  response assembler and small record helpers with project_types. The package re-export is gone.
+- Queue implementation is directly owned by workers: redis_queue, queue_contracts, queue_leases,
+  queue_retries and the other queue_* modules. Filtering lives with queue queries, not a standalone
+  nineteen-line module. Queue storage and worker-run leases remain distinct lifecycle concepts.
+- Product-tool dispatch and file, memory, mailbox and event implementations are direct tools/product_*
+  modules. Authorization contexts remain explicit; they are not merged into workspace CRUD services.
+- Scheduled jobs are owned by workers/scheduled_jobs.py, scheduled_models.py, scheduled_types.py
+  and schedules.py. Six service mixins and their internal plumbing protocol were removed in favor
+  of a concrete service. Scheduling calculation remains pure and separate from transaction handling.
+- Team project views and dashboards import canonical run statuses directly; duplicate status aliases
+  were removed. Operations still reads scheduling/queue evidence but does not own execution logic.
+- This batch consolidates 43 old source files into 28 direct domain modules and removes all four
+  former directories. Public API paths, database table identities and tenant-scoped queries are
+  unchanged. Workspaces remains the tenant owner; team project assembly is not a second tenant service.
+
+## Retained boundaries
+
 - capabilities/mcp is an SDK protocol/execution boundary.
 - API routes and schema groups retain their authentication and transport grouping.
 - auth, identity, security, secrets, db, self_hosted and workspaces are separate security or
@@ -58,3 +71,7 @@ and two final source-layout/import checks passed (119 checks in total). Ruff pas
 Focused mypy still reports five existing typing defects in the provider RunConfig/sandbox
 boundary and request metadata dictionaries; this directory-only migration does not claim a
 clean type-check or repair those runtime contracts.
+
+The edge-domain batch passed 60 focused queue/scheduled-job/product-tool/architecture/health tests.
+Workers, teams and tools also pass focused mypy (151 source files). These results do not supersede
+the separate SDK-boundary typing findings above.

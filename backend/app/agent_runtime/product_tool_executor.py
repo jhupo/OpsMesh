@@ -45,7 +45,7 @@ from backend.app.security.redaction import redact_sensitive_text
 from backend.app.storage.storage import ObjectStorage, create_storage
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
-from backend.app.tools.product_tools.service import ProductToolService
+from backend.app.tools.product_service import ProductToolService
 
 __all__ = ["PRODUCT_TOOL_NAMES", "ProductToolExecutor"]
 

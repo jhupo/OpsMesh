@@ -25,7 +25,7 @@ from backend.app.webhooks.replay import (
 )
 from backend.app.webhooks.signing import WebhookDeliverySigner
 from backend.app.webhooks.utils import _matches_event
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 
 
 class WebhookDeliveryService:

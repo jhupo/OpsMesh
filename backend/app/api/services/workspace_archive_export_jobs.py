@@ -24,7 +24,7 @@ from backend.app.projects.export_status import WorkspaceExportJobStatus
 from backend.app.storage.storage import ObjectStorage
 from backend.app.storage.storage_transactions import CompensatingObjectStorageWrites
 from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue.redis_queue import RedisQueue
+from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace
 
 
