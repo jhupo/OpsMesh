@@ -85,7 +85,13 @@ class ContextualMcpAdapterResolver:
                 "stdio_runtime_not_authorized",
                 "MCP stdio execution requires the run's frozen runtime binding",
             )
-        runtime = self._session.get(WorkspaceRuntime, binding.workspace_runtime_id)
+        effective_runtime_id = binding.execution_runtime_id or binding.workspace_runtime_id
+        runtime = self._session.scalar(
+            select(WorkspaceRuntime).where(
+                WorkspaceRuntime.workspace_id == run.workspace_id,
+                WorkspaceRuntime.id == effective_runtime_id,
+            )
+        )
         if runtime is None or runtime.workspace_id != run.workspace_id:
             self._deny_stdio(
                 "stdio_runtime_unavailable",
@@ -108,6 +114,14 @@ class ContextualMcpAdapterResolver:
             self._deny_stdio(
                 "stdio_runtime_network_policy_mismatch",
                 "MCP stdio runtime does not enforce the frozen network policy",
+            )
+        if binding.execution_runtime_id is not None and (
+            runtime.parent_runtime_id != binding.workspace_runtime_id
+            or runtime.execution_run_id != run.id
+        ):
+            self._deny_stdio(
+                "stdio_runtime_execution_binding_invalid",
+                "MCP stdio runtime is not bound to this run",
             )
         return runtime
 

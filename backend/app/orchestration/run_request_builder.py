@@ -122,6 +122,16 @@ class RunRequestBuilder:
             model_provider=model_provider,
             authorization_snapshot=authorization_snapshot,
         )
+        if runtime_binding.execution_runtime_id is not None:
+            metadata["runtime_execution"] = {
+                "mode": "per_run",
+                "execution_runtime_id": str(runtime_binding.execution_runtime_id),
+                "parent_runtime_id": (
+                    str(runtime_binding.workspace_runtime_id)
+                    if runtime_binding.workspace_runtime_id is not None
+                    else None
+                ),
+            }
         project_workspace = project_runtime_context(self.session, run)
         if project_workspace is not None:
             metadata["project_workspace"] = project_workspace
@@ -325,6 +335,16 @@ class RunRequestBuilder:
             ),
             "node_execution": "direct_tool",
         }
+        if runtime_binding.execution_runtime_id is not None:
+            metadata["runtime_execution"] = {
+                "mode": "per_run",
+                "execution_runtime_id": str(runtime_binding.execution_runtime_id),
+                "parent_runtime_id": (
+                    str(runtime_binding.workspace_runtime_id)
+                    if runtime_binding.workspace_runtime_id is not None
+                    else None
+                ),
+            }
         context = AgentRuntimeContext(
             workspace_id=run.workspace_id,
             task_id=run.task_id,

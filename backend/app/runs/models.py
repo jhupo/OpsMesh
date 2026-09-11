@@ -14,6 +14,7 @@ class AgentRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_agent_runs_workspace_task", "workspace_id", "task_id"),
         Index("ix_agent_runs_workspace_status", "workspace_id", "status"),
         Index("ix_agent_runs_workspace_runtime_space", "workspace_id", "runtime_space_id"),
+        Index("ix_agent_runs_workspace_execution_runtime", "workspace_id", "execution_runtime_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -30,6 +31,10 @@ class AgentRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
     )
     runtime_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    execution_runtime_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("workspace_runtimes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     runtime_space_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
         nullable=True,

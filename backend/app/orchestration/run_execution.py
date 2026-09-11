@@ -39,6 +39,10 @@ from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
+from backend.app.runtime_manager.run_environment import (
+    RunRuntimeEnvironmentService,
+    RuntimeEnvironmentError,
+)
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
 from backend.app.workers.jobs import JobPayload
@@ -70,6 +74,11 @@ class RunExecutionService:
         init=False,
         repr=False,
     )
+    _runtime_environment_service: RunRuntimeEnvironmentService | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         self.settings = self.settings or get_settings()
@@ -95,11 +104,12 @@ class RunExecutionService:
             self.session.commit()
 
             try:
+                self._runtime_environment().ensure_for_run(run)
                 self._project_io().stage_inputs(
                     run,
                     actor_user_id=job.requested_by_user_id,
                 )
-            except ProjectRunIOError as exc:
+            except (ProjectRunIOError, RuntimeEnvironmentError) as exc:
                 self._lifecycle().mark_run_failed(run, exc)
                 self._commit_and_refresh(run)
                 return run
@@ -497,6 +507,14 @@ class RunExecutionService:
             )
         return self._project_io_service
 
+    def _runtime_environment(self) -> RunRuntimeEnvironmentService:
+        if self._runtime_environment_service is None:
+            self._runtime_environment_service = RunRuntimeEnvironmentService(
+                self.session,
+                self.docker_client,
+            )
+        return self._runtime_environment_service
+
     def _lock_for_run(self, run: AgentRun) -> AbstractContextManager[bool]:
         if self.queue is not None:
             return self.queue.run_lock(str(run.workspace_id), str(run.id))
@@ -505,6 +523,7 @@ class RunExecutionService:
     def _commit_and_refresh(self, run: AgentRun) -> None:
         if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
             self._project_io().cleanup_runtime_workspace(run, reason="run_terminal")
+            self._runtime_environment().cleanup_for_run(run)
         self.session.commit()
         self.session.refresh(run)
 

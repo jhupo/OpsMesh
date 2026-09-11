@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import UUID
 
 from sqlalchemy import select
@@ -34,6 +34,7 @@ class ResolvedRunRuntimeBinding:
     capability_resource_ids: tuple[UUID, ...]
     network_disabled: bool
     allowed_file_ids: tuple[UUID, ...]
+    execution_runtime_id: UUID | None = None
 
     def as_snapshot(self) -> dict[str, object]:
         return {
@@ -63,6 +64,7 @@ class ResolvedRunRuntimeBinding:
             capability_resource_ids=self.capability_resource_ids,
             network_disabled=self.network_disabled,
             allowed_file_ids=self.allowed_file_ids,
+            execution_runtime_id=self.execution_runtime_id,
         )
 
 
@@ -211,6 +213,7 @@ class RunRuntimeAuthorizationService:
                 ) from exc
             if (
                 run.runtime_id is not None
+                or run.execution_runtime_id is not None
                 or run.runtime_space_id is not None
                 or runtime_resource_ids
                 or file_resource_ids
@@ -281,6 +284,7 @@ class RunRuntimeAuthorizationService:
                     "runtime_network_policy_mismatch",
                     "Runtime no longer enforces the frozen network policy",
                 )
+        execution_runtime_id = self._execution_runtime_for_run(run, binding)
         if binding.runtime_space_id is not None:
             runtime_space = self._runtime_space(run.workspace_id, binding.runtime_space_id)
             if task is None:
@@ -292,7 +296,40 @@ class RunRuntimeAuthorizationService:
             else:
                 self._require_space_available_for_task(runtime_space, task)
         self._require_active_files(run.workspace_id, binding.allowed_file_ids)
-        return binding
+        return replace(binding, execution_runtime_id=execution_runtime_id)
+
+    def _execution_runtime_for_run(
+        self,
+        run: AgentRun,
+        binding: ResolvedRunRuntimeBinding,
+    ) -> UUID | None:
+        if run.execution_runtime_id is None:
+            return None
+        if binding.workspace_runtime_id is None:
+            raise RunRuntimeAuthorizationError(
+                "runtime_execution_binding_invalid",
+                "A per-run runtime requires an authorized parent runtime",
+            )
+        execution_runtime = self._runtime(run.workspace_id, run.execution_runtime_id)
+        if (
+            execution_runtime.parent_runtime_id != binding.workspace_runtime_id
+            or execution_runtime.execution_run_id != run.id
+            or execution_runtime.runtime_space_id != binding.runtime_space_id
+        ):
+            raise RunRuntimeAuthorizationError(
+                "runtime_execution_binding_invalid",
+                "Per-run runtime is not bound to the frozen runtime placement",
+            )
+        self._require_runtime_ready(execution_runtime)
+        if (
+            binding.network_disabled
+            and execution_runtime.network_policy.get("disabled") is not True
+        ):
+            raise RunRuntimeAuthorizationError(
+                "runtime_execution_network_policy_mismatch",
+                "Per-run runtime does not enforce the frozen network policy",
+            )
+        return execution_runtime.id
 
     def _team_for_task(self, task: Task) -> AgentTeam | None:
         if task.agent_team_id is None:

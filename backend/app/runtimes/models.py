@@ -33,6 +33,7 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("ix_workspace_runtimes_workspace_runtime_space", "workspace_id", "runtime_space_id"),
         Index("ix_workspace_runtimes_container", "docker_container_id"),
+        Index("ix_workspace_runtimes_workspace_execution_run", "workspace_id", "execution_run_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -45,6 +46,14 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     runtime_space_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    parent_runtime_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("workspace_runtimes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    execution_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"),
         nullable=True,
     )
     runtime_provider: Mapped[str] = mapped_column(

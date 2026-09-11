@@ -353,10 +353,11 @@ class RunProjectIOService:
                 stage=stage,
                 retryable=False,
             )
+        effective_runtime_id = run.execution_runtime_id or run.runtime_id
         runtime = self._session.scalar(
             select(WorkspaceRuntime).where(
                 WorkspaceRuntime.workspace_id == run.workspace_id,
-                WorkspaceRuntime.id == run.runtime_id,
+                WorkspaceRuntime.id == effective_runtime_id,
                 WorkspaceRuntime.status.in_(("active", "running")),
                 WorkspaceRuntime.connection_status == "online",
             )
@@ -367,6 +368,16 @@ class RunProjectIOService:
                 message="The authorized project runtime is unavailable",
                 stage=stage,
                 retryable=True,
+            )
+        if run.execution_runtime_id is not None and (
+            runtime.parent_runtime_id != run.runtime_id
+            or runtime.execution_run_id != run.id
+        ):
+            raise ProjectRunIOError(
+                code="project_runtime_execution_binding_invalid",
+                message="The per-run project runtime is not bound to this run",
+                stage=stage,
+                retryable=False,
             )
         backend = build_runtime_backend_registry(
             self._session,

@@ -205,6 +205,7 @@ class AgentRuntimeExecutionBinding:
     capability_resource_ids: tuple[UUID, ...] = ()
     network_disabled: bool = False
     allowed_file_ids: tuple[UUID, ...] = ()
+    execution_runtime_id: UUID | None = None
 
 
 @dataclass(frozen=True)
