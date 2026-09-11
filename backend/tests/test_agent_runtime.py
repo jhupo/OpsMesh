@@ -29,11 +29,11 @@ from backend.app.agent_runtime.errors import (
 from backend.app.agent_runtime.factory import build_agent_runtime_registry
 from backend.app.agent_runtime.multi_provider import ProviderAgentRuntimeRegistry
 from backend.app.agent_runtime.adapters.openai_agents import OpenAIAgentsRunner
-from backend.app.agent_runtime.openai_results import (
+from backend.app.agent_runtime.openai.results import (
     OpenAIAgentsResultMapper,
     runtime_event_from_sdk_item,
 )
-from backend.app.agent_runtime.openai_tools import OpenAIToolBridge, runtime_allowed_tools
+from backend.app.agent_runtime.openai.tools import OpenAIToolBridge, runtime_allowed_tools
 from backend.app.agent_runtime.sessions import PersistentAgentSessionRef, SQLAlchemyAgentSession
 from backend.app.agents.models import AgentProfile
 from backend.app.model_providers.base_url import normalize_openai_compatible_base_url

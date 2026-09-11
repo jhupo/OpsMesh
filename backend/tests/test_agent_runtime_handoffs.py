@@ -15,7 +15,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeHandoff,
 )
 from backend.app.agent_runtime.adapters.openai_agents import OpenAIAgentsRunner
-from backend.app.agent_runtime.openai_results import OpenAIAgentsResultMapper
+from backend.app.agent_runtime.openai.results import OpenAIAgentsResultMapper
 from backend.app.agents.models import AgentProfile
 
 

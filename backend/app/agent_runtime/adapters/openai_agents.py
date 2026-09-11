@@ -42,19 +42,19 @@ from backend.app.agent_runtime.guardrails import (
     guardrail_events,
     validated_structured_output,
 )
-from backend.app.agent_runtime.openai_compaction import openai_run_session
-from backend.app.agent_runtime.openai_guardrails import (
+from backend.app.agent_runtime.openai.compaction import openai_run_session
+from backend.app.agent_runtime.openai.guardrails import (
     OpenAIRuntimeOutputSchema,
     OpenAIRuntimeOutputSchemaError,
     merged_openai_guardrail_results,
     openai_input_guardrails,
     openai_output_guardrails,
 )
-from backend.app.agent_runtime.openai_lifecycle import OpenAIRuntimeHooks
-from backend.app.agent_runtime.openai_results import OpenAIAgentsResultMapper, jsonable
-from backend.app.agent_runtime.openai_settings import OpenAIModelSettingsMapper
-from backend.app.agent_runtime.openai_streaming import run_openai_streamed
-from backend.app.agent_runtime.openai_tools import OpenAIToolBridge
+from backend.app.agent_runtime.openai.lifecycle import OpenAIRuntimeHooks
+from backend.app.agent_runtime.openai.results import OpenAIAgentsResultMapper, jsonable
+from backend.app.agent_runtime.openai.settings import OpenAIModelSettingsMapper
+from backend.app.agent_runtime.openai.streaming import run_openai_streamed
+from backend.app.agent_runtime.openai.tools import OpenAIToolBridge
 from backend.app.agent_runtime.usage import runtime_usage
 from backend.app.model_providers.base_url import normalize_openai_compatible_base_url
 from backend.app.model_providers.model_api import (

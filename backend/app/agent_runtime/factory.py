@@ -1,4 +1,4 @@
-from backend.app.agent_runtime.adapters.claude_agent import ClaudeAgentSDKRunner
+from backend.app.agent_runtime.claude.runner import ClaudeAgentSDKRunner
 from backend.app.agent_runtime.multi_provider import ProviderAgentRuntimeRegistry
 from backend.app.agent_runtime.adapters.openai_agents import OpenAIAgentsRunner
 

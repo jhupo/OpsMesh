@@ -15,7 +15,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeStreamEvent,
     AgentRuntimeStructuredOutput,
 )
-from backend.app.agent_runtime.openai_tools import OpenAIProductFunctionTool
+from backend.app.agent_runtime.openai.tools import OpenAIProductFunctionTool
 from backend.app.security.redaction import redact_sensitive_payload
 
 

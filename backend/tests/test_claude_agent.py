@@ -7,7 +7,7 @@ import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 from claude_agent_sdk.types import PreToolUseHookInput
 
-from backend.app.agent_runtime.adapters.claude_agent import (
+from backend.app.agent_runtime.claude.runner import (
     ClaudeAgentSDKRunner,
     ClaudeAgentSessionStore,
     _approval_hook,

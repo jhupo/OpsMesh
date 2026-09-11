@@ -9,8 +9,8 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import sessionmaker
 
-import backend.app.agent_runtime.openai_streaming as openai_streaming
-from backend.app.agent_runtime.adapters.claude_agent import ClaudeAgentSDKRunner
+import backend.app.agent_runtime.openai.streaming as openai_streaming
+from backend.app.agent_runtime.claude.runner import ClaudeAgentSDKRunner
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
