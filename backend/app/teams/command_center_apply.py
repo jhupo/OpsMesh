@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.runtime_manager.lifecycle.control import RuntimeLifecycleControl
+from backend.app.runtime_manager.lifecycle_control import RuntimeLifecycleControl
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError
 from backend.app.runtime_manager.safety import RuntimeSafetyError
 from backend.app.teams.command_center_constants import NON_APPLICABLE_RUNTIME_ACTIONS

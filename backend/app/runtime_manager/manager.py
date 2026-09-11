@@ -16,11 +16,11 @@ from backend.app.runtime_manager.contracts import (
     validate_runtime_execution_mode,
 )
 from backend.app.runtime_manager.events import RuntimeEventLog
-from backend.app.runtime_manager.lifecycle.cleanup import (
+from backend.app.runtime_manager.lifecycle_cleanup import (
     RuntimeResourceCleaner,
     cleanup_succeeded,
 )
-from backend.app.runtime_manager.lifecycle.guards import require_container
+from backend.app.runtime_manager.lifecycle_guards import require_container
 from backend.app.runtime_manager.pool.leases import RuntimeLeaseStore, RuntimeSpaceReservationStore
 from backend.app.runtime_manager.provisioning_executor import RuntimeProvisioningExecutor
 from backend.app.runtime_manager.quotas import RuntimeQuotaPolicy

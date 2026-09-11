@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs import RunOrchestrationService
-from backend.app.runtime_manager.lifecycle.control import RuntimeLifecycleControl
+from backend.app.runtime_manager.lifecycle_control import RuntimeLifecycleControl
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.teams.command_center_action_plan import (
