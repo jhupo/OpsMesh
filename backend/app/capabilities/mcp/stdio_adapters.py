@@ -3,15 +3,7 @@ from __future__ import annotations
 import json
 from uuid import UUID
 
-from backend.app.capabilities.mcp.stdio_credentials import (
-    hosted_stdio_environment,
-    self_hosted_stdio_environment_refs,
-)
-from backend.app.capabilities.mcp.types import (
-    McpExecutionError,
-    McpExecutionPending,
-)
-from backend.app.capabilities.mcp_adapter_payloads import (
+from backend.app.capabilities.mcp.adapter_payloads import (
     MCP_PYTHON_SDK_PACKAGE,
     MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
     MCP_STDIO_CONTRACT_VERSION,
@@ -19,6 +11,14 @@ from backend.app.capabilities.mcp_adapter_payloads import (
     result_from_sdk_output,
     stdio_command,
     stdio_sdk_request,
+)
+from backend.app.capabilities.mcp.stdio_credentials import (
+    hosted_stdio_environment,
+    self_hosted_stdio_environment_refs,
+)
+from backend.app.capabilities.mcp.types import (
+    McpExecutionError,
+    McpExecutionPending,
 )
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.runtime_manager.core.contracts import RuntimeCommandInputFile

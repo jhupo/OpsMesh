@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 import httpx
 
-from backend.app.capabilities.mcp_adapter_payloads import (
+from backend.app.capabilities.mcp.adapter_payloads import (
     MCP_PYTHON_SDK_PACKAGE,
     MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
     MCP_STDIO_CONTRACT_VERSION,

@@ -5,7 +5,7 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
+from backend.app.capabilities.mcp.adapter_resolver import McpAdapterResolver
 from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.mcp.remote_adapters import (
     HostedMcpToolAdapter,

@@ -25,7 +25,7 @@ from backend.app.agent_runtime.tools import BackendToolExecutor
 from backend.app.agents.memory_policy import context_budget_policy, working_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.pending_tools import PendingToolInvocationService
-from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
+from backend.app.capabilities.mcp.adapter_resolver import McpAdapterResolver
 from backend.app.core.config import Settings
 from backend.app.memory.context import AgentMemoryContextService
 from backend.app.memory.working import AgentWorkingMemoryService, working_memory_context

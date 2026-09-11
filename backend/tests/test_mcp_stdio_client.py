@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from backend.app.capabilities.mcp_adapter_payloads import stdio_sdk_request
+from backend.app.capabilities.mcp.adapter_payloads import stdio_sdk_request
 from runtime.opsmesh_runtime import mcp_stdio_client
 
 
