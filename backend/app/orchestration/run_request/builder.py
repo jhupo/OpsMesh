@@ -38,7 +38,7 @@ from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType
 
-from ..context_budget import ContextBudgetManager, ContextFragment, ContextPriority
+from ..state.context_budget import ContextBudgetManager, ContextFragment, ContextPriority
 from ..run_agent_tool_authorization import hydrate_agent_tools
 from ..run_cancellation import DatabaseRunCancellation
 from ..runtime.authorization import RunRuntimeAuthorizationService

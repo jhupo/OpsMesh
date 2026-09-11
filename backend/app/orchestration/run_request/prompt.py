@@ -14,7 +14,7 @@ from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime import TeamRuntimeService
 
-from ..context_budget import ContextFragment, ContextPriority
+from ..state.context_budget import ContextFragment, ContextPriority
 from ..task_step_review import is_pm_summary_step
 
 
