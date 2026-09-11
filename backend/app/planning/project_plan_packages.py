@@ -189,6 +189,9 @@ def requested_package(
         output_schema=request.get("output_schema")
         if isinstance(request.get("output_schema"), dict)
         else None,
+        input_bindings=request.get("input_bindings")
+        if isinstance(request.get("input_bindings"), dict)
+        else {},
         subworkflow_definition_id=uuid_or_none(request.get("subworkflow_definition_id")),
         subworkflow_version=subworkflow_version,
         required_tools=tuple(string_list(request.get("required_tools"))),

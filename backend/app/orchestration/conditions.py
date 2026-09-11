@@ -59,7 +59,8 @@ def condition_step_references(value: object) -> set[str]:
     assert isinstance(value, dict)
     path = value.get("path")
     if isinstance(path, str) and path.startswith("steps."):
-        return {path[len("steps.") :].rsplit(".", 1)[0]}
+        reference = _step_reference_key(path)
+        return {reference} if reference is not None else set()
     references: set[str] = set()
     for key in ("all", "any", "not"):
         children = value.get(key, [])
@@ -267,6 +268,11 @@ def _resolve_path(
         return step.status
     if field == "result_summary":
         return step.result_summary if step.result_summary is not None else _MISSING
+    if "output" in parts[1:]:
+        marker_index = parts.index("output", 1)
+        if step.result_payload is None:
+            return _MISSING
+        return _walk(step.result_payload, parts[marker_index + 1 :])
     return _MISSING
 
 
@@ -278,8 +284,29 @@ def _step_for_path(
     parts = path.split(".")
     if len(parts) < 3 or parts[0] != "steps":
         return None
-    key = ".".join(parts[1:-1])
+    if "output" in parts[1:]:
+        key = ".".join(parts[1 : parts.index("output", 1)])
+    else:
+        key = ".".join(parts[1:-1])
     return steps_by_package.get(key) or steps_by_id.get(key)
+
+
+def _step_reference_key(path: str) -> str | None:
+    parts = path.split(".")
+    if len(parts) < 3 or parts[0] != "steps":
+        return None
+    if "output" in parts[1:]:
+        return ".".join(parts[1 : parts.index("output", 1)])
+    return ".".join(parts[1:-1])
+
+
+def _walk(value: object, parts: list[str]) -> object:
+    current = value
+    for part in parts:
+        if not isinstance(current, dict) or part not in current:
+            return _MISSING
+        current = current[part]
+    return current
 
 
 def _compare(actual: object, operator: str, expected: object) -> bool:
@@ -336,13 +363,17 @@ def _valid_path(path: str) -> bool:
             part.replace("_", "").replace("-", "").isalnum() for part in parts[2:]
         )
     if parts[0] == "steps":
-        return (
-            len(parts) >= 3
-            and parts[-1] in {"status", "result_summary"}
-            and all(
+        if len(parts) >= 3 and parts[-1] in {"status", "result_summary"}:
+            return all(
                 part.replace("_", "").replace("-", "").replace(".", "").isalnum()
                 for part in parts[1:-1]
             )
+        if "output" not in parts[1:]:
+            return False
+        marker_index = parts.index("output", 1)
+        return marker_index >= 2 and all(
+            part.replace("_", "").replace("-", "").replace(".", "").isalnum()
+            for part in parts[1:marker_index] + parts[marker_index + 1 :]
         )
     return False
 

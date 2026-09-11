@@ -21,6 +21,7 @@ class TaskStepStateService:
         *,
         dependencies: dict[str, object] | None = None,
         result_summary: str | None = None,
+        result_payload: dict[str, object] | None = None,
     ) -> TaskStepTransition:
         current_status = TaskStepStatus(step.status)
         if current_status == next_status:
@@ -28,6 +29,8 @@ class TaskStepStateService:
                 step.dependencies = dependencies
             if result_summary is not None:
                 step.result_summary = result_summary
+            if result_payload is not None:
+                step.result_payload = result_payload
             return TaskStepTransition(current_status, next_status, changed=False)
 
         require_step_transition(current_status, next_status)
@@ -36,4 +39,6 @@ class TaskStepStateService:
             step.dependencies = dependencies
         if result_summary is not None:
             step.result_summary = result_summary
+        if result_payload is not None:
+            step.result_payload = result_payload
         return TaskStepTransition(current_status, next_status, changed=True)

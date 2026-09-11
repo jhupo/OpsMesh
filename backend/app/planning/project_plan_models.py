@@ -41,6 +41,7 @@ def _package_dict(package: WorkflowNode) -> dict[str, object]:
         "tool_name",
         "arguments",
         "output_schema",
+        "input_bindings",
         "subworkflow_definition_id",
         "subworkflow_version",
     ):

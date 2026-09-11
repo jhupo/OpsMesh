@@ -10,7 +10,7 @@ share the canonical node contract, admission policy, durable execution and mutat
 | Branch correctness | Done | Explicit skipped state, skip propagation, selected-branch join, reference cycle denial; empty selection completes without a run |
 | Immutable publication | Done | Historical versions remain executable and queryable; draft edits use optimistic concurrency; application locks task |
 | Typed executable node catalog | Done | Agent, direct tool/MCP, control, approval and subworkflow nodes use the shared contract and existing SDK/tool/approval/task boundaries; child execution is pinned to an immutable revision |
-| Structured data flow | Pending | Typed inputs/outputs and references, bounded payloads, schema validation and scoped evidence |
+| Structured data flow | Done | Nodes declare bounded task/step input bindings; completed steps persist structured outputs; bindings are redacted, size-limited and workspace-scoped; conditions and output schemas validate against the same data |
 | Human/AI editing policy | Pending | Locked nodes and edges cannot be modified outside the authorized region |
 | Execution inspection | Pending | Persisted per-node results, attempts, approval state and diagnostics usable by a future canvas |
 | PostgreSQL integration | Done for revisions | Real PostgreSQL 18: migration round trip with existing data, concurrent publication/application, Alembic metadata check |

@@ -9,12 +9,18 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolResult,
 )
 from backend.app.agents.models import AgentProfile
+from backend.app.orchestration.conditions import evaluate_task_step_condition
 from backend.app.orchestration.models import SubworkflowInvocation
 from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.orchestration.run_execution import RunExecutionDependencies, RunExecutionService
+from backend.app.orchestration.run_step_completion import TaskStepCompletionService
 from backend.app.orchestration.subworkflows import (
     SubworkflowExecutionError,
     SubworkflowExecutionService,
+)
+from backend.app.orchestration.workflow_data import (
+    WorkflowDataBindingError,
+    resolve_workflow_inputs,
 )
 from backend.app.planning.workflow_contracts import WorkflowNode
 from backend.app.runs.models import AgentRun
@@ -45,6 +51,21 @@ def test_typed_workflow_nodes_require_explicit_execution_targets() -> None:
         WorkflowNode(package_id="missing", title="Missing", node_type="tool")
     with pytest.raises(ValueError, match="definition"):
         WorkflowNode(package_id="child", title="Child", node_type="subworkflow")
+    node = WorkflowNode(
+        package_id="bound",
+        title="Bound",
+        input_bindings={"source": {"reference": "task.input.customer"}},
+        output_schema={"type": "object", "required": ["ok"]},
+    )
+    assert node.input_bindings["source"].reference == "task.input.customer"
+    optional = WorkflowNode(
+        package_id="optional",
+        title="Optional",
+        input_bindings={
+            "source": {"reference": "task.input.customer", "required": False}
+        },
+    )
+    assert optional.input_bindings["source"].required is False
 
 
 def test_direct_tool_node_uses_authorized_executor_without_model_execution() -> None:
@@ -193,3 +214,76 @@ def test_subworkflow_invocation_is_idempotent_and_workspace_scoped() -> None:
 
     with pytest.raises(SubworkflowExecutionError):
         SubworkflowExecutionService._assert_payload_bound({"value": "x" * (64 * 1024)})
+
+
+def test_workflow_data_bindings_resolve_task_and_completed_step_outputs() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, with_default_provider=False)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Data task",
+        input={"customer": {"id": "c-1"}},
+    )
+    session.add(task)
+    session.flush()
+    source = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Source",
+        work_package_id="source",
+        status="completed",
+        result_payload={"structured_output": {"value": {"score": 8}}},
+    )
+    target = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Target",
+        work_package_id="target",
+        dependencies={
+            "input_bindings": {
+                "customer_id": {"reference": "task.input.customer.id"},
+                "score": {"reference": "steps.source.output.structured_output.value.score"},
+            }
+        },
+    )
+    session.add_all([source, target])
+    session.flush()
+    assert resolve_workflow_inputs(session, task, target) == {
+        "customer_id": "c-1",
+        "score": 8,
+    }
+    target.dependencies = {
+        "input_bindings": {"missing": {"reference": "steps.source.output.missing"}}
+    }
+    with pytest.raises(WorkflowDataBindingError, match="missing"):
+        resolve_workflow_inputs(session, task, target)
+
+    target.dependencies = {
+        "condition": {
+            "path": "steps.source.output.structured_output.value.score",
+            "operator": "greater_than",
+            "value": 5,
+        }
+    }
+    assert evaluate_task_step_condition(session, task, target).state == "true"
+
+    target.dependencies = {
+        "output_schema": {
+            "type": "object",
+            "required": ["ok"],
+            "properties": {"ok": {"type": "boolean"}},
+        }
+    }
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=target.id,
+        output={"structured_output": {"value": {"ok": True}}},
+    )
+    session.add(run)
+    session.flush()
+    TaskStepCompletionService(session, lambda *args: None).validate_step_output(run, "")
+    run.output = {"structured_output": {"value": {"ok": "wrong"}}}
+    with pytest.raises(ValueError, match="workflow step output"):
+        TaskStepCompletionService(session, lambda *args: None).validate_step_output(run, "")

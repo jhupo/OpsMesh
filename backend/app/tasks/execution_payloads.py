@@ -57,6 +57,9 @@ def build_step_payload(
         "runs": [run_payload(run) for run in runs],
         "active_run_ids": [run.id for run in active_runs],
         "result_summary": step.result_summary,
+        "result_payload": redact_sensitive_payload(step.result_payload)
+        if step.result_payload is not None
+        else None,
     }
 
 

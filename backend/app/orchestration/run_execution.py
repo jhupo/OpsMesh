@@ -32,6 +32,7 @@ from backend.app.orchestration.run_lifecycle import RunLifecycleService
 from backend.app.orchestration.run_request_builder import RunRequestBuilder
 from backend.app.orchestration.run_runtime_event_messages import RunRuntimeEventMessageMapper
 from backend.app.orchestration.subworkflows import SubworkflowExecutionService
+from backend.app.orchestration.workflow_data import resolve_workflow_inputs
 from backend.app.projects.runtime_io import RunProjectIOService
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.runs.models import AgentRun, RunEvent
@@ -361,6 +362,20 @@ class RunExecutionService:
         arguments = step.dependencies.get("arguments", {})
         if not isinstance(arguments, dict):
             raise ValueError("Direct tool node arguments must be an object")
+        if run.task_id is None:
+            raise ValueError("Direct tool run has no parent task")
+        parent_task = self.session.scalar(
+            select(Task).where(
+                Task.workspace_id == run.workspace_id,
+                Task.id == run.task_id,
+            )
+        )
+        if parent_task is None:
+            raise ValueError("Direct tool parent task not found")
+        arguments = {
+            **{key: value for key, value in arguments.items() if isinstance(key, str)},
+            **resolve_workflow_inputs(self.session, parent_task, step),
+        }
         context: AgentRuntimeContext
         tool_executor: AgentRuntimeToolExecutor | None
         if request is None:

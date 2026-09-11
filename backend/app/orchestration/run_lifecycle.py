@@ -136,6 +136,11 @@ class RunLifecycleService:
                 task_status=TaskStatus.BLOCKED,
             )
             return
+        try:
+            self._step_completion().validate_step_output(run, final_output)
+        except ValueError as exc:
+            self.mark_run_failed(run, exc)
+            return
         RunStateService().transition(
             run,
             RunStatus.COMPLETED,

@@ -128,6 +128,7 @@ class TaskStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     dependencies: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     result_summary: Mapped[str | None] = mapped_column(String, nullable=True)
+    result_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     task: Mapped[Task] = relationship(back_populates="steps")
 

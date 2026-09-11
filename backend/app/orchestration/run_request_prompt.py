@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.tools import PRODUCT_TOOL_NAMES
+from backend.app.orchestration.workflow_data import resolve_workflow_inputs
 from backend.app.planning.agent_plan import is_agent_planning_step
 from backend.app.runs.models import AgentRun
 from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
@@ -111,6 +112,22 @@ class RunRequestPromptRenderer:
                             key="step.requirements",
                             text=step_context_text,
                             priority=ContextPriority.HIGH,
+                        )
+                    )
+                workflow_inputs = resolve_workflow_inputs(self.session, task, step)
+                if workflow_inputs:
+                    fragments.append(
+                        ContextFragment(
+                            key="workflow.input_bindings",
+                            text="Bound workflow inputs:\n"
+                            + json.dumps(
+                                redact_sensitive_payload(workflow_inputs),
+                                ensure_ascii=False,
+                                default=str,
+                            ),
+                            priority=ContextPriority.HIGH,
+                            required=True,
+                            allow_truncation=False,
                         )
                     )
                 if is_pm_summary_step(step):

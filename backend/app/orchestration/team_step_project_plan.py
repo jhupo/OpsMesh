@@ -110,6 +110,7 @@ def step_dependencies_for_package(
         "tool_name": package.get("tool_name"),
         "arguments": package.get("arguments", {}),
         "output_schema": package.get("output_schema"),
+        "input_bindings": package.get("input_bindings", {}),
         "subworkflow_definition_id": package.get("subworkflow_definition_id"),
         "subworkflow_version": package.get("subworkflow_version"),
     }

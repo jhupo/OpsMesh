@@ -35,15 +35,23 @@ def validate_parameters(
     *,
     label: str,
 ) -> None:
+    validate_json_value(parameters, schema, label=label)
+
+
+def validate_json_value(
+    value: object,
+    schema: dict[str, object],
+    *,
+    label: str,
+) -> None:
+    """Validate any JSON value against a JSON Schema, including scalar outputs."""
     try:
-        Draft202012Validator(schema).validate(parameters)
+        Draft202012Validator(schema).validate(value)
     except ValidationError as exc:
         path = ".".join(str(item) for item in exc.absolute_path)
         suffix = f" at {path}" if path else ""
         constraint = str(exc.validator or "schema")
-        raise ValueError(
-            f"Invalid {label}{suffix}: {constraint} constraint failed"
-        ) from exc
+        raise ValueError(f"Invalid {label}{suffix}: {constraint} constraint failed") from exc
 
 
 def validate_partial_parameters(

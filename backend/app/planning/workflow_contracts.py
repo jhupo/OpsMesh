@@ -40,7 +40,11 @@ class WorkflowCondition(BaseModel):
     path: str | None = Field(
         default=None,
         max_length=240,
-        pattern=r"^(task\.(input|generic_state|domain_state|final_output)(\.[A-Za-z0-9_-]+)*|steps\.[A-Za-z0-9_.-]+\.(status|result_summary))$",
+        pattern=(
+            r"^(task\.(input|generic_state|domain_state|final_output)"
+            r"(\.[A-Za-z0-9_-]+)*|steps\.[A-Za-z0-9_.-]+\.(status|result_summary|output)"
+            r"(\.[A-Za-z0-9_-]+)*)$"
+        ),
     )
     operator: ConditionOperator | None = None
     value: object | None = None
@@ -80,6 +84,29 @@ class McpToolSelection(BaseModel):
     tool_name: str = Field(min_length=1, max_length=160)
 
 
+class WorkflowDataBinding(BaseModel):
+    """A bounded reference to task or completed-step data."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    reference: str = Field(
+        min_length=1,
+        max_length=300,
+        pattern=(
+            r"^(task\.(input|generic_state|domain_state|final_output)"
+            r"(\.[A-Za-z0-9_-]+)*|steps\.[A-Za-z0-9_.-]+\.output"
+            r"(\.[A-Za-z0-9_-]+)*|steps\.[A-Za-z0-9_.-]+\.result_summary)$"
+        ),
+    )
+    required: bool = True
+    default: object | None = None
+
+    @model_validator(mode="after")
+    def validate_binding(self) -> WorkflowDataBinding:
+        reject_embedded_secrets(self.default, path="input_bindings.default")
+        return self
+
+
 class WorkflowNode(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -112,6 +139,7 @@ class WorkflowNode(BaseModel):
     tool_name: str | None = Field(default=None, min_length=1, max_length=160)
     arguments: dict[str, object] = Field(default_factory=dict, max_length=32)
     output_schema: dict[str, object] | None = None
+    input_bindings: dict[str, WorkflowDataBinding] = Field(default_factory=dict, max_length=32)
     subworkflow_definition_id: UUID | None = None
     subworkflow_version: StrictInt | None = Field(default=None, ge=1)
     estimated_cost_usd: FiniteFloat = Field(default=0, ge=0, le=1_000_000)
@@ -144,6 +172,10 @@ class WorkflowNode(BaseModel):
             from backend.app.capabilities.schema_validation import validate_json_schema
 
             validate_json_schema(self.output_schema)
+        for key in self.input_bindings:
+            compact_key = key.replace("_", "").replace("-", "").replace(".", "")
+            if not key or len(key) > 80 or not compact_key.isalnum():
+                raise ValueError("input_bindings keys must be simple names")
         reject_embedded_secrets(self.arguments, path="arguments")
         for name in (
             "depends_on",
