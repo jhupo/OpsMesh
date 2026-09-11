@@ -18,7 +18,7 @@ from backend.app.approvals.models import Approval
 from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
 from backend.app.capabilities.execution import McpToolExecutionService
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
-from backend.app.capabilities.mcp_execution_types import (
+from backend.app.capabilities.mcp.types import (
     McpExecutionError,
     McpExecutionRequest,
 )

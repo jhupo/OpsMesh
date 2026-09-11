@@ -7,20 +7,20 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.capabilities.mcp_execution_adapters import (
+from backend.app.capabilities.mcp.adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
-from backend.app.capabilities.mcp_execution_context import snapshot_audit_metadata
-from backend.app.capabilities.mcp_execution_logs import McpToolCallLogService
-from backend.app.capabilities.mcp_execution_notifications import McpExecutionNotifier
-from backend.app.capabilities.mcp_execution_policy import McpExecutionPolicy
-from backend.app.capabilities.mcp_execution_types import (
+from backend.app.capabilities.mcp.types import (
     McpExecutionError,
     McpExecutionPending,
     McpExecutionRequest,
     McpExecutionResult,
 )
+from backend.app.capabilities.mcp_execution_context import snapshot_audit_metadata
+from backend.app.capabilities.mcp_execution_logs import McpToolCallLogService
+from backend.app.capabilities.mcp_execution_notifications import McpExecutionNotifier
+from backend.app.capabilities.mcp_execution_policy import McpExecutionPolicy
 from backend.app.capabilities.mcp_payloads import canonical_payload, payload_hash
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.runs.models import AgentRun

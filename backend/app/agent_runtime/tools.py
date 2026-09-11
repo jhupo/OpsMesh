@@ -22,11 +22,11 @@ from backend.app.agents.memory_policy import working_memory_policy
 from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.approvals.policy import ApprovalPolicyEngine
 from backend.app.capabilities.execution import McpToolExecutionService
-from backend.app.capabilities.mcp_execution_adapters import (
+from backend.app.capabilities.mcp.adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
-from backend.app.capabilities.mcp_execution_types import McpExecutionRequest
+from backend.app.capabilities.mcp.types import McpExecutionRequest
 from backend.app.capabilities.models import McpToolAllowlist
 from backend.app.core.config import Settings
 from backend.app.files.storage import ObjectStorage

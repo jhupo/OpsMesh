@@ -6,7 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
-from backend.app.capabilities.mcp_execution_types import McpExecutionError
+from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.mcp_remote_adapters import (
     HostedMcpToolAdapter,
     SseMcpToolAdapter,

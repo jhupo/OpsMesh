@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from backend.app.capabilities.mcp_execution_types import McpExecutionError
+from backend.app.capabilities.mcp.types import McpExecutionError
 
 MCP_PYTHON_SDK_PACKAGE = "mcp"
 MCP_PYTHON_SDK_STDIO_ENTRYPOINT = "mcp.client.stdio.stdio_client"

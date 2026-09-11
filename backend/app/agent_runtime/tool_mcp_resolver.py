@@ -7,11 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.core.contracts import AgentRuntimeContext
-from backend.app.capabilities.mcp_execution_adapters import (
+from backend.app.capabilities.mcp.adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
-from backend.app.capabilities.mcp_execution_types import McpExecutionError
+from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings
 from backend.app.projects.models import AgentRunProjectIOState

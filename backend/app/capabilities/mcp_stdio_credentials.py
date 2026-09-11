@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from backend.app.capabilities.mcp_execution_types import McpExecutionError
+from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.models import McpCredentialReference
 from backend.app.secrets.service import SecretEncryptionService
 

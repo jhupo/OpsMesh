@@ -4,8 +4,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.capabilities.mcp.types import McpExecutionRequest
 from backend.app.capabilities.mcp_execution_context import snapshot_audit_metadata
-from backend.app.capabilities.mcp_execution_types import McpExecutionRequest
 from backend.app.capabilities.mcp_payloads import canonical_payload, error_code, payload_hash
 from backend.app.capabilities.mcp_payloads import response_hash as mcp_response_hash
 from backend.app.capabilities.models import McpToolCallLog

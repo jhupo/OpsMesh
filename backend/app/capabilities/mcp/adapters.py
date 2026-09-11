@@ -1,6 +1,6 @@
 from typing import Protocol, runtime_checkable
 
-from backend.app.capabilities.mcp_execution_types import McpExecutionError
+from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 
 

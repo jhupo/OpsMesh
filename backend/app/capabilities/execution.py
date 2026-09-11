@@ -8,19 +8,19 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.approvals.policy import ApprovalPolicyEngine
-from backend.app.capabilities.mcp_execution_adapters import (
+from backend.app.capabilities.mcp.adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
+)
+from backend.app.capabilities.mcp.types import (
+    McpExecutionRequest,
+    McpExecutionResult,
 )
 from backend.app.capabilities.mcp_execution_approvals import McpToolApprovalRequester
 from backend.app.capabilities.mcp_execution_blocking import McpExecutionBlocker
 from backend.app.capabilities.mcp_execution_context import snapshot_audit_metadata
 from backend.app.capabilities.mcp_execution_invocation import McpToolInvoker
 from backend.app.capabilities.mcp_execution_policy import resolve_mcp_execution_policy
-from backend.app.capabilities.mcp_execution_types import (
-    McpExecutionRequest,
-    McpExecutionResult,
-)
 from backend.app.capabilities.mcp_execution_validation import McpExecutionValidator
 from backend.app.capabilities.mcp_policy import MCP_LIMIT_COUNTED_STATUSES
 from backend.app.capabilities.models import McpToolCallLog

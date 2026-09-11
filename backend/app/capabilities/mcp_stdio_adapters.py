@@ -3,6 +3,10 @@ from __future__ import annotations
 import json
 from uuid import UUID
 
+from backend.app.capabilities.mcp.types import (
+    McpExecutionError,
+    McpExecutionPending,
+)
 from backend.app.capabilities.mcp_adapter_payloads import (
     MCP_PYTHON_SDK_PACKAGE,
     MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
@@ -11,10 +15,6 @@ from backend.app.capabilities.mcp_adapter_payloads import (
     result_from_sdk_output,
     stdio_command,
     stdio_sdk_request,
-)
-from backend.app.capabilities.mcp_execution_types import (
-    McpExecutionError,
-    McpExecutionPending,
 )
 from backend.app.capabilities.mcp_stdio_credentials import (
     hosted_stdio_environment,

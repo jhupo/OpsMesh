@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.app.capabilities.mcp_execution_adapters import McpToolAdapter
+from backend.app.capabilities.mcp.adapters import McpToolAdapter
 from backend.app.capabilities.mcp_remote_adapters import (
     HostedMcpToolAdapter,
     SseMcpToolAdapter,
