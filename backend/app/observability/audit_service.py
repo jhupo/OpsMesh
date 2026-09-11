@@ -10,8 +10,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import Select, delete, func, select, text
 from sqlalchemy.orm import Session
 
-from backend.app.observability.audit_models import AuditEvent
 from backend.app.core.config import Settings, get_settings
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.workspaces.models import Workspace
 

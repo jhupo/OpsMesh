@@ -14,10 +14,10 @@ from backend.app.api.schemas.exports import (
 )
 from backend.app.api.services.workspace_export_builder import WorkspaceExportBuilder
 from backend.app.files.artifact_models import Artifact
-from backend.app.observability.audit_service import AuditService
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.security import safe_filename
 from backend.app.files.storage import ObjectStorage
+from backend.app.observability.audit_service import AuditService
 from backend.app.workspaces.models import Workspace
 
 

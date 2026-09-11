@@ -3,14 +3,16 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.runtime_manager.spaces.blockers import RuntimeSpaceBlockerService
 from backend.app.runtime_manager.spaces.events import RuntimeSpaceEventLog
 from backend.app.runtime_manager.spaces.models import RuntimeSpace
 from backend.app.runtime_manager.spaces.quotas import RuntimeSpaceQuotaService
-from backend.app.runtime_manager.spaces.reservation_release import RuntimeSpaceReservationReleaseService
+from backend.app.runtime_manager.spaces.reservation_release import (
+    RuntimeSpaceReservationReleaseService,
+)
 from backend.app.runtime_manager.spaces.targets import RuntimeSpaceTargetService
 from backend.app.runtime_manager.spaces.utils import non_empty_string_or_none
-from backend.app.runtime_manager.models import WorkspaceRuntime
 
 
 class RuntimeSpaceLifecycleService:

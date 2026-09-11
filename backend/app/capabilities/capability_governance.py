@@ -5,7 +5,6 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.capability_governance_actions import (
     CapabilityGovernanceActionService,
 )
@@ -15,6 +14,7 @@ from backend.app.capabilities.capability_governance_rules import (
     governance_actions,
 )
 from backend.app.core.config import Settings, get_settings
+from backend.app.observability.audit_service import AuditService
 
 
 class CapabilityGovernanceService:

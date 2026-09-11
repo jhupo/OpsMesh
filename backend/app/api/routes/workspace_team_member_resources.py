@@ -28,7 +28,6 @@ from backend.app.api.schemas.teams import (
     AgentTeamMemberResponse,
     AgentTeamMemberUpdateRequest,
 )
-from backend.app.observability.audit_service import AuditService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
@@ -36,6 +35,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
 from backend.app.model_providers.model_api import configured_model_api, require_known_model_api
+from backend.app.observability.audit_service import AuditService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.teams.runtime import TeamRuntimeService

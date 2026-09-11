@@ -4,8 +4,8 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from uuid import UUID
 
-from backend.app.files.artifact_models import Artifact
 from backend.app.core.typing import int_or_zero
+from backend.app.files.artifact_models import Artifact
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskStep

@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 from backend.app.approvals.models import Approval
 from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.approvals.run_gate import ApprovalRunGateService
-from backend.app.observability.audit_service import AuditService
 from backend.app.core.config import get_settings
 from backend.app.memory.episodic import AgentEpisodicMemoryService
+from backend.app.observability.audit_service import AuditService
 from backend.app.reviews.resource_review_targets import ResourceReviewDecisionService
 from backend.app.runs.models import AgentRunStateSnapshot
 from backend.app.secrets.service import SecretEncryptionService

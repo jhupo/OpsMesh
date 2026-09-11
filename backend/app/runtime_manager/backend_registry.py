@@ -12,9 +12,9 @@ from backend.app.capabilities.mcp.stdio_adapters import (
 )
 from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
 from backend.app.runtime_manager.manager import RuntimeManager
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.runtime_manager.project_files import DockerRunProjectFilesystem
 from backend.app.runtime_manager.sdk_process import RuntimeSdkProcess
-from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.self_hosted.mcp_jobs import SelfHostedMcpJobService
 

@@ -6,7 +6,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.capability_governance_rules import (
     governance_result,
     governance_skipped,
@@ -25,6 +24,7 @@ from backend.app.capabilities.mcp.server_rules import (
 from backend.app.capabilities.models import McpToolAllowlist
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
+from backend.app.observability.audit_service import AuditService
 
 
 class CapabilityGovernanceMcpActionService:

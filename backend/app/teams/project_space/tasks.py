@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections import defaultdict
 from uuid import UUID
 
-from backend.app.files.artifact_models import Artifact
 from backend.app.core.typing import counts_by_value
+from backend.app.files.artifact_models import Artifact
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.project_space.policies import ACTIVE_RUN_STATUSES

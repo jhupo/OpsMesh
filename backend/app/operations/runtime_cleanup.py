@@ -10,9 +10,9 @@ from backend.app.projects.runtime_io import RunProjectIOService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
+from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.runtime_manager.run_environment import RunRuntimeEnvironmentService
 from backend.app.runtime_manager.spaces.models import RuntimeSpaceEvent
-from backend.app.runtime_manager.models import WorkspaceRuntime
 
 
 class RuntimeCleanupService:

@@ -11,7 +11,6 @@ from backend.app.api.schemas.capabilities.catalog import (
     CapabilityResourceCreateRequest,
     CapabilityResourceUpdateRequest,
 )
-from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.models import (
     CapabilityResource,
     McpCredentialReference,
@@ -27,9 +26,10 @@ from backend.app.core.errors import DomainError, NotFoundError
 from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.files.models import WorkspaceFile
+from backend.app.observability.audit_service import AuditService
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.spaces.models import RuntimeSpace
 from backend.app.runtime_manager.models import WorkspaceRuntime
+from backend.app.runtime_manager.spaces.models import RuntimeSpace
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
 

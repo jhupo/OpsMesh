@@ -6,12 +6,12 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
-from backend.app.observability.audit_service import AuditService
 from backend.app.core.config import Settings
+from backend.app.observability.audit_service import AuditService
 from backend.app.runtime_manager.manager_factory import RuntimeManagerFactory
+from backend.app.runtime_manager.models import RuntimeCommand, RuntimeEvent, WorkspaceRuntime
 from backend.app.runtime_manager.queries import RuntimeControlQueryService
 from backend.app.runtime_manager.security_events import RuntimeSecurityEventRecorder
-from backend.app.runtime_manager.models import RuntimeCommand, RuntimeEvent, WorkspaceRuntime
 
 
 class RuntimeCommandService:

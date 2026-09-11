@@ -17,14 +17,14 @@ from backend.app.model_providers.model_api import (
 )
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.model_providers.resolution import ModelProviderResolutionService
-from backend.app.orchestration.runs.tool_authorization import (
-    AgentToolAuthorizationSnapshotService,
-)
+from backend.app.orchestration.run_request.builder import RunRequestBuilder
+from backend.app.orchestration.run_request.utils import dict_copy, uuid_or_none
 from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
-from backend.app.orchestration.run_request.builder import RunRequestBuilder
-from backend.app.orchestration.run_request.utils import dict_copy, uuid_or_none
+from backend.app.orchestration.runs.tool_authorization import (
+    AgentToolAuthorizationSnapshotService,
+)
 from backend.app.orchestration.runtime.authorization import (
     RunRuntimeAuthorizationService,
 )

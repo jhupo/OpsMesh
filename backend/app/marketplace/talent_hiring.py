@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from backend.app.agents.memory_policy import normalized_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.marketplace import HireTalentRequest, HireTaskTalentRequest
-from backend.app.observability.audit_service import AuditService
 from backend.app.core.typing import string_or_default
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.marketplace.listing_payloads import listing_agent_definition
@@ -16,6 +15,7 @@ from backend.app.marketplace.recommendations import (
     missing_work_package_by_id,
 )
 from backend.app.marketplace.talent_repository import TalentMarketplaceRepository
+from backend.app.observability.audit_service import AuditService
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage
 

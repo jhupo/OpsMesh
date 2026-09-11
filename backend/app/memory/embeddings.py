@@ -11,7 +11,6 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
 from backend.app.memory.configuration import (
     EMBEDDING_DIMENSIONS,
     WorkspaceMemoryConfigurationService,
@@ -26,6 +25,7 @@ from backend.app.model_providers.provider_keys import (
     canonical_model_provider,
     is_openai_compatible_provider,
 )
+from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
 from backend.app.secrets.service import SecretEncryptionService
 
 

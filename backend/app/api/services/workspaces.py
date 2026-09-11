@@ -13,7 +13,6 @@ from backend.app.api.services.workspace_settings import (
     semantic_resource_review_settings,
     validate_resource_review_settings,
 )
-from backend.app.observability.audit_service import AuditService
 from backend.app.auth.permissions import WorkspaceRole
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
@@ -21,6 +20,7 @@ from backend.app.db.errors import commit_or_raise_conflict
 from backend.app.db.pagination import page_scalars
 from backend.app.memory.models import WorkspaceMemoryConfiguration
 from backend.app.memory.policy import default_lifecycle_policy, default_retrieval_policy
+from backend.app.observability.audit_service import AuditService
 from backend.app.workspaces.models import (
     Workspace,
     WorkspaceInvite,

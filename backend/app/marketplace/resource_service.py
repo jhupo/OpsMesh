@@ -10,7 +10,6 @@ from backend.app.api.schemas.marketplace import (
     MarketplaceInstallRequest,
     MarketplaceListingCreateRequest,
 )
-from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.models import McpServer, Skill
 from backend.app.core.config import Settings
 from backend.app.core.pagination import PageParams
@@ -26,6 +25,7 @@ from backend.app.marketplace.listing_payloads import (
 )
 from backend.app.marketplace.models import MarketplaceListing, WorkspaceMarketplaceInstall
 from backend.app.marketplace.resource_installer import MarketplaceResourceInstaller
+from backend.app.observability.audit_service import AuditService
 from backend.app.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder

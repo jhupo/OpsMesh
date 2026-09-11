@@ -9,18 +9,20 @@ from sqlalchemy.orm import Session
 from backend.app.approvals.lifecycle import AgentToolApprovalLifecycleService
 from backend.app.approvals.models import PendingToolInvocation
 from backend.app.observability.audit_service import AuditService
-from backend.app.orchestration.run_events import RunEventRecorder
-from backend.app.orchestration.run_terminal_state import RunTerminalStateService
 from backend.app.orchestration.policies.statuses import (
     ACTIVE_RUN_STATUS_VALUES,
     STALE_RECOVERABLE_RUN_STATUS_VALUES,
 )
+from backend.app.orchestration.run_events import RunEventRecorder
+from backend.app.orchestration.run_terminal_state import RunTerminalStateService
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.runtime_manager.models import WorkspaceRuntime
+from backend.app.runtime_manager.spaces.reservation_release import (
+    RuntimeSpaceReservationReleaseService,
+)
 from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus

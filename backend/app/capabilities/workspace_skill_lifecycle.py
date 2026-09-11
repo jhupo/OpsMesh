@@ -12,7 +12,6 @@ from backend.app.api.schemas.capabilities.workspace_skills import (
     WorkspaceSkillRollbackRequest,
     WorkspaceSkillUpgradeRequest,
 )
-from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.models import WorkspaceSkillInstall
 from backend.app.capabilities.workspace_skill_lifecycle_helpers import (
     append_skill_install_history,
@@ -27,6 +26,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.db.pagination import page_scalars
+from backend.app.observability.audit_service import AuditService
 
 T = TypeVar("T")
 

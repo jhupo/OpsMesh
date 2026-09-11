@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.orchestration.planning.team_project_plan import ProjectPlanStepMaterializer
+from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.planning.agent_plan import is_agent_planning_step
 from backend.app.tasks.models import Task, TaskStep
 

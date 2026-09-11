@@ -22,7 +22,9 @@ from backend.app.runtime_manager.spaces.reservation_capacity import (
     RuntimeSpaceCapacityReservationService,
     RuntimeSpaceReservationResult,
 )
-from backend.app.runtime_manager.spaces.reservation_release import RuntimeSpaceReservationReleaseService
+from backend.app.runtime_manager.spaces.reservation_release import (
+    RuntimeSpaceReservationReleaseService,
+)
 from backend.app.runtime_manager.spaces.targets import RuntimeSpaceTargetService
 
 T = TypeVar("T")

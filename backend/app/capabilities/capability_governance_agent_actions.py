@@ -6,7 +6,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.capability_governance_rules import (
     governance_result,
     governance_skipped,
@@ -14,6 +13,7 @@ from backend.app.capabilities.capability_governance_rules import (
 )
 from backend.app.capabilities.skill_tool_diagnostics import SkillToolDiagnosticsService
 from backend.app.core.config import Settings, get_settings
+from backend.app.observability.audit_service import AuditService
 
 
 class CapabilityGovernanceAgentActionService:

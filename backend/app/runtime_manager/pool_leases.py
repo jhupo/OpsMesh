@@ -5,8 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.runtime_manager.metadata import runtime_space_reservation_key
-from backend.app.runtime_manager.spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.runtime_manager.models import RuntimeLease, WorkspaceRuntime
+from backend.app.runtime_manager.spaces.reservation_release import (
+    RuntimeSpaceReservationReleaseService,
+)
 
 
 class RuntimeLeaseStore:

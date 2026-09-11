@@ -4,12 +4,12 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.orchestration.state.resource_usage import step_resource_requirements
 from backend.app.orchestration.scheduler.policy import WorkspaceSchedulerPolicy
 from backend.app.orchestration.scheduler.team_capacity import (
     TeamMemberCapacityResolver,
     member_blocked_reason,
 )
+from backend.app.orchestration.state.resource_usage import step_resource_requirements
 from backend.app.orchestration.steps.scheduling_state import set_blocked_resource_keys
 from backend.app.tasks.models import TaskStep
 

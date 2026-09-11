@@ -7,8 +7,8 @@ from backend.app.core.metrics import GaugeMetric
 from backend.app.operations.observability_constants import ACTIVE_RUNTIME_RUN_STATUSES
 from backend.app.operations.utils import capacity_slots_from_metadata
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.spaces.models import RuntimeSpaceQuota
 from backend.app.runtime_manager.models import WorkspaceRuntime
+from backend.app.runtime_manager.spaces.models import RuntimeSpaceQuota
 
 
 class RuntimePrometheusMetrics:

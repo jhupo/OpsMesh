@@ -18,8 +18,8 @@ from backend.app.runtime_manager.contracts import (
 )
 from backend.app.runtime_manager.events import RuntimeEventLog
 from backend.app.runtime_manager.lifecycle_guards import require_container
-from backend.app.runtime_manager.security_events import RuntimeSecurityEventRecorder
 from backend.app.runtime_manager.models import RuntimeCommand, WorkspaceRuntime
+from backend.app.runtime_manager.security_events import RuntimeSecurityEventRecorder
 
 
 class RuntimeCommandExecutor:

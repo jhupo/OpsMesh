@@ -28,14 +28,14 @@ from backend.app.api.schemas.operations import (
     StaleRunsDiagnosticsResponse,
 )
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
-from backend.app.observability.audit_integrity import AuditIntegrityService
-from backend.app.observability.audit_service import AuditService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
+from backend.app.observability.audit_integrity import AuditIntegrityService
+from backend.app.observability.audit_service import AuditService
 from backend.app.operations.events import OperationsEventQueryService
 from backend.app.operations.stale_run_diagnostics import StaleRunDiagnosticsService
 from backend.app.operations.stale_run_recovery import StaleRunRecoveryService

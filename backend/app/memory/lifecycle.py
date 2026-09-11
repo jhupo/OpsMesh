@@ -8,7 +8,6 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.observability.audit_service import AuditService
 from backend.app.memory.models import (
     WorkspaceMemoryConfiguration,
     WorkspaceMemoryEntry,
@@ -16,6 +15,7 @@ from backend.app.memory.models import (
 )
 from backend.app.memory.policy import MemoryLifecyclePolicy, memory_lifecycle_policy
 from backend.app.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
+from backend.app.observability.audit_service import AuditService
 from backend.app.teams.models import AgentTeam
 
 

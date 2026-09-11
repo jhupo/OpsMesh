@@ -19,11 +19,13 @@ from backend.app.runtime_manager.metadata import (
     runtime_space_reservation_key,
     runtime_space_usage_for_runtime,
 )
+from backend.app.runtime_manager.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime_manager.pool_leases import RuntimeLeaseStore, RuntimeSpaceReservationStore
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
 from backend.app.runtime_manager.security_events import RuntimeSecurityEventRecorder
-from backend.app.runtime_manager.spaces.reservation_capacity import RuntimeSpaceCapacityReservationService
-from backend.app.runtime_manager.models import RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime_manager.spaces.reservation_capacity import (
+    RuntimeSpaceCapacityReservationService,
+)
 
 
 class RuntimeProvisioningExecutor:

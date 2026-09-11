@@ -20,7 +20,6 @@ from backend.app.api.schemas.memory import (
     WorkspaceMemoryConfigurationResponse,
     WorkspaceMemoryConfigurationUpdateRequest,
 )
-from backend.app.observability.audit_service import AuditService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
@@ -36,6 +35,7 @@ from backend.app.memory.semantic import (
     SemanticMemoryConflictError,
     SemanticMemoryUpsert,
 )
+from backend.app.observability.audit_service import AuditService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/memories", tags=["workspace-memory"])
 

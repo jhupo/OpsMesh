@@ -7,8 +7,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.files.artifact_models import Artifact
 from backend.app.core.config import Settings
+from backend.app.files.artifact_models import Artifact
 from backend.app.files.models import FileAccessEvent
 from backend.app.files.storage import ObjectStorage, create_storage
 from backend.app.projects.file_boundaries import (

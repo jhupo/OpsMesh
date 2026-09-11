@@ -25,10 +25,10 @@ from backend.app.api.services.workspace_snapshots import (
     invite_snapshot,
     member_snapshot,
 )
-from backend.app.observability.audit_service import AuditService
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.errors import commit_or_raise_conflict
 from backend.app.identity.models import User
+from backend.app.observability.audit_service import AuditService
 from backend.app.workspaces.models import Workspace, WorkspaceInvite, WorkspaceMember
 
 

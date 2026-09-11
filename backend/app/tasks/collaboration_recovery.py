@@ -5,8 +5,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.observability.audit_service import AuditService
 from backend.app.core.typing import dict_list
+from backend.app.observability.audit_service import AuditService
 from backend.app.tasks.collaboration_recovery_plan import (
     build_recovery_plan,
     dry_run_recovery_result,

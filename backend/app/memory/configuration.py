@@ -6,7 +6,6 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from backend.app.observability.audit_service import AuditService
 from backend.app.memory.models import WorkspaceMemoryConfiguration, WorkspaceMemoryEntry
 from backend.app.memory.policy import (
     HybridMemoryRetrievalPolicy,
@@ -18,6 +17,7 @@ from backend.app.memory.policy import (
 )
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.model_providers.provider_keys import is_openai_compatible_provider
+from backend.app.observability.audit_service import AuditService
 
 EMBEDDING_DIMENSIONS = 1_536
 

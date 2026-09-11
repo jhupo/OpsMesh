@@ -13,7 +13,6 @@ from backend.app.api.schemas.capabilities.mcp_servers import (
     McpToolAllowRequest,
     McpToolAllowUpdateRequest,
 )
-from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.mcp.catalog import McpCatalogServer
 from backend.app.capabilities.mcp.catalog_service import McpCatalogService
 from backend.app.capabilities.mcp.server_helpers import (
@@ -30,6 +29,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DomainError
 from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.observability.audit_service import AuditService
 from backend.app.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
