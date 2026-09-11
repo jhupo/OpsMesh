@@ -24,7 +24,7 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.capabilities.mcp_catalog import McpCatalogServer, McpCatalogUsage
-from backend.app.capabilities.mcp_servers import McpServerService
+from backend.app.capabilities.mcp.servers import McpServerService
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.errors import DatabaseConflictError
