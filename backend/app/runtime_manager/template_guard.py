@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.runtime_manager.core.contracts import RuntimeLimits
+from backend.app.runtime_manager.contracts import RuntimeLimits
 from backend.app.runtime_manager.runtime_policy import (
     RuntimePolicyResolution,
     RuntimePolicyResolver,

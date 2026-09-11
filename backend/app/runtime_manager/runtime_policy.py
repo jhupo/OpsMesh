@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.runtime_manager.core.contracts import RuntimeLimits
+from backend.app.runtime_manager.contracts import RuntimeLimits
 from backend.app.runtime_manager.egress import RuntimeEgressPolicy, resolve_egress_policy
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceBinding
 from backend.app.runtimes.models import RuntimeTemplate

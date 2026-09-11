@@ -3,7 +3,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
-from backend.app.runtime_manager.core.contracts import DockerRuntimeClient
+from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.runtime_manager.manager import RuntimeManager
 
 

@@ -10,7 +10,7 @@ from backend.app.capabilities.mcp.stdio_adapters import (
     DockerRuntimeStdioMcpToolAdapter,
     SelfHostedStdioMcpToolAdapter,
 )
-from backend.app.runtime_manager.core.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
+from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtime_manager.project_files import DockerRunProjectFilesystem
 from backend.app.runtime_manager.sdk_process import RuntimeSdkProcess

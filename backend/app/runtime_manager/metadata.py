@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import TypedDict
 from uuid import UUID
 
-from backend.app.runtime_manager.core.contracts import (
+from backend.app.runtime_manager.contracts import (
     RuntimeHardeningPolicy,
     RuntimeLimits,
 )

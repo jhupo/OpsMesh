@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.admin.policy_reader import PlatformPolicyService
 from backend.app.core.config import Settings
 from backend.app.runtime_manager.commands import RuntimeCommandService
-from backend.app.runtime_manager.core.contracts import (
+from backend.app.runtime_manager.contracts import (
     DockerRuntimeClient,
     RuntimeExecutionMode,
     RuntimeLimits,

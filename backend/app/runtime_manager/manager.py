@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.runtime_manager.command_executor import RuntimeCommandExecutor
 from backend.app.runtime_manager.command_output import lease_metadata
-from backend.app.runtime_manager.core.contracts import (
+from backend.app.runtime_manager.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeExecutionMode,
