@@ -15,6 +15,7 @@ ACTIVE_RUN_STATUSES = {
     RunStatus.RUNNING.value,
     RunStatus.WAITING_RUNTIME.value,
     RunStatus.WAITING_APPROVAL.value,
+    RunStatus.WAITING_SUBWORKFLOW.value,
 }
 
 

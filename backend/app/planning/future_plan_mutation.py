@@ -801,6 +801,7 @@ class TaskPlanMutationService:
             RunStatus.RUNNING.value,
             RunStatus.WAITING_RUNTIME.value,
             RunStatus.WAITING_APPROVAL.value,
+            RunStatus.WAITING_SUBWORKFLOW.value,
         }
         for run in runs:
             if run.task_step_id is None:

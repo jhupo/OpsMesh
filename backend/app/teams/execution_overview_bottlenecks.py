@@ -143,6 +143,23 @@ def summary_bottlenecks(
             )
         )
 
+    waiting_subworkflow_runs = [
+        run for run in runs if run.status == RunStatus.WAITING_SUBWORKFLOW.value
+    ]
+    if waiting_subworkflow_runs:
+        bottlenecks.append(
+            _bottleneck(
+                code="subworkflow_wait",
+                severity="low",
+                count=len(waiting_subworkflow_runs),
+                task_ids=sorted(
+                    {run.task_id for run in waiting_subworkflow_runs if run.task_id},
+                    key=str,
+                ),
+                recommended_action="inspect_subworkflow_child_tasks",
+            )
+        )
+
     return sorted(
         bottlenecks,
         key=lambda item: (severity_rank(str(item["severity"])), str(item["code"])),

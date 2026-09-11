@@ -111,4 +111,5 @@ def step_dependencies_for_package(
         "arguments": package.get("arguments", {}),
         "output_schema": package.get("output_schema"),
         "subworkflow_definition_id": package.get("subworkflow_definition_id"),
+        "subworkflow_version": package.get("subworkflow_version"),
     }

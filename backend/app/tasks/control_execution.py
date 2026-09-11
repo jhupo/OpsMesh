@@ -22,6 +22,7 @@ PAUSABLE_RUN_STATUSES = {
     RunStatus.RUNNING.value,
     RunStatus.WAITING_RUNTIME.value,
     RunStatus.WAITING_APPROVAL.value,
+    RunStatus.WAITING_SUBWORKFLOW.value,
 }
 PAUSABLE_STEP_STATUSES = {"queued", "running", "blocked"}
 TASK_PAUSED_REASON = "task_paused"

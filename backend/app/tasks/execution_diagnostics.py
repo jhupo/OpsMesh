@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.core.typing import dict_list
+from backend.app.orchestration.models import SubworkflowInvocation
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.execution_handoff import (
@@ -25,6 +26,7 @@ ACTIVE_RUN_STATUSES = {
     RunStatus.RUNNING.value,
     RunStatus.WAITING_RUNTIME.value,
     RunStatus.WAITING_APPROVAL.value,
+    RunStatus.WAITING_SUBWORKFLOW.value,
 }
 
 
@@ -64,6 +66,28 @@ class TaskExecutionDiagnosticsService:
         step_payload_by_id = {
             step.id: payload for step, payload in zip(steps, step_payloads, strict=True)
         }
+        invocations = self._session.scalars(
+            select(SubworkflowInvocation).where(
+                SubworkflowInvocation.workspace_id == workspace_id,
+                SubworkflowInvocation.parent_task_id == task.id,
+            )
+        ).all()
+        invocation_by_step = {
+            invocation.parent_task_step_id: invocation for invocation in invocations
+        }
+        for step_payload in step_payloads:
+            step_id = step_payload.get("task_step_id")
+            invocation = invocation_by_step.get(step_id) if isinstance(step_id, UUID) else None
+            if invocation is not None:
+                step_payload["subworkflow"] = {
+                    "invocation_id": invocation.id,
+                    "child_task_id": invocation.child_task_id,
+                    "definition_id": invocation.definition_id,
+                    "definition_version": invocation.definition_version,
+                    "status": invocation.status,
+                    "output": invocation.output_payload,
+                    "error": invocation.error_payload,
+                }
         for step_payload in step_payloads:
             step_payload["handoff"] = handoff_state(
                 step_payload,

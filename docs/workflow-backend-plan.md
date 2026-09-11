@@ -9,7 +9,7 @@ share the canonical node contract, admission policy, durable execution and mutat
 | Shared agent node contract | Done | Authored, agent-generated, deterministic and mutated plans share WorkflowNode and graph validation; conditions, MCP identity and joins are retained |
 | Branch correctness | Done | Explicit skipped state, skip propagation, selected-branch join, reference cycle denial; empty selection completes without a run |
 | Immutable publication | Done | Historical versions remain executable and queryable; draft edits use optimistic concurrency; application locks task |
-| Typed executable node catalog | In progress | Agent, direct tool/MCP, control and approval nodes use the shared contract and existing SDK/tool/approval boundaries; subworkflow execution remains the next bounded item |
+| Typed executable node catalog | Done | Agent, direct tool/MCP, control, approval and subworkflow nodes use the shared contract and existing SDK/tool/approval/task boundaries; child execution is pinned to an immutable revision |
 | Structured data flow | Pending | Typed inputs/outputs and references, bounded payloads, schema validation and scoped evidence |
 | Human/AI editing policy | Pending | Locked nodes and edges cannot be modified outside the authorized region |
 | Execution inspection | Pending | Persisted per-node results, attempts, approval state and diagnostics usable by a future canvas |

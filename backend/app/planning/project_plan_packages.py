@@ -151,6 +151,14 @@ def requested_package(
         raise ProjectPlanValidationError("Tool workflow node requires tool_name")
     if node_type == "subworkflow" and not request.get("subworkflow_definition_id"):
         raise ProjectPlanValidationError("Subworkflow node requires a definition")
+    raw_subworkflow_version = request.get("subworkflow_version")
+    subworkflow_version = (
+        raw_subworkflow_version
+        if isinstance(raw_subworkflow_version, int)
+        and not isinstance(raw_subworkflow_version, bool)
+        and raw_subworkflow_version > 0
+        else None
+    )
     return WorkflowNode(
         package_id=package_id,
         title=string_or_default(request.get("title"), f"{role} execution"),
@@ -182,6 +190,7 @@ def requested_package(
         if isinstance(request.get("output_schema"), dict)
         else None,
         subworkflow_definition_id=uuid_or_none(request.get("subworkflow_definition_id")),
+        subworkflow_version=subworkflow_version,
         required_tools=tuple(string_list(request.get("required_tools"))),
         required_mcp_tools=tuple(_dict_items(raw_mcp_tools)),
         required_resource_ids=tuple(

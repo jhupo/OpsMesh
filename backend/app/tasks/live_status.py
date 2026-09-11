@@ -10,7 +10,13 @@ from backend.app.runs.activity import run_activity
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
-ACTIVE_RUN_STATUSES = {"queued", "running", "waiting_runtime", "waiting_approval"}
+ACTIVE_RUN_STATUSES = {
+    "queued",
+    "running",
+    "waiting_runtime",
+    "waiting_approval",
+    "waiting_subworkflow",
+}
 
 
 class TaskLiveStatusService:
@@ -248,4 +254,3 @@ def _event_summary(event: RunEvent | None) -> dict[str, object] | None:
         "metadata": event.event_metadata,
         "created_at": event.created_at,
     }
-

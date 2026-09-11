@@ -1,6 +1,7 @@
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from types import TracebackType
 from uuid import UUID
 
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunResult
 from backend.app.agent_runtime.errors import normalize_agent_error
+from backend.app.orchestration.models import SubworkflowInvocation
 from backend.app.orchestration.planner_completion import PlannerCompletionService
 from backend.app.orchestration.pm_acceptance import PmAcceptanceService
 from backend.app.orchestration.pm_final_output import PmFinalOutputService
@@ -111,6 +113,15 @@ class RunLifecycleService:
             if task is not None and TaskStatus(task.status) == TaskStatus.RUNNING:
                 TaskStateService().transition(task, TaskStatus.WAITING_APPROVAL)
 
+    def mark_run_waiting_subworkflow(self, run: AgentRun) -> None:
+        RunStateService().transition(run, RunStatus.WAITING_SUBWORKFLOW)
+        self.callbacks.append_event(
+            run,
+            "run.waiting.subworkflow",
+            "Run is waiting for a subworkflow child task",
+            None,
+        )
+
     def mark_run_completed(
         self,
         run: AgentRun,
@@ -206,6 +217,7 @@ class RunLifecycleService:
             final_output=task_output,
         )
         self._memory_completion().capture_task_completed(run, task, result)
+        self._complete_parent_subworkflow(task, requested_by_user_id=requested_by_user_id)
         if pm_acceptance is not None:
             pm_acceptance_service.append_decision_message(
                 task,
@@ -239,6 +251,7 @@ class RunLifecycleService:
                     task_status,
                     completed_at=run.completed_at,
                 )
+                self._fail_parent_subworkflow(task, error.as_dict())
         if run.task_step_id is not None:
             step = self.session.scalar(
                 select(TaskStep).where(
@@ -355,6 +368,93 @@ class RunLifecycleService:
             body=body,
             payload=payload or {},
         )
+
+    def _complete_parent_subworkflow(
+        self,
+        child_task: Task,
+        *,
+        requested_by_user_id: UUID | None,
+    ) -> None:
+        invocation = self.session.scalar(
+            select(SubworkflowInvocation)
+            .where(
+                SubworkflowInvocation.workspace_id == child_task.workspace_id,
+                SubworkflowInvocation.child_task_id == child_task.id,
+                SubworkflowInvocation.status == "running",
+            )
+            .with_for_update()
+        )
+        if invocation is None:
+            return
+        parent_run = self.session.scalar(
+            select(AgentRun)
+            .where(
+                AgentRun.workspace_id == invocation.workspace_id,
+                AgentRun.id == invocation.parent_run_id,
+            )
+            .with_for_update()
+        )
+        if parent_run is None or parent_run.status != RunStatus.WAITING_SUBWORKFLOW.value:
+            return
+        output = child_task.final_output or {}
+        invocation.status = "completed"
+        invocation.output_payload = output
+        invocation.completed_at = datetime.now(UTC)
+        self.session.flush([invocation])
+        self.callbacks.append_event(
+            parent_run,
+            "subworkflow.completed",
+            "Subworkflow child task completed",
+            {
+                "invocation_id": str(invocation.id),
+                "child_task_id": str(child_task.id),
+            },
+        )
+        self.mark_run_completed(
+            parent_run,
+            AgentRunResult(
+                final_output=json.dumps(output, ensure_ascii=False, default=str),
+            ),
+            requested_by_user_id,
+        )
+
+    def _fail_parent_subworkflow(
+        self,
+        child_task: Task,
+        error: dict[str, object],
+    ) -> None:
+        invocation = self.session.scalar(
+            select(SubworkflowInvocation)
+            .where(
+                SubworkflowInvocation.workspace_id == child_task.workspace_id,
+                SubworkflowInvocation.child_task_id == child_task.id,
+                SubworkflowInvocation.status == "running",
+            )
+            .with_for_update()
+        )
+        if invocation is None:
+            return
+        invocation.status = "failed"
+        invocation.error_payload = error
+        invocation.completed_at = datetime.now(UTC)
+        parent_run = self.session.scalar(
+            select(AgentRun).where(
+                AgentRun.workspace_id == invocation.workspace_id,
+                AgentRun.id == invocation.parent_run_id,
+            )
+        )
+        self.session.flush([invocation])
+        if parent_run is not None and parent_run.status == RunStatus.WAITING_SUBWORKFLOW.value:
+            self.callbacks.append_event(
+                parent_run,
+                "subworkflow.failed",
+                "Subworkflow child task failed",
+                {"invocation_id": str(invocation.id), "child_task_id": str(child_task.id)},
+            )
+            self.mark_run_failed(
+                parent_run,
+                ValueError(str(error.get("message", "Subworkflow child task failed"))),
+            )
 
 
 class NoopLifecycleContext:

@@ -31,6 +31,7 @@ from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_lifecycle import RunLifecycleService
 from backend.app.orchestration.run_request_builder import RunRequestBuilder
 from backend.app.orchestration.run_runtime_event_messages import RunRuntimeEventMessageMapper
+from backend.app.orchestration.subworkflows import SubworkflowExecutionService
 from backend.app.projects.runtime_io import RunProjectIOService
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.runs.models import AgentRun, RunEvent
@@ -105,7 +106,7 @@ class RunExecutionService:
             try:
                 request = (
                     None
-                    if node_type in {"tool", "mcp", "approval"}
+                    if node_type in {"tool", "mcp", "approval", "subworkflow"}
                     else self._request_builder().build_agent_request(run, job)
                 )
             except (ModelProviderUnavailableError, AgentRuntimePolicyError) as exc:
@@ -119,10 +120,17 @@ class RunExecutionService:
 
             if request is not None:
                 self._events().append_context_built_event(run, request)
-            direct_result = await self._run_non_agent_node(run, job, request, node_type)
+            try:
+                direct_result = await self._run_non_agent_node(run, job, request, node_type)
+            except Exception as exc:
+                self._lifecycle().mark_run_failed(run, exc)
+                self._commit_and_refresh(run)
+                return run
             if direct_result is not None:
                 if direct_result.status == "waiting_approval":
                     self._lifecycle().mark_run_waiting_approval(run)
+                elif direct_result.status == "waiting_subworkflow":
+                    self._lifecycle().mark_run_waiting_subworkflow(run)
                 elif direct_result.status == "completed":
                     self._lifecycle().mark_run_completed(
                         run,
@@ -314,6 +322,36 @@ class RunExecutionService:
             return AgentRuntimeToolResult(
                 status="waiting_approval",
                 metadata={"approval_id": str(approval.id), "node_type": "approval"},
+            )
+        if node_type == "subworkflow":
+            if run.task_id is None:
+                raise ValueError("Subworkflow run has no parent task")
+            parent_task = self.session.scalar(
+                select(Task).where(
+                    Task.workspace_id == run.workspace_id,
+                    Task.id == run.task_id,
+                )
+            )
+            if parent_task is None:
+                raise ValueError("Subworkflow parent task not found")
+            launch = SubworkflowExecutionService(self.session, queue=self.queue).launch(
+                parent_run=run,
+                parent_task=parent_task,
+                parent_step=step,
+                requested_by_user_id=job.requested_by_user_id,
+            )
+            return AgentRuntimeToolResult(
+                status=launch.status,
+                output=launch.output,
+                error=launch.error,
+                metadata={
+                    "invocation_id": str(launch.invocation_id),
+                    "child_task_id": str(launch.child_task_id),
+                    "child_run_id": str(launch.child_run_id)
+                    if launch.child_run_id is not None
+                    else None,
+                    "node_type": "subworkflow",
+                },
             )
         if node_type not in {"tool", "mcp"}:
             return None

@@ -6,6 +6,7 @@ class RunStatus(StrEnum):
     RUNNING = "running"
     WAITING_RUNTIME = "waiting_runtime"
     WAITING_APPROVAL = "waiting_approval"
+    WAITING_SUBWORKFLOW = "waiting_subworkflow"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -17,6 +18,7 @@ ALLOWED_RUN_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
         RunStatus.QUEUED,
         RunStatus.WAITING_APPROVAL,
         RunStatus.WAITING_RUNTIME,
+        RunStatus.WAITING_SUBWORKFLOW,
         RunStatus.COMPLETED,
         RunStatus.FAILED,
         RunStatus.CANCELLED,
@@ -28,6 +30,11 @@ ALLOWED_RUN_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
         RunStatus.CANCELLED,
     },
     RunStatus.WAITING_APPROVAL: {RunStatus.RUNNING, RunStatus.FAILED, RunStatus.CANCELLED},
+    RunStatus.WAITING_SUBWORKFLOW: {
+        RunStatus.COMPLETED,
+        RunStatus.FAILED,
+        RunStatus.CANCELLED,
+    },
     RunStatus.COMPLETED: set(),
     RunStatus.FAILED: set(),
     RunStatus.CANCELLED: set(),

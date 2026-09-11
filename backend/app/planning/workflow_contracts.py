@@ -113,6 +113,7 @@ class WorkflowNode(BaseModel):
     arguments: dict[str, object] = Field(default_factory=dict, max_length=32)
     output_schema: dict[str, object] | None = None
     subworkflow_definition_id: UUID | None = None
+    subworkflow_version: StrictInt | None = Field(default=None, ge=1)
     estimated_cost_usd: FiniteFloat = Field(default=0, ge=0, le=1_000_000)
 
     @model_validator(mode="after")
@@ -133,6 +134,8 @@ class WorkflowNode(BaseModel):
             raise ValueError("tool_name must be included in required_mcp_tools")
         if self.node_type == "subworkflow" and self.subworkflow_definition_id is None:
             raise ValueError("subworkflow nodes require subworkflow_definition_id")
+        if self.node_type != "subworkflow" and self.subworkflow_version is not None:
+            raise ValueError("subworkflow_version is only valid for subworkflow nodes")
         if self.node_type in {"condition", "join", "start", "end"} and (
             self.tool_name is not None or self.subworkflow_definition_id is not None
         ):

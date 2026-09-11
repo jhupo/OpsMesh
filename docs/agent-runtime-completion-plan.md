@@ -225,8 +225,9 @@ run. These are agent-workflow capabilities, not a claim that arbitrary typed can
 The current follow-up also admits typed `agent`, direct `tool`/`mcp`, control (`condition`, `join`,
 `start`, `end`) and `approval` nodes. Direct tool nodes execute through the frozen authorization
 snapshot and existing `BackendToolExecutor` without resolving a model provider; approval nodes create
-durable workflow approvals. Subworkflow nodes are contract-validated but still await their durable
-child-task execution boundary.
+durable workflow approvals. Subworkflow nodes use a durable parent/child invocation boundary: the
+child task is created through normal task admission, pinned to an immutable revision, queued on the
+existing worker queue, and its terminal result is propagated back to the waiting parent run.
 
 A project can be planned, validated, executed in parallel, replanned after failure, transferred
 between agents, corrected by a human, reviewed by a manager, and assembled into one final delivery.

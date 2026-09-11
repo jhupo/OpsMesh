@@ -19,6 +19,7 @@ ACTIVE_RUN_STATUSES = {
     RunStatus.RUNNING.value,
     RunStatus.WAITING_RUNTIME.value,
     RunStatus.WAITING_APPROVAL.value,
+    RunStatus.WAITING_SUBWORKFLOW.value,
 }
 
 
@@ -274,4 +275,3 @@ def _artifact_payload(artifact: Artifact) -> dict[str, object]:
         "review_status": artifact.review_status,
         "work_package_id": artifact.work_package_id,
     }
-

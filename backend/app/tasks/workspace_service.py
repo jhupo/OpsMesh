@@ -11,6 +11,7 @@ from backend.app.orchestration.definitions import OrchestrationDefinitionService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.projects.models import WorkspaceProject
+from backend.app.runs.models import AgentRun
 from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
@@ -57,6 +58,66 @@ class WorkspaceTaskService:
         *,
         queue: RedisQueue | None = None,
     ) -> Task:
+        task, _ = self._create_task(
+            workspace_id=workspace_id,
+            created_by_user_id=created_by_user_id,
+            created_by_agent_run_id=None,
+            command=command,
+            queue=queue,
+        )
+        self._session.commit()
+        self._session.refresh(task)
+        return task
+
+    def create_subworkflow_task(
+        self,
+        *,
+        parent_task: Task,
+        parent_run_id: UUID,
+        title: str,
+        description: str,
+        input_payload: dict[str, object],
+        orchestration_definition_id: UUID,
+        orchestration_version: int,
+        queue: RedisQueue | None = None,
+    ) -> tuple[Task, AgentRun | None]:
+        """Materialize a child task through the same task admission path as user tasks."""
+        if parent_task.agent_team_id is None:
+            raise ValueError("Subworkflow execution requires a parent task team")
+        command = TaskCreateCommand(
+            title=title,
+            agent_team_id=parent_task.agent_team_id,
+            runtime_space_id=parent_task.runtime_space_id,
+            workspace_project_id=parent_task.workspace_project_id,
+            domain_type=parent_task.domain_type,
+            description=description,
+            priority=parent_task.priority,
+            input=input_payload,
+            generic_state={
+                "subworkflow_parent_task_id": str(parent_task.id),
+                "subworkflow_parent_run_id": str(parent_run_id),
+            },
+            domain_state={},
+            orchestration_definition_id=orchestration_definition_id,
+            orchestration_version=orchestration_version,
+        )
+        return self._create_task(
+            workspace_id=parent_task.workspace_id,
+            created_by_user_id=None,
+            created_by_agent_run_id=parent_run_id,
+            command=command,
+            queue=queue,
+        )
+
+    def _create_task(
+        self,
+        *,
+        workspace_id: UUID,
+        created_by_user_id: UUID | None,
+        created_by_agent_run_id: UUID | None,
+        command: TaskCreateCommand,
+        queue: RedisQueue | None,
+    ) -> tuple[Task, AgentRun | None]:
         payload = _task_payload(command)
         runtime_spaces = RuntimeSpaceService(self._session)
         team = self._team_for_task(workspace_id, command)
@@ -81,6 +142,7 @@ class WorkspaceTaskService:
         task = Task(
             workspace_id=workspace_id,
             created_by_user_id=created_by_user_id,
+            created_by_agent_run_id=created_by_agent_run_id,
             **payload,
         )
         self._session.add(task)
@@ -107,25 +169,38 @@ class WorkspaceTaskService:
                     created_by_user_id,
                 )
 
-        AuditService(self._session).record_user_action(
-            workspace_id=workspace_id,
-            user_id=created_by_user_id,
-            action="task.created",
-            target_type="task",
-            target_id=task.id,
-            metadata={
-                "title": task.title,
-                "domain_type": task.domain_type,
-                "initial_run_id": str(initial_run.id) if initial_run is not None else None,
-                "initial_run_enqueued": initial_run_enqueued,
-                "workspace_project_id": str(task.workspace_project_id)
-                if task.workspace_project_id is not None
-                else None,
-            },
-        )
-        self._session.commit()
-        self._session.refresh(task)
-        return task
+        metadata: dict[str, object] = {
+            "title": task.title,
+            "domain_type": task.domain_type,
+            "initial_run_id": str(initial_run.id) if initial_run is not None else None,
+            "initial_run_enqueued": initial_run_enqueued,
+            "workspace_project_id": str(task.workspace_project_id)
+            if task.workspace_project_id is not None
+            else None,
+            "created_by_agent_run_id": str(created_by_agent_run_id)
+            if created_by_agent_run_id is not None
+            else None,
+        }
+        audit = AuditService(self._session)
+        if created_by_user_id is None:
+            audit.record_system_action(
+                workspace_id=workspace_id,
+                action="task.created",
+                target_type="task",
+                target_id=task.id,
+                metadata=metadata,
+            )
+        else:
+            audit.record_user_action(
+                workspace_id=workspace_id,
+                user_id=created_by_user_id,
+                action="task.created",
+                target_type="task",
+                target_id=task.id,
+                metadata=metadata,
+            )
+        self._session.flush()
+        return task, initial_run
 
     def get_task(self, workspace_id: UUID, task_id: UUID) -> Task | None:
         return self._session.scalar(

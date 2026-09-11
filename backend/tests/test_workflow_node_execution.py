@@ -9,10 +9,16 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolResult,
 )
 from backend.app.agents.models import AgentProfile
+from backend.app.orchestration.models import SubworkflowInvocation
 from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.orchestration.run_execution import RunExecutionDependencies, RunExecutionService
+from backend.app.orchestration.subworkflows import (
+    SubworkflowExecutionError,
+    SubworkflowExecutionService,
+)
 from backend.app.planning.workflow_contracts import WorkflowNode
 from backend.app.runs.models import AgentRun
+from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
@@ -117,3 +123,73 @@ def test_control_only_workflow_finishes_after_control_nodes_complete() -> None:
     session.flush()
     assert RunEligibilityService(session).next_eligible_steps(task.id, workspace.id) == []
     assert task.status == "completed"
+
+
+def test_subworkflow_invocation_is_idempotent_and_workspace_scoped() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session, with_default_provider=False)
+    parent_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Parent task",
+        agent_team_id=None,
+    )
+    child_task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Child task",
+        status="completed",
+        final_output={"summary": "child complete"},
+    )
+    session.add_all([parent_task, child_task])
+    session.flush()
+    parent_step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=parent_task.id,
+        title="Invoke child",
+        work_package_id="invoke-child",
+        dependencies={"node_type": "subworkflow"},
+    )
+    parent_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=parent_task.id,
+        task_step_id=parent_step.id,
+        status=RunStatus.WAITING_SUBWORKFLOW.value,
+        input={},
+    )
+    child_run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=child_task.id,
+        status=RunStatus.COMPLETED.value,
+        input={},
+    )
+    session.add_all([parent_step, parent_run, child_run])
+    session.flush()
+    invocation = SubworkflowInvocation(
+        workspace_id=workspace.id,
+        parent_task_id=parent_task.id,
+        parent_task_step_id=parent_step.id,
+        parent_run_id=parent_run.id,
+        child_task_id=child_task.id,
+        definition_id=uuid4(),
+        definition_version=1,
+        status="running",
+        input_payload={},
+    )
+    session.add(invocation)
+    session.flush()
+
+    launch = SubworkflowExecutionService(session).launch(
+        parent_run=parent_run,
+        parent_task=parent_task,
+        parent_step=parent_step,
+        requested_by_user_id=user.id,
+    )
+    assert launch.status == "waiting_subworkflow"
+    assert launch.invocation_id == invocation.id
+    assert launch.child_task_id == child_task.id
+    assert launch.child_run_id == child_run.id
+    assert session.query(SubworkflowInvocation).count() == 1
+
+    with pytest.raises(SubworkflowExecutionError):
+        SubworkflowExecutionService._assert_payload_bound({"value": "x" * (64 * 1024)})

@@ -247,6 +247,7 @@ class TaskPlanLifecycleService:
             RunStatus.RUNNING.value,
             RunStatus.WAITING_RUNTIME.value,
             RunStatus.WAITING_APPROVAL.value,
+            RunStatus.WAITING_SUBWORKFLOW.value,
         }
         if any(
             run.status in side_effecting_statuses

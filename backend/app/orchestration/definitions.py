@@ -441,6 +441,13 @@ class OrchestrationDefinitionService:
         matcher = MemberMatchingService(self._session)
         packages: list[dict[str, object]] = []
         for node in raw_nodes:
+            if node.node_type == "subworkflow":
+                if node.subworkflow_definition_id == definition.id:
+                    raise OrchestrationDefinitionError(
+                        "A subworkflow cannot reference its own definition",
+                        code="orchestration_recursive_subworkflow",
+                    )
+                self._validate_subworkflow_reference(task.workspace_id, node)
             assigned_id = node.assigned_agent_profile_id
             if node.node_type in {"condition", "join", "start", "end"}:
                 assigned_id = None
@@ -601,7 +608,48 @@ class OrchestrationDefinitionService:
                         code="orchestration_mcp_tool_reference_invalid",
                     )
 
+        for node in nodes:
+            if node.node_type == "subworkflow":
+                self._validate_subworkflow_reference(workspace_id, node)
+
         return [node.model_dump(mode="json", by_alias=True, exclude_none=True) for node in nodes]
+
+    def _validate_subworkflow_reference(
+        self,
+        workspace_id: UUID,
+        node: WorkflowNode,
+    ) -> None:
+        definition_id = node.subworkflow_definition_id
+        if definition_id is None:
+            raise OrchestrationDefinitionError(
+                "Subworkflow node requires a definition",
+                code="orchestration_subworkflow_definition_invalid",
+            )
+        definition = self._session.scalar(
+            select(OrchestrationDefinition).where(
+                OrchestrationDefinition.workspace_id == workspace_id,
+                OrchestrationDefinition.id == definition_id,
+                OrchestrationDefinition.status != "archived",
+            )
+        )
+        if definition is None:
+            raise OrchestrationDefinitionError(
+                "Subworkflow definition is unavailable",
+                code="orchestration_subworkflow_definition_invalid",
+            )
+        revision_query = select(OrchestrationRevision.id).where(
+            OrchestrationRevision.workspace_id == workspace_id,
+            OrchestrationRevision.definition_id == definition.id,
+        )
+        if node.subworkflow_version is not None:
+            revision_query = revision_query.where(
+                OrchestrationRevision.version == node.subworkflow_version
+            )
+        if self._session.scalar(revision_query.limit(1)) is None:
+            raise OrchestrationDefinitionError(
+                "Subworkflow definition has no published revision",
+                code="orchestration_subworkflow_revision_invalid",
+            )
 
     def _nodes_from_definition(
         self,

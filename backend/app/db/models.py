@@ -49,7 +49,11 @@ from backend.app.memory.models import (
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.notifications.models import WorkspaceNotification
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
-from backend.app.orchestration.models import OrchestrationDefinition, OrchestrationRevision
+from backend.app.orchestration.models import (
+    OrchestrationDefinition,
+    OrchestrationRevision,
+    SubworkflowInvocation,
+)
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.projects.models import (
     AgentRunProjectIOState,
@@ -134,6 +138,7 @@ __all__ = [
     "ModelProviderCredential",
     "OrchestrationDefinition",
     "OrchestrationRevision",
+    "SubworkflowInvocation",
     "PersistentAgentSession",
     "PersistentAgentSessionItem",
     "PlatformPolicy",

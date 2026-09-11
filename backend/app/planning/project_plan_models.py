@@ -42,6 +42,7 @@ def _package_dict(package: WorkflowNode) -> dict[str, object]:
         "arguments",
         "output_schema",
         "subworkflow_definition_id",
+        "subworkflow_version",
     ):
         value = payload.get(key)
         if value in (None, False, 0, {}, [], "all_success", "agent"):
