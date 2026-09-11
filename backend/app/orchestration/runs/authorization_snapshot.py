@@ -17,7 +17,7 @@ from backend.app.model_providers.model_api import (
 )
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.model_providers.resolution import ModelProviderResolutionService
-from backend.app.orchestration.run_agent_tool_authorization import (
+from backend.app.orchestration.runs.tool_authorization import (
     AgentToolAuthorizationSnapshotService,
 )
 from backend.app.orchestration.runs.authorization_integrity import (
