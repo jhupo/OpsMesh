@@ -23,6 +23,7 @@ from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.projects.runtime_io_state import ProjectIOStateService
 from backend.app.projects.runtime_staging import ProjectInputArchiveBuilder
 from backend.app.runs.models import AgentRun
+from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.backends import build_runtime_backend_registry
 from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
 from backend.app.runtimes.models import WorkspaceRuntime
@@ -182,6 +183,79 @@ class RunProjectIOService:
             if locked_state is not None:
                 self._states.record_failure(run, locked_state, error)
             raise error from exc
+
+    def cleanup_runtime_workspace(self, run: AgentRun, *, reason: str) -> bool:
+        """Remove the run-scoped workspace after a terminal run.
+
+        Cleanup is deliberately separate from output harvesting so a failed or cancelled run
+        cannot leave its staged inputs in a shared runtime volume. The state row is locked and
+        retried by maintenance when the runtime is temporarily unavailable.
+        """
+        if RunStatus(run.status) not in {
+            RunStatus.COMPLETED,
+            RunStatus.FAILED,
+            RunStatus.CANCELLED,
+        }:
+            raise ValueError("Runtime workspace cleanup requires a terminal run")
+        state = self._states.begin_cleanup(run)
+        if state is None or state.cleanup_status in {"completed", "not_required"}:
+            return True
+        runtime = self._session.scalar(
+            select(WorkspaceRuntime).where(
+                WorkspaceRuntime.workspace_id == run.workspace_id,
+                WorkspaceRuntime.id == state.workspace_runtime_id,
+            )
+        )
+        if runtime is None or runtime.status == "deleted":
+            self._states.mark_cleanup_completed(
+                run,
+                state,
+                status="not_required",
+                error={"code": "runtime_already_deleted", "reason": reason},
+            )
+            self._session.commit()
+            return True
+        try:
+            backend = build_runtime_backend_registry(
+                self._session,
+                self._docker_client,
+                None,
+            ).resolve(runtime.runtime_provider)
+            filesystem = backend.project_filesystem(runtime, run.id) if backend else None
+            if filesystem is None:
+                raise ProjectRunIOError(
+                    code="project_runtime_cleanup_unsupported",
+                    message="The runtime provider does not expose a cleanup boundary",
+                    stage="runtime_cleanup",
+                    retryable=False,
+                )
+            filesystem.cleanup()
+        except ProjectRunIOError as exc:
+            self._states.mark_cleanup_completed(
+                run,
+                state,
+                status="failed",
+                error={"code": exc.code, "message": exc.message, "reason": reason},
+            )
+            self._session.commit()
+            return False
+        except Exception as exc:
+            self._states.mark_cleanup_completed(
+                run,
+                state,
+                status="failed",
+                error={
+                    "code": "project_runtime_cleanup_failed",
+                    "message": "The run-scoped runtime workspace could not be removed",
+                    "reason": reason,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            self._session.commit()
+            return False
+        self._states.mark_cleanup_completed(run, state, status="completed")
+        self._session.commit()
+        return True
 
     def _read_declared_outputs(
         self,

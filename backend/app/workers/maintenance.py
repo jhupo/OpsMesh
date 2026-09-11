@@ -17,6 +17,7 @@ from backend.app.operations.runtime_cleanup import RuntimeCleanupService
 from backend.app.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
 from backend.app.orchestration.run_control import RunControlService
 from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.runtime_manager.dependencies import get_docker_runtime_client
 from backend.app.scheduled_jobs.service import WorkspaceScheduledJobService
 from backend.app.tasks.event_outbox import TaskEventOutboxPublisher
 from backend.app.tasks.events import RedisTaskEventBus
@@ -68,6 +69,8 @@ class WorkerMaintenanceSummary:
     memory_episodes_archived: int = 0
     memory_semantic_archived: int = 0
     memory_episodes_promoted: int = 0
+    project_runtime_workspaces_cleaned: int = 0
+    project_runtime_workspaces_failed: int = 0
 
 
 class WorkerMaintenanceService:
@@ -119,6 +122,13 @@ class WorkerMaintenanceService:
             session,
         ).cleanup_stale_runtimes_across_workspaces(
             stale_after_seconds=self._config.run_lease_seconds,
+        )
+        project_runtime_workspaces_cleaned, project_runtime_workspaces_failed = (
+            RuntimeCleanupService(session).cleanup_terminal_run_workspaces(
+                settings=self._settings,
+                docker_client=(get_docker_runtime_client() if self._settings is not None else None),
+                limit=self._config.recovery_batch_size,
+            )
         )
         lifecycle_summary = WorkspaceDataLifecycleService(session).run_scheduled_lifecycle(
             queue=self._queue,
@@ -198,6 +208,8 @@ class WorkerMaintenanceService:
             memory_episodes_archived=memory_lifecycle.archived_episodes,
             memory_semantic_archived=memory_lifecycle.archived_semantic,
             memory_episodes_promoted=memory_lifecycle.promoted_episodes,
+            project_runtime_workspaces_cleaned=project_runtime_workspaces_cleaned,
+            project_runtime_workspaces_failed=project_runtime_workspaces_failed,
         )
 
     @contextmanager

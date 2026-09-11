@@ -45,6 +45,17 @@ class DockerRunProjectFilesystem:
             PROJECT_FILE_TRANSFER_TIMEOUT_SECONDS,
         )
 
+    def cleanup(self) -> None:
+        """Remove only this run's workspace tree inside the managed container."""
+        result = self._client.exec_command(
+            self._container_id,
+            ["rm", "-rf", "--", self._root_path],
+            PROJECT_FILE_TRANSFER_TIMEOUT_SECONDS,
+            working_dir="/",
+        )
+        if result.exit_code != 0:
+            raise RuntimeError("Runtime run workspace cleanup failed")
+
     @staticmethod
     def _require_workspace_mount(runtime: WorkspaceRuntime) -> None:
         isolation = runtime.capabilities.get("isolation")

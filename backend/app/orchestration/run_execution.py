@@ -444,6 +444,8 @@ class RunExecutionService:
         return _NoopLock()
 
     def _commit_and_refresh(self, run: AgentRun) -> None:
+        if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
+            self._project_io().cleanup_runtime_workspace(run, reason="run_terminal")
         self.session.commit()
         self.session.refresh(run)
 

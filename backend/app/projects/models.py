@@ -202,6 +202,10 @@ class AgentRunProjectIOState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="status_valid",
         ),
         CheckConstraint(
+            "cleanup_status in ('pending', 'running', 'completed', 'failed', 'not_required')",
+            name="cleanup_status_valid",
+        ),
+        CheckConstraint(
             "staged_file_count >= 0 and staged_bytes >= 0 and "
             "harvested_output_count >= 0 and harvested_bytes >= 0",
             name="counts_non_negative",
@@ -230,3 +234,7 @@ class AgentRunProjectIOState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     staged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     harvested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cleanup_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    cleanup_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cleanup_error: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    cleaned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -40,6 +40,7 @@ from backend.app.projects.runtime_io import RunProjectIOService
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.projects.serialization import sha256_json
 from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.runtime_manager.contracts import RuntimeCommandResult
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task
@@ -52,6 +53,21 @@ class FakeDockerClient:
     staged_files: dict[str, bytes] = field(default_factory=dict)
     staged_modes: dict[str, int] = field(default_factory=dict)
     output_files: dict[str, bytes] = field(default_factory=dict)
+    cleanup_commands: list[list[str]] = field(default_factory=list)
+
+    def exec_command(
+        self,
+        container_id: str,
+        command: list[str],
+        timeout_seconds: int,
+        *,
+        working_dir: str | None = None,
+    ) -> RuntimeCommandResult:
+        assert container_id == "container-1"
+        assert timeout_seconds == 60
+        assert working_dir == "/"
+        self.cleanup_commands.append(command)
+        return RuntimeCommandResult(exit_code=0, stdout="", stderr="")
 
     def copy_archive_to_container(
         self,
@@ -164,6 +180,51 @@ def test_managed_runtime_stages_snapshot_and_versions_declared_outputs(tmp_path:
     assert {"project.inputs_staged", "project.outputs_harvested"} <= actions
     access_actions = set(fixture.session.scalars(select(FileAccessEvent.action)).all())
     assert {"stage_to_runtime", "collect_from_runtime"} <= access_actions
+
+
+def test_terminal_run_cleanup_is_scoped_idempotent_and_audited(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    service = RunProjectIOService(
+        fixture.session,
+        fixture.storage,
+        fixture.docker,
+        fixture.settings,
+    )
+    service.stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
+    fixture.run.status = "completed"
+    fixture.session.commit()
+
+    assert service.cleanup_runtime_workspace(fixture.run, reason="test") is True
+    assert service.cleanup_runtime_workspace(fixture.run, reason="test-repeat") is True
+
+    state = fixture.session.scalar(
+        select(AgentRunProjectIOState).where(
+            AgentRunProjectIOState.workspace_id == fixture.workspace.id,
+            AgentRunProjectIOState.agent_run_id == fixture.run.id,
+        )
+    )
+    assert state is not None
+    assert state.cleanup_status == "completed"
+    assert state.cleanup_attempts == 1
+    assert state.cleaned_at is not None
+    assert fixture.docker.cleanup_commands == [
+        ["rm", "-rf", "--", f"/workspace/runs/{fixture.run.id}"]
+    ]
+    event = fixture.session.scalar(
+        select(RunEvent).where(
+            RunEvent.workspace_id == fixture.workspace.id,
+            RunEvent.agent_run_id == fixture.run.id,
+            RunEvent.event_type == "project.runtime_cleanup.completed",
+        )
+    )
+    assert event is not None
+    audit = fixture.session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == fixture.workspace.id,
+            AuditEvent.action == "project.runtime_cleanup.completed",
+        )
+    )
+    assert audit is not None
 
 
 def test_managed_runtime_fails_closed_when_required_output_is_missing(tmp_path: Path) -> None:

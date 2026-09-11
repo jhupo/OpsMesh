@@ -264,6 +264,59 @@ class ProjectIOStateService:
             )
         )
 
+    def begin_cleanup(self, run: AgentRun) -> AgentRunProjectIOState | None:
+        state = self.locked(run)
+        if state is None or state.cleanup_status in {"completed", "not_required"}:
+            return state
+        state.cleanup_status = "running"
+        state.cleanup_attempts += 1
+        state.cleanup_error = None
+        self._session.flush([state])
+        return state
+
+    def mark_cleanup_completed(
+        self,
+        run: AgentRun,
+        state: AgentRunProjectIOState,
+        *,
+        status: str = "completed",
+        error: dict[str, object] | None = None,
+    ) -> None:
+        state.cleanup_status = status
+        state.cleanup_error = error
+        state.cleaned_at = datetime.now(UTC) if status in {"completed", "not_required"} else None
+        RunEventRecorder(self._session).append_event(
+            run,
+            "project.runtime_cleanup.completed"
+            if status in {"completed", "not_required"}
+            else "project.runtime_cleanup.failed",
+            "Per-run runtime workspace cleanup completed"
+            if status in {"completed", "not_required"}
+            else "Per-run runtime workspace cleanup failed",
+            {
+                "cleanup_status": status,
+                "cleanup_attempts": state.cleanup_attempts,
+                "root_path": state.root_path,
+                **({"error_code": error.get("code")} if error else {}),
+            },
+        )
+        AuditService(self._session).record_system_action(
+            workspace_id=run.workspace_id,
+            action=(
+                "project.runtime_cleanup.completed"
+                if status in {"completed", "not_required"}
+                else "project.runtime_cleanup.failed"
+            ),
+            target_type="agent_run",
+            target_id=run.id,
+            metadata={
+                "cleanup_status": status,
+                "cleanup_attempts": state.cleanup_attempts,
+                "root_path": state.root_path,
+                **({"error_code": error.get("code")} if error else {}),
+            },
+        )
+
     @staticmethod
     def _bind_state_to_run(
         run: AgentRun,
