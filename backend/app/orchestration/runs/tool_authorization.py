@@ -32,7 +32,7 @@ from ..run_request.authorization import (
     resource_grants_for_snapshot,
     tool_definitions_for_snapshot,
 )
-from .run_request.utils import dict_copy, string_list, uuid_or_none
+from ..run_request.utils import dict_copy, string_list, uuid_or_none
 
 MAX_AGENT_TOOL_DEPTH = 3
 MAX_AGENT_TOOL_TURNS = 20
