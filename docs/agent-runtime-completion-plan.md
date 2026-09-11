@@ -159,8 +159,8 @@ Goal: move from a deterministic organization template to validated, adaptive age
 | 5.2 | P0 | Validate schema, cycles, authorization, capability availability, cost, and resource feasibility | Done | `1c30501` | Invalid plans cannot enqueue work; stable failure codes cover stale roster/policy, role/skill, tool/resource, runtime/workspace quota, provider, and cost gates |
 | 5.3 | P0 | Replan by adding, splitting, merging, cancelling, or reassigning future work | Done | `a86f7cf` | `TaskPlanMutationService` and `POST /tasks/{task_id}/plan/mutate` apply task-row-locked, idempotent mutations; DAG/feasibility gates, step projection reconciliation, manager-summary coverage, cancellation history, and active-side-effect protection are covered by focused service/API tests and Backend CI |
 | 5.4 | P0 | Transfer tasks between agents with objective, context, artifacts, state, and ownership | Done | `f69305b` | `TaskTransferService` and task transfer endpoints capture redacted objective/state/steps/messages/runs/artifact and memory references; task-row ownership/version locks, active-run denial, idempotency, audit/message evidence, platform-step reassignment, scheduler checks, and stale authorization rejection are covered by focused transfer tests |
-| 5.5 | P0 | Support human pause, context correction, reassignment, and in-place continuation | Pending | `complete-human-agent-intervention` | Human changes are versioned, audited, and applied before the resumed action |
-| 5.6 | P0 | Close manager acceptance, revision, missing-work, and final integration loops | Pending | `complete-agent-delivery-workflow` | Delivery completes only after criteria are satisfied or an explicit authorized override |
+| 5.5 | P0 | Support human pause, context correction, reassignment, and in-place continuation | Done | `caef04e` | Control, diagnostics, correction, and resume APIs persist redacted instructions/audit evidence; corrected steps are assigned and re-enter the existing scheduler |
+| 5.6 | P0 | Close manager acceptance, revision, missing-work, and final integration loops | Done | `caef04e` | Delivery review/decision APIs enforce active-run, step, artifact, and review gates; explicit override requires a reason and is audited |
 
 Phase acceptance gate:
 
@@ -170,7 +170,11 @@ The worker checks the normalized structured result, frozen roster and DAG before
 then appends a platform-owned final acceptance step. Plain text never silently becomes a plan.
 `input.planning_mode = "deterministic"` explicitly selects the existing template planner and records
 that choice in planning evidence. SDK execution failures and expired workers close the attempt and
-block for review; initial retry preserves failed attempts and cannot replace active work.
+block for review; initial retry preserves failed attempts and cannot replace active work. Human
+control endpoints pause/resume runs, append instructions, create target-scoped corrections, and
+expose control diagnostics; corrected work is scheduled through the same workspace capacity and
+authorization gates. Delivery review and decision endpoints enforce artifact and completion gates,
+while a documented override reason is required for authorized exceptional finalization.
 
 Evidence for 5.1: `test_agent_planning.py`, `test_task_dag.py`, focused worker/API regressions,
 and the dedicated `test_agent_planning_postgres.py` CI job. Evidence for 5.2: the same planning
@@ -181,7 +185,8 @@ reassign, immutable completed history, and active side-effect denial; `test_work
 covers the workspace mutation endpoint and audit event. No new SDK/framework dependency was
 introduced: schema-constrained generation remains owned by the provider SDK, while plan
 authorization, mutation, and scheduling remain product policy. Human continuation and final
-delivery gates below remain open.
+delivery gates are now exposed through the task control, correction, delivery review, and delivery
+decision services described above.
 
 Accepted code: `a86f7cf` (5.3), `f69305b` (5.4), and `f0ba331` (migration contract fix), on top of
 `1c30501`, `638bf87`, `f455fa5` and the prerequisite fixes `e03bb48` (pgvector test fixture
@@ -193,7 +198,8 @@ after the migration contract fix. Delivery Integration
 PostgreSQL migration, container deployment/runtime probe, backup restoration, and tamper-denial
 checks. The PostgreSQL planning test verifies concurrent planning requests produce one durable
 attempt and remains separate from SQLite metadata-patching tests; the Backend job also ran the
-focused planning, transfer, and workspace API regressions. Phase 5.5 through 5.6 remain open.
+focused planning, transfer, and workspace API regressions. Phase 5.5 and 5.6 are covered by
+`test_workspace_api.py` control, correction, diagnostics, delivery review, and decision scenarios.
 
 Evidence for 5.4: `test_task_transfer.py` covers durable package capture, response serialization,
 idempotent requests, active-run denial, acceptance, owner-version increment, and platform-step
