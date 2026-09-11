@@ -10,14 +10,14 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import sessionmaker
 
 import backend.app.agent_runtime.openai_streaming as openai_streaming
-from backend.app.agent_runtime.claude_agent import ClaudeAgentSDKRunner
+from backend.app.agent_runtime.adapters.claude_agent import ClaudeAgentSDKRunner
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
 from backend.app.agent_runtime.errors import AgentRuntimeCancelledError
-from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
+from backend.app.agent_runtime.adapters.openai_agents import OpenAIAgentsRunner
 from backend.app.agents.models import AgentProfile
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base

@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from agents import OpenAIResponsesCompactionSession, RunContextWrapper
 
-import backend.app.agent_runtime.openai_agents as openai_runtime
+import backend.app.agent_runtime.adapters.openai_agents as openai_runtime
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -28,7 +28,7 @@ from backend.app.agent_runtime.errors import (
 )
 from backend.app.agent_runtime.factory import build_agent_runtime_registry
 from backend.app.agent_runtime.multi_provider import ProviderAgentRuntimeRegistry
-from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
+from backend.app.agent_runtime.adapters.openai_agents import OpenAIAgentsRunner
 from backend.app.agent_runtime.openai_results import (
     OpenAIAgentsResultMapper,
     runtime_event_from_sdk_item,
