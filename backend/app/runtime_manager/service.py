@@ -234,4 +234,4 @@ class RuntimeControlService:
         return RuntimeProvisioningService(self._session, self._safety, self._manager_factory)
 
     def _commands(self) -> RuntimeCommandService:
-        return RuntimeCommandService(self._session, self._manager_factory)
+        return RuntimeCommandService(self._session, self._manager_factory, self._settings)

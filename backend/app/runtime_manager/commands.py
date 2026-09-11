@@ -4,14 +4,17 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.runtime_manager.manager_factory import RuntimeManagerFactory
+from backend.app.approvals.policy import ApprovalPolicyEngine
+from backend.app.core.config import Settings
 from backend.app.runtime_manager.queries import RuntimeControlQueryService
 from backend.app.runtimes.models import RuntimeCommand, RuntimeEvent, WorkspaceRuntime
 
 
 class RuntimeCommandService:
-    def __init__(self, session: Session, manager_factory: RuntimeManagerFactory) -> None:
+    def __init__(self, session: Session, manager_factory: RuntimeManagerFactory, settings: Settings) -> None:
         self._session = session
         self._manager_factory = manager_factory
+        self._settings = settings
 
     def execute_command(
         self,
@@ -20,6 +23,11 @@ class RuntimeCommandService:
         runtime: WorkspaceRuntime,
         command: list[str],
     ) -> RuntimeCommand:
+        decision = ApprovalPolicyEngine(self._session, self._settings).evaluate_runtime_command(
+            workspace_id=workspace_id, command=command, context={"runtime_id": str(runtime.id), "source": "runtime_control"}
+        )
+        if decision.decision.value != "allow":
+            raise PermissionError("runtime command denied by approval policy")
         return self._manager_factory.require().execute_command(
             workspace_id=workspace_id,
             runtime=runtime,
@@ -74,6 +82,14 @@ class RuntimeCommandService:
         if record is None:
             return None
         if record.status != "queued":
+            return record
+        decision = ApprovalPolicyEngine(self._session, self._settings).evaluate_runtime_command(
+            workspace_id=workspace_id, command=command, context={"runtime_id": str(runtime.id), "source": "runtime_control_queue"}
+        )
+        if decision.decision.value != "allow":
+            record.status = "blocked"
+            record.error = "runtime command denied by approval policy"
+            self._session.commit()
             return record
         return self._manager_factory.require().execute_existing_command(
             workspace_id=workspace_id,
