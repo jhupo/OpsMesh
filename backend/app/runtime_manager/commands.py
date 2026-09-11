@@ -3,15 +3,20 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.runtime_manager.manager_factory import RuntimeManagerFactory
 from backend.app.approvals.policy import ApprovalPolicyEngine
 from backend.app.core.config import Settings
+from backend.app.runtime_manager.manager_factory import RuntimeManagerFactory
 from backend.app.runtime_manager.queries import RuntimeControlQueryService
 from backend.app.runtimes.models import RuntimeCommand, RuntimeEvent, WorkspaceRuntime
 
 
 class RuntimeCommandService:
-    def __init__(self, session: Session, manager_factory: RuntimeManagerFactory, settings: Settings) -> None:
+    def __init__(
+        self,
+        session: Session,
+        manager_factory: RuntimeManagerFactory,
+        settings: Settings,
+    ) -> None:
         self._session = session
         self._manager_factory = manager_factory
         self._settings = settings
@@ -24,7 +29,9 @@ class RuntimeCommandService:
         command: list[str],
     ) -> RuntimeCommand:
         decision = ApprovalPolicyEngine(self._session, self._settings).evaluate_runtime_command(
-            workspace_id=workspace_id, command=command, context={"runtime_id": str(runtime.id), "source": "runtime_control"}
+            workspace_id=workspace_id,
+            command=command,
+            context={"runtime_id": str(runtime.id), "source": "runtime_control"},
         )
         if decision.decision.value != "allow":
             raise PermissionError("runtime command denied by approval policy")
@@ -84,7 +91,9 @@ class RuntimeCommandService:
         if record.status != "queued":
             return record
         decision = ApprovalPolicyEngine(self._session, self._settings).evaluate_runtime_command(
-            workspace_id=workspace_id, command=command, context={"runtime_id": str(runtime.id), "source": "runtime_control_queue"}
+            workspace_id=workspace_id,
+            command=command,
+            context={"runtime_id": str(runtime.id), "source": "runtime_control_queue"},
         )
         if decision.decision.value != "allow":
             record.status = "blocked"

@@ -20,6 +20,7 @@ from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
+from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
@@ -258,6 +259,16 @@ class RunControlService:
         requeued = 0
         failed = 0
         for run in stale_runs:
+            if self._runtime_wall_time_expired(run, now=datetime.now(UTC)):
+                self.fail_recovered_run(
+                    run,
+                    code="runtime_wall_time_exceeded",
+                    message="Run exceeded the authorized runtime wall-time limit",
+                    retryable=True,
+                    event_message="Marked failed after runtime wall-time limit expired",
+                )
+                failed += 1
+                continue
             if run.status == RunStatus.QUEUED.value:
                 self.requeue_stale_run(
                     run,
@@ -288,6 +299,30 @@ class RunControlService:
             requeued_runs=requeued,
             failed_runs=failed,
         )
+
+    def _runtime_wall_time_expired(self, run: AgentRun, *, now: datetime) -> bool:
+        if run.status not in {
+            RunStatus.RUNNING.value,
+            RunStatus.WAITING_RUNTIME.value,
+        } or run.runtime_id is None:
+            return False
+        runtime = self.session.scalar(
+            select(WorkspaceRuntime).where(
+                WorkspaceRuntime.workspace_id == run.workspace_id,
+                WorkspaceRuntime.id == run.runtime_id,
+            )
+        )
+        if runtime is None:
+            return False
+        timeout = runtime.limits.get("timeout_seconds")
+        if not isinstance(timeout, int) or timeout <= 0:
+            return False
+        started_at = run.started_at or run.updated_at
+        if started_at is None:
+            return False
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=UTC)
+        return now - started_at.astimezone(UTC) >= timedelta(seconds=timeout)
 
     def requeue_stale_run(
         self,

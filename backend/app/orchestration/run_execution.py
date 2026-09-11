@@ -23,6 +23,7 @@ from backend.app.approvals.agent_tool_interruptions import AgentToolInterruption
 from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.approvals.service import ApprovalService
 from backend.app.approvals.waiting import ApprovalWaitingService
+from backend.app.audit.service import AuditService
 from backend.app.core.config import Settings, get_settings
 from backend.app.files.storage import ObjectStorage
 from backend.app.model_providers.service_models import ModelProviderUnavailableError
@@ -151,7 +152,35 @@ class RunExecutionService:
                 return run
             assert request is not None
             try:
-                result = await self._model_gateway().run_with_provider_fallback(run, request, job)
+                result = await self._run_model_with_runtime_limit(run, request, job)
+            except TimeoutError:
+                timeout_seconds = self._runtime_timeout_seconds(run)
+                timeout_error = AgentRuntimePolicyError(
+                    code="runtime_wall_time_exceeded",
+                    message="Run exceeded the authorized runtime wall-time limit",
+                    event_type="runtime.limit.exceeded",
+                    metadata={
+                        "limit": "timeout_seconds",
+                        "timeout_seconds": timeout_seconds,
+                    },
+                    retryable=True,
+                )
+                self._events().append_event(
+                    run,
+                    timeout_error.event_type,
+                    timeout_error.message,
+                    timeout_error.metadata,
+                )
+                AuditService(self.session).record_system_action(
+                    workspace_id=run.workspace_id,
+                    action="runtime.limit.exceeded",
+                    target_type="agent_run",
+                    target_id=run.id,
+                    metadata=timeout_error.metadata,
+                )
+                self._lifecycle().mark_run_failed(run, timeout_error)
+                self._commit_and_refresh(run)
+                return run
             except AgentRuntimeCancelledError:
                 self.session.refresh(run)
                 if RunStatus(run.status) not in TERMINAL_RUN_STATUSES:
@@ -273,6 +302,36 @@ class RunExecutionService:
             return False
         task = self.session.get(Task, run.task_id)
         return task is not None and TaskStatus(task.status) == TaskStatus.CANCELLED
+
+    async def _run_model_with_runtime_limit(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        job: JobPayload,
+    ) -> AgentRunResult | None:
+        timeout_seconds = self._runtime_timeout_seconds(run)
+        gateway = self._model_gateway().run_with_provider_fallback(run, request, job)
+        if timeout_seconds is None:
+            return await gateway
+        return await asyncio.wait_for(gateway, timeout=timeout_seconds)
+
+    def _runtime_timeout_seconds(self, run: AgentRun) -> int | None:
+        if run.runtime_id is None:
+            return None
+        from backend.app.runtimes.models import WorkspaceRuntime
+
+        runtime = self.session.scalar(
+            select(WorkspaceRuntime).where(
+                WorkspaceRuntime.workspace_id == run.workspace_id,
+                WorkspaceRuntime.id == run.runtime_id,
+            )
+        )
+        if runtime is None:
+            return None
+        value = runtime.limits.get("timeout_seconds")
+        if isinstance(value, int) and value > 0:
+            return value
+        return None
 
     def _run_has_waiting_runtime_event(self, run: AgentRun) -> bool:
         return (
