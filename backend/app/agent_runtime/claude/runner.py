@@ -361,6 +361,11 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             if isinstance(sandbox_session, dict)
             else None
         )
+        sandbox_cli_path = (
+            sandbox_session.get("cli_path")
+            if isinstance(sandbox_session, dict)
+            else None
+        )
         resume_id = _resume_session_id(request) or (session_id if resume_existing else None)
         approved_resume = bool(request.approval_decisions and resume_id)
         options = ClaudeAgentOptions(
@@ -392,6 +397,7 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             session_store_flush="eager",
             env=env,
             cwd=sandbox_root,
+            cli_path=sandbox_cli_path,
         )
         if sandbox_settings is not None:
             if not isinstance(sandbox_settings, dict):
