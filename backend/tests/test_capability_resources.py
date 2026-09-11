@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.models import AgentProfile
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.base import Base

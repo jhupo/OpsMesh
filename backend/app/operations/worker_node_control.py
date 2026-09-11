@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.operations.models import WorkerNode
 from backend.app.operations.utils import non_empty_string_or_none
 from backend.app.operations.worker_node_repository import WorkerNodeRepository

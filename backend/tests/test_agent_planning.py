@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.core.contracts import AgentRunResult, AgentRuntimeStructuredOutput
 from backend.app.agents.models import AgentProfile
-from backend.app.costs.models import WorkspaceCostBudget
+from backend.app.observability.cost_models import WorkspaceCostBudget
 from backend.app.orchestration.planner_completion import PlannerCompletionService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.future_plan_mutation import (

@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_manager.contracts import (

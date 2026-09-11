@@ -8,7 +8,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agents.models import AgentProfile
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.runs.models import AgentRun, RunEvent

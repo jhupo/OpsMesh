@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_messages.models import AgentMessageThread
 from backend.app.agent_runtime.sessions import PersistentAgentSession
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime_mailbox import TeamRuntimeMailboxStore
 from backend.app.teams.runtime_sessions import TeamRuntimeSessionStore

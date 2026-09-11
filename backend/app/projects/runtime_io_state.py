@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.artifacts.models import Artifact
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.files.models import FileAccessEvent
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.projects.models import AgentRunProjectIOState, AgentRunProjectSnapshot

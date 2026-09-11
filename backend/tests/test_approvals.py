@@ -29,7 +29,7 @@ from backend.app.approvals.pending_tools import (
 )
 from backend.app.approvals.queries import ApprovalQueryService
 from backend.app.approvals.service import ApprovalService
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams

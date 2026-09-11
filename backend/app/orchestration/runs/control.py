@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.approvals.lifecycle import AgentToolApprovalLifecycleService
 from backend.app.approvals.models import PendingToolInvocation
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_terminal_state import RunTerminalStateService
 from backend.app.orchestration.policies.statuses import (

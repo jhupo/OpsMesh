@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.runtime_manager.lifecycle.control import RuntimeLifecycleControl
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.artifacts.models import Artifact
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.core.config import Settings
 from backend.app.files.models import FileAccessEvent
 from backend.app.files.storage import ObjectStorage, create_storage

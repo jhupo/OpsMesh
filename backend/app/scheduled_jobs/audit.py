@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.scheduled_jobs.contracts import ScheduledJobStore
 from backend.app.scheduled_jobs.models import WorkspaceScheduledJob
 from backend.app.workspaces.models import Workspace

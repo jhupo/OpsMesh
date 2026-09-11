@@ -18,7 +18,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401

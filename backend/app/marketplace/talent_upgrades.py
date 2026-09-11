@@ -11,7 +11,7 @@ from backend.app.api.schemas.marketplace import (
     TalentListingResponse,
     TalentUpgradeStatusResponse,
 )
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.marketplace.listing_payloads import listing_agent_definition
 from backend.app.marketplace.models import WorkspaceAgentInstall
 from backend.app.marketplace.responses import install_response

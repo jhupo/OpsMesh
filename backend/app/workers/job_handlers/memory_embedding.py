@@ -1,6 +1,6 @@
 from sqlalchemy import select
 
-from backend.app.costs.service import CostBudgetExceededError
+from backend.app.observability.cost_service import CostBudgetExceededError
 from backend.app.memory.embeddings import (
     MemoryEmbeddingError,
     MemoryEmbeddingWork,

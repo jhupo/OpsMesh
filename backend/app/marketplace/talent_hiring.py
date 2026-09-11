@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.agents.memory_policy import normalized_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.marketplace import HireTalentRequest, HireTaskTalentRequest
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.core.typing import string_or_default
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.marketplace.listing_payloads import listing_agent_definition

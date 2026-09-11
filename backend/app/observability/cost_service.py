@@ -10,10 +10,10 @@ from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.core.contracts import AgentRunRequest, AgentRunResult
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.core.trace_context import current_trace_context
-from backend.app.costs.models import ModelPricingRule, ModelUsageRecord, WorkspaceCostBudget
-from backend.app.costs.usage import NormalizedModelUsage, normalize_model_usage
+from backend.app.observability.cost_models import ModelPricingRule, ModelUsageRecord, WorkspaceCostBudget
+from backend.app.observability.cost_usage import NormalizedModelUsage, normalize_model_usage
 from backend.app.model_providers.provider_keys import canonical_model_provider
 from backend.app.runs.models import AgentRun
 

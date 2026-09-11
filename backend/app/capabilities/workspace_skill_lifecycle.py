@@ -12,7 +12,7 @@ from backend.app.api.schemas.capabilities.workspace_skills import (
     WorkspaceSkillRollbackRequest,
     WorkspaceSkillUpgradeRequest,
 )
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.models import WorkspaceSkillInstall
 from backend.app.capabilities.workspace_skill_lifecycle_helpers import (
     append_skill_install_history,

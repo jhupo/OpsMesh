@@ -10,8 +10,8 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.audit.models import AuditEvent, AuditIntegrityCheck
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_models import AuditEvent, AuditIntegrityCheck
+from backend.app.observability.audit_service import AuditService
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base

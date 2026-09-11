@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.operations.timeline_models import TimelineEvent, TimelineFilters
 from backend.app.operations.timeline_team_context import TeamRuntimeTimelineContext

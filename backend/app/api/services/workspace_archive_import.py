@@ -17,7 +17,7 @@ from backend.app.api.services.workspace_archive_blob_reader import WorkspaceArch
 from backend.app.api.services.workspace_archive_file_import import WorkspaceArchiveFileImporter
 from backend.app.api.services.workspace_import_preview import _populate_import_preview
 from backend.app.api.services.workspace_metadata_import import WorkspaceMetadataImportService
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.files.storage import ObjectStorage
 from backend.app.files.storage_transactions import (
     CompensatingObjectStorageWrites,

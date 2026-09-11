@@ -32,8 +32,8 @@ from backend.app.api.services.workspace_export_payloads import (
     _workspace_payload,
 )
 from backend.app.artifacts.models import Artifact
-from backend.app.audit.models import AuditEvent
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.models import WorkspaceSkillInstall
 from backend.app.files.models import WorkspaceFile
 from backend.app.runs.models import AgentRun, RunEvent

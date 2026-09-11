@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from backend.app.api.services.exports import WorkspaceExportService
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.files.storage import ObjectStorage
 from backend.app.workspaces.data_lifecycle_payloads import _archive_integrity_payload
 from backend.app.workspaces.data_lifecycle_recovery import (

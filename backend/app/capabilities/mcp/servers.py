@@ -13,7 +13,7 @@ from backend.app.api.schemas.capabilities.mcp_servers import (
     McpToolAllowRequest,
     McpToolAllowUpdateRequest,
 )
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.mcp.catalog import McpCatalogServer
 from backend.app.capabilities.mcp.catalog_service import McpCatalogService
 from backend.app.capabilities.mcp.server_helpers import (

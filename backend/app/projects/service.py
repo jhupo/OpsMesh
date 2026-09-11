@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.db.pagination import page_scalars_by_offset
 from backend.app.files.models import WorkspaceFile

@@ -10,9 +10,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.requests import Request
 
 from backend.app.api.services.workspace_reads import WorkspaceReadService
-from backend.app.audit.integrity import AuditIntegrityService
-from backend.app.audit.models import AuditEvent
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_integrity import AuditIntegrityService
+from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit_service import AuditService
 from backend.app.core.config import Settings
 from backend.app.core.pagination import PageParams
 from backend.app.db import models as registered_models  # noqa: F401

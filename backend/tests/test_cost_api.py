@@ -17,9 +17,9 @@ from backend.app.agent_runtime.core.contracts import (
     AgentRuntimeUsage,
 )
 from backend.app.agents.models import AgentProfile
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.core.config import Settings, get_settings
-from backend.app.costs.service import CostAccountingService
+from backend.app.observability.cost_service import CostAccountingService
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session

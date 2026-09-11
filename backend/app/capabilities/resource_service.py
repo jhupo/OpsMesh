@@ -11,7 +11,7 @@ from backend.app.api.schemas.capabilities.catalog import (
     CapabilityResourceCreateRequest,
     CapabilityResourceUpdateRequest,
 )
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.models import (
     CapabilityResource,
     McpCredentialReference,

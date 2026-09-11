@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.operation_queue import QueueGovernanceReconcileAction
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.operations.queue_governance_reconcile_models import (
     QueueGovernanceReconcileCounts,
 )

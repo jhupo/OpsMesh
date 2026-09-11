@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.approvals.models import Approval
 from backend.app.approvals.service import ApprovalService
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.reviews.models import ResourceReview
 from backend.app.security.redaction import redact_sensitive_payload
 

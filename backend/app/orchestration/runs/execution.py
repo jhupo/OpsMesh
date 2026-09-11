@@ -26,7 +26,7 @@ from backend.app.approvals.agent_tool_interruptions import AgentToolInterruption
 from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.approvals.service import ApprovalService
 from backend.app.approvals.waiting import ApprovalWaitingService
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.core.config import Settings, get_settings
 from backend.app.files.storage import ObjectStorage
 from backend.app.model_providers.service_models import ModelProviderUnavailableError

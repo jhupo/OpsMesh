@@ -20,7 +20,7 @@ from backend.app.api.schemas.memory import (
     WorkspaceMemoryConfigurationResponse,
     WorkspaceMemoryConfigurationUpdateRequest,
 )
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction

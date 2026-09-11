@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.core.contracts import AgentRunRequest
 from backend.app.agent_runtime.core.errors import normalize_agent_error
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.models_layer.request_reviewing import model_provider_request_snapshot
 from backend.app.runs.models import AgentRun
 from backend.app.workers.jobs import JobPayload

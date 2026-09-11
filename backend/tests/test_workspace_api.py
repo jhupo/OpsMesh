@@ -18,7 +18,7 @@ from backend.app.agent_runtime.core.contracts import AgentRunRequest, AgentRunRe
 from backend.app.agent_runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
 from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.auth.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.base import Base

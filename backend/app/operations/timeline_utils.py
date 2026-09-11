@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.operations.timeline_models import TimelineEvent, TimelineFilters
 
 TEAM_RUNTIME_CAPABILITY_KEY = "team_runtime"

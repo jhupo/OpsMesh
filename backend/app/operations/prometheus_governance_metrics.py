@@ -6,9 +6,9 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.audit.models import AuditIntegrityCheck
+from backend.app.observability.audit_models import AuditIntegrityCheck
 from backend.app.core.metrics import GaugeMetric
-from backend.app.costs.models import ModelUsageRecord, WorkspaceCostBudget
+from backend.app.observability.cost_models import ModelUsageRecord, WorkspaceCostBudget
 from backend.app.workspaces.models import Workspace
 
 

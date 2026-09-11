@@ -17,7 +17,7 @@ from backend.app.agent_runtime.sessions import (
     PersistentAgentSessionItem,
 )
 from backend.app.agents.models import AgentProfile, AgentProfileVersion
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base

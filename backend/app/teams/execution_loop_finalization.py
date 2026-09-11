@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep

@@ -18,7 +18,7 @@ from backend.app.api.services.workspace_archive_integrity import WorkspaceArchiv
 from backend.app.api.services.workspace_archive_restore_drill import (
     WorkspaceArchiveRestoreDrillService,
 )
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.exports.models import WorkspaceExportJob
 from backend.app.exports.status import WorkspaceExportJobStatus
 from backend.app.files.storage import ObjectStorage

@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.marketplace import TalentListingCreateRequest
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.core.config import Settings
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.marketplace.listing_payloads import (

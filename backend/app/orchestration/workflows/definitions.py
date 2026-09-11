@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.models import CapabilityResource, McpServer, McpToolAllowlist
 from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict

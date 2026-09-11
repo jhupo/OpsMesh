@@ -14,7 +14,7 @@ from backend.app.api.services.workspace_archive_export_repository import (
 )
 from backend.app.api.services.workspace_archive_import import WorkspaceArchiveImportService
 from backend.app.api.services.workspace_import_preview import _import_preview_audit_metadata
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.files.storage import ObjectStorage
 from backend.app.workspaces.models import Workspace
 

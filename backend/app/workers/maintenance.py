@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from backend.app.approvals.lifecycle import AgentToolApprovalLifecycleService
-from backend.app.audit.integrity import AuditIntegrityService
+from backend.app.observability.audit_integrity import AuditIntegrityService
 from backend.app.core.config import Settings
 from backend.app.files.storage import create_storage
 from backend.app.memory.embedding_jobs import WorkspaceMemoryEmbeddingScheduler

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.operations import SchedulerControlResponse
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.operations.scheduler_policy import (
     SchedulerPolicyService,
     non_empty_string_or_none,

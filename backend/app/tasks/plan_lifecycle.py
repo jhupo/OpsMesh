@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.planning.agent_plan import is_agent_planning_step

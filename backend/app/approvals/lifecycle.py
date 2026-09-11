@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.approvals.models import Approval, PendingToolInvocation
 from backend.app.approvals.run_gate import ApprovalRunGateService
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.runs.models import AgentRunStateSnapshot
 
 

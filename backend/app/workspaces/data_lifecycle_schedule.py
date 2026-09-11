@@ -5,7 +5,7 @@ from backend.app.api.schemas.exports import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveRestoreDrillRequest,
 )
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.exports.models import WorkspaceExportJob
 from backend.app.workspaces.data_lifecycle_settings import (
     _ensure_utc_datetime,

@@ -2,7 +2,7 @@ from datetime import datetime
 
 from backend.app.agents.models import AgentProfile
 from backend.app.artifacts.models import Artifact
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.capabilities.models import WorkspaceSkillInstall
 from backend.app.files.models import WorkspaceFile
 from backend.app.runs.models import AgentRun, RunEvent

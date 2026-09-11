@@ -7,8 +7,8 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.audit.models import AuditIntegrityCheck
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_models import AuditIntegrityCheck
+from backend.app.observability.audit_service import AuditService
 from backend.app.workspaces.models import Workspace
 
 

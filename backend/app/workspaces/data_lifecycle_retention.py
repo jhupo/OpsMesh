@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.artifacts.models import Artifact
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.files.models import WorkspaceFile
 from backend.app.workspaces.data_lifecycle_policy import (
     _candidate_counts,

@@ -28,7 +28,7 @@ from backend.app.api.schemas.teams import (
     AgentTeamMemberResponse,
     AgentTeamMemberUpdateRequest,
 )
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction

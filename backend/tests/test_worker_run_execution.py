@@ -29,7 +29,7 @@ from backend.app.approvals.decisions import ApprovalDecisionService
 from backend.app.approvals.models import Approval, PendingToolInvocation
 from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.artifacts.models import Artifact
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.capabilities.models import (
     CapabilityResource,
     McpCredentialReference,

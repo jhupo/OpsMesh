@@ -13,7 +13,7 @@ from backend.app.api.services.workspace_settings import (
     semantic_resource_review_settings,
     validate_resource_review_settings,
 )
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.auth.permissions import WorkspaceRole
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams

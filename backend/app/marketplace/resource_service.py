@@ -10,7 +10,7 @@ from backend.app.api.schemas.marketplace import (
     MarketplaceInstallRequest,
     MarketplaceListingCreateRequest,
 )
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.models import McpServer, Skill
 from backend.app.core.config import Settings
 from backend.app.core.pagination import PageParams

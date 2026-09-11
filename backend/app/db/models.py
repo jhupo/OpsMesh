@@ -14,7 +14,7 @@ from backend.app.agent_runtime.sessions import (
 from backend.app.agents.models import AgentProfile, AgentProfileVersion
 from backend.app.approvals.models import Approval, PendingToolInvocation
 from backend.app.artifacts.models import Artifact
-from backend.app.audit.models import AuditEvent, AuditIntegrityCheck
+from backend.app.observability.audit_models import AuditEvent, AuditIntegrityCheck
 from backend.app.capabilities.models import (
     Capability,
     CapabilityResource,
@@ -26,7 +26,7 @@ from backend.app.capabilities.models import (
     ToolGroup,
     WorkspaceSkillInstall,
 )
-from backend.app.costs.models import ModelPricingRule, ModelUsageRecord, WorkspaceCostBudget
+from backend.app.observability.cost_models import ModelPricingRule, ModelUsageRecord, WorkspaceCostBudget
 from backend.app.domains.models import DomainItem, DomainProject, ReviewComment, RevisionRequest
 from backend.app.exports.models import WorkspaceExportJob
 from backend.app.files.models import FileAccessEvent, WorkspaceFile

@@ -1,6 +1,6 @@
 import asyncio
 
-from backend.app.audit.integrity import AuditIntegrityService
+from backend.app.observability.audit_integrity import AuditIntegrityService
 from backend.app.model_providers.health_probes import provider_health_probes
 from backend.app.model_providers.health_service import ModelProviderHealthService
 from backend.app.secrets.rotation import HostedSecretReencryptService

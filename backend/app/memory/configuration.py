@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.memory.models import WorkspaceMemoryConfiguration, WorkspaceMemoryEntry
 from backend.app.memory.policy import (
     HybridMemoryRetrievalPolicy,

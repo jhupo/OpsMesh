@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 from backend.app.model_providers.health_summary import (

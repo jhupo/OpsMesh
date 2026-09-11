@@ -17,8 +17,8 @@ from backend.app.agent_runtime.core.contracts import (
 )
 from backend.app.agent_runtime.usage import runtime_usage
 from backend.app.agents.models import AgentProfile
-from backend.app.costs.service import CostAccountingService, CostBudgetExceededError
-from backend.app.costs.usage import normalize_model_usage
+from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
+from backend.app.observability.cost_usage import normalize_model_usage
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User

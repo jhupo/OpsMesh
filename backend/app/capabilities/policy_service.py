@@ -12,7 +12,7 @@ from backend.app.api.schemas.capabilities.catalog import (
     CapabilityTeamPolicy,
     CapabilityToolDescriptor,
 )
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.catalog_service import WorkspaceCapabilityCatalogService
 from backend.app.capabilities.schema_validation import validate_partial_parameters
 from backend.app.core.errors import DomainError, NotFoundError

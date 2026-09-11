@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.service import AgentManagementService
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.schema_validation import reject_embedded_secrets
 from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars

@@ -22,7 +22,7 @@ from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpTool
 from backend.app.core.config import Settings
 from backend.app.core.request_context import current_log_context
 from backend.app.core.trace_context import TraceContext, trace_context
-from backend.app.costs.models import ModelPricingRule, ModelUsageRecord, WorkspaceCostBudget
+from backend.app.observability.cost_models import ModelPricingRule, ModelUsageRecord, WorkspaceCostBudget
 from backend.app.db.base import Base
 from backend.app.exports.models import WorkspaceExportJob
 from backend.app.exports.status import WorkspaceExportJobStatus

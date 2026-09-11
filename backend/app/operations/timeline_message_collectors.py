@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_messages.models import AgentMessage
-from backend.app.audit.models import AuditEvent
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.operations.timeline_constants import (
     TEAM_EXECUTION_ITERATION_ACTION,
     TEAM_RUNTIME_AUDIT_ACTION_PREFIX,

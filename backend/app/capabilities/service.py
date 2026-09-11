@@ -12,7 +12,7 @@ from backend.app.api.schemas.capabilities.base import (
     ToolGroupCreateRequest,
     ToolGroupUpdateRequest,
 )
-from backend.app.audit.service import AuditService
+from backend.app.observability.audit_service import AuditService
 from backend.app.capabilities.models import (
     Capability,
     Skill,
