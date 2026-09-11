@@ -6,7 +6,7 @@ from typing import Any
 from agents import Agent, Tool
 from agents import __version__ as agents_sdk_version
 
-from backend.app.agent_runtime.core.contracts import (
+from backend.app.agent_runtime.contracts import (
     AgentRuntimeAgentRef,
     AgentRuntimeEvent,
     AgentRuntimeHandoffResult,

@@ -1,5 +1,5 @@
 
-from backend.app.agent_runtime.core.contracts import AgentRunTracing
+from backend.app.agent_runtime.contracts import AgentRunTracing
 from backend.app.agents.models import AgentProfile
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task

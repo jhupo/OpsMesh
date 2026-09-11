@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 
-from backend.app.agent_runtime.core.contracts import AgentRuntimeCapability
+from backend.app.agent_runtime.contracts import AgentRuntimeCapability
 from backend.app.agent_runtime.factory import build_agent_runtime_registry
 from backend.app.api.schemas.model_providers import (
     AgentRuntimeAdapterCapabilityResponse,

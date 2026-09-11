@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from uuid import UUID
 
-from backend.app.agent_runtime.core.contracts import AgentRuntimeResourceGrant
+from backend.app.agent_runtime.contracts import AgentRuntimeResourceGrant
 
 MEMORY_SCOPE_TYPES = frozenset({"workspace", "team", "agent", "task", "run"})
 MEMORY_READ_ACCESS_MODES = frozenset({"read", "read_write"})

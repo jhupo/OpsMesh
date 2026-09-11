@@ -3,7 +3,7 @@ from uuid import UUID
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.core.contracts import (
+from backend.app.agent_runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolResult,

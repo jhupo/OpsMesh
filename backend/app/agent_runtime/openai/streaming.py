@@ -10,7 +10,7 @@ from backend.app.agent_runtime.cancellation import (
     raise_if_cancelled,
     stop_cancellation_watcher,
 )
-from backend.app.agent_runtime.core.contracts import (
+from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
 )

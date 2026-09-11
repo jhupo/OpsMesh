@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.core.contracts import AgentRunRequest
+from backend.app.agent_runtime.contracts import AgentRunRequest
 from backend.app.agent_runtime.core.errors import normalize_agent_error
 from backend.app.core.typing import optional_string, uuid_or_none
 from backend.app.model_providers.health_service import ModelProviderHealthService

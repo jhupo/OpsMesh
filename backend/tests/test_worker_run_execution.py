@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.agent_runtime.adapters import openai_agents as openai_runtime
-from backend.app.agent_runtime.core.contracts import (
+from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,

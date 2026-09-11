@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.core.contracts import AgentRuntimeContext
+from backend.app.agent_runtime.contracts import AgentRuntimeContext
 from backend.app.runs.models import AgentRun
 
 

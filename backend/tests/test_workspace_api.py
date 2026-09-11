@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
-from backend.app.agent_runtime.core.contracts import AgentRunRequest, AgentRunResult
+from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agent_runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
 from backend.app.agents.models import AgentProfile
 from backend.app.files.artifact_models import Artifact

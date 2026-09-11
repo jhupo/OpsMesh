@@ -12,7 +12,7 @@ from agents import (
 )
 from agents.exceptions import ModelBehaviorError
 
-from backend.app.agent_runtime.core.contracts import (
+from backend.app.agent_runtime.contracts import (
     AgentRuntimeGuardrail,
     AgentRuntimeGuardrailResult,
     AgentRuntimeOutputSchema,

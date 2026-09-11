@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import sessionmaker
 
-from backend.app.agent_runtime.core.contracts import AgentRuntimeToolResult
+from backend.app.agent_runtime.contracts import AgentRuntimeToolResult
 from backend.app.agents.memory_policy import WorkingMemoryPolicy
 from backend.app.agents.models import AgentProfile
 from backend.app.db import models as registered_models  # noqa: F401

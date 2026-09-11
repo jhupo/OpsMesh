@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from backend.app.agent_messages.models import AgentMessage
-from backend.app.agent_runtime.core.contracts import AgentRunRequest, AgentRunResult
+from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agent_runtime.core.errors import AgentRuntimePolicyError, normalize_agent_error
 from backend.app.orchestration.models_layer.request_reviewing import model_provider_request_snapshot
 from backend.app.orchestration.run_request.utils import dict_copy, json_safe

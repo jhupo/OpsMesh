@@ -20,7 +20,7 @@ from agents.models.interface import Model
 from agents.models.openai_provider import OpenAIProvider
 
 from backend.app.agent_runtime.core.base import BaseSDKAgentRuntimeAdapter
-from backend.app.agent_runtime.core.contracts import (
+from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeAgentDefinition,

@@ -44,7 +44,7 @@ from backend.app.agent_runtime.cancellation import (
     stop_cancellation_watcher,
 )
 from backend.app.agent_runtime.core.base import BaseSDKAgentRuntimeAdapter
-from backend.app.agent_runtime.core.contracts import (
+from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeCapabilities,

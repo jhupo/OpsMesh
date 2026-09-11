@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.core.contracts import AgentRunResult
+from backend.app.agent_runtime.contracts import AgentRunResult
 from backend.app.agent_runtime.core.errors import normalize_agent_error
 from backend.app.orchestration.models import SubworkflowInvocation
 from backend.app.orchestration.planning.completion import PlannerCompletionService

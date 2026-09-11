@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.core.contracts import AgentRuntimeApprovalDecision
+from backend.app.agent_runtime.contracts import AgentRuntimeApprovalDecision
 from backend.app.approvals.models import PendingToolInvocation
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.redaction import redact_sensitive_payload

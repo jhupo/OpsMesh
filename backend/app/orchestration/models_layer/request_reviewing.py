@@ -1,7 +1,7 @@
 import json
 from hashlib import sha256
 
-from backend.app.agent_runtime.core.contracts import AgentRunRequest
+from backend.app.agent_runtime.contracts import AgentRunRequest
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task
 

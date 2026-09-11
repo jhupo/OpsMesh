@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 
 from backend.app.agent_runtime.capability_policy import required_runtime_capabilities
-from backend.app.agent_runtime.core.contracts import (
+from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeAdapter,

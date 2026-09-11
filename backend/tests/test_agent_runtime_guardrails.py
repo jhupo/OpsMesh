@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 import backend.app.agent_runtime.adapters.openai_agents as openai_runtime
 from backend.app.agent_runtime.claude.runner import ClaudeAgentSDKRunner
-from backend.app.agent_runtime.core.contracts import (
+from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeGuardrail,

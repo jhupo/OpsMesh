@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.core.contracts import AgentRuntimeExecutionBinding
+from backend.app.agent_runtime.contracts import AgentRuntimeExecutionBinding
 from backend.app.files.models import WorkspaceFile
 from backend.app.runs.models import AgentRun
 from backend.app.runtime_manager.runtime_policy import policy_disables_network

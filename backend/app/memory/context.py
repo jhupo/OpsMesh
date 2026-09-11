@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.core.contracts import AgentRuntimeResourceGrant
+from backend.app.agent_runtime.contracts import AgentRuntimeResourceGrant
 from backend.app.agent_runtime.token_estimation import (
     estimate_token_upper_bound,
     truncate_to_token_bound,

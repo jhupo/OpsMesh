@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.core.contracts import AgentRunRequest
+from backend.app.agent_runtime.contracts import AgentRunRequest
 from backend.app.approvals.models import Approval
 from backend.app.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
 from backend.app.approvals.service import ApprovalService

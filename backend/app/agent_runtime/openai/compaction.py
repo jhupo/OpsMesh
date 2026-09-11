@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from agents import OpenAIResponsesCompactionSession, Session
 from openai import AsyncOpenAI
 
-from backend.app.agent_runtime.core.contracts import AgentRunRequest
+from backend.app.agent_runtime.contracts import AgentRunRequest
 from backend.app.agent_runtime.openai.session import OpenAISessionAdapter
 from backend.app.agent_runtime.token_estimation import estimate_token_upper_bound
 from backend.app.model_providers.base_url import normalize_openai_compatible_base_url

@@ -14,7 +14,7 @@ from agents import (
 from agents.tool_context import ToolContext
 
 from backend.app.agent_runtime.cancellation import raise_if_cancelled
-from backend.app.agent_runtime.core.contracts import (
+from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeCancellation,
     AgentRuntimeContext,

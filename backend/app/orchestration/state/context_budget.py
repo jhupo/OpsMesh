@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from enum import IntEnum
 
-from backend.app.agent_runtime.core.contracts import (
+from backend.app.agent_runtime.contracts import (
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentTool,
     AgentRuntimeOutputSchema,
