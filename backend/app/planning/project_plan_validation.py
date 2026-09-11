@@ -44,6 +44,21 @@ def _validate_package_shape(packages: list[object], allowed_agent_ids: set[str])
         package_ids.add(package_id)
         required_string(raw_package, "title")
         required_string(raw_package, "required_role")
+        node_type = raw_package.get("node_type", "agent")
+        if node_type not in {
+            "agent",
+            "tool",
+            "mcp",
+            "condition",
+            "join",
+            "approval",
+            "subworkflow",
+            "start",
+            "end",
+        }:
+            raise ProjectPlanValidationError(
+                "Unknown workflow node type", code="plan_node_type_invalid"
+            )
 
         condition = raw_package.get("condition")
         if condition not in (None, {}):

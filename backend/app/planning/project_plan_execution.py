@@ -18,6 +18,7 @@ from backend.app.planning.project_plan_utils import (
     string_tuple,
     unique_package_id,
 )
+from backend.app.planning.project_plan_validation import ProjectPlanValidationError
 from backend.app.planning.workflow_contracts import WorkflowNode
 from backend.app.tasks.models import Task
 
@@ -156,6 +157,8 @@ class ExecutionPackageAppender:
                 if isinstance(requested_package_id, str) and requested_package_id
                 else unique_package_id(f"{role}-{index}", existing_ids)
             )
+            if package_id in existing_ids:
+                raise ProjectPlanValidationError(f"Duplicate work package id: {package_id}")
             existing_ids.add(package_id)
             execution_package_ids.append(package_id)
             lead_dependency_id = lead_package_for_request(

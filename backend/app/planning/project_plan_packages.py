@@ -9,6 +9,7 @@ from backend.app.planning.project_plan_utils import (
     string_or_default,
     uuid_or_none,
 )
+from backend.app.planning.project_plan_validation import ProjectPlanValidationError
 from backend.app.planning.workflow_contracts import WorkflowNode
 
 
@@ -74,7 +75,8 @@ def lead_breakdown_package(
             "risks, and quality checks."
         ),
         required_role=member_role(lead, "team_lead"),
-        required_skills=tuple(skill_names(lead.get("skill_weights"))) or (
+        required_skills=tuple(skill_names(lead.get("skill_weights")))
+        or (
             "breakdown",
             "coordination",
         ),
@@ -128,10 +130,27 @@ def requested_package(
     raw_estimated_cost = request.get("estimated_cost_usd")
     estimated_cost = (
         float(raw_estimated_cost)
-        if isinstance(raw_estimated_cost, int | float)
-        and not isinstance(raw_estimated_cost, bool)
+        if isinstance(raw_estimated_cost, int | float) and not isinstance(raw_estimated_cost, bool)
         else 0.0
     )
+    node_type = request.get("node_type", "agent")
+    if node_type != "agent" and node_type not in {
+        "tool",
+        "mcp",
+        "condition",
+        "join",
+        "approval",
+        "subworkflow",
+        "start",
+        "end",
+    }:
+        raise ProjectPlanValidationError(
+            "Unknown workflow node type", code="plan_node_type_invalid"
+        )
+    if node_type in {"tool", "mcp"} and not isinstance(request.get("tool_name"), str):
+        raise ProjectPlanValidationError("Tool workflow node requires tool_name")
+    if node_type == "subworkflow" and not request.get("subworkflow_definition_id"):
+        raise ProjectPlanValidationError("Subworkflow node requires a definition")
     return WorkflowNode(
         package_id=package_id,
         title=string_or_default(request.get("title"), f"{role} execution"),
@@ -154,8 +173,15 @@ def requested_package(
             request.get("review_policy"),
             {"reviewer": "manager", "mode": "manager_review"},
         ),
-        condition=request.get("condition"),
+        condition=request.get("condition") or None,
         join_policy=request.get("join_policy", "all_success"),
+        node_type=node_type,
+        tool_name=request.get("tool_name"),
+        arguments=request.get("arguments") if isinstance(request.get("arguments"), dict) else {},
+        output_schema=request.get("output_schema")
+        if isinstance(request.get("output_schema"), dict)
+        else None,
+        subworkflow_definition_id=uuid_or_none(request.get("subworkflow_definition_id")),
         required_tools=tuple(string_list(request.get("required_tools"))),
         required_mcp_tools=tuple(_dict_items(raw_mcp_tools)),
         required_resource_ids=tuple(

@@ -222,6 +222,11 @@ disables further application. Conditions include their step references in cycle 
 branch becomes `skipped`, not user-cancelled. `all_success` propagates skips; `all_selected` waits for
 all predecessors and runs when at least one completed. All-skipped workflows finish without a model
 run. These are agent-workflow capabilities, not a claim that arbitrary typed canvas nodes exist.
+The current follow-up also admits typed `agent`, direct `tool`/`mcp`, control (`condition`, `join`,
+`start`, `end`) and `approval` nodes. Direct tool nodes execute through the frozen authorization
+snapshot and existing `BackendToolExecutor` without resolving a model provider; approval nodes create
+durable workflow approvals. Subworkflow nodes are contract-validated but still await their durable
+child-task execution boundary.
 
 A project can be planned, validated, executed in parallel, replanned after failure, transferred
 between agents, corrected by a human, reviewed by a manager, and assembled into one final delivery.

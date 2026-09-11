@@ -191,13 +191,6 @@ def test_small_team_without_lead_still_generates_usable_plan() -> None:
     assert plan["work_packages"] == [
         {
             "package_id": "developer-1",
-            "required_tools": [],
-            "required_mcp_tools": [],
-            "required_resource_ids": [],
-            "resource_requirements": {},
-            "estimated_cost_usd": 0.0,
-            "join_policy": "all_success",
-            "locked": False,
             "title": "developer execution",
             "description": "Complete the assigned developer work package for the task.",
             "required_role": "developer",

@@ -24,6 +24,9 @@ ConditionOperator = Literal[
     "less_than",
     "less_than_or_equal",
 ]
+WorkflowNodeType = Literal[
+    "agent", "tool", "mcp", "condition", "join", "approval", "subworkflow", "start", "end"
+]
 
 
 class WorkflowCondition(BaseModel):
@@ -85,6 +88,7 @@ class WorkflowNode(BaseModel):
         max_length=120,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
     )
+    node_type: WorkflowNodeType = "agent"
     title: str = Field(min_length=1, max_length=240)
     description: str = Field(default="", max_length=8_000)
     required_role: str = Field(default="specialist", min_length=1, max_length=120)
@@ -105,10 +109,39 @@ class WorkflowNode(BaseModel):
     condition: WorkflowCondition | None = None
     join_policy: Literal["all_success", "all_selected"] = "all_success"
     locked: bool = False
+    tool_name: str | None = Field(default=None, min_length=1, max_length=160)
+    arguments: dict[str, object] = Field(default_factory=dict, max_length=32)
+    output_schema: dict[str, object] | None = None
+    subworkflow_definition_id: UUID | None = None
     estimated_cost_usd: FiniteFloat = Field(default=0, ge=0, le=1_000_000)
 
     @model_validator(mode="after")
     def validate_node_policy(self) -> WorkflowNode:
+        if self.node_type in {"tool", "mcp"} and self.tool_name is None:
+            raise ValueError(f"{self.node_type} nodes require tool_name")
+        if (
+            self.node_type == "tool"
+            and self.required_tools
+            and self.tool_name not in self.required_tools
+        ):
+            raise ValueError("tool_name must be included in required_tools")
+        if self.node_type == "mcp" and not self.required_mcp_tools:
+            raise ValueError("mcp nodes require required_mcp_tools")
+        if self.node_type == "mcp" and self.tool_name not in {
+            item.tool_name for item in self.required_mcp_tools
+        }:
+            raise ValueError("tool_name must be included in required_mcp_tools")
+        if self.node_type == "subworkflow" and self.subworkflow_definition_id is None:
+            raise ValueError("subworkflow nodes require subworkflow_definition_id")
+        if self.node_type in {"condition", "join", "start", "end"} and (
+            self.tool_name is not None or self.subworkflow_definition_id is not None
+        ):
+            raise ValueError(f"{self.node_type} nodes cannot define execution targets")
+        if self.output_schema is not None:
+            from backend.app.capabilities.schema_validation import validate_json_schema
+
+            validate_json_schema(self.output_schema)
+        reject_embedded_secrets(self.arguments, path="arguments")
         for name in (
             "depends_on",
             "required_skills",

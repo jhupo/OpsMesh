@@ -106,4 +106,9 @@ def step_dependencies_for_package(
         "required_resource_ids": package.get("required_resource_ids", []),
         "resource_requirements": package.get("resource_requirements", {}),
         "estimated_cost_usd": package.get("estimated_cost_usd", 0),
+        "node_type": package.get("node_type", "agent"),
+        "tool_name": package.get("tool_name"),
+        "arguments": package.get("arguments", {}),
+        "output_schema": package.get("output_schema"),
+        "subworkflow_definition_id": package.get("subworkflow_definition_id"),
     }

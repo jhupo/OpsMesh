@@ -442,14 +442,16 @@ class OrchestrationDefinitionService:
         packages: list[dict[str, object]] = []
         for node in raw_nodes:
             assigned_id = node.assigned_agent_profile_id
-            if assigned_id is None:
+            if node.node_type in {"condition", "join", "start", "end"}:
+                assigned_id = None
+            elif assigned_id is None:
                 assigned_id = self._match_agent(
                     task,
                     team,
                     matcher,
                     node,
                 )
-            if assigned_id is None:
+            if assigned_id is None and node.node_type not in {"condition", "join", "start", "end"}:
                 raise OrchestrationDefinitionError(
                     f"No team agent matches orchestration node {node.package_id}",
                     code="orchestration_agent_unavailable",

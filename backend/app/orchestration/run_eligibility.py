@@ -146,6 +146,24 @@ class RunEligibilityService:
                 task_cache[step.task_id] = task
             if task is None:
                 continue
+            node_type = step.dependencies.get("node_type", "agent")
+            if node_type in {"condition", "join", "start", "end"}:
+                TaskStepStateService().transition(
+                    step,
+                    TaskStepStatus.RUNNING,
+                )
+                TaskStepStateService().transition(
+                    step,
+                    TaskStepStatus.COMPLETED,
+                    result_summary="Workflow control node completed.",
+                )
+                self.session.flush()
+                pending = [
+                    candidate
+                    for candidate in steps
+                    if candidate.status == STEP_STATUS_QUEUED and candidate not in eligible
+                ]
+                continue
             decision = evaluate_task_step_condition(self.session, task, step)
             if dependency == "skip" or decision.state == "false":
                 reason = (
@@ -169,13 +187,26 @@ class RunEligibilityService:
     def _complete_empty_selection(self, task: Task) -> None:
         if task.status in TERMINAL_TASK_STATUSES or self.task_has_open_team_work(task):
             return
-        statuses = self.session.scalars(
-            select(TaskStep.status).where(
+        task_steps = self.session.scalars(
+            select(TaskStep).where(
                 TaskStep.workspace_id == task.workspace_id,
                 TaskStep.task_id == task.id,
             )
         ).all()
-        if not statuses or any(status != TaskStepStatus.SKIPPED for status in statuses):
+        if not task_steps or any(
+            step.status not in {TaskStepStatus.COMPLETED.value, TaskStepStatus.SKIPPED.value}
+            for step in task_steps
+        ):
+            return
+        control_types = {"condition", "join", "start", "end"}
+        if any(
+            step.status == TaskStepStatus.COMPLETED.value
+            and (
+                not isinstance(step.dependencies, dict)
+                or step.dependencies.get("node_type", "agent") not in control_types
+            )
+            for step in task_steps
+        ):
             return
         states = TaskStateService()
         if task.status == TaskStatus.DRAFT:

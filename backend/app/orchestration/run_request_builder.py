@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
+    AgentRuntimeToolExecutor,
 )
 from backend.app.agent_runtime.guardrails import runtime_controls_from_snapshot
 from backend.app.agent_runtime.sessions import (
@@ -269,15 +270,7 @@ class RunRequestBuilder:
             api_key=model_provider["api_key"],
             model_api=model_provider["model_api"],
             model_provider_credential_id=model_provider["model_provider_credential_id"],
-            tool_executor=BackendToolExecutor(
-                self.session,
-                McpAdapterResolver(secret_service=self.mcp_secret_service()),
-                settings=self.settings,
-                docker_client=self.docker_client,
-                secret_service=self.mcp_secret_service(),
-            )
-            if allowed_tools
-            else None,
+            tool_executor=self.build_tool_executor() if allowed_tools else None,
             continuations=continuations,
             session=persistent_session,
             previous_response_id=provider_continuation["previous_response_id"],
@@ -306,6 +299,53 @@ class RunRequestBuilder:
                 workspace_id=run.workspace_id,
                 run_id=run.id,
             ),
+        )
+
+    def build_direct_tool_context(
+        self,
+        run: AgentRun,
+        job: JobPayload,
+    ) -> tuple[AgentRuntimeContext, AgentRuntimeToolExecutor]:
+        """Build frozen authorization for direct workflow tools without a model call."""
+        self.validate_job_scope(run, job)
+        task = self.authorized_task_for_run(run)
+        profile = self.authorized_profile_for_run(run)
+        if task is None or profile is None:
+            raise ValueError("Direct workflow tools require a scoped task agent")
+        snapshot = self.authorization_snapshot_for_run(run)
+        self.validate_authorization_snapshot(run, task, profile, snapshot)
+        runtime_binding = RunRuntimeAuthorizationService(self.session).validate_for_run(
+            run=run, task=task, snapshot=snapshot
+        )
+        catalog = snapshot.get("capability_catalog")
+        metadata = {
+            "authorization_snapshot_fingerprint": snapshot.get("fingerprint"),
+            "capability_catalog_fingerprint": (
+                catalog.get("fingerprint") if isinstance(catalog, dict) else None
+            ),
+            "node_execution": "direct_tool",
+        }
+        context = AgentRuntimeContext(
+            workspace_id=run.workspace_id,
+            task_id=run.task_id,
+            run_id=run.id,
+            user_id=job.requested_by_user_id,
+            allowed_tools=self.allowed_tools_for_run(run, profile),
+            tool_definitions=tool_definitions_for_snapshot(snapshot),
+            resource_grants=resource_grants_for_snapshot(snapshot),
+            file_scope_ids=file_scope_ids_for_snapshot(snapshot),
+            runtime_binding=runtime_binding.as_runtime_context(),
+            metadata=metadata,
+        )
+        return context, self.build_tool_executor()
+
+    def build_tool_executor(self) -> AgentRuntimeToolExecutor:
+        return BackendToolExecutor(
+            self.session,
+            McpAdapterResolver(secret_service=self.mcp_secret_service()),
+            settings=self.settings,
+            docker_client=self.docker_client,
+            secret_service=self.mcp_secret_service(),
         )
 
     def runtime_metadata(

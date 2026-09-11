@@ -23,8 +23,27 @@ class ProjectPlan:
             else None,
             "generated_at": self.generated_at,
             "strategy": self.strategy,
-            "work_packages": [
-                package.model_dump(mode="json", by_alias=True, exclude_none=True)
-                for package in self.work_packages
-            ],
+            "work_packages": [_package_dict(package) for package in self.work_packages],
         }
+
+
+def _package_dict(package: WorkflowNode) -> dict[str, object]:
+    payload = package.model_dump(mode="json", by_alias=True, exclude_none=True)
+    for key in (
+        "node_type",
+        "required_tools",
+        "required_mcp_tools",
+        "required_resource_ids",
+        "resource_requirements",
+        "estimated_cost_usd",
+        "join_policy",
+        "locked",
+        "tool_name",
+        "arguments",
+        "output_schema",
+        "subworkflow_definition_id",
+    ):
+        value = payload.get(key)
+        if value in (None, False, 0, {}, [], "all_success", "agent"):
+            payload.pop(key, None)
+    return payload

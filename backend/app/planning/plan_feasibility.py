@@ -69,6 +69,8 @@ class PlanFeasibilityService:
         provider_keys: set[tuple[UUID, str, str]] = set()
 
         for package in packages:
+            if package.get("node_type", "agent") in {"condition", "join", "start", "end"}:
+                continue
             profile_id = _uuid_or_none(package.get("assigned_agent_profile_id"))
             if profile_id is None:
                 _reject("plan_agent_unavailable")
@@ -278,11 +280,7 @@ class PlanFeasibilityService:
         raw_tools = package.get("required_mcp_tools", [])
         if not isinstance(raw_tools, list):
             _reject("plan_capability_policy_invalid")
-        descriptors = [
-            item.descriptor
-            for item in catalog.tools
-            if item.descriptor.source == "mcp"
-        ]
+        descriptors = [item.descriptor for item in catalog.tools if item.descriptor.source == "mcp"]
         seen: set[tuple[UUID, UUID | None, str]] = set()
         for raw_tool in raw_tools:
             if not isinstance(raw_tool, dict):
@@ -299,10 +297,7 @@ class PlanFeasibilityService:
             if not any(
                 descriptor.name == tool_name.strip()
                 and descriptor.mcp_server_id == server_id
-                and (
-                    allowlist_id is None
-                    or descriptor.mcp_tool_allowlist_id == allowlist_id
-                )
+                and (allowlist_id is None or descriptor.mcp_tool_allowlist_id == allowlist_id)
                 for descriptor in descriptors
             ):
                 _reject("plan_mcp_tool_unavailable")
