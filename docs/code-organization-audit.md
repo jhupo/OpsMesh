@@ -67,3 +67,27 @@ Planned consolidations:
    each move.
 4. Keep API route grouping and migration history stable unless a route or schema boundary is
    actually changing.
+
+## Whole-app execution order
+
+The consolidation should proceed in this order, from lowest coupling to highest coupling:
+
+1. **Runtime domain:** merge `runtime_manager`, `runtime_spaces`, and `runtimes` behind one
+   runtime package. This is the clearest duplicate boundary and has an existing backend registry
+   seam.
+2. **Observability:** merge `audit`, `costs`, and `telemetry` behind shared event/usage contracts;
+   keep notification delivery as an adapter rather than a separate domain.
+3. **Storage:** consolidate `files`, `artifacts`, and `exports`; keep `projects` as the domain
+   owner of project snapshots and file authorization.
+4. **Agent runtime:** reduce provider folders to provider implementations plus a shared runtime
+   contract. Do not merge SDK-specific implementations into orchestration.
+5. **Orchestration:** apply the target four-package layout (`runs`, `workflows`, `requests`,
+   `models`) after the runtime and storage moves, because orchestration imports both.
+6. **Edge packages:** flatten `teams/project_space`, `workers/queue`, and
+   `tools/product_tools` only if their current public imports can be updated without creating
+   a second compatibility path.
+
+The following areas are **not** over-split by default and should not be merged merely to reduce
+the directory count: `auth`, `identity`, `db`, `capabilities/mcp`, `secrets`, migrations, and
+API route groups with distinct authentication or deployment policy. They represent real security,
+protocol, or operational boundaries.
