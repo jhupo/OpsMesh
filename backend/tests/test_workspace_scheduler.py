@@ -28,12 +28,12 @@ from backend.app.orchestration.step_scheduling_state import (
 )
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_spaces.models import (
+from backend.app.runtime_manager.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime_spaces.service import RuntimeSpaceService
+from backend.app.runtime_manager.spaces.service import RuntimeSpaceService
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeam, AgentTeamMember

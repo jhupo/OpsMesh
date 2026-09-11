@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from backend.app.core.typing import string_list
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_spaces.models import RuntimeSpace
+from backend.app.runtime_manager.spaces.models import RuntimeSpace
 
 
 def positive_policy_int(value: object) -> int | None:

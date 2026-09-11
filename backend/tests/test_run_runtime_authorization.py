@@ -31,7 +31,7 @@ from backend.app.orchestration.runtime.authorization import (
     RunRuntimeAuthorizationService,
 )
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runtime_spaces.models import RuntimeSpace
+from backend.app.runtime_manager.spaces.models import RuntimeSpace
 from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task, TaskStep

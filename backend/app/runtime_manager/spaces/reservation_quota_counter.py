@@ -1,7 +1,7 @@
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from backend.app.runtime_spaces.models import RuntimeSpaceQuota
+from backend.app.runtime_manager.spaces.models import RuntimeSpaceQuota
 
 
 class RuntimeSpaceQuotaCounter:

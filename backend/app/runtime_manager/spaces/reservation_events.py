@@ -2,10 +2,10 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 
 
-class RuntimeSpaceEventLog:
+class RuntimeSpaceReservationEventLog:
     def __init__(self, session: Session) -> None:
         self._session = session
 

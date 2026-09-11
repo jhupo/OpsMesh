@@ -16,7 +16,7 @@ from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.projects.export_status import WorkspaceExportJobStatus
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.data_lifecycle_payloads import (

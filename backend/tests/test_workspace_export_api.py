@@ -31,7 +31,7 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue

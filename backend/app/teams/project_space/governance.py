@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.app.core.typing import counts_by_value
-from backend.app.runtime_spaces.models import RuntimeSpace
+from backend.app.runtime_manager.spaces.models import RuntimeSpace
 from backend.app.teams.execution_overview_constants import DONE_TASK_STATUSES
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.project_space.policies import ACTIVE_RUN_STATUSES

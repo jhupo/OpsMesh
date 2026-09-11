@@ -26,14 +26,14 @@ from backend.app.runtime_manager.contracts import (
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
 from backend.app.runtime_manager.service import RuntimeControlService
-from backend.app.runtime_spaces.models import (
+from backend.app.runtime_manager.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime_spaces.service import RuntimeSpaceService
+from backend.app.runtime_manager.spaces.service import RuntimeSpaceService
 from backend.app.runtime_manager.models import (
     RuntimeCommand,
     RuntimeEvent,

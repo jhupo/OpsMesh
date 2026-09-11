@@ -11,7 +11,7 @@ from backend.app.files.artifact_models import Artifact
 from backend.app.files.models import WorkspaceFile
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_spaces.models import (
+from backend.app.runtime_manager.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,

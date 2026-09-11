@@ -45,7 +45,7 @@ from backend.app.runtime_manager.contracts import (
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtime_manager.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.collaboration_state import TaskCollaborationStateService

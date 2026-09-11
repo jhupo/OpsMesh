@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from backend.app.runtime_spaces.models import RuntimeSpaceQuota, RuntimeSpaceReservation
+from backend.app.runtime_manager.spaces.models import RuntimeSpaceQuota, RuntimeSpaceReservation
 
 RUN_CAPACITY_QUOTA_KEY = "active_runs"
 

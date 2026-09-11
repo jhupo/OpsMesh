@@ -8,14 +8,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.runtime_spaces.models import (
+from backend.app.runtime_manager.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime_spaces.reservation_events import RuntimeSpaceReservationEventLog
-from backend.app.runtime_spaces.reservation_quota_counter import RuntimeSpaceQuotaCounter
-from backend.app.runtime_spaces.reservation_usage import reservation_usage
+from backend.app.runtime_manager.spaces.reservation_events import RuntimeSpaceReservationEventLog
+from backend.app.runtime_manager.spaces.reservation_quota_counter import RuntimeSpaceQuotaCounter
+from backend.app.runtime_manager.spaces.reservation_usage import reservation_usage
 
 
 @dataclass(frozen=True)

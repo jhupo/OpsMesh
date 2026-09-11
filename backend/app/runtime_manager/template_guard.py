@@ -11,7 +11,7 @@ from backend.app.runtime_manager.runtime_policy import (
     policy_disables_network,
 )
 from backend.app.runtime_manager.safety import RuntimeSafetyError, RuntimeSafetyPolicy
-from backend.app.runtime_spaces.service import RuntimeSpaceService
+from backend.app.runtime_manager.spaces.service import RuntimeSpaceService
 from backend.app.runtime_manager.models import RuntimeTemplate
 
 

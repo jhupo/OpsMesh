@@ -19,7 +19,7 @@ from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
+from backend.app.runtime_manager.spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.tasks.models import Task
 from backend.app.tasks.service import TaskStateService

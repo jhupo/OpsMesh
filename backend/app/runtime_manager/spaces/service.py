@@ -8,22 +8,22 @@ from sqlalchemy.orm import Session
 from backend.app.api.schemas.runtime_spaces import RuntimeSpaceDiagnosticsResponse
 from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
-from backend.app.runtime_spaces.diagnostics import RuntimeSpaceDiagnosticsService
-from backend.app.runtime_spaces.lifecycle import RuntimeSpaceLifecycleService
-from backend.app.runtime_spaces.models import (
+from backend.app.runtime_manager.spaces.diagnostics import RuntimeSpaceDiagnosticsService
+from backend.app.runtime_manager.spaces.lifecycle import RuntimeSpaceLifecycleService
+from backend.app.runtime_manager.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime_spaces.reservation_attachment import (
+from backend.app.runtime_manager.spaces.reservation_attachment import (
     RuntimeSpaceReservationAttachmentService,
 )
-from backend.app.runtime_spaces.reservation_capacity import (
+from backend.app.runtime_manager.spaces.reservation_capacity import (
     RuntimeSpaceCapacityReservationService,
     RuntimeSpaceReservationResult,
 )
-from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
-from backend.app.runtime_spaces.targets import RuntimeSpaceTargetService
+from backend.app.runtime_manager.spaces.reservation_release import RuntimeSpaceReservationReleaseService
+from backend.app.runtime_manager.spaces.targets import RuntimeSpaceTargetService
 
 T = TypeVar("T")
 

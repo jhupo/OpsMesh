@@ -13,7 +13,7 @@ from backend.app.approvals.models import Approval
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task
 

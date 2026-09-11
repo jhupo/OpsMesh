@@ -24,7 +24,7 @@ from backend.app.orchestration.scheduler.policy import (
 from backend.app.planning.org_structure import normalize_role
 from backend.app.planning.project_plan_validation import ProjectPlanValidationError
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import WorkspaceQuota

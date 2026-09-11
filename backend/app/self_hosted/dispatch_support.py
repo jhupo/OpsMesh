@@ -10,11 +10,11 @@ from backend.app.core.typing import string_list
 from backend.app.orchestration.run_request.authorization import RunAuthorizationService
 from backend.app.orchestration.runtime.authorization import RunRuntimeAuthorizationService
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_spaces.models import RuntimeSpace
-from backend.app.runtime_spaces.reservation_attachment import (
+from backend.app.runtime_manager.spaces.models import RuntimeSpace
+from backend.app.runtime_manager.spaces.reservation_attachment import (
     RuntimeSpaceReservationAttachmentService,
 )
-from backend.app.runtime_spaces.reservation_capacity import RuntimeSpaceCapacityReservationService
+from backend.app.runtime_manager.spaces.reservation_capacity import RuntimeSpaceCapacityReservationService
 from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.self_hosted.jobs import SelfHostedJobFinalizer
 from backend.app.self_hosted.models import (

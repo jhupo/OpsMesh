@@ -49,7 +49,7 @@ from backend.app.runtime_manager.contracts import (
     RuntimeCreateRequest,
 )
 from backend.app.runtime_manager.dependencies import get_docker_runtime_client
-from backend.app.runtime_spaces.models import (
+from backend.app.runtime_manager.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,

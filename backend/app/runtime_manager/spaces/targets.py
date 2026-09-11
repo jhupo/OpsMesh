@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceBinding
+from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceBinding
 from backend.app.runtime_manager.models import RuntimeTemplate
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam

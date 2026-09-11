@@ -10,7 +10,7 @@ from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUSES
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_spaces.reservation_release import RuntimeSpaceReservationReleaseService
+from backend.app.runtime_manager.spaces.reservation_release import RuntimeSpaceReservationReleaseService
 from backend.app.self_hosted.events import SelfHostedEventRecorder
 from backend.app.self_hosted.models import (
     RuntimeCredential,

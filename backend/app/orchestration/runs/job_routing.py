@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from backend.app.orchestration.state.resource_usage import positive_numeric_usage
 from backend.app.orchestration.run_request.utils import string_list
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_spaces.models import RuntimeSpace
+from backend.app.runtime_manager.spaces.models import RuntimeSpace
 from backend.app.tasks.models import Task
 
 

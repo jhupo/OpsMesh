@@ -32,7 +32,7 @@ from backend.app.operations.prometheus_worker_metrics import WorkerPrometheusMet
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.teams.models import AgentTeam
 from backend.app.workers.jobs import JobPayload, JobType

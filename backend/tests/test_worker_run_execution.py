@@ -84,7 +84,7 @@ from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.activity import activity_phase
 from backend.app.runs.models import AgentRun, AgentRunStateSnapshot, RunEvent
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_spaces.models import (
+from backend.app.runtime_manager.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
     RuntimeSpaceQuota,

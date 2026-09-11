@@ -41,7 +41,7 @@ from backend.app.runtime_manager.contracts import (
     RuntimeCreateRequest,
 )
 from backend.app.runtime_manager.dependencies import get_docker_runtime_client
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtime_manager.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam

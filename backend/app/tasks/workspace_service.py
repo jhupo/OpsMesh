@@ -12,7 +12,7 @@ from backend.app.orchestration.runs import RunOrchestrationService
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.projects.models import WorkspaceProject
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_spaces.service import RuntimeSpaceService
+from backend.app.runtime_manager.spaces.service import RuntimeSpaceService
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.snapshots import build_team_snapshot

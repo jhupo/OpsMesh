@@ -24,7 +24,7 @@ from backend.app.model_providers.credential_commands import ModelProviderCredent
 from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
 from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runtime_spaces.models import (
+from backend.app.runtime_manager.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,

@@ -21,7 +21,7 @@ from backend.app.planning.future_plan_mutation import (
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.plan_lifecycle import TaskPlanLifecycleService, TaskPlanRetryCommand
 from backend.app.teams.models import AgentTeam, AgentTeamMember

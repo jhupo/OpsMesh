@@ -14,7 +14,7 @@ from backend.app.api.schemas.self_hosted import (
     WorkerHeartbeatRequest,
 )
 from backend.app.core.config import Settings
-from backend.app.runtime_spaces.models import RuntimeSpace
+from backend.app.runtime_manager.spaces.models import RuntimeSpace
 from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.self_hosted.attestation import (
     CapabilityAttestationResult,
