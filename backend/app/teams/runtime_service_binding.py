@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from backend.app.runtime_manager.core.contracts import RuntimeLimits
-from backend.app.runtime_manager.lifecycle_control import RuntimeLifecycleControl
+from backend.app.runtime_manager.lifecycle.control import RuntimeLifecycleControl
 from backend.app.teams.runtime_state_builder import TeamRuntimeState
 from backend.app.teams.runtime_workspace_binding import TeamWorkspaceRuntimeBindingService
 

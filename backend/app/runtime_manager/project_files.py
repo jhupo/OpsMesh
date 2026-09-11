@@ -4,7 +4,7 @@ from uuid import UUID
 
 from backend.app.files.security import validate_runtime_relative_path
 from backend.app.runtime_manager.core.contracts import DockerRuntimeClient
-from backend.app.runtime_manager.runtime_guards import require_container
+from backend.app.runtime_manager.lifecycle.guards import require_container
 from backend.app.runtimes.models import WorkspaceRuntime
 
 RUNTIME_WORKSPACE_ROOT = "/workspace"

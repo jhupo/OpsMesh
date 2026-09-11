@@ -17,7 +17,7 @@ from backend.app.runtime_manager.core.contracts import (
     RuntimeCommandResult,
 )
 from backend.app.runtime_manager.events import RuntimeEventLog
-from backend.app.runtime_manager.runtime_guards import require_container
+from backend.app.runtime_manager.lifecycle.guards import require_container
 from backend.app.runtime_manager.security_events import RuntimeSecurityEventRecorder
 from backend.app.runtimes.models import RuntimeCommand, WorkspaceRuntime
 

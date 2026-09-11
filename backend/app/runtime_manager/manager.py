@@ -6,10 +6,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.runtime_manager.cleanup import (
-    RuntimeResourceCleaner,
-    cleanup_succeeded,
-)
 from backend.app.runtime_manager.command_executor import RuntimeCommandExecutor
 from backend.app.runtime_manager.command_output import lease_metadata
 from backend.app.runtime_manager.core.contracts import (
@@ -20,10 +16,14 @@ from backend.app.runtime_manager.core.contracts import (
     validate_runtime_execution_mode,
 )
 from backend.app.runtime_manager.events import RuntimeEventLog
+from backend.app.runtime_manager.lifecycle.cleanup import (
+    RuntimeResourceCleaner,
+    cleanup_succeeded,
+)
+from backend.app.runtime_manager.lifecycle.guards import require_container
 from backend.app.runtime_manager.pool.leases import RuntimeLeaseStore, RuntimeSpaceReservationStore
 from backend.app.runtime_manager.provisioning_executor import RuntimeProvisioningExecutor
 from backend.app.runtime_manager.quotas import RuntimeQuotaPolicy
-from backend.app.runtime_manager.runtime_guards import require_container
 from backend.app.runtime_manager.security_events import RuntimeSecurityEventRecorder
 from backend.app.runtimes.models import (
     RuntimeCommand,

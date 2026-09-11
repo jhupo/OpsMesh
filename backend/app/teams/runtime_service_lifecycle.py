@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.runtime_manager.lifecycle_control import RuntimeLifecycleControl
+from backend.app.runtime_manager.lifecycle.control import RuntimeLifecycleControl
 from backend.app.teams.runtime_constants import (
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,
