@@ -60,7 +60,7 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
                 network_mode=_docker_network_mode(request),
                 environment=_docker_network_environment(request),
                 cap_drop=list(request.hardening.cap_drop),
-                security_opt=list(request.hardening.security_opt),
+                security_opt=_security_options(request),
                 read_only=request.hardening.read_only_rootfs,
                 tmpfs={
                     mount.target: f"{mount.mode},size={mount.size_mb}m"
@@ -218,6 +218,15 @@ def _docker_network_mode(request: RuntimeCreateRequest) -> str:
             raise ValueError("Restricted runtime egress requires a gateway network")
         return gateway_network.strip()
     raise ValueError("Runtime egress mode is unsupported")
+
+
+def _security_options(request: RuntimeCreateRequest) -> list[str]:
+    options = list(request.hardening.security_opt)
+    if request.hardening.apparmor_profile:
+        options.append(f"apparmor={request.hardening.apparmor_profile}")
+    if request.hardening.seccomp_profile not in {"", "default"}:
+        options.append(f"seccomp={request.hardening.seccomp_profile}")
+    return options
 
 
 def _docker_network_environment(request: RuntimeCreateRequest) -> dict[str, str] | None:

@@ -145,7 +145,10 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
         "/tmp",
         "/var/tmp",
     ]
-    assert docker.created_requests[0].hardening.user_enforced is False
+    assert docker.created_requests[0].hardening.user_enforced is True
+    assert docker.created_requests[0].hardening.user == "65532:65532"
+    assert docker.created_requests[0].hardening.seccomp_profile == "default"
+    assert docker.created_requests[0].hardening.apparmor_profile == "docker-default"
     assert docker.created_requests[0].workspace_id == str(workspace.id)
     assert docker.created_requests[0].runtime_id == str(runtime.id)
     assert docker.created_requests[0].runtime_space_id == str(runtime_space.id)
@@ -186,9 +189,9 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     ]
     assert events[0].event_metadata["hardening"]["read_only_rootfs"] is True
     assert events[0].event_metadata["hardening"]["user"] == {
-        "value": None,
-        "policy": "image_default",
-        "enforced": False,
+        "value": "65532:65532",
+        "policy": "fixed_non_root",
+        "enforced": True,
     }
     assert events[1].event_metadata["runtime_lease_id"] == str(lease.id)
     assert events[2].event_metadata["runtime_lease_id"] == str(lease.id)
@@ -1104,7 +1107,10 @@ def test_docker_sdk_create_container_applies_limits_and_hardening() -> None:
     assert captured["pids_limit"] == 96
     assert captured["storage_opt"] == {"size": "2048m"}
     assert captured["cap_drop"] == ["ALL"]
-    assert captured["security_opt"] == ["no-new-privileges:true"]
+    assert captured["security_opt"] == [
+        "no-new-privileges:true",
+        "apparmor=docker-default",
+    ]
     assert captured["read_only"] is True
     assert captured["tmpfs"] == {
         "/tmp": "rw,noexec,nosuid,nodev,size=64m",

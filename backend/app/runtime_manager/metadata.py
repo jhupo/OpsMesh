@@ -101,6 +101,19 @@ def runtime_hardening_metadata(
     return {
         "cap_drop": list(policy.cap_drop),
         "security_opt": list(policy.security_opt),
+        "seccomp": {
+            "profile": policy.seccomp_profile or "default",
+            "enforced": policy.seccomp_profile != "unconfined",
+            "source": (
+                "docker_default"
+                if policy.seccomp_profile in {"", "default"}
+                else "configured"
+            ),
+        },
+        "apparmor": {
+            "profile": policy.apparmor_profile,
+            "enforced": bool(policy.apparmor_profile),
+        },
         "read_only_rootfs": policy.read_only_rootfs,
         "writable_paths": writable_paths,
         "user": {

@@ -52,9 +52,11 @@ class RuntimeHardeningPolicy:
         RuntimeTmpfsMount(target="/tmp", size_mb=64),
         RuntimeTmpfsMount(target="/var/tmp", size_mb=16),
     )
-    user: str | None = None
-    user_policy: str = "image_default"
-    user_enforced: bool = False
+    user: str | None = "65532:65532"
+    user_policy: str = "fixed_non_root"
+    user_enforced: bool = True
+    seccomp_profile: str = "default"
+    apparmor_profile: str = "docker-default"
 
 
 @dataclass(frozen=True)
