@@ -31,7 +31,7 @@ from backend.app.memory.context import AgentMemoryContextService
 from backend.app.memory.working import AgentWorkingMemoryService, working_memory_context
 from backend.app.projects.runtime_context import project_runtime_context
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.backends.registry import build_runtime_backend_registry
+from backend.app.runtime_manager.backend_registry import build_runtime_backend_registry
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService

@@ -16,7 +16,7 @@ from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings
 from backend.app.projects.models import AgentRunProjectIOState
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.backends.registry import build_runtime_backend_registry
+from backend.app.runtime_manager.backend_registry import build_runtime_backend_registry
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
 from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
