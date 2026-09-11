@@ -32,7 +32,7 @@ from backend.app.files.storage import ObjectStorage
 from backend.app.model_providers.service_models import ModelProviderUnavailableError
 from backend.app.orchestration.models_layer.run_gateway import ModelRunGateway
 from backend.app.orchestration.run_events import RunEventRecorder
-from backend.app.orchestration.run_lifecycle import RunLifecycleService
+from backend.app.orchestration.runs.lifecycle import RunLifecycleService
 from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.orchestration.runtime.event_messages import RunRuntimeEventMessageMapper
 from backend.app.orchestration.workflows.subworkflows import SubworkflowExecutionService
