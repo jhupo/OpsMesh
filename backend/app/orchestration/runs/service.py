@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
 from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.orchestration.run_events import RunEventRecorder
-from backend.app.orchestration.run_job_routing import RunJobRoutingService
+from backend.app.orchestration.runs.job_routing import RunJobRoutingService
 from backend.app.orchestration.run_lifecycle import RunLifecycleCallbacks, RunLifecycleService
 from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.orchestration.runs.resources import RunResourceReservationService
