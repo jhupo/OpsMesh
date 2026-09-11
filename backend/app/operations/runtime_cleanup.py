@@ -10,6 +10,7 @@ from backend.app.projects.runtime_io import RunProjectIOService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
+from backend.app.runtime_manager.run_environment import RunRuntimeEnvironmentService
 from backend.app.runtime_spaces.models import RuntimeSpaceEvent
 from backend.app.runtimes.models import WorkspaceRuntime
 
@@ -107,6 +108,49 @@ class RuntimeCleanupService:
                 docker_client=docker_client,
                 settings=settings,
             ).cleanup_runtime_workspace(run, reason="worker_maintenance"):
+                completed += 1
+            else:
+                failed += 1
+        self._session.commit()
+        return completed, failed
+
+    def cleanup_terminal_run_environments(
+        self,
+        *,
+        docker_client: DockerRuntimeClient | None,
+        workspace_id: UUID | None = None,
+        limit: int = 100,
+    ) -> tuple[int, int]:
+        """Reclaim ephemeral containers and volumes left by terminal or orphaned runs."""
+        statement = (
+            select(AgentRun)
+            .join(
+                WorkspaceRuntime,
+                (WorkspaceRuntime.workspace_id == AgentRun.workspace_id)
+                & (WorkspaceRuntime.id == AgentRun.execution_runtime_id),
+            )
+            .where(
+                AgentRun.execution_runtime_id.is_not(None),
+                WorkspaceRuntime.status != "deleted",
+                AgentRun.status.in_(
+                    (
+                        RunStatus.COMPLETED.value,
+                        RunStatus.FAILED.value,
+                        RunStatus.CANCELLED.value,
+                    )
+                ),
+            )
+            .order_by(AgentRun.updated_at.asc())
+            .limit(limit)
+        )
+        if workspace_id is not None:
+            statement = statement.where(AgentRun.workspace_id == workspace_id)
+        runs = list(self._session.scalars(statement).all())
+        completed = 0
+        failed = 0
+        service = RunRuntimeEnvironmentService(self._session, docker_client)
+        for run in runs:
+            if service.cleanup_for_run(run):
                 completed += 1
             else:
                 failed += 1

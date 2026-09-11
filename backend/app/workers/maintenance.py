@@ -71,6 +71,8 @@ class WorkerMaintenanceSummary:
     memory_episodes_promoted: int = 0
     project_runtime_workspaces_cleaned: int = 0
     project_runtime_workspaces_failed: int = 0
+    run_runtime_environments_cleaned: int = 0
+    run_runtime_environments_failed: int = 0
 
 
 class WorkerMaintenanceService:
@@ -127,6 +129,14 @@ class WorkerMaintenanceService:
             RuntimeCleanupService(session).cleanup_terminal_run_workspaces(
                 settings=self._settings,
                 docker_client=(get_docker_runtime_client() if self._settings is not None else None),
+                limit=self._config.recovery_batch_size,
+            )
+        )
+        run_runtime_environments_cleaned, run_runtime_environments_failed = (
+            RuntimeCleanupService(session).cleanup_terminal_run_environments(
+                docker_client=(
+                    get_docker_runtime_client() if self._settings is not None else None
+                ),
                 limit=self._config.recovery_batch_size,
             )
         )
@@ -210,6 +220,8 @@ class WorkerMaintenanceService:
             memory_episodes_promoted=memory_lifecycle.promoted_episodes,
             project_runtime_workspaces_cleaned=project_runtime_workspaces_cleaned,
             project_runtime_workspaces_failed=project_runtime_workspaces_failed,
+            run_runtime_environments_cleaned=run_runtime_environments_cleaned,
+            run_runtime_environments_failed=run_runtime_environments_failed,
         )
 
     @contextmanager

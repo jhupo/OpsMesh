@@ -244,8 +244,8 @@ Goal: make runtime isolation enforceable by the platform for every managed run.
 
 | Order | Priority | Functional point | Status | Commit | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- |
-| 6.1 | P0 | Create an isolated ephemeral execution space per run with explicit persistent mounts | Pending | `add-per-run-runtime-isolation` | Concurrent and sequential runs cannot read each other's undeclared files |
-| 6.2 | P0 | Complete normal, failed, cancelled, and orphan runtime cleanup | Pending | `complete-runtime-resource-cleanup` | Containers, volumes, leases, and reservations are reclaimed with durable evidence |
+| 6.1 | P0 | Create an isolated ephemeral execution space per run with explicit persistent mounts | Done | `add-per-run-runtime-isolation` | Concurrent and sequential runs cannot read each other's undeclared files |
+| 6.2 | P0 | Complete normal, failed, cancelled, and orphan runtime cleanup | Done | `complete-runtime-resource-cleanup` | Containers, volumes, leases, and reservations are reclaimed with durable evidence |
 | 6.3 | P0 | Enforce domain, IP, DNS, protocol, and port egress rules through a controlled gateway | Pending | `add-runtime-egress-policy` | Direct unapproved egress fails even when code attempts to bypass application policy |
 | 6.4 | P0 | Enforce non-root execution, seccomp/AppArmor policy, read-only rootfs, and minimal capabilities | Pending | `harden-runtime-sandbox` | Runtime diagnostics prove each required control is platform-enforced |
 | 6.5 | P0 | Enforce CPU, memory, disk, process, wall-time, command-output, and concurrency limits | Pending | `complete-runtime-resource-limits` | Each limit has a deterministic failure state, cleanup, and bounded evidence |

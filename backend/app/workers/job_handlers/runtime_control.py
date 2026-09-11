@@ -40,6 +40,28 @@ class RuntimeCleanupJobHandler:
             job.workspace_id,
             stale_after_seconds=stale_after_seconds,
         )
+        cleanup = RuntimeCleanupService(self._context.session)
+        cleanup.cleanup_terminal_run_workspaces(
+            settings=self._context.settings,
+            docker_client=self._context.docker_client(),
+            workspace_id=job.workspace_id,
+            limit=positive_int(
+                routing.get("limit"),
+                default=100,
+                key="limit",
+                context=RUNTIME_CLEANUP_JOB,
+            ),
+        )
+        cleanup.cleanup_terminal_run_environments(
+            docker_client=self._context.docker_client(),
+            workspace_id=job.workspace_id,
+            limit=positive_int(
+                routing.get("limit"),
+                default=100,
+                key="limit",
+                context=RUNTIME_CLEANUP_JOB,
+            ),
+        )
         WorkerLeaseMaintenanceService(self._context.session).expire_stale_worker_leases(
             workspace_id=job.workspace_id,
             stale_after_seconds=stale_lease_after_seconds,
