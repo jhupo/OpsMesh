@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, StrictInt, model_validator
 
 from backend.app.capabilities.schema_validation import reject_embedded_secrets
-from backend.app.orchestration.conditions import validate_condition
+from backend.app.orchestration.policies.conditions import validate_condition
 
 ConditionOperator = Literal[
     "equals",

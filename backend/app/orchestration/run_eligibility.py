@@ -6,8 +6,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.audit.service import AuditService
-from backend.app.orchestration.conditions import evaluate_task_step_condition
-from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
+from backend.app.orchestration.policies.conditions import evaluate_task_step_condition
+from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.orchestration.steps.dependencies import dependencies_satisfied, dependency_decision
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.message_append import TaskMessageAppendService

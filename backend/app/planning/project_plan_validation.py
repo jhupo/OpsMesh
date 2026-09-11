@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from graphlib import CycleError, TopologicalSorter
 
-from backend.app.orchestration.conditions import (
+from backend.app.orchestration.policies.conditions import (
     ConditionValidationError,
     condition_step_references,
     validate_condition,

@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.orchestration.statuses import ACTIVE_RUN_STATUS_VALUES
+from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
