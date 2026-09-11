@@ -20,7 +20,7 @@ from backend.app.model_providers.resolution import ModelProviderResolutionServic
 from backend.app.orchestration.run_agent_tool_authorization import (
     AgentToolAuthorizationSnapshotService,
 )
-from backend.app.orchestration.run_authorization_integrity import (
+from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.orchestration.run_request.builder import RunRequestBuilder
