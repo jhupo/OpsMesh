@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime_manager.core.contracts import (
     RuntimeExecutionMode,
     RuntimeLimits,
     validate_runtime_execution_mode,

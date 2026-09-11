@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from backend.app.runtime_manager.contracts import DockerRuntimeClient
+from backend.app.runtime_manager.core.contracts import DockerRuntimeClient
 from backend.app.runtime_manager.docker_client import DockerSdkRuntimeClient
 
 

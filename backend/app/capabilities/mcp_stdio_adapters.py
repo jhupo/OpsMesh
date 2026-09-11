@@ -21,7 +21,7 @@ from backend.app.capabilities.mcp_stdio_credentials import (
     self_hosted_stdio_environment_refs,
 )
 from backend.app.capabilities.models import McpCredentialReference, McpServer
-from backend.app.runtime_manager.contracts import RuntimeCommandInputFile
+from backend.app.runtime_manager.core.contracts import RuntimeCommandInputFile
 from backend.app.runtime_manager.manager import RuntimeManager
 from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService

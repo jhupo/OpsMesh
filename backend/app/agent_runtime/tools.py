@@ -31,7 +31,7 @@ from backend.app.capabilities.models import McpToolAllowlist
 from backend.app.core.config import Settings
 from backend.app.files.storage import ObjectStorage
 from backend.app.memory.working import AgentWorkingMemoryService
-from backend.app.runtime_manager.contracts import DockerRuntimeClient
+from backend.app.runtime_manager.core.contracts import DockerRuntimeClient
 from backend.app.secrets.service import SecretEncryptionService
 
 

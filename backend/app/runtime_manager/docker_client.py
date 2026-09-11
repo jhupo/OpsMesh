@@ -16,7 +16,7 @@ from docker.models.containers import Container
 from docker.types import Mount
 from requests.exceptions import Timeout as RequestsTimeout
 
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime_manager.core.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,

@@ -11,7 +11,7 @@ from backend.app.runtime_manager.command_output import (
     command_failure_metadata,
     positive_int_limit,
 )
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime_manager.core.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,

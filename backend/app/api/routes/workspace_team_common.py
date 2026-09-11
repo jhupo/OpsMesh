@@ -18,7 +18,7 @@ from backend.app.api.schemas.teams import (
 )
 from backend.app.auth.context import WorkspaceContext
 from backend.app.core.config import Settings
-from backend.app.runtime_manager.contracts import RuntimeLimits
+from backend.app.runtime_manager.core.contracts import RuntimeLimits
 from backend.app.runtime_manager.queued_control import QueuedRuntimeControl
 from backend.app.teams.execution_loop import (
     enqueue_team_execution_loop_job,

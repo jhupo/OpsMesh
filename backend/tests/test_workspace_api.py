@@ -42,7 +42,7 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.model_request import ModelRequestReview
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime_manager.core.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,

@@ -39,7 +39,7 @@ from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime_manager.core.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
 )

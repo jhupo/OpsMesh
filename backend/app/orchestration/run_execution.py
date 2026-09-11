@@ -41,7 +41,7 @@ from backend.app.projects.runtime_io import RunProjectIOService
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.contracts import DockerRuntimeClient
+from backend.app.runtime_manager.core.contracts import DockerRuntimeClient
 from backend.app.runtime_manager.run_environment import (
     RunRuntimeEnvironmentService,
     RuntimeEnvironmentError,

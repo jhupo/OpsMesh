@@ -12,7 +12,7 @@ from backend.app.runtime_manager.cleanup import (
 )
 from backend.app.runtime_manager.command_executor import RuntimeCommandExecutor
 from backend.app.runtime_manager.command_output import lease_metadata
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime_manager.core.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeExecutionMode,

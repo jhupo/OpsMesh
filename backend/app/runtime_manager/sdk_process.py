@@ -4,7 +4,7 @@ import io
 import tarfile
 from dataclasses import dataclass
 
-from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeCommandResult
+from backend.app.runtime_manager.core.contracts import DockerRuntimeClient, RuntimeCommandResult
 
 
 @dataclass(frozen=True, slots=True)

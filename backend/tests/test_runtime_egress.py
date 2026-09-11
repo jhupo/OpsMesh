@@ -1,6 +1,6 @@
 import pytest
 
-from backend.app.runtime_manager.contracts import RuntimeCreateRequest, RuntimeLimits
+from backend.app.runtime_manager.core.contracts import RuntimeCreateRequest, RuntimeLimits
 from backend.app.runtime_manager.docker_client import (
     _docker_network_environment,
     _docker_network_mode,

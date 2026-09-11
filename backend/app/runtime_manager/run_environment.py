@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from backend.app.audit.service import AuditService
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime_manager.core.contracts import (
     DockerRuntimeClient,
     RuntimeCreateRequest,
     RuntimeExecutionMode,

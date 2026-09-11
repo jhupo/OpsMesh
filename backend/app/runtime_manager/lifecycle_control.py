@@ -1,7 +1,7 @@
 from typing import Protocol
 from uuid import UUID
 
-from backend.app.runtime_manager.contracts import RuntimeLimits
+from backend.app.runtime_manager.core.contracts import RuntimeLimits
 from backend.app.runtimes.models import WorkspaceRuntime
 
 
