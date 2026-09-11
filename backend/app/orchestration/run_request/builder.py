@@ -41,8 +41,8 @@ from backend.app.workers.jobs import JobPayload, JobType
 from ..context_budget import ContextBudgetManager, ContextFragment, ContextPriority
 from ..run_agent_tool_authorization import hydrate_agent_tools
 from ..run_cancellation import DatabaseRunCancellation
-from ..run_runtime_authorization import RunRuntimeAuthorizationService
-from ..run_runtime_metadata import RunRuntimeMetadataBuilder
+from ..runtime.authorization import RunRuntimeAuthorizationService
+from ..runtime.metadata import RunRuntimeMetadataBuilder
 from .authorization import (
     RunAuthorizationService,
     file_scope_ids_for_snapshot,

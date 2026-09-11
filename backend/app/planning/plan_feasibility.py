@@ -17,7 +17,7 @@ from backend.app.core.errors import DomainError
 from backend.app.costs.service import CostAccountingService, CostBudgetExceededError
 from backend.app.model_providers.resolution import ModelProviderResolutionService
 from backend.app.orchestration.resource_usage import merge_usage_max, positive_int_usage
-from backend.app.orchestration.scheduler_policy import (
+from backend.app.orchestration.scheduler.policy import (
     SchedulerPolicyResolver,
     WorkspaceSchedulerPolicy,
 )

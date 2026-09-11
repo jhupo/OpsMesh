@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.orchestration.scheduler_policy import WorkspaceSchedulerPolicy
+from backend.app.orchestration.scheduler.policy import WorkspaceSchedulerPolicy
 from backend.app.tasks.models import Task, TaskStep
 
 
