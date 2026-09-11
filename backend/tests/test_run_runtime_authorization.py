@@ -26,7 +26,7 @@ from backend.app.orchestration.run_authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.orchestration.run_request.authorization import RunAuthorizationService
-from backend.app.orchestration.run_runtime_authorization import (
+from backend.app.orchestration.runtime.authorization import (
     RunRuntimeAuthorizationError,
     RunRuntimeAuthorizationService,
 )

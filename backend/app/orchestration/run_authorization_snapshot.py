@@ -25,7 +25,7 @@ from backend.app.orchestration.run_authorization_integrity import (
 )
 from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.orchestration.run_request.utils import dict_copy, uuid_or_none
-from backend.app.orchestration.run_runtime_authorization import (
+from backend.app.orchestration.runtime.authorization import (
     RunRuntimeAuthorizationService,
 )
 from backend.app.planning.agent_plan import is_agent_planning_step, planner_output_schema

@@ -10,7 +10,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.core.errors import DomainError
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_resource_reservations import RunResourceReservationService
-from backend.app.orchestration.run_runtime_authorization import (
+from backend.app.orchestration.runtime.authorization import (
     RunRuntimeAuthorizationError,
     runtime_binding_for_snapshot,
 )
