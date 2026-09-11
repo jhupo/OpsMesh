@@ -16,9 +16,9 @@ from backend.app.agent_runtime.core.errors import (
 from backend.app.core.config import Settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.costs.service import CostAccountingService, CostBudgetExceededError
-from backend.app.orchestration.model_provider_audit import ModelProviderAuditService
-from backend.app.orchestration.model_provider_routing import ModelProviderRoutingService
-from backend.app.orchestration.model_request_approval import ModelRequestApprovalService
+from backend.app.orchestration.models_layer.provider_audit import ModelProviderAuditService
+from backend.app.orchestration.models_layer.provider_routing import ModelProviderRoutingService
+from backend.app.orchestration.models_layer.request_approval import ModelRequestApprovalService
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.runs.models import AgentRun

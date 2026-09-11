@@ -11,8 +11,8 @@ from backend.app.model_providers.health_service import ModelProviderHealthServic
 from backend.app.model_providers.model_api import canonical_model_api
 from backend.app.model_providers.resolution_service import ModelProviderResolutionService
 from backend.app.model_providers.service_models import ModelProviderUnavailableError
-from backend.app.orchestration.model_provider_audit import ModelProviderAuditService
-from backend.app.orchestration.model_request_reviewing import model_provider_fallback_policy
+from backend.app.orchestration.models_layer.provider_audit import ModelProviderAuditService
+from backend.app.orchestration.models_layer.request_reviewing import model_provider_fallback_policy
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_request.builder import RunRequestBuilder
 from backend.app.orchestration.run_request.utils import effective_resolved_model_api

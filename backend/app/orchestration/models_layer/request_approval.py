@@ -8,7 +8,7 @@ from backend.app.approvals.models import Approval
 from backend.app.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
 from backend.app.approvals.service import ApprovalService
 from backend.app.core.config import Settings
-from backend.app.orchestration.model_request_reviewing import (
+from backend.app.orchestration.models_layer.request_reviewing import (
     model_request_review_context,
     model_request_review_fingerprint,
     model_request_review_input,

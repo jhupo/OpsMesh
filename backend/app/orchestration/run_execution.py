@@ -30,7 +30,7 @@ from backend.app.audit.service import AuditService
 from backend.app.core.config import Settings, get_settings
 from backend.app.files.storage import ObjectStorage
 from backend.app.model_providers.service_models import ModelProviderUnavailableError
-from backend.app.orchestration.model_run_gateway import ModelRunGateway
+from backend.app.orchestration.models_layer.run_gateway import ModelRunGateway
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.run_lifecycle import RunLifecycleService
 from backend.app.orchestration.run_request.builder import RunRequestBuilder
