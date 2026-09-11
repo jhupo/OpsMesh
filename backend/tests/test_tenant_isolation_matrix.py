@@ -24,7 +24,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
-from backend.app.exports.models import WorkspaceExportJob
+from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.storage import LocalStorage
 from backend.app.identity.models import User

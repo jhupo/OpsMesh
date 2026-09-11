@@ -1,8 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
-from backend.app.exports.models import WorkspaceExportJob
-from backend.app.exports.status import WorkspaceExportJobStatus
+from backend.app.projects.export_models import WorkspaceExportJob
+from backend.app.projects.export_status import WorkspaceExportJobStatus
 from backend.app.workspaces.data_lifecycle_constants import RECOVERY_READINESS_APPLY_ACTIONS
 from backend.app.workspaces.data_lifecycle_policy import _age_days
 from backend.app.workspaces.data_lifecycle_settings import _safe_int, _string_list, _unique_strings

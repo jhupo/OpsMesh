@@ -12,8 +12,8 @@ from backend.app.agents.models import AgentProfile
 from backend.app.files.artifact_models import Artifact
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.capabilities.models import WorkspaceSkillInstall
-from backend.app.exports.models import WorkspaceExportJob
-from backend.app.exports.status import WorkspaceExportJobStatus
+from backend.app.projects.export_models import WorkspaceExportJob
+from backend.app.projects.export_status import WorkspaceExportJobStatus
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime_spaces.models import RuntimeSpace, RuntimeSpaceQuota

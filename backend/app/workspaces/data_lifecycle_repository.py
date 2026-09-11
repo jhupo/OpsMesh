@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.observability.audit_service import AuditService
-from backend.app.exports.models import WorkspaceExportJob
-from backend.app.exports.status import WorkspaceExportJobStatus
+from backend.app.projects.export_models import WorkspaceExportJob
+from backend.app.projects.export_status import WorkspaceExportJobStatus
 from backend.app.workspaces.data_lifecycle_settings import _ensure_utc_datetime
 from backend.app.workspaces.models import Workspace
 

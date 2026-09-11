@@ -24,8 +24,8 @@ from backend.app.core.request_context import current_log_context
 from backend.app.core.trace_context import TraceContext, trace_context
 from backend.app.observability.cost_models import ModelPricingRule, ModelUsageRecord, WorkspaceCostBudget
 from backend.app.db.base import Base
-from backend.app.exports.models import WorkspaceExportJob
-from backend.app.exports.status import WorkspaceExportJobStatus
+from backend.app.projects.export_models import WorkspaceExportJob
+from backend.app.projects.export_status import WorkspaceExportJobStatus
 from backend.app.identity.models import User
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService

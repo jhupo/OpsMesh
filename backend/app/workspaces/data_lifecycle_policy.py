@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from backend.app.exports.models import WorkspaceExportJob
+from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.workspaces.data_lifecycle_schedule import _backup_schedule_status
 from backend.app.workspaces.data_lifecycle_settings import (
     _backup_settings,

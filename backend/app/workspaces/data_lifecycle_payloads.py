@@ -1,5 +1,5 @@
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.exports.models import WorkspaceExportJob
+from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.workspaces.data_lifecycle_settings import (
     _safe_conflict_summaries,
     _safe_count_map,

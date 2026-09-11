@@ -28,7 +28,7 @@ from backend.app.capabilities.models import (
 )
 from backend.app.observability.cost_models import ModelPricingRule, ModelUsageRecord, WorkspaceCostBudget
 from backend.app.domains.models import DomainItem, DomainProject, ReviewComment, RevisionRequest
-from backend.app.exports.models import WorkspaceExportJob
+from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.identity.models import User, UserAPIToken
 from backend.app.marketplace.models import (

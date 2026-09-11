@@ -14,7 +14,7 @@ from backend.app.api.schemas.exports import (
 from backend.app.api.services.workspace_archive_export_builder import WorkspaceArchiveExportBuilder
 from backend.app.api.services.workspace_archive_export_jobs import WorkspaceArchiveExportJobService
 from backend.app.api.services.workspace_export_builder import WorkspaceExportBuilder
-from backend.app.exports.models import WorkspaceExportJob
+from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.files.storage import ObjectStorage
 from backend.app.workers.jobs import JobPayload
 from backend.app.workers.queue.redis_queue import RedisQueue
