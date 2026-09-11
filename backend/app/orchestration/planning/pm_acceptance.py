@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import dict_list, string_list, string_list_or_single, string_or_default
-from backend.app.orchestration.run_result_payloads import json_object_from_text
+from backend.app.orchestration.runs.result_payloads import json_object_from_text
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
