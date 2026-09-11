@@ -10,7 +10,11 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolExecutor,
 )
 from backend.app.agent_runtime.guardrails import runtime_controls_from_snapshot
-from backend.app.agent_runtime.sandbox.mapper import sandbox_settings_for_claude
+from backend.app.agent_runtime.sandbox.mapper import (
+    manifest_to_openai_run_config,
+    sandbox_settings_for_claude,
+)
+from backend.app.agent_runtime.sandbox.contracts import SandboxManifest
 from backend.app.agent_runtime.sessions import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
@@ -280,6 +284,16 @@ class RunRequestBuilder:
             allowed_tools=allowed_tools,
             metadata=metadata,
         )
+        sandbox = None
+        if _runtime_execution_mode(run) != "none" and model_provider["provider"] in {
+            "openai",
+            "openai-compatible",
+        }:
+            workspace = metadata.get("project_workspace")
+            root = workspace.get("working_directory") if isinstance(workspace, dict) else "/workspace"
+            sandbox = manifest_to_openai_run_config(
+                SandboxManifest(run_id=run.id, root=str(root))
+            )
         return AgentRunRequest(
             agent_profile=profile,
             input_text=context_budget.text,
@@ -296,6 +310,7 @@ class RunRequestBuilder:
             previous_response_id=provider_continuation["previous_response_id"],
             conversation_id=provider_continuation["conversation_id"],
             tracing=tracing,
+            sandbox=sandbox,
             resume_state=AgentRunStateStore(
                 self.session,
                 self.secret_service(),

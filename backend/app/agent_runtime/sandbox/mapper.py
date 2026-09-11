@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from agents.sandbox import Manifest, SandboxRunConfig
 
 from backend.app.agent_runtime.sandbox.contracts import SandboxManifest
 
@@ -12,6 +13,15 @@ def manifest_to_openai_payload(manifest: SandboxManifest) -> dict[str, Any]:
         "environment": dict(manifest.environment),
         "files": list(manifest.files),
     }
+
+
+def manifest_to_openai_run_config(manifest: SandboxManifest) -> SandboxRunConfig:
+    """Build the official OpenAI SDK sandbox configuration from an OpsMesh manifest."""
+    return SandboxRunConfig(
+        manifest=Manifest(
+            root=manifest.root,
+        )
+    )
 
 
 def sandbox_settings_for_claude(*, network_disabled: bool) -> dict[str, Any]:
