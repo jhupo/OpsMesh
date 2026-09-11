@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
 from backend.app.orchestration.run_eligibility import RunEligibilityService
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.orchestration.runs.job_routing import RunJobRoutingService
