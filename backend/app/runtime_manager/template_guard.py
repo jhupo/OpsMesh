@@ -8,8 +8,9 @@ from backend.app.runtime_manager.contracts import RuntimeLimits
 from backend.app.runtime_manager.runtime_policy import (
     RuntimePolicyResolution,
     RuntimePolicyResolver,
+    policy_disables_network,
 )
-from backend.app.runtime_manager.safety import RuntimeSafetyPolicy
+from backend.app.runtime_manager.safety import RuntimeSafetyError, RuntimeSafetyPolicy
 from backend.app.runtime_spaces.service import RuntimeSpaceService
 from backend.app.runtimes.models import RuntimeTemplate
 
@@ -43,6 +44,14 @@ class RuntimeTemplateGuard:
             requested_limits=limits,
             requested_network_disabled=network_disabled,
         )
+        if (
+            not network_disabled
+            and policy_disables_network({"network": template.default_network_policy})
+        ):
+            raise RuntimeSafetyError(
+                "runtime_network_globally_disabled",
+                "Runtime network access is disabled by platform safety policy",
+            )
         self._safety.assert_template_allowed(template)
         self._safety.assert_network_allowed(
             template,

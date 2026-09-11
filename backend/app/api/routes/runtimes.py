@@ -224,22 +224,23 @@ async def execute_runtime_command(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if command is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime not found")
-    _enqueue_runtime_control(
-        queue,
-        JobPayload(
-            workspace_id=context.workspace.id,
-            job_type=JobType.RUNTIME_CONTROL,
-            resource_id=runtime_id,
-            requested_by_user_id=context.user.user_id,
-            idempotency_key=f"runtime.command:{context.workspace.id}:{command.id}",
-            routing={
-                "action": "command",
-                "runtime_command_id": str(command.id),
-                "command": request.command,
-            },
-        ),
-        force=True,
-    )
+    if command.status == "queued":
+        _enqueue_runtime_control(
+            queue,
+            JobPayload(
+                workspace_id=context.workspace.id,
+                job_type=JobType.RUNTIME_CONTROL,
+                resource_id=runtime_id,
+                requested_by_user_id=context.user.user_id,
+                idempotency_key=f"runtime.command:{context.workspace.id}:{command.id}",
+                routing={
+                    "action": "command",
+                    "runtime_command_id": str(command.id),
+                    "command": request.command,
+                },
+            ),
+            force=True,
+        )
     return RuntimeCommandResponse.model_validate(command)
 
 

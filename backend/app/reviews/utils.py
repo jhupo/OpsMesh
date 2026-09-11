@@ -47,6 +47,9 @@ _PRIVATE_REVIEW_DEFAULTS = {
     "mcp_tool_allowlist": False,
     "mcp_credential_reference": False,
     "plugin": False,
+    # Runtime commands already pass the deterministic command-risk scanner and the platform
+    # approval policy. Semantic review is opt-in for this operator-controlled boundary.
+    "runtime_command": False,
 }
 
 

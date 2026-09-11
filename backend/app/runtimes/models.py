@@ -161,5 +161,6 @@ class RuntimeCommand(UUIDPrimaryKeyMixin, Base):
     exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     stdout: Mapped[str] = mapped_column(String, nullable=False, default="")
     stderr: Mapped[str] = mapped_column(String, nullable=False, default="")
+    error: Mapped[str | None] = mapped_column(String, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)

@@ -29,6 +29,7 @@ class RuntimeControlService:
         docker_client: DockerRuntimeClient | None = None,
     ) -> None:
         self._session = session
+        self._settings = settings
         self._manager_factory = RuntimeManagerFactory(session, settings, docker_client)
         self._safety = RuntimeSafetyPolicy(
             tuple(settings.runtime_allowed_images),

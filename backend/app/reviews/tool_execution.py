@@ -136,15 +136,11 @@ class ToolExecutionReviewService:
             requires_approval=False,
             context=context,
         )
-        semantic = self._resource_reviews.review_tool_execution(
-            workspace_id=workspace_id,
-            tool_kind="runtime_command",
-            tool_name="runtime_shell",
-            arguments=arguments,
-            static_signals=static.signals,
-            context=context,
-        )
-        return _merge_reviews(static, semantic, arguments)
+        # Runtime command authorization is deliberately deterministic. The command scanner
+        # classifies shell/metacharacter/destructive forms, and the platform approval policy is
+        # the review boundary; sending operator commands through a model review would make a
+        # fail-closed provider outage block harmless maintenance commands.
+        return static
 
 
 def _merge_reviews(

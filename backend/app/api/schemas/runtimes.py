@@ -77,6 +77,7 @@ class RuntimeCommandResponse(ORMModel):
     exit_code: int | None
     stdout: str
     stderr: str
+    error: str | None
     started_at: datetime | None
     completed_at: datetime | None
 

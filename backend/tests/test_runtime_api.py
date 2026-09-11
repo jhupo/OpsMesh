@@ -120,7 +120,7 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
     )
     assert created.status_code == 201
     runtime_id = created.json()["id"]
-    assert created.json()["network_policy"] == {"disabled": True}
+    assert created.json()["network_policy"]["disabled"] is True
     assert created.json()["runtime_space_id"] == str(runtime_space.id)
     assert created.json()["status"] == "queued"
     assert created.json()["has_docker_container"] is False
@@ -427,7 +427,7 @@ def test_runtime_api_allows_network_when_template_allows_it() -> None:
     )
 
     assert response.status_code == 201
-    assert response.json()["network_policy"] == {"disabled": False}
+    assert response.json()["network_policy"]["disabled"] is False
     job = queue.dequeue()
     assert job is not None
     WorkerJobHandler(

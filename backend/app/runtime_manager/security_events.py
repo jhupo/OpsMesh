@@ -63,6 +63,31 @@ class RuntimeSecurityEventRecorder:
             )
         )
 
+    def record_command_blocked(
+        self,
+        runtime: WorkspaceRuntime,
+        *,
+        reason: str,
+        metadata: dict[str, object],
+    ) -> None:
+        self._session.add(
+            SecurityEvent(
+                workspace_id=runtime.workspace_id,
+                user_id=None,
+                action="runtime.command.blocked",
+                outcome="blocked",
+                severity="high",
+                source_ip=None,
+                user_agent=None,
+                request_id=None,
+                path="runtime_manager",
+                method="SYSTEM",
+                reason=reason[:512],
+                event_metadata=runtime_security_metadata(runtime) | metadata,
+                created_at=datetime.now(UTC),
+            )
+        )
+
 
 def runtime_security_metadata(runtime: WorkspaceRuntime) -> dict[str, object]:
     return {
