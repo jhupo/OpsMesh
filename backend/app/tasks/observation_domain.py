@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from backend.app.artifacts.models import Artifact
+from backend.app.files.artifact_models import Artifact
 from backend.app.tasks.models import Task
 from backend.app.tasks.observation_utils import count_items, int_value, present
 

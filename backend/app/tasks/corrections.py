@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.tasks import TaskCorrectionRequest
-from backend.app.artifacts.models import Artifact
+from backend.app.files.artifact_models import Artifact
 from backend.app.observability.audit_service import AuditService
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep

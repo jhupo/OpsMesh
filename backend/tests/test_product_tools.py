@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agent_messages.models import AgentMessage
 from backend.app.agents.models import AgentProfile
-from backend.app.artifacts.models import Artifact
+from backend.app.files.artifact_models import Artifact
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.files.models import WorkspaceFile

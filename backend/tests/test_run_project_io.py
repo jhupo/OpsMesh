@@ -16,7 +16,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.artifacts.models import Artifact
+from backend.app.files.artifact_models import Artifact
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.capabilities.models import CapabilityResource
 from backend.app.core.config import Settings

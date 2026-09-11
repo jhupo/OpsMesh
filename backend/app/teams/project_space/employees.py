@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from uuid import UUID
 
-from backend.app.artifacts.models import Artifact
+from backend.app.files.artifact_models import Artifact
 from backend.app.teams.models import AgentTeamMember
 from backend.app.teams.project_space.types import ProjectSpaceRecords
 from backend.app.teams.project_space.utils import mark_latest

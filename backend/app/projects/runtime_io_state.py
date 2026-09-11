@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.artifacts.models import Artifact
+from backend.app.files.artifact_models import Artifact
 from backend.app.observability.audit_service import AuditService
 from backend.app.files.models import FileAccessEvent
 from backend.app.orchestration.run_events import RunEventRecorder

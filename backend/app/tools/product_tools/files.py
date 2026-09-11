@@ -4,8 +4,8 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
-from backend.app.artifacts.models import Artifact
-from backend.app.artifacts.persistence import ArtifactPersistenceError, ArtifactPersistenceService
+from backend.app.files.artifact_models import Artifact
+from backend.app.files.artifact_persistence import ArtifactPersistenceError, ArtifactPersistenceService
 from backend.app.files.content import (
     WorkspaceFileContent,
     WorkspaceFileContentReader,

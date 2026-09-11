@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.artifacts.models import Artifact
+from backend.app.files.artifact_models import Artifact
 from backend.app.observability.audit_service import AuditService
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.orchestration.runs import RunOrchestrationService

@@ -17,7 +17,7 @@ from backend.app.api.services.workspace_import_fields import (
     _uuid_or_none,
 )
 from backend.app.api.services.workspace_import_resolution import _archive_resolution_action
-from backend.app.artifacts.models import Artifact
+from backend.app.files.artifact_models import Artifact
 from backend.app.files.security import safe_filename
 from backend.app.files.storage_transactions import CompensatingObjectStorageWrites
 from backend.app.workspaces.models import Workspace

@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.artifacts.persistence import ArtifactPersistenceService
+from backend.app.files.artifact_persistence import ArtifactPersistenceService
 from backend.app.files.content import (
     DEFAULT_AGENT_FILE_READ_MAX_BYTES,
     DEFAULT_AGENT_READABLE_CONTENT_TYPES,

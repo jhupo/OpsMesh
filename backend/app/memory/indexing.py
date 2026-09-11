@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.artifacts.models import Artifact
+from backend.app.files.artifact_models import Artifact
 from backend.app.files.models import WorkspaceFile
 from backend.app.files.runtime_policy import runtime_file_denial_code
 from backend.app.memory.configuration import initial_embedding_status

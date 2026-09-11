@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.artifacts.models import Artifact
+from backend.app.files.artifact_models import Artifact
 from backend.app.observability.audit_service import AuditService
 from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars

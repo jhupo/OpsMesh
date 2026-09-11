@@ -10,7 +10,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.artifacts.models import Artifact
+from backend.app.files.artifact_models import Artifact
 from backend.app.files.security import safe_filename
 from backend.app.files.storage import ObjectStorage
 from backend.app.files.storage_transactions import (
