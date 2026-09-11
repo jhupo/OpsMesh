@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.orchestration.resource_usage import step_resource_requirements
+from backend.app.orchestration.state.resource_usage import step_resource_requirements
 from backend.app.orchestration.scheduler.policy import WorkspaceSchedulerPolicy
 from backend.app.orchestration.scheduler.team_capacity import (
     TeamMemberCapacityResolver,
