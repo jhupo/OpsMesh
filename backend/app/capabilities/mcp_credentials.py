@@ -11,7 +11,7 @@ from backend.app.api.schemas.capabilities.mcp_credentials import (
     McpCredentialReferenceUpdateRequest,
 )
 from backend.app.audit.service import AuditService
-from backend.app.capabilities.mcp_server_helpers import require_mcp_server
+from backend.app.capabilities.mcp.server_helpers import require_mcp_server
 from backend.app.capabilities.models import McpCredentialReference
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams

@@ -10,11 +10,11 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.agent_tool_policy import agent_mcp_policy_mode
-from backend.app.capabilities.mcp_catalog_service import McpCatalogService
-from backend.app.capabilities.mcp_server_rules import (
+from backend.app.capabilities.mcp.catalog_service import McpCatalogService
+from backend.app.capabilities.mcp.server_rules import (
     credential_status as _credential_status,
 )
-from backend.app.capabilities.mcp_server_rules import (
+from backend.app.capabilities.mcp.server_rules import (
     execution_mode as _execution_mode,
 )
 from backend.app.capabilities.models import (

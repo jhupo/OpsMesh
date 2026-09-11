@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from backend.app.capabilities.mcp_policy import layered_int_policy, layered_optional_int_policy
+from backend.app.capabilities.mcp.policy import layered_int_policy, layered_optional_int_policy
 from backend.app.capabilities.models import McpToolAllowlist
 
 

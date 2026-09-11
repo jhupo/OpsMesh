@@ -9,10 +9,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
+from backend.app.capabilities.mcp.policy import mcp_health_check_stale
 from backend.app.capabilities.mcp.types import McpExecutionRequest
 from backend.app.capabilities.mcp_execution_blocking import McpExecutionBlocker
 from backend.app.capabilities.mcp_execution_context import authorization_snapshot
-from backend.app.capabilities.mcp_policy import mcp_health_check_stale
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.capabilities.schema_validation import validate_parameters
 from backend.app.core.config import Settings
