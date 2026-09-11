@@ -598,15 +598,16 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         )
 
     def _run_config(self, request: AgentRunRequest) -> RunConfig | None:
-        if request.tracing is None:
+        if request.tracing is None and request.sandbox is None:
             return None
+        tracing = request.tracing
         return RunConfig(
-            workflow_name=request.tracing.workflow_name,
-            trace_id=request.tracing.trace_id,
-            group_id=request.tracing.group_id,
-            trace_metadata=request.tracing.metadata,
-            tracing_disabled=request.tracing.disabled,
-            trace_include_sensitive_data=request.tracing.include_sensitive_data,
+            workflow_name=tracing.workflow_name if tracing else None,
+            trace_id=tracing.trace_id if tracing else None,
+            group_id=tracing.group_id if tracing else None,
+            trace_metadata=tracing.metadata if tracing else None,
+            tracing_disabled=tracing.disabled if tracing else True,
+            trace_include_sensitive_data=tracing.include_sensitive_data if tracing else False,
             sandbox=request.sandbox,
         )
 

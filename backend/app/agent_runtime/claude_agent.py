@@ -33,6 +33,7 @@ from claude_agent_sdk.types import (
     SessionKey,
     SessionStore,
     SessionStoreEntry,
+    SandboxSettings,
     ThinkingConfig,
 )
 from pydantic import TypeAdapter, ValidationError
@@ -385,8 +386,10 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             session_store_flush="eager",
             env=env,
         )
-        if isinstance(sandbox_settings, dict):
-            options.sandbox = dict(sandbox_settings)
+        if sandbox_settings is not None:
+            if not isinstance(sandbox_settings, dict):
+                raise TypeError("sandbox_settings must be a Claude Agent SDK SandboxSettings mapping")
+            options.sandbox = SandboxSettings(**sandbox_settings)
         return options
 
     def _input_for_request(self, request: AgentRunRequest) -> str:
