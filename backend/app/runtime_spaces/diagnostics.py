@@ -14,7 +14,7 @@ from backend.app.api.schemas.runtime_spaces import (
     RuntimeSpaceRuntimeDiagnosticResponse,
 )
 from backend.app.core.typing import string_list
-from backend.app.orchestration.blocked_reasons import explain_blocked_reason
+from backend.app.orchestration.policies.blocked_reasons import explain_blocked_reason
 from backend.app.runtime_spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
