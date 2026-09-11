@@ -22,7 +22,7 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
-from backend.app.orchestration.run_authorization_integrity import (
+from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.orchestration.run_request.authorization import RunAuthorizationService
