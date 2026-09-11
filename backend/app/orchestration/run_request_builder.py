@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import (
@@ -30,7 +31,9 @@ from backend.app.memory.context import AgentMemoryContextService
 from backend.app.memory.working import AgentWorkingMemoryService, working_memory_context
 from backend.app.projects.runtime_context import project_runtime_context
 from backend.app.runs.models import AgentRun
+from backend.app.runtime_manager.backends.registry import build_runtime_backend_registry
 from backend.app.runtime_manager.contracts import DockerRuntimeClient
+from backend.app.runtimes.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType
@@ -147,6 +150,14 @@ class RunRequestBuilder:
         if project_workspace is not None:
             metadata["project_workspace"] = project_workspace
         if runtime_binding.execution_runtime_id is not None:
+            runtime = self.session.scalar(
+                select(WorkspaceRuntime).where(
+                    WorkspaceRuntime.id == runtime_binding.execution_runtime_id,
+                    WorkspaceRuntime.workspace_id == run.workspace_id,
+                )
+            )
+            if runtime is None:
+                raise ValueError("Authorized execution runtime is missing")
             metadata["sandbox_session"] = {
                 "session_id": str(runtime_binding.execution_runtime_id),
                 "root": (
@@ -157,6 +168,25 @@ class RunRequestBuilder:
                 "backend": "runtime_manager",
                 "persistent": _runtime_execution_mode(run) == "persistent",
             }
+            backend = build_runtime_backend_registry(
+                self.session, self.docker_client, self.secret_service()
+            ).resolve(runtime.runtime_provider)
+            if backend is not None and hasattr(backend, "sandbox_session"):
+                session = backend.sandbox_session(
+                    SandboxManifest(run_id=run.id, root=str(metadata["sandbox_session"]["root"])),
+                    runtime,
+                )
+                metadata["sandbox_session"] = {
+                    "session_id": session.session_id,
+                    "root": session.root,
+                    "backend": session.backend,
+                    "persistent": session.persistent,
+                }
+                if model_provider["provider"] == "anthropic" and hasattr(backend, "sdk_process"):
+                    process = backend.sdk_process(session)
+                    metadata["sandbox_session"]["cli_path"] = (
+                        process.install_claude_cli_wrapper()
+                    )
         persistent_session_ref = self.persistent_session_ref_for_run(run, task, profile)
         working_policy = working_memory_policy(authorization_snapshot.get("memory_policy"))
         working_entries = AgentWorkingMemoryService(self.session).prepare_run(
