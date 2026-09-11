@@ -212,7 +212,7 @@ class SelfHostedIdentityService:
         data: WorkerHeartbeatRequest,
         capabilities: dict[str, object],
     ) -> CapabilityAttestationResult:
-        if data.attestation is None and not data.capabilities:
+        if data.attestation is None and capabilities == auth.worker.capabilities:
             return CapabilityAttestationResult(
                 state=auth.worker.capability_attestation_state or "untrusted",
                 fingerprint=auth.worker.capability_attestation_fingerprint,

@@ -1815,6 +1815,15 @@ def test_self_hosted_signed_capability_attestation_is_verified_but_not_host_isol
     assert worker.capability_attestation_metadata["verification_method"] == "hmac-sha256"
     assert worker.capability_attestation_metadata["host_isolation_verified"] is False
 
+    unchanged = client.post(
+        "/api/v1/self-hosted/heartbeat",
+        headers=_runtime_headers(registered.json()["credential_token"]),
+        json={"status": "online", "capabilities": capabilities},
+    )
+    assert unchanged.status_code == 200
+    session.refresh(worker)
+    assert worker.capability_attestation_state == "verified"
+
     changed = client.post(
         "/api/v1/self-hosted/heartbeat",
         headers=_runtime_headers(registered.json()["credential_token"]),
