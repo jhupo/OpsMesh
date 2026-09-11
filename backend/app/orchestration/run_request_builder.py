@@ -10,11 +10,11 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolExecutor,
 )
 from backend.app.agent_runtime.guardrails import runtime_controls_from_snapshot
+from backend.app.agent_runtime.sandbox.contracts import SandboxManifest
 from backend.app.agent_runtime.sandbox.mapper import (
     manifest_to_openai_run_config,
     sandbox_settings_for_claude,
 )
-from backend.app.agent_runtime.sandbox.contracts import SandboxManifest
 from backend.app.agent_runtime.sessions import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
@@ -146,6 +146,17 @@ class RunRequestBuilder:
         project_workspace = project_runtime_context(self.session, run)
         if project_workspace is not None:
             metadata["project_workspace"] = project_workspace
+        if runtime_binding.execution_runtime_id is not None:
+            metadata["sandbox_session"] = {
+                "session_id": str(runtime_binding.execution_runtime_id),
+                "root": (
+                    project_workspace.get("working_directory")
+                    if isinstance(project_workspace, dict)
+                    else "/workspace"
+                ),
+                "backend": "runtime_manager",
+                "persistent": _runtime_execution_mode(run) == "persistent",
+            }
         persistent_session_ref = self.persistent_session_ref_for_run(run, task, profile)
         working_policy = working_memory_policy(authorization_snapshot.get("memory_policy"))
         working_entries = AgentWorkingMemoryService(self.session).prepare_run(
@@ -290,7 +301,11 @@ class RunRequestBuilder:
             "openai-compatible",
         }:
             workspace = metadata.get("project_workspace")
-            root = workspace.get("working_directory") if isinstance(workspace, dict) else "/workspace"
+            root = (
+                workspace.get("working_directory")
+                if isinstance(workspace, dict)
+                else "/workspace"
+            )
             sandbox = manifest_to_openai_run_config(
                 SandboxManifest(run_id=run.id, root=str(root))
             )
