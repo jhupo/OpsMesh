@@ -19,7 +19,7 @@ from backend.app.capabilities.models import (
     McpToolAllowlist,
     WorkspaceSkillInstall,
 )
-from backend.app.orchestration.run_authorization_integrity import (
+from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.orchestration.run_events import RunEventRecorder
