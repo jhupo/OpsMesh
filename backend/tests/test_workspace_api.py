@@ -10483,22 +10483,22 @@ def test_task_correction_diagnostics_tracks_follow_up_status_and_redacts_metadat
     assert body["summary"]["status_counts"] == {
         "cancelled": 1,
         "completed": 1,
-        "pending": 1,
+        "in_progress": 1,
     }
     assert body["summary"]["mode_counts"] == {
         "replace_artifact": 1,
         "revise": 1,
         "stop_work": 1,
     }
-    assert body["summary"]["blocked_corrections"] == 1
+    assert body["summary"]["blocked_corrections"] == 0
     by_mode = {item["mode"]: item for item in body["corrections"]}
     assert by_mode["replace_artifact"]["status"] == "completed"
     assert by_mode["replace_artifact"]["metadata"]["token"] == "[redacted]"
     assert by_mode["replace_artifact"]["created_step"]["result_summary"] == ("Replacement complete")
     assert by_mode["replace_artifact"]["artifacts"][0]["filename"] == "replacement.pdf"
     assert by_mode["replace_artifact"]["blocked_reasons"] == []
-    assert by_mode["revise"]["status"] == "pending"
-    assert by_mode["revise"]["blocked_reasons"] == ["follow_up_waiting_to_start"]
+    assert by_mode["revise"]["status"] == "in_progress"
+    assert by_mode["revise"]["blocked_reasons"] == []
     assert by_mode["stop_work"]["status"] == "cancelled"
     assert "hidden-token" not in str(body)
     assert "sk-hidden" not in str(body)
@@ -12108,3 +12108,70 @@ def _patch_portable_types_for_sqlite() -> None:
                 column.type = column.type.as_generic()
             if isinstance(column.type, JSONB):
                 column.type = SqliteJSON()
+
+
+def test_task_control_and_delivery_routes_close_manual_intervention_loop() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Manual delivery gate",
+        status="running",
+    )
+    session.add(task)
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Required delivery",
+        status="completed",
+        order_index=1,
+        expected_artifacts=["final_delivery"],
+    )
+    session.add(step)
+    session.commit()
+
+    instruction = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control",
+        headers=_headers(owner.id),
+        json={"action": "add_instruction", "instruction": "Keep the final delivery concise."},
+    )
+    diagnostics = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control-diagnostics",
+        headers=_headers(owner.id),
+    )
+    review = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/delivery-review",
+        headers=_headers(owner.id),
+    )
+    deferred = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/delivery-decision",
+        headers=_headers(owner.id),
+        json={"action": "approve", "summary": "Approve after review."},
+    )
+    overridden = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/delivery-decision",
+        headers=_headers(owner.id),
+        json={
+            "action": "approve",
+            "summary": "Approve with documented exception.",
+            "override": True,
+            "override_reason": "Business owner accepted the missing optional delivery artifact.",
+        },
+    )
+
+    assert instruction.status_code == 200
+    assert instruction.json()["action"] == "add_instruction"
+    assert diagnostics.status_code == 200
+    assert diagnostics.json()["control"]["instruction_count"] == 1
+    assert review.status_code == 200
+    assert review.json()["status"] == "incomplete"
+    assert deferred.status_code == 200
+    assert deferred.json()["details"]["finalization"]["status"] == "deferred"
+    assert deferred.json()["details"]["finalization"]["reason"] == "expected_artifacts_missing"
+    assert overridden.status_code == 200
+    assert overridden.json()["details"]["finalization"]["status"] == "finalized"
+    assert overridden.json()["details"]["finalization"]["reason"] == "overridden"
+    session.refresh(task)
+    assert task.status == "completed"

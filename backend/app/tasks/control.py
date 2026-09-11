@@ -246,7 +246,7 @@ class TaskControlService:
                 "reason": request.reason,
             },
         )
-        result = TaskCorrectionService(self._session).create_correction(
+        result = TaskCorrectionService(self._session, queue=self._queue).create_correction(
             workspace_id=task.workspace_id,
             task_id=task.id,
             actor_user_id=actor_user_id,

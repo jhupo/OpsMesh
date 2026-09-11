@@ -52,6 +52,8 @@ class TaskDeliveryDecisionRequest(BaseModel):
     correction_mode: str | None = Field(default=None, pattern=CORRECTION_MODE_PATTERN)
     target_type: str | None = Field(default=None, pattern=CORRECTION_TARGET_PATTERN)
     target_id: UUID | None = None
+    override: bool = False
+    override_reason: str | None = Field(default=None, max_length=1_000)
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
@@ -62,6 +64,7 @@ class TaskCorrectionResponse(BaseModel):
     created_step_id: UUID | None
     message_id: UUID
     status: str
+    scheduled_run_ids: list[UUID] = Field(default_factory=list)
 
 
 class TaskOperatorActionResponse(BaseModel):

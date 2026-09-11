@@ -6,9 +6,15 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.tasks import (
+    TaskControlActionRequest,
+    TaskControlActionResponse,
+    TaskControlDiagnosticsResponse,
     TaskCorrectionDiagnosticsResponse,
     TaskCorrectionRequest,
     TaskCorrectionResponse,
+    TaskDeliveryDecisionRequest,
+    TaskDeliveryDecisionResponse,
+    TaskDeliveryReviewResponse,
     TaskExecutionDiagnosticsResponse,
     TaskManagerDiagnosticsResponse,
     TaskObservationResponse,
@@ -20,13 +26,19 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.session import get_db_session
+from backend.app.tasks.control import TaskControlService
+from backend.app.tasks.control_diagnostics import TaskControlDiagnosticsService
 from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
 from backend.app.tasks.corrections import TaskCorrectionService
+from backend.app.tasks.delivery_decisions import TaskDeliveryDecisionService
+from backend.app.tasks.delivery_review import TaskDeliveryReviewService
 from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.tasks.observation import TaskObservationService
 from backend.app.tasks.operator_actions import TaskOperatorActionService
 from backend.app.tasks.timeline import TaskTimelineService
+from backend.app.workers.dependencies import get_worker_queue
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]
@@ -47,9 +59,10 @@ async def create_task_correction(
     request: TaskCorrectionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> TaskCorrectionResponse:
     try:
-        correction = TaskCorrectionService(session).create_correction(
+        correction = TaskCorrectionService(session, queue=queue).create_correction(
             workspace_id=context.workspace.id,
             task_id=task_id,
             actor_user_id=context.user.user_id,
@@ -60,6 +73,92 @@ async def create_task_correction(
     if correction is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskCorrectionResponse(**correction.__dict__)
+
+
+@router.post(
+    "/tasks/{task_id}/control",
+    response_model=TaskControlActionResponse,
+)
+async def apply_task_control_action(
+    task_id: UUID,
+    request: TaskControlActionRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> TaskControlActionResponse:
+    try:
+        response = TaskControlService(session, queue=queue).apply_action(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            actor_user_id=context.user.user_id,
+            request=request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskControlActionResponse.model_validate(response)
+
+
+@router.get(
+    "/tasks/{task_id}/control-diagnostics",
+    response_model=TaskControlDiagnosticsResponse,
+)
+async def get_task_control_diagnostics(
+    task_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskControlDiagnosticsResponse:
+    diagnostics = TaskControlDiagnosticsService(session).get_diagnostics(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+    )
+    if diagnostics is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskControlDiagnosticsResponse.model_validate(diagnostics)
+
+
+@router.get(
+    "/tasks/{task_id}/delivery-review",
+    response_model=TaskDeliveryReviewResponse,
+)
+async def get_task_delivery_review(
+    task_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskDeliveryReviewResponse:
+    review = TaskDeliveryReviewService(session).get_review(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+    )
+    if review is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskDeliveryReviewResponse.model_validate(review)
+
+
+@router.post(
+    "/tasks/{task_id}/delivery-decision",
+    response_model=TaskDeliveryDecisionResponse,
+)
+async def apply_task_delivery_decision(
+    task_id: UUID,
+    request: TaskDeliveryDecisionRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
+    session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> TaskDeliveryDecisionResponse:
+    try:
+        response = TaskDeliveryDecisionService(session, queue=queue).apply_decision(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            actor_user_id=context.user.user_id,
+            request=request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskDeliveryDecisionResponse.model_validate(response)
 
 
 @router.get(
@@ -183,4 +282,3 @@ async def get_task_manager_diagnostics(
     if diagnostics is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskManagerDiagnosticsResponse.model_validate(diagnostics)
-

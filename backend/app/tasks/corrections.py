@@ -14,6 +14,7 @@ from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 STEP_STATUS_QUEUED = "queued"
 
@@ -26,11 +27,13 @@ class TaskCorrectionResult:
     created_step_id: UUID | None
     message_id: UUID
     status: str
+    scheduled_run_ids: tuple[UUID, ...] = ()
 
 
 class TaskCorrectionService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, queue: RedisQueue | None = None) -> None:
         self._session = session
+        self._queue = queue
 
     def create_correction(
         self,
@@ -56,6 +59,8 @@ class TaskCorrectionService:
                 TaskStateService().reset_to_draft(task)
                 TaskStateService().transition(task, TaskStatus.QUEUED)
                 TaskStateService().transition(task, TaskStatus.RUNNING)
+            elif task.status == TaskStatus.BLOCKED.value:
+                TaskStateService().transition(task, TaskStatus.RUNNING)
 
         message = self._append_message(
             task,
@@ -78,7 +83,11 @@ class TaskCorrectionService:
             },
         )
         self._session.commit()
+        scheduled_run_ids = self._schedule_follow_up(task, actor_user_id)
+        if scheduled_run_ids:
+            self._session.commit()
         self._session.refresh(message)
+        self._session.refresh(task)
         if created_step is not None:
             self._session.refresh(created_step)
         return TaskCorrectionResult(
@@ -88,7 +97,24 @@ class TaskCorrectionService:
             created_step_id=created_step.id if created_step is not None else None,
             message_id=message.id,
             status=task.status,
+            scheduled_run_ids=tuple(scheduled_run_ids),
         )
+
+    def _schedule_follow_up(self, task: Task, actor_user_id: UUID) -> list[UUID]:
+        if self._queue is None or task.status not in {
+            TaskStatus.RUNNING.value,
+            TaskStatus.QUEUED.value,
+        }:
+            return []
+        # Scheduling is deliberately delegated to the existing workspace scheduler so
+        # corrections use the same dependency, capacity, quota, and idempotency gates.
+        from backend.app.orchestration.runs import RunOrchestrationService
+
+        runs = RunOrchestrationService(self._session, queue=self._queue).schedule_workspace_steps(
+            workspace_id=task.workspace_id,
+            requested_by_user_id=actor_user_id,
+        )
+        return [run.id for run in runs]
 
     def _resolve_target(
         self,
@@ -108,6 +134,11 @@ class TaskCorrectionService:
                 "task_step_id": str(step.id),
                 "work_package_id": step.work_package_id,
                 "title": step.title,
+                "agent_profile_id": (
+                    str(step.assigned_agent_profile_id)
+                    if step.assigned_agent_profile_id is not None
+                    else None
+                ),
             }
         if request.target_type == "agent":
             agent = self._require_agent(task.workspace_id, request.target_id)
@@ -135,6 +166,7 @@ class TaskCorrectionService:
     ) -> TaskStep:
         order_index = self._next_step_order(task)
         title = _step_title(request)
+        assigned_agent_profile_id = _assigned_agent_profile_id(task, target_payload)
         step = TaskStep(
             workspace_id=task.workspace_id,
             task_id=task.id,
@@ -142,6 +174,7 @@ class TaskCorrectionService:
             work_package_id=f"correction-{request.mode}-{order_index}",
             title=title,
             description=request.instruction,
+            assigned_agent_profile_id=assigned_agent_profile_id,
             status=STEP_STATUS_QUEUED,
             order_index=order_index,
             expected_artifacts=_expected_artifacts(request),
@@ -245,3 +278,13 @@ def _expected_artifacts(request: TaskCorrectionRequest) -> list[str]:
     if request.target_type == "final_output":
         return ["final_delivery"]
     return ["correction_result"]
+
+
+def _assigned_agent_profile_id(task: Task, target_payload: dict[str, object]) -> UUID | None:
+    raw_profile_id = target_payload.get("agent_profile_id")
+    if isinstance(raw_profile_id, str):
+        try:
+            return UUID(raw_profile_id)
+        except ValueError:
+            pass
+    return task.owner_agent_profile_id

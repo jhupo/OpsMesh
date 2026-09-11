@@ -12,10 +12,12 @@ from backend.app.memory.episodic import AgentEpisodicMemoryService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.corrections import TaskCorrectionResult, TaskCorrectionService
+from backend.app.tasks.delivery_review import TaskDeliveryReviewService
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TaskStatus
+from backend.app.workers.queue.redis_queue import RedisQueue
 
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,
@@ -30,8 +32,9 @@ FINAL_STEP_STATUSES = {"completed", "cancelled", "skipped"}
 class TaskDeliveryDecisionService:
     """Apply owner/manager delivery acceptance decisions for a task."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, queue: RedisQueue | None = None) -> None:
         self._session = session
+        self._queue = queue
 
     def apply_decision(
         self,
@@ -64,7 +67,13 @@ class TaskDeliveryDecisionService:
             request=request,
         )
         final_output = _final_output_from_decision(decision_message)
-        finalization = self._finalization_result(task, request.finalize, final_output)
+        finalization = self._finalization_result(
+            task,
+            finalize=request.finalize,
+            final_output=final_output,
+            override=request.override,
+            override_reason=request.override_reason,
+        )
         if finalization["status"] == "finalized":
             AgentEpisodicMemoryService(self._session).capture_task_completed(
                 task,
@@ -78,6 +87,7 @@ class TaskDeliveryDecisionService:
             metadata={
                 "message_id": str(decision_message.id),
                 "finalization": finalization,
+                "override": request.override,
                 "metadata": request.metadata,
             },
         )
@@ -152,23 +162,50 @@ class TaskDeliveryDecisionService:
         task: Task,
         finalize: bool,
         final_output: dict[str, object],
+        *,
+        override: bool,
+        override_reason: str | None,
     ) -> dict[str, object]:
         if not finalize:
             return {"status": "deferred", "reason": "finalize_disabled"}
-        blocked_reason = self._finalization_blocked_reason(task)
-        if blocked_reason is not None:
-            return {"status": "deferred", "reason": blocked_reason}
+        if override and not override_reason:
+            raise ValueError("override_reason is required for a delivery override")
+        if not override and override_reason:
+            raise ValueError("override_reason requires override=true")
+        blocked_reasons = self._finalization_blocked_reasons(task)
+        if blocked_reasons and not override:
+            return {
+                "status": "deferred",
+                "reason": blocked_reasons[0],
+                "blocked_reasons": blocked_reasons,
+            }
+        if task.status == TaskStatus.COMPLETED.value:
+            task.final_output = final_output
+            return {
+                "status": "finalized",
+                "reason": "overridden" if override and blocked_reasons else "already_completed",
+                "blocked_reasons": blocked_reasons,
+            }
         TaskStateService().transition(
             task,
             TaskStatus.COMPLETED,
             completed_at=datetime.now(UTC),
             final_output=final_output,
         )
-        return {"status": "finalized", "reason": "ready"}
+        return {
+            "status": "finalized",
+            "reason": "overridden" if override and blocked_reasons else "ready",
+            "blocked_reasons": blocked_reasons,
+        }
 
-    def _finalization_blocked_reason(self, task: Task) -> str | None:
-        if task.status not in {TaskStatus.RUNNING.value, TaskStatus.BLOCKED.value}:
-            return "task_status_not_finalizable"
+    def _finalization_blocked_reasons(self, task: Task) -> list[str]:
+        reasons: list[str] = []
+        if task.status not in {
+            TaskStatus.RUNNING.value,
+            TaskStatus.BLOCKED.value,
+            TaskStatus.COMPLETED.value,
+        }:
+            reasons.append("task_status_not_finalizable")
         active_run = self._session.scalar(
             select(AgentRun.id)
             .where(
@@ -179,7 +216,7 @@ class TaskDeliveryDecisionService:
             .limit(1)
         )
         if active_run is not None:
-            return "active_runs_present"
+            reasons.append("active_runs_present")
         incomplete_step = self._session.scalar(
             select(TaskStep.id)
             .where(
@@ -190,8 +227,20 @@ class TaskDeliveryDecisionService:
             .limit(1)
         )
         if incomplete_step is not None:
-            return "task_steps_incomplete"
-        return None
+            reasons.append("task_steps_incomplete")
+        review = TaskDeliveryReviewService(self._session).get_review(
+            workspace_id=task.workspace_id,
+            task_id=task.id,
+        )
+        summary = review.get("summary") if isinstance(review, dict) else None
+        if isinstance(summary, dict):
+            if int(summary.get("missing_expected_artifact_count") or 0) > 0:
+                reasons.append("expected_artifacts_missing")
+            if int(summary.get("pending_review_artifact_count") or 0) > 0:
+                reasons.append("artifacts_pending_review")
+            if int(summary.get("rejected_artifact_count") or 0) > 0:
+                reasons.append("artifacts_rejected")
+        return list(dict.fromkeys(reasons))
 
     def _create_follow_up_correction(
         self,
@@ -213,7 +262,7 @@ class TaskDeliveryDecisionService:
                 "acceptance_message_id": str(decision_message_id),
             },
         )
-        return TaskCorrectionService(self._session).create_correction(
+        return TaskCorrectionService(self._session, queue=self._queue).create_correction(
             workspace_id=task.workspace_id,
             task_id=task.id,
             actor_user_id=actor_user_id,
@@ -238,6 +287,8 @@ class TaskDeliveryDecisionService:
                 "instruction": request.instruction,
                 "actor_user_id": str(actor_user_id),
                 "source": "delivery_decision",
+                "override": request.override,
+                "override_reason": request.override_reason,
                 "metadata": request.metadata,
             },
         )
