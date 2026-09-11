@@ -17,7 +17,7 @@ from backend.app.capabilities.schema_validation import validate_parameters
 from backend.app.core.trace_context import with_current_trace_metadata
 from backend.app.memory.authorization import memory_read_scopes, memory_write_scopes
 from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.orchestration.run_events import RunEventRecorder
+from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.runs.models import AgentRun
 from backend.app.security.models import SecurityEvent
 
