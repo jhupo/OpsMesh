@@ -357,6 +357,7 @@ class AgentRunRequest:
     guardrails: AgentRuntimeGuardrails | None = None
     stream: bool = False
     cancellation: AgentRuntimeCancellation | None = None
+    sandbox: object | None = None
 
 
 @dataclass(frozen=True)

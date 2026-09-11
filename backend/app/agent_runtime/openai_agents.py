@@ -607,6 +607,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             trace_metadata=request.tracing.metadata,
             tracing_disabled=request.tracing.disabled,
             trace_include_sensitive_data=request.tracing.include_sensitive_data,
+            sandbox=request.sandbox,
         )
 
 

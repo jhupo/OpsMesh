@@ -10,6 +10,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolExecutor,
 )
 from backend.app.agent_runtime.guardrails import runtime_controls_from_snapshot
+from backend.app.agent_runtime.sandbox.mapper import sandbox_settings_for_claude
 from backend.app.agent_runtime.sessions import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
@@ -135,6 +136,9 @@ class RunRequestBuilder:
                     else None
                 ),
             }
+        metadata["sandbox_settings"] = sandbox_settings_for_claude(
+            network_disabled=runtime_binding.network_disabled
+        ) if _runtime_execution_mode(run) != "none" else {"enabled": False}
         project_workspace = project_runtime_context(self.session, run)
         if project_workspace is not None:
             metadata["project_workspace"] = project_workspace
@@ -206,6 +210,9 @@ class RunRequestBuilder:
             runtime_binding=runtime_binding.as_runtime_context(),
             metadata=metadata,
         )
+        execution_mode = _runtime_execution_mode(run)
+        if execution_mode == "none":
+            metadata["sandbox_mode"] = "none"
         agent_tools = hydrate_agent_tools(
             session=self.session,
             snapshot=authorization_snapshot,

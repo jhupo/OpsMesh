@@ -353,9 +353,10 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
         }
         if request.base_url:
             env["ANTHROPIC_BASE_URL"] = request.base_url.rstrip("/")
+        sandbox_settings = request.context.metadata.get("sandbox_settings")
         resume_id = _resume_session_id(request) or (session_id if resume_existing else None)
         approved_resume = bool(request.approval_decisions and resume_id)
-        return ClaudeAgentOptions(
+        options = ClaudeAgentOptions(
             tools=[],
             allowed_tools=[],
             system_prompt=request.agent_profile.instructions,
@@ -384,6 +385,9 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             session_store_flush="eager",
             env=env,
         )
+        if isinstance(sandbox_settings, dict):
+            options.sandbox = dict(sandbox_settings)
+        return options
 
     def _input_for_request(self, request: AgentRunRequest) -> str:
         if not request.continuations:
