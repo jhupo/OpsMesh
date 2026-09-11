@@ -43,6 +43,12 @@ class ContextualMcpAdapterResolver:
     def resolve(self, server: McpServer) -> McpToolAdapter:
         if server.server_type != "stdio":
             return self._default_adapter_for(server)
+        runtime_binding = self._context.runtime_binding
+        if runtime_binding is None or runtime_binding.mode == "none":
+            self._deny_stdio(
+                "stdio_requires_runtime",
+                "MCP stdio execution requires an isolated, pooled, or persistent runtime",
+            )
         run = self._current_run()
         if run is None:
             self._deny_stdio("stdio_run_context_invalid", "MCP stdio run context is invalid")
