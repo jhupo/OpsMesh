@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from backend.app.orchestration.run_events import RunEventRecorder
+from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import TaskMessage

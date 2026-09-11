@@ -18,22 +18,26 @@ from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
 from backend.app.api.middleware import _metrics_path
-from backend.app.observability.audit_models import AuditIntegrityCheck
 from backend.app.core.config import Settings
 from backend.app.core.metrics import MetricsRegistry, metrics_registry
-from backend.app.observability.cost_models import ModelPricingRule, ModelUsageRecord, WorkspaceCostBudget
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.observability.audit_models import AuditIntegrityCheck
+from backend.app.observability.cost_models import (
+    ModelPricingRule,
+    ModelUsageRecord,
+    WorkspaceCostBudget,
+)
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.operations.prometheus_worker_metrics import WorkerPrometheusMetrics
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.runtime_manager.models import WorkspaceRuntime
+from backend.app.runtime.models import WorkspaceRuntime
+from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.teams.models import AgentTeam
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workspaces.models import Workspace

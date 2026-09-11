@@ -7,7 +7,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.files.models import WorkspaceFile
 from backend.app.projects.diffs import ProjectDiffEntry, diff_json
 from backend.app.projects.models import (
     WorkspaceProject,
@@ -15,6 +14,7 @@ from backend.app.projects.models import (
     WorkspaceProjectFile,
 )
 from backend.app.projects.policy import normalize_project_path
+from backend.app.storage.models import WorkspaceFile
 
 
 @dataclass(frozen=True, slots=True)

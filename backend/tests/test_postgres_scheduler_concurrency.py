@@ -14,10 +14,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.spaces.models import (
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,

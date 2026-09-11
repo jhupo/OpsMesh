@@ -4,9 +4,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.files.artifact_models import Artifact
-from backend.app.files.models import WorkspaceFile
 from backend.app.observability.audit_service import AuditService
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.models import WorkspaceFile
 from backend.app.workspaces.data_lifecycle_policy import (
     _candidate_counts,
     _candidate_payload,

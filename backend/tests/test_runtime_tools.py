@@ -17,15 +17,15 @@ from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
     RuntimeLimits,
 )
-from backend.app.runtime_manager.manager import RuntimeManager
-from backend.app.runtime_manager.models import RuntimeTemplate
+from backend.app.runtime.manager import RuntimeManager
+from backend.app.runtime.models import RuntimeTemplate
 from backend.app.tasks.models import Task
 from backend.app.tasks.status import TaskStatus
 from backend.app.tools.context import ToolContext

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from backend.app.files.artifact_models import Artifact
-from backend.app.files.content import WorkspaceFileContent
-from backend.app.files.models import WorkspaceFile
 from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.content import WorkspaceFileContent
+from backend.app.storage.models import WorkspaceFile
 
 
 def memory_entry_payload(entry: WorkspaceMemoryEntry) -> dict[str, object]:

@@ -25,14 +25,13 @@ from backend.app.model_providers.provider_keys import (
     is_anthropic_provider,
     is_openai_compatible_provider,
 )
-from backend.app.tasks.models import Task
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-
-from ..run_request.authorization import (
+from backend.app.orchestration.requests.authorization import (
     resource_grants_for_snapshot,
     tool_definitions_for_snapshot,
 )
-from ..run_request.utils import dict_copy, string_list, uuid_or_none
+from backend.app.orchestration.requests.utils import dict_copy, string_list, uuid_or_none
+from backend.app.tasks.models import Task
+from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 MAX_AGENT_TOOL_DEPTH = 3
 MAX_AGENT_TOOL_TURNS = 20

@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from backend.app.files.storage import ObjectStorage
+from backend.app.storage.storage import ObjectStorage
 from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.data_lifecycle_scheduler_backup import ScheduledBackupMixin
 from backend.app.workspaces.data_lifecycle_scheduler_restore import ScheduledRestoreDrillMixin

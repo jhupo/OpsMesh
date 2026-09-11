@@ -19,30 +19,30 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.models import AgentProfile
-from backend.app.files.artifact_models import Artifact
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
-from backend.app.projects.export_models import WorkspaceExportJob
-from backend.app.files.models import WorkspaceFile
-from backend.app.files.storage import LocalStorage
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.notifications.models import WorkspaceNotification
+from backend.app.observability.notification_models import WorkspaceNotification
+from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.runtime_manager.dependencies import get_docker_runtime_client
-from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceEvent
-from backend.app.runtime_manager.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.runtime.dependencies import get_docker_runtime_client
+from backend.app.runtime.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.models import WorkspaceFile
+from backend.app.storage.storage import LocalStorage
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam
 from backend.app.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription

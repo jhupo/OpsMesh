@@ -39,10 +39,10 @@ from backend.app.approvals.waiting import ApprovalWaitingService
 from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_NAMES as PRODUCT_TOOL_NAMES
 from backend.app.core.config import Settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
-from backend.app.files.storage import ObjectStorage, create_storage
 from backend.app.memory.authorization import memory_read_scopes, memory_write_scopes
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.redaction import redact_sensitive_text
+from backend.app.storage.storage import ObjectStorage, create_storage
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError
 from backend.app.tools.product_tools.service import ProductToolService

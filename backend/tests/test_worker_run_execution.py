@@ -12,7 +12,6 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
-from backend.app.agent_runtime.providers import openai_agents as openai_runtime
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -21,6 +20,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
+from backend.app.agent_runtime.providers import openai_agents as openai_runtime
 from backend.app.agent_runtime.sessions import PersistentAgentSession
 from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.agents.models import AgentProfile
@@ -28,8 +28,6 @@ from backend.app.approvals.agent_tool_interruptions import AgentToolInterruption
 from backend.app.approvals.decisions import ApprovalDecisionService
 from backend.app.approvals.models import Approval, PendingToolInvocation
 from backend.app.approvals.pending_tools import PendingToolInvocationService
-from backend.app.files.artifact_models import Artifact
-from backend.app.observability.audit_models import AuditEvent
 from backend.app.capabilities.models import (
     CapabilityResource,
     McpCredentialReference,
@@ -50,29 +48,30 @@ from backend.app.model_providers.credential_commands import (
 from backend.app.model_providers.service_models import (
     ModelProviderUnavailableError,
 )
-from backend.app.orchestration.model_request_reviewing import (
+from backend.app.observability.audit_models import AuditEvent
+from backend.app.orchestration.requests.builder import RunRequestBuilder
+from backend.app.orchestration.requests.request_reviewing import (
     model_request_review_fingerprint,
     model_request_review_input,
 )
-from backend.app.orchestration.run_authorization_integrity import (
+from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
-from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
-from backend.app.orchestration.run_control import RunControlService
-from backend.app.orchestration.run_eligibility import RunEligibilityService
-from backend.app.orchestration.run_events import RunEventRecorder
+from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.runs.control import RunControlService
+from backend.app.orchestration.runs.eligibility import RunEligibilityService
+from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.execution import (
     RunExecutionDependencies,
     RunExecutionService,
 )
-from backend.app.orchestration.run_lifecycle import RunLifecycleCallbacks, RunLifecycleService
-from backend.app.orchestration.run_request.builder import RunRequestBuilder
-from backend.app.orchestration.run_resource_reservations import RunResourceReservationService
-from backend.app.orchestration.steps.launcher import RunStepLauncher
-from backend.app.orchestration.runs import (
+from backend.app.orchestration.runs.lifecycle import RunLifecycleCallbacks, RunLifecycleService
+from backend.app.orchestration.runs.resources import RunResourceReservationService
+from backend.app.orchestration.runs.service import (
     RunOrchestrationService,
 )
-from backend.app.orchestration.steps.scheduling_state import (
+from backend.app.orchestration.workflows.step_launcher import RunStepLauncher
+from backend.app.orchestration.workflows.step_scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
@@ -84,14 +83,15 @@ from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.activity import activity_phase
 from backend.app.runs.models import AgentRun, AgentRunStateSnapshot, RunEvent
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.spaces.models import (
+from backend.app.runtime.models import WorkspaceRuntime
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
+from backend.app.storage.artifact_models import Artifact
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeam, AgentTeamMember

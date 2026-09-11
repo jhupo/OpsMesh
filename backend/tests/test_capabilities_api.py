@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.models import AgentProfile
-from backend.app.observability.audit_models import AuditEvent
 from backend.app.capabilities.models import McpCredentialReference, McpServer, McpToolCallLog, Skill
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
@@ -23,6 +22,7 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.reviews.llm import LlmReviewResult, StructuredResourceReview
 from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService

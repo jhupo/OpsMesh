@@ -1,4 +1,4 @@
-from backend.app.runtime_manager.service import RuntimeControlService
+from backend.app.runtime.service import RuntimeControlService
 from backend.app.teams.execution_loop import TeamExecutionLoopService
 from backend.app.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.workers.jobs import JobPayload

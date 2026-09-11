@@ -7,15 +7,6 @@ import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 from claude_agent_sdk.types import PreToolUseHookInput
 
-from backend.app.agent_runtime.claude.runner import (
-    ClaudeAgentSDKRunner,
-    ClaudeAgentSessionStore,
-    _approval_hook,
-    _ApprovalState,
-    _effort_setting,
-    _session_id,
-    _thinking_setting,
-)
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeApprovalDecision,
@@ -24,6 +15,15 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeResumeState,
     AgentRuntimeToolDefinition,
     AgentRuntimeToolResult,
+)
+from backend.app.agent_runtime.providers.claude_runner import (
+    ClaudeAgentSDKRunner,
+    ClaudeAgentSessionStore,
+    _approval_hook,
+    _ApprovalState,
+    _effort_setting,
+    _session_id,
+    _thinking_setting,
 )
 from backend.app.agents.models import AgentProfile
 

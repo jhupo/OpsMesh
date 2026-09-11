@@ -23,11 +23,11 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
-from backend.app.orchestration.definition_commands import (
+from backend.app.orchestration.workflows.definition_commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
 )
-from backend.app.orchestration.definitions import (
+from backend.app.orchestration.workflows.definitions import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
 )

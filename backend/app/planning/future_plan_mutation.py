@@ -12,13 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.observability.audit_service import AuditService
-from backend.app.orchestration.policies.conditions import condition_step_references
-from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.orchestration.team_step_project_plan import (
+from backend.app.orchestration.workflows.conditions import condition_step_references
+from backend.app.orchestration.workflows.planning_team_project_plan import (
     ProjectPlanStepMaterializer,
     after_step_ids_for_package,
     step_dependencies_for_package,
 )
+from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.planning.agent_plan import PlannedWork
 from backend.app.planning.plan_feasibility import PlanFeasibilityService
 from backend.app.planning.project_plan_validation import (
@@ -759,7 +759,7 @@ class TaskPlanMutationService:
             return None
         if task.status in {"blocked", "failed"}:
             TaskStateService().reset_to_draft(task)
-        from backend.app.orchestration.runs import RunOrchestrationService
+        from backend.app.orchestration.runs.service import RunOrchestrationService
 
         run = RunOrchestrationService(self._session).create_queued_run_for_task(task)
         if run is not None and queue is not None:

@@ -8,10 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import dict_or_empty, uuid_or_none
-from backend.app.files.artifact_models import Artifact
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.storage.artifact_models import Artifact
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
 ACTIVE_RUN_STATUSES = {

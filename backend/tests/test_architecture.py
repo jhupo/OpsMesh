@@ -1,5 +1,7 @@
 """Exercise the adopted linter against actual source, including intentional violations."""
 
+import ast
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -10,6 +12,69 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_consolidated_domains_have_one_source_owner() -> None:
+    app = ROOT / "backend/app"
+    for name in (
+        "runtime",
+        "storage",
+        "observability",
+        "agent_runtime/providers",
+        "agent_runtime/runtime",
+        "orchestration/requests",
+        "orchestration/runs",
+        "orchestration/workflows",
+    ):
+        assert (app / name / "__init__.py").is_file(), name
+    for name in (
+        "runtime_manager",
+        "runtime_spaces",
+        "runtimes",
+        "files",
+        "artifacts",
+        "exports",
+        "audit",
+        "costs",
+        "telemetry",
+        "notifications",
+        "agent_runtime/openai",
+        "agent_runtime/claude",
+        "agent_runtime/sandbox",
+        "orchestration/models_layer",
+        "orchestration/run_request",
+        "orchestration/planning",
+        "orchestration/policies",
+        "orchestration/state",
+        "orchestration/steps",
+        "orchestration/scheduler",
+        "orchestration/runtime",
+    ):
+        assert not list((app / name).rglob("*.py")), name
+
+
+def test_local_application_imports_resolve_without_compatibility_shims() -> None:
+    missing = []
+    for path in (ROOT / "backend/app").rglob("*.py"):
+        module = ".".join(path.relative_to(ROOT).with_suffix("").parts)
+        package = module.rsplit(".", 1)[0]
+        for node in ast.walk(ast.parse(path.read_text("utf-8-sig"))):
+            targets = []
+            if isinstance(node, ast.ImportFrom):
+                name = "." * node.level + (node.module or "")
+                targets = [importlib.util.resolve_name(name, package) if node.level else name]
+            elif isinstance(node, ast.Import):
+                targets = [item.name for item in node.names]
+            for target in targets:
+                if not target.startswith("backend.app"):
+                    continue
+                source = ROOT.joinpath(*target.split("."))
+                if (
+                    not source.with_suffix(".py").is_file()
+                    and not (source / "__init__.py").is_file()
+                ):
+                    missing.append(f"{path.relative_to(ROOT)}:{node.lineno}: {target}")
+    assert not missing, "Unresolved application imports:\n" + "\n".join(missing)
 
 
 def test_all_application_modules_are_discoverable_packages() -> None:

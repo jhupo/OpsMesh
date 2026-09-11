@@ -1,5 +1,5 @@
 from backend.app.api.services.exports import WorkspaceExportService
-from backend.app.files.storage import create_storage
+from backend.app.storage.storage import create_storage
 from backend.app.webhooks.service import WebhookDeliveryService
 from backend.app.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.workers.jobs import JobPayload

@@ -9,18 +9,18 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolResult,
 )
 from backend.app.agents.models import AgentProfile
-from backend.app.orchestration.policies.conditions import evaluate_task_step_condition
 from backend.app.orchestration.models import SubworkflowInvocation
-from backend.app.orchestration.run_eligibility import RunEligibilityService
+from backend.app.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.orchestration.runs.execution import RunExecutionDependencies, RunExecutionService
-from backend.app.orchestration.steps.completion import TaskStepCompletionService
-from backend.app.orchestration.workflows.subworkflows import (
-    SubworkflowExecutionError,
-    SubworkflowExecutionService,
-)
+from backend.app.orchestration.workflows.conditions import evaluate_task_step_condition
 from backend.app.orchestration.workflows.data import (
     WorkflowDataBindingError,
     resolve_workflow_inputs,
+)
+from backend.app.orchestration.workflows.step_completion import TaskStepCompletionService
+from backend.app.orchestration.workflows.subworkflows import (
+    SubworkflowExecutionError,
+    SubworkflowExecutionService,
 )
 from backend.app.planning.workflow_contracts import WorkflowNode
 from backend.app.runs.models import AgentRun

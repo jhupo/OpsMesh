@@ -17,8 +17,8 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
-from backend.app.orchestration.run_control import RunControlService
-from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.orchestration.runs.control import RunControlService
+from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.projects.runtime_io_queries import RunProjectIOQueryService
 from backend.app.workers.dependencies import get_worker_queue

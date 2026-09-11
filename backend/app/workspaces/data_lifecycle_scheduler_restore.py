@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from pydantic import ValidationError
 
 from backend.app.api.services.exports import WorkspaceExportService
-from backend.app.files.storage import ObjectStorage
+from backend.app.storage.storage import ObjectStorage
 from backend.app.workspaces.data_lifecycle_schedule import (
     _backup_interval_hours,
     _restore_drill_due,

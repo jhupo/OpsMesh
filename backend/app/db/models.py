@@ -25,8 +25,6 @@ from backend.app.capabilities.models import (
     WorkspaceSkillInstall,
 )
 from backend.app.domains.models import DomainItem, DomainProject, ReviewComment, RevisionRequest
-from backend.app.files.artifact_models import Artifact
-from backend.app.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.identity.models import User, UserAPIToken
 from backend.app.marketplace.models import (
     MarketplaceListing,
@@ -44,13 +42,13 @@ from backend.app.memory.models import (
     WorkspaceMemoryVersion,
 )
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.notifications.models import WorkspaceNotification
 from backend.app.observability.audit_models import AuditEvent, AuditIntegrityCheck
 from backend.app.observability.cost_models import (
     ModelPricingRule,
     ModelUsageRecord,
     WorkspaceCostBudget,
 )
+from backend.app.observability.notification_models import WorkspaceNotification
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.orchestration.models import (
     OrchestrationDefinition,
@@ -68,14 +66,14 @@ from backend.app.projects.models import (
     WorkspaceProjectOutput,
 )
 from backend.app.runs.models import AgentRun, AgentRunStateSnapshot, RunEvent
-from backend.app.runtime_manager.models import (
+from backend.app.runtime.models import (
     RuntimeCommand,
     RuntimeEvent,
     RuntimeLease,
     RuntimeTemplate,
     WorkspaceRuntime,
 )
-from backend.app.runtime_manager.spaces.models import (
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
     RuntimeSpaceEvent,
@@ -96,6 +94,8 @@ from backend.app.self_hosted.models import (
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.models import FileAccessEvent, WorkspaceFile
 from backend.app.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep, TaskTransfer
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription

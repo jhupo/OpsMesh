@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.tasks import TaskControlActionRequest
-from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus

@@ -15,7 +15,7 @@ from backend.app.core.typing import string_list
 from backend.app.observability.audit_service import AuditService
 from backend.app.operations.scheduler_policy import non_empty_string_or_none
 from backend.app.operations.utils import positive_int_or_none
-from backend.app.orchestration.policies.blocked_reasons import explain_blocked_reason
+from backend.app.orchestration.workflows.blocked_reasons import explain_blocked_reason
 from backend.app.tasks.models import Task, TaskStep
 
 

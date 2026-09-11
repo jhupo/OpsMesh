@@ -10,16 +10,16 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.observability.audit_models import AuditEvent
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
-from backend.app.files.models import FileAccessEvent
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.memory.jobs import enqueue_workspace_memory_index_job
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.storage.models import FileAccessEvent
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.jobs import JobType
 from backend.app.workers.queue.redis_queue import RedisQueue

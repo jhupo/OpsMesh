@@ -4,9 +4,9 @@ from collections import defaultdict
 from uuid import UUID
 
 from backend.app.core.typing import counts_by_value, dedupe_strings, dict_or_empty, int_or_zero
-from backend.app.files.artifact_models import Artifact
 from backend.app.runs.activity import run_activity
 from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.storage.artifact_models import Artifact
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.project_dashboard_constants import (
     ACTIVE_RUN_STATUSES,

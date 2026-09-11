@@ -6,13 +6,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.files.models import WorkspaceFile
-from backend.app.files.runtime_policy import runtime_file_denial_code
-from backend.app.orchestration.run_authorization_integrity import (
+from backend.app.orchestration.requests.authorization import RunAuthorizationService
+from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
-from backend.app.orchestration.run_request.authorization import RunAuthorizationService
-from backend.app.orchestration.runtime.authorization import (
+from backend.app.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationError,
     runtime_binding_for_snapshot,
 )
@@ -20,7 +18,9 @@ from backend.app.projects.models import AgentRunProjectSnapshot
 from backend.app.projects.run_manifest import RunProjectManifest
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.models import WorkspaceRuntime
+from backend.app.runtime.models import WorkspaceRuntime
+from backend.app.storage.models import WorkspaceFile
+from backend.app.storage.runtime_policy import runtime_file_denial_code
 from backend.app.tasks.models import Task
 
 MAX_PROJECT_INPUT_FILES = 512

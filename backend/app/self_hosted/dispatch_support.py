@@ -7,15 +7,15 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import string_list
-from backend.app.orchestration.run_request.authorization import RunAuthorizationService
-from backend.app.orchestration.runtime.authorization import RunRuntimeAuthorizationService
+from backend.app.orchestration.requests.authorization import RunAuthorizationService
+from backend.app.orchestration.runs.runtime_authorization import RunRuntimeAuthorizationService
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.models import WorkspaceRuntime
-from backend.app.runtime_manager.spaces.models import RuntimeSpace
-from backend.app.runtime_manager.spaces.reservation_attachment import (
+from backend.app.runtime.models import WorkspaceRuntime
+from backend.app.runtime.spaces.models import RuntimeSpace
+from backend.app.runtime.spaces.reservation_attachment import (
     RuntimeSpaceReservationAttachmentService,
 )
-from backend.app.runtime_manager.spaces.reservation_capacity import (
+from backend.app.runtime.spaces.reservation_capacity import (
     RuntimeSpaceCapacityReservationService,
 )
 from backend.app.self_hosted.jobs import SelfHostedJobFinalizer

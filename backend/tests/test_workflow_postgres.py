@@ -15,12 +15,12 @@ from sqlalchemy.orm import sessionmaker
 from backend.app.agents.models import AgentProfile
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.orchestration.definition_commands import OrchestrationDefinitionCreate
-from backend.app.orchestration.definitions import (
+from backend.app.orchestration.models import OrchestrationDefinition, OrchestrationRevision
+from backend.app.orchestration.workflows.definition_commands import OrchestrationDefinitionCreate
+from backend.app.orchestration.workflows.definitions import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
 )
-from backend.app.orchestration.models import OrchestrationDefinition, OrchestrationRevision
 from backend.app.planning.workflow_contracts import WorkflowNode
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam

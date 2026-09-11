@@ -21,16 +21,16 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
-from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
-from backend.app.orchestration.run_request.builder import RunRequestBuilder
+from backend.app.orchestration.requests.builder import RunRequestBuilder
+from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runtime_manager.spaces.models import (
+from backend.app.runtime.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime_manager.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.models import SecurityEvent
 from backend.app.self_hosted.attestation import (

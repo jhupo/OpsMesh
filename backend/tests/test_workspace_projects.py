@@ -10,17 +10,17 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.observability.audit_models import AuditEvent
 from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
-from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.main import create_app_with_dependencies
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.projects.policy import validate_project_configuration
 from backend.app.rate_limits.service import FixedWindowRateLimiter
 from backend.app.runs.models import AgentRun
+from backend.app.storage.models import WorkspaceFile
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "project-test-token"

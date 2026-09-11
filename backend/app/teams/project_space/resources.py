@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from backend.app.core.typing import counts_by_value
-from backend.app.files.artifact_models import Artifact
-from backend.app.files.models import WorkspaceFile
 from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.models import WorkspaceFile
 
 
 def storage_summary(artifacts: list[Artifact], files: list[WorkspaceFile]) -> dict[str, object]:

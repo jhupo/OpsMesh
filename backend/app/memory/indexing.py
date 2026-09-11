@@ -9,12 +9,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.files.artifact_models import Artifact
-from backend.app.files.models import WorkspaceFile
-from backend.app.files.runtime_policy import runtime_file_denial_code
 from backend.app.memory.configuration import initial_embedding_status
 from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.models import WorkspaceFile
+from backend.app.storage.runtime_policy import runtime_file_denial_code
 from backend.app.tasks.models import Task
 
 _CHUNK_SIZE = 900

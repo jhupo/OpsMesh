@@ -16,13 +16,10 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.files.artifact_models import Artifact
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
-from backend.app.files.models import WorkspaceFile
-from backend.app.files.storage import LocalStorage
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.projects.models import (
@@ -35,7 +32,10 @@ from backend.app.projects.models import (
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.projects.serialization import sha256_json
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.models import WorkspaceRuntime
+from backend.app.runtime.models import WorkspaceRuntime
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.models import WorkspaceFile
+from backend.app.storage.storage import LocalStorage
 from backend.app.tasks.models import Task
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 from backend.tests.fixtures.project_authorization import authorize_project_run

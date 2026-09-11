@@ -5,9 +5,9 @@ from typing import Any
 from uuid import UUID
 
 from backend.app.agents.models import AgentProfile
-from backend.app.files.artifact_models import Artifact
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.storage.artifact_models import Artifact
 from backend.app.tasks.models import TaskMessage, TaskStep
 
 

@@ -1,107 +1,60 @@
 # Backend application organization audit
 
-## Scope
+## Scope and acceptance
 
-This audit covers `backend/app`, not only `orchestration`. The repository currently has many
-package directories whose only purpose is to contain one or two implementation files. That adds
-import depth and makes ownership harder to discover without improving runtime isolation.
+This consolidation covers package ownership throughout backend/app. It does not claim that every
+feature in the product roadmap is complete. Source moves must update production imports, test
+imports, dynamic patch targets, architecture gates and documentation together, without aliases.
 
-## Findings
+## Current ownership
 
-- `agent_runtime` is split across `core`, `adapters`, `openai`, `claude`, and `sandbox`; these are
-  provider/runtime concerns and should be grouped under one provider/runtime boundary.
-- `runtime_manager` is split across `core`, `backends`, `lifecycle`, and `pool`, while related
-  runtime entities also exist in `runtime_spaces` and `runtimes`.
-- Observability is spread across `audit`, `costs`, and `telemetry` despite sharing event, trace,
-  and usage concerns.
-- Storage concerns are spread across `files`, `artifacts`, `exports`, and `projects`.
-- `orchestration` contains several small packages (`models_layer`, `planning`, `policies`,
-  `state`, `steps`, `workflows`, and `runs`) with overlapping execution/planning ownership.
-- `teams/project_space`, `workers/queue`, and `tools/product_tools` are small nested packages
-  that should remain files or direct children of their owning domain until they have independent
-  lifecycle or extension boundaries.
-
-## Target boundaries
-
-The target is a two-level domain structure. A package is retained only when it represents an
-independent lifecycle, dependency boundary, or extension point.
-
-```text
-backend/app/
-├── api/
-├── auth/
-├── agents/
-├── agent_runtime/
-├── capabilities/
-├── orchestration/
-├── projects/
-├── tasks/
-├── teams/
-├── runs/
-├── runtime/
-├── storage/
-├── observability/
-├── operations/
-└── workers/
-```
-
-Planned consolidations:
-
-| Current areas | Target | Reason |
+| Area | Current owner | Change |
 | --- | --- | --- |
-| `agent_runtime/core`, `adapters`, `openai`, `claude`, `sandbox` | `agent_runtime/providers` and `agent_runtime/runtime` | Keep SDK/provider extension points without five nested boundaries. |
-| `runtime_manager/*`, `runtime_spaces`, `runtimes` | `runtime` | One owner for runtime backends, pools, leases, and execution policy. |
-| `audit`, `costs`, `telemetry`, related notifications | `observability` | Shared event, trace, usage, and audit lifecycle. |
-| `files`, `artifacts`, `exports`, project file I/O | `storage` plus `projects` | Separate physical storage from project domain behavior. |
-| `orchestration/planning`, `workflows`, `steps`, `policies`, `state` | `orchestration/workflows` and `orchestration/runs` | Remove overlapping micro-packages. |
-| `orchestration/run_request` | `orchestration/requests` | Naming reflects request construction rather than an implementation detail. |
-| `orchestration/models_layer` | `orchestration/models` | Replace generic refactor name with domain ownership. |
+| Runtime models, backends, pools and lifecycle | runtime | Former runtime_manager and runtimes share one owner. |
+| Placement quotas and reservations | runtime/spaces | Former runtime_spaces; retained as a cohesive reservation lifecycle. |
+| Audit, costs, traces and notification delivery | observability | Direct modules, with explicit audit_, cost_ and notification_ names. |
+| Object storage, file metadata and artifact persistence | storage | Former files and artifacts; one byte-storage boundary. |
+| Project snapshots, staging policy and export metadata | projects | Project-domain policy remains separate from storage drivers. |
+| Provider SDK implementation and helpers | agent_runtime/providers | OpenAI helpers and Claude runner no longer have separate sibling packages. |
+| Vendor-neutral execution environment | agent_runtime/runtime | Former sandbox; distinct from the infrastructure runtime resource owner. |
+| Run execution and state application | orchestration/runs | Includes runtime authorization and execution state helpers. |
+| Plan validation, scheduling and step lifecycle | orchestration/workflows | Former planning, policies, steps and scheduler micro-packages consolidated. |
+| Authorized request construction and provider gateway | orchestration/requests | Former run_request and models_layer; these are services, not database models. |
+| Orchestration database entities | orchestration/models.py | Kept as a module; creating a one-file models package would add needless depth. |
 
-## Guardrails for the refactor
+## Retained boundaries, reviewed rather than flattened blindly
 
-1. Do not merge modules solely because they are short; preserve a package when it has a true
-   lifecycle, public extension contract, or materially different dependency direction.
-2. Move one domain group at a time, update imports explicitly, run focused tests, and commit each
-   group independently.
-3. Do not introduce compatibility shims or duplicate module paths. The old path is removed after
-   each move.
-4. Keep API route grouping and migration history stable unless a route or schema boundary is
-   actually changing.
+- teams/project_space has twelve implementation modules for assembling team projects, staffing,
+  resource matching and governance. It remains a cohesive application-service boundary.
+- workers/queue has nine implementation modules for queue contracts, Redis scripts, leases,
+  retries and consumption. It is an independently testable queue lifecycle.
+- tools/product_tools has six implementation modules for authorized product-tool dispatch.
+- capabilities/mcp is an SDK protocol/execution boundary.
+- API routes and schema groups retain their authentication and transport grouping.
+- auth, identity, security, secrets, db, self_hosted and workspaces are separate security or
+  lifecycle owners; the target tree was not an instruction to erase these domains.
 
-## Whole-app execution order
+## Defects repaired during migration
 
-The consolidation should proceed in this order, from lowest coupling to highest coupling:
+The previous layout had unresolved imports into removed orchestration modules. The initial
+health-test collection failed on orchestration.run_eligibility. Callers now use the actual owning
+modules. Relative imports and dynamic test patch targets were updated too. The runs package's
+lazy __getattr__ compatibility export was removed; callers import runs.service explicitly.
 
-1. **Runtime domain:** merge `runtime_manager`, `runtime_spaces`, and `runtimes` behind one
-   runtime package. This is the clearest duplicate boundary and has an existing backend registry
-   seam.
-2. **Observability:** merge `audit`, `costs`, and `telemetry` behind shared event/usage contracts;
-   keep notification delivery as an adapter rather than a separate domain.
-3. **Storage:** consolidate `files`, `artifacts`, and `exports`; keep `projects` as the domain
-   owner of project snapshots and file authorization.
-4. **Agent runtime:** reduce provider folders to provider implementations plus a shared runtime
-   contract. Do not merge SDK-specific implementations into orchestration.
-5. **Orchestration:** apply the target four-package layout (`runs`, `workflows`, `requests`,
-   `models`) after the runtime and storage moves, because orchestration imports both.
-6. **Edge packages:** flatten `teams/project_space`, `workers/queue`, and
-   `tools/product_tools` only if their current public imports can be updated without creating
-   a second compatibility path.
+The static architecture test resolves every application import directly against source files,
+without importing providers or requiring credentials. It catches removed absolute and relative
+module targets. Existing import-linter rules continue to enforce SDK and infrastructure boundaries.
 
-The following areas are **not** over-split by default and should not be merged merely to reduce
-the directory count: `auth`, `identity`, `db`, `capabilities/mcp`, `secrets`, migrations, and
-API route groups with distinct authentication or deployment policy. `teams/project_space`,
-`workers/queue`, and `tools/product_tools` also currently have enough cohesive implementation
-files to remain subpackages; they should only be flattened after a dependency review, not by
-directory-count alone. These areas represent real security, protocol, lifecycle, or operational
-boundaries.
+## Verification
 
-## Completed consolidation batches
+Use focused architecture, health, user orchestration, runtime environment and project I/O tests
+for this package migration. Provider contract and storage tests cover the other moved boundaries.
+Passing these tests demonstrates the tested refactor paths, not release readiness or completion
+of unrelated SDK capabilities. Full-suite release tests remain tag-only.
 
-- Runtime contracts and runtime models are owned by `runtime_manager`.
-- Runtime spaces are under `runtime_manager/spaces`.
-- Runtime lifecycle, pool, and backend registry layers no longer use one-file subpackages.
-- Audit, cost, and tracing implementations are owned by `observability`.
-- Artifact models and persistence are owned by `files`; export models and status are owned by
-  `projects`.
-- Agent Runtime contracts, base adapter, and errors are owned by `agent_runtime`; provider
-  implementations are under `agent_runtime/providers`.
+Validated in this change: 53 architecture/health/orchestration/runtime/project-I/O tests,
+43 provider-contract/runtime/storage-boundary tests, 21 Claude/storage/notification tests,
+and two final source-layout/import checks passed (119 checks in total). Ruff passes for app.
+Focused mypy still reports five existing typing defects in the provider RunConfig/sandbox
+boundary and request metadata dictionaries; this directory-only migration does not claim a
+clean type-check or repair those runtime contracts.

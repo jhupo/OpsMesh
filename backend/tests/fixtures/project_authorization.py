@@ -6,12 +6,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
 from backend.app.capabilities.models import CapabilityResource
-from backend.app.files.models import WorkspaceFile
-from backend.app.orchestration.run_authorization_integrity import (
+from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.models import WorkspaceRuntime
+from backend.app.runtime.models import WorkspaceRuntime
+from backend.app.storage.models import WorkspaceFile
 from backend.app.tasks.models import Task
 
 

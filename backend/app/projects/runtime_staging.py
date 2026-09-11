@@ -4,12 +4,12 @@ from dataclasses import dataclass
 from hashlib import sha256
 from uuid import UUID
 
-from backend.app.files.storage import ObjectStorage, StorageObjectTooLargeError
 from backend.app.projects.models import AgentRunProjectSnapshot
 from backend.app.projects.run_manifest import RunProjectManifest
 from backend.app.projects.runtime_archive import build_runtime_project_archive
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.runs.models import AgentRun
+from backend.app.storage.storage import ObjectStorage, StorageObjectTooLargeError
 
 
 @dataclass(frozen=True, slots=True)

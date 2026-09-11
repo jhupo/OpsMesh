@@ -6,11 +6,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.orchestration.policies.statuses import ACTIVE_RUN_STATUSES
+from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.models import WorkspaceRuntime
+from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.self_hosted.events import SelfHostedEventRecorder
 from backend.app.self_hosted.jobs import SelfHostedJobFinalizer, dt_iso
 from backend.app.self_hosted.models import RuntimeCredential, SelfHostedWorker

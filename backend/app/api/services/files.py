@@ -8,14 +8,14 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
-from backend.app.files.artifact_models import Artifact
-from backend.app.files.models import FileAccessEvent, WorkspaceFile
-from backend.app.files.runtime_policy import validate_file_runtime_policy
-from backend.app.files.security import safe_filename
-from backend.app.files.storage import ObjectStorage
-from backend.app.files.storage_transactions import CompensatingObjectStorageWrites
 from backend.app.memory.indexing import WorkspaceMemoryIndexingService
 from backend.app.observability.audit_service import AuditService
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.models import FileAccessEvent, WorkspaceFile
+from backend.app.storage.runtime_policy import validate_file_runtime_policy
+from backend.app.storage.security import safe_filename
+from backend.app.storage.storage import ObjectStorage
+from backend.app.storage.storage_transactions import CompensatingObjectStorageWrites
 from backend.app.tasks.models import Task, TaskStep
 
 T = TypeVar("T")

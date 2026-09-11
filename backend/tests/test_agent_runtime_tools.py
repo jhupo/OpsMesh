@@ -32,18 +32,18 @@ from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.orchestration.run_authorization_integrity import (
+from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
 )
-from backend.app.runtime_manager.models import WorkspaceRuntime
+from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.self_hosted.models import SelfHostedMcpJob
 from backend.app.tasks.models import Task

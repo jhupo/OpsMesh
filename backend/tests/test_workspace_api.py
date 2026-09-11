@@ -17,13 +17,10 @@ from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
 from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agent_runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
 from backend.app.agents.models import AgentProfile
-from backend.app.files.artifact_models import Artifact
-from backend.app.observability.audit_models import AuditEvent
 from backend.app.auth.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
-from backend.app.files.models import WorkspaceFile
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.memory.content import memory_content_fingerprint
@@ -35,6 +32,7 @@ from backend.app.model_providers.health import (
     ModelProviderHealthCheckResult,
 )
 from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
 from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.dependencies import get_redis_client
@@ -42,22 +40,24 @@ from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.model_request import ModelRequestReview
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.runtime_manager.dependencies import get_docker_runtime_client
-from backend.app.runtime_manager.spaces.models import (
+from backend.app.runtime.dependencies import get_docker_runtime_client
+from backend.app.runtime.models import RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime_manager.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.scheduled_jobs.models import WorkspaceScheduledJob
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.models import SecurityEvent
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.models import WorkspaceFile
 from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
 from backend.app.tasks.event_outbox import TaskEventOutboxPublisher
 from backend.app.tasks.events import RedisTaskEventBus

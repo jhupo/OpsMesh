@@ -21,9 +21,9 @@ from backend.app.capabilities.mcp.types import (
     McpExecutionPending,
 )
 from backend.app.capabilities.models import McpCredentialReference, McpServer
-from backend.app.runtime_manager.contracts import RuntimeCommandInputFile
-from backend.app.runtime_manager.manager import RuntimeManager
-from backend.app.runtime_manager.models import WorkspaceRuntime
+from backend.app.runtime.contracts import RuntimeCommandInputFile
+from backend.app.runtime.manager import RuntimeManager
+from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.self_hosted.mcp_jobs import SelfHostedMcpJobService
 

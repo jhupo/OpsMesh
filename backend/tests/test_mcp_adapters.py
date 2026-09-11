@@ -6,7 +6,6 @@ from typing import Any
 from uuid import uuid4
 
 from backend.app.capabilities.mcp.adapter_resolver import McpAdapterResolver
-from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.mcp.remote_adapters import (
     HostedMcpToolAdapter,
     SseMcpToolAdapter,
@@ -16,14 +15,15 @@ from backend.app.capabilities.mcp.stdio_adapters import DockerRuntimeStdioMcpToo
 from backend.app.capabilities.mcp.stdio_credentials import (
     self_hosted_stdio_environment_refs,
 )
+from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.mcp.unsupported_adapter import UnsupportedMcpToolAdapter
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
 )
-from backend.app.runtime_manager.models import RuntimeCommand, WorkspaceRuntime
+from backend.app.runtime.models import RuntimeCommand, WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import EgressUrlPolicy
 

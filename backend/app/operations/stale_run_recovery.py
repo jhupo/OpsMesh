@@ -12,8 +12,8 @@ from backend.app.operations.stale_run_lease_expiration import StaleRunLeaseExpir
 from backend.app.operations.stale_run_queries import StaleRunQueryService
 from backend.app.operations.stale_run_recovery_actions import StaleRunRecoveryActionExecutor
 from backend.app.operations.stale_run_recovery_audit import StaleRunRecoveryAuditRecorder
-from backend.app.orchestration.run_control import RunControlService
-from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.orchestration.runs.control import RunControlService
+from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.workers.queue.redis_queue import RedisQueue
 

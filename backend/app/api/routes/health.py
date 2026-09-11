@@ -12,11 +12,11 @@ from starlette import status
 
 from backend.app.core.config import Settings
 from backend.app.db.session import get_db_session
-from backend.app.files.storage import create_storage
 from backend.app.operations.models import WorkerNode
 from backend.app.operations.utils import ensure_aware_utc
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.storage.storage import create_storage
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

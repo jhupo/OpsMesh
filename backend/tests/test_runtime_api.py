@@ -18,15 +18,15 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.runtime_manager.contracts import (
+from backend.app.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.runtime_manager.dependencies import get_docker_runtime_client
-from backend.app.runtime_manager.spaces.models import RuntimeSpace
-from backend.app.runtime_manager.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.dependencies import get_docker_runtime_client
+from backend.app.runtime.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.spaces.models import RuntimeSpace
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobType
 from backend.app.workers.queue.redis_queue import RedisQueue

@@ -15,7 +15,7 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
-from backend.app.notifications.service import NotificationCenterService
+from backend.app.observability.notification_service import NotificationCenterService
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/notifications",

@@ -21,8 +21,8 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
-from backend.app.runtime_manager.quotas import RuntimeQuotaExceededError
-from backend.app.runtime_manager.safety import RuntimeSafetyError
+from backend.app.runtime.quotas import RuntimeQuotaExceededError
+from backend.app.runtime.safety import RuntimeSafetyError
 from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue.redis_queue import RedisQueue

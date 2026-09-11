@@ -29,10 +29,10 @@ from backend.app.capabilities.mcp.adapters import (
 from backend.app.capabilities.mcp.types import McpExecutionRequest
 from backend.app.capabilities.models import McpToolAllowlist
 from backend.app.core.config import Settings
-from backend.app.files.storage import ObjectStorage
 from backend.app.memory.working import AgentWorkingMemoryService
-from backend.app.runtime_manager.contracts import DockerRuntimeClient
+from backend.app.runtime.contracts import DockerRuntimeClient
 from backend.app.secrets.service import SecretEncryptionService
+from backend.app.storage.storage import ObjectStorage
 
 
 class BackendToolExecutor:

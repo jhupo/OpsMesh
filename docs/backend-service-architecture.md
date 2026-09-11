@@ -296,10 +296,10 @@ backend/
     teams/
     tasks/
     approvals/
-    runtimes/
+    runtime/                # Runtime models, Docker control, pools and placement
+    storage/                # File/artifact persistence and storage drivers
     orchestration/          # Agent Management And Orchestration Layer
     agent_runtime/          # OpenAI Agents Runtime Layer
-    runtime_manager/        # Docker control plane
     workers/
     db/
     redis/

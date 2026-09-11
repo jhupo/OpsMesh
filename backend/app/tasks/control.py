@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from backend.app.api.schemas.tasks import TaskControlActionRequest, TaskCorrectionRequest
 from backend.app.core.typing import int_or_zero
 from backend.app.observability.audit_service import AuditService
-from backend.app.orchestration.run_control import RunControlService
-from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.orchestration.runs.control import RunControlService
+from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.tasks import control_execution
 from backend.app.tasks.control_messages import TaskControlMessageWriter
 from backend.app.tasks.control_payloads import task_control_response

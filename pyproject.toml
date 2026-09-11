@@ -148,14 +148,14 @@ id = "docker-sdk-boundary"
 name = "Docker daemon access stays in its infrastructure adapter"
 type = "protected"
 protected_modules = ["docker"]
-allowed_importers = ["backend.app.runtime_manager.docker_client"]
+allowed_importers = ["backend.app.runtime.docker_client"]
 
 [[tool.importlinter.contracts]]
 id = "s3-sdk-boundary"
 name = "S3 SDK access stays in its storage adapter"
 type = "protected"
 protected_modules = ["boto3"]
-allowed_importers = ["backend.app.files.storage"]
+allowed_importers = ["backend.app.storage.storage"]
 
 [[tool.importlinter.contracts]]
 id = "provider-neutral-contracts"

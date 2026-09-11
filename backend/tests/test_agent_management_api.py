@@ -17,7 +17,6 @@ from backend.app.agent_runtime.sessions import (
     PersistentAgentSessionItem,
 )
 from backend.app.agents.models import AgentProfile, AgentProfileVersion
-from backend.app.observability.audit_models import AuditEvent
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -25,6 +24,7 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.service import ResourceReview

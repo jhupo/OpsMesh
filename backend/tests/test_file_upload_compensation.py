@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 
 from backend.app.api.services.files import WorkspaceFileService
-from backend.app.files.models import WorkspaceFile
-from backend.app.files.storage import LocalStorage
+from backend.app.storage.models import WorkspaceFile
+from backend.app.storage.storage import LocalStorage
 from backend.tests.test_product_tools import _seed_workspace, _session
 
 

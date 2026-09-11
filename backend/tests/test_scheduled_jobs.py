@@ -11,7 +11,6 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.observability.audit_models import AuditEvent
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -25,6 +24,7 @@ from backend.app.model_providers.health import (
     ModelProviderHealthCheckResult,
 )
 from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.observability.audit_models import AuditEvent
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.scheduled_jobs.models import (

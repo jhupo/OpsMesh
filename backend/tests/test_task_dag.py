@@ -6,9 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.runs.eligibility import RunEligibilityService
-from backend.app.orchestration.runs import RunOrchestrationService
-from backend.app.orchestration.steps.dependencies import dependencies_satisfied
-from backend.app.orchestration.planning.team_project_plan import ProjectPlanStepMaterializer
+from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.workflows.planning_team_project_plan import (
+    ProjectPlanStepMaterializer,
+)
+from backend.app.orchestration.workflows.step_dependencies import dependencies_satisfied
 from backend.app.planning.project_plan_validation import (
     ProjectPlanValidationError,
     validate_project_plan,

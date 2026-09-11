@@ -1,6 +1,6 @@
 from fastapi import Request
 
-from backend.app.orchestration.runs import build_default_queue
+from backend.app.orchestration.runs.service import build_default_queue
 from backend.app.redis.client import redis_client
 from backend.app.workers.queue.redis_queue import RedisQueue
 

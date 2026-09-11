@@ -5,7 +5,7 @@ from uuid import UUID
 from backend.app.operations.queue_governance_reconcile_models import (
     QueueGovernanceReconcileCounts,
 )
-from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.runs.models import AgentRun
 from backend.app.workers.jobs import JobPayload
 from backend.app.workers.queue.redis_queue import RedisQueue

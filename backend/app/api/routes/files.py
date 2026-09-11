@@ -19,9 +19,9 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
-from backend.app.files.security import content_disposition_attachment
-from backend.app.files.storage import create_storage
 from backend.app.memory.jobs import enqueue_workspace_memory_index_job
+from backend.app.storage.security import content_disposition_attachment
+from backend.app.storage.storage import create_storage
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.queue.redis_queue import RedisQueue
 

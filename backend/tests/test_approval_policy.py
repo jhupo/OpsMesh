@@ -13,7 +13,7 @@ from backend.app.approvals.policy import (
     ApprovalPolicyOutcome,
 )
 from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.orchestration.model_request_approval import ModelRequestApprovalService
+from backend.app.orchestration.requests.request_approval import ModelRequestApprovalService
 from backend.app.reviews.model_request import ModelRequestReviewService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus

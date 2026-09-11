@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.tasks import TaskCorrectionRequest
-from backend.app.files.artifact_models import Artifact
 from backend.app.observability.audit_service import AuditService
+from backend.app.storage.artifact_models import Artifact
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
@@ -108,7 +108,7 @@ class TaskCorrectionService:
             return []
         # Scheduling is deliberately delegated to the existing workspace scheduler so
         # corrections use the same dependency, capacity, quota, and idempotency gates.
-        from backend.app.orchestration.runs import RunOrchestrationService
+        from backend.app.orchestration.runs.service import RunOrchestrationService
 
         runs = RunOrchestrationService(self._session, queue=self._queue).schedule_workspace_steps(
             workspace_id=task.workspace_id,

@@ -11,7 +11,6 @@ from agents.exceptions import InputGuardrailTripwireTriggered
 from sqlalchemy import select
 
 import backend.app.agent_runtime.providers.openai_agents as openai_runtime
-from backend.app.agent_runtime.claude.runner import ClaudeAgentSDKRunner
 from backend.app.agent_runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
@@ -25,17 +24,18 @@ from backend.app.agent_runtime.errors import (
     AgentRuntimeOutputValidationError,
     normalize_agent_error,
 )
+from backend.app.agent_runtime.providers.claude_runner import ClaudeAgentSDKRunner
 from backend.app.agent_runtime.providers.openai_agents import OpenAIAgentsRunner
-from backend.app.agent_runtime.openai.guardrails import OpenAIRuntimeOutputSchema
+from backend.app.agent_runtime.providers.openai_guardrails import OpenAIRuntimeOutputSchema
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.profile_commands import AgentProfileCommandService
 from backend.app.core.config import Settings
-from backend.app.orchestration.run_authorization_snapshot import (
+from backend.app.orchestration.requests.builder import RunRequestBuilder
+from backend.app.orchestration.runs.authorization_snapshot import (
     RunAuthorizationSnapshotService,
 )
-from backend.app.orchestration.run_events import RunEventRecorder
-from backend.app.orchestration.run_request.builder import RunRequestBuilder
-from backend.app.orchestration.run_result_payloads import run_output_payload
+from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.result_payloads import run_output_payload
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType

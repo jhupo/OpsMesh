@@ -16,15 +16,15 @@ from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalo
 from backend.app.core.errors import DomainError
 from backend.app.model_providers.resolution import ModelProviderResolutionService
 from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
-from backend.app.orchestration.scheduler.policy import (
+from backend.app.orchestration.runs.state_resource_usage import merge_usage_max, positive_int_usage
+from backend.app.orchestration.workflows.scheduler_policy import (
     SchedulerPolicyResolver,
     WorkspaceSchedulerPolicy,
 )
-from backend.app.orchestration.state.resource_usage import merge_usage_max, positive_int_usage
 from backend.app.planning.org_structure import normalize_role
 from backend.app.planning.project_plan_validation import ProjectPlanValidationError
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import WorkspaceQuota

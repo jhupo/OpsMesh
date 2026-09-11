@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.files.models import WorkspaceFile
 from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.storage.models import WorkspaceFile
 from backend.app.teams.project_space.types import ProjectSpaceRelationshipIds
 
 TEAM_METADATA_KEYS = {"agent_team_id"}

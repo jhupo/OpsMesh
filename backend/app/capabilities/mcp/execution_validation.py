@@ -16,7 +16,7 @@ from backend.app.capabilities.mcp.types import McpExecutionRequest
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.capabilities.schema_validation import validate_parameters
 from backend.app.core.config import Settings
-from backend.app.orchestration.run_authorization_integrity import (
+from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.runs.models import AgentRun

@@ -4,20 +4,20 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
-from backend.app.files.artifact_models import Artifact
-from backend.app.files.artifact_persistence import (
+from backend.app.runs.models import AgentRun
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.artifact_persistence import (
     ArtifactPersistenceError,
     ArtifactPersistenceService,
 )
-from backend.app.files.content import (
+from backend.app.storage.content import (
     WorkspaceFileContent,
     WorkspaceFileContentReader,
     WorkspaceFileReadError,
 )
-from backend.app.files.models import WorkspaceFile
-from backend.app.files.runtime_policy import runtime_file_denial_code
-from backend.app.files.security import safe_filename
-from backend.app.runs.models import AgentRun
+from backend.app.storage.models import WorkspaceFile
+from backend.app.storage.runtime_policy import runtime_file_denial_code
+from backend.app.storage.security import safe_filename
 from backend.app.tasks.models import TaskStep
 from backend.app.tools.context import ToolContext
 from backend.app.tools.errors import ToolResourceNotFoundError

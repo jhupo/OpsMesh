@@ -4,16 +4,16 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 from backend.app.agents.models import AgentProfile
-from backend.app.files.artifact_models import Artifact
-from backend.app.files.models import WorkspaceFile
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.spaces.models import (
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.models import WorkspaceFile
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 

@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 
 from backend.app.domains.models import RevisionRequest
-from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.tasks.models import Task
 from backend.app.workers.job_handlers.context import WorkerJobHandlerContext

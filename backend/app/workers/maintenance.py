@@ -9,16 +9,16 @@ from sqlalchemy.orm import Session
 
 from backend.app.approvals.lifecycle import AgentToolApprovalLifecycleService
 from backend.app.core.config import Settings
-from backend.app.files.storage import create_storage
 from backend.app.memory.embedding_jobs import WorkspaceMemoryEmbeddingScheduler
 from backend.app.memory.lifecycle import WorkspaceMemoryLifecycleService
 from backend.app.observability.audit_integrity import AuditIntegrityService
 from backend.app.operations.runtime_cleanup import RuntimeCleanupService
 from backend.app.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
-from backend.app.orchestration.run_control import RunControlService
-from backend.app.orchestration.runs import RunOrchestrationService
-from backend.app.runtime_manager.dependencies import get_docker_runtime_client
+from backend.app.orchestration.runs.control import RunControlService
+from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.runtime.dependencies import get_docker_runtime_client
 from backend.app.scheduled_jobs.service import WorkspaceScheduledJobService
+from backend.app.storage.storage import create_storage
 from backend.app.tasks.event_outbox import TaskEventOutboxPublisher
 from backend.app.tasks.events import RedisTaskEventBus
 from backend.app.teams.execution_loop import TeamExecutionLoopQueueService

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
-from backend.app.runtime_manager.models import RuntimeLease
+from backend.app.runtime.models import RuntimeLease
 
 T = TypeVar("T")
 

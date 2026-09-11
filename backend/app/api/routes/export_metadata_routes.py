@@ -15,7 +15,7 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.session import get_db_session
-from backend.app.files.security import content_disposition_attachment
+from backend.app.storage.security import content_disposition_attachment
 
 router = APIRouter()
 

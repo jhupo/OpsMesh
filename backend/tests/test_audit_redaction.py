@@ -10,14 +10,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.requests import Request
 
 from backend.app.api.services.workspace_reads import WorkspaceReadService
-from backend.app.observability.audit_integrity import AuditIntegrityService
-from backend.app.observability.audit_models import AuditEvent
-from backend.app.observability.audit_service import AuditService
 from backend.app.core.config import Settings
 from backend.app.core.pagination import PageParams
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.observability.audit_integrity import AuditIntegrityService
+from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit_service import AuditService
 from backend.app.security.models import SecurityEvent
 from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.security.service import SecurityAuditService

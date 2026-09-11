@@ -7,12 +7,12 @@ from sqlalchemy.orm import Session
 from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 from backend.app.observability.audit_service import AuditService
-from backend.app.orchestration.runs import RunOrchestrationService
+from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.workflows.definitions import OrchestrationDefinitionService
 from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.projects.models import WorkspaceProject
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.spaces.service import RuntimeSpaceService
+from backend.app.runtime.spaces.service import RuntimeSpaceService
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.snapshots import build_team_snapshot

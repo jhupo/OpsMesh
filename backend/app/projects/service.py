@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.db.pagination import page_scalars_by_offset
-from backend.app.files.models import WorkspaceFile
 from backend.app.observability.audit_service import AuditService
 from backend.app.projects.contracts import (
     ProjectCreateCommand,
@@ -33,6 +32,7 @@ from backend.app.projects.policy import (
     validate_project_layout,
 )
 from backend.app.projects.serialization import sha256_json
+from backend.app.storage.models import WorkspaceFile
 
 
 class WorkspaceProjectService:

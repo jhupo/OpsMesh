@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.files.storage import ObjectStorage
+from backend.app.storage.storage import ObjectStorage
 from backend.app.workers.queue.redis_queue import RedisQueue
 from backend.app.workspaces.data_lifecycle_actions import WorkspaceRecoveryActionService
 from backend.app.workspaces.data_lifecycle_diagnostics import WorkspaceLifecycleDiagnosticsService

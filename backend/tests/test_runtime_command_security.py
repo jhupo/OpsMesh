@@ -7,17 +7,17 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.observability.audit_models import AuditEvent
 from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
-from backend.app.runtime_manager.contracts import (
+from backend.app.observability.audit_models import AuditEvent
+from backend.app.runtime.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.runtime_manager.service import RuntimeControlService
-from backend.app.runtime_manager.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.service import RuntimeControlService
 from backend.app.security.models import SecurityEvent
 from backend.app.workspaces.models import Workspace
 

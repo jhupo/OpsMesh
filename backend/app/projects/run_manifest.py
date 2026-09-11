@@ -5,10 +5,10 @@ from collections.abc import Hashable, Iterable
 from dataclasses import dataclass
 from uuid import UUID
 
-from backend.app.files.security import validate_storage_key
 from backend.app.projects.models import AgentRunProjectSnapshot
 from backend.app.projects.policy import require_path_within, validate_project_layout
 from backend.app.projects.serialization import sha256_json
+from backend.app.storage.security import validate_storage_key
 
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 

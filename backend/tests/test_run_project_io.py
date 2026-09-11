@@ -16,16 +16,13 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.files.artifact_models import Artifact
-from backend.app.observability.audit_models import AuditEvent
 from backend.app.capabilities.models import CapabilityResource
 from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
-from backend.app.files.models import FileAccessEvent, WorkspaceFile
-from backend.app.files.storage import LocalStorage
 from backend.app.identity.models import User
-from backend.app.orchestration.run_authorization_integrity import (
+from backend.app.observability.audit_models import AuditEvent
+from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.projects.models import (
@@ -40,9 +37,12 @@ from backend.app.projects.runtime_io import RunProjectIOService
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.projects.serialization import sha256_json
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runtime_manager.contracts import RuntimeCommandResult
-from backend.app.runtime_manager.models import WorkspaceRuntime
+from backend.app.runtime.contracts import RuntimeCommandResult
+from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.models import FileAccessEvent, WorkspaceFile
+from backend.app.storage.storage import LocalStorage
 from backend.app.tasks.models import Task
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 from backend.tests.fixtures.project_authorization import authorize_project_run

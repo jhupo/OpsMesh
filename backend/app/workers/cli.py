@@ -11,7 +11,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.logging import configure_logging
 from backend.app.db.session import SessionLocal, engine
 from backend.app.observability.tracing import configure_worker_telemetry
-from backend.app.orchestration.runs import build_default_queue
+from backend.app.orchestration.runs.service import build_default_queue
 from backend.app.redis.client import redis_client
 from backend.app.workers.runner import WorkerRunner
 from backend.app.workers.runner_models import WorkerRunnerConfig

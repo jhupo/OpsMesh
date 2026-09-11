@@ -15,7 +15,7 @@ from backend.app.model_providers.service import ModelProviderCredentialService
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.openai_agents import OpenAIAgentsRunner
+from backend.app.agent_runtime.providers.openai_agents import OpenAIAgentsRunner
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.tasks import TaskCreateRequest
 from backend.app.core.config import Settings, get_settings

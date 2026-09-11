@@ -13,27 +13,27 @@ from backend.app.agents.models import AgentProfile
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.orchestration.run_authorization_snapshot import RunAuthorizationSnapshotService
-from backend.app.orchestration.run_eligibility import RunEligibilityService
-from backend.app.orchestration.run_events import RunEventRecorder
-from backend.app.orchestration.run_lifecycle import RunLifecycleCallbacks, RunLifecycleService
-from backend.app.orchestration.run_request.builder import RunRequestBuilder
-from backend.app.orchestration.run_resource_reservations import RunResourceReservationService
-from backend.app.orchestration.run_step_launcher import RunStepLauncher
-from backend.app.orchestration.runs import RunOrchestrationService
-from backend.app.orchestration.scheduler.main import WorkspaceScheduler
-from backend.app.orchestration.step_scheduling_state import (
+from backend.app.orchestration.requests.builder import RunRequestBuilder
+from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.runs.eligibility import RunEligibilityService
+from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.lifecycle import RunLifecycleCallbacks, RunLifecycleService
+from backend.app.orchestration.runs.resources import RunResourceReservationService
+from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.workflows.scheduler_main import WorkspaceScheduler
+from backend.app.orchestration.workflows.step_launcher import RunStepLauncher
+from backend.app.orchestration.workflows.step_scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.spaces.models import (
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime_manager.spaces.service import RuntimeSpaceService
+from backend.app.runtime.spaces.service import RuntimeSpaceService
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeam, AgentTeamMember

@@ -8,9 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
-from backend.app.files.artifact_models import Artifact
-from backend.app.files.models import FileAccessEvent
-from backend.app.files.storage import ObjectStorage, create_storage
 from backend.app.projects.file_boundaries import (
     ProjectBoundaryViolation,
     ProjectFileBoundaryService,
@@ -24,9 +21,12 @@ from backend.app.projects.runtime_io_state import ProjectIOStateService
 from backend.app.projects.runtime_staging import ProjectInputArchiveBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.runtime_manager.backend_registry import build_runtime_backend_registry
-from backend.app.runtime_manager.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
-from backend.app.runtime_manager.models import WorkspaceRuntime
+from backend.app.runtime.backend_registry import build_runtime_backend_registry
+from backend.app.runtime.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
+from backend.app.runtime.models import WorkspaceRuntime
+from backend.app.storage.artifact_models import Artifact
+from backend.app.storage.models import FileAccessEvent
+from backend.app.storage.storage import ObjectStorage, create_storage
 from backend.app.tasks.models import Task
 
 

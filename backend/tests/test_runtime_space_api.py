@@ -20,14 +20,14 @@ from backend.app.main import create_app
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
-from backend.app.runtime_manager.spaces.models import (
+from backend.app.runtime.models import WorkspaceRuntime
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime_manager.models import WorkspaceRuntime
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 from backend.app.workers.dependencies import get_worker_queue
