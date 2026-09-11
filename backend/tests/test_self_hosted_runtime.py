@@ -25,7 +25,7 @@ from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime.models import RuntimeEvent, WorkspaceRuntime
-from backend.app.runtime.spaces.models import (
+from backend.app.runtime.space_models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,

@@ -7,7 +7,7 @@ from uuid import UUID
 from backend.app.agents.models import AgentProfile
 from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.runs.models import AgentRun
-from backend.app.runtime.spaces.models import (
+from backend.app.runtime.space_models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,

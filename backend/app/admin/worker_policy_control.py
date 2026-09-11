@@ -17,6 +17,28 @@ from backend.app.core.errors import PolicyDeniedError
 
 
 class AdminWorkerPolicyControlService:
+    def update_worker_control_policy(
+        self,
+        *,
+        value: dict[str, object],
+        updated_by: str | None,
+        description: str | None = None,
+    ) -> PlatformPolicy:
+        policy = self.get_or_create_worker_control_policy()
+        policy.value = normalize_worker_control_policy_value(policy.value, value)
+        if description is not None:
+            policy.description = description
+        policy.updated_by = updated_by
+        self._events.append_policy_event(
+            policy,
+            "platform_policy.updated",
+            "Worker control policy updated",
+            {"value": policy.value, "updated_by": updated_by},
+        )
+        self._session.commit()
+        self._session.refresh(policy)
+        return policy
+
     def __init__(self, session: Session) -> None:
         self._session = session
         self._events = AdminPolicyEventService(session)

@@ -13,6 +13,7 @@ from backend.app.orchestration.runs.job_routing import RunJobRoutingService
 from backend.app.orchestration.runs.lifecycle import RunLifecycleCallbacks, RunLifecycleService
 from backend.app.orchestration.runs.resources import RunResourceReservationService
 from backend.app.orchestration.runs.runtime_authorization import runtime_binding_for_snapshot
+from backend.app.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
 from backend.app.orchestration.workflows.planning_team_step_planner import TeamStepPlanner
 from backend.app.orchestration.workflows.scheduler_main import WorkspaceScheduler
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
@@ -21,7 +22,6 @@ from backend.app.orchestration.workflows.step_scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.planning.attempts import TaskPlanningAttemptService
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun

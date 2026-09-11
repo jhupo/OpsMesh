@@ -35,7 +35,7 @@ from backend.app.capabilities.models import WorkspaceSkillInstall
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.observability.audit_service import AuditService
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
 from backend.app.tasks.models import Task, TaskMessage, TaskStep

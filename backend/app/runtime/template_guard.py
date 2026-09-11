@@ -12,7 +12,7 @@ from backend.app.runtime.runtime_policy import (
     policy_disables_network,
 )
 from backend.app.runtime.safety import RuntimeSafetyError, RuntimeSafetyPolicy
-from backend.app.runtime.spaces.service import RuntimeSpaceService
+from backend.app.runtime.space_service import RuntimeSpaceService
 
 
 class RuntimeTemplateGuard:

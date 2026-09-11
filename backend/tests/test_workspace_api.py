@@ -34,7 +34,7 @@ from backend.app.model_providers.health import (
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
-from backend.app.planning.models import TaskPlanningAttempt
+from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.model_request import ModelRequestReview
@@ -48,7 +48,7 @@ from backend.app.runtime.contracts import (
 )
 from backend.app.runtime.dependencies import get_docker_runtime_client
 from backend.app.runtime.models import RuntimeTemplate, WorkspaceRuntime
-from backend.app.runtime.spaces.models import (
+from backend.app.runtime.space_models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,

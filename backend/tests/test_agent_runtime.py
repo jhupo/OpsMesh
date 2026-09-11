@@ -34,6 +34,7 @@ from backend.app.agent_runtime.providers.openai_results import (
     runtime_event_from_sdk_item,
 )
 from backend.app.agent_runtime.providers.openai_tools import OpenAIToolBridge, runtime_allowed_tools
+from backend.app.agent_runtime.runtime.contracts import SandboxManifest
 from backend.app.agent_runtime.sessions import PersistentAgentSessionRef, SQLAlchemyAgentSession
 from backend.app.agents.models import AgentProfile
 from backend.app.model_providers.base_url import normalize_openai_compatible_base_url
@@ -42,6 +43,26 @@ from backend.app.model_providers.base_url import normalize_openai_compatible_bas
 class DeterministicTestRunner:
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
         return AgentRunResult(final_output="deterministic_test_run_completed")
+
+
+def test_sandbox_manifest_is_mapped_only_at_provider_boundary() -> None:
+    workspace_id = uuid4()
+    manifest = SandboxManifest(run_id=uuid4(), root="/workspace/run-test")
+    request = AgentRunRequest(
+        agent_profile=AgentProfile(workspace_id=workspace_id, name="Sandbox test", role="worker"),
+        input_text="Inspect the workspace",
+        context=AgentRuntimeContext(
+            workspace_id=workspace_id, task_id=None, run_id=manifest.run_id
+        ),
+        sandbox=manifest,
+    )
+    config = OpenAIAgentsRunner()._run_config(request)
+    assert request.sandbox is manifest
+    assert config is not None and config.sandbox is not None
+    assert config.workflow_name == "OpsMesh agent run"
+    assert config.tracing_disabled is True
+    assert config.sandbox.manifest is not None
+    assert config.sandbox.manifest.root == manifest.root
 
 
 def test_openai_agents_runner_requires_explicit_provider_api_key() -> None:

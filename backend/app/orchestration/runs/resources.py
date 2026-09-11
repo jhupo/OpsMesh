@@ -12,14 +12,14 @@ from backend.app.orchestration.runs.state_resource_usage import (
     positive_int_usage,
 )
 from backend.app.runs.models import AgentRun
-from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceReservation
-from backend.app.runtime.spaces.reservation_attachment import (
+from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceReservation
+from backend.app.runtime.space_reservation_attachment import (
     RuntimeSpaceReservationAttachmentService,
 )
-from backend.app.runtime.spaces.reservation_capacity import (
+from backend.app.runtime.space_reservation_capacity import (
     RuntimeSpaceCapacityReservationService,
 )
-from backend.app.runtime.spaces.reservation_release import (
+from backend.app.runtime.space_reservation_release import (
     RuntimeSpaceReservationReleaseService,
 )
 from backend.app.tasks.models import Task, TaskStep

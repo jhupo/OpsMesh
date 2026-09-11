@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from backend.app.runtime.models import RuntimeEvent, WorkspaceRuntime
-from backend.app.runtime.spaces.models import RuntimeSpaceEvent
+from backend.app.runtime.space_models import RuntimeSpaceEvent
 
 
 class RuntimeEventLog:

@@ -17,12 +17,12 @@ from backend.app.orchestration.workflows.data import (
     WorkflowDataBindingError,
     resolve_workflow_inputs,
 )
+from backend.app.orchestration.workflows.plan_workflow_contracts import WorkflowNode
 from backend.app.orchestration.workflows.step_completion import TaskStepCompletionService
 from backend.app.orchestration.workflows.subworkflows import (
     SubworkflowExecutionError,
     SubworkflowExecutionService,
 )
-from backend.app.planning.workflow_contracts import WorkflowNode
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.models import Task, TaskStep

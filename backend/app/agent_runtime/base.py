@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from dataclasses import replace
 
@@ -16,6 +17,30 @@ class BaseSDKAgentRuntimeAdapter(ABC):
     """Template for product invariants shared by provider SDK adapters."""
 
     capabilities: AgentRuntimeCapabilities
+
+    def _input_for_request(self, request: AgentRunRequest) -> str:
+        if not request.continuations:
+            return request.input_text
+        continuation_lines = [
+            "- "
+            + json.dumps(
+                {
+                    "tool_name": continuation.tool_name,
+                    "status": continuation.status,
+                    "result": continuation.result
+                    if continuation.status == "completed"
+                    else continuation.error,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            for continuation in request.continuations
+        ]
+        return (
+            request.input_text
+            + "\n\nCompleted runtime tool results:\n"
+            + "\n".join(continuation_lines)
+        )
 
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
         self._validate_request(request)

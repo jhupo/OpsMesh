@@ -33,14 +33,14 @@ from backend.app.runtime.models import (
 )
 from backend.app.runtime.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
 from backend.app.runtime.service import RuntimeControlService
-from backend.app.runtime.spaces.models import (
+from backend.app.runtime.space_models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime.spaces.service import RuntimeSpaceService
+from backend.app.runtime.space_service import RuntimeSpaceService
 from backend.app.security.models import SecurityEvent
 from backend.app.teams.models import AgentTeam
 from backend.app.workspaces.models import Workspace

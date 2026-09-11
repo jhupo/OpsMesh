@@ -8,20 +8,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunResult
-from backend.app.orchestration.workflows.planning_team_project_plan import (
-    ProjectPlanStepMaterializer,
-)
-from backend.app.planning.agent_plan import (
+from backend.app.orchestration.workflows.plan_agent_plan import (
     AgentPlanProposal,
     is_agent_planning_step,
     planner_output_schema,
 )
-from backend.app.planning.attempts import TaskPlanningAttemptService
-from backend.app.planning.models import TaskPlanningAttempt
-from backend.app.planning.plan_feasibility import PlanFeasibilityService
-from backend.app.planning.project_plan_validation import (
+from backend.app.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
+from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
+from backend.app.orchestration.workflows.plan_plan_feasibility import PlanFeasibilityService
+from backend.app.orchestration.workflows.plan_project_plan_validation import (
     ProjectPlanValidationError,
     validate_project_plan,
+)
+from backend.app.orchestration.workflows.planning_team_project_plan import (
+    ProjectPlanStepMaterializer,
 )
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.message_append import TaskMessageAppendService

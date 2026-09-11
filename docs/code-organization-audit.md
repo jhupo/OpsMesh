@@ -11,7 +11,7 @@ imports, dynamic patch targets, architecture gates and documentation together, w
 | Area | Current owner | Change |
 | --- | --- | --- |
 | Runtime models, backends, pools and lifecycle | runtime | Former runtime_manager and runtimes share one owner. |
-| Placement quotas and reservations | runtime/spaces | Former runtime_spaces; retained as a cohesive reservation lifecycle. |
+| Placement quotas and reservations | runtime/space_* | Former runtime_spaces and runtime/spaces, now direct modules. |
 | Audit, costs, traces and notification delivery | observability | Direct modules, with explicit audit_, cost_ and notification_ names. |
 | Object storage, file metadata and artifact persistence | storage | Former files and artifacts; one byte-storage boundary. |
 | Project snapshots, staging policy and export metadata | projects | Project-domain policy remains separate from storage drivers. |
@@ -21,6 +21,7 @@ imports, dynamic patch targets, architecture gates and documentation together, w
 | Plan validation, scheduling and step lifecycle | orchestration/workflows | Former planning, policies, steps and scheduler micro-packages consolidated. |
 | Authorized request construction and provider gateway | orchestration/requests | Former run_request and models_layer; these are services, not database models. |
 | Orchestration database entities | orchestration/models.py | Kept as a module; creating a one-file models package would add needless depth. |
+| Planning attempts, feasibility, ownership and project plans | orchestration/workflows/plan_* | Former top-level planning; one orchestration owner for automatic and user-authored work. |
 
 ## Edge-domain consolidation
 
@@ -68,10 +69,32 @@ of unrelated SDK capabilities. Full-suite release tests remain tag-only.
 Validated in this change: 53 architecture/health/orchestration/runtime/project-I/O tests,
 43 provider-contract/runtime/storage-boundary tests, 21 Claude/storage/notification tests,
 and two final source-layout/import checks passed (119 checks in total). Ruff passes for app.
-Focused mypy still reports five existing typing defects in the provider RunConfig/sandbox
-boundary and request metadata dictionaries; this directory-only migration does not claim a
-clean type-check or repair those runtime contracts.
+The initial five typing defects were subsequently repaired: AgentRunRequest carries a typed
+product SandboxManifest, the OpenAI provider alone builds SandboxRunConfig, tracing has a valid
+workflow name, and runtime metadata and Claude settings retain their appropriate boundary types.
+The shared runtime package no longer imports a vendor SDK. Its unused manifest/session re-export
+modules and mixed-vendor mapper were deleted. The provider-neutral import gate covers this package.
 
 The edge-domain batch passed 60 focused queue/scheduled-job/product-tool/architecture/health tests.
-Workers, teams and tools also pass focused mypy (151 source files). These results do not supersede
-the separate SDK-boundary typing findings above.
+Workers, teams and tools also pass focused mypy (151 source files).
+
+## Final plan acceptance
+
+All seven consolidation directions in the original plan now have concrete owners above:
+Agent providers/runtime, physical runtimes, observability, storage/projects, orchestration,
+team/workspace ownership, and worker/operations ownership. Removed modules have no compatibility
+aliases. The models.py file replaces the proposed one-file models package intentionally.
+API route groups remain distinct transport/authentication boundaries, not arbitrary nesting.
+
+An AST comparison of same-named functions spanning at least sixteen lines across app found four
+exact duplicate groups. Runtime-space event writing now has one implementation, worker policy
+creation/update has one service owner, and continuation prompt formatting belongs to the shared
+Agent adapter base. The remaining TaskControl/DeliveryDecision audit helpers only adapt their
+domain command to the same AuditService; keeping that adapter does not create a second audit
+algorithm or persistence owner. This comparison is not a claim that all semantically similar code
+is identical or should be merged.
+
+Final verification includes full app mypy, Ruff, the seven import-linter contracts, source-path
+checks, focused planner/runtime/API/provider tests, and the sandbox-manifest boundary regression.
+Live-provider smoke tests remain explicitly skipped without credentials. No full pytest suite,
+release tag, push, or remote publication is part of this directory-consolidation acceptance.

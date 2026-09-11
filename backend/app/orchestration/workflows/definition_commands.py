@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from backend.app.planning.workflow_contracts import WorkflowNode
+from backend.app.orchestration.workflows.plan_workflow_contracts import WorkflowNode
 
 
 class OrchestrationDefinitionCreate(BaseModel):

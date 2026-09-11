@@ -404,32 +404,9 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
                 raise TypeError(
                     "sandbox_settings must be a Claude Agent SDK SandboxSettings mapping"
                 )
-            options.sandbox = SandboxSettings(**sandbox_settings)
+            options.sandbox = cast(SandboxSettings, dict(sandbox_settings))
         return options
 
-    def _input_for_request(self, request: AgentRunRequest) -> str:
-        if not request.continuations:
-            return request.input_text
-        continuation_lines = [
-            "- "
-            + json.dumps(
-                {
-                    "tool_name": continuation.tool_name,
-                    "status": continuation.status,
-                    "result": continuation.result
-                    if continuation.status == "completed"
-                    else continuation.error,
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-            for continuation in request.continuations
-        ]
-        return (
-            request.input_text
-            + "\n\nCompleted runtime tool results:\n"
-            + "\n".join(continuation_lines)
-        )
 
     def _interruptions(
         self,

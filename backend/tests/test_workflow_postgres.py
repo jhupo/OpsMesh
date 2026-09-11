@@ -21,7 +21,7 @@ from backend.app.orchestration.workflows.definitions import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
 )
-from backend.app.planning.workflow_contracts import WorkflowNode
+from backend.app.orchestration.workflows.plan_workflow_contracts import WorkflowNode
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 from backend.app.workspaces.models import Workspace

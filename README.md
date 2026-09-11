@@ -381,7 +381,7 @@ backend/app/orchestration/    Run construction, authorization, and lifecycle
 backend/app/teams/            Team execution and operations views
 backend/app/capabilities/     Skills, MCP, tool policy, and execution
 backend/app/runtime/          Docker runtime control, models, pools and hardening
-backend/app/runtime/spaces/   Quotas, reservations, leases, and placement
+backend/app/runtime/space_*   Quotas, reservations, leases, and placement
 backend/app/self_hosted/      User-owned runtime protocol and trust controls
 backend/app/workers/          Async jobs, queue consumption, and maintenance
 backend/migrations/           Alembic schema history

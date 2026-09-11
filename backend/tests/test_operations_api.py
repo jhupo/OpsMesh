@@ -31,7 +31,7 @@ from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
-from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
+from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
 from backend.app.security.models import SecurityEvent
 from backend.app.self_hosted.models import (
     RuntimeCredential,

@@ -44,6 +44,12 @@ def admin_worker_service(
     return AdminWorkerService(session, AdminWorkerPolicyControlService(session))
 
 
+def admin_worker_policy_service(
+    session: Session = Depends(get_db_session),
+) -> AdminWorkerPolicyControlService:
+    return AdminWorkerPolicyControlService(session)
+
+
 def admin_runtime_service(
     session: Session = Depends(get_db_session),
 ) -> AdminRuntimeService:

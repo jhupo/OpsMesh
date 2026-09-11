@@ -39,7 +39,7 @@ from backend.app.runtime.contracts import (
 )
 from backend.app.runtime.dependencies import get_docker_runtime_client
 from backend.app.runtime.models import RuntimeEvent, WorkspaceRuntime
-from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
 from backend.app.storage.storage import LocalStorage

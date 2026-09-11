@@ -1,8 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.app.admin.policy_control import AdminPolicyService
+from backend.app.admin.worker_policy_control import AdminWorkerPolicyControlService
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.routes.admin.dependencies import admin_policy_service
+from backend.app.api.routes.admin.dependencies import (
+    admin_policy_service,
+    admin_worker_policy_service,
+)
 from backend.app.api.routes.admin.responses import page_response
 from backend.app.api.schemas.admin import (
     AdminPlatformPolicyEventResponse,
@@ -74,7 +78,7 @@ async def update_admin_risky_execution_policy(
     response_model=AdminPlatformPolicyResponse,
 )
 async def get_admin_worker_control_policy(
-    service: AdminPolicyService = Depends(admin_policy_service),
+    service: AdminWorkerPolicyControlService = Depends(admin_worker_policy_service),
 ) -> AdminPlatformPolicyResponse:
     policy = service.get_or_create_worker_control_policy()
     return AdminPlatformPolicyResponse.model_validate(policy)
@@ -86,7 +90,7 @@ async def get_admin_worker_control_policy(
 )
 async def update_admin_worker_control_policy(
     request: AdminWorkerControlPolicyUpdateRequest,
-    service: AdminPolicyService = Depends(admin_policy_service),
+    service: AdminWorkerPolicyControlService = Depends(admin_worker_policy_service),
 ) -> AdminPlatformPolicyResponse:
     policy = service.update_worker_control_policy(
         value=request.value,

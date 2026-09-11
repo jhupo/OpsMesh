@@ -23,7 +23,7 @@ from backend.app.runtime.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.pool_leases import RuntimeLeaseStore, RuntimeSpaceReservationStore
 from backend.app.runtime.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
 from backend.app.runtime.security_events import RuntimeSecurityEventRecorder
-from backend.app.runtime.spaces.reservation_capacity import (
+from backend.app.runtime.space_reservation_capacity import (
     RuntimeSpaceCapacityReservationService,
 )
 

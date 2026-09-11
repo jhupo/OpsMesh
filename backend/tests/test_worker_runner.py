@@ -50,7 +50,7 @@ from backend.app.runtime.contracts import (
     RuntimeCreateRequest,
 )
 from backend.app.runtime.models import RuntimeTemplate, WorkspaceRuntime
-from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tasks.collaboration_state import TaskCollaborationStateService
 from backend.app.tasks.events import RedisTaskEventBus

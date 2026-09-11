@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.runtime.contracts import RuntimeLimits
 from backend.app.runtime.egress import RuntimeEgressPolicy, resolve_egress_policy
 from backend.app.runtime.models import RuntimeTemplate
-from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceBinding
+from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceBinding
 from backend.app.teams.models import AgentTeam
 
 

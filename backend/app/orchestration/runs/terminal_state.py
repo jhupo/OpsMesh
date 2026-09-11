@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.memory.episodic import AgentEpisodicMemoryService
 from backend.app.memory.working import AgentWorkingMemoryService
-from backend.app.planning.attempts import TaskPlanningAttemptService
+from backend.app.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus

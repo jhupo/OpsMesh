@@ -6,7 +6,7 @@ from backend.app.admin.base import AdminSessionService
 from backend.app.core.pagination import PageParams
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.runtime.models import WorkspaceRuntime
-from backend.app.runtime.spaces.models import RuntimeSpace
+from backend.app.runtime.space_models import RuntimeSpace
 from backend.app.security.models import SecurityEvent
 from backend.app.workspaces.models import Workspace
 

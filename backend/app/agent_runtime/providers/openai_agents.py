@@ -52,6 +52,7 @@ from backend.app.agent_runtime.providers.openai_guardrails import (
 )
 from backend.app.agent_runtime.providers.openai_lifecycle import OpenAIRuntimeHooks
 from backend.app.agent_runtime.providers.openai_results import OpenAIAgentsResultMapper, jsonable
+from backend.app.agent_runtime.providers.openai_sandbox import sandbox_run_config
 from backend.app.agent_runtime.providers.openai_settings import OpenAIModelSettingsMapper
 from backend.app.agent_runtime.providers.openai_streaming import run_openai_streamed
 from backend.app.agent_runtime.providers.openai_tools import OpenAIToolBridge
@@ -573,42 +574,19 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             output_guardrails=output_guardrails,
         )
 
-    def _input_for_request(self, request: AgentRunRequest) -> str:
-        if not request.continuations:
-            return request.input_text
-        continuation_lines = [
-            "- "
-            + json.dumps(
-                {
-                    "tool_name": continuation.tool_name,
-                    "status": continuation.status,
-                    "result": continuation.result
-                    if continuation.status == "completed"
-                    else continuation.error,
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-            for continuation in request.continuations
-        ]
-        return (
-            request.input_text
-            + "\n\nCompleted runtime tool results:\n"
-            + "\n".join(continuation_lines)
-        )
 
     def _run_config(self, request: AgentRunRequest) -> RunConfig | None:
         if request.tracing is None and request.sandbox is None:
             return None
         tracing = request.tracing
         return RunConfig(
-            workflow_name=tracing.workflow_name if tracing else None,
+            workflow_name=tracing.workflow_name if tracing else "OpsMesh agent run",
             trace_id=tracing.trace_id if tracing else None,
             group_id=tracing.group_id if tracing else None,
             trace_metadata=tracing.metadata if tracing else None,
             tracing_disabled=tracing.disabled if tracing else True,
             trace_include_sensitive_data=tracing.include_sensitive_data if tracing else False,
-            sandbox=request.sandbox,
+            sandbox=sandbox_run_config(request.sandbox) if request.sandbox is not None else None,
         )
 
 

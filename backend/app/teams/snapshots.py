@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.model_providers.model_api import configured_model_api
-from backend.app.planning.org_structure import build_org_structure
+from backend.app.orchestration.workflows.plan_org_structure import build_org_structure
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 

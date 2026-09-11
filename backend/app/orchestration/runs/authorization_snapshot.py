@@ -28,7 +28,10 @@ from backend.app.orchestration.runs.runtime_authorization import (
 from backend.app.orchestration.runs.tool_authorization import (
     AgentToolAuthorizationSnapshotService,
 )
-from backend.app.planning.agent_plan import is_agent_planning_step, planner_output_schema
+from backend.app.orchestration.workflows.plan_agent_plan import (
+    is_agent_planning_step,
+    planner_output_schema,
+)
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.tasks.models import Task, TaskStep
 

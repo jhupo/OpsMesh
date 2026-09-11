@@ -55,7 +55,7 @@ from backend.app.orchestration.models import (
     OrchestrationRevision,
     SubworkflowInvocation,
 )
-from backend.app.planning.models import TaskPlanningAttempt
+from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.projects.models import (
     AgentRunProjectIOState,
@@ -73,7 +73,7 @@ from backend.app.runtime.models import (
     RuntimeTemplate,
     WorkspaceRuntime,
 )
-from backend.app.runtime.spaces.models import (
+from backend.app.runtime.space_models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
     RuntimeSpaceEvent,

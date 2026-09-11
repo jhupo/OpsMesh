@@ -12,8 +12,8 @@ from backend.app.core.typing import (
     string_or_default,
     uuid_or_none,
 )
+from backend.app.orchestration.workflows.plan_member_matching import MemberMatchingService
 from backend.app.orchestration.workflows.planning_task_step_review import is_pm_summary_step
-from backend.app.planning.member_matching import MemberMatchingService
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 

@@ -20,7 +20,7 @@ from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
 from backend.app.runtime.models import WorkspaceRuntime
-from backend.app.runtime.spaces.reservation_release import (
+from backend.app.runtime.space_reservation_release import (
     RuntimeSpaceReservationReleaseService,
 )
 from backend.app.tasks.models import Task

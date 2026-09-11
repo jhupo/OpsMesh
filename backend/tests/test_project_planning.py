@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from backend.app.planning.project_plans import (
+from backend.app.orchestration.workflows.plan_project_plans import (
     ProjectPlanningService,
     ProjectPlanValidationError,
     validate_project_plan,

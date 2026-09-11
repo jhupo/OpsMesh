@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import dict_or_empty, optional_string, string_list, uuid_or_none
-from backend.app.planning.project_plan_validation import validate_project_plan
+from backend.app.orchestration.workflows.plan_project_plan_validation import validate_project_plan
 from backend.app.tasks.models import Task, TaskStep
 
 STEP_STATUS_QUEUED = "queued"

@@ -4,10 +4,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.runs.eligibility import RunEligibilityService
+from backend.app.orchestration.workflows.plan_agent_plan import is_agent_planning_step
 from backend.app.orchestration.workflows.planning_team_project_plan import (
     ProjectPlanStepMaterializer,
 )
-from backend.app.planning.agent_plan import is_agent_planning_step
 from backend.app.tasks.models import Task, TaskStep
 
 

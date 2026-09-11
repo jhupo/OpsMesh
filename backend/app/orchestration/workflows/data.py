@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.planning.workflow_contracts import WorkflowDataBinding
+from backend.app.orchestration.workflows.plan_workflow_contracts import WorkflowDataBinding
 from backend.app.security.redaction import redact_sensitive_payload_item
 from backend.app.tasks.models import Task, TaskStep
 

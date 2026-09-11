@@ -70,12 +70,12 @@ from backend.app.orchestration.runs.resources import RunResourceReservationServi
 from backend.app.orchestration.runs.service import (
     RunOrchestrationService,
 )
+from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.orchestration.workflows.step_launcher import RunStepLauncher
 from backend.app.orchestration.workflows.step_scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.planning.models import TaskPlanningAttempt
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.model_request import ModelRequestReview
 from backend.app.reviews.models import ResourceReview
@@ -84,7 +84,7 @@ from backend.app.runs.activity import activity_phase
 from backend.app.runs.models import AgentRun, AgentRunStateSnapshot, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.runtime.models import WorkspaceRuntime
-from backend.app.runtime.spaces.models import (
+from backend.app.runtime.space_models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
     RuntimeSpaceQuota,

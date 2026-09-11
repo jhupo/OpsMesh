@@ -133,7 +133,7 @@ the OpsMesh control plane.
 - `backend/app/agents`, `backend/app/teams`, `backend/app/tasks`: core product domains.
 - `backend/app/capabilities`: skills, MCP, credentials, policy, diagnostics, and execution.
 - `backend/app/runtime`: runtime models, Docker lifecycle, pools, and host-resource cleanup.
-- `backend/app/runtime/spaces`: placement, quotas, reservations, and leases.
+- `backend/app/runtime/space_*`: placement, quotas, reservations, and leases.
 - `backend/app/storage`: file and artifact persistence and physical storage adapters.
 - `backend/app/observability`: audit, cost, trace, and notification evidence.
 - `backend/app/self_hosted`: user-owned runtime protocol, trust, and job lifecycle.

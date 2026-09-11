@@ -5,6 +5,7 @@ from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
+from backend.app.agent_runtime.runtime.contracts import SandboxManifest
 from backend.app.agents.models import AgentProfile
 
 AgentRuntimeSessionItem = dict[str, object]
@@ -357,7 +358,7 @@ class AgentRunRequest:
     guardrails: AgentRuntimeGuardrails | None = None
     stream: bool = False
     cancellation: AgentRuntimeCancellation | None = None
-    sandbox: object | None = None
+    sandbox: SandboxManifest | None = None
 
 
 @dataclass(frozen=True)

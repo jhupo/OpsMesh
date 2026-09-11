@@ -10,7 +10,7 @@ from backend.app.agent_runtime.contracts import AgentRuntimeExecutionBinding
 from backend.app.runs.models import AgentRun
 from backend.app.runtime.models import RuntimeLease, WorkspaceRuntime
 from backend.app.runtime.runtime_policy import policy_disables_network
-from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceBinding
+from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceBinding
 from backend.app.storage.models import WorkspaceFile
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam

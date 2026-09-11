@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.workflows.plan_agent_plan import is_agent_planning_step
+from backend.app.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
+from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
+from backend.app.orchestration.workflows.plan_ownership import require_automatic_plan_ownership
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.planning.agent_plan import is_agent_planning_step
-from backend.app.planning.attempts import TaskPlanningAttemptService
-from backend.app.planning.models import TaskPlanningAttempt
-from backend.app.planning.ownership import require_automatic_plan_ownership
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.tasks.message_append import TaskMessageAppendService

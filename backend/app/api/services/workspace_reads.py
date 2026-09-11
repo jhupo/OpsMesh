@@ -9,7 +9,7 @@ from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.observability.audit_service import AuditService
-from backend.app.planning.models import TaskPlanningAttempt
+from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import Task, TaskMessage
 

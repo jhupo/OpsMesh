@@ -17,7 +17,7 @@ from backend.app.identity.models import User
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.runtime.spaces.models import (
+from backend.app.runtime.space_models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,

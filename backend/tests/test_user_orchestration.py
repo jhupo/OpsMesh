@@ -13,8 +13,11 @@ from backend.app.orchestration.workflows.definition_commands import (
     OrchestrationDefinitionUpdate,
 )
 from backend.app.orchestration.workflows.definitions import OrchestrationDefinitionService
-from backend.app.planning.models import TaskPlanningAttempt
-from backend.app.planning.workflow_contracts import WorkflowCondition, WorkflowNode
+from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
+from backend.app.orchestration.workflows.plan_workflow_contracts import (
+    WorkflowCondition,
+    WorkflowNode,
+)
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.tests.test_capability_resources import (

@@ -23,8 +23,8 @@ from backend.app.orchestration.workflows.definitions import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
 )
-from backend.app.planning.diagnostics import ProjectPlanDiagnosticsService
-from backend.app.planning.future_plan_mutation import (
+from backend.app.orchestration.workflows.plan_diagnostics import ProjectPlanDiagnosticsService
+from backend.app.orchestration.workflows.plan_future_plan_mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,
     TaskPlanMutationService,

@@ -11,11 +11,8 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolExecutor,
 )
 from backend.app.agent_runtime.guardrails import runtime_controls_from_snapshot
+from backend.app.agent_runtime.providers.claude_sandbox import sandbox_settings_for_claude
 from backend.app.agent_runtime.runtime.contracts import SandboxManifest
-from backend.app.agent_runtime.runtime.mapper import (
-    manifest_to_openai_run_config,
-    sandbox_settings_for_claude,
-)
 from backend.app.agent_runtime.sessions import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
@@ -161,7 +158,7 @@ class RunRequestBuilder:
             )
             if runtime is None:
                 raise ValueError("Authorized execution runtime is missing")
-            metadata["sandbox_session"] = {
+            sandbox_metadata: dict[str, object] = {
                 "session_id": str(runtime_binding.execution_runtime_id),
                 "root": (
                     project_workspace.get("working_directory")
@@ -171,23 +168,25 @@ class RunRequestBuilder:
                 "backend": "runtime_manager",
                 "persistent": _runtime_execution_mode(run) == "persistent",
             }
+            metadata["sandbox_session"] = sandbox_metadata
             backend = build_runtime_backend_registry(
                 self.session, self.docker_client, self.secret_service()
             ).resolve(runtime.runtime_provider)
             if backend is not None and hasattr(backend, "sandbox_session"):
                 session = backend.sandbox_session(
-                    SandboxManifest(run_id=run.id, root=str(metadata["sandbox_session"]["root"])),
+                    SandboxManifest(run_id=run.id, root=str(sandbox_metadata["root"])),
                     runtime,
                 )
-                metadata["sandbox_session"] = {
+                sandbox_metadata = {
                     "session_id": session.session_id,
                     "root": session.root,
                     "backend": session.backend,
                     "persistent": session.persistent,
                 }
+                metadata["sandbox_session"] = sandbox_metadata
                 if model_provider["provider"] == "anthropic" and hasattr(backend, "sdk_process"):
                     process = backend.sdk_process(session)
-                    metadata["sandbox_session"]["cli_path"] = (
+                    sandbox_metadata["cli_path"] = (
                         process.install_claude_cli_wrapper()
                     )
         persistent_session_ref = self.persistent_session_ref_for_run(run, task, profile)
@@ -339,9 +338,7 @@ class RunRequestBuilder:
                 if isinstance(workspace, dict)
                 else "/workspace"
             )
-            sandbox = manifest_to_openai_run_config(
-                SandboxManifest(run_id=run.id, root=str(root))
-            )
+            sandbox = SandboxManifest(run_id=run.id, root=str(root))
         return AgentRunRequest(
             agent_profile=profile,
             input_text=context_budget.text,

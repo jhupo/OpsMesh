@@ -26,7 +26,7 @@ from backend.app.runtime.contracts import (
 )
 from backend.app.runtime.dependencies import get_docker_runtime_client
 from backend.app.runtime.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
-from backend.app.runtime.spaces.models import RuntimeSpace
+from backend.app.runtime.space_models import RuntimeSpace
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobType
 from backend.app.workers.redis_queue import RedisQueue

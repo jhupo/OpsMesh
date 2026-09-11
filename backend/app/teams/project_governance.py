@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from backend.app.core.typing import counts_by_value
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
-from backend.app.runtime.spaces.models import RuntimeSpace
+from backend.app.runtime.space_models import RuntimeSpace
 from backend.app.teams.execution_overview_constants import DONE_TASK_STATUSES
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.project_types import ProjectSpaceRecords

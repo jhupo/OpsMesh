@@ -28,7 +28,7 @@ from backend.app.observability.audit_models import AuditEvent
 from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import FileAccessEvent, WorkspaceFile
 from backend.app.storage.storage import LocalStorage
