@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.agent_runtime.sandbox.contracts import SandboxManifest, SandboxSession
 from backend.app.capabilities.mcp_execution_adapters import McpToolAdapter
 from backend.app.capabilities.mcp_stdio_adapters import (
     DockerRuntimeStdioMcpToolAdapter,
@@ -41,6 +42,10 @@ class RuntimeBackend(Protocol):
         runtime: WorkspaceRuntime,
         run_id: UUID,
     ) -> RuntimeProjectFilesystem | None: ...
+
+    def sandbox_session(
+        self, manifest: SandboxManifest, runtime: WorkspaceRuntime
+    ) -> SandboxSession: ...
 
 
 class DockerRuntimeBackend:
@@ -81,6 +86,18 @@ class DockerRuntimeBackend:
             raise RuntimeError("Docker project files require a worker-injected client")
         return DockerRunProjectFilesystem(self._client, runtime, run_id)
 
+    def sandbox_session(
+        self, manifest: SandboxManifest, runtime: WorkspaceRuntime
+    ) -> SandboxSession:
+        if not runtime.docker_container_id:
+            raise RuntimeError("Docker runtime has no active container")
+        return SandboxSession(
+            session_id=runtime.docker_container_id,
+            root=manifest.root,
+            backend=self.__class__.__name__,
+            persistent=runtime.execution_mode == "persistent",
+        )
+
 
 class SelfHostedRuntimeBackend:
     capabilities = RuntimeBackendCapabilities(True, True, False, False)
@@ -107,6 +124,11 @@ class SelfHostedRuntimeBackend:
         run_id: UUID,
     ) -> RuntimeProjectFilesystem | None:
         return None
+
+    def sandbox_session(
+        self, manifest: SandboxManifest, runtime: WorkspaceRuntime
+    ) -> SandboxSession:
+        raise RuntimeError("Self-hosted runtime sandbox sessions are provided by the worker")
 
 
 class RuntimeBackendRegistry:
