@@ -17,7 +17,7 @@ from backend.app.core.logging import configure_logging
 from backend.app.db.session import engine
 from backend.app.rate_limits.service import FixedWindowRateLimiter
 from backend.app.redis.client import close_redis_client, create_redis_client
-from backend.app.telemetry.tracing import configure_api_telemetry
+from backend.app.observability.tracing import configure_api_telemetry
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
