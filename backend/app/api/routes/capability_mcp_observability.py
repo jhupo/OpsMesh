@@ -15,7 +15,7 @@ from backend.app.api.schemas.capabilities.policy_diagnostics import (
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
-from backend.app.capabilities.mcp_call_logs import McpToolCallLogQueryService
+from backend.app.capabilities.mcp.call_logs import McpToolCallLogQueryService
 from backend.app.capabilities.skill_tool_diagnostics import SkillToolDiagnosticsService
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session

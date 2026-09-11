@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from backend.app.capabilities.mcp.adapters import McpToolAdapter
-from backend.app.capabilities.mcp_remote_adapters import (
+from backend.app.capabilities.mcp.remote_adapters import (
     HostedMcpToolAdapter,
     SseMcpToolAdapter,
     StreamableHttpMcpToolAdapter,
 )
-from backend.app.capabilities.mcp_unsupported_adapter import UnsupportedMcpToolAdapter
+from backend.app.capabilities.mcp.unsupported_adapter import UnsupportedMcpToolAdapter
 from backend.app.capabilities.models import McpServer
 from backend.app.secrets.service import SecretEncryptionService
 

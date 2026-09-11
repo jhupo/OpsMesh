@@ -22,7 +22,7 @@ from backend.app.capabilities.mcp.types import (
     McpExecutionError,
     McpExecutionRequest,
 )
-from backend.app.capabilities.mcp_remote_adapters import SseMcpToolAdapter
+from backend.app.capabilities.mcp.remote_adapters import SseMcpToolAdapter
 from backend.app.capabilities.models import (
     McpCredentialReference,
     McpServer,
@@ -817,11 +817,11 @@ def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> 
     session.commit()
     sdk = _FakeSseSdk(_FakeSdkCallToolResult(structured_content={"status": "created"}))
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.sse_client",
+        "backend.app.capabilities.mcp.remote_adapters.sse_client",
         sdk.sse_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        "backend.app.capabilities.mcp.remote_adapters.ClientSession",
         sdk.client_session,
     )
 
@@ -862,11 +862,11 @@ def test_mcp_sse_adapter_normalizes_remote_errors(monkeypatch) -> None:
 
     sdk = _FakeSseSdk(_FakeSdkCallToolResult(is_error=True))
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.sse_client",
+        "backend.app.capabilities.mcp.remote_adapters.sse_client",
         sdk.sse_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        "backend.app.capabilities.mcp.remote_adapters.ClientSession",
         sdk.client_session,
     )
 

@@ -7,16 +7,16 @@ from uuid import uuid4
 
 from backend.app.capabilities.mcp_adapter_resolver import McpAdapterResolver
 from backend.app.capabilities.mcp.types import McpExecutionError
-from backend.app.capabilities.mcp_remote_adapters import (
+from backend.app.capabilities.mcp.remote_adapters import (
     HostedMcpToolAdapter,
     SseMcpToolAdapter,
     StreamableHttpMcpToolAdapter,
 )
-from backend.app.capabilities.mcp_stdio_adapters import DockerRuntimeStdioMcpToolAdapter
-from backend.app.capabilities.mcp_stdio_credentials import (
+from backend.app.capabilities.mcp.stdio_adapters import DockerRuntimeStdioMcpToolAdapter
+from backend.app.capabilities.mcp.stdio_credentials import (
     self_hosted_stdio_environment_refs,
 )
-from backend.app.capabilities.mcp_unsupported_adapter import UnsupportedMcpToolAdapter
+from backend.app.capabilities.mcp.unsupported_adapter import UnsupportedMcpToolAdapter
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.runtime_manager.core.contracts import (
@@ -31,11 +31,11 @@ from backend.app.security.egress import EgressUrlPolicy
 def test_streamable_http_mcp_adapter_uses_official_client_session(monkeypatch) -> None:
     sdk = _FakeMcpSdk([_FakeCallToolResult(content=[_FakeContent({"type": "text", "text": "ok"})])])
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.streamable_http_client",
+        "backend.app.capabilities.mcp.remote_adapters.streamable_http_client",
         sdk.streamable_http_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        "backend.app.capabilities.mcp.remote_adapters.ClientSession",
         sdk.client_session,
     )
     secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
@@ -107,11 +107,11 @@ def test_streamable_http_mcp_adapter_does_not_replay_failed_tool_call(monkeypatc
         ]
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.streamable_http_client",
+        "backend.app.capabilities.mcp.remote_adapters.streamable_http_client",
         sdk.streamable_http_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        "backend.app.capabilities.mcp.remote_adapters.ClientSession",
         sdk.client_session,
     )
     try:
@@ -144,11 +144,11 @@ def test_streamable_http_mcp_adapter_runs_inside_async_runner(
 ) -> None:
     sdk = _FakeMcpSdk([_FakeCallToolResult(structured_content={"ok": True})])
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.streamable_http_client",
+        "backend.app.capabilities.mcp.remote_adapters.streamable_http_client",
         sdk.streamable_http_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        "backend.app.capabilities.mcp.remote_adapters.ClientSession",
         sdk.client_session,
     )
     adapter = StreamableHttpMcpToolAdapter(egress_policy=_local_test_egress_policy())
@@ -173,11 +173,11 @@ def test_streamable_http_mcp_adapter_runs_inside_async_runner(
 def test_streamable_http_mcp_adapter_sanitizes_remote_errors(monkeypatch) -> None:
     sdk = _FakeMcpSdk([_FakeCallToolResult(is_error=True)])
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.streamable_http_client",
+        "backend.app.capabilities.mcp.remote_adapters.streamable_http_client",
         sdk.streamable_http_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        "backend.app.capabilities.mcp.remote_adapters.ClientSession",
         sdk.client_session,
     )
     try:
@@ -206,11 +206,11 @@ def test_streamable_http_mcp_adapter_sanitizes_remote_errors(monkeypatch) -> Non
 def test_hosted_mcp_adapter_delegates_to_official_remote_http_transport(monkeypatch) -> None:
     sdk = _FakeMcpSdk([_FakeCallToolResult(structured_content={"ok": True})])
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.streamable_http_client",
+        "backend.app.capabilities.mcp.remote_adapters.streamable_http_client",
         sdk.streamable_http_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp_remote_adapters.ClientSession",
+        "backend.app.capabilities.mcp.remote_adapters.ClientSession",
         sdk.client_session,
     )
     secret_service = SecretEncryptionService(secret="test-secret", key_id="test")

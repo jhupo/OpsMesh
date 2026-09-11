@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.sandbox.contracts import SandboxManifest, SandboxSession
 from backend.app.capabilities.mcp.adapters import McpToolAdapter
-from backend.app.capabilities.mcp_stdio_adapters import (
+from backend.app.capabilities.mcp.stdio_adapters import (
     DockerRuntimeStdioMcpToolAdapter,
     SelfHostedStdioMcpToolAdapter,
 )
