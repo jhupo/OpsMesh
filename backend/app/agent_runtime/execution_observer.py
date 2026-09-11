@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeEvent,

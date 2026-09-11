@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import Session as DbSession
 
-from backend.app.agent_runtime.contracts import AgentRuntimeSessionItem
+from backend.app.agent_runtime.core.contracts import AgentRuntimeSessionItem
 from backend.app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 ACTIVE_SESSION_STATUS = "active"

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRuntimeExecutor
+from backend.app.agent_runtime.core.contracts import AgentRuntimeExecutor
 from backend.app.capabilities.mcp_execution_adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,

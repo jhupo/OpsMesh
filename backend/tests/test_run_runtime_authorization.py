@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agent_runtime.contracts import AgentRuntimeExecutionBinding
+from backend.app.agent_runtime.core.contracts import AgentRuntimeExecutionBinding
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.effective_catalog import (
     EffectiveCapabilityCatalogService,

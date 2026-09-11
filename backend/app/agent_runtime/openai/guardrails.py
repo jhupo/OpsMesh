@@ -12,12 +12,12 @@ from agents import (
 )
 from agents.exceptions import ModelBehaviorError
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.contracts import (
     AgentRuntimeGuardrail,
     AgentRuntimeGuardrailResult,
     AgentRuntimeOutputSchema,
 )
-from backend.app.agent_runtime.errors import AgentRuntimeOutputValidationError
+from backend.app.agent_runtime.core.errors import AgentRuntimeOutputValidationError
 from backend.app.agent_runtime.guardrails import (
     evaluate_guardrail,
     validated_structured_output,

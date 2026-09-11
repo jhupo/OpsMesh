@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.contracts import (
     AgentRuntimeCapabilities,
     AgentRuntimeCapability,
     AgentRuntimeGuardrailResult,

@@ -8,7 +8,7 @@ import pytest
 from agents.tool_context import ToolContext
 
 import backend.app.agent_runtime.adapters.openai_agents as openai_runtime
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.contracts import (
     AgentRunRequest,
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentRef,

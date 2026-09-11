@@ -1,4 +1,4 @@
-from backend.app.agent_runtime.errors import AgentRuntimePolicyError
+from backend.app.agent_runtime.core.errors import AgentRuntimePolicyError
 
 
 class ProjectRunIOError(AgentRuntimePolicyError):

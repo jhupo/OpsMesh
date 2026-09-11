@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.types import JSON
 
-from backend.app.agent_runtime.contracts import AgentRunResult
+from backend.app.agent_runtime.core.contracts import AgentRunResult
 from backend.app.agents.memory_policy import normalized_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval

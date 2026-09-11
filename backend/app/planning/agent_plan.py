@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.app.agent_runtime.contracts import AgentRuntimeOutputSchema
+from backend.app.agent_runtime.core.contracts import AgentRuntimeOutputSchema
 from backend.app.planning.project_plan_context import PlanningContext
 from backend.app.planning.project_plan_models import ProjectPlan
 from backend.app.planning.project_plan_validation import ProjectPlanValidationError

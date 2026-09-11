@@ -1,4 +1,4 @@
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.contracts import (
     AgentRunRequest,
     AgentRuntimeCapability,
 )

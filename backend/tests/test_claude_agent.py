@@ -16,7 +16,7 @@ from backend.app.agent_runtime.claude.runner import (
     _session_id,
     _thinking_setting,
 )
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.contracts import (
     AgentRunRequest,
     AgentRuntimeApprovalDecision,
     AgentRuntimeContext,

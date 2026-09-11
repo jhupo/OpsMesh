@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRunResult
+from backend.app.agent_runtime.core.contracts import AgentRunResult
 from backend.app.planning.agent_plan import (
     AgentPlanProposal,
     is_agent_planning_step,

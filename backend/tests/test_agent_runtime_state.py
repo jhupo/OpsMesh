@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agent_runtime.contracts import AgentRuntimeResumeState
+from backend.app.agent_runtime.core.contracts import AgentRuntimeResumeState
 from backend.app.agent_runtime.state_store import AgentRunStateStore
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base

@@ -38,13 +38,13 @@ from claude_agent_sdk.types import (
 )
 from pydantic import TypeAdapter, ValidationError
 
-from backend.app.agent_runtime.base import BaseSDKAgentRuntimeAdapter
 from backend.app.agent_runtime.cancellation import (
     cancel_active_tools,
     raise_if_cancelled,
     stop_cancellation_watcher,
 )
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.base import BaseSDKAgentRuntimeAdapter
+from backend.app.agent_runtime.core.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeCapabilities,
@@ -58,7 +58,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeStructuredOutput,
     AgentRuntimeToolDefinition,
 )
-from backend.app.agent_runtime.errors import AgentRuntimeCancelledError
+from backend.app.agent_runtime.core.errors import AgentRuntimeCancelledError
 from backend.app.agent_runtime.execution_observer import AgentRuntimeExecutionObserver
 from backend.app.agent_runtime.guardrails import (
     evaluate_guardrail_stage,

@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from backend.app.agent_runtime.contracts import AgentRuntimeEvent
+from backend.app.agent_runtime.core.contracts import AgentRuntimeEvent
 from backend.app.agent_runtime.event_mapping import RuntimeEventTaskMessageMapper
 from backend.app.db import models  # noqa: F401
 from backend.app.runs.models import AgentRun

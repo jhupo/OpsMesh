@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRuntimeToolResult
+from backend.app.agent_runtime.core.contracts import AgentRuntimeToolResult
 from backend.app.agent_runtime.token_estimation import truncate_to_token_bound
 from backend.app.agents.memory_policy import WorkingMemoryPolicy
 from backend.app.agents.models import AgentProfile

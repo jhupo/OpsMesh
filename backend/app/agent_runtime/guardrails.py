@@ -7,7 +7,7 @@ from dataclasses import asdict
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.contracts import (
     AgentRuntimeEvent,
     AgentRuntimeGuardrail,
     AgentRuntimeGuardrailResult,
@@ -15,7 +15,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeOutputSchema,
     AgentRuntimeStructuredOutput,
 )
-from backend.app.agent_runtime.errors import (
+from backend.app.agent_runtime.core.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimeOutputValidationError,
 )

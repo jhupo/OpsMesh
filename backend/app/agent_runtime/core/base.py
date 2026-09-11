@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import replace
 
 from backend.app.agent_runtime.cancellation import raise_if_cancelled
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeCapabilities,

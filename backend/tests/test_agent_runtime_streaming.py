@@ -11,12 +11,12 @@ from sqlalchemy.orm import sessionmaker
 
 import backend.app.agent_runtime.openai.streaming as openai_streaming
 from backend.app.agent_runtime.claude.runner import ClaudeAgentSDKRunner
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
-from backend.app.agent_runtime.errors import AgentRuntimeCancelledError
+from backend.app.agent_runtime.core.errors import AgentRuntimeCancelledError
 from backend.app.agent_runtime.adapters.openai_agents import OpenAIAgentsRunner
 from backend.app.agents.models import AgentProfile
 from backend.app.db import models as registered_models  # noqa: F401

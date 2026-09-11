@@ -4,14 +4,14 @@ import json
 from dataclasses import dataclass
 from enum import IntEnum
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.contracts import (
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentTool,
     AgentRuntimeOutputSchema,
     AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
 )
-from backend.app.agent_runtime.errors import AgentRuntimePolicyError
+from backend.app.agent_runtime.core.errors import AgentRuntimePolicyError
 from backend.app.agent_runtime.token_estimation import (
     estimate_token_upper_bound,
     truncate_to_token_bound,

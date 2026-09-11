@@ -7,7 +7,7 @@ import pytest
 from agents import OpenAIResponsesCompactionSession, RunContextWrapper
 
 import backend.app.agent_runtime.adapters.openai_agents as openai_runtime
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeAgentRef,
@@ -22,7 +22,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolResult,
     AgentRunTracing,
 )
-from backend.app.agent_runtime.errors import (
+from backend.app.agent_runtime.core.errors import (
     AgentRuntimeCapabilityError,
     normalize_agent_error,
 )

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import overload
 from uuid import UUID
 
-from backend.app.agent_runtime.contracts import AgentRuntimeEvent
+from backend.app.agent_runtime.core.contracts import AgentRuntimeEvent
 from backend.app.runs.models import AgentRun
 from backend.app.security.redaction import redact_sensitive_text
 from backend.app.tasks.models import TaskStep

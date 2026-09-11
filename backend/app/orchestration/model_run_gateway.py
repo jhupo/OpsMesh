@@ -4,12 +4,12 @@ from dataclasses import dataclass
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agent_runtime.core.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeExecutor,
 )
-from backend.app.agent_runtime.errors import (
+from backend.app.agent_runtime.core.errors import (
     AgentRuntimeCancelledError,
     AgentRuntimePolicyError,
 )

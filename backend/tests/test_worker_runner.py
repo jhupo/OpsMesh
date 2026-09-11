@@ -15,7 +15,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agent_messages.models import AgentMessage
-from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
+from backend.app.agent_runtime.core.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agent_runtime.sessions import PersistentAgentSession
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog

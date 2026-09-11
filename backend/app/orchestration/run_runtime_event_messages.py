@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRunResult
+from backend.app.agent_runtime.core.contracts import AgentRunResult
 from backend.app.agent_runtime.event_mapping import RuntimeEventTaskMessageMapper
 from backend.app.orchestration.run_events import RunEventRecorder
 from backend.app.runs.models import AgentRun
