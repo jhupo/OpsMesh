@@ -57,7 +57,7 @@ from backend.app.domains.orchestration.runs.runtime_authorization import (
 from backend.app.domains.orchestration.runs.runtime_metadata import RunRuntimeMetadataBuilder
 from backend.app.domains.orchestration.runs.tool_authorization import hydrate_agent_tools
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.projects.runtime_context import project_runtime_context
+from backend.app.domains.workspace.projects.io.support import project_runtime_context
 from backend.app.runtime.environment.backends.registry import build_runtime_backend_registry
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.environment.models import WorkspaceRuntime

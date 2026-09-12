@@ -16,9 +16,9 @@ from backend.app.domains.orchestration.runs.runtime_authorization import (
     runtime_binding_for_snapshot,
 )
 from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
 from backend.app.domains.workspace.projects.models import AgentRunProjectSnapshot
-from backend.app.domains.workspace.projects.run_manifest import RunProjectManifest
-from backend.app.domains.workspace.projects.runtime_io_errors import ProjectRunIOError
+from backend.app.domains.workspace.projects.snapshots.manifest import RunProjectManifest
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.runtime_policy import runtime_file_denial_code
 from backend.app.runtime.environment.models import WorkspaceRuntime

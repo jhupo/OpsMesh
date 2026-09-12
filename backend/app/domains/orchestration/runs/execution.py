@@ -45,8 +45,8 @@ from backend.app.domains.orchestration.workflows.definitions.data import resolve
 from backend.app.domains.orchestration.workflows.definitions.subworkflows import (
     SubworkflowExecutionService,
 )
-from backend.app.domains.workspace.projects.runtime_io import RunProjectIOService
-from backend.app.domains.workspace.projects.runtime_io_errors import ProjectRunIOError
+from backend.app.domains.workspace.projects.io.service import RunProjectIOService
+from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.environment.contracts import DockerRuntimeClient

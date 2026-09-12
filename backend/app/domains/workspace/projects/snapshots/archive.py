@@ -6,7 +6,7 @@ import tarfile
 from pathlib import PurePosixPath
 from uuid import UUID
 
-from backend.app.domains.workspace.projects.run_manifest import (
+from backend.app.domains.workspace.projects.snapshots.manifest import (
     RunProjectManifest,
     public_run_project_manifest,
 )

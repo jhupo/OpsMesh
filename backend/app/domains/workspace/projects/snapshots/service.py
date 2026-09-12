@@ -15,7 +15,7 @@ from backend.app.domains.workspace.projects.models import (
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
-from backend.app.domains.workspace.projects.serialization import sha256_json
+from backend.app.domains.workspace.projects.snapshots.format import sha256_json
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 
 PROJECT_SNAPSHOT_SCHEMA_VERSION = 1

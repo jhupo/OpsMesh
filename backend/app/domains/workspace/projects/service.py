@@ -30,7 +30,7 @@ from backend.app.domains.workspace.projects.policy import (
     validate_project_configuration,
     validate_project_layout,
 )
-from backend.app.domains.workspace.projects.serialization import sha256_json
+from backend.app.domains.workspace.projects.snapshots.format import sha256_json
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.observability.audit_service import AuditService
 

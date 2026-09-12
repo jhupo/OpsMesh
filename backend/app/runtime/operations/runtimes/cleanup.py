@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from backend.app.core.common.config import Settings
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.workspace.projects.io.service import RunProjectIOService
 from backend.app.domains.workspace.projects.models import AgentRunProjectIOState
-from backend.app.domains.workspace.projects.runtime_io import RunProjectIOService
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.run_environment import RunRuntimeEnvironmentService

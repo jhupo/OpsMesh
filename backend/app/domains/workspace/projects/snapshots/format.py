@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 
 
@@ -30,3 +32,16 @@ def diff_json(before: object, after: object, *, path: str = "") -> list[ProjectD
 
 def _escape_pointer_token(value: str) -> str:
     return value.replace("~", "~0").replace("/", "~1")
+def canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def sha256_json(value: object) -> str:
+    return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+

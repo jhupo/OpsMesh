@@ -28,6 +28,8 @@ from backend.app.domains.orchestration.runs.models import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.workspace.projects.io.service import RunProjectIOService
+from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
 from backend.app.domains.workspace.projects.models import (
     AgentRunProjectIOState,
     WorkspaceProject,
@@ -35,10 +37,8 @@ from backend.app.domains.workspace.projects.models import (
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
-from backend.app.domains.workspace.projects.run_snapshots import RunProjectSnapshotService
-from backend.app.domains.workspace.projects.runtime_io import RunProjectIOService
-from backend.app.domains.workspace.projects.runtime_io_errors import ProjectRunIOError
-from backend.app.domains.workspace.projects.serialization import sha256_json
+from backend.app.domains.workspace.projects.snapshots.format import sha256_json
+from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import FileAccessEvent, WorkspaceFile
 from backend.app.domains.workspace.storage.storage import LocalStorage

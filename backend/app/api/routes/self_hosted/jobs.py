@@ -18,7 +18,7 @@ from backend.app.api.schemas.operations.self_hosted import (
 )
 from backend.app.api.schemas.orchestration.runs import RunEventResponse
 from backend.app.api.schemas.workspace.files import ArtifactResponse
-from backend.app.domains.workspace.projects.runtime_io_errors import ProjectRunIOError
+from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
 from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
 from backend.app.runtime.self_hosted.dispatch.completion import SelfHostedRunCompletionService
 from backend.app.runtime.self_hosted.dispatch.service import SelfHostedDispatchService

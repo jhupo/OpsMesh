@@ -10,7 +10,7 @@ from backend.app.domains.workspace.projects.policy import (
     require_path_within,
     validate_project_layout,
 )
-from backend.app.domains.workspace.projects.serialization import sha256_json
+from backend.app.domains.workspace.projects.snapshots.format import sha256_json
 from backend.app.domains.workspace.storage.security import validate_storage_key
 
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")

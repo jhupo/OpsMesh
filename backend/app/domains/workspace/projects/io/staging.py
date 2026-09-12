@@ -5,10 +5,10 @@ from hashlib import sha256
 from uuid import UUID
 
 from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
 from backend.app.domains.workspace.projects.models import AgentRunProjectSnapshot
-from backend.app.domains.workspace.projects.run_manifest import RunProjectManifest
-from backend.app.domains.workspace.projects.runtime_archive import build_runtime_project_archive
-from backend.app.domains.workspace.projects.runtime_io_errors import ProjectRunIOError
+from backend.app.domains.workspace.projects.snapshots.archive import build_runtime_project_archive
+from backend.app.domains.workspace.projects.snapshots.manifest import RunProjectManifest
 from backend.app.domains.workspace.storage.storage import ObjectStorage, StorageObjectTooLargeError
 
 

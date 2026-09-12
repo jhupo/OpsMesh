@@ -19,8 +19,8 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.workspace.projects.run_snapshots import RunProjectSnapshotService
-from backend.app.domains.workspace.projects.runtime_io_queries import RunProjectIOQueryService
+from backend.app.domains.workspace.projects.io.support import RunProjectIOQueryService
+from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
 from backend.app.runtime.workers.queue.dependencies import (
     get_worker_queue,
 )

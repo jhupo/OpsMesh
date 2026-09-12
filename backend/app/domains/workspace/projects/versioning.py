@@ -7,13 +7,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.workspace.projects.diffs import ProjectDiffEntry, diff_json
 from backend.app.domains.workspace.projects.models import (
     WorkspaceProject,
     WorkspaceProjectConfigurationVersion,
     WorkspaceProjectFile,
 )
 from backend.app.domains.workspace.projects.policy import normalize_project_path
+from backend.app.domains.workspace.projects.snapshots.format import ProjectDiffEntry, diff_json
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 
 

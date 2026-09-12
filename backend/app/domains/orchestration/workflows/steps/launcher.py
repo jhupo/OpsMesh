@@ -20,7 +20,7 @@ from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.tasks.operations.ownership import task_owner_can_execute_step
 from backend.app.domains.orchestration.workflows.scheduling.service import WorkspaceScheduler
 from backend.app.domains.orchestration.workflows.steps.dependencies import dependencies_satisfied
-from backend.app.domains.workspace.projects.run_snapshots import RunProjectSnapshotService
+from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
 
 STEP_STATUS_QUEUED = "queued"
 

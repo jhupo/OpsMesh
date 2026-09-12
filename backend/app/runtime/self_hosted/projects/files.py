@@ -11,21 +11,21 @@ from backend.app.core.common.config import Settings
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.workspace.projects.artifacts.service import ProjectOutputArtifactWriter
 from backend.app.domains.workspace.projects.file_boundaries import (
     ProjectBoundaryViolation,
     ProjectFileBoundaryService,
 )
+from backend.app.domains.workspace.projects.io.staging import ProjectInputArchiveBuilder
+from backend.app.domains.workspace.projects.io.state import ProjectIOStateService
+from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
 from backend.app.domains.workspace.projects.models import AgentRunProjectSnapshot
-from backend.app.domains.workspace.projects.output_artifacts import ProjectOutputArtifactWriter
-from backend.app.domains.workspace.projects.run_manifest import (
+from backend.app.domains.workspace.projects.snapshots.manifest import (
     RunProjectManifest,
     RunProjectOutput,
     public_run_project_manifest,
 )
-from backend.app.domains.workspace.projects.run_snapshots import RunProjectSnapshotService
-from backend.app.domains.workspace.projects.runtime_io_errors import ProjectRunIOError
-from backend.app.domains.workspace.projects.runtime_io_state import ProjectIOStateService
-from backend.app.domains.workspace.projects.runtime_staging import ProjectInputArchiveBuilder
+from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import FileAccessEvent
 from backend.app.domains.workspace.storage.storage import ObjectStorage, create_storage

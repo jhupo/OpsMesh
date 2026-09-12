@@ -30,8 +30,8 @@ from backend.app.domains.workspace.projects.models import (
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
-from backend.app.domains.workspace.projects.run_snapshots import RunProjectSnapshotService
-from backend.app.domains.workspace.projects.serialization import sha256_json
+from backend.app.domains.workspace.projects.snapshots.format import sha256_json
+from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.storage import LocalStorage

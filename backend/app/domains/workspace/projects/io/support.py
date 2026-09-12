@@ -1,17 +1,52 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.agents.runtime.errors import AgentRuntimePolicyError
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.projects.models import AgentRunProjectIOState
-from backend.app.domains.workspace.projects.run_manifest import (
+from backend.app.domains.workspace.projects.snapshots.manifest import (
     parse_run_project_manifest,
     public_run_project_manifest,
 )
-from backend.app.domains.workspace.projects.run_snapshots import RunProjectSnapshotService
+from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
 
 
+class ProjectRunIOError(AgentRuntimePolicyError):
+    def __init__(
+        self,
+        *,
+        code: str,
+        message: str,
+        stage: str,
+        retryable: bool,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(
+            code=code,
+            message=message,
+            event_type=f"project.{stage}.failed",
+            metadata={"stage": stage, **(metadata or {})},
+            retryable=retryable,
+        )
+class RunProjectIOQueryService:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def get_state(
+        self,
+        workspace_id: UUID,
+        run_id: UUID,
+    ) -> AgentRunProjectIOState | None:
+        return self._session.scalar(
+            select(AgentRunProjectIOState).where(
+                AgentRunProjectIOState.workspace_id == workspace_id,
+                AgentRunProjectIOState.agent_run_id == run_id,
+            )
+        )
 def project_runtime_context(
     session: Session,
     run: AgentRun,
@@ -36,3 +71,4 @@ def project_runtime_context(
         "fingerprint_sha256": snapshot.fingerprint_sha256,
         **public_run_project_manifest(manifest),
     }
+

@@ -12,9 +12,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import TaskStep
+from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
 from backend.app.domains.workspace.projects.models import AgentRunProjectSnapshot, WorkspaceProject
-from backend.app.domains.workspace.projects.run_manifest import RunProjectOutput
-from backend.app.domains.workspace.projects.runtime_io_errors import ProjectRunIOError
+from backend.app.domains.workspace.projects.snapshots.manifest import RunProjectOutput
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.security import safe_filename
 from backend.app.domains.workspace.storage.storage import ObjectStorage
