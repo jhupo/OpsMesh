@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session
 from backend.app.runtime.lifecycle_control import RuntimeLifecycleControl
 from backend.app.runtime.quotas import RuntimeQuotaExceededError
 from backend.app.runtime.safety import RuntimeSafetyError
-from backend.app.teams.command_center_constants import NON_APPLICABLE_RUNTIME_ACTIONS
-from backend.app.teams.command_center_grouping import _runtime_action_result
+from backend.app.teams.command_center_grouping import (
+    NON_APPLICABLE_RUNTIME_ACTIONS,
+    _runtime_action_result,
+)
 from backend.app.teams.command_center_payloads import _runtime_payload
 from backend.app.teams.command_center_utils import _uuid_list, _uuid_value
 from backend.app.teams.operator_actions import TeamOperatorActionService

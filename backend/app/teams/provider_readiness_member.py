@@ -17,10 +17,6 @@ from backend.app.model_providers.model_api import (
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.security.redaction import redact_sensitive_text
 from backend.app.teams.models import AgentTeamMember
-from backend.app.teams.provider_readiness_constants import (
-    BLOCKING_HEALTH_STATUSES,
-    DEGRADED_HEALTH_STATUSES,
-)
 from backend.app.teams.provider_readiness_payloads import (
     _capability_provider,
     _empty_health_check_schedule,
@@ -28,6 +24,9 @@ from backend.app.teams.provider_readiness_payloads import (
     _model_capability_payload,
     _selected_model,
 )
+
+BLOCKING_HEALTH_STATUSES = {"unhealthy"}
+DEGRADED_HEALTH_STATUSES = {"degraded", "unknown"}
 
 
 class TeamProviderReadinessMemberBuilder:

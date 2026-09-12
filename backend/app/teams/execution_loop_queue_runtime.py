@@ -17,7 +17,7 @@ from backend.app.teams.execution_loop_runtime_candidates import (
     _scheduled_runtime_priority,
 )
 from backend.app.teams.models import AgentTeam
-from backend.app.teams.provider_readiness import TeamProviderReadinessService
+from backend.app.teams.provider_readiness_service import TeamProviderReadinessService
 from backend.app.teams.runtime import (
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,

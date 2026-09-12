@@ -3,13 +3,23 @@ from __future__ import annotations
 from typing import TypedDict
 from uuid import UUID
 
-from backend.app.teams.command_center_constants import (
-    COMMAND_CENTER_ACTION_SOURCES,
-    NON_APPLICABLE_RUNTIME_ACTIONS,
-    RUNTIME_OPERATOR_ACTIONS,
-)
 from backend.app.teams.command_center_utils import _int, _uuid_list, _uuid_value
 from backend.app.teams.operator_actions import TEAM_OPERATOR_ACTIONS
+
+COMMAND_CENTER_ACTION_SOURCES = {
+    "execution_overview",
+    "handoff_queue",
+    "manager_queue",
+    "provider_readiness",
+    "team_runtime",
+}
+RUNTIME_OPERATOR_ACTIONS = {
+    "ensure_team_runtime",
+    "review_model_provider",
+    "review_team_runtime_stall",
+    "start_team_runtime",
+}
+NON_APPLICABLE_RUNTIME_ACTIONS = {"review_model_provider", "review_team_runtime_stall"}
 
 
 class ActionGroup(TypedDict):

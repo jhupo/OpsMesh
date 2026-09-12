@@ -27,7 +27,7 @@ from backend.app.teams.command_center_utils import (
     _string_list,
 )
 from backend.app.teams.execution_overview import TeamExecutionOverviewService
-from backend.app.teams.provider_readiness import TeamProviderReadinessService
+from backend.app.teams.provider_readiness_service import TeamProviderReadinessService
 from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.teams.scheduling_blocks import scheduled_run_blocking_summary
 from backend.app.workers.redis_queue import RedisQueue

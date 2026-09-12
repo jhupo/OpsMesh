@@ -87,6 +87,10 @@ def test_team_consolidation_removes_superseded_sources() -> None:
         "execution_loop_recorder.py",
         "execution_loop_repository.py",
         "execution_overview_members.py",
+        "command_center_constants.py",
+        "project_dashboard_constants.py",
+        "provider_readiness.py",
+        "provider_readiness_constants.py",
     ):
         assert not (teams / name).exists(), name
 

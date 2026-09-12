@@ -8,9 +8,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
-from backend.app.teams.project_dashboard_constants import TERMINAL_TASK_STATUSES
 from backend.app.teams.project_dashboard_repository import TeamProjectDashboardRepository
-from backend.app.teams.project_dashboard_views import _summary, _task_item
+from backend.app.teams.project_dashboard_views import (
+    TERMINAL_TASK_STATUSES,
+    _summary,
+    _task_item,
+)
 
 
 class TeamProjectDashboardService:

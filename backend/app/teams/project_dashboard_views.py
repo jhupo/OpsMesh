@@ -9,7 +9,8 @@ from backend.app.runs.activity import run_activity
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.storage.artifact_models import Artifact
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.teams.project_dashboard_constants import TERMINAL_TASK_STATUSES
+
+TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled", "canceled"}
 
 
 def _task_item(
