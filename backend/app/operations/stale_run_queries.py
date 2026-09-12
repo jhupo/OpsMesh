@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.operations.models import WorkerLease
 from backend.app.operations.stale_run_domain import stale_run_age_anchor
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.workers.jobs import JobType
 
 

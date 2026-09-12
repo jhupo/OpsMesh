@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from backend.app.agents.models import AgentProfile
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.storage.artifact_models import Artifact
 
 SUPPORTED_VIEW_TYPES = {"generic", "aigc", "novel", "research", "software"}

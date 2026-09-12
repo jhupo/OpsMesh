@@ -19,7 +19,7 @@ from backend.app.observability.cost_models import (
     WorkspaceCostBudget,
 )
 from backend.app.observability.cost_usage import NormalizedModelUsage, normalize_model_usage
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 
 _MILLION = Decimal(1_000_000)
 _COST_QUANTUM = Decimal("0.000000000001")

@@ -3,8 +3,8 @@ from datetime import datetime
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.models import WorkspaceSkillInstall
 from backend.app.observability.audit_models import AuditEvent
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile

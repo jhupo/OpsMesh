@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.runs.status import RunStatus
+from backend.app.orchestration.runs.status import RunStatus
 
 ACTIVE_RUN_STATUS_VALUES = (
     RunStatus.QUEUED.value,

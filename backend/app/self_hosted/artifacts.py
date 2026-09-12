@@ -4,8 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.self_hosted import ArtifactUploadRequest, LocalFileReferenceRequest
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.runs.models import AgentRun
 from backend.app.self_hosted.models import LocalFileReference, SelfHostedArtifactUpload
 from backend.app.self_hosted.policy import positive_policy_int
 from backend.app.self_hosted.types import AuthenticatedWorker

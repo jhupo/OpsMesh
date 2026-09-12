@@ -9,7 +9,7 @@ from backend.app.capabilities.mcp.payloads import canonical_payload, error_code,
 from backend.app.capabilities.mcp.payloads import response_hash as mcp_response_hash
 from backend.app.capabilities.mcp.types import McpExecutionRequest
 from backend.app.capabilities.models import McpToolCallLog
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 
 
 @dataclass(slots=True)

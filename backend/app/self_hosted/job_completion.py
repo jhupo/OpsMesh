@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.self_hosted import JobCompleteRequest
 from backend.app.core.config import Settings
-from backend.app.runs.models import AgentRun
-from backend.app.runs.service import RunStateService
-from backend.app.runs.status import RunStatus
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.state import RunStateService
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.self_hosted.events import SelfHostedEventRecorder
 from backend.app.self_hosted.jobs import SelfHostedJobFinalizer
 from backend.app.self_hosted.models import SelfHostedJobClaim

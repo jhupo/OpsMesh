@@ -15,7 +15,7 @@ from backend.app.capabilities.mcp.execution_notifications import McpExecutionNot
 from backend.app.capabilities.mcp.types import McpExecutionRequest
 from backend.app.capabilities.tools.errors import ToolPermissionError
 from backend.app.core.trace_context import with_current_trace_metadata
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.security.models import SecurityEvent
 
 

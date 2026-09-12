@@ -25,12 +25,12 @@ from backend.app.orchestration.requests.authorization import RunAuthorizationSer
 from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationError,
     RunRuntimeAuthorizationService,
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.runtime.space_models import RuntimeSpace
 from backend.app.security.models import SecurityEvent

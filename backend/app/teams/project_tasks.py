@@ -4,9 +4,9 @@ from collections import defaultdict
 from uuid import UUID
 
 from backend.app.core.typing import counts_by_value
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
-from backend.app.runs.models import AgentRun
 from backend.app.storage.artifact_models import Artifact
 from backend.app.teams.project_types import ProjectSpaceRecords
 

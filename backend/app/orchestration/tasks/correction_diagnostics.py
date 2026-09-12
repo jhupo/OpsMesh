@@ -8,9 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import dict_or_empty, uuid_or_none
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.storage.artifact_models import Artifact
 

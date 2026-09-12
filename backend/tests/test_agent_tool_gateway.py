@@ -24,9 +24,9 @@ from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.security.models import SecurityEvent
 from backend.app.storage.models import WorkspaceFile
 from backend.app.storage.storage import LocalStorage

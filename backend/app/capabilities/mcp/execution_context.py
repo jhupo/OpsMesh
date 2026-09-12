@@ -1,4 +1,4 @@
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 
 
 def authorization_snapshot(run: AgentRun) -> dict[str, object]:

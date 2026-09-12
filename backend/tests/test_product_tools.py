@@ -24,8 +24,8 @@ from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearc
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
 from backend.app.storage.storage import LocalStorage

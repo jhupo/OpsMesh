@@ -4,8 +4,8 @@ from backend.app.agents.models import AgentProfile
 from backend.app.core.trace_context import current_trace_metadata
 from backend.app.orchestration.requests.authorization import RunAuthorizationService
 from backend.app.orchestration.requests.context import RunRequestContextProvider
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
-from backend.app.runs.models import AgentRun
 
 
 class RunRuntimeMetadataBuilder:

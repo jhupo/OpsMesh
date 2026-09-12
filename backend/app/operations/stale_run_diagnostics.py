@@ -18,8 +18,8 @@ from backend.app.operations.stale_run_domain import (
     worker_lease_age_seconds,
 )
 from backend.app.operations.stale_run_queries import StaleRunQueryService
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus
 
 
 class StaleRunDiagnosticsService:

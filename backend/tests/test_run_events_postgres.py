@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.db.base import Base
-from backend.app.runs.event_writer import RunEventWriter
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.event_writer import RunEventWriter
+from backend.app.orchestration.runs.models import AgentRun
 from backend.tests.test_postgres_scheduler_concurrency import (
     POSTGRES_TEST_URL_ENV,
     _metadata_has_sqlite_json_columns,

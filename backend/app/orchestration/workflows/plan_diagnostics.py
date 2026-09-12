@@ -13,12 +13,12 @@ from backend.app.core.typing import (
     string_or_default,
     uuid_or_none,
 )
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.conditions import condition_step_references
 from backend.app.orchestration.workflows.plan_member_matching import MemberMatchingService
 from backend.app.orchestration.workflows.plan_org_structure import build_org_structure
 from backend.app.orchestration.workflows.plan_project_plan_members import snapshot_agent_ids
-from backend.app.runs.models import AgentRun
 from backend.app.security.redaction import redact_sensitive_text
 
 

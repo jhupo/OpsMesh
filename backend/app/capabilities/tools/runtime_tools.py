@@ -7,7 +7,7 @@ from backend.app.core.config import Settings
 from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
 from backend.app.orchestration.approvals.service import ApprovalService
 from backend.app.orchestration.approvals.waiting import ApprovalWaitingService
-from backend.app.runs.event_writer import RunEventWriter
+from backend.app.orchestration.runs.event_writer import RunEventWriter
 from backend.app.runtime.manager import RuntimeManager
 from backend.app.runtime.models import RuntimeCommand, WorkspaceRuntime
 

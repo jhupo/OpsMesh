@@ -11,9 +11,9 @@ from backend.app.agents.runtime.sessions import (
     SQLAlchemyAgentSession,
 )
 from backend.app.orchestration.requests.utils import uuid_or_none
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
 
 
 @dataclass(slots=True)

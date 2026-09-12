@@ -16,11 +16,11 @@ from backend.app.orchestration.models import (
     SubworkflowInvocation,
 )
 from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.tasks.workspace_service import WorkspaceTaskService
 from backend.app.orchestration.workflows.data import resolve_workflow_inputs
-from backend.app.runs.models import AgentRun
 from backend.app.workers.redis_queue import RedisQueue
 
 

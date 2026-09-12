@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
 from backend.app.projects.file_boundaries import (
     ProjectBoundaryViolation,
@@ -26,7 +27,6 @@ from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.projects.runtime_io_state import ProjectIOStateService
 from backend.app.projects.runtime_staging import ProjectInputArchiveBuilder
-from backend.app.runs.models import AgentRun
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.self_hosted.models import SelfHostedJobClaim
 from backend.app.self_hosted.types import AuthenticatedWorker

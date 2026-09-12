@@ -5,8 +5,8 @@ from typing import overload
 from uuid import UUID
 
 from backend.app.agents.runtime.contracts import AgentRuntimeEvent
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import TaskStep
-from backend.app.runs.models import AgentRun
 from backend.app.security.redaction import redact_sensitive_text
 
 _SECRET_KEYS = {

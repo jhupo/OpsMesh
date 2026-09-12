@@ -12,7 +12,7 @@ from backend.app.agents.runtime.state_store import AgentRunStateStore
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 

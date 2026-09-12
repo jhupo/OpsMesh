@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
 from backend.app.core.typing import string_list
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.runtime.space_models import RuntimeSpace
 
 

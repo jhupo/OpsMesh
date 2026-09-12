@@ -2,6 +2,7 @@ from collections import Counter
 from uuid import UUID
 
 from backend.app.agents.models import AgentProfile
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.tasks.observation_utils import (
     review_event_status,
@@ -9,7 +10,6 @@ from backend.app.orchestration.tasks.observation_utils import (
     status_from_message_type,
     str_or_none,
 )
-from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.storage.artifact_models import Artifact
 

@@ -17,9 +17,9 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.orchestration.approvals.models import Approval
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.feedback import TaskFeedbackService
 from backend.app.orchestration.tasks.models import Task
-from backend.app.runs.models import AgentRun
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 

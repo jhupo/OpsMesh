@@ -18,7 +18,7 @@ from backend.app.capabilities.models import CapabilityResource
 from backend.app.capabilities.schema_validation import validate_parameters
 from backend.app.core.trace_context import with_current_trace_metadata
 from backend.app.orchestration.runs.events import RunEventRecorder
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.security.models import SecurityEvent
 
 

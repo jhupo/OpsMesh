@@ -9,8 +9,8 @@ from sqlalchemy import select
 from backend.app.capabilities.tools.context import ToolContext
 from backend.app.capabilities.tools.errors import ToolResourceNotFoundError
 from backend.app.capabilities.tools.product_events import ProductToolEventRecorder
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import TaskStep
-from backend.app.runs.models import AgentRun
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.artifact_persistence import (
     ArtifactPersistenceError,

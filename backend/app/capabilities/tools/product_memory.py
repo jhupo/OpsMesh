@@ -15,7 +15,7 @@ from backend.app.capabilities.tools.errors import ToolResourceNotFoundError
 from backend.app.capabilities.tools.product_events import ProductToolEventRecorder
 from backend.app.capabilities.tools.product_normalization import normalized_tags
 from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
 
 

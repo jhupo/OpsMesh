@@ -24,7 +24,7 @@ from backend.app.capabilities.mcp.types import (
 )
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.capabilities.tools.errors import ToolPermissionError
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 
 
 @dataclass(slots=True)

@@ -3,8 +3,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.runs.event_writer import RunEventWriter
-from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.event_writer import RunEventWriter
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.runtime.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.runtime.space_models import RuntimeSpaceEvent
 from backend.app.security.models import SecurityEvent

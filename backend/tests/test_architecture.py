@@ -54,6 +54,7 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "marketplace",
         "approvals",
         "tasks",
+        "runs",
         "orchestration/models_layer",
         "orchestration/run_request",
         "orchestration/planning",

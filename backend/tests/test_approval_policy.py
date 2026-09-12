@@ -14,9 +14,9 @@ from backend.app.orchestration.approvals.policy import (
     ApprovalPolicyOutcome,
 )
 from backend.app.orchestration.requests.request_approval import ModelRequestApprovalService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.reviews.model_request import ModelRequestReviewService
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
 
 
 def test_identical_policy_inputs_produce_the_same_decision_for_every_action_kind() -> None:

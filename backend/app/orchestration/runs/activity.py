@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 
 
 def run_activity(run: AgentRun, latest_event: RunEvent | None) -> dict[str, object]:

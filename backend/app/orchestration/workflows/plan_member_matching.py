@@ -5,13 +5,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import string_list, uuid_or_none
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.orchestration.workflows.plan_org_structure import (
     is_leadership_role,
     normalize_role,
 )
 from backend.app.orchestration.workflows.statuses import WORKLOAD_RUN_STATUS_VALUES
-from backend.app.runs.models import AgentRun
 
 
 @dataclass(frozen=True)

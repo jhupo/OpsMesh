@@ -6,7 +6,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.operations.models import WorkerHeartbeat
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 

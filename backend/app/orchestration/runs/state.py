@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus, require_run_transition
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus, require_run_transition
 
 
 @dataclass(frozen=True)

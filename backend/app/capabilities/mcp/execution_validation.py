@@ -20,7 +20,7 @@ from backend.app.core.config import Settings
 from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 
 
 @dataclass(frozen=True, slots=True)

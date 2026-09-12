@@ -4,9 +4,9 @@ from collections import Counter, defaultdict
 from uuid import UUID
 
 from backend.app.agents.models import AgentProfile
+from backend.app.orchestration.runs.activity import run_activity
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import TaskStep
-from backend.app.runs.activity import run_activity
-from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.teams.execution_overview_contracts import (
     ACTIVE_RUN_STATUSES,
     ACTIVE_STEP_STATUSES,

@@ -12,7 +12,7 @@ from backend.app.api.schemas.self_hosted import (
     WorkerHeartbeatRequest,
 )
 from backend.app.core.config import Settings
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.self_hosted.artifacts import SelfHostedArtifactService
 from backend.app.self_hosted.dispatch import SelfHostedDispatchService
 from backend.app.self_hosted.events import SelfHostedEventRecorder

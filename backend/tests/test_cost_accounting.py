@@ -22,7 +22,7 @@ from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
 from backend.app.observability.cost_usage import normalize_model_usage
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 

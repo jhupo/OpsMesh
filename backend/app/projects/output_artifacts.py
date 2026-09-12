@@ -10,11 +10,11 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.projects.models import AgentRunProjectSnapshot, WorkspaceProject
 from backend.app.projects.run_manifest import RunProjectOutput
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
-from backend.app.runs.models import AgentRun
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.security import safe_filename
 from backend.app.storage.storage import ObjectStorage

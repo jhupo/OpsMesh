@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.core.typing import dict_list
 from backend.app.orchestration.models import SubworkflowInvocation
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.execution_handoff import (
     handoff_needs_attention,
     handoff_queue_item,
@@ -21,8 +23,6 @@ from backend.app.orchestration.tasks.execution_payloads import (
     handoff_state,
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
 from backend.app.teams.models import AgentTeam
 
 ACTIVE_RUN_STATUSES = {

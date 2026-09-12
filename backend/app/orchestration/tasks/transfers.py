@@ -10,13 +10,13 @@ from sqlalchemy.orm import Session
 from backend.app.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.agents.models import AgentProfile
 from backend.app.observability.audit_service import AuditService
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep, TaskTransfer
 from backend.app.orchestration.tasks.ownership import is_platform_owned_step, owner_version
 from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.runs.models import AgentRun
 from backend.app.security.redaction import redact_sensitive_payload, redact_text_fragments
 from backend.app.storage.artifact_models import Artifact
 from backend.app.teams.models import AgentTeam, AgentTeamMember

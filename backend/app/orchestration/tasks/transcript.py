@@ -7,8 +7,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.runs.models import AgentRun
 
 
 class TaskInteractionTranscriptService:

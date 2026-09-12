@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.self_hosted import ProgressEventRequest
-from backend.app.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.self_hosted.events import SelfHostedEventRecorder
 from backend.app.self_hosted.types import AuthenticatedWorker
 

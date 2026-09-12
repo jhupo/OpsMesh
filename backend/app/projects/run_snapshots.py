@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
 from backend.app.projects.models import (
     AgentRunProjectSnapshot,
@@ -15,7 +16,6 @@ from backend.app.projects.models import (
     WorkspaceProjectOutput,
 )
 from backend.app.projects.serialization import sha256_json
-from backend.app.runs.models import AgentRun
 from backend.app.storage.models import WorkspaceFile
 
 PROJECT_SNAPSHOT_SCHEMA_VERSION = 1

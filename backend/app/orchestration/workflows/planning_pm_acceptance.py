@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import dict_list, string_list, string_list_or_single, string_or_default
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.result_payloads import json_object_from_text
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.workflows.planning_task_step_review import is_pm_summary_step
-from backend.app.runs.models import AgentRun
 
 AppendTaskMessage = Callable[..., TaskMessage]
 

@@ -10,8 +10,8 @@ from backend.app.operations.timeline_utils import (
     configured_mcp_tools,
     team_runtime_team_id,
 )
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
-from backend.app.runs.models import AgentRun
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 

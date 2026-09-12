@@ -16,7 +16,7 @@ from backend.app.orchestration.requests.provider_audit import ModelProviderAudit
 from backend.app.orchestration.requests.request_reviewing import model_provider_fallback_policy
 from backend.app.orchestration.requests.utils import effective_resolved_model_api
 from backend.app.orchestration.runs.events import RunEventRecorder
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.workers.jobs import JobPayload
 from backend.app.workspaces.models import Workspace
 

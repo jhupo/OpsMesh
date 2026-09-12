@@ -8,8 +8,8 @@ from sqlalchemy import Engine, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus
 
 
 @dataclass(slots=True)

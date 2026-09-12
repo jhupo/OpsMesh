@@ -3,12 +3,12 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.state_task_progress import (
     deep_merge_dict,
     task_progress_from_output,
 )
 from backend.app.orchestration.tasks.models import Task, TaskMessage
-from backend.app.runs.models import AgentRun
 
 AppendTaskMessage = Callable[..., TaskMessage]
 

@@ -36,11 +36,11 @@ from backend.app.identity.models import User
 from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task
 from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
 from backend.app.runtime.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
@@ -1148,7 +1148,7 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
 
 
 def test_waiting_runtime_status_transition_is_allowed() -> None:
-    from backend.app.runs.status import can_transition_run
+    from backend.app.orchestration.runs.status import can_transition_run
 
     assert can_transition_run(RunStatus.RUNNING, RunStatus.WAITING_RUNTIME)
     assert can_transition_run(RunStatus.WAITING_RUNTIME, RunStatus.QUEUED)

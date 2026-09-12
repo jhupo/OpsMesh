@@ -27,11 +27,11 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.notification_models import WorkspaceNotification
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,

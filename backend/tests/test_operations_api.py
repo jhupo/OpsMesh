@@ -26,11 +26,11 @@ from backend.app.observability.audit_models import AuditEvent
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
 from backend.app.orchestration.approvals.models import Approval
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
 from backend.app.security.models import SecurityEvent

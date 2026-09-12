@@ -3,12 +3,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.state import RunStateService
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.tasks.service import TaskStateService
 from backend.app.orchestration.tasks.status import TaskStatus
-from backend.app.runs.models import AgentRun
-from backend.app.runs.service import RunStateService
-from backend.app.runs.status import RunStatus
 
 
 class ApprovalWaitingService:

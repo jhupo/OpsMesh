@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.typing import string_list
 from backend.app.orchestration.requests.authorization import RunAuthorizationService
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.runtime_authorization import RunRuntimeAuthorizationService
 from backend.app.orchestration.tasks.models import Task
-from backend.app.runs.models import AgentRun
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.runtime.space_models import RuntimeSpace
 from backend.app.runtime.space_reservation_attachment import (

@@ -10,6 +10,7 @@ from backend.app.orchestration.requests.authorization import RunAuthorizationSer
 from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationError,
     runtime_binding_for_snapshot,
@@ -18,7 +19,6 @@ from backend.app.orchestration.tasks.models import Task
 from backend.app.projects.models import AgentRunProjectSnapshot
 from backend.app.projects.run_manifest import RunProjectManifest
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
-from backend.app.runs.models import AgentRun
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.storage.models import WorkspaceFile
 from backend.app.storage.runtime_policy import runtime_file_denial_code

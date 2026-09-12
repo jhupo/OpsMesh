@@ -23,9 +23,9 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.reviews.llm import LlmReviewResult, StructuredResourceReview
-from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 

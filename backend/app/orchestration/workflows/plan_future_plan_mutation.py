@@ -12,6 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.observability.audit_service import AuditService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.tasks.service import TaskStateService
@@ -30,8 +32,6 @@ from backend.app.orchestration.workflows.planning_team_project_plan import (
     step_dependencies_for_package,
 )
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
 from backend.app.teams.snapshots import build_team_snapshot
 from backend.app.workers.redis_queue import RedisQueue
 

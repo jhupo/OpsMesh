@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.tasks.timeline_events import (
     artifact_timeline_event,
@@ -18,7 +19,6 @@ from backend.app.orchestration.tasks.timeline_events import (
     str_or_none,
     timeline_event_sort_key,
 )
-from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.storage.artifact_models import Artifact
 
 

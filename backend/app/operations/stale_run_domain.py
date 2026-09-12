@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from backend.app.operations.models import WorkerLease
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.workflows.statuses import STALE_RECOVERABLE_RUN_STATUS_VALUES
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
 
 
 def normalized_stale_run_statuses(statuses: list[str] | None) -> set[RunStatus]:

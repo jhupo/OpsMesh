@@ -25,7 +25,7 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.observability.cost_service import CostAccountingService
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "cost-api-token"

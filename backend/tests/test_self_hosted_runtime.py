@@ -23,9 +23,9 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.tasks.status import TaskStatus
-from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.runtime.space_models import (
     RuntimeSpace,

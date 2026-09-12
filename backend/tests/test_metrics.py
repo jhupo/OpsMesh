@@ -33,9 +33,9 @@ from backend.app.observability.cost_models import (
 )
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.operations.prometheus_worker_metrics import WorkerPrometheusMetrics
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runs.models import AgentRun
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.teams.models import AgentTeam

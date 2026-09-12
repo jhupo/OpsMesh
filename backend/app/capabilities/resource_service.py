@@ -26,8 +26,8 @@ from backend.app.core.errors import DomainError, NotFoundError
 from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.observability.audit_service import AuditService
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
-from backend.app.runs.models import AgentRun
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.runtime.space_models import RuntimeSpace
 from backend.app.storage.models import WorkspaceFile

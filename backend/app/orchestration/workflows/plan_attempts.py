@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.approvals.service import ApprovalService
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.tasks.service import TaskStateService
@@ -23,7 +24,6 @@ from backend.app.orchestration.workflows.plan_project_plans import (
     ProjectPlanValidationError,
     validate_project_plan,
 )
-from backend.app.runs.models import AgentRun
 
 
 class TaskPlanningAttemptService:

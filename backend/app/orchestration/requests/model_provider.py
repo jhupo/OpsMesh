@@ -14,7 +14,7 @@ from backend.app.orchestration.requests.utils import (
     model_api_from_settings,
     uuid_or_none,
 )
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
 
 

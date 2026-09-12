@@ -37,11 +37,11 @@ from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runs.status import RunStatus
 from backend.app.security.models import SecurityEvent
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 

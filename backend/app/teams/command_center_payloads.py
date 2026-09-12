@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.teams.command_center_utils import _dict, _int
 from backend.app.teams.runtime import TEAM_RUNTIME_RUNNING
 

@@ -5,10 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.projects.models import AgentRunProjectIOState
 from backend.app.projects.runtime_io import RunProjectIOService
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
 from backend.app.runtime.contracts import DockerRuntimeClient
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.runtime.run_environment import RunRuntimeEnvironmentService

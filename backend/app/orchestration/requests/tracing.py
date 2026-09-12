@@ -2,8 +2,8 @@
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRunTracing
 from backend.app.orchestration.requests.utils import json_safe
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
-from backend.app.runs.models import AgentRun
 
 
 def agent_run_tracing(

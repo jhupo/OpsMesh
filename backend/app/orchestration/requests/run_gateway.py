@@ -21,7 +21,7 @@ from backend.app.orchestration.requests.provider_audit import ModelProviderAudit
 from backend.app.orchestration.requests.provider_routing import ModelProviderRoutingService
 from backend.app.orchestration.requests.request_approval import ModelRequestApprovalService
 from backend.app.orchestration.runs.events import RunEventRecorder
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.workers.jobs import JobPayload
 
 MarkRunFailed = Callable[[AgentRun, Exception], None]

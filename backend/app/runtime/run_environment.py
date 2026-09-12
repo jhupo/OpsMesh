@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.events import RunEventRecorder
-from backend.app.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCreateRequest,

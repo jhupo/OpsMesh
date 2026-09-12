@@ -22,6 +22,7 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
 from backend.app.projects.models import (
     AgentRunProjectIOState,
@@ -32,7 +33,6 @@ from backend.app.projects.models import (
 )
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.projects.serialization import sha256_json
-from backend.app.runs.models import AgentRun
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile

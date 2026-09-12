@@ -46,12 +46,12 @@ from backend.app.orchestration.requests.prompt import (
 from backend.app.orchestration.requests.sessions import RunRequestSessionService
 from backend.app.orchestration.requests.tracing import agent_run_tracing
 from backend.app.orchestration.runs.cancellation import DatabaseRunCancellation
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.runtime_authorization import RunRuntimeAuthorizationService
 from backend.app.orchestration.runs.runtime_metadata import RunRuntimeMetadataBuilder
 from backend.app.orchestration.runs.tool_authorization import hydrate_agent_tools
 from backend.app.orchestration.tasks.models import Task
 from backend.app.projects.runtime_context import project_runtime_context
-from backend.app.runs.models import AgentRun
 from backend.app.runtime.backend_registry import build_runtime_backend_registry
 from backend.app.runtime.contracts import DockerRuntimeClient
 from backend.app.runtime.models import WorkspaceRuntime

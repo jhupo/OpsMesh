@@ -8,10 +8,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.projects.models import AgentRunProjectIOState, AgentRunProjectSnapshot
 from backend.app.projects.run_manifest import RunProjectManifest, parse_run_project_manifest
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
-from backend.app.runs.models import AgentRun
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.storage.artifact_models import Artifact

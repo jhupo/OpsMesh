@@ -23,8 +23,8 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.orchestration.runs.cancellation import DatabaseRunCancellation
-from backend.app.runs.models import AgentRun
-from backend.app.runs.status import RunStatus
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.workspaces.models import Workspace
 
 

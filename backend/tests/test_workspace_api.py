@@ -34,6 +34,8 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
 from backend.app.orchestration.tasks.event_outbox import TaskEventOutboxPublisher
 from backend.app.orchestration.tasks.events import RedisTaskEventBus
@@ -50,8 +52,6 @@ from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.model_request import ModelRequestReview
-from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runs.status import RunStatus
 from backend.app.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,

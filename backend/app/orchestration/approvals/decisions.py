@@ -10,8 +10,8 @@ from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.orchestration.approvals.run_gate import ApprovalRunGateService
+from backend.app.orchestration.runs.models import AgentRunStateSnapshot
 from backend.app.reviews.resource_review_targets import ResourceReviewDecisionService
-from backend.app.runs.models import AgentRunStateSnapshot
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.redis_queue import RedisQueue

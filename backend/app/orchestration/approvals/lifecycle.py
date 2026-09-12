@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.approvals.models import Approval, PendingToolInvocation
 from backend.app.orchestration.approvals.run_gate import ApprovalRunGateService
-from backend.app.runs.models import AgentRunStateSnapshot
+from backend.app.orchestration.runs.models import AgentRunStateSnapshot
 
 
 @dataclass(frozen=True, slots=True)

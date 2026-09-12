@@ -55,6 +55,7 @@ from backend.app.orchestration.models import (
     OrchestrationRevision,
     SubworkflowInvocation,
 )
+from backend.app.orchestration.runs.models import AgentRun, AgentRunStateSnapshot, RunEvent
 from backend.app.orchestration.tasks.models import (
     Task,
     TaskEventOutbox,
@@ -72,7 +73,6 @@ from backend.app.projects.models import (
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
-from backend.app.runs.models import AgentRun, AgentRunStateSnapshot, RunEvent
 from backend.app.runtime.models import (
     RuntimeCommand,
     RuntimeEvent,

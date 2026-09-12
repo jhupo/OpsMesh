@@ -11,6 +11,12 @@ from backend.app.agents.models import AgentProfile
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.observability.audit_models import AuditEvent
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.status import (
+    RunStatus,
+    can_transition_run,
+    require_run_transition,
+)
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.tasks.service import TaskStateService
 from backend.app.orchestration.tasks.status import (
@@ -18,8 +24,6 @@ from backend.app.orchestration.tasks.status import (
     can_transition_task,
     require_task_transition,
 )
-from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.runs.status import RunStatus, can_transition_run, require_run_transition
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
