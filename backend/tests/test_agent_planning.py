@@ -21,13 +21,13 @@ from backend.app.domains.orchestration.tasks.delivery.plan_lifecycle import (
     TaskPlanRetryCommand,
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.plan_future_plan_mutation import (
+from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
+from backend.app.domains.orchestration.workflows.planning.completion import PlannerCompletionService
+from backend.app.domains.orchestration.workflows.planning.future_plan_mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,
     TaskPlanMutationService,
 )
-from backend.app.domains.orchestration.workflows.plan_models import TaskPlanningAttempt
-from backend.app.domains.orchestration.workflows.planning_completion import PlannerCompletionService
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.tenants.models import WorkspaceQuota
 from backend.app.observability.cost_models import WorkspaceCostBudget

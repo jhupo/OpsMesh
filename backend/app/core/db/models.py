@@ -59,7 +59,7 @@ from backend.app.domains.orchestration.tasks.models import (
     TaskStep,
     TaskTransfer,
 )
-from backend.app.domains.orchestration.workflows.plan_models import TaskPlanningAttempt
+from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.workspace.domains.models import (
     DomainItem,
     DomainProject,

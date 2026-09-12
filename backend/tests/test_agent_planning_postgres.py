@@ -11,8 +11,8 @@ from backend.app.core.db.base import Base
 from backend.app.core.identity.models import User
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
-from backend.app.domains.orchestration.workflows.plan_models import TaskPlanningAttempt
+from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
+from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.tests.test_postgres_scheduler_concurrency import _temporary_postgres_schema

@@ -26,7 +26,9 @@ from backend.app.core.common.values import (
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.blocked_reasons import explain_blocked_reason
+from backend.app.domains.orchestration.workflows.definitions.blocked_reasons import (
+    explain_blocked_reason,
+)
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_service import AuditService

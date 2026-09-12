@@ -13,7 +13,9 @@ from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.plan_member_matching import MemberMatchingService
+from backend.app.domains.orchestration.workflows.planning.member_matching import (
+    MemberMatchingService,
+)
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 
 

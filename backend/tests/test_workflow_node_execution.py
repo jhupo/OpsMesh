@@ -18,17 +18,19 @@ from backend.app.domains.orchestration.runs.execution import (
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.conditions import evaluate_task_step_condition
-from backend.app.domains.orchestration.workflows.data import (
+from backend.app.domains.orchestration.workflows.definitions.conditions import (
+    evaluate_task_step_condition,
+)
+from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
+from backend.app.domains.orchestration.workflows.definitions.data import (
     WorkflowDataBindingError,
     resolve_workflow_inputs,
 )
-from backend.app.domains.orchestration.workflows.plan_workflow_contracts import WorkflowNode
-from backend.app.domains.orchestration.workflows.step_completion import TaskStepCompletionService
-from backend.app.domains.orchestration.workflows.subworkflows import (
+from backend.app.domains.orchestration.workflows.definitions.subworkflows import (
     SubworkflowExecutionError,
     SubworkflowExecutionService,
 )
+from backend.app.domains.orchestration.workflows.steps.completion import TaskStepCompletionService
 from backend.app.runtime.workers.jobs import JobPayload, JobType
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 

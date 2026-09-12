@@ -5,20 +5,22 @@ from sqlalchemy import select
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.workflows.conditions import (
-    evaluate_task_step_condition,
-    validate_condition,
-)
-from backend.app.domains.orchestration.workflows.definition_commands import (
+from backend.app.domains.orchestration.workflows.definitions.commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
 )
-from backend.app.domains.orchestration.workflows.definitions import OrchestrationDefinitionService
-from backend.app.domains.orchestration.workflows.plan_models import TaskPlanningAttempt
-from backend.app.domains.orchestration.workflows.plan_workflow_contracts import (
+from backend.app.domains.orchestration.workflows.definitions.conditions import (
+    evaluate_task_step_condition,
+    validate_condition,
+)
+from backend.app.domains.orchestration.workflows.definitions.contracts import (
     WorkflowCondition,
     WorkflowNode,
 )
+from backend.app.domains.orchestration.workflows.definitions.service import (
+    OrchestrationDefinitionService,
+)
+from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.tests.test_capability_resources import (
     _client as _api_client,

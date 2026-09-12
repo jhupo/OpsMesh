@@ -12,9 +12,11 @@ from backend.app.domains.orchestration.tasks.service import TaskStateService
 from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.domains.orchestration.tasks.step_service import TaskStepStateService
 from backend.app.domains.orchestration.tasks.step_status import TaskStepStatus
-from backend.app.domains.orchestration.workflows.conditions import evaluate_task_step_condition
+from backend.app.domains.orchestration.workflows.definitions.conditions import (
+    evaluate_task_step_condition,
+)
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.domains.orchestration.workflows.step_dependencies import (
+from backend.app.domains.orchestration.workflows.steps.dependencies import (
     dependencies_satisfied,
     dependency_decision,
 )

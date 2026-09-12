@@ -25,11 +25,11 @@ from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.orchestration.workflows.definition_commands import (
+from backend.app.domains.orchestration.workflows.definitions.commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
 )
-from backend.app.domains.orchestration.workflows.definitions import (
+from backend.app.domains.orchestration.workflows.definitions.service import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
 )

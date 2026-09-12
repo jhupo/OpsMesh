@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.db import models  # noqa: F401 - register ORM relationship targets
 from backend.app.domains.orchestration.tasks.models import TaskStep
-from backend.app.domains.orchestration.workflows.scheduler_team_capacity import (
+from backend.app.domains.orchestration.workflows.scheduling.capacity import (
     TeamMemberCapacityResolver,
     manager_capacity_context,
 )

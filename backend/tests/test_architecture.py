@@ -236,6 +236,36 @@ def test_task_modules_are_nested_by_function() -> None:
         assert not (tasks / name).exists(), name
 
 
+def test_workflow_modules_are_nested_by_function() -> None:
+    workflows = ROOT / "backend/app/domains/orchestration/workflows"
+    expected = {"definitions", "planning", "scheduling", "steps"}
+    assert {path.name for path in workflows.iterdir() if path.is_dir()} >= expected
+    root_modules = {
+        path.stem
+        for path in workflows.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert root_modules == {"statuses"}
+    assert (workflows / "planning/project_plan/__init__.py").is_file()
+    for name in (
+        "blocked_reasons.py",
+        "conditions.py",
+        "data.py",
+        "definition_commands.py",
+        "definitions.py",
+        "plan_agent_plan.py",
+        "plan_attempts.py",
+        "plan_diagnostics.py",
+        "plan_project_plan_members.py",
+        "plan_workflow_contracts.py",
+        "planning_completion.py",
+        "scheduler_main.py",
+        "step_launcher.py",
+        "subworkflows.py",
+    ):
+        assert not (workflows / name).exists(), name
+
+
 def test_operations_features_are_nested_by_function() -> None:
     operations = ROOT / "backend/app/runtime/operations"
     expected = {"metrics", "queues", "recovery", "runtimes", "timeline", "workers"}

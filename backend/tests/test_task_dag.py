@@ -8,14 +8,14 @@ from sqlalchemy.orm import Session
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.plan_project_plan_validation import (
+from backend.app.domains.orchestration.workflows.planning.project_plan.validation import (
     ProjectPlanValidationError,
     validate_project_plan,
 )
-from backend.app.domains.orchestration.workflows.planning_team_project_plan import (
+from backend.app.domains.orchestration.workflows.planning.team_project_plan import (
     ProjectPlanStepMaterializer,
 )
-from backend.app.domains.orchestration.workflows.step_dependencies import dependencies_satisfied
+from backend.app.domains.orchestration.workflows.steps.dependencies import dependencies_satisfied
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 

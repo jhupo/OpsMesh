@@ -25,14 +25,14 @@ from backend.app.domains.orchestration.tasks.delivery.plan_lifecycle import (
     TaskPlanRetryCommand,
 )
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.workflows.definitions import (
+from backend.app.domains.orchestration.workflows.definitions.service import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
 )
-from backend.app.domains.orchestration.workflows.plan_diagnostics import (
+from backend.app.domains.orchestration.workflows.planning.diagnostics import (
     ProjectPlanDiagnosticsService,
 )
-from backend.app.domains.orchestration.workflows.plan_future_plan_mutation import (
+from backend.app.domains.orchestration.workflows.planning.future_plan_mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,
     TaskPlanMutationService,

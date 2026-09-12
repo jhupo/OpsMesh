@@ -26,12 +26,12 @@ from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.tasks.service import TaskStateService
 from backend.app.domains.orchestration.tasks.status import TaskStatus
-from backend.app.domains.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
-from backend.app.domains.orchestration.workflows.planning_team_step_planner import TeamStepPlanner
-from backend.app.domains.orchestration.workflows.scheduler_main import WorkspaceScheduler
+from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
+from backend.app.domains.orchestration.workflows.planning.team_step_planner import TeamStepPlanner
+from backend.app.domains.orchestration.workflows.scheduling.service import WorkspaceScheduler
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.domains.orchestration.workflows.step_launcher import RunStepLauncher
-from backend.app.domains.orchestration.workflows.step_scheduling_state import (
+from backend.app.domains.orchestration.workflows.steps.launcher import RunStepLauncher
+from backend.app.domains.orchestration.workflows.steps.scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )

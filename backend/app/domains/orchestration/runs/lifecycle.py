@@ -27,19 +27,19 @@ from backend.app.domains.orchestration.tasks.step_service import (
     step_message_payload,
 )
 from backend.app.domains.orchestration.tasks.step_status import TaskStepStatus
-from backend.app.domains.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
-from backend.app.domains.orchestration.workflows.plan_project_plan_validation import (
-    ProjectPlanValidationError,
-)
-from backend.app.domains.orchestration.workflows.planning_completion import PlannerCompletionService
-from backend.app.domains.orchestration.workflows.planning_pm_acceptance import PmAcceptanceService
-from backend.app.domains.orchestration.workflows.planning_pm_final_output import (
+from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
+from backend.app.domains.orchestration.workflows.planning.completion import PlannerCompletionService
+from backend.app.domains.orchestration.workflows.planning.pm_acceptance import PmAcceptanceService
+from backend.app.domains.orchestration.workflows.planning.pm_final_output import (
     PmFinalOutputService,
 )
-from backend.app.domains.orchestration.workflows.planning_pm_follow_up_work import (
+from backend.app.domains.orchestration.workflows.planning.pm_follow_up_work import (
     PmFollowUpWorkService,
 )
-from backend.app.domains.orchestration.workflows.step_completion import TaskStepCompletionService
+from backend.app.domains.orchestration.workflows.planning.project_plan.validation import (
+    ProjectPlanValidationError,
+)
+from backend.app.domains.orchestration.workflows.steps.completion import TaskStepCompletionService
 
 AppendEvent = Callable[[AgentRun, str, str, dict[str, object] | None], RunEvent]
 ReleaseRunReservations = Callable[[AgentRun, datetime], None]

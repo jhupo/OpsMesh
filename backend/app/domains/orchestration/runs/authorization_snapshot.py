@@ -35,7 +35,7 @@ from backend.app.domains.orchestration.runs.tool_authorization import (
     AgentToolAuthorizationSnapshotService,
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.plan_agent_plan import (
+from backend.app.domains.orchestration.workflows.planning.agent_plan import (
     is_agent_planning_step,
     planner_output_schema,
 )

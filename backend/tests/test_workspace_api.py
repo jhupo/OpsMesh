@@ -65,7 +65,7 @@ from backend.app.domains.orchestration.tasks.models import (
 from backend.app.domains.orchestration.tasks.observation.service import TaskObservationService
 from backend.app.domains.orchestration.tasks.observation.timeline import TaskTimelineService
 from backend.app.domains.orchestration.tasks.status import TaskStatus
-from backend.app.domains.orchestration.workflows.plan_models import TaskPlanningAttempt
+from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.workspace.reviews.model_request import ModelRequestReview
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile

@@ -17,14 +17,14 @@ from backend.app.core.identity.models import User
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.models import OrchestrationDefinition, OrchestrationRevision
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.definition_commands import (
+from backend.app.domains.orchestration.workflows.definitions.commands import (
     OrchestrationDefinitionCreate,
 )
-from backend.app.domains.orchestration.workflows.definitions import (
+from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
+from backend.app.domains.orchestration.workflows.definitions.service import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
 )
-from backend.app.domains.orchestration.workflows.plan_workflow_contracts import WorkflowNode
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.tests.test_postgres_scheduler_concurrency import _temporary_postgres_schema

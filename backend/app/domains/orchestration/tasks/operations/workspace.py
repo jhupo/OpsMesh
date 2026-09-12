@@ -9,8 +9,10 @@ from backend.app.core.db.pagination import page_scalars
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.workflows.definitions import OrchestrationDefinitionService
-from backend.app.domains.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
+from backend.app.domains.orchestration.workflows.definitions.service import (
+    OrchestrationDefinitionService,
+)
+from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
 from backend.app.domains.workspace.projects.models import WorkspaceProject
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot

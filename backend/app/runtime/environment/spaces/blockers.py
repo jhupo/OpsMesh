@@ -4,7 +4,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.blocked_reasons import explain_blocked_reason
+from backend.app.domains.orchestration.workflows.definitions.blocked_reasons import (
+    explain_blocked_reason,
+)
 
 
 class RuntimeSpaceBlockerService:

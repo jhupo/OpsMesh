@@ -15,7 +15,7 @@ from backend.app.domains.orchestration.tasks.service import TaskStateService
 from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.domains.orchestration.tasks.step_service import TaskStepStateService
 from backend.app.domains.orchestration.tasks.step_status import TaskStepStatus
-from backend.app.domains.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
+from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
 from backend.app.runtime.workers.lease_lifecycle import mark_agent_run_worker_cancel_requested
 
 AppendEvent = Callable[[AgentRun, str, str, dict[str, object] | None], RunEvent]

@@ -10,10 +10,10 @@ from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.orchestration.tasks.service import TaskStateService
-from backend.app.domains.orchestration.workflows.plan_agent_plan import is_agent_planning_step
-from backend.app.domains.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
-from backend.app.domains.orchestration.workflows.plan_models import TaskPlanningAttempt
-from backend.app.domains.orchestration.workflows.plan_ownership import (
+from backend.app.domains.orchestration.workflows.planning.agent_plan import is_agent_planning_step
+from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
+from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
+from backend.app.domains.orchestration.workflows.planning.ownership import (
     require_automatic_plan_ownership,
 )
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES

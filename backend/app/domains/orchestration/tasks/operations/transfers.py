@@ -18,7 +18,7 @@ from backend.app.domains.orchestration.tasks.operations.ownership import (
     is_platform_owned_step,
     owner_version,
 )
-from backend.app.domains.orchestration.workflows.plan_models import TaskPlanningAttempt
+from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
