@@ -28,16 +28,19 @@ from backend.app.execution.runtime.models import (
     RuntimeTemplate,
     WorkspaceRuntime,
 )
-from backend.app.execution.runtime.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
+from backend.app.execution.runtime.policies.quotas import (
+    RuntimeQuotaExceededError,
+    RuntimeQuotaPolicy,
+)
 from backend.app.execution.runtime.service import RuntimeControlService
-from backend.app.execution.runtime.space_models import (
+from backend.app.execution.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.execution.runtime.space_service import RuntimeSpaceService
+from backend.app.execution.runtime.spaces.service import RuntimeSpaceService
 from backend.app.platform.common.config import Settings
 from backend.app.platform.db import models as registered_models  # noqa: F401
 from backend.app.platform.db.base import Base
@@ -1065,7 +1068,7 @@ def test_runtime_manager_rejects_process_limit_over_workspace_quota() -> None:
 
 
 def test_docker_sdk_create_container_applies_limits_and_hardening() -> None:
-    from backend.app.execution.runtime.docker_client import DockerSdkRuntimeClient
+    from backend.app.execution.runtime.backends.docker import DockerSdkRuntimeClient
 
     captured: dict[str, object] = {}
 
@@ -1128,7 +1131,7 @@ def test_docker_sdk_create_container_applies_limits_and_hardening() -> None:
 
 
 def test_docker_sdk_exec_uses_transient_file_without_argv_secret() -> None:
-    from backend.app.execution.runtime.docker_client import DockerSdkRuntimeClient
+    from backend.app.execution.runtime.backends.docker import DockerSdkRuntimeClient
 
     calls: list[tuple[list[str], str | None]] = []
     archives: list[bytes] = []
@@ -1196,7 +1199,7 @@ def test_docker_sdk_exec_uses_transient_file_without_argv_secret() -> None:
 
 
 def test_docker_sdk_archive_transfer_uses_runtime_identity() -> None:
-    from backend.app.execution.runtime.docker_client import DockerSdkRuntimeClient
+    from backend.app.execution.runtime.backends.docker import DockerSdkRuntimeClient
 
     captured: list[bytes] = []
 
@@ -1252,7 +1255,7 @@ def test_docker_sdk_archive_transfer_uses_runtime_identity() -> None:
 
 
 def test_docker_sdk_archive_rejects_non_normalized_paths() -> None:
-    from backend.app.execution.runtime.docker_client import _rewrite_archive_owner
+    from backend.app.execution.runtime.backends.docker import _rewrite_archive_owner
 
     source = io.BytesIO()
     with tarfile.open(fileobj=source, mode="w") as archive:

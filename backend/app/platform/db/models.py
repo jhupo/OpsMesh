@@ -41,7 +41,7 @@ from backend.app.execution.runtime.models import (
     RuntimeTemplate,
     WorkspaceRuntime,
 )
-from backend.app.execution.runtime.space_models import (
+from backend.app.execution.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
     RuntimeSpaceEvent,

@@ -6,13 +6,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.execution.runtime.contracts import RuntimeLimits
 from backend.app.execution.runtime.models import RuntimeTemplate
-from backend.app.execution.runtime.runtime_policy import (
+from backend.app.execution.runtime.policies.runtime import (
     RuntimePolicyResolution,
     RuntimePolicyResolver,
     policy_disables_network,
 )
-from backend.app.execution.runtime.safety import RuntimeSafetyError, RuntimeSafetyPolicy
-from backend.app.execution.runtime.space_service import RuntimeSpaceService
+from backend.app.execution.runtime.policies.safety import RuntimeSafetyError, RuntimeSafetyPolicy
+from backend.app.execution.runtime.spaces.service import RuntimeSpaceService
 
 
 class RuntimeTemplateGuard:

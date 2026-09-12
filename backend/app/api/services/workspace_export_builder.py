@@ -32,7 +32,7 @@ from backend.app.api.services.workspace_export_payloads import (
     _workspace_payload,
 )
 from backend.app.capabilities.models import WorkspaceSkillInstall
-from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.models import AgentRun, RunEvent

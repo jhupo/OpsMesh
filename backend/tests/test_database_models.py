@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import CreateTable
 
 from backend.app.execution.operations.models import WorkerLease
-from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.orchestration.tasks.models import TaskEventOutbox
 from backend.app.platform.db import models as registered_models  # noqa: F401
 from backend.app.platform.db.base import Base

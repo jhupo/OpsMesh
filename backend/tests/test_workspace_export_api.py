@@ -18,7 +18,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
-from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.execution.workers.runner import WorkerRunner, WorkerRunnerConfig

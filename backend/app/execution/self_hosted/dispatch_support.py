@@ -7,11 +7,11 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.execution.runtime.space_models import RuntimeSpace
-from backend.app.execution.runtime.space_reservation_attachment import (
+from backend.app.execution.runtime.spaces.models import RuntimeSpace
+from backend.app.execution.runtime.spaces.reservations.attachment import (
     RuntimeSpaceReservationAttachmentService,
 )
-from backend.app.execution.runtime.space_reservation_capacity import (
+from backend.app.execution.runtime.spaces.reservations.capacity import (
     RuntimeSpaceCapacityReservationService,
 )
 from backend.app.execution.self_hosted.jobs import SelfHostedJobFinalizer

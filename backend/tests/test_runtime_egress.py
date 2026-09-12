@@ -1,11 +1,14 @@
 import pytest
 
-from backend.app.execution.runtime.contracts import RuntimeCreateRequest, RuntimeLimits
-from backend.app.execution.runtime.docker_client import (
+from backend.app.execution.runtime.backends.docker import (
     _docker_network_environment,
     _docker_network_mode,
 )
-from backend.app.execution.runtime.egress import RuntimeEgressPolicyError, resolve_egress_policy
+from backend.app.execution.runtime.backends.egress import (
+    RuntimeEgressPolicyError,
+    resolve_egress_policy,
+)
+from backend.app.execution.runtime.contracts import RuntimeCreateRequest, RuntimeLimits
 
 
 def _request(policy: dict[str, object], *, disabled: bool = False) -> RuntimeCreateRequest:

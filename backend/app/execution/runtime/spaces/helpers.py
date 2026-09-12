@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from backend.app.execution.runtime.space_models import RuntimeSpaceQuota
+from backend.app.execution.runtime.spaces.models import RuntimeSpaceQuota
 
 
 def non_empty_string_or_none(value: object) -> str | None:

@@ -14,7 +14,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.capabilities.models import CapabilityResource, McpServer, McpToolAllowlist
 from backend.app.execution.runtime.models import RuntimeEvent, WorkspaceRuntime
-from backend.app.execution.runtime.space_models import (
+from backend.app.execution.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,

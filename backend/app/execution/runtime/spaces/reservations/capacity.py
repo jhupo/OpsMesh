@@ -6,14 +6,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.execution.runtime.space_events import RuntimeSpaceEventLog
-from backend.app.execution.runtime.space_helpers import RuntimeSpaceQuotaCounter
-from backend.app.execution.runtime.space_models import (
+from backend.app.execution.runtime.spaces.events import RuntimeSpaceEventLog
+from backend.app.execution.runtime.spaces.helpers import RuntimeSpaceQuotaCounter
+from backend.app.execution.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.execution.runtime.space_reservation_usage import (
+from backend.app.execution.runtime.spaces.reservations.usage import (
     active_reservation_matches,
     first_exceeded_quota,
     normalize_reservation_usage,

@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from backend.app.execution.runtime.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
-from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.platform.admin.base import AdminSessionService

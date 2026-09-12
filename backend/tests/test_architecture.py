@@ -41,6 +41,13 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "platform/secrets",
         "platform/security",
         "execution/runtime",
+        "execution/runtime/backends",
+        "execution/runtime/commands",
+        "execution/runtime/lifecycle",
+        "execution/runtime/pool",
+        "execution/runtime/policies",
+        "execution/runtime/spaces",
+        "execution/runtime/spaces/reservations",
         "execution/workers",
         "execution/operations",
         "execution/self_hosted",
@@ -195,6 +202,58 @@ def test_team_features_are_nested_by_function() -> None:
         "workspace_service",
     }
     assert (teams / "runtime/service.py").is_file()
+
+
+def test_runtime_features_are_nested_by_function() -> None:
+    runtime = ROOT / "backend/app/execution/runtime"
+    expected = {
+        "backends",
+        "commands",
+        "lifecycle",
+        "pool",
+        "policies",
+        "spaces",
+    }
+    assert {path.name for path in runtime.iterdir() if path.is_dir()} >= expected
+    root_modules = {
+        path.stem
+        for path in runtime.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert root_modules <= {
+        "contracts",
+        "dependencies",
+        "manager",
+        "manager_factory",
+        "metadata",
+        "models",
+        "project_files",
+        "provisioning",
+        "provisioning_executor",
+        "queries",
+        "run_environment",
+        "service",
+        "security_events",
+    }
+    for name in (
+        "backend_registry.py",
+        "command_executor.py",
+        "command_output.py",
+        "commands.py",
+        "docker_client.py",
+        "egress.py",
+        "events.py",
+        "lifecycle_cleanup.py",
+        "lifecycle_control.py",
+        "lifecycle_guards.py",
+        "pool_leases.py",
+        "quotas.py",
+        "runtime_policy.py",
+        "safety.py",
+        "space_models.py",
+        "space_service.py",
+    ):
+        assert not (runtime / name).exists(), name
 
 
 def test_local_application_imports_resolve_without_compatibility_shims() -> None:

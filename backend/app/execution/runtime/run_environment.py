@@ -16,7 +16,7 @@ from backend.app.execution.runtime.contracts import (
     RuntimeMount,
     validate_runtime_execution_mode,
 )
-from backend.app.execution.runtime.events import RuntimeEventLog
+from backend.app.execution.runtime.lifecycle.events import RuntimeEventLog
 from backend.app.execution.runtime.manager import RuntimeManager
 from backend.app.execution.runtime.metadata import (
     default_runtime_hardening_policy,
@@ -24,7 +24,7 @@ from backend.app.execution.runtime.metadata import (
     runtime_labels,
 )
 from backend.app.execution.runtime.models import RuntimeLease, RuntimeTemplate, WorkspaceRuntime
-from backend.app.execution.runtime.pool_leases import RuntimeLeaseStore
+from backend.app.execution.runtime.pool.leases import RuntimeLeaseStore
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.models import AgentRun

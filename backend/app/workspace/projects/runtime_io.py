@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.execution.runtime.backend_registry import build_runtime_backend_registry
+from backend.app.execution.runtime.backends.registry import build_runtime_backend_registry
 from backend.app.execution.runtime.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.orchestration.runs.models import AgentRun

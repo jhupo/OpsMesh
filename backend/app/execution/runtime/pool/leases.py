@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.execution.runtime.metadata import runtime_space_reservation_key
 from backend.app.execution.runtime.models import RuntimeLease, WorkspaceRuntime
-from backend.app.execution.runtime.space_reservation_release import (
+from backend.app.execution.runtime.spaces.reservations.release import (
     RuntimeSpaceReservationReleaseService,
 )
 

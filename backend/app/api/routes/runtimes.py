@@ -14,8 +14,8 @@ from backend.app.api.schemas.runtimes import (
     WorkspaceRuntimeResponse,
 )
 from backend.app.execution.runtime.contracts import RuntimeLimits
-from backend.app.execution.runtime.quotas import RuntimeQuotaExceededError
-from backend.app.execution.runtime.safety import RuntimeSafetyError
+from backend.app.execution.runtime.policies.quotas import RuntimeQuotaExceededError
+from backend.app.execution.runtime.policies.safety import RuntimeSafetyError
 from backend.app.execution.runtime.service import RuntimeControlService
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.jobs import JobPayload, JobType

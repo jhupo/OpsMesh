@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.execution.runtime.contracts import RuntimeLimits
-from backend.app.execution.runtime.lifecycle_control import RuntimeLifecycleControl
+from backend.app.execution.runtime.lifecycle.control import RuntimeLifecycleControl
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.workspace.teams.models import AgentTeam
 from backend.app.workspace.teams.runtime.mailbox import TeamRuntimeMailboxStore

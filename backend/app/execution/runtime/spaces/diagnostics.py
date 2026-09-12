@@ -14,7 +14,7 @@ from backend.app.api.schemas.runtime_spaces import (
     RuntimeSpaceRuntimeDiagnosticResponse,
 )
 from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.execution.runtime.space_models import (
+from backend.app.execution.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,

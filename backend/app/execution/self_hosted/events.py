@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.execution.runtime.models import RuntimeEvent, WorkspaceRuntime
-from backend.app.execution.runtime.space_models import RuntimeSpaceEvent
+from backend.app.execution.runtime.spaces.models import RuntimeSpaceEvent
 from backend.app.orchestration.runs.event_writer import RunEventWriter
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.platform.security.models import SecurityEvent

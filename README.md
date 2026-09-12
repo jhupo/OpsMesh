@@ -381,6 +381,7 @@ backend/app/agents/runtime/providers/         OpenAI and Claude SDK adapters
 backend/app/capabilities/                     Skills, MCP, tools, marketplace, and policy
 backend/app/orchestration/                    Requests, runs, approvals, tasks, and workflows
 backend/app/execution/                        Runtime, worker, operations, and self-hosted execution
+backend/app/execution/runtime/{...}/          Runtime backends, commands, lifecycle, pools, policies, and spaces
 backend/app/workspace/                        Workspace tenant, projects, teams, storage, and reviews
 backend/app/workspace/teams/{...}/            Team execution, operations, projects, providers, organization, and runtime modules
 backend/app/platform/                        Identity, auth, persistence, security, and integrations

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRunResult, AgentRuntimeStructuredOutput
-from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.execution.workers.handlers import WorkerJobHandler
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.queue_consumer import consume_once

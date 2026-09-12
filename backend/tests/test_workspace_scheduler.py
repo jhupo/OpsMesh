@@ -10,12 +10,12 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agents.models import AgentProfile
-from backend.app.execution.runtime.space_models import (
+from backend.app.execution.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.execution.runtime.space_service import RuntimeSpaceService
+from backend.app.execution.runtime.spaces.service import RuntimeSpaceService
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
 from backend.app.orchestration.runs.eligibility import RunEligibilityService

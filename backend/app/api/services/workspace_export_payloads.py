@@ -2,7 +2,7 @@ from datetime import datetime
 
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.models import WorkspaceSkillInstall
-from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep

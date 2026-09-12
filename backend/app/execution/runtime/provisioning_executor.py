@@ -9,7 +9,7 @@ from backend.app.execution.runtime.contracts import (
     RuntimeLimits,
     RuntimeMount,
 )
-from backend.app.execution.runtime.events import RuntimeEventLog
+from backend.app.execution.runtime.lifecycle.events import RuntimeEventLog
 from backend.app.execution.runtime.metadata import (
     RuntimeIsolationMetadata,
     default_runtime_hardening_policy,
@@ -20,13 +20,16 @@ from backend.app.execution.runtime.metadata import (
     runtime_space_usage_for_runtime,
 )
 from backend.app.execution.runtime.models import RuntimeTemplate, WorkspaceRuntime
-from backend.app.execution.runtime.pool_leases import (
+from backend.app.execution.runtime.policies.quotas import (
+    RuntimeQuotaExceededError,
+    RuntimeQuotaPolicy,
+)
+from backend.app.execution.runtime.pool.leases import (
     RuntimeLeaseStore,
     RuntimeSpaceReservationStore,
 )
-from backend.app.execution.runtime.quotas import RuntimeQuotaExceededError, RuntimeQuotaPolicy
 from backend.app.execution.runtime.security_events import RuntimeSecurityEventRecorder
-from backend.app.execution.runtime.space_reservation_capacity import (
+from backend.app.execution.runtime.spaces.reservations.capacity import (
     RuntimeSpaceCapacityReservationService,
 )
 

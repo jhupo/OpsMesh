@@ -4,15 +4,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.execution.runtime.space_blockers import RuntimeSpaceBlockerService
-from backend.app.execution.runtime.space_events import RuntimeSpaceEventLog
-from backend.app.execution.runtime.space_helpers import non_empty_string_or_none
-from backend.app.execution.runtime.space_models import RuntimeSpace
-from backend.app.execution.runtime.space_quotas import RuntimeSpaceQuotaService
-from backend.app.execution.runtime.space_reservation_release import (
+from backend.app.execution.runtime.spaces.blockers import RuntimeSpaceBlockerService
+from backend.app.execution.runtime.spaces.events import RuntimeSpaceEventLog
+from backend.app.execution.runtime.spaces.helpers import non_empty_string_or_none
+from backend.app.execution.runtime.spaces.models import RuntimeSpace
+from backend.app.execution.runtime.spaces.quotas import RuntimeSpaceQuotaService
+from backend.app.execution.runtime.spaces.reservations.release import (
     RuntimeSpaceReservationReleaseService,
 )
-from backend.app.execution.runtime.space_targets import RuntimeSpaceTargetService
+from backend.app.execution.runtime.spaces.targets import RuntimeSpaceTargetService
 
 
 class RuntimeSpaceLifecycleService:

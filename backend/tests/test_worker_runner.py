@@ -30,7 +30,7 @@ from backend.app.execution.runtime.contracts import (
     RuntimeCreateRequest,
 )
 from backend.app.execution.runtime.models import RuntimeTemplate, WorkspaceRuntime
-from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.execution.workers.handlers import WorkerJobHandler
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.redis_queue import RedisQueue

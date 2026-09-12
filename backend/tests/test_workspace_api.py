@@ -35,7 +35,7 @@ from backend.app.execution.runtime.contracts import (
 )
 from backend.app.execution.runtime.dependencies import get_docker_runtime_client
 from backend.app.execution.runtime.models import RuntimeTemplate, WorkspaceRuntime
-from backend.app.execution.runtime.space_models import (
+from backend.app.execution.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,

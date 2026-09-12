@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.execution.runtime.contracts import DockerRuntimeClient
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.run_environment import RunRuntimeEnvironmentService
-from backend.app.execution.runtime.space_models import RuntimeSpaceEvent
+from backend.app.execution.runtime.spaces.models import RuntimeSpaceEvent
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.status import RunStatus
 from backend.app.platform.common.config import Settings

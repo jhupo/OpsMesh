@@ -14,7 +14,7 @@ from backend.app.api.schemas.self_hosted import (
     WorkerHeartbeatRequest,
 )
 from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.execution.runtime.space_models import RuntimeSpace
+from backend.app.execution.runtime.spaces.models import RuntimeSpace
 from backend.app.execution.self_hosted.attestation import (
     CapabilityAttestationResult,
     evaluate_capability_attestation,

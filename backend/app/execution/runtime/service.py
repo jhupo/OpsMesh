@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.execution.runtime.commands import RuntimeCommandService
+from backend.app.execution.runtime.commands.service import RuntimeCommandService
 from backend.app.execution.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeExecutionMode,
@@ -18,9 +18,9 @@ from backend.app.execution.runtime.models import (
     RuntimeTemplate,
     WorkspaceRuntime,
 )
+from backend.app.execution.runtime.policies.safety import RuntimeSafetyPolicy
 from backend.app.execution.runtime.provisioning import RuntimeProvisioningService
 from backend.app.execution.runtime.queries import RuntimeControlQueryService
-from backend.app.execution.runtime.safety import RuntimeSafetyPolicy
 from backend.app.platform.admin.policy_reader import PlatformPolicyService
 from backend.app.platform.common.config import Settings
 

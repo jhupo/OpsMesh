@@ -28,7 +28,7 @@ from backend.app.execution.runtime.contracts import (
 )
 from backend.app.execution.runtime.dependencies import get_docker_runtime_client
 from backend.app.execution.runtime.models import RuntimeEvent, WorkspaceRuntime
-from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.main import create_app

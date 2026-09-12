@@ -13,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.execution.operations.models import WorkerLease, WorkerNode
 from backend.app.execution.runtime.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
-from backend.app.execution.runtime.space_models import (
+from backend.app.execution.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,

@@ -6,24 +6,24 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.runtime_spaces import RuntimeSpaceDiagnosticsResponse
-from backend.app.execution.runtime.space_diagnostics import RuntimeSpaceDiagnosticsService
-from backend.app.execution.runtime.space_lifecycle import RuntimeSpaceLifecycleService
-from backend.app.execution.runtime.space_models import (
+from backend.app.execution.runtime.spaces.diagnostics import RuntimeSpaceDiagnosticsService
+from backend.app.execution.runtime.spaces.lifecycle import RuntimeSpaceLifecycleService
+from backend.app.execution.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceReservation,
 )
-from backend.app.execution.runtime.space_reservation_attachment import (
+from backend.app.execution.runtime.spaces.reservations.attachment import (
     RuntimeSpaceReservationAttachmentService,
 )
-from backend.app.execution.runtime.space_reservation_capacity import (
+from backend.app.execution.runtime.spaces.reservations.capacity import (
     RuntimeSpaceCapacityReservationService,
     RuntimeSpaceReservationResult,
 )
-from backend.app.execution.runtime.space_reservation_release import (
+from backend.app.execution.runtime.spaces.reservations.release import (
     RuntimeSpaceReservationReleaseService,
 )
-from backend.app.execution.runtime.space_targets import RuntimeSpaceTargetService
+from backend.app.execution.runtime.spaces.targets import RuntimeSpaceTargetService
 from backend.app.platform.common.pagination import PageParams
 from backend.app.platform.db.pagination import page_scalars
 

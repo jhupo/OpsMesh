@@ -23,7 +23,7 @@ from backend.app.capabilities.schema_validation import (
     validate_parameters,
 )
 from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.execution.runtime.space_models import RuntimeSpace
+from backend.app.execution.runtime.spaces.models import RuntimeSpace
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task

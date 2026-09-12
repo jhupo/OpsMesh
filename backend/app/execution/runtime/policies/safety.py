@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from backend.app.execution.runtime.egress import RuntimeEgressPolicy
+from backend.app.execution.runtime.backends.egress import RuntimeEgressPolicy
 from backend.app.execution.runtime.models import RuntimeTemplate
 from backend.app.platform.admin.risky_policy_values import RiskyExecutionPolicy
 

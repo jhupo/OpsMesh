@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.execution.runtime.space_models import RuntimeSpace
+from backend.app.execution.runtime.spaces.models import RuntimeSpace
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.platform.common.values import counts_by_value
 from backend.app.workspace.teams.execution.overview_contracts import DONE_TASK_STATUSES

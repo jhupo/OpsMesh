@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from backend.app.execution.runtime.space_reservation_release import (
+from backend.app.execution.runtime.spaces.reservations.release import (
     RuntimeSpaceReservationReleaseService,
 )
 from backend.app.orchestration.approvals.models import Approval

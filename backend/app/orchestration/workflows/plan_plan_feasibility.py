@@ -14,7 +14,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.agents.providers.resolution import ModelProviderResolutionService
 from backend.app.api.schemas.capabilities.catalog import EffectiveCapabilityCatalogResponse
 from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalogService
-from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.state_resource_usage import merge_usage_max, positive_int_usage

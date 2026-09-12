@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from backend.app.execution.runtime.contracts import DockerRuntimeClient
-from backend.app.execution.runtime.lifecycle_guards import require_container
+from backend.app.execution.runtime.lifecycle.guards import require_container
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.workspace.storage.security import validate_runtime_relative_path
 

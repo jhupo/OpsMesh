@@ -16,7 +16,7 @@ from backend.app.api.schemas.runtime_spaces import (
     RuntimeSpaceResponse,
     RuntimeSpaceUpdateRequest,
 )
-from backend.app.execution.runtime.space_service import RuntimeSpaceService
+from backend.app.execution.runtime.spaces.service import RuntimeSpaceService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

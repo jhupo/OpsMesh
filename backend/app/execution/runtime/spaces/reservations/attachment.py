@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.execution.runtime.space_models import RuntimeSpaceReservation
-from backend.app.execution.runtime.space_reservation_usage import reservation_usage
+from backend.app.execution.runtime.spaces.models import RuntimeSpaceReservation
+from backend.app.execution.runtime.spaces.reservations.usage import reservation_usage
 
 
 class RuntimeSpaceReservationAttachmentService:

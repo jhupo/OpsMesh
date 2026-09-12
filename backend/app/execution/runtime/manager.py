@@ -6,8 +6,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.execution.runtime.command_executor import RuntimeCommandExecutor
-from backend.app.execution.runtime.command_output import lease_metadata
+from backend.app.execution.runtime.commands.executor import RuntimeCommandExecutor
+from backend.app.execution.runtime.commands.output import lease_metadata
 from backend.app.execution.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
@@ -15,24 +15,24 @@ from backend.app.execution.runtime.contracts import (
     RuntimeLimits,
     validate_runtime_execution_mode,
 )
-from backend.app.execution.runtime.events import RuntimeEventLog
-from backend.app.execution.runtime.lifecycle_cleanup import (
+from backend.app.execution.runtime.lifecycle.cleanup import (
     RuntimeResourceCleaner,
     cleanup_succeeded,
 )
-from backend.app.execution.runtime.lifecycle_guards import require_container
+from backend.app.execution.runtime.lifecycle.events import RuntimeEventLog
+from backend.app.execution.runtime.lifecycle.guards import require_container
 from backend.app.execution.runtime.models import (
     RuntimeCommand,
     RuntimeLease,
     RuntimeTemplate,
     WorkspaceRuntime,
 )
-from backend.app.execution.runtime.pool_leases import (
+from backend.app.execution.runtime.policies.quotas import RuntimeQuotaPolicy
+from backend.app.execution.runtime.pool.leases import (
     RuntimeLeaseStore,
     RuntimeSpaceReservationStore,
 )
 from backend.app.execution.runtime.provisioning_executor import RuntimeProvisioningExecutor
-from backend.app.execution.runtime.quotas import RuntimeQuotaPolicy
 from backend.app.execution.runtime.security_events import RuntimeSecurityEventRecorder
 
 

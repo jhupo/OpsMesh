@@ -16,8 +16,8 @@ from backend.app.api.schemas.teams import (
     AgentTeamRuntimeEnsureRequest,
     AgentTeamRuntimeResponse,
 )
-from backend.app.execution.runtime.quotas import RuntimeQuotaExceededError
-from backend.app.execution.runtime.safety import RuntimeSafetyError
+from backend.app.execution.runtime.policies.quotas import RuntimeQuotaExceededError
+from backend.app.execution.runtime.policies.safety import RuntimeSafetyError
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.platform.auth.context import WorkspaceContext

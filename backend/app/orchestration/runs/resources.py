@@ -5,14 +5,14 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceReservation
-from backend.app.execution.runtime.space_reservation_attachment import (
+from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceReservation
+from backend.app.execution.runtime.spaces.reservations.attachment import (
     RuntimeSpaceReservationAttachmentService,
 )
-from backend.app.execution.runtime.space_reservation_capacity import (
+from backend.app.execution.runtime.spaces.reservations.capacity import (
     RuntimeSpaceCapacityReservationService,
 )
-from backend.app.execution.runtime.space_reservation_release import (
+from backend.app.execution.runtime.spaces.reservations.release import (
     RuntimeSpaceReservationReleaseService,
 )
 from backend.app.orchestration.runs.models import AgentRun

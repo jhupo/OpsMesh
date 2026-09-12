@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.execution.runtime.backends.template_guard import RuntimeTemplateGuard
 from backend.app.execution.runtime.contracts import (
     RuntimeExecutionMode,
     RuntimeLimits,
@@ -10,9 +11,8 @@ from backend.app.execution.runtime.contracts import (
 )
 from backend.app.execution.runtime.manager_factory import RuntimeManagerFactory
 from backend.app.execution.runtime.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
-from backend.app.execution.runtime.runtime_policy import RuntimePolicyResolution, limits_metadata
-from backend.app.execution.runtime.safety import RuntimeSafetyPolicy
-from backend.app.execution.runtime.template_guard import RuntimeTemplateGuard
+from backend.app.execution.runtime.policies.runtime import RuntimePolicyResolution, limits_metadata
+from backend.app.execution.runtime.policies.safety import RuntimeSafetyPolicy
 
 
 class RuntimeProvisioningService:

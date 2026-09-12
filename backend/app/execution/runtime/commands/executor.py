@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.execution.runtime.command_output import (
+from backend.app.execution.runtime.commands.output import (
     bounded_error,
     bounded_text,
     command_failure_metadata,
@@ -16,8 +16,8 @@ from backend.app.execution.runtime.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
 )
-from backend.app.execution.runtime.events import RuntimeEventLog
-from backend.app.execution.runtime.lifecycle_guards import require_container
+from backend.app.execution.runtime.lifecycle.events import RuntimeEventLog
+from backend.app.execution.runtime.lifecycle.guards import require_container
 from backend.app.execution.runtime.models import RuntimeCommand, WorkspaceRuntime
 from backend.app.execution.runtime.security_events import RuntimeSecurityEventRecorder
 

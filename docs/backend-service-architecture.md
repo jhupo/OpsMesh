@@ -304,7 +304,9 @@ backend/
     orchestration/                          # Requests, runs, approvals, tasks, workflows
       approvals/ requests/ runs/ tasks/ workflows/
     execution/                              # Runtime, workers, operations, self-hosted jobs
-      operations/ runtime/ self_hosted/ workers/
+      operations/ self_hosted/ workers/
+      runtime/                               # Runtime manager and isolated execution spaces
+        backends/ commands/ lifecycle/ pool/ policies/ spaces/
     workspace/                              # Tenant, project, team, storage, and review domains
       domains/ projects/ reviews/ storage/ tenants/
       teams/                                # Public team services and stable domain models
@@ -320,6 +322,9 @@ packages are nested under the owning boundary instead of being siblings of the a
 Within the team domain, implementation files are grouped by functional lifecycle (execution,
 operator surfaces, project assembly, provider readiness, organization policy, and runtime state);
 the package root contains only public service entrypoints and shared domain models.
+The execution runtime follows the same rule: backend adapters, command execution, lifecycle,
+pool leases, policies, and runtime spaces are nested under `execution/runtime`; the runtime root
+keeps only orchestration services and shared contracts/models.
 `api` remains a transport boundary, while `observability` remains top-level because every domain
 may emit audit, cost, trace, and notification evidence. `main.py` and `delivery.py` are process
 entrypoints and intentionally remain at the application root.

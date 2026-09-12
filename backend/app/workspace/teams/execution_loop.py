@@ -3,9 +3,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.execution.runtime.lifecycle_control import RuntimeLifecycleControl
-from backend.app.execution.runtime.quotas import RuntimeQuotaExceededError
-from backend.app.execution.runtime.safety import RuntimeSafetyError
+from backend.app.execution.runtime.lifecycle.control import RuntimeLifecycleControl
+from backend.app.execution.runtime.policies.quotas import RuntimeQuotaExceededError
+from backend.app.execution.runtime.policies.safety import RuntimeSafetyError
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.workspace.teams.command_center import TeamCommandCenterService
 from backend.app.workspace.teams.execution.loop_finalization import TeamExecutionFinalizationService

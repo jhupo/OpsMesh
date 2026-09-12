@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from backend.app.execution.runtime.space_models import RuntimeSpace
+from backend.app.execution.runtime.spaces.models import RuntimeSpace
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.platform.common.values import string_list
 

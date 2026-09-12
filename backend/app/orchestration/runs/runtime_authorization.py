@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.runtime.contracts import AgentRuntimeExecutionBinding
 from backend.app.execution.runtime.models import RuntimeLease, WorkspaceRuntime
-from backend.app.execution.runtime.runtime_policy import policy_disables_network
-from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceBinding
+from backend.app.execution.runtime.policies.runtime import policy_disables_network
+from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceBinding
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.workspace.storage.models import WorkspaceFile

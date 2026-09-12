@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.execution.runtime.models import RuntimeTemplate, WorkspaceRuntime
-from backend.app.execution.runtime.space_models import RuntimeSpace
+from backend.app.execution.runtime.spaces.models import RuntimeSpace
 from backend.app.workspace.teams.models import TEAM_RUNTIME_STATUS_KEY, AgentTeam, AgentTeamMember
 from backend.app.workspace.teams.runtime.refs import _uuid_or_none, team_bound_runtime_id
 

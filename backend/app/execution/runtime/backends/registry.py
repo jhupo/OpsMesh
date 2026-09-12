@@ -10,11 +10,11 @@ from backend.app.capabilities.mcp.stdio_adapters import (
     DockerRuntimeStdioMcpToolAdapter,
     SelfHostedStdioMcpToolAdapter,
 )
+from backend.app.execution.runtime.backends.sdk_process import RuntimeSdkProcess
 from backend.app.execution.runtime.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
 from backend.app.execution.runtime.manager import RuntimeManager
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.project_files import DockerRunProjectFilesystem
-from backend.app.execution.runtime.sdk_process import RuntimeSdkProcess
 from backend.app.execution.self_hosted.mcp_jobs import SelfHostedMcpJobService
 from backend.app.platform.secrets.service import SecretEncryptionService
 
