@@ -20,7 +20,8 @@ from backend.app.agents.runtime.contracts import (
     AgentRuntimeToolDefinition,
 )
 from backend.app.agents.runtime.tools import BackendToolExecutor
-from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
+from backend.app.capabilities.catalog.effective import effective_catalog_fingerprint
+from backend.app.capabilities.catalog.product_tools import PRODUCT_TOOL_CATALOG
 from backend.app.capabilities.models import (
     CapabilityResource,
     McpCredentialReference,
@@ -28,7 +29,6 @@ from backend.app.capabilities.models import (
     McpToolAllowlist,
     McpToolCallLog,
 )
-from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_CATALOG
 from backend.app.capabilities.tools.errors import ToolPermissionError
 from backend.app.execution.runtime.contracts import (
     RuntimeCommandInputFile,
@@ -36,10 +36,10 @@ from backend.app.execution.runtime.contracts import (
 )
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.self_hosted.models import SelfHostedMcpJob
-from backend.app.orchestration.runs.authorization_integrity import (
+from backend.app.orchestration.runs.models import (
+    AgentRun,
     authorization_snapshot_fingerprint,
 )
-from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task
 from backend.app.platform.db import models as registered_models  # noqa: F401

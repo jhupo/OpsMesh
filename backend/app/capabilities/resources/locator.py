@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.capabilities.schema_validation import reject_embedded_secrets
+from backend.app.capabilities.resources.schema import reject_embedded_secrets
 
 RESOURCE_ACCESS_MODES = {
     "file_collection": frozenset({"read"}),

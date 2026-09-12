@@ -4,13 +4,13 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.capabilities.capability_governance_agent_actions import (
+from backend.app.capabilities.governance.agent_actions import (
     CapabilityGovernanceAgentActionService,
 )
-from backend.app.capabilities.capability_governance_mcp_actions import (
+from backend.app.capabilities.governance.mcp_actions import (
     CapabilityGovernanceMcpActionService,
 )
-from backend.app.capabilities.capability_governance_skill_actions import (
+from backend.app.capabilities.governance.skill_actions import (
     CapabilityGovernanceSkillActionService,
 )
 from backend.app.platform.common.config import Settings, get_settings

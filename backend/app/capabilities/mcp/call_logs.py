@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.capabilities.mcp_observability import McpToolCallLogRequest
-from backend.app.capabilities.agent_tool_policy import agent_allowed_mcp_tool_names
+from backend.app.capabilities.governance.agent_policy import agent_allowed_mcp_tool_names
 from backend.app.capabilities.mcp.payloads import (
     error_code,
     hash_from_payload,

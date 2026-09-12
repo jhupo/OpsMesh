@@ -5,9 +5,6 @@ from uuid import UUID, uuid4
 
 import fakeredis
 import pytest
-from backend.app.orchestration.runs.authorization_integrity import (
-    authorization_snapshot_fingerprint,
-)
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -76,7 +73,12 @@ from backend.app.orchestration.runs.execution import (
     RunExecutionService,
 )
 from backend.app.orchestration.runs.lifecycle import RunLifecycleCallbacks, RunLifecycleService
-from backend.app.orchestration.runs.models import AgentRun, AgentRunStateSnapshot, RunEvent
+from backend.app.orchestration.runs.models import (
+    AgentRun,
+    AgentRunStateSnapshot,
+    RunEvent,
+    authorization_snapshot_fingerprint,
+)
 from backend.app.orchestration.runs.resources import RunResourceReservationService
 from backend.app.orchestration.runs.service import (
     RunOrchestrationService,

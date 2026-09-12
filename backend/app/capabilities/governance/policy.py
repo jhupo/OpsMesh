@@ -12,8 +12,8 @@ from backend.app.api.schemas.capabilities.catalog import (
     CapabilityTeamPolicy,
     CapabilityToolDescriptor,
 )
-from backend.app.capabilities.catalog_service import WorkspaceCapabilityCatalogService
-from backend.app.capabilities.schema_validation import validate_partial_parameters
+from backend.app.capabilities.catalog.service import WorkspaceCapabilityCatalogService
+from backend.app.capabilities.resources.schema import validate_partial_parameters
 from backend.app.observability.audit_service import AuditService
 from backend.app.platform.common.errors import DomainError, NotFoundError
 from backend.app.workspace.teams.models import AgentTeam

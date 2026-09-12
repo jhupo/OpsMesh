@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.capabilities.capability_governance_rules import (
+from backend.app.capabilities.governance.rules import (
     governance_result,
     governance_skipped,
     mcp_health_refresh_error,

@@ -1,9 +1,6 @@
 from uuid import uuid4
 
 import pytest
-from backend.app.orchestration.runs.authorization_integrity import (
-    authorization_snapshot_fingerprint,
-)
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -12,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRuntimeExecutionBinding
-from backend.app.capabilities.effective_catalog import (
+from backend.app.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )
@@ -24,7 +21,11 @@ from backend.app.capabilities.models import (
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.spaces.models import RuntimeSpace
 from backend.app.orchestration.requests.authorization import RunAuthorizationService
-from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.models import (
+    AgentRun,
+    RunEvent,
+    authorization_snapshot_fingerprint,
+)
 from backend.app.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationError,
     RunRuntimeAuthorizationService,

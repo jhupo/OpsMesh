@@ -13,10 +13,10 @@ from backend.app.api.schemas.capabilities.catalog import (
     TeamCapabilityPolicyUpdateRequest,
     WorkspaceCapabilityCatalogResponse,
 )
-from backend.app.capabilities.catalog_service import WorkspaceCapabilityCatalogService
-from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalogService
-from backend.app.capabilities.policy_service import TeamCapabilityPolicyService
-from backend.app.capabilities.resource_service import CapabilityResourceService
+from backend.app.capabilities.catalog.effective import EffectiveCapabilityCatalogService
+from backend.app.capabilities.catalog.service import WorkspaceCapabilityCatalogService
+from backend.app.capabilities.governance.policy import TeamCapabilityPolicyService
+from backend.app.capabilities.resources.service import CapabilityResourceService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

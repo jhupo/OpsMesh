@@ -16,8 +16,8 @@ from backend.app.capabilities.models import (
     McpCredentialReference,
     McpServer,
 )
-from backend.app.capabilities.resource_validation import normalize_resource_locator
-from backend.app.capabilities.schema_validation import (
+from backend.app.capabilities.resources.locator import normalize_resource_locator
+from backend.app.capabilities.resources.schema import (
     normalize_object_schema,
     reject_embedded_secrets,
     validate_parameters,

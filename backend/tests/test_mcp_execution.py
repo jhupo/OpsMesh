@@ -12,9 +12,9 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
-from backend.app.capabilities.execution import McpToolExecutionService
+from backend.app.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.capabilities.mcp.adapter_resolver import McpAdapterResolver
+from backend.app.capabilities.mcp.execution_service import McpToolExecutionService
 from backend.app.capabilities.mcp.remote_adapters import SseMcpToolAdapter
 from backend.app.capabilities.mcp.types import (
     McpExecutionError,
@@ -28,10 +28,11 @@ from backend.app.capabilities.models import (
 )
 from backend.app.capabilities.tools.errors import ToolPermissionError, ToolResourceNotFoundError
 from backend.app.orchestration.approvals.models import Approval
-from backend.app.orchestration.runs.authorization_integrity import (
+from backend.app.orchestration.runs.models import (
+    AgentRun,
+    RunEvent,
     authorization_snapshot_fingerprint,
 )
-from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.platform.admin.models import PlatformPolicy

@@ -6,12 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.capabilities.capability_governance_rules import (
+from backend.app.capabilities.governance.rules import (
     governance_result,
     governance_skipped,
     string_list,
 )
-from backend.app.capabilities.skill_tool_diagnostics import SkillToolDiagnosticsService
+from backend.app.capabilities.skills.diagnostics import SkillToolDiagnosticsService
 from backend.app.observability.audit_service import AuditService
 from backend.app.platform.common.config import Settings, get_settings
 

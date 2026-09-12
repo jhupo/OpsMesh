@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, StrictInt, model_validator
 
-from backend.app.capabilities.schema_validation import reject_embedded_secrets
+from backend.app.capabilities.resources.schema import reject_embedded_secrets
 from backend.app.orchestration.workflows.conditions import validate_condition
 
 ConditionOperator = Literal[
@@ -169,7 +169,7 @@ class WorkflowNode(BaseModel):
         ):
             raise ValueError(f"{self.node_type} nodes cannot define execution targets")
         if self.output_schema is not None:
-            from backend.app.capabilities.schema_validation import validate_json_schema
+            from backend.app.capabilities.resources.schema import validate_json_schema
 
             validate_json_schema(self.output_schema)
         for key in self.input_bindings:

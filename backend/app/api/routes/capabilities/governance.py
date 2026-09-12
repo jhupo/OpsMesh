@@ -6,7 +6,7 @@ from backend.app.api.schemas.capabilities.governance import (
     WorkspaceCapabilityGovernanceApplyResponse,
     WorkspaceCapabilityGovernanceResponse,
 )
-from backend.app.capabilities.capability_governance import CapabilityGovernanceService
+from backend.app.capabilities.governance.service import CapabilityGovernanceService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

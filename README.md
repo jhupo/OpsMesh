@@ -383,6 +383,7 @@ backend/app/agents/                           Agent profiles, SDK runtime, memor
 backend/app/agents/{profiles,memory,messages,providers,runtime}/  Agent lifecycle and execution domains
 backend/app/agents/runtime/providers/         OpenAI and Claude SDK adapters
 backend/app/capabilities/                     Skills, MCP, tools, marketplace, and policy
+backend/app/capabilities/{catalog,governance,resources,skills,mcp,marketplace,tools}/  Capability feature modules
 backend/app/orchestration/                    Requests, runs, approvals, tasks, and workflows
 backend/app/execution/                        Runtime, worker, operations, and self-hosted execution
 backend/app/execution/runtime/{...}/          Runtime backends, commands, lifecycle, pools, policies, and spaces

@@ -6,16 +6,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.capabilities.agent_tool_policy import agent_mcp_policy_mode
-from backend.app.capabilities.skill_manifest_tools import (
-    agent_installed_skill_ids,
-    manifest_mcp_tools,
-)
-from backend.app.capabilities.skill_tool_diagnostics import SkillToolDiagnosticsService
-from backend.app.capabilities.workspace_skill_lifecycle_helpers import (
+from backend.app.capabilities.governance.agent_policy import agent_mcp_policy_mode
+from backend.app.capabilities.skills.diagnostics import SkillToolDiagnosticsService
+from backend.app.capabilities.skills.lifecycle_helpers import (
     require_installable_skill,
     require_same_skill_key,
     require_workspace_install,
+)
+from backend.app.capabilities.skills.manifest import (
+    agent_installed_skill_ids,
+    manifest_mcp_tools,
 )
 from backend.app.platform.common.config import Settings, get_settings
 

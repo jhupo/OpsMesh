@@ -16,7 +16,7 @@ from backend.app.agents.providers.model_api import (
 from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.providers.resolution import ModelProviderResolutionService
 from backend.app.agents.runtime.guardrails import runtime_controls_snapshot
-from backend.app.capabilities.effective_catalog import (
+from backend.app.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )

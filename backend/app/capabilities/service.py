@@ -17,7 +17,7 @@ from backend.app.capabilities.models import (
     Skill,
     ToolGroup,
 )
-from backend.app.capabilities.schema_validation import reject_embedded_secrets
+from backend.app.capabilities.resources.schema import reject_embedded_secrets
 from backend.app.observability.audit_service import AuditService
 from backend.app.platform.common.config import Settings, get_settings
 from backend.app.platform.common.pagination import PageParams

@@ -421,6 +421,33 @@ def test_agent_profile_and_memory_modules_have_stable_owners() -> None:
     assert not (agents / "memory/agent_policy.py").exists()
 
 
+def test_capability_modules_are_nested_by_function() -> None:
+    capabilities = ROOT / "backend/app/capabilities"
+    expected = {"catalog", "governance", "mcp", "marketplace", "resources", "skills", "tools"}
+    assert {path.name for path in capabilities.iterdir() if path.is_dir()} >= expected
+    root_modules = {
+        path.name
+        for path in capabilities.iterdir()
+        if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
+    }
+    assert root_modules == {"models.py", "service.py"}
+    for name in (
+        "capability_governance.py",
+        "capability_governance_actions.py",
+        "catalog_service.py",
+        "effective_catalog.py",
+        "execution.py",
+        "policy_service.py",
+        "product_tool_catalog.py",
+        "resource_service.py",
+        "resource_validation.py",
+        "schema_validation.py",
+        "workspace_skill_lifecycle.py",
+    ):
+        assert not (capabilities / name).exists(), name
+    assert (capabilities / "mcp/execution_service.py").is_file()
+
+
 def test_local_application_imports_resolve_without_compatibility_shims() -> None:
     missing = []
     for path in (ROOT / "backend/app").rglob("*.py"):

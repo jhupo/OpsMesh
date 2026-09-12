@@ -34,7 +34,7 @@ from backend.app.agents.runtime.tool_payloads import (
     workspace_file_content_payload,
     workspace_file_payload,
 )
-from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_NAMES as PRODUCT_TOOL_NAMES
+from backend.app.capabilities.catalog.product_tools import PRODUCT_TOOL_NAMES as PRODUCT_TOOL_NAMES
 from backend.app.capabilities.tools.context import ToolContext
 from backend.app.capabilities.tools.errors import ToolResourceNotFoundError
 from backend.app.capabilities.tools.product_service import ProductToolService

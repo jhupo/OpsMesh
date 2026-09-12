@@ -18,7 +18,7 @@ from backend.app.agents.runtime.contracts import (
 )
 from backend.app.agents.runtime.tool_gateway import AgentToolGateway, ToolGatewayDenied
 from backend.app.agents.runtime.tools import BackendToolExecutor
-from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalogService
+from backend.app.capabilities.catalog.effective import EffectiveCapabilityCatalogService
 from backend.app.capabilities.models import CapabilityResource, McpCredentialReference, McpServer
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.platform.common.config import Settings

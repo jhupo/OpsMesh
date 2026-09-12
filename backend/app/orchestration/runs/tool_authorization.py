@@ -20,11 +20,11 @@ from backend.app.agents.runtime.contracts import (
     AgentRuntimeAgentTool,
     AgentRuntimeContext,
 )
-from backend.app.capabilities.effective_catalog import (
+from backend.app.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )
-from backend.app.capabilities.schema_validation import validate_partial_parameters
+from backend.app.capabilities.resources.schema import validate_partial_parameters
 from backend.app.orchestration.requests.authorization import (
     resource_grants_for_snapshot,
     tool_definitions_for_snapshot,

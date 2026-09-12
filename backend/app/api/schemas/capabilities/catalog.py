@@ -11,7 +11,7 @@ from pydantic import (
 )
 
 from backend.app.api.schemas.common import TimestampedModel
-from backend.app.capabilities.schema_validation import reject_embedded_secrets
+from backend.app.capabilities.resources.schema import reject_embedded_secrets
 from backend.app.platform.security.redaction import redact_sensitive_payload
 
 ResourceType = Literal[

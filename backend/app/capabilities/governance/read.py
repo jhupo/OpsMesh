@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.capabilities.capability_governance_rules import (
+from backend.app.capabilities.governance.rules import (
     agent_governance_actions,
     dict_list,
     mcp_server_governance_actions,
@@ -18,7 +18,7 @@ from backend.app.capabilities.capability_governance_rules import (
 )
 from backend.app.capabilities.mcp.catalog_service import McpCatalogService
 from backend.app.capabilities.models import WorkspaceSkillInstall
-from backend.app.capabilities.skill_tool_diagnostics import SkillToolDiagnosticsService
+from backend.app.capabilities.skills.diagnostics import SkillToolDiagnosticsService
 from backend.app.platform.common.config import Settings, get_settings
 from backend.app.platform.common.pagination import PageParams
 

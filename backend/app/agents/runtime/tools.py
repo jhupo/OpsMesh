@@ -20,11 +20,11 @@ from backend.app.agents.runtime.tool_gateway import (
 )
 from backend.app.agents.runtime.tool_mcp_resolver import ContextualMcpAdapterResolver
 from backend.app.agents.runtime.tool_metadata import product_review_context, tool_metadata
-from backend.app.capabilities.execution import McpToolExecutionService
 from backend.app.capabilities.mcp.adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
+from backend.app.capabilities.mcp.execution_service import McpToolExecutionService
 from backend.app.capabilities.mcp.types import McpExecutionRequest
 from backend.app.capabilities.models import McpToolAllowlist
 from backend.app.execution.runtime.contracts import DockerRuntimeClient

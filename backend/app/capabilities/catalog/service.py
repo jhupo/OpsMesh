@@ -9,9 +9,9 @@ from backend.app.api.schemas.capabilities.catalog import (
     CapabilityToolDescriptor,
     WorkspaceCapabilityCatalogResponse,
 )
+from backend.app.capabilities.catalog.product_tools import PRODUCT_TOOL_CATALOG
 from backend.app.capabilities.mcp.servers import McpServerService
-from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_CATALOG
-from backend.app.capabilities.resource_service import CapabilityResourceService
+from backend.app.capabilities.resources.service import CapabilityResourceService
 
 
 class WorkspaceCapabilityCatalogService:

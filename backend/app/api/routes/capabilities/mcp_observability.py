@@ -13,7 +13,7 @@ from backend.app.api.schemas.capabilities.policy_diagnostics import (
     WorkspaceToolPolicyMatrixResponse,
 )
 from backend.app.capabilities.mcp.call_logs import McpToolCallLogQueryService
-from backend.app.capabilities.skill_tool_diagnostics import SkillToolDiagnosticsService
+from backend.app.capabilities.skills.diagnostics import SkillToolDiagnosticsService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

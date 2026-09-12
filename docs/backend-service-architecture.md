@@ -304,7 +304,7 @@ backend/
       agents/                                 # Agent profiles and nested runtime domains
         profiles/ memory/ messages/ providers/ runtime/
     capabilities/                           # Tools, MCP, marketplace, and policy
-      mcp/ marketplace/ tools/
+      catalog/ governance/ resources/ skills/ mcp/ marketplace/ tools/
     orchestration/                          # Requests, runs, approvals, tasks, workflows
       approvals/ requests/ runs/ tasks/ workflows/
     execution/                              # Runtime, workers, operations, self-hosted jobs

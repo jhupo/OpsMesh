@@ -20,10 +20,11 @@ from backend.app.capabilities.models import CapabilityResource
 from backend.app.execution.runtime.contracts import RuntimeCommandResult
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.orchestration.runs.authorization_integrity import (
+from backend.app.orchestration.runs.models import (
+    AgentRun,
+    RunEvent,
     authorization_snapshot_fingerprint,
 )
-from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task
 from backend.app.platform.common.config import Settings
 from backend.app.platform.db import models as registered_models  # noqa: F401

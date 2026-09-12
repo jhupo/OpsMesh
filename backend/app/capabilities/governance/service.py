@@ -5,11 +5,11 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.capabilities.capability_governance_actions import (
+from backend.app.capabilities.governance.actions import (
     CapabilityGovernanceActionService,
 )
-from backend.app.capabilities.capability_governance_read import CapabilityGovernanceReadService
-from backend.app.capabilities.capability_governance_rules import (
+from backend.app.capabilities.governance.read import CapabilityGovernanceReadService
+from backend.app.capabilities.governance.rules import (
     GOVERNANCE_APPLY_ACTIONS,
     governance_actions,
 )

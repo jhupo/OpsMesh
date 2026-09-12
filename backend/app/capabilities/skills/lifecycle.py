@@ -13,7 +13,7 @@ from backend.app.api.schemas.capabilities.workspace_skills import (
     WorkspaceSkillUpgradeRequest,
 )
 from backend.app.capabilities.models import WorkspaceSkillInstall
-from backend.app.capabilities.workspace_skill_lifecycle_helpers import (
+from backend.app.capabilities.skills.lifecycle_helpers import (
     append_skill_install_history,
     config_with_lifecycle,
     copy_skill_snapshot,

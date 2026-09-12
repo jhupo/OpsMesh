@@ -22,7 +22,7 @@ from backend.app.api.schemas.workspace.teams import (
     AgentTeamUpdateRequest,
     WorkspaceTeamCommandCenterResponse,
 )
-from backend.app.capabilities.policy_service import TeamCapabilityPolicyService
+from backend.app.capabilities.governance.policy import TeamCapabilityPolicyService
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.platform.auth.context import WorkspaceContext

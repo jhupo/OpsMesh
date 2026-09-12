@@ -1,0 +1,1 @@
+"""Capability resources modules."""

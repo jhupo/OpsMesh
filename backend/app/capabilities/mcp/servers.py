@@ -21,7 +21,7 @@ from backend.app.capabilities.mcp.server_helpers import (
 )
 from backend.app.capabilities.mcp.server_rules import connection_summary
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
-from backend.app.capabilities.schema_validation import (
+from backend.app.capabilities.resources.schema import (
     normalize_object_schema,
     reject_embedded_secrets,
 )

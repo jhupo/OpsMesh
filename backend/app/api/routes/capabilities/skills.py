@@ -14,9 +14,9 @@ from backend.app.api.schemas.capabilities.workspace_skills import (
     WorkspaceSkillToolAvailabilityResponse,
     WorkspaceSkillUpgradeRequest,
 )
-from backend.app.capabilities.skill_tool_diagnostics import SkillToolDiagnosticsService
-from backend.app.capabilities.workspace_skill_impact import WorkspaceSkillImpactService
-from backend.app.capabilities.workspace_skill_lifecycle import WorkspaceSkillLifecycleService
+from backend.app.capabilities.skills.diagnostics import SkillToolDiagnosticsService
+from backend.app.capabilities.skills.impact import WorkspaceSkillImpactService
+from backend.app.capabilities.skills.lifecycle import WorkspaceSkillLifecycleService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

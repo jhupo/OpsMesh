@@ -11,7 +11,7 @@ from backend.app.agents.runtime.contracts import (
     AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
 )
-from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
+from backend.app.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.capabilities.models import (
     CapabilityResource,
     McpCredentialReference,

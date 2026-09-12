@@ -15,7 +15,7 @@ from backend.app.agents.runtime.contracts import (
     AgentRuntimeToolDefinition,
 )
 from backend.app.capabilities.models import CapabilityResource
-from backend.app.capabilities.schema_validation import validate_parameters
+from backend.app.capabilities.resources.schema import validate_parameters
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.platform.common.trace_context import with_current_trace_metadata

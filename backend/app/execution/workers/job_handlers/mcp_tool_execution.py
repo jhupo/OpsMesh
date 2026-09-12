@@ -1,7 +1,7 @@
 import asyncio
 
-from backend.app.capabilities.execution import McpToolExecutionService
 from backend.app.capabilities.mcp.adapter_resolver import McpAdapterResolver
+from backend.app.capabilities.mcp.execution_service import McpToolExecutionService
 from backend.app.capabilities.mcp.types import McpExecutionRequest
 from backend.app.execution.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.execution.workers.job_routing import optional_uuid, required_string

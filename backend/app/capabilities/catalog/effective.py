@@ -18,8 +18,8 @@ from backend.app.api.schemas.capabilities.catalog import (
     EffectiveCapabilityResource,
     EffectiveCapabilityTool,
 )
-from backend.app.capabilities.catalog_service import WorkspaceCapabilityCatalogService
-from backend.app.capabilities.schema_validation import (
+from backend.app.capabilities.catalog.service import WorkspaceCapabilityCatalogService
+from backend.app.capabilities.resources.schema import (
     reject_embedded_secrets,
     validate_partial_parameters,
 )

@@ -9,7 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.capabilities.agent_tool_policy import agent_mcp_policy_mode
+from backend.app.capabilities.governance.agent_policy import agent_mcp_policy_mode
 from backend.app.capabilities.mcp.catalog_service import McpCatalogService
 from backend.app.capabilities.mcp.server_rules import (
     credential_status as _credential_status,
@@ -23,18 +23,18 @@ from backend.app.capabilities.models import (
     McpToolAllowlist,
     WorkspaceSkillInstall,
 )
-from backend.app.capabilities.skill_diagnostic_types import (
+from backend.app.capabilities.skills.availability import (
+    WorkspaceSkillToolAvailability,
+    skill_tool_availability,
+)
+from backend.app.capabilities.skills.diagnostic_types import (
     AgentSkillDiagnostic,
     AgentToolDiagnostic,
     AgentToolPolicyDiagnostic,
 )
-from backend.app.capabilities.skill_manifest_tools import (
+from backend.app.capabilities.skills.manifest import (
     agent_installed_skill_ids,
     manifest_mcp_tools,
-)
-from backend.app.capabilities.skill_tool_availability import (
-    WorkspaceSkillToolAvailability,
-    skill_tool_availability,
 )
 from backend.app.platform.common.config import Settings, get_settings
 
