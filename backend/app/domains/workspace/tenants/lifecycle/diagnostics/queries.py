@@ -19,13 +19,13 @@ from backend.app.domains.workspace.projects.export_models import (
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import FileAccessEvent, WorkspaceFile
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.tenants.data_lifecycle_payloads import (
+from backend.app.domains.workspace.tenants.lifecycle.diagnostics.payloads import (
     _import_preview_payload,
     _job_payload,
     _metadata_counts,
     _restore_test_payload,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_settings import _safe_count_map, _safe_int
+from backend.app.domains.workspace.tenants.lifecycle.settings import _safe_count_map, _safe_int
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 

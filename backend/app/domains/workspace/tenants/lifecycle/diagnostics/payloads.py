@@ -1,5 +1,5 @@
 from backend.app.domains.workspace.projects.export_models import WorkspaceExportJob
-from backend.app.domains.workspace.tenants.data_lifecycle_settings import (
+from backend.app.domains.workspace.tenants.lifecycle.settings import (
     _safe_conflict_summaries,
     _safe_count_map,
     _safe_int,

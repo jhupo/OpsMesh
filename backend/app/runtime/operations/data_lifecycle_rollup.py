@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.values import dict_or_empty, int_or_zero, string_list
-from backend.app.domains.workspace.tenants.data_lifecycle import WorkspaceDataLifecycleService
+from backend.app.domains.workspace.tenants.lifecycle.service import WorkspaceDataLifecycleService
 
 
 class WorkspaceDataLifecycleRollupService:

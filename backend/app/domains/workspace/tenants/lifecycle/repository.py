@@ -8,7 +8,7 @@ from backend.app.domains.workspace.projects.export_models import (
     WorkspaceExportJob,
     WorkspaceExportJobStatus,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_settings import _ensure_utc_datetime
+from backend.app.domains.workspace.tenants.lifecycle.settings import _ensure_utc_datetime
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.observability.audit_service import AuditService

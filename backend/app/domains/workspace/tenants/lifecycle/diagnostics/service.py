@@ -4,27 +4,27 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.workspace.exports import SUPPORTED_WORKSPACE_EXPORT_FORMAT
-from backend.app.domains.workspace.tenants.data_lifecycle_diagnostic_queries import (
-    WorkspaceDataLifecycleDiagnosticQueries,
-)
-from backend.app.domains.workspace.tenants.data_lifecycle_payloads import (
+from backend.app.domains.workspace.tenants.lifecycle.diagnostics.payloads import (
     _archive_integrity_payload,
     _audit_event_payload,
     _job_payload,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_policy import (
+from backend.app.domains.workspace.tenants.lifecycle.diagnostics.queries import (
+    WorkspaceDataLifecycleDiagnosticQueries,
+)
+from backend.app.domains.workspace.tenants.lifecycle.policy import (
     _backup_policy,
     _readiness,
     _retention_policy,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_recovery import (
+from backend.app.domains.workspace.tenants.lifecycle.recovery import (
     _backup_coverage,
     _restore_readiness,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_repository import (
+from backend.app.domains.workspace.tenants.lifecycle.repository import (
     WorkspaceDataLifecycleRepository,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_schedule import (
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.policy import (
     _automation_backup_warnings,
     _automation_restore_drill_warnings,
     _automation_retention_warnings,
@@ -33,7 +33,7 @@ from backend.app.domains.workspace.tenants.data_lifecycle_schedule import (
     _schedule_configured,
     _scheduled_backup_due,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_settings import (
+from backend.app.domains.workspace.tenants.lifecycle.settings import (
     _restore_drill_settings,
     _retention_settings,
     _string_list,

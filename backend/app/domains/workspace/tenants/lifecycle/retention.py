@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.tenants.data_lifecycle_policy import (
+from backend.app.domains.workspace.tenants.lifecycle.policy import (
     _candidate_counts,
     _candidate_payload,
     _retention_blocked_reasons,
@@ -15,7 +15,7 @@ from backend.app.domains.workspace.tenants.data_lifecycle_policy import (
     _retention_recommended_actions,
     _retention_warnings,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_repository import (
+from backend.app.domains.workspace.tenants.lifecycle.repository import (
     WorkspaceDataLifecycleRepository,
 )
 from backend.app.domains.workspace.tenants.models import Workspace

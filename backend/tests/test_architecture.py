@@ -266,6 +266,40 @@ def test_workflow_modules_are_nested_by_function() -> None:
         assert not (workflows / name).exists(), name
 
 
+def test_tenant_modules_are_nested_by_function() -> None:
+    tenants = ROOT / "backend/app/domains/workspace/tenants"
+    expected = {"health", "lifecycle"}
+    assert {path.name for path in tenants.iterdir() if path.is_dir()} >= expected
+    root_modules = {
+        path.stem
+        for path in tenants.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert root_modules == {"models", "quotas"}
+    for name in (
+        "lifecycle/actions",
+        "lifecycle/diagnostics",
+        "lifecycle/scheduling",
+    ):
+        assert (tenants / name / "__init__.py").is_file(), name
+    for name in (
+        "data_lifecycle.py",
+        "data_lifecycle_actions.py",
+        "data_lifecycle_diagnostics.py",
+        "data_lifecycle_policy.py",
+        "data_lifecycle_recovery.py",
+        "data_lifecycle_repository.py",
+        "data_lifecycle_retention.py",
+        "data_lifecycle_scheduler.py",
+        "health.py",
+        "health_collector.py",
+        "health_metrics.py",
+        "health_policy.py",
+        "health_trends.py",
+    ):
+        assert not (tenants / name).exists(), name
+
+
 def test_operations_features_are_nested_by_function() -> None:
     operations = ROOT / "backend/app/runtime/operations"
     expected = {"metrics", "queues", "recovery", "runtimes", "timeline", "workers"}

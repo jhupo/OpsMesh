@@ -1,21 +1,29 @@
 from uuid import UUID
 
+from sqlalchemy.orm import Session
+
 from backend.app.api.services.workspace.exports.service import WorkspaceExportService
 from backend.app.domains.workspace.storage.storage import ObjectStorage
-from backend.app.domains.workspace.tenants.data_lifecycle_payloads import _archive_integrity_payload
-from backend.app.domains.workspace.tenants.data_lifecycle_recovery import (
+from backend.app.domains.workspace.tenants.lifecycle.diagnostics.payloads import (
+    _archive_integrity_payload,
+)
+from backend.app.domains.workspace.tenants.lifecycle.recovery import (
     _recovery_action_result,
     _recovery_action_skipped,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_repository import (
+from backend.app.domains.workspace.tenants.lifecycle.repository import (
     WorkspaceDataLifecycleRepository,
 )
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_service import AuditService
 
 
-class RecoveryArchiveIntegrityActionMixin(WorkspaceDataLifecycleRepository):
-    def _apply_recovery_archive_integrity_action(
+class RecoveryArchiveIntegrityAction:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._repository = WorkspaceDataLifecycleRepository(session)
+
+    def apply(
         self,
         *,
         workspace: Workspace,
@@ -28,7 +36,7 @@ class RecoveryArchiveIntegrityActionMixin(WorkspaceDataLifecycleRepository):
         warnings: list[str],
     ) -> tuple[dict[str, object] | None, dict[str, object] | None]:
         action = "verify_latest_archive_integrity"
-        latest_success = self.latest_successful_archive_export(workspace.id)
+        latest_success = self._repository.latest_successful_archive_export(workspace.id)
         if latest_success is None:
             return None, _recovery_action_skipped(
                 action=action,
@@ -38,7 +46,7 @@ class RecoveryArchiveIntegrityActionMixin(WorkspaceDataLifecycleRepository):
                 blocked_reasons=blocked_reasons,
             )
 
-        latest_integrity = self.latest_archive_integrity_event(workspace.id)
+        latest_integrity = self._repository.latest_archive_integrity_event(workspace.id)
         integrity_payload = _archive_integrity_payload(
             latest_integrity,
             latest_success=latest_success,

@@ -6,11 +6,13 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceArchiveRestoreDrillRequest,
 )
 from backend.app.domains.workspace.projects.export_models import WorkspaceExportJob
-from backend.app.domains.workspace.tenants.data_lifecycle_settings import (
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.summary import (
+    ScheduledLifecycleSummary,
+)
+from backend.app.domains.workspace.tenants.lifecycle.settings import (
     _ensure_utc_datetime,
     _positive_int,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_summary import ScheduledLifecycleSummary
 from backend.app.observability.audit_models import AuditEvent
 
 

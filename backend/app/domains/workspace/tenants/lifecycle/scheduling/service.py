@@ -1,27 +1,32 @@
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from backend.app.domains.workspace.storage.storage import ObjectStorage
-from backend.app.domains.workspace.tenants.data_lifecycle_scheduler_backup import (
-    ScheduledBackupMixin,
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.backup import (
+    ScheduledBackupService,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_scheduler_restore import (
-    ScheduledRestoreDrillMixin,
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.restore import (
+    ScheduledRestoreDrillService,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_scheduler_retention import (
-    ScheduledRetentionMixin,
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.retention import (
+    ScheduledRetentionService,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_summary import ScheduledLifecycleSummary
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.summary import (
+    ScheduledLifecycleSummary,
+)
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.runtime.workers.redis_queue import RedisQueue
 
 
-class WorkspaceScheduledLifecycleService(
-    ScheduledBackupMixin,
-    ScheduledRetentionMixin,
-    ScheduledRestoreDrillMixin,
-):
+class WorkspaceScheduledLifecycleService:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._backup = ScheduledBackupService(session)
+        self._retention = ScheduledRetentionService(session)
+        self._restore_drill = ScheduledRestoreDrillService(session)
+
     def run_scheduled_lifecycle(
         self,
         *,
@@ -55,9 +60,9 @@ class WorkspaceScheduledLifecycleService(
         *,
         storage: ObjectStorage | None,
     ) -> ScheduledLifecycleSummary:
-        backup_summary = self._schedule_workspace_backup_if_due(workspace, queue)
-        retention_summary = self._run_workspace_retention_if_due(workspace)
-        restore_drill_summary = self._run_workspace_restore_drill_if_due(
+        backup_summary = self._backup.run_if_due(workspace, queue)
+        retention_summary = self._retention.run_if_due(workspace)
+        restore_drill_summary = self._restore_drill.run_if_due(
             workspace,
             storage=storage,
         )

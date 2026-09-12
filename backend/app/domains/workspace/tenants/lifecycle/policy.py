@@ -2,8 +2,10 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from backend.app.domains.workspace.projects.export_models import WorkspaceExportJob
-from backend.app.domains.workspace.tenants.data_lifecycle_schedule import _backup_schedule_status
-from backend.app.domains.workspace.tenants.data_lifecycle_settings import (
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.policy import (
+    _backup_schedule_status,
+)
+from backend.app.domains.workspace.tenants.lifecycle.settings import (
     _backup_settings,
     _ensure_utc_datetime,
     _positive_int,

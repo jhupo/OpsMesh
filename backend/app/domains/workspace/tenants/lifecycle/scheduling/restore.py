@@ -1,26 +1,33 @@
 from datetime import UTC, datetime
 
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 
 from backend.app.api.services.workspace.exports.service import WorkspaceExportService
 from backend.app.domains.workspace.storage.storage import ObjectStorage
-from backend.app.domains.workspace.tenants.data_lifecycle_repository import (
+from backend.app.domains.workspace.tenants.lifecycle.repository import (
     WorkspaceDataLifecycleRepository,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_schedule import (
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.policy import (
     _backup_interval_hours,
     _restore_drill_due,
     _restore_drill_skipped_summary,
     _scheduled_lifecycle_detail,
     _scheduled_restore_drill_request,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_settings import _restore_drill_settings
-from backend.app.domains.workspace.tenants.data_lifecycle_summary import ScheduledLifecycleSummary
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.summary import (
+    ScheduledLifecycleSummary,
+)
+from backend.app.domains.workspace.tenants.lifecycle.settings import _restore_drill_settings
 from backend.app.domains.workspace.tenants.models import Workspace
 
 
-class ScheduledRestoreDrillMixin(WorkspaceDataLifecycleRepository):
-    def _run_workspace_restore_drill_if_due(
+class ScheduledRestoreDrillService:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._repository = WorkspaceDataLifecycleRepository(session)
+
+    def run_if_due(
         self,
         workspace: Workspace,
         *,
@@ -32,7 +39,7 @@ class ScheduledRestoreDrillMixin(WorkspaceDataLifecycleRepository):
 
         interval_hours = _backup_interval_hours(raw_policy)
         if interval_hours is None:
-            self.record_lifecycle_schedule_event(
+            self._repository.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
                 reason="restore_drill_schedule_unrecognized",
@@ -44,8 +51,8 @@ class ScheduledRestoreDrillMixin(WorkspaceDataLifecycleRepository):
                 "restore_drill_schedule_unrecognized",
             )
 
-        latest_success = self.latest_successful_archive_export(workspace.id)
-        latest_drill = self.latest_restore_drill_event(workspace.id)
+        latest_success = self._repository.latest_successful_archive_export(workspace.id)
+        latest_drill = self._repository.latest_restore_drill_event(workspace.id)
         now = datetime.now(UTC)
         if not _restore_drill_due(
             raw_policy=raw_policy,
@@ -56,7 +63,7 @@ class ScheduledRestoreDrillMixin(WorkspaceDataLifecycleRepository):
             return ScheduledLifecycleSummary()
 
         if latest_success is None:
-            self.record_lifecycle_schedule_event(
+            self._repository.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
                 reason="no_successful_archive_export",
@@ -68,8 +75,8 @@ class ScheduledRestoreDrillMixin(WorkspaceDataLifecycleRepository):
                 "no_successful_archive_export",
             )
 
-        if self.has_active_archive_export_job(workspace.id):
-            self.record_lifecycle_schedule_event(
+        if self._repository.has_active_archive_export_job(workspace.id):
+            self._repository.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
                 reason="archive_export_already_active",
@@ -83,7 +90,7 @@ class ScheduledRestoreDrillMixin(WorkspaceDataLifecycleRepository):
             )
 
         if storage is None:
-            self.record_lifecycle_schedule_event(
+            self._repository.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
                 reason="storage_unavailable",
@@ -99,7 +106,7 @@ class ScheduledRestoreDrillMixin(WorkspaceDataLifecycleRepository):
         try:
             request = _scheduled_restore_drill_request(raw_policy)
         except ValidationError as exc:
-            self.record_lifecycle_schedule_event(
+            self._repository.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
                 reason="invalid_restore_drill_request",
@@ -124,7 +131,7 @@ class ScheduledRestoreDrillMixin(WorkspaceDataLifecycleRepository):
                 storage=storage,
             )
         except (FileNotFoundError, ValueError) as exc:
-            self.record_lifecycle_schedule_event(
+            self._repository.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
                 reason="restore_drill_failed",
@@ -140,7 +147,7 @@ class ScheduledRestoreDrillMixin(WorkspaceDataLifecycleRepository):
                 resource_id=latest_success.id,
             )
 
-        self.record_lifecycle_schedule_event(
+        self._repository.record_lifecycle_schedule_event(
             workspace=workspace,
             action="workspace.lifecycle.restore_drill_completed",
             reason="restore_drill_schedule_due",

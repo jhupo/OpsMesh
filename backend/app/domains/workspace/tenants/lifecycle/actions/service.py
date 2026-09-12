@@ -1,21 +1,26 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy.orm import Session
+
 from backend.app.domains.workspace.storage.storage import ObjectStorage
-from backend.app.domains.workspace.tenants.data_lifecycle_action_archive import (
-    RecoveryArchiveExportActionMixin,
+from backend.app.domains.workspace.tenants.lifecycle.actions.archive import (
+    RecoveryArchiveExportAction,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_action_integrity import (
-    RecoveryArchiveIntegrityActionMixin,
+from backend.app.domains.workspace.tenants.lifecycle.actions.integrity import (
+    RecoveryArchiveIntegrityAction,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_action_restore import (
-    RecoveryRestoreDrillActionMixin,
+from backend.app.domains.workspace.tenants.lifecycle.actions.restore import (
+    RecoveryRestoreDrillAction,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_recovery import (
+from backend.app.domains.workspace.tenants.lifecycle.recovery import (
     RECOVERY_READINESS_APPLY_ACTIONS,
     _recovery_readiness_actions,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_settings import (
+from backend.app.domains.workspace.tenants.lifecycle.repository import (
+    WorkspaceDataLifecycleRepository,
+)
+from backend.app.domains.workspace.tenants.lifecycle.settings import (
     _backup_settings,
     _restore_drill_settings,
     _string_list,
@@ -25,11 +30,14 @@ from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.workers.redis_queue import RedisQueue
 
 
-class WorkspaceRecoveryActionService(
-    RecoveryArchiveExportActionMixin,
-    RecoveryRestoreDrillActionMixin,
-    RecoveryArchiveIntegrityActionMixin,
-):
+class WorkspaceRecoveryActionService:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._repository = WorkspaceDataLifecycleRepository(session)
+        self._archive_export = RecoveryArchiveExportAction(session)
+        self._restore_drill = RecoveryRestoreDrillAction(session)
+        self._archive_integrity = RecoveryArchiveIntegrityAction(session)
+
     def apply_recovery_readiness_actions(
         self,
         *,
@@ -69,7 +77,7 @@ class WorkspaceRecoveryActionService(
 
         for action in requested_actions:
             if action == "run_archive_export":
-                result, skipped_result = self._apply_recovery_archive_export_action(
+                result, skipped_result = self._archive_export.apply(
                     workspace=workspace,
                     user_id=user_id,
                     queue=queue,
@@ -81,7 +89,7 @@ class WorkspaceRecoveryActionService(
                     raw_backup_policy=raw_backup_policy,
                 )
             elif action == "run_restore_import_test":
-                result, skipped_result = self._apply_recovery_restore_test_action(
+                result, skipped_result = self._restore_drill.apply(
                     workspace=workspace,
                     user_id=user_id,
                     storage=storage,
@@ -93,7 +101,7 @@ class WorkspaceRecoveryActionService(
                     raw_restore_drill_policy=raw_restore_drill_policy,
                 )
             elif action == "verify_latest_archive_integrity":
-                result, skipped_result = self._apply_recovery_archive_integrity_action(
+                result, skipped_result = self._archive_integrity.apply(
                     workspace=workspace,
                     user_id=user_id,
                     storage=storage,
@@ -127,7 +135,7 @@ class WorkspaceRecoveryActionService(
                 if item["action"] == "verify_latest_archive_integrity"
                 and item["status"] == "applied"
             ),
-            "active_archive_export_job_count": self.active_archive_export_job_count(
+            "active_archive_export_job_count": self._repository.active_archive_export_job_count(
                 workspace_id
             ),
             "metadata_keys": metadata_keys,

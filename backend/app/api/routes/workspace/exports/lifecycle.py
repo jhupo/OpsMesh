@@ -15,7 +15,7 @@ from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.workspace.storage.storage import create_storage
-from backend.app.domains.workspace.tenants.data_lifecycle import WorkspaceDataLifecycleService
+from backend.app.domains.workspace.tenants.lifecycle.service import WorkspaceDataLifecycleService
 from backend.app.runtime.workers.dependencies import get_worker_queue
 from backend.app.runtime.workers.redis_queue import RedisQueue
 

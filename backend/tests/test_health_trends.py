@@ -1,5 +1,5 @@
 from backend.app.core.db import models  # noqa: F401 - register ORM relationship targets
-from backend.app.domains.workspace.tenants.health_trends import risk_changes
+from backend.app.domains.workspace.tenants.health.trends import risk_changes
 from backend.app.domains.workspace.tenants.models import WorkspaceHealthSnapshot
 
 

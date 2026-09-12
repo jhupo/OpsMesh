@@ -1,25 +1,30 @@
 from uuid import UUID
 
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 
 from backend.app.api.services.workspace.exports.service import WorkspaceExportService
 from backend.app.domains.workspace.storage.storage import ObjectStorage
-from backend.app.domains.workspace.tenants.data_lifecycle_recovery import (
+from backend.app.domains.workspace.tenants.lifecycle.recovery import (
     _recovery_action_result,
     _recovery_action_skipped,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_repository import (
+from backend.app.domains.workspace.tenants.lifecycle.repository import (
     WorkspaceDataLifecycleRepository,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_schedule import (
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.policy import (
     _scheduled_restore_drill_request,
 )
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_service import AuditService
 
 
-class RecoveryRestoreDrillActionMixin(WorkspaceDataLifecycleRepository):
-    def _apply_recovery_restore_test_action(
+class RecoveryRestoreDrillAction:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._repository = WorkspaceDataLifecycleRepository(session)
+
+    def apply(
         self,
         *,
         workspace: Workspace,
@@ -33,7 +38,7 @@ class RecoveryRestoreDrillActionMixin(WorkspaceDataLifecycleRepository):
         raw_restore_drill_policy: dict[str, object],
     ) -> tuple[dict[str, object] | None, dict[str, object] | None]:
         action = "run_restore_import_test"
-        latest_success = self.latest_successful_archive_export(workspace.id)
+        latest_success = self._repository.latest_successful_archive_export(workspace.id)
         if latest_success is None:
             return None, _recovery_action_skipped(
                 action=action,
@@ -42,7 +47,7 @@ class RecoveryRestoreDrillActionMixin(WorkspaceDataLifecycleRepository):
                 reason="no_successful_archive_export",
                 blocked_reasons=blocked_reasons,
             )
-        if self.has_active_archive_export_job(workspace.id):
+        if self._repository.has_active_archive_export_job(workspace.id):
             return None, _recovery_action_skipped(
                 action=action,
                 resource_type="workspace_export_job",

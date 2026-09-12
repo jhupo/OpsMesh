@@ -5,17 +5,19 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.domains.workspace.storage.storage import ObjectStorage
-from backend.app.domains.workspace.tenants.data_lifecycle_actions import (
+from backend.app.domains.workspace.tenants.lifecycle.actions.service import (
     WorkspaceRecoveryActionService,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_diagnostics import (
+from backend.app.domains.workspace.tenants.lifecycle.diagnostics.service import (
     WorkspaceLifecycleDiagnosticsService,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_retention import WorkspaceRetentionService
-from backend.app.domains.workspace.tenants.data_lifecycle_scheduler import (
+from backend.app.domains.workspace.tenants.lifecycle.retention import WorkspaceRetentionService
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.service import (
     WorkspaceScheduledLifecycleService,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_summary import ScheduledLifecycleSummary
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.summary import (
+    ScheduledLifecycleSummary,
+)
 from backend.app.runtime.workers.redis_queue import RedisQueue
 
 

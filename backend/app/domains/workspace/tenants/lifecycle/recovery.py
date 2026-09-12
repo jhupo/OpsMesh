@@ -5,8 +5,8 @@ from backend.app.domains.workspace.projects.export_models import (
     WorkspaceExportJob,
     WorkspaceExportJobStatus,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_policy import _age_days
-from backend.app.domains.workspace.tenants.data_lifecycle_settings import (
+from backend.app.domains.workspace.tenants.lifecycle.policy import _age_days
+from backend.app.domains.workspace.tenants.lifecycle.settings import (
     _safe_int,
     _string_list,
     _unique_strings,

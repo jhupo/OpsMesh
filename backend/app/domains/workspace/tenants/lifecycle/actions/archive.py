@@ -1,16 +1,17 @@
 from uuid import UUID
 
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 
 from backend.app.api.services.workspace.exports.service import WorkspaceExportService
-from backend.app.domains.workspace.tenants.data_lifecycle_recovery import (
+from backend.app.domains.workspace.tenants.lifecycle.recovery import (
     _recovery_action_result,
     _recovery_action_skipped,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_repository import (
+from backend.app.domains.workspace.tenants.lifecycle.repository import (
     WorkspaceDataLifecycleRepository,
 )
-from backend.app.domains.workspace.tenants.data_lifecycle_schedule import (
+from backend.app.domains.workspace.tenants.lifecycle.scheduling.policy import (
     _scheduled_archive_export_request,
 )
 from backend.app.domains.workspace.tenants.models import Workspace
@@ -18,8 +19,12 @@ from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.workers.redis_queue import RedisQueue
 
 
-class RecoveryArchiveExportActionMixin(WorkspaceDataLifecycleRepository):
-    def _apply_recovery_archive_export_action(
+class RecoveryArchiveExportAction:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._repository = WorkspaceDataLifecycleRepository(session)
+
+    def apply(
         self,
         *,
         workspace: Workspace,
@@ -33,7 +38,7 @@ class RecoveryArchiveExportActionMixin(WorkspaceDataLifecycleRepository):
         raw_backup_policy: dict[str, object],
     ) -> tuple[dict[str, object] | None, dict[str, object] | None]:
         action = "run_archive_export"
-        if self.has_active_archive_export_job(workspace.id):
+        if self._repository.has_active_archive_export_job(workspace.id):
             return None, _recovery_action_skipped(
                 action=action,
                 resource_type="workspace",
