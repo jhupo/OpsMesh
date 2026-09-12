@@ -18,7 +18,7 @@ from backend.app.domains.workspace.tenants.lifecycle.scheduling.service import (
 from backend.app.domains.workspace.tenants.lifecycle.scheduling.summary import (
     ScheduledLifecycleSummary,
 )
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 class WorkspaceDataLifecycleService:

@@ -31,7 +31,7 @@ from backend.app.domains.orchestration.workflows.definitions.subworkflows import
     SubworkflowExecutionService,
 )
 from backend.app.domains.orchestration.workflows.steps.completion import TaskStepCompletionService
-from backend.app.runtime.workers.jobs import JobPayload, JobType
+from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 

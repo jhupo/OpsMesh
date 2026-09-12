@@ -73,14 +73,14 @@ from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRun
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtime.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.runtime.operations.workers.heartbeats import WorkerHeartbeatOperationsService
-from backend.app.runtime.workers.handlers import WorkerJobHandler
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
-from backend.app.runtime.workers.runner import (
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.execution.runner import (
     WorkerMaintenanceSummary,
     WorkerRunner,
     WorkerRunnerConfig,
 )
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 @pytest.fixture(autouse=True)
@@ -1113,7 +1113,7 @@ def test_team_runtime_maintenance_consume_then_reschedules_on_next_cadence(
     queue = _queue()
     docker = FakeDockerClient()
     monkeypatch.setattr(
-        "backend.app.runtime.workers.job_handlers.context.get_docker_runtime_client",
+        "backend.app.runtime.workers.execution.handlers.context.get_docker_runtime_client",
         lambda: docker,
     )
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(
@@ -1377,7 +1377,7 @@ def test_worker_runner_team_execution_loop_ensures_workspace_runtime(
     queue = _queue()
     docker = FakeDockerClient()
     monkeypatch.setattr(
-        "backend.app.runtime.workers.job_handlers.context.get_docker_runtime_client",
+        "backend.app.runtime.workers.execution.handlers.context.get_docker_runtime_client",
         lambda: docker,
     )
     workspace_id, team_id, user_id, _ = _seed_team_loop_task(
@@ -1430,7 +1430,7 @@ def test_degraded_team_runtime_maintenance_job_recovers_workspace_runtime(
     queue = _queue()
     docker = FakeDockerClient()
     monkeypatch.setattr(
-        "backend.app.runtime.workers.job_handlers.context.get_docker_runtime_client",
+        "backend.app.runtime.workers.execution.handlers.context.get_docker_runtime_client",
         lambda: docker,
     )
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(
@@ -1510,7 +1510,7 @@ def test_worker_runner_team_runtime_soak_keeps_persistent_context_between_iterat
     queue = _queue()
     docker = FakeDockerClient()
     monkeypatch.setattr(
-        "backend.app.runtime.workers.job_handlers.context.get_docker_runtime_client",
+        "backend.app.runtime.workers.execution.handlers.context.get_docker_runtime_client",
         lambda: docker,
     )
     workspace_id, team_id, user_id, _task_id = _seed_team_loop_task(
@@ -1585,7 +1585,7 @@ def test_team_runtime_scheduled_soak_across_thirty_minutes(
     queue = _queue()
     docker = FakeDockerClient()
     monkeypatch.setattr(
-        "backend.app.runtime.workers.job_handlers.context.get_docker_runtime_client",
+        "backend.app.runtime.workers.execution.handlers.context.get_docker_runtime_client",
         lambda: docker,
     )
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(

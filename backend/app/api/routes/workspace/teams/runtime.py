@@ -24,8 +24,10 @@ from backend.app.core.db.session import get_db_session
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
 from backend.app.runtime.environment.policies.quotas import RuntimeQuotaExceededError
 from backend.app.runtime.environment.policies.safety import RuntimeSafetyError
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

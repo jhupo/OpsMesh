@@ -12,7 +12,7 @@ from backend.app.domains.agents.providers.models import ModelProviderCredential
 _HEALTH_CHECK_SCHEDULE_JOB_LIMIT = 10
 
 if TYPE_CHECKING:
-    from backend.app.runtime.workers.scheduled_models import WorkspaceScheduledJob
+    from backend.app.runtime.workers.scheduling.models import WorkspaceScheduledJob
 
 
 def model_provider_last_health_check_at(
@@ -32,8 +32,8 @@ def model_provider_health_check_schedule_summary(
     workspace_id: UUID,
     credential_id: UUID,
 ) -> dict[str, object]:
-    from backend.app.runtime.workers.jobs import JobType
-    from backend.app.runtime.workers.scheduled_models import WorkspaceScheduledJob
+    from backend.app.runtime.workers.contracts import JobType
+    from backend.app.runtime.workers.scheduling.models import WorkspaceScheduledJob
 
     jobs = list(
         session.scalars(

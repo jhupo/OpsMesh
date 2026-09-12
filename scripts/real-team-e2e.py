@@ -28,9 +28,9 @@ from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.runtime.workers.handlers import WorkerJobHandler
-from backend.app.runtime.workers.queue_consumer import consume_once
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.queue.consumer import consume_once
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 @dataclass(frozen=True)

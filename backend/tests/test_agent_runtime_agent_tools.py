@@ -28,7 +28,7 @@ from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.result_payloads import run_output_payload
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.runtime.workers.jobs import JobPayload, JobType
+from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 

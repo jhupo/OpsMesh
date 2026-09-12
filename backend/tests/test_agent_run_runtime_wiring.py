@@ -5,9 +5,9 @@ from backend.app.domains.orchestration.runs.execution import (
     RunExecutionDependencies,
     RunExecutionService,
 )
-from backend.app.runtime.workers.job_handlers.agent_run import AgentRunJobHandler
-from backend.app.runtime.workers.job_handlers.context import WorkerJobHandlerContext
-from backend.app.runtime.workers.jobs import JobPayload, JobType
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.execution.handlers.agent_run import AgentRunJobHandler
+from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
 
 
 def test_agent_run_handler_passes_worker_docker_client_to_execution_service(monkeypatch) -> None:
@@ -30,11 +30,11 @@ def test_agent_run_handler_passes_worker_docker_client_to_execution_service(monk
             captured["job"] = job
 
     monkeypatch.setattr(
-        "backend.app.runtime.workers.job_handlers.agent_run.RunOrchestrationService",
+        "backend.app.runtime.workers.execution.handlers.agent_run.RunOrchestrationService",
         _FakeOrchestration,
     )
     monkeypatch.setattr(
-        "backend.app.runtime.workers.job_handlers.agent_run.RunExecutionService",
+        "backend.app.runtime.workers.execution.handlers.agent_run.RunExecutionService",
         _FakeExecution,
     )
     context = WorkerJobHandlerContext(

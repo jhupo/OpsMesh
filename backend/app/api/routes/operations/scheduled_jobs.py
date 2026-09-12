@@ -13,8 +13,8 @@ from backend.app.core.auth.dependencies import workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
-from backend.app.runtime.workers.scheduled_jobs import WorkspaceScheduledJobService
-from backend.app.runtime.workers.scheduled_types import ScheduledJobCreate
+from backend.app.runtime.workers.scheduling.service import WorkspaceScheduledJobService
+from backend.app.runtime.workers.scheduling.types import ScheduledJobCreate
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/scheduled-jobs",

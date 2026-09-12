@@ -22,9 +22,11 @@ from backend.app.runtime.environment.contracts import RuntimeLimits
 from backend.app.runtime.environment.policies.quotas import RuntimeQuotaExceededError
 from backend.app.runtime.environment.policies.safety import RuntimeSafetyError
 from backend.app.runtime.environment.service import RuntimeControlService
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["runtimes"])
 

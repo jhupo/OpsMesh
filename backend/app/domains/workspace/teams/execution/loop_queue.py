@@ -23,7 +23,7 @@ from backend.app.domains.workspace.teams.execution.runtime_candidates import (
     _record_runtime_scheduler_scan,
     _team_loop_candidate,
 )
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 @dataclass(frozen=True)

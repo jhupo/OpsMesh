@@ -33,7 +33,7 @@ from backend.app.domains.workspace.teams.runtime.service import (
 from backend.app.runtime.environment.lifecycle.control import RuntimeLifecycleControl
 from backend.app.runtime.environment.policies.quotas import RuntimeQuotaExceededError
 from backend.app.runtime.environment.policies.safety import RuntimeSafetyError
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 __all__ = [
     "TeamExecutionLoopEnqueueSummary",

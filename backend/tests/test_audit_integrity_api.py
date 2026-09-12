@@ -20,10 +20,12 @@ from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMem
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent, AuditIntegrityCheck
 from backend.app.observability.audit_service import AuditService
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.handlers import WorkerJobHandler
-from backend.app.runtime.workers.jobs import JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobType
+from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 TOKEN = "audit-integrity-api-token"
 

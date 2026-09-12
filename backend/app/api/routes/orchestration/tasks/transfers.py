@@ -18,8 +18,10 @@ from backend.app.domains.orchestration.tasks.operations.transfers import (
     TaskTransferError,
     TaskTransferService,
 )
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 

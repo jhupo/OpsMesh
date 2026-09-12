@@ -13,8 +13,8 @@ from backend.app.runtime.operations.models import WorkerLease, WorkerNode
 from backend.app.runtime.operations.workers.lifecycle_buckets import (
     WorkerLifecycleBucketAccumulator,
 )
-from backend.app.runtime.workers.jobs import JobPayload
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 RUNNING_LEASE_STATUSES = {"running"}
 LIFECYCLE_EVENTS_LIMIT = 50

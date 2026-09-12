@@ -37,9 +37,11 @@ from backend.app.domains.workspace.teams.operations.operator_actions import (
 from backend.app.domains.workspace.teams.workspace_service import (
     WorkspaceTeamService,
 )
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.jobs import JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobType
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

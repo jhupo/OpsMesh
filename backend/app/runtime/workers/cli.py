@@ -13,8 +13,8 @@ from backend.app.core.redis.client import redis_client
 from backend.app.domains.agents.runtime.factory import build_agent_runtime_registry
 from backend.app.domains.orchestration.runs.service import build_default_queue
 from backend.app.observability.tracing import configure_worker_telemetry
-from backend.app.runtime.workers.runner import WorkerRunner
-from backend.app.runtime.workers.runner_models import WorkerRunnerConfig
+from backend.app.runtime.workers.execution.models import WorkerRunnerConfig
+from backend.app.runtime.workers.execution.runner import WorkerRunner
 
 logger = logging.getLogger(__name__)
 

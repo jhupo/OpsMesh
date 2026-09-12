@@ -32,10 +32,10 @@ from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMembe
 from backend.app.domains.workspace.tenants.models import WorkspaceQuota
 from backend.app.observability.cost_models import WorkspaceCostBudget
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.runtime.workers.handlers import WorkerJobHandler
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.queue_consumer import consume_once
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.queue.consumer import consume_once
+from backend.app.runtime.workers.queue.redis import RedisQueue
 from backend.tests.test_worker_run_execution import (
     _build_agent_request,
     _seed_workspace,

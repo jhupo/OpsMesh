@@ -40,7 +40,7 @@ from backend.app.domains.workspace.teams.runtime.scheduling_blocks import (
     scheduled_run_blocking_summary,
 )
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 PROVIDER_RUN_STATUSES = ACTIVE_RUN_STATUSES
 

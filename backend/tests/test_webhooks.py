@@ -38,10 +38,12 @@ from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.handlers import WorkerJobHandler
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 TOKEN = "test-token"
 SECRET = "test-credential-secret"
@@ -533,7 +535,7 @@ def test_worker_handler_dispatches_webhook_delivery_job(monkeypatch: pytest.Monk
             )
 
     monkeypatch.setattr(
-        "backend.app.runtime.workers.job_handlers.io.WebhookDeliveryService",
+        "backend.app.runtime.workers.execution.handlers.io.WebhookDeliveryService",
         RecordingDeliveryService,
     )
 

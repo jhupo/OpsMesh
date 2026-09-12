@@ -20,8 +20,10 @@ from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
 from backend.app.observability.notification_models import WorkspaceNotification
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 TOKEN = "test-token"
 

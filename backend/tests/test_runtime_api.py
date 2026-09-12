@@ -28,9 +28,9 @@ from backend.app.runtime.environment.contracts import (
 from backend.app.runtime.environment.dependencies import get_docker_runtime_client
 from backend.app.runtime.environment.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
-from backend.app.runtime.workers.handlers import WorkerJobHandler
-from backend.app.runtime.workers.jobs import JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobType
+from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 TOKEN = "test-token"
 
@@ -499,7 +499,9 @@ def _client(
     from fakeredis import FakeRedis
 
     from backend.app.core.redis.keys import RedisKeyBuilder
-    from backend.app.runtime.workers.dependencies import get_worker_queue
+    from backend.app.runtime.workers.queue.dependencies import (
+        get_worker_queue,
+    )
 
     def override_db_session() -> Generator[Session, None, None]:
         request_session = session_factory()

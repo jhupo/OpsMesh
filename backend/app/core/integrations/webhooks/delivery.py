@@ -28,7 +28,7 @@ from backend.app.core.integrations.webhooks.signing import WebhookDeliverySigner
 from backend.app.core.integrations.webhooks.utils import _matches_event
 from backend.app.core.rate_limits.service import FixedWindowRateLimiter
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 class WebhookDeliveryService:

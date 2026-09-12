@@ -7,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.integrations.webhooks.models import WebhookDeliveryAttempt
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 @dataclass(frozen=True)

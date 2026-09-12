@@ -19,11 +19,13 @@ from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.workflows.definitions.conditions import (
     condition_step_references,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.members import snapshot_agent_ids
 from backend.app.domains.orchestration.workflows.planning.member_matching import (
     MemberMatchingService,
 )
 from backend.app.domains.orchestration.workflows.planning.org_structure import build_org_structure
+from backend.app.domains.orchestration.workflows.planning.project_plan.members import (
+    snapshot_agent_ids,
+)
 
 
 @dataclass(frozen=True)

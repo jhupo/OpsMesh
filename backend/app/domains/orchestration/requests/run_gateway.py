@@ -22,7 +22,7 @@ from backend.app.domains.orchestration.requests.request_approval import ModelReq
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
-from backend.app.runtime.workers.jobs import JobPayload
+from backend.app.runtime.workers.contracts import JobPayload
 
 MarkRunFailed = Callable[[AgentRun, Exception], None]
 

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from graphlib import CycleError, TopologicalSorter
 
-from backend.app.domains.orchestration.workflows.planning.project_plan.members import snapshot_agent_ids
-
 from backend.app.domains.orchestration.tasks.models import TaskStep
 from backend.app.domains.orchestration.workflows.definitions.conditions import (
     ConditionValidationError,
     condition_step_references,
     validate_condition,
+)
+from backend.app.domains.orchestration.workflows.planning.project_plan.members import (
+    snapshot_agent_ids,
 )
 
 

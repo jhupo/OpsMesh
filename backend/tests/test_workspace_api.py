@@ -97,12 +97,14 @@ from backend.app.runtime.operations.timeline.service import (
     TeamRuntimeTimelineService,
     TimelineFilters,
 )
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.handlers import WorkerJobHandler
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.queue_consumer import consume_once
-from backend.app.runtime.workers.redis_queue import RedisQueue
-from backend.app.runtime.workers.scheduled_models import WorkspaceScheduledJob
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.queue.consumer import consume_once
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.scheduling.models import WorkspaceScheduledJob
 
 TOKEN = "test-token"
 

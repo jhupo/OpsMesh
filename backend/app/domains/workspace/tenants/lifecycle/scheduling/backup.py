@@ -18,7 +18,7 @@ from backend.app.domains.workspace.tenants.lifecycle.scheduling.summary import (
 )
 from backend.app.domains.workspace.tenants.lifecycle.settings import _backup_settings
 from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 class ScheduledBackupService:

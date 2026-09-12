@@ -15,8 +15,10 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.orchestration.approvals.decisions import ApprovalDecisionService
 from backend.app.domains.orchestration.approvals.queries import ApprovalQueryService
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/approvals", tags=["approvals"])
 

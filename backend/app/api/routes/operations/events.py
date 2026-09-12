@@ -41,9 +41,11 @@ from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.operations.events import OperationsEventQueryService
 from backend.app.runtime.operations.recovery.diagnostics import StaleRunDiagnosticsService
 from backend.app.runtime.operations.recovery.service import StaleRunRecoveryService
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

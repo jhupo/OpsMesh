@@ -49,9 +49,11 @@ from backend.app.runtime.self_hosted.models import (
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 TOKEN = "test-token"
 WORKER_HEARTBEAT_TOKEN = "worker-heartbeat-token"

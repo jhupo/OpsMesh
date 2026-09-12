@@ -19,8 +19,8 @@ from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.capabilities.models import McpCredentialReference
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.runtime.workers.handlers import WorkerJobHandler
-from backend.app.runtime.workers.jobs import JobPayload, JobType
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.execution.registry import WorkerJobHandler
 
 OLD_SECRET = "old-credential-secret"
 NEW_SECRET = "new-credential-secret"

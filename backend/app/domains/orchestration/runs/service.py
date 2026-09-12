@@ -38,8 +38,8 @@ from backend.app.domains.orchestration.workflows.steps.scheduling_state import (
 from backend.app.domains.workspace.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 __all__ = [
     "RunOrchestrationService",

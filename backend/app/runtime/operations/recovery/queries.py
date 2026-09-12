@@ -10,7 +10,7 @@ from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.runtime.operations.models import WorkerLease
 from backend.app.runtime.operations.recovery.domain import stale_run_age_anchor
-from backend.app.runtime.workers.jobs import JobType
+from backend.app.runtime.workers.contracts import JobType
 
 
 class StaleRunQueryService:

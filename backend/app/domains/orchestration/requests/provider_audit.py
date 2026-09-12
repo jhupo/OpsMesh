@@ -9,7 +9,7 @@ from backend.app.domains.orchestration.requests.request_reviewing import (
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.observability.audit_service import AuditService
-from backend.app.runtime.workers.jobs import JobPayload
+from backend.app.runtime.workers.contracts import JobPayload
 
 
 @dataclass(slots=True)

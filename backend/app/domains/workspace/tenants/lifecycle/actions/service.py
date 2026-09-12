@@ -27,7 +27,7 @@ from backend.app.domains.workspace.tenants.lifecycle.settings import (
 )
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_service import AuditService
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 class WorkspaceRecoveryActionService:

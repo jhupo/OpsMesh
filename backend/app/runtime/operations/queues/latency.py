@@ -7,7 +7,7 @@ from redis import Redis
 
 from backend.app.api.schemas.operations.queue import QueueLatencyResponse
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 class OperationsQueueLatencyService:

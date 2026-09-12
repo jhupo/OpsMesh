@@ -14,8 +14,8 @@ from backend.app.runtime.operations.timeline.utils import (
     queue_job_time,
     within,
 )
-from backend.app.runtime.workers.jobs import JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobType
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 class TeamRuntimeQueueTimelineCollector:

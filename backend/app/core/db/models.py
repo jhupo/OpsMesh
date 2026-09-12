@@ -116,7 +116,7 @@ from backend.app.runtime.self_hosted.models import (
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
-from backend.app.runtime.workers.scheduled_models import (
+from backend.app.runtime.workers.scheduling.models import (
     WorkspaceScheduledJob,
     WorkspaceScheduledJobEvent,
 )

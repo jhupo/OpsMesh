@@ -40,7 +40,7 @@ from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.runtime.operations.metrics.workers import WorkerPrometheusMetrics
 from backend.app.runtime.operations.models import WorkerLease, WorkerNode
-from backend.app.runtime.workers.jobs import JobPayload, JobType
+from backend.app.runtime.workers.contracts import JobPayload, JobType
 
 
 def test_metrics_registry_renders_counters_and_histograms() -> None:

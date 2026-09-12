@@ -1,12 +1,5 @@
 from __future__ import annotations
 
-from backend.app.domains.orchestration.workflows.planning.project_plan.members import (
-    lead_package_for_member,
-    lead_package_for_request,
-    member_agent_profile_id,
-    requested_member_match,
-)
-
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
 from backend.app.domains.orchestration.workflows.planning.member_matching import (
@@ -23,6 +16,12 @@ from backend.app.domains.orchestration.workflows.planning.project_plan.helpers i
     string_or_default,
     string_tuple,
     unique_package_id,
+)
+from backend.app.domains.orchestration.workflows.planning.project_plan.members import (
+    lead_package_for_member,
+    lead_package_for_request,
+    member_agent_profile_id,
+    requested_member_match,
 )
 from backend.app.domains.orchestration.workflows.planning.project_plan.packages import (
     member_execution_package,

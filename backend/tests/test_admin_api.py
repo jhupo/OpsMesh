@@ -32,9 +32,11 @@ from backend.app.runtime.environment.spaces.models import (
     RuntimeSpaceQuota,
 )
 from backend.app.runtime.operations.models import WorkerLease, WorkerNode
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 TOKEN = "test-token"
 ADMIN_TOKEN = "admin-token"

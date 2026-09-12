@@ -20,7 +20,7 @@ from backend.app.runtime.operations.timeline.utils import (
     counts,
     matches_filters,
 )
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 class TeamRuntimeTimelineService:

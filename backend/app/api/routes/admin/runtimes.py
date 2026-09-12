@@ -11,8 +11,10 @@ from backend.app.api.schemas.platform.admin import (
 )
 from backend.app.core.admin.runtime_control import AdminRuntimeService
 from backend.app.core.common.pagination import PageParams
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 router = APIRouter()
 

@@ -45,8 +45,10 @@ from backend.app.domains.orchestration.tasks.management.diagnostics import (
 from backend.app.domains.orchestration.tasks.observation.service import TaskObservationService
 from backend.app.domains.orchestration.tasks.observation.timeline import TaskTimelineService
 from backend.app.domains.orchestration.tasks.operations.actions import TaskOperatorActionService
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

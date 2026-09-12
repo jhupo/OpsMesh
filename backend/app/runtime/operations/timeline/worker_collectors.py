@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.runtime.operations.models import WorkerLease
 from backend.app.runtime.operations.timeline.models import TimelineEvent, TimelineFilters
 from backend.app.runtime.operations.timeline.utils import aware_datetime, within
-from backend.app.runtime.workers.jobs import JobType
+from backend.app.runtime.workers.contracts import JobType
 
 
 class TeamRuntimeWorkerTimelineCollector:

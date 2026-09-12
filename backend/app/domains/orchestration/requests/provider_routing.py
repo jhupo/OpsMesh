@@ -20,7 +20,7 @@ from backend.app.domains.orchestration.requests.utils import effective_resolved_
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.runtime.workers.jobs import JobPayload
+from backend.app.runtime.workers.contracts import JobPayload
 
 
 @dataclass(slots=True)

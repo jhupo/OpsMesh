@@ -61,7 +61,7 @@ from backend.app.domains.workspace.projects.runtime_context import project_runti
 from backend.app.runtime.environment.backends.registry import build_runtime_backend_registry
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.workers.jobs import JobPayload, JobType
+from backend.app.runtime.workers.contracts import JobPayload, JobType
 
 
 @dataclass(slots=True)

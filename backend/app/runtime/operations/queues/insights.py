@@ -10,8 +10,8 @@ from backend.app.api.schemas.operations.queue import OperationsQueueInsightsResp
 from backend.app.core.common.values import age_seconds
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.runtime.operations.queues.insight_buckets import QueueInsightBucketBuilder
-from backend.app.runtime.workers.jobs import JobPayload
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 @dataclass(frozen=True, slots=True)

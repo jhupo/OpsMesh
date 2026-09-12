@@ -13,7 +13,7 @@ from backend.app.domains.orchestration.tasks.control.state import task_control_s
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.runtime.operations.models import WorkerLease
-from backend.app.runtime.workers.jobs import JobType
+from backend.app.runtime.workers.contracts import JobType
 
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,

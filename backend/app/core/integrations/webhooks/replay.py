@@ -17,7 +17,7 @@ from backend.app.core.integrations.webhooks.models import (
 from backend.app.core.integrations.webhooks.scheduler import WebhookDeliveryScheduler
 from backend.app.core.integrations.webhooks.utils import _metadata_datetime
 from backend.app.core.rate_limits.service import FixedWindowRateLimiter
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 class WebhookDeliveryReplayError(ValueError):

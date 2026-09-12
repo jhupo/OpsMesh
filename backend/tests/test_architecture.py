@@ -300,6 +300,48 @@ def test_tenant_modules_are_nested_by_function() -> None:
         assert not (tenants / name).exists(), name
 
 
+def test_worker_modules_are_nested_by_function() -> None:
+    workers = ROOT / "backend/app/runtime/workers"
+    expected = {"execution", "lifecycle", "queue", "scheduling"}
+    assert {path.name for path in workers.iterdir() if path.is_dir()} >= expected
+    root_modules = {
+        path.stem
+        for path in workers.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert root_modules == {"cli", "contracts"}
+    assert (workers / "execution/handlers/__init__.py").is_file()
+    for name in (
+        "capacity.py",
+        "handlers.py",
+        "heartbeat.py",
+        "job_handlers",
+        "job_routing.py",
+        "jobs.py",
+        "lease_lifecycle.py",
+        "lease_reporting.py",
+        "maintenance.py",
+        "queue_consumer.py",
+        "queue_contracts.py",
+        "queue_leases.py",
+        "queue_queries.py",
+        "queue_retries.py",
+        "queue_scripts.py",
+        "queue_serialization.py",
+        "redis_queue.py",
+        "revision_planner.py",
+        "routing_payloads.py",
+        "run_state.py",
+        "runner.py",
+        "runner_models.py",
+        "scheduled_jobs.py",
+        "scheduled_models.py",
+        "scheduled_types.py",
+        "schedules.py",
+    ):
+        assert not (workers / name).exists(), name
+
+
 def test_operations_features_are_nested_by_function() -> None:
     operations = ROOT / "backend/app/runtime/operations"
     expected = {"metrics", "queues", "recovery", "runtimes", "timeline", "workers"}

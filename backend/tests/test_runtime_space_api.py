@@ -31,8 +31,10 @@ from backend.app.runtime.environment.spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 TOKEN = "test-token"
 

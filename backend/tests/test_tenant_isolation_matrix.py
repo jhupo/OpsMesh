@@ -50,8 +50,10 @@ from backend.app.runtime.environment.contracts import (
 from backend.app.runtime.environment.dependencies import get_docker_runtime_client
 from backend.app.runtime.environment.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceEvent
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 TOKEN = "test-token"
 SOURCE_MARKER = "source-secret-marker"

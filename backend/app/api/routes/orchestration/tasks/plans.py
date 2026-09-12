@@ -37,8 +37,10 @@ from backend.app.domains.orchestration.workflows.planning.future_plan_mutation i
     TaskPlanMutationError,
     TaskPlanMutationService,
 )
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

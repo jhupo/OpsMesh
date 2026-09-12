@@ -13,7 +13,7 @@ from backend.app.runtime.operations.workers.lifecycle import (
     worker_finish_lifecycle_event,
     worker_lifecycle_event,
 )
-from backend.app.runtime.workers.jobs import JobPayload
+from backend.app.runtime.workers.contracts import JobPayload
 
 
 class WorkerLeaseWriter:

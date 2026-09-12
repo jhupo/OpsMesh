@@ -8,7 +8,7 @@ from backend.app.api.schemas.operations.queue import (
     QueuePriorityBucketResponse,
 )
 from backend.app.core.common.values import age_seconds
-from backend.app.runtime.workers.jobs import JobPayload
+from backend.app.runtime.workers.contracts import JobPayload
 
 
 @dataclass(slots=True)

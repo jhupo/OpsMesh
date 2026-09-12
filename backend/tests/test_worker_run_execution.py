@@ -114,10 +114,10 @@ from backend.app.runtime.environment.spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime.workers.handlers import WorkerJobHandler
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.queue_consumer import consume_once
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.queue.consumer import consume_once
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 @pytest.fixture(autouse=True)

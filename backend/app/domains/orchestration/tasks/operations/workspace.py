@@ -18,7 +18,7 @@ from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.environment.spaces.service import RuntimeSpaceService
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 @dataclass(frozen=True, slots=True)

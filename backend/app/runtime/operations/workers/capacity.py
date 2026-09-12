@@ -14,7 +14,7 @@ from backend.app.runtime.operations.models import WorkerLease, WorkerNode
 from backend.app.runtime.operations.workers.lease_queries import WorkerLeaseQueryService
 from backend.app.runtime.operations.workers.lifecycle import RUNNING_LEASE_STATUSES
 from backend.app.runtime.operations.workers.node_repository import WorkerNodeRepository
-from backend.app.runtime.workers.jobs import JobType
+from backend.app.runtime.workers.contracts import JobType
 
 
 @dataclass(frozen=True)

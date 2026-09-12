@@ -35,9 +35,11 @@ from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMem
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.runtime.workers.dependencies import get_worker_queue
-from backend.app.runtime.workers.redis_queue import RedisQueue
-from backend.app.runtime.workers.runner import WorkerRunner, WorkerRunnerConfig
+from backend.app.runtime.workers.execution.runner import WorkerRunner, WorkerRunnerConfig
+from backend.app.runtime.workers.queue.dependencies import (
+    get_worker_queue,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 TOKEN = "test-token"
 

@@ -28,7 +28,7 @@ from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.tasks.service import TaskStateService
 from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.observability.audit_service import AuditService
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 class TaskControlService:

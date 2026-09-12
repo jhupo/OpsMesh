@@ -24,7 +24,7 @@ from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
 from backend.app.observability.audit_service import AuditService
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 TRANSFER_PENDING = "pending"
 TRANSFER_ACCEPTED = "accepted"

@@ -6,8 +6,8 @@ from backend.app.core.common.config import Settings
 from backend.app.runtime.environment.contracts import RuntimeExecutionMode, RuntimeLimits
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.service import RuntimeControlService
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 class QueuedRuntimeControl:

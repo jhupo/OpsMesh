@@ -60,10 +60,12 @@ from backend.app.domains.agents.providers.credential_commands import (
 )
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.runtime.workers.job_handlers.context import WorkerJobHandlerContext
-from backend.app.runtime.workers.job_handlers.memory_embedding import MemoryEmbeddingJobHandler
-from backend.app.runtime.workers.jobs import JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobType
+from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.execution.handlers.memory_embedding import (
+    MemoryEmbeddingJobHandler,
+)
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 def test_hybrid_retrieval_uses_weighted_rrf_and_deduplicates_content() -> None:

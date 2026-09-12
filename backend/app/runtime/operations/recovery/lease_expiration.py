@@ -13,7 +13,7 @@ from backend.app.runtime.operations.workers.lifecycle import (
     append_worker_lifecycle_events,
     worker_lifecycle_event,
 )
-from backend.app.runtime.workers.jobs import JobType
+from backend.app.runtime.workers.contracts import JobType
 
 
 class StaleRunLeaseExpirationService:

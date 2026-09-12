@@ -14,8 +14,8 @@ from backend.app.domains.workspace.teams.operations.console_utils import (
     _unique_strings,
 )
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeState
-from backend.app.runtime.workers.jobs import JobPayload, JobType
-from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 
 def _runtime_payload(
