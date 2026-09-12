@@ -9,12 +9,12 @@ from backend.app.workspace.tenants.data_lifecycle_recovery import (
     _recovery_action_result,
     _recovery_action_skipped,
 )
+from backend.app.workspace.tenants.data_lifecycle_repository import WorkspaceDataLifecycleRepository
 from backend.app.workspace.tenants.data_lifecycle_schedule import _scheduled_archive_export_request
-from backend.app.workspace.tenants.data_lifecycle_store import LifecycleStore
 from backend.app.workspace.tenants.models import Workspace
 
 
-class RecoveryArchiveExportActionMixin(LifecycleStore):
+class RecoveryArchiveExportActionMixin(WorkspaceDataLifecycleRepository):
     def _apply_recovery_archive_export_action(
         self,
         *,
@@ -29,7 +29,7 @@ class RecoveryArchiveExportActionMixin(LifecycleStore):
         raw_backup_policy: dict[str, object],
     ) -> tuple[dict[str, object] | None, dict[str, object] | None]:
         action = "run_archive_export"
-        if self._repo.has_active_archive_export_job(workspace.id):
+        if self.has_active_archive_export_job(workspace.id):
             return None, _recovery_action_skipped(
                 action=action,
                 resource_type="workspace",

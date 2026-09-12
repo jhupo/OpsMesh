@@ -4,12 +4,12 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.workspace.teams.models import AgentTeam
-from backend.app.workspace.teams.runtime_constants import (
+from backend.app.workspace.teams.models import (
     TEAM_RUNTIME_RUNNING,
     TEAM_RUNTIME_STATUS_KEY,
     TEAM_RUNTIME_STOPPED,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
+    AgentTeam,
 )
 from backend.app.workspace.teams.runtime_refs import team_runtime_metadata
 

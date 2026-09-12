@@ -21,16 +21,23 @@ from backend.app.workspace.teams.operations_console_provider_credentials import 
     _model_api_options_payload,
     _model_provider_credential_option_payload,
 )
-from backend.app.workspace.teams.operations_console_provider_runs import (
-    _run_model_provider_snapshot,
-)
 from backend.app.workspace.teams.operations_console_provider_summary import (
     _agent_model_provider_payload,
 )
 from backend.app.workspace.teams.operations_console_utils import (
+    _dict,
     _string_list,
     _uuid_or_none,
 )
+
+
+def _run_model_provider_snapshot(input_payload: object) -> dict[str, object]:
+    payload = _dict(input_payload)
+    authorization_snapshot = _dict(payload.get("authorization_snapshot"))
+    snapshot = _dict(authorization_snapshot.get("model_provider"))
+    if snapshot:
+        return snapshot
+    return _dict(payload.get("model_provider"))
 
 
 class TeamProviderManagementBuilder:
@@ -216,5 +223,4 @@ class TeamProviderManagementBuilder:
             "created_at": run.created_at,
             "updated_at": run.updated_at,
         }
-
 

@@ -20,7 +20,7 @@ from backend.app.orchestration.tasks.collaboration_recovery_plan import (
 from backend.app.orchestration.tasks.collaboration_state import TaskCollaborationStateService
 from backend.app.orchestration.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.orchestration.tasks.operator_actions import TaskOperatorActionService
-from backend.app.platform.common.typing import dict_list
+from backend.app.platform.common.values import dict_list
 
 
 class TaskCollaborationRecoveryService:

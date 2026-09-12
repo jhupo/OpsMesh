@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.platform.common.typing import dict_list, dict_or_empty, string_list
+from backend.app.platform.common.values import dict_list, dict_or_empty, string_list
 from backend.app.workspace.tenants.health_collector import WorkspaceHealthCollector
 from backend.app.workspace.tenants.health_metrics import (
     delivery_summary,

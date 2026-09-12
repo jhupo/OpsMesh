@@ -125,7 +125,7 @@ class WorkspaceRecoveryActionService(
                 if item["action"] == "verify_latest_archive_integrity"
                 and item["status"] == "applied"
             ),
-            "active_archive_export_job_count": self._repo.active_archive_export_job_count(
+            "active_archive_export_job_count": self.active_archive_export_job_count(
                 workspace_id
             ),
             "metadata_keys": metadata_keys,

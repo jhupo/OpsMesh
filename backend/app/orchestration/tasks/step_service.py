@@ -6,6 +6,17 @@ from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.orchestration.tasks.step_status import TaskStepStatus, require_step_transition
 
 
+def step_message_payload(step: TaskStep) -> dict[str, object]:
+    return {
+        "work_package_id": step.work_package_id,
+        "required_role": step.required_role,
+        "required_skills": step.required_skills,
+        "expected_artifacts": step.expected_artifacts,
+        "acceptance_criteria": step.acceptance_criteria,
+        "review_policy": step.review_policy,
+    }
+
+
 @dataclass(frozen=True)
 class TaskStepTransition:
     previous_status: TaskStepStatus

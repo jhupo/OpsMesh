@@ -22,7 +22,7 @@ from backend.app.orchestration.tasks.message_append import TaskMessageAppendServ
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.tasks.service import TaskStateService
 from backend.app.orchestration.tasks.status import TaskStatus
-from backend.app.orchestration.tasks.step_service import TaskStepStateService
+from backend.app.orchestration.tasks.step_service import TaskStepStateService, step_message_payload
 from backend.app.orchestration.tasks.step_status import TaskStepStatus
 from backend.app.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
 from backend.app.orchestration.workflows.plan_project_plan_validation import (
@@ -32,7 +32,6 @@ from backend.app.orchestration.workflows.planning_completion import PlannerCompl
 from backend.app.orchestration.workflows.planning_pm_acceptance import PmAcceptanceService
 from backend.app.orchestration.workflows.planning_pm_final_output import PmFinalOutputService
 from backend.app.orchestration.workflows.planning_pm_follow_up_work import PmFollowUpWorkService
-from backend.app.orchestration.workflows.planning_step_payload import step_message_payload
 from backend.app.orchestration.workflows.step_completion import TaskStepCompletionService
 
 AppendEvent = Callable[[AgentRun, str, str, dict[str, object] | None], RunEvent]

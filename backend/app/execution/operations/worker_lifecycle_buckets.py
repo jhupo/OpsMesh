@@ -7,7 +7,7 @@ from backend.app.api.schemas.operation_capacity import WorkerLifecycleBucketResp
 from backend.app.execution.operations.models import WorkerLease, WorkerNode
 from backend.app.execution.operations.utils import age_seconds, ensure_aware_utc
 from backend.app.execution.workers.jobs import JobPayload
-from backend.app.platform.common.typing import string_list
+from backend.app.platform.common.values import string_list
 
 TERMINAL_LEASE_STATUSES = {"completed", "failed", "expired"}
 

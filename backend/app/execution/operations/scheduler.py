@@ -24,7 +24,7 @@ from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.blocked_reasons import explain_blocked_reason
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.common.typing import string_list
+from backend.app.platform.common.values import string_list
 from backend.app.workspace.tenants.models import Workspace
 
 

@@ -11,7 +11,7 @@ from backend.app.orchestration.workflows.plan_org_structure import (
     normalize_role,
 )
 from backend.app.orchestration.workflows.statuses import WORKLOAD_RUN_STATUS_VALUES
-from backend.app.platform.common.typing import string_list, uuid_or_none
+from backend.app.platform.common.values import string_list, uuid_or_none
 
 
 @dataclass(frozen=True)

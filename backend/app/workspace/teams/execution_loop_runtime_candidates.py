@@ -6,7 +6,7 @@ from typing import Literal, TypedDict
 from uuid import UUID
 
 from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.platform.common.typing import datetime_or_none, positive_int_or_default
+from backend.app.platform.common.values import datetime_or_none, positive_int_or_default
 from backend.app.workspace.teams.execution_loop_support import (
     TEAM_RUNTIME_DEFAULT_LOOP_INTERVAL_SECONDS,
 )

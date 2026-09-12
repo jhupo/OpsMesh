@@ -3,12 +3,14 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.execution.operations.observability_constants import ACTIVE_RUNTIME_RUN_STATUSES
 from backend.app.execution.operations.utils import capacity_slots_from_metadata
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.space_models import RuntimeSpaceQuota
 from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.platform.common.metrics import GaugeMetric
+
+ACTIVE_RUNTIME_RUN_STATUSES = ACTIVE_RUN_STATUSES
 
 
 class RuntimePrometheusMetrics:

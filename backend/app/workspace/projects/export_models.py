@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import DateTime, ForeignKey, Index, String
@@ -6,6 +7,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.platform.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+
+class WorkspaceExportJobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class WorkspaceExportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):

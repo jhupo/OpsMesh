@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from uuid import UUID
 
-from backend.app.platform.common.typing import (
+from backend.app.platform.common.values import (
     datetime_or_none,
     dict_or_empty,
     int_or_zero,

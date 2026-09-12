@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.app.agents.runtime.session_views import PersistentSessionSummary
-from backend.app.platform.common.typing import dict_list, dict_or_empty
+from backend.app.platform.common.values import dict_list, dict_or_empty
 from backend.app.platform.security.redaction import redact_sensitive_payload
 from backend.app.workspace.teams.models import AgentTeam
 from backend.app.workspace.teams.operations_console_utils import (

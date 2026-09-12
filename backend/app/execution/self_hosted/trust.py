@@ -15,7 +15,7 @@ from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.self_hosted.models import RuntimeCredential, SelfHostedWorker
 from backend.app.execution.self_hosted.policy import positive_policy_int
 from backend.app.platform.common.config import Settings
-from backend.app.platform.common.typing import string_list
+from backend.app.platform.common.values import string_list
 from backend.app.workspace.tenants.models import Workspace
 
 

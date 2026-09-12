@@ -1,9 +1,9 @@
 
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRunTracing
-from backend.app.orchestration.requests.utils import json_safe
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
+from backend.app.platform.common.values import json_safe_payload
 
 
 def agent_run_tracing(
@@ -62,7 +62,7 @@ def trace_metadata_for_agent_run(
     if isinstance(tool_continuations, list):
         trace_metadata["tool_continuations"] = [
             item
-            for item in (json_safe(item) for item in tool_continuations)
+            for item in (json_safe_payload(item) for item in tool_continuations)
             if isinstance(item, dict)
         ]
     if task is not None:

@@ -5,6 +5,13 @@ from uuid import UUID
 from backend.app.orchestration.tasks.models import TaskStep
 
 
+class TaskOperatorActionResult(TypedDict):
+    changed_step_ids: list[UUID]
+    created_step_ids: list[UUID]
+    warnings: list[str]
+    details: dict[str, object]
+
+
 class ManagerSteps(TypedDict):
     planning: TaskStep | None
     summaries: list[TaskStep]

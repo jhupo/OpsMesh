@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import select
@@ -17,11 +20,7 @@ from backend.app.capabilities.effective_catalog import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )
-from backend.app.orchestration.requests.builder import RunRequestBuilder
-from backend.app.orchestration.requests.utils import dict_copy, uuid_or_none
-from backend.app.orchestration.runs.authorization_integrity import (
-    authorization_snapshot_fingerprint,
-)
+from backend.app.orchestration.runs.models import authorization_snapshot_fingerprint
 from backend.app.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationService,
 )
@@ -33,7 +32,16 @@ from backend.app.orchestration.workflows.plan_agent_plan import (
     is_agent_planning_step,
     planner_output_schema,
 )
+from backend.app.platform.common.values import (
+    dict_or_empty,
+    optional_string,
+    positive_int_or_default,
+    uuid_or_none,
+)
 from backend.app.platform.security.redaction import redact_sensitive_payload
+
+if TYPE_CHECKING:
+    from backend.app.orchestration.requests.builder import RunRequestBuilder
 
 
 @dataclass(slots=True)
@@ -123,15 +131,15 @@ class RunAuthorizationSnapshotService:
             "task_owner_version": max(int(task.owner_version or 1), 1),
             "allowed_tools": allowed_tools,
             "capability_catalog": catalog_snapshot,
-            "tool_policy": dict_copy(tool_policy),
+            "tool_policy": dict_or_empty(tool_policy),
             "installed_skills": self.request_builder.installed_skill_snapshots(
                 task.workspace_id,
                 profile,
             ),
             "model_provider": model_provider,
             "runtime_policy": frozen_runtime_policy,
-            "memory_policy": dict_copy(memory_policy),
-            "approval_policy": dict_copy(approval_policy),
+            "memory_policy": dict_or_empty(memory_policy),
+            "approval_policy": dict_or_empty(approval_policy),
             "output_schema": runtime_controls["output_schema"],
             "guardrails": runtime_controls["guardrails"],
             "agent_tools": agent_tools,
@@ -269,9 +277,9 @@ def model_api(settings: dict[str, object] | None) -> str | None:
 
 
 def runtime_policy_snapshot(value: object) -> dict[str, object]:
-    policy = dict_copy(value)
+    policy = dict_or_empty(value)
     raw_mcp = policy.get("mcp")
-    mcp_policy = dict_copy(raw_mcp)
+    mcp_policy = dict_or_empty(raw_mcp)
     network_mode = mcp_policy.get("network_mode")
     if not isinstance(network_mode, str) or not network_mode:
         network = policy.get("network")
@@ -286,11 +294,3 @@ def runtime_policy_snapshot(value: object) -> dict[str, object]:
         ),
     }
     return policy
-
-
-def positive_int_or_default(value: object, default: int) -> int:
-    return value if isinstance(value, int) and value > 0 else default
-
-
-def optional_string(value: object) -> str | None:
-    return value if isinstance(value, str) else None

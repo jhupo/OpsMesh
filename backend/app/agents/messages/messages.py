@@ -5,8 +5,11 @@ from sqlalchemy import select
 
 from backend.app.agents.messages.contracts import MailboxStore
 from backend.app.agents.messages.models import AgentMessage
-from backend.app.agents.messages.payloads import message_create_payload
 from backend.app.api.schemas.agent_messages import AgentMessageCreateRequest
+
+
+def message_create_payload(data: AgentMessageCreateRequest) -> dict[str, object]:
+    return data.model_dump(exclude={"task_id", "agent_team_id"})
 
 
 class AgentMailboxMessageMixin(MailboxStore):

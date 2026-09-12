@@ -14,7 +14,7 @@ from backend.app.capabilities.models import (
 )
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.approvals.models import Approval
-from backend.app.platform.common.typing import uuid_or_none
+from backend.app.platform.common.values import uuid_or_none
 from backend.app.workspace.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_REJECTED,

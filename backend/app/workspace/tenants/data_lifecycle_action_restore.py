@@ -9,12 +9,12 @@ from backend.app.workspace.tenants.data_lifecycle_recovery import (
     _recovery_action_result,
     _recovery_action_skipped,
 )
+from backend.app.workspace.tenants.data_lifecycle_repository import WorkspaceDataLifecycleRepository
 from backend.app.workspace.tenants.data_lifecycle_schedule import _scheduled_restore_drill_request
-from backend.app.workspace.tenants.data_lifecycle_store import LifecycleStore
 from backend.app.workspace.tenants.models import Workspace
 
 
-class RecoveryRestoreDrillActionMixin(LifecycleStore):
+class RecoveryRestoreDrillActionMixin(WorkspaceDataLifecycleRepository):
     def _apply_recovery_restore_test_action(
         self,
         *,
@@ -29,7 +29,7 @@ class RecoveryRestoreDrillActionMixin(LifecycleStore):
         raw_restore_drill_policy: dict[str, object],
     ) -> tuple[dict[str, object] | None, dict[str, object] | None]:
         action = "run_restore_import_test"
-        latest_success = self._repo.latest_successful_archive_export(workspace.id)
+        latest_success = self.latest_successful_archive_export(workspace.id)
         if latest_success is None:
             return None, _recovery_action_skipped(
                 action=action,
@@ -38,7 +38,7 @@ class RecoveryRestoreDrillActionMixin(LifecycleStore):
                 reason="no_successful_archive_export",
                 blocked_reasons=blocked_reasons,
             )
-        if self._repo.has_active_archive_export_job(workspace.id):
+        if self.has_active_archive_export_job(workspace.id):
             return None, _recovery_action_skipped(
                 action=action,
                 resource_type="workspace_export_job",

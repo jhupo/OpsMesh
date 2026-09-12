@@ -126,9 +126,6 @@ def _agent_policy(agent: AgentProfile) -> dict[str, object]:
             agent.model_settings, text_mode="fragments"
         ),
         "tool_policy": redact_sensitive_payload_item(agent.tool_policy, text_mode="fragments"),
-        "runtime_preferences": redact_sensitive_payload_item(
-            agent.runtime_policy, text_mode="fragments"
-        ),
         "runtime_policy": redact_sensitive_payload_item(
             agent.runtime_policy, text_mode="fragments"
         ),

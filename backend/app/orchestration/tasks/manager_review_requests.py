@@ -5,8 +5,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.orchestration.tasks.manager_contracts import TaskOperatorActionResult
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.orchestration.tasks.operator_action_contracts import TaskOperatorActionResult
 from backend.app.orchestration.tasks.operator_dependencies import manager_agent_id
 
 

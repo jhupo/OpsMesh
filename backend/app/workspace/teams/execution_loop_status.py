@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.platform.common.typing import dict_or_empty, dict_or_none, optional_string
+from backend.app.platform.common.values import dict_or_empty, dict_or_none, optional_string
 from backend.app.workspace.teams.command_center import TeamCommandCenterService
 from backend.app.workspace.teams.execution_loop_finalization import TeamExecutionFinalizationService
 from backend.app.workspace.teams.execution_loop_payloads import (

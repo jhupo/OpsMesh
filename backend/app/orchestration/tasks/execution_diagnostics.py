@@ -22,7 +22,7 @@ from backend.app.orchestration.tasks.execution_payloads import (
     handoff_state,
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.platform.common.typing import dict_list
+from backend.app.platform.common.values import dict_list
 from backend.app.workspace.teams.models import AgentTeam
 
 ACTIVE_RUN_STATUSES = {

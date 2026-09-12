@@ -21,7 +21,7 @@ from backend.app.orchestration.tasks.corrections import TaskCorrectionService
 from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.tasks.service import TaskStateService
 from backend.app.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
-from backend.app.platform.common.typing import int_or_zero
+from backend.app.platform.common.values import int_or_zero
 
 TASK_PAUSED_REASON = control_execution.TASK_PAUSED_REASON
 

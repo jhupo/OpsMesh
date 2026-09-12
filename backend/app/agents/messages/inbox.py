@@ -3,9 +3,8 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 
-from backend.app.agents.messages.constants import PENDING_STATUSES, READ_STATUSES
 from backend.app.agents.messages.contracts import AgentInbox, MailboxStore
-from backend.app.agents.messages.models import AgentMessage
+from backend.app.agents.messages.models import PENDING_STATUSES, READ_STATUSES, AgentMessage
 from backend.app.agents.messages.queries import scoped_message_statement
 
 

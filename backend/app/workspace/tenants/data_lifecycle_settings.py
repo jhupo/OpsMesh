@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from datetime import UTC, datetime
 
-from backend.app.platform.common.typing import string_list
+from backend.app.platform.common.values import string_list
 
 
 def _lifecycle_settings(settings: dict[str, object]) -> dict[str, object]:

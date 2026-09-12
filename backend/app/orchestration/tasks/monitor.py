@@ -13,7 +13,7 @@ from backend.app.orchestration.tasks.manager_contracts import ManagerDiagnostics
 from backend.app.orchestration.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.tasks.timeline import TaskTimelineService
-from backend.app.platform.common.typing import dict_or_empty, int_or_zero, string_list
+from backend.app.platform.common.values import dict_or_empty, int_or_zero, string_list
 
 
 class TaskExecutionStatusService:

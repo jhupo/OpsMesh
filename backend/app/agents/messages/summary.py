@@ -3,9 +3,13 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 
-from backend.app.agents.messages.constants import PENDING_STATUSES, READ_STATUSES
 from backend.app.agents.messages.contracts import MailboxStore
-from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.messages.models import (
+    PENDING_STATUSES,
+    READ_STATUSES,
+    AgentMessage,
+    AgentMessageThread,
+)
 
 
 class AgentMailboxSummaryMixin(MailboxStore):

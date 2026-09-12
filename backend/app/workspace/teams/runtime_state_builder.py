@@ -6,12 +6,12 @@ from uuid import UUID
 
 from backend.app.agents.messages.models import AgentMessageThread
 from backend.app.agents.runtime.sessions import PersistentAgentSession
-from backend.app.workspace.teams.models import AgentTeam
-from backend.app.workspace.teams.operating_context_service import TeamOperatingContextService
-from backend.app.workspace.teams.runtime_constants import (
+from backend.app.workspace.teams.models import (
     TEAM_RUNTIME_STOPPED,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
+    AgentTeam,
 )
+from backend.app.workspace.teams.operating_context_service import TeamOperatingContextService
 from backend.app.workspace.teams.runtime_mailbox import TeamRuntimeMailboxStore
 from backend.app.workspace.teams.runtime_refs import _uuid_or_none, team_runtime_metadata
 from backend.app.workspace.teams.runtime_repository import TeamRuntimeRepository

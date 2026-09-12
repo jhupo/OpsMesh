@@ -3,12 +3,12 @@ from __future__ import annotations
 from uuid import UUID
 
 from backend.app.agents.runtime.sessions import PersistentAgentSessionRef
-from backend.app.platform.common.typing import dict_or_none, uuid_or_none
-from backend.app.workspace.teams.models import AgentTeam
-from backend.app.workspace.teams.runtime_constants import (
+from backend.app.platform.common.values import dict_or_none, uuid_or_none
+from backend.app.workspace.teams.models import (
     TEAM_RUNTIME_SESSION_SCOPE,
     TEAM_RUNTIME_STATUS_KEY,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
+    AgentTeam,
 )
 
 

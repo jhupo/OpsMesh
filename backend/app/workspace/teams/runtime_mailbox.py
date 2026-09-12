@@ -8,8 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.models import AgentProfile
-from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.teams.runtime_constants import TEAM_RUNTIME_THREAD_KEY
+from backend.app.workspace.teams.models import TEAM_RUNTIME_THREAD_KEY, AgentTeam, AgentTeamMember
 from backend.app.workspace.teams.runtime_refs import _uuid_or_none
 
 

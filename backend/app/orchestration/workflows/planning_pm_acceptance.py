@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.result_payloads import json_object_from_text
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.orchestration.workflows.planning_task_step_review import is_pm_summary_step
-from backend.app.platform.common.typing import (
+from backend.app.orchestration.workflows.plan_project_plan_validation import is_pm_summary_step
+from backend.app.platform.common.values import (
     dict_list,
     string_list,
     string_list_or_single,

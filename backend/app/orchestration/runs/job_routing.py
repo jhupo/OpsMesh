@@ -1,10 +1,10 @@
 from sqlalchemy.orm import Session
 
 from backend.app.execution.runtime.space_models import RuntimeSpace
-from backend.app.orchestration.requests.utils import string_list
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.state_resource_usage import positive_numeric_usage
 from backend.app.orchestration.tasks.models import Task
+from backend.app.platform.common.values import string_list
 
 
 class RunJobRoutingService:

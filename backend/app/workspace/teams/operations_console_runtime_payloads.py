@@ -5,7 +5,7 @@ from uuid import UUID
 
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.platform.common.typing import dict_list
+from backend.app.platform.common.values import dict_list
 from backend.app.platform.security.redaction import redact_sensitive_payload
 from backend.app.workspace.teams.operations_console_utils import (
     _datetime_or_none,

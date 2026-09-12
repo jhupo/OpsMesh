@@ -12,7 +12,7 @@ from backend.app.orchestration.workflows.conditions import condition_step_refere
 from backend.app.orchestration.workflows.plan_member_matching import MemberMatchingService
 from backend.app.orchestration.workflows.plan_org_structure import build_org_structure
 from backend.app.orchestration.workflows.plan_project_plan_members import snapshot_agent_ids
-from backend.app.platform.common.typing import (
+from backend.app.platform.common.values import (
     dict_list,
     dict_or_empty,
     string_list,

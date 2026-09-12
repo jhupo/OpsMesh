@@ -4,7 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from uuid import UUID
 
-from backend.app.platform.common.typing import string_list, uuid_or_none
+from backend.app.platform.common.values import string_list, uuid_or_none
 
 EXECUTIVE_ROLES = {"ceo", "cto", "coo", "cfo", "chief_executive", "chief_technology_officer"}
 MANAGER_ROLES = {"project_manager", "product_manager", "program_manager", "manager", "pm"}

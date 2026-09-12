@@ -17,7 +17,7 @@ from backend.app.orchestration.requests.request_reviewing import model_provider_
 from backend.app.orchestration.requests.utils import effective_resolved_model_api
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.platform.common.typing import optional_string, uuid_or_none
+from backend.app.platform.common.values import optional_string, uuid_or_none
 from backend.app.workspace.tenants.models import Workspace
 
 

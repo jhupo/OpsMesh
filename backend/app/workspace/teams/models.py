@@ -6,6 +6,17 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.platform.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
+TEAM_RUNTIME_RUNNING = "running"
+TEAM_RUNTIME_PAUSED = "paused"
+TEAM_RUNTIME_STOPPED = "stopped"
+TEAM_RUNTIME_STATUS_KEY = "team_runtime"
+TEAM_RUNTIME_THREAD_KEY = "team_runtime_thread_id"
+TEAM_RUNTIME_SESSION_SCOPE = "team_runtime"
+TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY = "workspace_runtime_id"
+TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS = 300
+TEAM_RUNTIME_STALL_THRESHOLD = 3
+TEAM_RUNTIME_STALL_STATUSES = {"noop", "skipped"}
+
 
 class AgentTeam(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "agent_teams"

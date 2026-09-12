@@ -8,10 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.orchestration.requests.authorization import RunAuthorizationService
-from backend.app.orchestration.runs.authorization_integrity import (
-    authorization_snapshot_fingerprint,
-)
-from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun, authorization_snapshot_fingerprint
 from backend.app.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationError,
     runtime_binding_for_snapshot,

@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.platform.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.workspace.teams.runtime_constants import (
+from backend.app.workspace.teams.models import (
     TEAM_RUNTIME_STALL_STATUSES,
     TEAM_RUNTIME_STATUS_KEY,
 )

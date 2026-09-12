@@ -7,10 +7,6 @@ from redis.exceptions import RedisError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from backend.app.execution.operations.observability_constants import (
-    PROMETHEUS_QUEUE_SCAN_LIMIT,
-    PROMETHEUS_WORKER_STALE_AFTER_SECONDS,
-)
 from backend.app.execution.operations.prometheus_governance_metrics import (
     GovernancePrometheusMetrics,
 )
@@ -22,6 +18,9 @@ from backend.app.execution.operations.prometheus_worker_metrics import WorkerPro
 from backend.app.execution.operations.queue_metrics import QueueMetricsService
 from backend.app.platform.common.metrics import GaugeMetric
 from backend.app.platform.redis.keys import RedisKeyBuilder
+
+PROMETHEUS_WORKER_STALE_AFTER_SECONDS = 300
+PROMETHEUS_QUEUE_SCAN_LIMIT = 1_000
 
 
 class OperationsPrometheusMetricsService:

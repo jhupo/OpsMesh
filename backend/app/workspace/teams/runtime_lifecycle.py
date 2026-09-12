@@ -10,13 +10,13 @@ from backend.app.agents.runtime.sessions import PersistentAgentSession
 from backend.app.execution.runtime.lifecycle_control import RuntimeLifecycleControl
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.observability.audit_service import AuditService
-from backend.app.workspace.teams.models import AgentTeam
-from backend.app.workspace.teams.runtime_constants import (
+from backend.app.workspace.teams.models import (
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,
     TEAM_RUNTIME_STATUS_KEY,
     TEAM_RUNTIME_STOPPED,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
+    AgentTeam,
 )
 from backend.app.workspace.teams.runtime_mailbox import TeamRuntimeMailboxStore
 from backend.app.workspace.teams.runtime_refs import _dict_or_none, team_runtime_metadata

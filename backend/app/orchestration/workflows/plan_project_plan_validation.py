@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from graphlib import CycleError, TopologicalSorter
 
+from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.orchestration.workflows.conditions import (
     ConditionValidationError,
     condition_step_references,
@@ -14,6 +15,14 @@ class ProjectPlanValidationError(ValueError):
     def __init__(self, message: str, *, code: str = "plan_invalid") -> None:
         super().__init__(message)
         self.code = code
+
+
+def is_pm_summary_step(step: TaskStep) -> bool:
+    review_policy = step.review_policy if isinstance(step.review_policy, dict) else {}
+    return (
+        step.work_package_id == "manager-summary"
+        or review_policy.get("mode") == "final_acceptance"
+    )
 
 
 def validate_project_plan(

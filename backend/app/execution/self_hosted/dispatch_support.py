@@ -30,7 +30,7 @@ from backend.app.orchestration.requests.authorization import RunAuthorizationSer
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.runtime_authorization import RunRuntimeAuthorizationService
 from backend.app.orchestration.tasks.models import Task
-from backend.app.platform.common.typing import string_list
+from backend.app.platform.common.values import string_list
 from backend.app.workspace.tenants.quotas import WorkspaceQuotaService
 
 

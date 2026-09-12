@@ -3,9 +3,9 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.observability.audit_service import AuditService
+from backend.app.orchestration.tasks.manager_contracts import TaskOperatorActionResult
 from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.orchestration.tasks.models import Task, TaskMessage
-from backend.app.orchestration.tasks.operator_action_contracts import TaskOperatorActionResult
 
 
 class TaskOperatorActionRecorder:

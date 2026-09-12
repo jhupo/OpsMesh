@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.platform.common.typing import dict_or_empty, json_safe_payload
+from backend.app.platform.common.values import dict_or_empty, json_safe_payload
 from backend.app.platform.security.redaction import redact_sensitive_payload
 
 

@@ -11,10 +11,10 @@ from backend.app.orchestration.requests.authorization import RunAuthorizationSer
 from backend.app.orchestration.requests.utils import (
     effective_resolved_model_api,
     model_api_from_settings,
-    uuid_or_none,
 )
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.platform.common.config import Settings
+from backend.app.platform.common.values import uuid_or_none
 from backend.app.platform.secrets.service import SecretEncryptionService
 
 

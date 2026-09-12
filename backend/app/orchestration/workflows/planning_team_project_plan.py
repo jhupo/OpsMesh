@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.plan_project_plan_validation import validate_project_plan
-from backend.app.platform.common.typing import (
+from backend.app.platform.common.values import (
     dict_or_empty,
     optional_string,
     string_list,

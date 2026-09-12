@@ -3,7 +3,7 @@ from backend.app.orchestration.tasks.observation_utils import (
     risk_flags_from_payload,
     safe_message_payload,
 )
-from backend.app.platform.common.typing import dict_or_empty
+from backend.app.platform.common.values import dict_or_empty
 from backend.app.platform.security.redaction import redact_sensitive_payload
 
 

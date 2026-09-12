@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.orchestration.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.orchestration.tasks.manager_contracts import ManagerDiagnostics
 from backend.app.orchestration.tasks.manager_diagnostics import TaskManagerDiagnosticsService
-from backend.app.platform.common.typing import dict_list, string_list
+from backend.app.platform.common.values import dict_list, string_list
 
 
 class CollaborationParticipant(TypedDict):

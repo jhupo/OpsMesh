@@ -15,7 +15,7 @@ from backend.app.execution.operations.worker_lease_queries import WorkerLeaseQue
 from backend.app.execution.operations.worker_lifecycle import RUNNING_LEASE_STATUSES
 from backend.app.execution.operations.worker_node_repository import WorkerNodeRepository
 from backend.app.execution.workers.jobs import JobType
-from backend.app.platform.common.typing import int_or_zero
+from backend.app.platform.common.values import int_or_zero
 
 
 @dataclass(frozen=True)

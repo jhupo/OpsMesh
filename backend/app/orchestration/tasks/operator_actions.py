@@ -6,9 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.orchestration.tasks.manager_contracts import TaskOperatorActionResult
 from backend.app.orchestration.tasks.manager_review_requests import ManagerReviewRequestService
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.orchestration.tasks.operator_action_contracts import TaskOperatorActionResult
 from backend.app.orchestration.tasks.operator_action_recording import TaskOperatorActionRecorder
 from backend.app.orchestration.tasks.operator_dependencies import (
     completed_source_steps,

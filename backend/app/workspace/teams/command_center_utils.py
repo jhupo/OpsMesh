@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.platform.common.typing import (
+from backend.app.platform.common.values import (
     dict_or_empty,
     int_or_zero,
     json_safe_payload,

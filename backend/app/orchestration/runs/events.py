@@ -7,10 +7,10 @@ from backend.app.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agents.runtime.errors import AgentRuntimePolicyError, normalize_agent_error
 from backend.app.execution.workers.jobs import JobPayload
 from backend.app.orchestration.requests.request_reviewing import model_provider_request_snapshot
-from backend.app.orchestration.requests.utils import dict_copy, json_safe
 from backend.app.orchestration.runs.event_writer import RunEventWriter
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task
+from backend.app.platform.common.values import dict_or_empty, json_safe_payload
 from backend.app.workspace.teams.models import AgentTeam
 from backend.app.workspace.teams.runtime import TeamRuntimeService
 
@@ -288,9 +288,9 @@ def optional_string_from_metadata(metadata: dict[str, object], key: str) -> str 
 
 
 def safe_routing_metadata(value: object) -> dict[str, object]:
-    routing = dict_copy(value)
+    routing = dict_or_empty(value)
     return {
-        key: json_safe(item)
+        key: json_safe_payload(item)
         for key, item in routing.items()
         if key
         not in {

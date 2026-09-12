@@ -1,4 +1,6 @@
+import json
 from datetime import datetime
+from hashlib import sha256
 from uuid import UUID
 
 from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint
@@ -6,6 +8,12 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.platform.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+
+def authorization_snapshot_fingerprint(snapshot: dict[str, object]) -> str:
+    payload = {key: value for key, value in snapshot.items() if key != "fingerprint"}
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return f"sha256:{sha256(serialized.encode('utf-8')).hexdigest()}"
 
 
 class AgentRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):

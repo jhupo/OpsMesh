@@ -3,11 +3,13 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from backend.app.agents.messages.constants import THREAD_STATUSES
 from backend.app.agents.messages.contracts import MailboxStore
-from backend.app.agents.messages.models import AgentMessageThread
-from backend.app.agents.messages.payloads import thread_create_payload
+from backend.app.agents.messages.models import THREAD_STATUSES, AgentMessageThread
 from backend.app.api.schemas.agent_messages import AgentMessageThreadCreateRequest
+
+
+def thread_create_payload(data: AgentMessageThreadCreateRequest) -> dict[str, object]:
+    return data.model_dump(exclude={"agent_team_id"})
 
 
 class AgentMailboxThreadMixin(MailboxStore):

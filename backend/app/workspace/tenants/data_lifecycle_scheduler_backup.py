@@ -5,26 +5,26 @@ from pydantic import ValidationError
 from backend.app.api.services.exports import WorkspaceExportService
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.workspace.tenants.data_lifecycle_policy import _backup_policy
+from backend.app.workspace.tenants.data_lifecycle_repository import WorkspaceDataLifecycleRepository
 from backend.app.workspace.tenants.data_lifecycle_schedule import (
     _scheduled_archive_export_request,
     _scheduled_backup_due,
     _scheduled_lifecycle_detail,
 )
 from backend.app.workspace.tenants.data_lifecycle_settings import _backup_settings
-from backend.app.workspace.tenants.data_lifecycle_store import LifecycleStore
 from backend.app.workspace.tenants.data_lifecycle_summary import ScheduledLifecycleSummary
 from backend.app.workspace.tenants.models import Workspace
 
 
-class ScheduledBackupMixin(LifecycleStore):
+class ScheduledBackupMixin(WorkspaceDataLifecycleRepository):
     def _schedule_workspace_backup_if_due(
         self,
         workspace: Workspace,
         queue: RedisQueue,
     ) -> ScheduledLifecycleSummary:
         raw_policy = _backup_settings(workspace.settings)
-        latest_job = self._repo.latest_export_job(workspace.id)
-        latest_success = self._repo.latest_successful_archive_export(workspace.id)
+        latest_job = self.latest_export_job(workspace.id)
+        latest_success = self.latest_successful_archive_export(workspace.id)
         backup_policy = _backup_policy(
             workspace.settings,
             latest_job,
@@ -36,8 +36,8 @@ class ScheduledBackupMixin(LifecycleStore):
         if not due:
             return ScheduledLifecycleSummary()
 
-        if self._repo.has_active_archive_export_job(workspace.id):
-            self._repo.record_lifecycle_schedule_event(
+        if self.has_active_archive_export_job(workspace.id):
+            self.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.backup_skipped",
                 reason="archive_export_already_active",
@@ -59,7 +59,7 @@ class ScheduledBackupMixin(LifecycleStore):
         try:
             request = _scheduled_archive_export_request(raw_policy)
         except ValidationError as exc:
-            self._repo.record_lifecycle_schedule_event(
+            self.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.backup_skipped",
                 reason="invalid_archive_request",
@@ -89,7 +89,7 @@ class ScheduledBackupMixin(LifecycleStore):
             "scheduled_by": "workspace_data_lifecycle",
             "schedule_status": schedule_status,
         }
-        self._repo.record_lifecycle_schedule_event(
+        self.record_lifecycle_schedule_event(
             workspace=workspace,
             action="workspace.lifecycle.backup_enqueued",
             reason="backup_schedule_due",

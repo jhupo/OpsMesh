@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.platform.common.typing import dict_list
+from backend.app.platform.common.values import dict_list
 from backend.app.platform.security.redaction import redact_sensitive_payload
 from backend.app.workspace.teams.operations_console_runtime_payloads import (
     _runtime_blocked_step_suggested_actions,

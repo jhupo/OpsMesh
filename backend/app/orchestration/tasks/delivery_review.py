@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.platform.common.typing import int_or_zero, string_list
+from backend.app.platform.common.values import int_or_zero, string_list
 from backend.app.workspace.storage.artifact_models import Artifact
 
 

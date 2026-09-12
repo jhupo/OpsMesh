@@ -29,8 +29,8 @@ from backend.app.orchestration.requests.authorization import (
     resource_grants_for_snapshot,
     tool_definitions_for_snapshot,
 )
-from backend.app.orchestration.requests.utils import dict_copy, string_list, uuid_or_none
 from backend.app.orchestration.tasks.models import Task
+from backend.app.platform.common.values import dict_or_empty, string_list, uuid_or_none
 from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
 
 MAX_AGENT_TOOL_DEPTH = 3
@@ -249,7 +249,7 @@ def _hydrate_level(
     for raw_item in raw_items:
         if not isinstance(raw_item, dict):
             raise ValueError("Authorization snapshot agent tool entry is invalid")
-        target = dict_copy(raw_item.get("target"))
+        target = dict_or_empty(raw_item.get("target"))
         profile_id = uuid_or_none(target.get("profile_id"))
         workspace_id = uuid_or_none(target.get("workspace_id"))
         if profile_id is None or workspace_id != root_context.workspace_id:
@@ -265,7 +265,7 @@ def _hydrate_level(
         )
         if active_profile is None:
             raise ValueError("Authorized agent tool target is no longer active")
-        provider_snapshot = dict_copy(raw_item.get("model_provider"))
+        provider_snapshot = dict_or_empty(raw_item.get("model_provider"))
         selected_model = provider_snapshot.get("selected_model")
         if not isinstance(selected_model, str) or not selected_model:
             raise ValueError("Authorization snapshot agent tool model is invalid")
@@ -283,7 +283,7 @@ def _hydrate_level(
             or resolved.get("model_provider_credential_id") != credential_id
         ):
             raise ValueError("Agent tool model provider no longer matches the frozen snapshot")
-        catalog = dict_copy(raw_item.get("capability_catalog"))
+        catalog = dict_or_empty(raw_item.get("capability_catalog"))
         fingerprint = catalog.get("fingerprint")
         if not isinstance(fingerprint, str) or fingerprint != effective_catalog_fingerprint(
             catalog
@@ -446,10 +446,10 @@ def _intersect_catalog(
         if parent_item.get("descriptor") != target_item.get("descriptor"):
             raise ValueError("Agent tool descriptor differs from its parent authorization scope")
         merged = _merge_policy_item(parent_item, target_item)
-        descriptor = dict_copy(merged.get("descriptor"))
+        descriptor = dict_or_empty(merged.get("descriptor"))
         validate_partial_parameters(
-            dict_copy(merged.get("parameters")),
-            dict_copy(descriptor.get("input_schema")),
+            dict_or_empty(merged.get("parameters")),
+            dict_or_empty(descriptor.get("input_schema")),
             label=f"agent tool {descriptor.get('name')}",
         )
         tools.append(merged)
@@ -467,15 +467,15 @@ def _intersect_catalog(
         resources.append(_merge_policy_item(parent_item, target_item))
     available_access = {
         (
-            dict_copy(item.get("resource")).get("resource_type"),
-            dict_copy(item.get("resource")).get("access_mode"),
+            dict_or_empty(item.get("resource")).get("resource_type"),
+            dict_or_empty(item.get("resource")).get("access_mode"),
         )
         for item in resources
     }
     tools = [
         item
         for item in tools
-        if _tool_has_required_resource(dict_copy(item.get("descriptor")), available_access)
+        if _tool_has_required_resource(dict_or_empty(item.get("descriptor")), available_access)
     ]
     scoped["tools"] = tools
     scoped["resources"] = resources
@@ -489,8 +489,8 @@ def _merge_policy_item(
     target: dict[str, object],
 ) -> dict[str, object]:
     merged = deepcopy(target)
-    parent_parameters = dict_copy(parent.get("parameters"))
-    target_parameters = dict_copy(target.get("parameters"))
+    parent_parameters = dict_or_empty(parent.get("parameters"))
+    target_parameters = dict_or_empty(target.get("parameters"))
     parent_locked = set(string_list(parent.get("locked_parameters")))
     target_locked = set(string_list(target.get("locked_parameters")))
     for field in parent_locked & target_locked:
@@ -523,13 +523,13 @@ def _tool_has_required_resource(
 
 
 def _descriptor_key(item: dict[str, object]) -> str:
-    descriptor = dict_copy(item.get("descriptor"))
+    descriptor = dict_or_empty(item.get("descriptor"))
     name = descriptor.get("name")
     return name if isinstance(name, str) else ""
 
 
 def _resource_key(item: dict[str, object]) -> str:
-    resource = dict_copy(item.get("resource"))
+    resource = dict_or_empty(item.get("resource"))
     resource_id = resource.get("id")
     return str(resource_id) if resource_id is not None else ""
 

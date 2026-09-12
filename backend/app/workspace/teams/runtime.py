@@ -6,9 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.messages.models import AgentMessageThread
 from backend.app.agents.runtime.sessions import PersistentAgentSession
-from backend.app.workspace.teams.models import AgentTeam
-from backend.app.workspace.teams.operating_context_service import TeamOperatingContextService
-from backend.app.workspace.teams.runtime_constants import (
+from backend.app.workspace.teams.models import (
     TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,
@@ -19,7 +17,9 @@ from backend.app.workspace.teams.runtime_constants import (
     TEAM_RUNTIME_STOPPED,
     TEAM_RUNTIME_THREAD_KEY,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
+    AgentTeam,
 )
+from backend.app.workspace.teams.operating_context_service import TeamOperatingContextService
 from backend.app.workspace.teams.runtime_heartbeat import TeamRuntimeHeartbeatRecorder
 from backend.app.workspace.teams.runtime_lifecycle import TeamRuntimeLifecycleService
 from backend.app.workspace.teams.runtime_mailbox import TeamRuntimeMailboxStore

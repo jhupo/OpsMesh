@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from backend.app.platform.common.typing import datetime_or_none, uuid_or_none
+from backend.app.platform.common.values import datetime_or_none, uuid_or_none
 from backend.app.workspace.teams.execution_loop_queue_repository import (
     TeamExecutionLoopQueueRepository,
 )

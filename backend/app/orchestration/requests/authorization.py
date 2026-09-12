@@ -20,22 +20,17 @@ from backend.app.capabilities.models import (
     WorkspaceSkillInstall,
 )
 from backend.app.orchestration.requests.utils import (
-    dict_copy,
     expect_optional_uuid,
-    string_list,
-    uuid_or_none,
-)
-from backend.app.orchestration.runs.authorization_integrity import (
-    authorization_snapshot_fingerprint,
 )
 from backend.app.orchestration.runs.events import RunEventRecorder
-from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun, authorization_snapshot_fingerprint
 from backend.app.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationError,
     RunRuntimeAuthorizationService,
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.tasks.ownership import task_owner_can_execute_step
+from backend.app.platform.common.values import dict_or_empty, string_list, uuid_or_none
 from backend.app.platform.security.models import SecurityEvent
 
 
@@ -331,7 +326,7 @@ class RunAuthorizationService:
                     "capability_key": allow.capability_key,
                     "requires_approval": allow.requires_approval,
                     "risk_level": allow.risk_level,
-                    "policy": dict_copy(allow.policy),
+                    "policy": dict_or_empty(allow.policy),
                     "credential_reference_ids": [
                         str(ref["credential_reference_id"]) for ref in refs
                     ],
@@ -516,9 +511,9 @@ def tool_continuations_for_run(
             AgentRuntimeToolContinuation(
                 tool_name=tool_name,
                 status=status,
-                result=dict_copy(item.get("response")),
-                error=dict_copy(item.get("error")),
-                metadata=dict_copy(metadata),
+                result=dict_or_empty(item.get("response")),
+                error=dict_or_empty(item.get("error")),
+                metadata=dict_or_empty(metadata),
             )
         )
     return tuple(continuations)

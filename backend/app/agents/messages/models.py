@@ -7,6 +7,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.platform.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
+PENDING_STATUSES = {"pending", "queued", "waiting", "waiting_reply"}
+READ_STATUSES = {"read"}
+THREAD_STATUSES = {"active", "closed", "archived"}
+
 
 class AgentMessageThread(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "agent_message_threads"

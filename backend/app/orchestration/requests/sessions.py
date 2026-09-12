@@ -10,10 +10,10 @@ from backend.app.agents.runtime.sessions import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
 )
-from backend.app.orchestration.requests.utils import uuid_or_none
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task
+from backend.app.platform.common.values import uuid_or_none
 
 
 @dataclass(slots=True)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from backend.app.execution.runtime.lifecycle_control import RuntimeLifecycleControl
-from backend.app.workspace.teams.runtime_constants import (
+from backend.app.workspace.teams.models import (
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,
     TEAM_RUNTIME_STOPPED,
