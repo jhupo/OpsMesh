@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from backend.app.model_providers.contracts import ResolvedModelProvider
-from backend.app.model_providers.model_api import (
+from backend.app.agents.providers.contracts import ResolvedModelProvider
+from backend.app.agents.providers.model_api import (
     ANTHROPIC_MESSAGES_API,
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,

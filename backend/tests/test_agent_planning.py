@@ -8,8 +8,8 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRunResult, AgentRuntimeStructuredOutput
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.contracts import AgentRunResult, AgentRuntimeStructuredOutput
 from backend.app.observability.cost_models import WorkspaceCostBudget
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.workflows.plan_future_plan_mutation import (

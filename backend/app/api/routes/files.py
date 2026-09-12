@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from backend.app.agents.memory.jobs import enqueue_workspace_memory_index_job
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.files import (
     ArtifactHistoryResponse,
@@ -19,7 +20,6 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
-from backend.app.memory.jobs import enqueue_workspace_memory_index_job
 from backend.app.storage.security import content_disposition_attachment
 from backend.app.storage.storage import create_storage
 from backend.app.workers.dependencies import get_worker_queue

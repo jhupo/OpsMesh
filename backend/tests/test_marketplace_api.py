@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.api.schemas.marketplace import MarketplaceInstallRequest
 from backend.app.capabilities.models import (
     McpServer,
@@ -33,7 +34,6 @@ from backend.app.marketplace.models import (
     WorkspaceMarketplaceInstall,
 )
 from backend.app.marketplace.resource_service import MarketplaceService
-from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.reviews.llm import LlmReviewResult
 from backend.app.tasks.models import Task, TaskMessage

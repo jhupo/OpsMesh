@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.agent_messages.service import AgentMailboxService
+from backend.app.agents.messages.service import AgentMailboxService
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.agent_messages import (
     AgentInboxSummaryResponse,

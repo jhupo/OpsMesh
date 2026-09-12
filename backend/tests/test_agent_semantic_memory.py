@@ -11,19 +11,19 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.types import JSON
 
+from backend.app.agents.memory.configuration import WorkspaceMemoryConfigurationService
+from backend.app.agents.memory.semantic import (
+    AgentSemanticMemoryService,
+    SemanticMemoryConflictError,
+    SemanticMemoryUpsert,
+)
+from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.memory.configuration import WorkspaceMemoryConfigurationService
-from backend.app.memory.semantic import (
-    AgentSemanticMemoryService,
-    SemanticMemoryConflictError,
-    SemanticMemoryUpsert,
-)
-from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.teams.models import AgentTeam

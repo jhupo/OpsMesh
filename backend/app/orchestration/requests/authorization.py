@@ -5,12 +5,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.contracts import (
     AgentRuntimeResourceGrant,
     AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
 )
-from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
 from backend.app.capabilities.models import (
     CapabilityResource,

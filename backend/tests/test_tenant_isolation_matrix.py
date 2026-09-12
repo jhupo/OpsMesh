@@ -17,15 +17,15 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.observability.notification_models import WorkspaceNotification
 from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.redis.dependencies import get_redis_client

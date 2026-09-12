@@ -10,8 +10,10 @@ from agents import RunContextWrapper
 from agents.exceptions import InputGuardrailTripwireTriggered
 from sqlalchemy import select
 
-import backend.app.agent_runtime.providers.openai_agents as openai_runtime
-from backend.app.agent_runtime.contracts import (
+import backend.app.agents.runtime.providers.openai_agents as openai_runtime
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.profile_commands import AgentProfileCommandService
+from backend.app.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeGuardrail,
@@ -19,16 +21,14 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeGuardrails,
     AgentRuntimeOutputSchema,
 )
-from backend.app.agent_runtime.errors import (
+from backend.app.agents.runtime.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimeOutputValidationError,
     normalize_agent_error,
 )
-from backend.app.agent_runtime.providers.claude_runner import ClaudeAgentSDKRunner
-from backend.app.agent_runtime.providers.openai_agents import OpenAIAgentsRunner
-from backend.app.agent_runtime.providers.openai_guardrails import OpenAIRuntimeOutputSchema
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.profile_commands import AgentProfileCommandService
+from backend.app.agents.runtime.providers.claude_runner import ClaudeAgentSDKRunner
+from backend.app.agents.runtime.providers.openai_agents import OpenAIAgentsRunner
+from backend.app.agents.runtime.providers.openai_guardrails import OpenAIRuntimeOutputSchema
 from backend.app.core.config import Settings
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.runs.authorization_snapshot import (
@@ -327,7 +327,7 @@ def test_policy_failure_appends_redacted_durable_event() -> None:
 def test_guardrail_execution_rejects_invalid_direct_contract(
     kind: str, config: dict[str, object]
 ) -> None:
-    from backend.app.agent_runtime.guardrails import evaluate_guardrail
+    from backend.app.agents.runtime.guardrails import evaluate_guardrail
 
     with pytest.raises(ValueError):
         evaluate_guardrail(

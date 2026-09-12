@@ -7,13 +7,13 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.models import DomainItem
-from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.memory.search import (
+from backend.app.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.agents.memory.search import (
     MemorySearchDocument,
     MemorySearchHit,
     memory_entry_document_metadata,
 )
+from backend.app.domains.models import DomainItem
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
 from backend.app.tasks.models import Task, TaskMessage, TaskStep

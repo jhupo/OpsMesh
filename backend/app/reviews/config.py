@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.model_providers.contracts import ModelProviderUnavailableError
+from backend.app.agents.providers.contracts import ModelProviderUnavailableError
 from backend.app.reviews.constants import (
     PRIVATE_RESOURCE_REVIEW_SETTINGS_KEY,
     RESOURCE_REVIEW_SETTINGS_KEY,

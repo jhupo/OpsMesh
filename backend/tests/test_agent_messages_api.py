@@ -11,8 +11,8 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
-from backend.app.agent_messages.service import AgentMailboxService
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.messages.service import AgentMailboxService
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.agent_messages import (
     AgentMessageCreateRequest,

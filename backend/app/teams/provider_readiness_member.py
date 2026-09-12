@@ -3,18 +3,18 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.model_providers.health_summary import (
+from backend.app.agents.providers.health_summary import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,
 )
-from backend.app.model_providers.metadata import budget_is_exhausted
-from backend.app.model_providers.model_api import (
+from backend.app.agents.providers.metadata import budget_is_exhausted
+from backend.app.agents.providers.model_api import (
     configured_model_api,
     default_model_api,
     model_api_for_agent_provider,
     unsupported_agent_model_api,
 )
-from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.security.redaction import redact_sensitive_text
 from backend.app.teams.models import AgentTeamMember
 from backend.app.teams.provider_readiness_payloads import (

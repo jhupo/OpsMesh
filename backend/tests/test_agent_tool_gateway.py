@@ -10,14 +10,14 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolDefinition,
 )
-from backend.app.agent_runtime.tool_gateway import AgentToolGateway, ToolGatewayDenied
-from backend.app.agent_runtime.tools import BackendToolExecutor
-from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.tool_gateway import AgentToolGateway, ToolGatewayDenied
+from backend.app.agents.runtime.tools import BackendToolExecutor
 from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalogService
 from backend.app.capabilities.models import CapabilityResource, McpCredentialReference, McpServer
 from backend.app.core.config import Settings

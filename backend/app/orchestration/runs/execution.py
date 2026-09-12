@@ -8,7 +8,8 @@ from types import TracebackType
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agents.providers.contracts import ModelProviderUnavailableError
+from backend.app.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
@@ -16,18 +17,17 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolExecutor,
     AgentRuntimeToolResult,
 )
-from backend.app.agent_runtime.errors import (
+from backend.app.agents.runtime.errors import (
     AgentRuntimeCancelledError,
     AgentRuntimePolicyError,
 )
-from backend.app.agent_runtime.factory import build_agent_runtime_registry
-from backend.app.agent_runtime.state_store import AgentRunStateStore
+from backend.app.agents.runtime.factory import build_agent_runtime_registry
+from backend.app.agents.runtime.state_store import AgentRunStateStore
 from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
 from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.approvals.service import ApprovalService
 from backend.app.approvals.waiting import ApprovalWaitingService
 from backend.app.core.config import Settings, get_settings
-from backend.app.model_providers.contracts import ModelProviderUnavailableError
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.requests.run_gateway import ModelRunGateway

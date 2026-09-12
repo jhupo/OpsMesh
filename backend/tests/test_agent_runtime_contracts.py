@@ -5,8 +5,8 @@ import json
 
 import pytest
 
-import backend.app.agent_runtime.contracts as runtime_contracts
-from backend.app.agent_runtime.contracts import (
+import backend.app.agents.runtime.contracts as runtime_contracts
+from backend.app.agents.runtime.contracts import (
     AgentRuntimeAgentRef,
     AgentRuntimeCapabilities,
     AgentRuntimeCapability,
@@ -15,7 +15,7 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeStreamEventKind,
     AgentRuntimeStructuredOutput,
 )
-from backend.app.agent_runtime.providers.openai_results import OpenAIAgentsResultMapper
+from backend.app.agents.runtime.providers.openai_results import OpenAIAgentsResultMapper
 
 
 def test_runtime_contracts_do_not_import_vendor_result_or_state_types() -> None:

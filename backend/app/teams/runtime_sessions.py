@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.sessions import ACTIVE_SESSION_STATUS, PersistentAgentSession
+from backend.app.agents.runtime.sessions import ACTIVE_SESSION_STATUS, PersistentAgentSession
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.runtime_constants import TEAM_RUNTIME_SESSION_SCOPE
 from backend.app.teams.runtime_refs import _member_session_key, _team_session_key

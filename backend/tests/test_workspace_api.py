@@ -13,25 +13,25 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
-from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
-from backend.app.agent_runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
+from backend.app.agents.memory.content import memory_content_fingerprint
+from backend.app.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers import health_service as model_provider_health_service_module
+from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
+from backend.app.agents.providers.health import (
+    ModelProviderHealthCheck,
+    ModelProviderHealthCheckResult,
+)
+from backend.app.agents.providers.models import ModelProviderCredential
+from backend.app.agents.runtime.contracts import AgentRunRequest, AgentRunResult
+from backend.app.agents.runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
 from backend.app.auth.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.memory.content import memory_content_fingerprint
-from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.model_providers import health_service as model_provider_health_service_module
-from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
-from backend.app.model_providers.health import (
-    ModelProviderHealthCheck,
-    ModelProviderHealthCheckResult,
-)
-from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
 from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt

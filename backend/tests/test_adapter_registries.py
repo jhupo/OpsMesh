@@ -5,13 +5,13 @@ from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
 
-from backend.app.model_providers.health import (
+from backend.app.agents.providers.health import (
     AnthropicHealthProbe,
     ModelProviderHealthTarget,
     OpenAICompatibleHealthProbe,
     ProviderHealthRegistry,
 )
-from backend.app.model_providers.model_api import (
+from backend.app.agents.providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
 )

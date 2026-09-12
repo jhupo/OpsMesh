@@ -2,7 +2,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRuntimeExecutor
+from backend.app.agents.runtime.contracts import AgentRuntimeExecutor
 from backend.app.capabilities.mcp.adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,

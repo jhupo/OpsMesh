@@ -8,12 +8,12 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.capabilities.models import McpCredentialReference
 from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.secrets.rotation import HostedSecretReencryptService
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.models import SecurityEvent

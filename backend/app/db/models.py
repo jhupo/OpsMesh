@@ -6,12 +6,21 @@ from backend.app.admin.updates.models import (
     PlatformUpdateEvent,
     PlatformUpdateJob,
 )
-from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
-from backend.app.agent_runtime.sessions import (
+from backend.app.agents.memory.models import (
+    WorkspaceMemoryConfiguration,
+    WorkspaceMemoryEmbeddingEvent,
+    WorkspaceMemoryEntry,
+    WorkspaceMemoryLifecycleEvent,
+    WorkspaceMemoryRetrievalEvent,
+    WorkspaceMemoryVersion,
+)
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.models import AgentProfile, AgentProfileVersion
+from backend.app.agents.providers.models import ModelProviderCredential
+from backend.app.agents.runtime.sessions import (
     PersistentAgentSession,
     PersistentAgentSessionItem,
 )
-from backend.app.agents.models import AgentProfile, AgentProfileVersion
 from backend.app.approvals.models import Approval, PendingToolInvocation
 from backend.app.capabilities.models import (
     Capability,
@@ -33,15 +42,6 @@ from backend.app.marketplace.models import (
     WorkspaceAgentInstall,
     WorkspaceMarketplaceInstall,
 )
-from backend.app.memory.models import (
-    WorkspaceMemoryConfiguration,
-    WorkspaceMemoryEmbeddingEvent,
-    WorkspaceMemoryEntry,
-    WorkspaceMemoryLifecycleEvent,
-    WorkspaceMemoryRetrievalEvent,
-    WorkspaceMemoryVersion,
-)
-from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.observability.audit_models import AuditEvent, AuditIntegrityCheck
 from backend.app.observability.cost_models import (
     ModelPricingRule,

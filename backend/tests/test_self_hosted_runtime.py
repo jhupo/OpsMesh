@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 from backend.app.admin.models import PlatformPolicy
 from backend.app.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.capabilities.models import CapabilityResource, McpServer, McpToolAllowlist
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
@@ -20,7 +21,6 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
 from backend.app.runs.models import AgentRun, RunEvent

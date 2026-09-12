@@ -14,18 +14,18 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agent_messages.models import AgentMessage
-from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
-from backend.app.agent_runtime.sessions import PersistentAgentSession
+from backend.app.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.agents.messages.models import AgentMessage
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
+from backend.app.agents.runtime.contracts import AgentRunRequest, AgentRunResult
+from backend.app.agents.runtime.sessions import PersistentAgentSession
 from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
 from backend.app.core.config import Settings
 from backend.app.core.request_context import current_log_context
 from backend.app.core.trace_context import TraceContext, trace_context
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.observability.cost_models import (
     ModelPricingRule,
     ModelUsageRecord,

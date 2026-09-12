@@ -4,12 +4,12 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.sessions import (
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.sessions import (
     PersistentAgentSession,
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
 )
-from backend.app.agents.models import AgentProfile
 from backend.app.orchestration.requests.utils import uuid_or_none
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus

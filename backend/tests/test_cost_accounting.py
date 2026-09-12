@@ -9,14 +9,14 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
     AgentRuntimeUsage,
 )
-from backend.app.agent_runtime.usage import runtime_usage
-from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.usage import runtime_usage
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User

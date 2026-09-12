@@ -7,8 +7,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.agents.models import AgentProfile
-from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt

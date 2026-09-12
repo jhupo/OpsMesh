@@ -6,11 +6,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.session_management import (
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.session_management import (
     PersistentAgentSessionManagementService,
 )
-from backend.app.agent_runtime.session_views import PersistentSessionSummary
-from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.session_views import PersistentSessionSummary
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.models import AgentTeam, AgentTeamMember

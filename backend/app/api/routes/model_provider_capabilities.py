@@ -1,7 +1,12 @@
 from fastapi import APIRouter, Depends, Query
 
-from backend.app.agent_runtime.contracts import AgentRuntimeCapability
-from backend.app.agent_runtime.factory import build_agent_runtime_registry
+from backend.app.agents.providers.capabilities import list_model_capabilities
+from backend.app.agents.providers.model_api import (
+    default_model_api,
+    model_api_options_for_provider,
+)
+from backend.app.agents.runtime.contracts import AgentRuntimeCapability
+from backend.app.agents.runtime.factory import build_agent_runtime_registry
 from backend.app.api.schemas.model_providers import (
     AgentRuntimeAdapterCapabilityResponse,
     AgentRuntimeCapabilityFeatureResponse,
@@ -10,11 +15,6 @@ from backend.app.api.schemas.model_providers import (
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
-from backend.app.model_providers.capabilities import list_model_capabilities
-from backend.app.model_providers.model_api import (
-    default_model_api,
-    model_api_options_for_provider,
-)
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/model-provider-capabilities",

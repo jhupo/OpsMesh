@@ -4,7 +4,7 @@ import pytest
 from agents import Session
 from agents.items import TResponseInputItem
 
-from backend.app.agent_runtime.providers.openai_session import OpenAISessionAdapter
+from backend.app.agents.runtime.providers.openai_session import OpenAISessionAdapter
 
 
 class MemoryStorage:

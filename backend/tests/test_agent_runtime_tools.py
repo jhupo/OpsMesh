@@ -9,15 +9,17 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
-from backend.app.agent_runtime.contracts import (
+from backend.app.agents.memory.content import memory_content_fingerprint
+from backend.app.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeExecutionBinding,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolDefinition,
 )
-from backend.app.agent_runtime.tools import BackendToolExecutor
-from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.tools import BackendToolExecutor
 from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
 from backend.app.capabilities.models import (
     CapabilityResource,
@@ -30,8 +32,6 @@ from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_CATALOG
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.memory.content import memory_content_fingerprint
-from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
@@ -527,7 +527,7 @@ def test_backend_tool_executor_redacts_product_tool_failure_messages(
         raise ValueError("provider rejected api_key=sk-product-tool-secret")
 
     monkeypatch.setattr(
-        "backend.app.agent_runtime.product_tool_executor.ProductToolService.send_agent_message",
+        "backend.app.agents.runtime.product_tool_executor.ProductToolService.send_agent_message",
         fail_send_agent_message,
     )
 

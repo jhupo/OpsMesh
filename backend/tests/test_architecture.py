@@ -20,8 +20,8 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "runtime",
         "storage",
         "observability",
-        "agent_runtime/providers",
-        "agent_runtime/runtime",
+        "agents/runtime/providers",
+        "agents/runtime/runtime",
         "orchestration/requests",
         "orchestration/runs",
         "orchestration/workflows",
@@ -44,9 +44,10 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "costs",
         "telemetry",
         "notifications",
-        "agent_runtime/openai",
-        "agent_runtime/claude",
-        "agent_runtime/sandbox",
+        "agent_runtime",
+        "agent_messages",
+        "model_providers",
+        "memory",
         "orchestration/models_layer",
         "orchestration/run_request",
         "orchestration/planning",
@@ -96,7 +97,7 @@ def test_team_consolidation_removes_superseded_sources() -> None:
 
     app = ROOT / "backend/app"
     for name in (
-        "agent_messages/pagination.py",
+        "agents/messages/pagination.py",
         "tasks/control_payloads.py",
         "workers/job_handlers/base.py",
         "teams/operating_context.py",
@@ -220,7 +221,7 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
             "S3 SDK access stays in its storage adapter",
         ),
         (
-            "agent_runtime/contracts.py",
+            "agents/runtime/contracts.py",
             "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from openai import OpenAI",
             "Agent runtime contracts do not depend on vendor SDKs or HTTP transport",
         ),

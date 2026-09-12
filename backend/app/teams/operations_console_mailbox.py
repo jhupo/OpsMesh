@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_messages.models import AgentMessage
+from backend.app.agents.messages.models import AgentMessage
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.teams.operations_console_utils import _preview
 from backend.app.teams.runtime import TeamRuntimeState

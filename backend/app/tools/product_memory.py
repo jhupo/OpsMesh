@@ -4,12 +4,12 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.agents.memory.authorization import AuthorizedMemoryScope
+from backend.app.agents.memory.embeddings import WorkspaceMemoryQueryEmbeddingService
+from backend.app.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.agents.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
+from backend.app.agents.memory.working import AgentWorkingMemoryService
 from backend.app.agents.memory_policy import semantic_memory_policy
-from backend.app.memory.authorization import AuthorizedMemoryScope
-from backend.app.memory.embeddings import WorkspaceMemoryQueryEmbeddingService
-from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
-from backend.app.memory.working import AgentWorkingMemoryService
 from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tools.context import ToolContext

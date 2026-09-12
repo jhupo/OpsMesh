@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.agent_runtime.sessions import PersistentAgentSessionRef
+from backend.app.agents.runtime.sessions import PersistentAgentSessionRef
 from backend.app.core.typing import dict_or_none, uuid_or_none
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime_constants import (

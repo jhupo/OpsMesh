@@ -6,8 +6,10 @@ from uuid import uuid4
 import pytest
 from agents import OpenAIResponsesCompactionSession, RunContextWrapper
 
-import backend.app.agent_runtime.providers.openai_agents as openai_runtime
-from backend.app.agent_runtime.contracts import (
+import backend.app.agents.runtime.providers.openai_agents as openai_runtime
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers.policy import normalize_openai_compatible_base_url
+from backend.app.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeAgentRef,
@@ -22,22 +24,23 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeToolResult,
     AgentRunTracing,
 )
-from backend.app.agent_runtime.errors import (
+from backend.app.agents.runtime.errors import (
     AgentRuntimeCapabilityError,
     normalize_agent_error,
 )
-from backend.app.agent_runtime.factory import build_agent_runtime_registry
-from backend.app.agent_runtime.multi_provider import ProviderAgentRuntimeRegistry
-from backend.app.agent_runtime.providers.openai_agents import OpenAIAgentsRunner
-from backend.app.agent_runtime.providers.openai_results import (
+from backend.app.agents.runtime.factory import build_agent_runtime_registry
+from backend.app.agents.runtime.multi_provider import ProviderAgentRuntimeRegistry
+from backend.app.agents.runtime.providers.openai_agents import OpenAIAgentsRunner
+from backend.app.agents.runtime.providers.openai_results import (
     OpenAIAgentsResultMapper,
     runtime_event_from_sdk_item,
 )
-from backend.app.agent_runtime.providers.openai_tools import OpenAIToolBridge, runtime_allowed_tools
-from backend.app.agent_runtime.runtime.contracts import SandboxManifest
-from backend.app.agent_runtime.sessions import PersistentAgentSessionRef, SQLAlchemyAgentSession
-from backend.app.agents.models import AgentProfile
-from backend.app.model_providers.policy import normalize_openai_compatible_base_url
+from backend.app.agents.runtime.providers.openai_tools import (
+    OpenAIToolBridge,
+    runtime_allowed_tools,
+)
+from backend.app.agents.runtime.runtime.contracts import SandboxManifest
+from backend.app.agents.runtime.sessions import PersistentAgentSessionRef, SQLAlchemyAgentSession
 
 
 class DeterministicTestRunner:

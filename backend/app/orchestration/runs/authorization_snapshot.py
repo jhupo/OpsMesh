@@ -4,19 +4,19 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.guardrails import runtime_controls_snapshot
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers.metadata import budget_is_exhausted
+from backend.app.agents.providers.model_api import (
+    canonical_model_api,
+    model_api_for_agent_provider,
+)
+from backend.app.agents.providers.models import ModelProviderCredential
+from backend.app.agents.providers.resolution import ModelProviderResolutionService
+from backend.app.agents.runtime.guardrails import runtime_controls_snapshot
 from backend.app.capabilities.effective_catalog import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )
-from backend.app.model_providers.metadata import budget_is_exhausted
-from backend.app.model_providers.model_api import (
-    canonical_model_api,
-    model_api_for_agent_provider,
-)
-from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.resolution import ModelProviderResolutionService
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.requests.utils import dict_copy, uuid_or_none
 from backend.app.orchestration.runs.authorization_integrity import (

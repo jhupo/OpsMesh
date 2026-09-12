@@ -10,13 +10,13 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
     AgentRuntimeUsage,
 )
-from backend.app.agents.models import AgentProfile
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base

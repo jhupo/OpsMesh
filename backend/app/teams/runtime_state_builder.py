@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from backend.app.agent_messages.models import AgentMessageThread
-from backend.app.agent_runtime.sessions import PersistentAgentSession
+from backend.app.agents.messages.models import AgentMessageThread
+from backend.app.agents.runtime.sessions import PersistentAgentSession
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.operating_context_service import TeamOperatingContextService
 from backend.app.teams.runtime_constants import (

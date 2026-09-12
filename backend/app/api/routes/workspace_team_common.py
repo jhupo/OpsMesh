@@ -5,7 +5,7 @@ from fastapi import HTTPException, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.session_management import (
+from backend.app.agents.runtime.session_management import (
     PersistentAgentSessionManagementService,
 )
 from backend.app.api.schemas.agents import (

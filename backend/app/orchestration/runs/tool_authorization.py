@@ -9,22 +9,22 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers.policy import (
+    is_anthropic_provider,
+    is_openai_compatible_provider,
+)
+from backend.app.agents.runtime.contracts import (
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentRef,
     AgentRuntimeAgentTool,
     AgentRuntimeContext,
 )
-from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.effective_catalog import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )
 from backend.app.capabilities.schema_validation import validate_partial_parameters
-from backend.app.model_providers.policy import (
-    is_anthropic_provider,
-    is_openai_compatible_provider,
-)
 from backend.app.orchestration.requests.authorization import (
     resource_grants_for_snapshot,
     tool_definitions_for_snapshot,

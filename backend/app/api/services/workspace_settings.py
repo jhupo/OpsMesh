@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.reviews.constants import (
     PRIVATE_RESOURCE_REVIEW_SETTINGS_KEY,
     PUBLIC_RESOURCE_REVIEW_SETTINGS_KEY,

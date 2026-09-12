@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.memory.episodic import AgentEpisodicMemoryService
+from backend.app.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.tasks.event_outbox import TaskEventOutboxService
 from backend.app.tasks.models import Task, TaskMessage
 

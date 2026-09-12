@@ -2,10 +2,10 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import AgentRunResult
+from backend.app.agents.memory.episodic import AgentEpisodicMemoryService
+from backend.app.agents.memory.working import AgentWorkingMemoryService
 from backend.app.agents.models import AgentProfile
-from backend.app.memory.episodic import AgentEpisodicMemoryService
-from backend.app.memory.working import AgentWorkingMemoryService
+from backend.app.agents.runtime.contracts import AgentRunResult
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task
 

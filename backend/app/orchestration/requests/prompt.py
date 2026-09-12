@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.tools import PRODUCT_TOOL_NAMES
+from backend.app.agents.runtime.tools import PRODUCT_TOOL_NAMES
 from backend.app.orchestration.requests.context_budget import ContextFragment, ContextPriority
 from backend.app.orchestration.workflows.data import resolve_workflow_inputs
 from backend.app.orchestration.workflows.plan_agent_plan import is_agent_planning_step

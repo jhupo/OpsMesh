@@ -5,7 +5,6 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.guardrails import runtime_controls_snapshot
 from backend.app.agents.model_validation import AgentModelValidator
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.payloads import (
@@ -16,6 +15,7 @@ from backend.app.agents.payloads import (
     profile_snapshot,
 )
 from backend.app.agents.reviews import AgentProfileReviewService
+from backend.app.agents.runtime.guardrails import runtime_controls_snapshot
 from backend.app.agents.versions import AgentVersionRecorder
 from backend.app.api.schemas.agents import (
     AgentProfileCreateRequest,

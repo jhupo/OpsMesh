@@ -3,12 +3,12 @@ from uuid import uuid4
 
 import pytest
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
-from backend.app.agents.models import AgentProfile
 from backend.app.orchestration.models import SubworkflowInvocation
 from backend.app.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.orchestration.runs.execution import RunExecutionDependencies, RunExecutionService

@@ -7,22 +7,22 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.schemas.agents import AgentProfileResponse
-from backend.app.model_providers.capabilities import resolve_model_capability
-from backend.app.model_providers.metadata import budget_is_exhausted
-from backend.app.model_providers.model_api import (
+from backend.app.agents.providers.capabilities import resolve_model_capability
+from backend.app.agents.providers.metadata import budget_is_exhausted
+from backend.app.agents.providers.model_api import (
     configured_model_api,
     default_model_api,
     model_api_for_agent_provider,
     model_api_options_for_provider,
     unsupported_agent_model_api,
 )
-from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.policy import model_provider_base_url_host
-from backend.app.model_providers.resolution import (
+from backend.app.agents.providers.models import ModelProviderCredential
+from backend.app.agents.providers.policy import model_provider_base_url_host
+from backend.app.agents.providers.resolution import (
     ModelProviderResolutionService,
     ModelProviderResolutionSnapshot,
 )
+from backend.app.api.schemas.agents import AgentProfileResponse
 
 
 class AgentModelProviderHealth(TypedDict):

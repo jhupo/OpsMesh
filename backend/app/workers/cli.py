@@ -6,7 +6,7 @@ import signal
 import socket
 from threading import Event
 
-from backend.app.agent_runtime.factory import build_agent_runtime_registry
+from backend.app.agents.runtime.factory import build_agent_runtime_registry
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.logging import configure_logging
 from backend.app.db.session import SessionLocal, engine

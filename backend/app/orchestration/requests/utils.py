@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from backend.app.model_providers.model_api import (
+from backend.app.agents.providers.model_api import (
     canonical_model_api,
     model_api_options_for_provider,
 )

@@ -11,8 +11,17 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
-from backend.app.agent_runtime.contracts import (
+from backend.app.agents.memory.content import memory_content_fingerprint
+from backend.app.agents.memory.models import WorkspaceMemoryEntry, WorkspaceMemoryRetrievalEvent
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers.contracts import (
+    ModelProviderUnavailableError,
+)
+from backend.app.agents.providers.credential_commands import (
+    ModelProviderCredentialCommandService,
+)
+from backend.app.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
@@ -20,10 +29,9 @@ from backend.app.agent_runtime.contracts import (
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
-from backend.app.agent_runtime.providers import openai_agents as openai_runtime
-from backend.app.agent_runtime.sessions import PersistentAgentSession
-from backend.app.agent_runtime.state_store import AgentRunStateStore
-from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.providers import openai_agents as openai_runtime
+from backend.app.agents.runtime.sessions import PersistentAgentSession
+from backend.app.agents.runtime.state_store import AgentRunStateStore
 from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
 from backend.app.approvals.decisions import ApprovalDecisionService
 from backend.app.approvals.models import Approval, PendingToolInvocation
@@ -40,14 +48,6 @@ from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.memory.content import memory_content_fingerprint
-from backend.app.memory.models import WorkspaceMemoryEntry, WorkspaceMemoryRetrievalEvent
-from backend.app.model_providers.contracts import (
-    ModelProviderUnavailableError,
-)
-from backend.app.model_providers.credential_commands import (
-    ModelProviderCredentialCommandService,
-)
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.requests.request_reviewing import (

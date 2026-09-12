@@ -13,44 +13,44 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.types import JSON
 
-from backend.app.core.config import Settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.identity.models import User
-from backend.app.memory.authorization import AuthorizedMemoryScope
-from backend.app.memory.configuration import (
+from backend.app.agents.memory.authorization import AuthorizedMemoryScope
+from backend.app.agents.memory.configuration import (
     MemoryConfigurationConflictError,
     MemoryConfigurationUpdate,
     WorkspaceMemoryConfigurationService,
 )
-from backend.app.memory.content import memory_content_fingerprint
-from backend.app.memory.embedding_jobs import WorkspaceMemoryEmbeddingScheduler
-from backend.app.memory.embeddings import (
+from backend.app.agents.memory.content import memory_content_fingerprint
+from backend.app.agents.memory.embedding_jobs import WorkspaceMemoryEmbeddingScheduler
+from backend.app.agents.memory.embeddings import (
     MemoryEmbeddingResult,
     OpenAIMemoryEmbeddingProvider,
     WorkspaceMemoryEmbeddingProviderResolver,
 )
-from backend.app.memory.lifecycle import WorkspaceMemoryLifecycleService
-from backend.app.memory.models import (
+from backend.app.agents.memory.lifecycle import WorkspaceMemoryLifecycleService
+from backend.app.agents.memory.models import (
     WorkspaceMemoryEmbeddingEvent,
     WorkspaceMemoryEntry,
     WorkspaceMemoryLifecycleEvent,
     WorkspaceMemoryVersion,
 )
-from backend.app.memory.policy import (
+from backend.app.agents.memory.policy import (
     HybridMemoryRetrievalPolicy,
     MemoryLifecyclePolicy,
     default_lifecycle_policy,
     default_retrieval_policy,
 )
-from backend.app.memory.search import (
+from backend.app.agents.memory.search import (
     HybridMemorySearchBackend,
     MemorySearchDocument,
     MemorySearchHit,
     MemorySearchRequest,
 )
-from backend.app.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
-from backend.app.model_providers.credential_commands import ModelProviderCredentialCommandService
+from backend.app.agents.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
+from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
+from backend.app.core.config import Settings
+from backend.app.db import models as registered_models  # noqa: F401
+from backend.app.db.base import Base
+from backend.app.identity.models import User
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.tools.workspace_memory import WorkspaceMemorySearchService

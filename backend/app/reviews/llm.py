@@ -10,13 +10,13 @@ from anthropic import Anthropic, AnthropicError
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from backend.app.model_providers.contracts import ResolvedModelProvider
-from backend.app.model_providers.model_api import (
+from backend.app.agents.providers.contracts import ResolvedModelProvider
+from backend.app.agents.providers.model_api import (
     ANTHROPIC_MESSAGES_API,
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
 )
-from backend.app.model_providers.policy import (
+from backend.app.agents.providers.policy import (
     canonical_model_provider,
     is_anthropic_provider,
     is_openai_compatible_provider,

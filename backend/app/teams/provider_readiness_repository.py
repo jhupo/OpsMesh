@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.teams.models import AgentTeamMember
 
 

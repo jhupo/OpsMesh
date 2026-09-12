@@ -1,4 +1,4 @@
-from backend.app.model_providers.capabilities import (
+from backend.app.agents.providers.capabilities import (
     list_model_capabilities,
     resolve_model_capability,
 )

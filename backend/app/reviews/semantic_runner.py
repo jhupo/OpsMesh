@@ -2,9 +2,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.agents.providers.contracts import ModelProviderUnavailableError
+from backend.app.agents.providers.resolution_service import ModelProviderResolutionService
 from backend.app.core.config import Settings
-from backend.app.model_providers.contracts import ModelProviderUnavailableError
-from backend.app.model_providers.resolution_service import ModelProviderResolutionService
 from backend.app.reviews.config import ResourceReviewSettings
 from backend.app.reviews.llm import LlmResourceReviewer
 from backend.app.reviews.llm_review import (

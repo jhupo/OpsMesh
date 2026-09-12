@@ -6,13 +6,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import sessionmaker
 
-from backend.app.agent_runtime.contracts import AgentRuntimeToolResult
+from backend.app.agents.memory.working import AgentWorkingMemoryService, working_memory_context
 from backend.app.agents.memory_policy import WorkingMemoryPolicy
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.contracts import AgentRuntimeToolResult
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.memory.working import AgentWorkingMemoryService, working_memory_context
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.models import Task, TaskStep
 from backend.app.workspaces.models import Workspace, WorkspaceMember

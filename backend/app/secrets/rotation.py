@@ -7,8 +7,8 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.capabilities.models import McpCredentialReference
-from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.models import SecurityEvent
 from backend.app.webhooks.models import WebhookSubscription

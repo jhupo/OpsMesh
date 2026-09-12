@@ -13,12 +13,12 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agents.runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
-from backend.app.agent_runtime.state_store import AgentRunStateStore
+from backend.app.agents.runtime.state_store import AgentRunStateStore
 from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
 from backend.app.approvals.decisions import ApprovalDecisionService
 from backend.app.approvals.lifecycle import AgentToolApprovalLifecycleService

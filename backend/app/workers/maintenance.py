@@ -7,10 +7,10 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
+from backend.app.agents.memory.embedding_jobs import WorkspaceMemoryEmbeddingScheduler
+from backend.app.agents.memory.lifecycle import WorkspaceMemoryLifecycleService
 from backend.app.approvals.lifecycle import AgentToolApprovalLifecycleService
 from backend.app.core.config import Settings
-from backend.app.memory.embedding_jobs import WorkspaceMemoryEmbeddingScheduler
-from backend.app.memory.lifecycle import WorkspaceMemoryLifecycleService
 from backend.app.observability.audit_integrity import AuditIntegrityService
 from backend.app.operations.runtime_cleanup import RuntimeCleanupService
 from backend.app.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService

@@ -5,27 +5,27 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.contracts import (
+from backend.app.agents.memory.context import AgentMemoryContextService
+from backend.app.agents.memory.working import AgentWorkingMemoryService, working_memory_context
+from backend.app.agents.memory_policy import context_budget_policy, working_memory_policy
+from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolExecutor,
 )
-from backend.app.agent_runtime.guardrails import runtime_controls_from_snapshot
-from backend.app.agent_runtime.providers.claude_sandbox import sandbox_settings_for_claude
-from backend.app.agent_runtime.runtime.contracts import SandboxManifest
-from backend.app.agent_runtime.sessions import (
+from backend.app.agents.runtime.guardrails import runtime_controls_from_snapshot
+from backend.app.agents.runtime.providers.claude_sandbox import sandbox_settings_for_claude
+from backend.app.agents.runtime.runtime.contracts import SandboxManifest
+from backend.app.agents.runtime.sessions import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
 )
-from backend.app.agent_runtime.state_store import AgentRunStateStore
-from backend.app.agent_runtime.tools import BackendToolExecutor
-from backend.app.agents.memory_policy import context_budget_policy, working_memory_policy
-from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.state_store import AgentRunStateStore
+from backend.app.agents.runtime.tools import BackendToolExecutor
 from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.capabilities.mcp.adapter_resolver import McpAdapterResolver
 from backend.app.core.config import Settings
-from backend.app.memory.context import AgentMemoryContextService
-from backend.app.memory.working import AgentWorkingMemoryService, working_memory_context
 from backend.app.orchestration.requests.authorization import (
     RunAuthorizationService,
     file_scope_ids_for_snapshot,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.memory.models import WorkspaceMemoryEntry
+from backend.app.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.storage.models import WorkspaceFile
 from backend.app.teams.project_types import ProjectSpaceRelationshipIds
 

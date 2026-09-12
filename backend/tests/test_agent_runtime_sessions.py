@@ -8,8 +8,8 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agent_runtime.session_management import PersistentAgentSessionManagementService
-from backend.app.agent_runtime.sessions import (
+from backend.app.agents.runtime.session_management import PersistentAgentSessionManagementService
+from backend.app.agents.runtime.sessions import (
     ACTIVE_SESSION_STATUS,
     ARCHIVED_SESSION_STATUS,
     FROZEN_SESSION_STATUS,

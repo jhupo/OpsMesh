@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.models import AgentProfile
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.runtime_constants import TEAM_RUNTIME_THREAD_KEY

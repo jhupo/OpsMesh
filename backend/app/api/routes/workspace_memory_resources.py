@@ -3,6 +3,17 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from backend.app.agents.memory.configuration import (
+    MemoryConfigurationConflictError,
+    MemoryConfigurationUpdate,
+    WorkspaceMemoryConfigurationService,
+)
+from backend.app.agents.memory.evidence import WorkspaceMemoryEvidenceService
+from backend.app.agents.memory.semantic import (
+    AgentSemanticMemoryService,
+    SemanticMemoryConflictError,
+    SemanticMemoryUpsert,
+)
 from backend.app.api.schemas.memory import (
     MemoryEmbeddingEventListResponse,
     MemoryEmbeddingEventResponse,
@@ -24,17 +35,6 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.session import get_db_session
-from backend.app.memory.configuration import (
-    MemoryConfigurationConflictError,
-    MemoryConfigurationUpdate,
-    WorkspaceMemoryConfigurationService,
-)
-from backend.app.memory.evidence import WorkspaceMemoryEvidenceService
-from backend.app.memory.semantic import (
-    AgentSemanticMemoryService,
-    SemanticMemoryConflictError,
-    SemanticMemoryUpsert,
-)
 from backend.app.observability.audit_service import AuditService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/memories", tags=["workspace-memory"])

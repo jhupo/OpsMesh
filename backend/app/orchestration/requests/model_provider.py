@@ -5,9 +5,9 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers.model_api import canonical_model_api
+from backend.app.agents.providers.resolution_service import ModelProviderResolutionService
 from backend.app.core.config import Settings
-from backend.app.model_providers.model_api import canonical_model_api
-from backend.app.model_providers.resolution_service import ModelProviderResolutionService
 from backend.app.orchestration.requests.authorization import RunAuthorizationService
 from backend.app.orchestration.requests.utils import (
     effective_resolved_model_api,

@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
+from backend.app.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.agents.models import AgentProfile
-from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.runs.models import AgentRun
 from backend.app.runtime.space_models import (
     RuntimeSpace,

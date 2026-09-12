@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from backend.app.agent_messages.models import AgentMessage
+from backend.app.agents.messages.models import AgentMessage
 from backend.app.core.typing import datetime_or_none, int_or_zero
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.teams.runtime_constants import (

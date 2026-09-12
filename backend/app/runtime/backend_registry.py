@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.agent_runtime.runtime.contracts import SandboxManifest, SandboxSession
+from backend.app.agents.runtime.runtime.contracts import SandboxManifest, SandboxSession
 from backend.app.capabilities.mcp.adapters import McpToolAdapter
 from backend.app.capabilities.mcp.stdio_adapters import (
     DockerRuntimeStdioMcpToolAdapter,

@@ -11,15 +11,15 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agent_messages.models import AgentMessage
+from backend.app.agents.memory.authorization import AuthorizedMemoryScope
+from backend.app.agents.memory.indexing import WorkspaceMemoryIndexingService
+from backend.app.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.agents.memory.search import MemorySearchHit, MemorySearchRequest
+from backend.app.agents.messages.models import AgentMessage
 from backend.app.agents.models import AgentProfile
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
-from backend.app.memory.authorization import AuthorizedMemoryScope
-from backend.app.memory.indexing import WorkspaceMemoryIndexingService
-from backend.app.memory.models import WorkspaceMemoryEntry
-from backend.app.memory.search import MemorySearchHit, MemorySearchRequest
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile

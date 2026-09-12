@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
+from backend.app.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.core.typing import counts_by_value
-from backend.app.memory.models import WorkspaceMemoryEntry
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
 from backend.app.teams.project_employees import employee_outputs

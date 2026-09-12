@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.admin.models import PlatformPolicy
-from backend.app.agent_messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval
 from backend.app.capabilities.models import McpServer, McpToolAllowlist

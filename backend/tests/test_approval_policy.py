@@ -3,8 +3,8 @@ from uuid import uuid4
 
 import pytest
 
-from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRuntimeContext
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.runtime.contracts import AgentRunRequest, AgentRuntimeContext
 from backend.app.approvals.models import Approval
 from backend.app.approvals.policy import (
     ApprovalPolicyDecision,

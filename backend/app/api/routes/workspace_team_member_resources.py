@@ -5,12 +5,13 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.agent_messages.models import AgentMessage
-from backend.app.agent_runtime.session_management import (
-    PersistentAgentSessionManagementService,
-)
+from backend.app.agents.messages.models import AgentMessage
 from backend.app.agents.model_provider_summary import agent_profile_response
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers.model_api import configured_model_api, require_known_model_api
+from backend.app.agents.runtime.session_management import (
+    PersistentAgentSessionManagementService,
+)
 from backend.app.agents.service import AgentManagementService
 from backend.app.api.idempotency import (
     IdempotencyInProgressError,
@@ -34,7 +35,6 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
-from backend.app.model_providers.model_api import configured_model_api, require_known_model_api
 from backend.app.observability.audit_service import AuditService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
