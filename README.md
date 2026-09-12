@@ -375,7 +375,8 @@ plan, so the whole phase is not yet complete.
 ## Repository Layout
 
 ```text
-backend/app/api/                              HTTP routes, schemas, and API services
+backend/app/api/                              HTTP transport, schemas, and application services
+backend/app/api/routes/{...}/                 Routes grouped by agents, capabilities, operations, orchestration, platform, and workspace
 backend/app/agents/                           Agent profiles, SDK runtime, memory, and providers
 backend/app/agents/runtime/providers/         OpenAI and Claude SDK adapters
 backend/app/capabilities/                     Skills, MCP, tools, marketplace, and policy

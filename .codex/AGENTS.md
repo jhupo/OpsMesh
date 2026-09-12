@@ -127,7 +127,9 @@ the OpsMesh control plane.
 
 ## Repository Map
 
-- `backend/app/api`: API routes, schemas, dependencies, and transport-facing services.
+- `backend/app/api`: API transport, schemas, dependencies, and application-facing services.
+  Routes are grouped by functional boundary under `api/routes/{admin,agents,capabilities,operations,orchestration,platform,workspace}`;
+  self-hosted and integration routes remain explicit nested boundaries.
 - `backend/app/agents`: agent profiles plus nested SDK runtime, memory, message, and provider domains.
 - `backend/app/capabilities`: skills, MCP, credentials, policy, diagnostics, marketplace, and tools.
 - `backend/app/orchestration`: requests, runs, approvals, tasks, and workflows.

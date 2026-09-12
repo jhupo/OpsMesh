@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.routes.workspace_team_common import (
+from backend.app.api.routes.workspace.teams.common import (
     _enqueue_team_runtime_control,
     _queued_runtime_control,
     _team_runtime_limits,

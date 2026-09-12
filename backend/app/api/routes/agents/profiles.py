@@ -13,7 +13,7 @@ from backend.app.api.idempotency import (
     run_idempotent_create,
 )
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.routes.agent_errors import agent_management_http_error
+from backend.app.api.routes.agents.errors import agent_management_http_error
 from backend.app.api.schemas.agents import (
     AgentProfileCloneRequest,
     AgentProfileCreateRequest,

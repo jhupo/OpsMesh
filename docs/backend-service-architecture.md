@@ -297,6 +297,8 @@ Docker must not be the only place where important final state exists.
 backend/
   app/
     api/                                    # HTTP transport and API-facing services
+      routes/{admin,agents,capabilities,operations,orchestration,platform,workspace}
+        self_hosted/ integrations/          # specialized transport boundaries
     agents/                                 # Agent profiles and nested runtime domains
       memory/ messages/ providers/ runtime/
     capabilities/                           # Tools, MCP, marketplace, and policy

@@ -9,7 +9,7 @@ from backend.app.agents.runtime.session_management import (
     PersistentAgentSessionManagementService,
 )
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.routes.workspace_team_common import (
+from backend.app.api.routes.workspace.teams.common import (
     _require_team,
     _require_team_session,
     _set_team_session_status_response,

@@ -302,6 +302,40 @@ def test_operations_features_are_nested_by_function() -> None:
         assert not (operations / name).exists(), name
 
 
+def test_api_routes_are_nested_by_function() -> None:
+    routes = ROOT / "backend/app/api/routes"
+    expected = {
+        "admin",
+        "agents",
+        "capabilities",
+        "integrations",
+        "operations",
+        "orchestration",
+        "platform",
+        "self_hosted",
+        "workspace",
+    }
+    assert {path.name for path in routes.iterdir() if path.is_dir()} >= expected
+    assert {
+        path.name
+        for path in routes.iterdir()
+        if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
+    } == set()
+    for name in (
+        "agent_messages.py",
+        "capabilities.py",
+        "operations.py",
+        "workspace_resources.py",
+        "workspace_task_resources.py",
+        "workspace_team_resources.py",
+        "workspaces.py",
+        "exports.py",
+        "auth.py",
+        "webhooks.py",
+    ):
+        assert not (routes / name).exists(), name
+
+
 def test_local_application_imports_resolve_without_compatibility_shims() -> None:
     missing = []
     for path in (ROOT / "backend/app").rglob("*.py"):

@@ -9,7 +9,7 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.routes.workspace_task_streaming import (
+from backend.app.api.routes.orchestration.tasks.streaming import (
     _message_sequence,
     _read_task_bus_events,
     _snapshot_messages,
