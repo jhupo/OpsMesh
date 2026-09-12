@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.operation_control_plane import OperationsControlPlaneResponse
 from backend.app.operations.control_plane_health import control_plane_health
-from backend.app.operations.control_plane_issues import control_plane_issues
+from backend.app.operations.control_plane import control_plane_issues
 from backend.app.operations.operation_capacity_payloads import OperationsCapacityPayloadService
 from backend.app.operations.outcomes import OperationsOutcomeService
 from backend.app.operations.queue_latency import OperationsQueueLatencyService

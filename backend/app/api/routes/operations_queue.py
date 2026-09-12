@@ -22,8 +22,8 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.operations.dead_letters import DeadLetterQueueService
-from backend.app.operations.queue_governance_diagnostics import QueueGovernanceDiagnosticsService
-from backend.app.operations.queue_governance_reconciliation import (
+from backend.app.operations.queue_governance import QueueGovernanceDiagnosticsService
+from backend.app.operations.queue_governance import (
     QueueGovernanceReconciliationService,
 )
 from backend.app.operations.queue_insights import QueueInsightsService
