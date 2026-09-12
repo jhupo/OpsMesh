@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.domains.agents.runtime.tools import PRODUCT_TOOL_NAMES
+from backend.app.domains.agents.runtime.tools.executor import PRODUCT_TOOL_NAMES
 from backend.app.domains.orchestration.requests.context_budget import (
     ContextFragment,
     ContextPriority,

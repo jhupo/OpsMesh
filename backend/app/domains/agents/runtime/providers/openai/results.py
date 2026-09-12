@@ -7,7 +7,7 @@ from agents import Agent, Tool
 from agents import __version__ as agents_sdk_version
 
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeAgentRef,
     AgentRuntimeEvent,
     AgentRuntimeHandoffResult,

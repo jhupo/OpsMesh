@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.runtime.contracts import AgentRuntimeResumeState
+from backend.app.domains.agents.runtime.execution.contracts import AgentRuntimeResumeState
 from backend.app.domains.orchestration.runs.models import AgentRunStateSnapshot
 
 MAX_SERIALIZED_RUN_STATE_BYTES = 8 * 1024 * 1024

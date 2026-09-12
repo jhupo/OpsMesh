@@ -10,7 +10,7 @@ from agents.tool_context import ToolContext
 import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
 from backend.app.core.common.config import Settings
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunRequest,
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentRef,

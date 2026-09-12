@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.messages.models import AgentMessageThread
-from backend.app.domains.agents.runtime.sessions import PersistentAgentSession
+from backend.app.domains.agents.runtime.sessions.models import PersistentAgentSession
 from backend.app.domains.workspace.teams.models import (
     TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,
     TEAM_RUNTIME_PAUSED,

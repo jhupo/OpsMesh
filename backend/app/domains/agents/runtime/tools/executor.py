@@ -9,19 +9,22 @@ from backend.app.core.common.config import Settings
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.agents.memory.policy import working_memory_policy
 from backend.app.domains.agents.memory.working import AgentWorkingMemoryService
-from backend.app.domains.agents.runtime.contracts import AgentRuntimeContext, AgentRuntimeToolResult
-from backend.app.domains.agents.runtime.errors import normalize_agent_error
-from backend.app.domains.agents.runtime.product_tool_executor import (
-    PRODUCT_TOOL_NAMES,
-    ProductToolExecutor,
+from backend.app.domains.agents.runtime.execution.contracts import (
+    AgentRuntimeContext,
+    AgentRuntimeToolResult,
 )
-from backend.app.domains.agents.runtime.tool_gateway import (
+from backend.app.domains.agents.runtime.execution.errors import normalize_agent_error
+from backend.app.domains.agents.runtime.tools.gateway import (
     AgentToolGateway,
     PreparedToolCall,
     ToolGatewayDenied,
 )
-from backend.app.domains.agents.runtime.tool_mcp_resolver import ContextualMcpAdapterResolver
-from backend.app.domains.agents.runtime.tool_metadata import product_review_context, tool_metadata
+from backend.app.domains.agents.runtime.tools.mcp import ContextualMcpAdapterResolver
+from backend.app.domains.agents.runtime.tools.metadata import product_review_context, tool_metadata
+from backend.app.domains.agents.runtime.tools.product import (
+    PRODUCT_TOOL_NAMES,
+    ProductToolExecutor,
+)
 from backend.app.domains.capabilities.mcp.execution.service import McpToolExecutionService
 from backend.app.domains.capabilities.mcp.execution.types import McpExecutionRequest
 from backend.app.domains.capabilities.mcp.transport.contracts import (

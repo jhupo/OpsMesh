@@ -21,7 +21,7 @@ from backend.app.domains.agents.profiles.payloads import (
 )
 from backend.app.domains.agents.profiles.reviews import AgentProfileReviewService
 from backend.app.domains.agents.profiles.versions import AgentVersionRecorder
-from backend.app.domains.agents.runtime.guardrails import runtime_controls_snapshot
+from backend.app.domains.agents.runtime.execution.guardrails import runtime_controls_snapshot
 from backend.app.domains.workspace.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,

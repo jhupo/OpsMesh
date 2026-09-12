@@ -5,7 +5,10 @@ import pytest
 
 from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRuntimeContext
+from backend.app.domains.agents.runtime.execution.contracts import (
+    AgentRunRequest,
+    AgentRuntimeContext,
+)
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.approvals.policy import (
     ApprovalPolicyDecision,

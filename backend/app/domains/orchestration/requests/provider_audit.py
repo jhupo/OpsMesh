@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest
-from backend.app.domains.agents.runtime.errors import normalize_agent_error
+from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest
+from backend.app.domains.agents.runtime.execution.errors import normalize_agent_error
 from backend.app.domains.orchestration.requests.request_reviewing import (
     model_provider_request_snapshot,
 )

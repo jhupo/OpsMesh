@@ -447,36 +447,12 @@ def test_agent_runtime_vendor_modules_are_nested_by_provider() -> None:
     runtime = ROOT / "backend/app/domains/agents/runtime"
     providers = runtime / "providers"
     assert {path.name for path in providers.iterdir() if path.is_dir()} >= {"openai", "claude"}
-    root_modules = {
-        path.stem
-        for path in runtime.glob("*.py")
-        if path.name != "__init__.py"
-    }
-    assert root_modules == {
-        "base",
-        "cancellation",
-        "capability_policy",
-        "contracts",
-        "errors",
-        "event_mapping",
-        "execution_observer",
-        "factory",
-        "guardrails",
-        "multi_provider",
-        "product_tool_executor",
-        "session_management",
-        "session_repository",
-        "session_views",
+    assert {path.name for path in runtime.iterdir() if path.is_dir()} >= {
+        "execution",
+        "providers",
+        "sandbox",
         "sessions",
-        "state_store",
-        "token_estimation",
-        "tool_arguments",
-        "tool_gateway",
-        "tool_mcp_resolver",
-        "tool_metadata",
-        "tool_payloads",
         "tools",
-        "usage",
     }
     for name in (
         "claude_runner.py",
@@ -813,7 +789,7 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
             "S3 SDK access stays in its storage adapter",
         ),
         (
-            "domains/agents/runtime/contracts.py",
+            "domains/agents/runtime/execution/contracts.py",
             "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from openai import OpenAI",
             "Agent runtime contracts do not depend on vendor SDKs or HTTP transport",
         ),

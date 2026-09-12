@@ -17,13 +17,13 @@ from backend.app.domains.agents.memory.content import memory_content_fingerprint
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeContext,
     AgentRuntimeExecutionBinding,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolDefinition,
 )
-from backend.app.domains.agents.runtime.tools import BackendToolExecutor
+from backend.app.domains.agents.runtime.tools.executor import BackendToolExecutor
 from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.domains.capabilities.catalog.product_tools import PRODUCT_TOOL_CATALOG
 from backend.app.domains.capabilities.models import (
@@ -527,7 +527,7 @@ def test_backend_tool_executor_redacts_product_tool_failure_messages(
         raise ValueError("provider rejected api_key=sk-product-tool-secret")
 
     monkeypatch.setattr(
-        "backend.app.domains.agents.runtime.product_tool_executor.ProductToolService.send_agent_message",
+        "backend.app.domains.agents.runtime.tools.product.ProductToolService.send_agent_message",
         fail_send_agent_message,
     )
 

@@ -35,8 +35,8 @@ from backend.app.domains.agents.providers.health.probes import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
-from backend.app.domains.agents.runtime.sessions import (
+from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest, AgentRunResult
+from backend.app.domains.agents.runtime.sessions.models import (
     PersistentAgentSession,
     PersistentAgentSessionItem,
 )

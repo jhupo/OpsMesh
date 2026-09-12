@@ -24,7 +24,7 @@ from backend.app.domains.agents.models import AgentProfile, AgentProfileVersion
 from backend.app.domains.agents.providers.credentials.commands import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.domains.agents.runtime.sessions import (
+from backend.app.domains.agents.runtime.sessions.models import (
     PersistentAgentSession,
     PersistentAgentSessionItem,
 )

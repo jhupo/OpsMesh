@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.orm import Session as DbSession
 
-from backend.app.domains.agents.runtime.sessions import (
+from backend.app.domains.agents.runtime.sessions.models import (
     PERSISTENT_AGENT_SESSION_STATUSES,
     PersistentAgentSession,
     PersistentAgentSessionItem,

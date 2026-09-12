@@ -8,8 +8,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.runtime.contracts import AgentRunResult
-from backend.app.domains.agents.runtime.errors import normalize_agent_error
+from backend.app.domains.agents.runtime.execution.contracts import AgentRunResult
+from backend.app.domains.agents.runtime.execution.errors import normalize_agent_error
 from backend.app.domains.orchestration.models import SubworkflowInvocation
 from backend.app.domains.orchestration.runs.memory import RunMemoryCompletionService
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent

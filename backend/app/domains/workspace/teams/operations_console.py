@@ -7,10 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.session_management import (
+from backend.app.domains.agents.runtime.sessions.management import (
     PersistentAgentSessionManagementService,
 )
-from backend.app.domains.agents.runtime.session_views import PersistentSessionSummary
+from backend.app.domains.agents.runtime.sessions.views import PersistentSessionSummary
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.domains.workspace.teams.command_center import TeamCommandCenterService
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember

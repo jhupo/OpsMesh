@@ -15,9 +15,9 @@ from backend.app.domains.agents.providers.catalog.policy import (
     canonical_model_provider,
     normalize_openai_compatible_base_url,
 )
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest
+from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest
+from backend.app.domains.agents.runtime.execution.tokens import estimate_token_upper_bound
 from backend.app.domains.agents.runtime.providers.openai.session import OpenAISessionAdapter
-from backend.app.domains.agents.runtime.token_estimation import estimate_token_upper_bound
 
 
 @asynccontextmanager

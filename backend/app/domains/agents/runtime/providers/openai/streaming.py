@@ -5,17 +5,17 @@ import asyncio
 from agents import Agent, RunConfig, RunHooks, Runner, RunResultStreaming, RunState, Session
 from agents.items import TResponseInputItem
 
-from backend.app.domains.agents.runtime.cancellation import (
+from backend.app.domains.agents.runtime.execution.cancellation import (
     cancel_active_tools,
     raise_if_cancelled,
     stop_cancellation_watcher,
 )
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
 )
-from backend.app.domains.agents.runtime.errors import AgentRuntimeCancelledError
-from backend.app.domains.agents.runtime.execution_observer import AgentRuntimeExecutionObserver
+from backend.app.domains.agents.runtime.execution.errors import AgentRuntimeCancelledError
+from backend.app.domains.agents.runtime.execution.observer import AgentRuntimeExecutionObserver
 from backend.app.domains.agents.runtime.providers.openai.results import (
     runtime_stream_event_from_sdk_item,
 )

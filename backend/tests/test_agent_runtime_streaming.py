@@ -14,12 +14,12 @@ from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
 from backend.app.core.identity.models import User
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
-from backend.app.domains.agents.runtime.errors import AgentRuntimeCancelledError
+from backend.app.domains.agents.runtime.execution.errors import AgentRuntimeCancelledError
 from backend.app.domains.agents.runtime.providers.claude.runner import ClaudeAgentSDKRunner
 from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
 from backend.app.domains.orchestration.runs.cancellation import DatabaseRunCancellation

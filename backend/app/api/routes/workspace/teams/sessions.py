@@ -21,7 +21,7 @@ from backend.app.core.auth.dependencies import workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.agents.runtime.session_management import (
+from backend.app.domains.agents.runtime.sessions.management import (
     PersistentAgentSessionManagementService,
 )
 

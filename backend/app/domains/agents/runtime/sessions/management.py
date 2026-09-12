@@ -6,24 +6,24 @@ from uuid import UUID
 from sqlalchemy.orm import Session as DbSession
 
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.domains.agents.runtime.session_repository import (
+from backend.app.domains.agents.runtime.sessions.models import (
+    ACTIVE_SESSION_STATUS,
+    ARCHIVED_SESSION_STATUS,
+    FROZEN_SESSION_STATUS,
+    PersistentAgentSession,
+)
+from backend.app.domains.agents.runtime.sessions.repository import (
     PersistentSessionRepository,
     bounded_limit,
     non_negative_offset,
     validate_status,
 )
-from backend.app.domains.agents.runtime.session_views import (
+from backend.app.domains.agents.runtime.sessions.views import (
     PersistentSessionDetail,
     PersistentSessionItemView,
     PersistentSessionSummary,
     session_item_view,
     session_summary,
-)
-from backend.app.domains.agents.runtime.sessions import (
-    ACTIVE_SESSION_STATUS,
-    ARCHIVED_SESSION_STATUS,
-    FROZEN_SESSION_STATUS,
-    PersistentAgentSession,
 )
 
 

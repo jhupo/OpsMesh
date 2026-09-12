@@ -12,7 +12,7 @@ from backend.app.core.db.base import Base
 from backend.app.core.identity.models import User
 from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import AgentRuntimeExecutionBinding
+from backend.app.domains.agents.runtime.execution.contracts import AgentRuntimeExecutionBinding
 from backend.app.domains.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,

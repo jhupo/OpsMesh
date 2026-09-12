@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.runtime.contracts import AgentRunResult
+from backend.app.domains.agents.runtime.execution.contracts import AgentRunResult
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep

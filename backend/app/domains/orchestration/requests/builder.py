@@ -14,20 +14,20 @@ from backend.app.domains.agents.memory.working import (
     working_memory_context,
 )
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolExecutor,
 )
-from backend.app.domains.agents.runtime.guardrails import runtime_controls_from_snapshot
+from backend.app.domains.agents.runtime.execution.guardrails import runtime_controls_from_snapshot
+from backend.app.domains.agents.runtime.execution.state import AgentRunStateStore
 from backend.app.domains.agents.runtime.providers.claude.sandbox import sandbox_settings_for_claude
 from backend.app.domains.agents.runtime.sandbox.contracts import SandboxManifest
-from backend.app.domains.agents.runtime.sessions import (
+from backend.app.domains.agents.runtime.sessions.models import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
 )
-from backend.app.domains.agents.runtime.state_store import AgentRunStateStore
-from backend.app.domains.agents.runtime.tools import BackendToolExecutor
+from backend.app.domains.agents.runtime.tools.executor import BackendToolExecutor
 from backend.app.domains.capabilities.mcp.transport.resolver import McpAdapterResolver
 from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.domains.orchestration.requests.authorization import (

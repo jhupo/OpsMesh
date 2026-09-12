@@ -28,8 +28,8 @@ from backend.app.domains.agents.providers.catalog.policy import (
     is_openai_compatible_provider,
     normalize_openai_compatible_base_url,
 )
-from backend.app.domains.agents.runtime.base import BaseSDKAgentRuntimeAdapter
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.base import BaseSDKAgentRuntimeAdapter
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeAgentDefinition,
@@ -41,16 +41,17 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeEvent,
     AgentRuntimeGuardrailResult,
 )
-from backend.app.domains.agents.runtime.errors import (
+from backend.app.domains.agents.runtime.execution.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimePolicyError,
     normalize_agent_error,
 )
-from backend.app.domains.agents.runtime.execution_observer import AgentRuntimeExecutionObserver
-from backend.app.domains.agents.runtime.guardrails import (
+from backend.app.domains.agents.runtime.execution.guardrails import (
     guardrail_events,
     validated_structured_output,
 )
+from backend.app.domains.agents.runtime.execution.observer import AgentRuntimeExecutionObserver
+from backend.app.domains.agents.runtime.execution.usage import runtime_usage
 from backend.app.domains.agents.runtime.providers.openai.compaction import openai_run_session
 from backend.app.domains.agents.runtime.providers.openai.guardrails import (
     OpenAIRuntimeOutputSchema,
@@ -68,7 +69,6 @@ from backend.app.domains.agents.runtime.providers.openai.sandbox import sandbox_
 from backend.app.domains.agents.runtime.providers.openai.settings import OpenAIModelSettingsMapper
 from backend.app.domains.agents.runtime.providers.openai.streaming import run_openai_streamed
 from backend.app.domains.agents.runtime.providers.openai.tools import OpenAIToolBridge
-from backend.app.domains.agents.runtime.usage import runtime_usage
 
 
 class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):

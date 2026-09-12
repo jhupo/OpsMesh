@@ -22,7 +22,7 @@ from backend.app.domains.agents.providers.catalog.model_api import (
 )
 from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.domains.agents.providers.resolution.snapshot import ModelProviderResolutionService
-from backend.app.domains.agents.runtime.guardrails import runtime_controls_snapshot
+from backend.app.domains.agents.runtime.execution.guardrails import runtime_controls_snapshot
 from backend.app.domains.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,

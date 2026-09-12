@@ -1,7 +1,7 @@
 import json
 from hashlib import sha256
 
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest
+from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
 

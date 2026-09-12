@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolResult,

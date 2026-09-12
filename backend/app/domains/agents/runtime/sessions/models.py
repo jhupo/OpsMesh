@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import Session as DbSession
 
 from backend.app.core.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from backend.app.domains.agents.runtime.contracts import AgentRuntimeSessionItem
+from backend.app.domains.agents.runtime.execution.contracts import AgentRuntimeSessionItem
 
 ACTIVE_SESSION_STATUS = "active"
 ARCHIVED_SESSION_STATUS = "archived"

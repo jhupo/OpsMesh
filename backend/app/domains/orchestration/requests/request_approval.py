@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.config import Settings
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest
+from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.approvals.policy import (
     ApprovalPolicyDecision,

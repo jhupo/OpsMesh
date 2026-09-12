@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from backend.app.domains.agents.messages.models import AgentMessageThread
-from backend.app.domains.agents.runtime.sessions import PersistentAgentSession
+from backend.app.domains.agents.runtime.sessions.models import PersistentAgentSession
 from backend.app.domains.workspace.teams.models import (
     TEAM_RUNTIME_STOPPED,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,

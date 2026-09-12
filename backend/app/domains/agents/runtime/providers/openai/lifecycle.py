@@ -4,11 +4,11 @@ from typing import Any
 
 from agents.lifecycle import RunHooksBase
 
-from backend.app.domains.agents.runtime.cancellation import raise_if_cancelled
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.cancellation import raise_if_cancelled
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeCancellation,
 )
-from backend.app.domains.agents.runtime.execution_observer import AgentRuntimeExecutionObserver
+from backend.app.domains.agents.runtime.execution.observer import AgentRuntimeExecutionObserver
 
 
 class OpenAIRuntimeHooks(RunHooksBase[Any, Any]):

@@ -40,13 +40,13 @@ from pydantic import TypeAdapter, ValidationError
 
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.agents.providers.catalog.model_api import ANTHROPIC_MESSAGES_API
-from backend.app.domains.agents.runtime.base import BaseSDKAgentRuntimeAdapter
-from backend.app.domains.agents.runtime.cancellation import (
+from backend.app.domains.agents.runtime.execution.base import BaseSDKAgentRuntimeAdapter
+from backend.app.domains.agents.runtime.execution.cancellation import (
     cancel_active_tools,
     raise_if_cancelled,
     stop_cancellation_watcher,
 )
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeCapabilities,
@@ -60,14 +60,14 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeStructuredOutput,
     AgentRuntimeToolDefinition,
 )
-from backend.app.domains.agents.runtime.errors import AgentRuntimeCancelledError
-from backend.app.domains.agents.runtime.execution_observer import AgentRuntimeExecutionObserver
-from backend.app.domains.agents.runtime.guardrails import (
+from backend.app.domains.agents.runtime.execution.errors import AgentRuntimeCancelledError
+from backend.app.domains.agents.runtime.execution.guardrails import (
     evaluate_guardrail_stage,
     guardrail_events,
     validated_structured_output,
 )
-from backend.app.domains.agents.runtime.usage import runtime_usage
+from backend.app.domains.agents.runtime.execution.observer import AgentRuntimeExecutionObserver
+from backend.app.domains.agents.runtime.execution.usage import runtime_usage
 
 _SDK_TOOL_PREFIX = "mcp__opsmesh__"
 _SESSION_NAMESPACE = UUID("6bd4b8b9-8a4b-49db-9b6c-d0b7d7da4be6")

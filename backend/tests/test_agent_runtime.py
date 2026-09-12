@@ -9,7 +9,7 @@ from agents import OpenAIResponsesCompactionSession, RunContextWrapper
 import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.providers.catalog.policy import normalize_openai_compatible_base_url
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeAgentRef,
@@ -24,12 +24,12 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeToolResult,
     AgentRunTracing,
 )
-from backend.app.domains.agents.runtime.errors import (
+from backend.app.domains.agents.runtime.execution.errors import (
     AgentRuntimeCapabilityError,
     normalize_agent_error,
 )
-from backend.app.domains.agents.runtime.factory import build_agent_runtime_registry
-from backend.app.domains.agents.runtime.multi_provider import ProviderAgentRuntimeRegistry
+from backend.app.domains.agents.runtime.execution.factory import build_agent_runtime_registry
+from backend.app.domains.agents.runtime.execution.registry import ProviderAgentRuntimeRegistry
 from backend.app.domains.agents.runtime.providers.openai.results import (
     OpenAIAgentsResultMapper,
     runtime_event_from_sdk_item,
@@ -40,7 +40,7 @@ from backend.app.domains.agents.runtime.providers.openai.tools import (
     runtime_allowed_tools,
 )
 from backend.app.domains.agents.runtime.sandbox.contracts import SandboxManifest
-from backend.app.domains.agents.runtime.sessions import (
+from backend.app.domains.agents.runtime.sessions.models import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
 )

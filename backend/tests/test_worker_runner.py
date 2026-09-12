@@ -27,8 +27,8 @@ from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.providers.credentials.commands import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
-from backend.app.domains.agents.runtime.sessions import PersistentAgentSession
+from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest, AgentRunResult
+from backend.app.domains.agents.runtime.sessions.models import PersistentAgentSession
 from backend.app.domains.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
 from backend.app.domains.orchestration.runs.authorization_snapshot import (

@@ -13,8 +13,8 @@ from backend.app.domains.agents.providers.catalog.model_api import (
     default_model_api,
     model_api_options_for_provider,
 )
-from backend.app.domains.agents.runtime.contracts import AgentRuntimeCapability
-from backend.app.domains.agents.runtime.factory import build_agent_runtime_registry
+from backend.app.domains.agents.runtime.execution.contracts import AgentRuntimeCapability
+from backend.app.domains.agents.runtime.execution.factory import build_agent_runtime_registry
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/model-provider-capabilities",

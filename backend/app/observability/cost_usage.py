@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.app.domains.agents.runtime.contracts import AgentRunResult
+from backend.app.domains.agents.runtime.execution.contracts import AgentRunResult
 
 
 @dataclass(frozen=True)

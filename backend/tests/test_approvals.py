@@ -21,12 +21,12 @@ from backend.app.core.db.session import get_db_session
 from backend.app.core.identity.models import User
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeContext,
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
-from backend.app.domains.agents.runtime.state_store import AgentRunStateStore
+from backend.app.domains.agents.runtime.execution.state import AgentRunStateStore
 from backend.app.domains.capabilities.models import McpServer
 from backend.app.domains.orchestration.approvals.agent_tool_interruptions import (
     AgentToolInterruptionService,

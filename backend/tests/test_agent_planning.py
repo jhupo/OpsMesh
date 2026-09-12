@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunResult,
     AgentRuntimeStructuredOutput,
 )

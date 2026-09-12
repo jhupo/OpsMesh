@@ -4,7 +4,7 @@ from agents.items import TResponseInputItem
 from agents.memory.session_settings import SessionSettings
 from pydantic import TypeAdapter, ValidationError
 
-from backend.app.domains.agents.runtime.contracts import AgentRuntimeSession
+from backend.app.domains.agents.runtime.execution.contracts import AgentRuntimeSession
 
 
 class OpenAISessionAdapter:

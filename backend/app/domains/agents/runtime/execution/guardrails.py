@@ -8,7 +8,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeEvent,
     AgentRuntimeGuardrail,
     AgentRuntimeGuardrailResult,
@@ -16,7 +16,7 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeOutputSchema,
     AgentRuntimeStructuredOutput,
 )
-from backend.app.domains.agents.runtime.errors import (
+from backend.app.domains.agents.runtime.execution.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimeOutputValidationError,
 )

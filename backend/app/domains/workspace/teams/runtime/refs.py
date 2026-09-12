@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from backend.app.core.common.values import dict_or_none, uuid_or_none
-from backend.app.domains.agents.runtime.sessions import PersistentAgentSessionRef
+from backend.app.domains.agents.runtime.sessions.models import PersistentAgentSessionRef
 from backend.app.domains.workspace.teams.models import (
     TEAM_RUNTIME_SESSION_SCOPE,
     TEAM_RUNTIME_STATUS_KEY,

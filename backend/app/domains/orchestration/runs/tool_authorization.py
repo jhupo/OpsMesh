@@ -15,7 +15,7 @@ from backend.app.domains.agents.providers.catalog.policy import (
     is_anthropic_provider,
     is_openai_compatible_provider,
 )
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentRef,
     AgentRuntimeAgentTool,

@@ -15,8 +15,8 @@ from backend.app.domains.agents.memory.policy import (
 )
 from backend.app.domains.agents.memory.search import query_fingerprint
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import AgentRuntimeResourceGrant
-from backend.app.domains.agents.runtime.token_estimation import (
+from backend.app.domains.agents.runtime.execution.contracts import AgentRuntimeResourceGrant
+from backend.app.domains.agents.runtime.execution.tokens import (
     estimate_token_upper_bound,
     truncate_to_token_bound,
 )

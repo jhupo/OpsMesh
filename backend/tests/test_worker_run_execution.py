@@ -31,7 +31,7 @@ from backend.app.domains.agents.providers.contracts import (
 from backend.app.domains.agents.providers.credentials.commands import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
@@ -39,8 +39,8 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
-from backend.app.domains.agents.runtime.sessions import PersistentAgentSession
-from backend.app.domains.agents.runtime.state_store import AgentRunStateStore
+from backend.app.domains.agents.runtime.execution.state import AgentRunStateStore
+from backend.app.domains.agents.runtime.sessions.models import PersistentAgentSession
 from backend.app.domains.capabilities.models import (
     CapabilityResource,
     McpCredentialReference,

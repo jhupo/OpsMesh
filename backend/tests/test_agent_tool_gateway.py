@@ -16,13 +16,13 @@ from backend.app.core.db.base import Base
 from backend.app.core.identity.models import User
 from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeContext,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolDefinition,
 )
-from backend.app.domains.agents.runtime.tool_gateway import AgentToolGateway, ToolGatewayDenied
-from backend.app.domains.agents.runtime.tools import BackendToolExecutor
+from backend.app.domains.agents.runtime.tools.executor import BackendToolExecutor
+from backend.app.domains.agents.runtime.tools.gateway import AgentToolGateway, ToolGatewayDenied
 from backend.app.domains.capabilities.catalog.effective import EffectiveCapabilityCatalogService
 from backend.app.domains.capabilities.models import (
     CapabilityResource,

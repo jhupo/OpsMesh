@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
@@ -18,12 +18,12 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeToolExecutor,
     AgentRuntimeToolResult,
 )
-from backend.app.domains.agents.runtime.errors import (
+from backend.app.domains.agents.runtime.execution.errors import (
     AgentRuntimeCancelledError,
     AgentRuntimePolicyError,
 )
-from backend.app.domains.agents.runtime.factory import build_agent_runtime_registry
-from backend.app.domains.agents.runtime.state_store import AgentRunStateStore
+from backend.app.domains.agents.runtime.execution.factory import build_agent_runtime_registry
+from backend.app.domains.agents.runtime.execution.state import AgentRunStateStore
 from backend.app.domains.orchestration.approvals.agent_tool_interruptions import (
     AgentToolInterruptionService,
 )

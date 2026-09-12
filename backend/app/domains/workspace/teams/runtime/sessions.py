@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.runtime.sessions import (
+from backend.app.domains.agents.runtime.sessions.models import (
     ACTIVE_SESSION_STATUS,
     PersistentAgentSession,
 )

@@ -8,12 +8,12 @@ from backend.app.core.common.trace_context import current_trace_context, telemet
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.redaction import redact_sensitive_text
 from backend.app.domains.agents.memory.authorization import memory_read_scopes, memory_write_scopes
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeContext,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolResult,
 )
-from backend.app.domains.agents.runtime.tool_arguments import (
+from backend.app.domains.agents.runtime.tools.arguments import (
     bool_argument,
     bytes_argument,
     dict_argument,
@@ -26,13 +26,13 @@ from backend.app.domains.agents.runtime.tool_arguments import (
     str_list_argument,
     uuid_argument,
 )
-from backend.app.domains.agents.runtime.tool_gateway import AgentToolGateway, ToolGatewayDenied
-from backend.app.domains.agents.runtime.tool_metadata import (
+from backend.app.domains.agents.runtime.tools.gateway import AgentToolGateway, ToolGatewayDenied
+from backend.app.domains.agents.runtime.tools.metadata import (
     agent_profile_id_for_context,
     product_review_context,
     tool_metadata,
 )
-from backend.app.domains.agents.runtime.tool_payloads import (
+from backend.app.domains.agents.runtime.tools.payloads import (
     artifact_payload,
     memory_entry_payload,
     workspace_file_content_payload,

@@ -1,4 +1,4 @@
-from backend.app.domains.agents.runtime.multi_provider import ProviderAgentRuntimeRegistry
+from backend.app.domains.agents.runtime.execution.registry import ProviderAgentRuntimeRegistry
 from backend.app.domains.agents.runtime.providers.claude.runner import ClaudeAgentSDKRunner
 from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
 

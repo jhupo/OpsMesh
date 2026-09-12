@@ -36,7 +36,7 @@ from backend.app.domains.agents.providers.catalog.model_api import (
     configured_model_api,
     require_known_model_api,
 )
-from backend.app.domains.agents.runtime.session_management import (
+from backend.app.domains.agents.runtime.sessions.management import (
     PersistentAgentSessionManagementService,
 )
 from backend.app.domains.agents.service import AgentManagementService

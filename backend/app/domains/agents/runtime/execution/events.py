@@ -5,7 +5,7 @@ from typing import overload
 from uuid import UUID
 
 from backend.app.core.security.redaction import redact_sensitive_text
-from backend.app.domains.agents.runtime.contracts import AgentRuntimeEvent
+from backend.app.domains.agents.runtime.execution.contracts import AgentRuntimeEvent
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import TaskStep
 

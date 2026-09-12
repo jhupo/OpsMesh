@@ -9,8 +9,8 @@ from backend.app.domains.agents.providers.catalog.model_api import canonical_mod
 from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
 from backend.app.domains.agents.providers.health.service import ModelProviderHealthService
 from backend.app.domains.agents.providers.resolution.service import ModelProviderResolutionService
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest
-from backend.app.domains.agents.runtime.errors import normalize_agent_error
+from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest
+from backend.app.domains.agents.runtime.execution.errors import normalize_agent_error
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
 from backend.app.domains.orchestration.requests.provider_audit import ModelProviderAuditService
 from backend.app.domains.orchestration.requests.request_reviewing import (
