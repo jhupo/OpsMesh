@@ -16,13 +16,13 @@ from backend.app.api.schemas.operations import (
     QueueMetricsResponse,
     RequeueDeadLetterResponse,
 )
-from backend.app.execution.operations.dead_letters import DeadLetterQueueService
-from backend.app.execution.operations.queue_governance import (
+from backend.app.execution.operations.queues.dead_letters import DeadLetterQueueService
+from backend.app.execution.operations.queues.governance import (
     QueueGovernanceDiagnosticsService,
     QueueGovernanceReconciliationService,
 )
-from backend.app.execution.operations.queue_insights import QueueInsightsService
-from backend.app.execution.operations.queue_metrics import QueueMetricsService
+from backend.app.execution.operations.queues.insights import QueueInsightsService
+from backend.app.execution.operations.queues.metrics import QueueMetricsService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

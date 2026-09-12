@@ -21,7 +21,7 @@ from backend.app.execution.runtime.spaces.models import (
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.blocked_reasons import explain_blocked_reason
-from backend.app.platform.common.values import string_list
+from backend.app.platform.common.values import positive_int_or_none, string_list
 
 
 class RuntimeSpaceDiagnosticsService:
@@ -146,7 +146,7 @@ class RuntimeSpaceDiagnosticsService:
                     message=explanation.message,
                     resource_key=explanation.resource_key,
                     blocked_resource_keys=string_list(dependencies.get("blocked_resource_keys")),
-                    priority_score=_positive_int_or_none(dependencies.get("priority_score")),
+                    priority_score=positive_int_or_none(dependencies.get("priority_score")),
                     created_at=step.created_at,
                 )
             )
@@ -165,12 +165,6 @@ def quota_diagnostic(quota: RuntimeSpaceQuota) -> RuntimeSpaceQuotaDiagnosticRes
         utilization=utilization,
         saturated=quota.limit_value > 0 and quota.reserved_value >= quota.limit_value,
     )
-
-
-def _positive_int_or_none(value: object) -> int | None:
-    if isinstance(value, int) and value > 0:
-        return value
-    return None
 
 
 def _policy_resolution(runtime: WorkspaceRuntime) -> dict[str, object]:

@@ -25,9 +25,37 @@ def int_or_zero(value: object) -> int:
 
 
 def positive_int_or_default(value: object, default: int) -> int:
-    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+    parsed = positive_int_or_none(value)
+    return parsed if parsed is not None else default
+
+
+def positive_int_or_none(value: object) -> int | None:
+    """Parse a positive integer from persisted or transport data."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value > 0:
         return value
-    return default
+    if isinstance(value, str):
+        try:
+            parsed = int(value)
+        except ValueError:
+            return None
+        return parsed if parsed > 0 else None
+    return None
+
+
+def non_negative_int(value: object) -> int:
+    """Normalize a counter value without allowing booleans or negatives."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return max(0, value)
+    if isinstance(value, str):
+        try:
+            return max(0, int(value))
+        except ValueError:
+            return 0
+    return 0
 
 
 def uuid_or_none(value: object) -> UUID | None:
@@ -77,6 +105,25 @@ def dedupe_strings(values: Iterable[str]) -> list[str]:
 
 def optional_string(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def non_empty_string_or_none(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def ensure_aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def age_seconds(now: datetime, value: datetime | None) -> int | None:
+    if value is None:
+        return None
+    return max(0, int((ensure_aware_utc(now) - ensure_aware_utc(value)).total_seconds()))
 
 
 def string_list(value: object) -> list[str]:

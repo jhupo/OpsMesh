@@ -26,7 +26,10 @@ from backend.app.agents.providers.health import (
 from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agents.runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
-from backend.app.execution.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
+from backend.app.execution.operations.timeline.service import (
+    TeamRuntimeTimelineService,
+    TimelineFilters,
+)
 from backend.app.execution.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,

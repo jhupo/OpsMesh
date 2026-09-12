@@ -29,8 +29,8 @@ from backend.app.api.schemas.operations import (
 )
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
 from backend.app.execution.operations.events import OperationsEventQueryService
-from backend.app.execution.operations.stale_run_diagnostics import StaleRunDiagnosticsService
-from backend.app.execution.operations.stale_run_recovery import StaleRunRecoveryService
+from backend.app.execution.operations.recovery.diagnostics import StaleRunDiagnosticsService
+from backend.app.execution.operations.recovery.service import StaleRunRecoveryService
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.redis_queue import RedisQueue

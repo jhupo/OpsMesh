@@ -14,8 +14,8 @@ from backend.app.capabilities.mcp.adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
-from backend.app.execution.operations.worker_capacity import WorkerCapacitySnapshotService
-from backend.app.execution.operations.worker_heartbeats import WorkerHeartbeatOperationsService
+from backend.app.execution.operations.workers.capacity import WorkerCapacitySnapshotService
+from backend.app.execution.operations.workers.heartbeats import WorkerHeartbeatOperationsService
 from backend.app.execution.workers.capacity import worker_can_run_job
 from backend.app.execution.workers.handlers import WorkerJobHandler
 from backend.app.execution.workers.heartbeat import worker_status_for_failures

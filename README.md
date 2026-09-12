@@ -382,9 +382,11 @@ backend/app/capabilities/                     Skills, MCP, tools, marketplace, a
 backend/app/orchestration/                    Requests, runs, approvals, tasks, and workflows
 backend/app/execution/                        Runtime, worker, operations, and self-hosted execution
 backend/app/execution/runtime/{...}/          Runtime backends, commands, lifecycle, pools, policies, and spaces
+backend/app/execution/operations/{...}/       Metrics, queues, recovery, runtimes, timeline, and worker operations
 backend/app/workspace/                        Workspace tenant, projects, teams, storage, and reviews
 backend/app/workspace/teams/{...}/            Team execution, operations, projects, providers, organization, and runtime modules
 backend/app/platform/                        Identity, auth, persistence, security, and integrations
+backend/app/platform/common/                 Provider-neutral config, pagination, values, and metrics primitives
 backend/app/observability/                    Audit, traces, costs, and notifications
 backend/migrations/           Alembic schema history
 backend/tests/                Unit and integration-style backend tests

@@ -30,7 +30,7 @@ from backend.app.orchestration.requests.authorization import RunAuthorizationSer
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.runtime_authorization import RunRuntimeAuthorizationService
 from backend.app.orchestration.tasks.models import Task
-from backend.app.platform.common.values import string_list
+from backend.app.platform.common.values import positive_int_or_none, string_list
 from backend.app.workspace.tenants.quotas import WorkspaceQuotaService
 
 
@@ -134,15 +134,21 @@ class SelfHostedWorkerCapacityService:
         self._session = session
 
     def allows_run_job(self, auth: AuthenticatedWorker) -> bool:
-        max_concurrent_jobs = positive_int(auth.worker.capabilities.get("max_concurrent_jobs"))
+        max_concurrent_jobs = positive_int_or_none(
+            auth.worker.capabilities.get("max_concurrent_jobs")
+        )
         if max_concurrent_jobs is None:
             return True
         return self.active_run_claims(auth) < max_concurrent_jobs
 
     def allows_mcp_job(self, auth: AuthenticatedWorker) -> bool:
-        max_concurrent_jobs = positive_int(auth.worker.capabilities.get("max_concurrent_mcp_jobs"))
+        max_concurrent_jobs = positive_int_or_none(
+            auth.worker.capabilities.get("max_concurrent_mcp_jobs")
+        )
         if max_concurrent_jobs is None:
-            max_concurrent_jobs = positive_int(auth.worker.capabilities.get("max_concurrent_jobs"))
+            max_concurrent_jobs = positive_int_or_none(
+                auth.worker.capabilities.get("max_concurrent_jobs")
+            )
         if max_concurrent_jobs is None:
             return True
         return self.active_mcp_jobs(auth) < max_concurrent_jobs
@@ -306,8 +312,3 @@ class SelfHostedRunReservationService:
         if runtime_space_reservation is not None:
             runtime_space_attachment.attach_reservation_to_run(runtime_space_reservation, run.id)
 
-
-def positive_int(value: object) -> int | None:
-    if isinstance(value, int) and value > 0:
-        return value
-    return None

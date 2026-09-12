@@ -4,6 +4,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.runs.state_resource_usage import scheduler_numeric_limits
+from backend.app.platform.common.values import (
+    non_empty_string_or_none,
+    positive_int_or_default,
+    positive_int_or_none,
+)
 from backend.app.workspace.tenants.models import Workspace
 
 
@@ -71,21 +76,3 @@ def merged_scheduler_policy(
         if key in override:
             effective[key] = override[key]
     return effective
-
-
-def positive_int_or_none(value: object) -> int | None:
-    if isinstance(value, int) and value > 0:
-        return value
-    return None
-
-
-def positive_int_or_default(value: object, default: int) -> int:
-    parsed = positive_int_or_none(value)
-    return parsed if parsed is not None else default
-
-
-def non_empty_string_or_none(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    return normalized or None

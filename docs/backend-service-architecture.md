@@ -304,7 +304,9 @@ backend/
     orchestration/                          # Requests, runs, approvals, tasks, workflows
       approvals/ requests/ runs/ tasks/ workflows/
     execution/                              # Runtime, workers, operations, self-hosted jobs
-      operations/ self_hosted/ workers/
+      operations/                               # operator metrics, queues, recovery, runtimes, timeline, workers
+        metrics/ queues/ recovery/ runtimes/ timeline/ workers/
+      self_hosted/ workers/
       runtime/                               # Runtime manager and isolated execution spaces
         backends/ commands/ lifecycle/ pool/ policies/ spaces/
     workspace/                              # Tenant, project, team, storage, and review domains

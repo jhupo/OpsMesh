@@ -50,6 +50,12 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "execution/runtime/spaces/reservations",
         "execution/workers",
         "execution/operations",
+        "execution/operations/metrics",
+        "execution/operations/queues",
+        "execution/operations/recovery",
+        "execution/operations/runtimes",
+        "execution/operations/timeline",
+        "execution/operations/workers",
         "execution/self_hosted",
         "observability",
         "agents/runtime/providers",
@@ -85,6 +91,7 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "operations",
         "self_hosted",
         "runtime/spaces",
+        "runtime/spaces/helpers.py",
         "planning",
         "teams/project_space",
         "workers/queue",
@@ -117,6 +124,7 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "orchestration/scheduler",
         "orchestration/runtime",
         "platform/common/typing.py",
+        "execution/operations/utils.py",
     ):
         target = app / name
         if target.suffix == ".py":
@@ -128,8 +136,8 @@ def test_consolidated_domains_have_one_source_owner() -> None:
 @pytest.mark.parametrize(
     "module",
     [
-        "backend.app.execution.operations.worker_lifecycle",
-        "backend.app.execution.operations.stale_run_recovery",
+        "backend.app.execution.operations.workers.lifecycle",
+        "backend.app.execution.operations.recovery.service",
         "backend.app.workspace.teams.execution_loop",
     ],
 )
@@ -252,8 +260,46 @@ def test_runtime_features_are_nested_by_function() -> None:
         "safety.py",
         "space_models.py",
         "space_service.py",
+        "spaces/helpers.py",
     ):
         assert not (runtime / name).exists(), name
+
+
+def test_operations_features_are_nested_by_function() -> None:
+    operations = ROOT / "backend/app/execution/operations"
+    expected = {"metrics", "queues", "recovery", "runtimes", "timeline", "workers"}
+    assert {path.name for path in operations.iterdir() if path.is_dir()} >= expected
+    root_modules = {
+        path.stem
+        for path in operations.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert root_modules <= {
+        "control_plane",
+        "control_plane_service",
+        "data_lifecycle_rollup",
+        "events",
+        "models",
+        "operation_capacity_payloads",
+        "operation_capacity",
+        "outcomes",
+        "overview_payloads",
+        "overview_queries",
+        "run_activity",
+        "scheduler",
+    }
+    for name in (
+        "dead_letters.py",
+        "queue_governance.py",
+        "queue_insights.py",
+        "prometheus_metrics.py",
+        "runtime_cleanup.py",
+        "worker_capacity.py",
+        "timeline.py",
+        "stale_run_recovery.py",
+        "utils.py",
+    ):
+        assert not (operations / name).exists(), name
 
 
 def test_local_application_imports_resolve_without_compatibility_shims() -> None:

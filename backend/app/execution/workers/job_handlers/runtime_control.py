@@ -1,5 +1,5 @@
-from backend.app.execution.operations.runtime_cleanup import RuntimeCleanupService
-from backend.app.execution.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
+from backend.app.execution.operations.runtimes.cleanup import RuntimeCleanupService
+from backend.app.execution.operations.workers.lease_maintenance import WorkerLeaseMaintenanceService
 from backend.app.execution.runtime.contracts import RuntimeLimits, validate_runtime_execution_mode
 from backend.app.execution.runtime.service import RuntimeControlService
 from backend.app.execution.workers.job_handlers.context import WorkerJobHandlerContext

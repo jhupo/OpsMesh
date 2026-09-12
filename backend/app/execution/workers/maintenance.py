@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.memory.embedding_jobs import WorkspaceMemoryEmbeddingScheduler
 from backend.app.agents.memory.lifecycle import WorkspaceMemoryLifecycleService
-from backend.app.execution.operations.runtime_cleanup import RuntimeCleanupService
-from backend.app.execution.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
+from backend.app.execution.operations.runtimes.cleanup import RuntimeCleanupService
+from backend.app.execution.operations.workers.lease_maintenance import WorkerLeaseMaintenanceService
 from backend.app.execution.runtime.dependencies import get_docker_runtime_client
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.execution.workers.scheduled_jobs import WorkspaceScheduledJobService

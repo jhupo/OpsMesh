@@ -18,8 +18,8 @@ from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
 from backend.app.api.middleware import _metrics_path
+from backend.app.execution.operations.metrics.workers import WorkerPrometheusMetrics
 from backend.app.execution.operations.models import WorkerLease, WorkerNode
-from backend.app.execution.operations.prometheus_worker_metrics import WorkerPrometheusMetrics
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.execution.workers.jobs import JobPayload, JobType

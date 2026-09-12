@@ -25,10 +25,10 @@ from backend.app.execution.operations.operation_capacity_payloads import (
 from backend.app.execution.operations.outcomes import OperationsOutcomeService
 from backend.app.execution.operations.overview_payloads import OperationsOverviewPayloadService
 from backend.app.execution.operations.run_activity import RunActivityPayloadService
-from backend.app.execution.operations.self_hosted_machines import (
+from backend.app.execution.operations.workers.lifecycle import WorkerLifecyclePayloadService
+from backend.app.execution.operations.workers.self_hosted_machines import (
     OperationsSelfHostedMachineService,
 )
-from backend.app.execution.operations.worker_lifecycle import WorkerLifecyclePayloadService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

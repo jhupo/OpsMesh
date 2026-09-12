@@ -22,7 +22,7 @@ from backend.app.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agents.runtime.sessions import PersistentAgentSession
 from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
 from backend.app.execution.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
-from backend.app.execution.operations.worker_heartbeats import WorkerHeartbeatOperationsService
+from backend.app.execution.operations.workers.heartbeats import WorkerHeartbeatOperationsService
 from backend.app.execution.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,

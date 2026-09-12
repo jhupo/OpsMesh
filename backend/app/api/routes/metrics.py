@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.responses import PlainTextResponse
 
-from backend.app.execution.operations.prometheus_metrics import OperationsPrometheusMetricsService
+from backend.app.execution.operations.metrics.prometheus import OperationsPrometheusMetricsService
 from backend.app.platform.common.config import Settings, get_settings
 from backend.app.platform.common.metrics import metrics_registry
 from backend.app.platform.db.session import get_db_session

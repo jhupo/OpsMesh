@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from starlette import status
 
 from backend.app.execution.operations.models import WorkerNode
-from backend.app.execution.operations.utils import ensure_aware_utc
 from backend.app.platform.common.config import Settings
+from backend.app.platform.common.values import ensure_aware_utc
 from backend.app.platform.db.session import get_db_session
 from backend.app.platform.redis.dependencies import get_redis_client
 from backend.app.platform.redis.keys import RedisKeyBuilder

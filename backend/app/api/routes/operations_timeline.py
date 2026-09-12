@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from backend.app.api.schemas.operations import (
     TeamRuntimeTimelineResponse,
 )
-from backend.app.execution.operations.timeline import TeamRuntimeTimelineService
-from backend.app.execution.operations.timeline_models import TimelineFilters
+from backend.app.execution.operations.timeline.models import TimelineFilters
+from backend.app.execution.operations.timeline.service import TeamRuntimeTimelineService
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.platform.auth.context import WorkspaceContext

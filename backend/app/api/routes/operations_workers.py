@@ -18,13 +18,13 @@ from backend.app.api.schemas.operations import (
     WorkerNodeResponse,
     WorkerStatusUpdateRequest,
 )
-from backend.app.execution.operations.runtime_cleanup import RuntimeCleanupService
-from backend.app.execution.operations.runtime_leases import RuntimeLeaseOperationsService
-from backend.app.execution.operations.worker_heartbeats import WorkerHeartbeatOperationsService
-from backend.app.execution.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
-from backend.app.execution.operations.worker_lease_queries import WorkerLeaseQueryService
-from backend.app.execution.operations.worker_node_control import WorkerNodeControlService
-from backend.app.execution.operations.worker_node_repository import WorkerNodeRepository
+from backend.app.execution.operations.runtimes.cleanup import RuntimeCleanupService
+from backend.app.execution.operations.runtimes.leases import RuntimeLeaseOperationsService
+from backend.app.execution.operations.workers.heartbeats import WorkerHeartbeatOperationsService
+from backend.app.execution.operations.workers.lease_maintenance import WorkerLeaseMaintenanceService
+from backend.app.execution.operations.workers.lease_queries import WorkerLeaseQueryService
+from backend.app.execution.operations.workers.node_control import WorkerNodeControlService
+from backend.app.execution.operations.workers.node_repository import WorkerNodeRepository
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

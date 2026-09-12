@@ -15,12 +15,12 @@ from backend.app.execution.operations.operation_capacity_payloads import (
     OperationsCapacityPayloadService,
 )
 from backend.app.execution.operations.outcomes import OperationsOutcomeService
-from backend.app.execution.operations.queue_latency import OperationsQueueLatencyService
+from backend.app.execution.operations.queues.latency import OperationsQueueLatencyService
 from backend.app.execution.operations.scheduler import SchedulerBacklogService
-from backend.app.execution.operations.self_hosted_machines import (
+from backend.app.execution.operations.workers.capacity import OperationsWorkerCapacityService
+from backend.app.execution.operations.workers.self_hosted_machines import (
     OperationsSelfHostedMachineService,
 )
-from backend.app.execution.operations.worker_capacity import OperationsWorkerCapacityService
 from backend.app.platform.redis.keys import RedisKeyBuilder
 
 

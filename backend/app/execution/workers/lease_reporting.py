@@ -6,7 +6,7 @@ from contextlib import AbstractContextManager
 
 from sqlalchemy.orm import Session
 
-from backend.app.execution.operations.worker_lease_writer import WorkerLeaseWriter
+from backend.app.execution.operations.workers.lease_writer import WorkerLeaseWriter
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.runner_models import WorkerRunnerConfig
 from backend.app.platform.common.trace_context import current_trace_metadata

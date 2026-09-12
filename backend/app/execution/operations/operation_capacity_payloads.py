@@ -10,12 +10,12 @@ from backend.app.api.schemas.operation_capacity import (
     OperationsCapacityResponse,
     OperationsRuntimeCapacityResponse,
 )
-from backend.app.execution.operations.queue_latency import OperationsQueueLatencyService
-from backend.app.execution.operations.runtime_provider_capacity import (
+from backend.app.execution.operations.queues.latency import OperationsQueueLatencyService
+from backend.app.execution.operations.runtimes.provider_capacity import (
     RuntimeProviderCapacityService,
 )
-from backend.app.execution.operations.runtime_space_saturation import RuntimeSpaceSaturationService
-from backend.app.execution.operations.worker_capacity import OperationsWorkerCapacityService
+from backend.app.execution.operations.runtimes.space_saturation import RuntimeSpaceSaturationService
+from backend.app.execution.operations.workers.capacity import OperationsWorkerCapacityService
 from backend.app.platform.redis.keys import RedisKeyBuilder
 
 
