@@ -20,7 +20,7 @@ from backend.app.api.services.workspace_import_resolution import (
 from backend.app.api.services.workspace_metadata_import_context import (
     WorkspaceMetadataImportContext,
 )
-from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 
 
 class RuntimeSpaceMetadataImporter:

@@ -10,12 +10,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.models import WorkspaceSkillInstall
+from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.projects.export_status import WorkspaceExportJobStatus
-from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import FileAccessEvent, WorkspaceFile
 from backend.app.teams.models import AgentTeam, AgentTeamMember

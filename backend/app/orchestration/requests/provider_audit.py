@@ -4,10 +4,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.runtime.contracts import AgentRunRequest
 from backend.app.agents.runtime.errors import normalize_agent_error
+from backend.app.execution.workers.jobs import JobPayload
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.requests.request_reviewing import model_provider_request_snapshot
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.workers.jobs import JobPayload
 
 
 @dataclass(slots=True)

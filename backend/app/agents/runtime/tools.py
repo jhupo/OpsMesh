@@ -28,9 +28,9 @@ from backend.app.capabilities.mcp.adapters import (
 from backend.app.capabilities.mcp.types import McpExecutionRequest
 from backend.app.capabilities.models import McpToolAllowlist
 from backend.app.core.config import Settings
+from backend.app.execution.runtime.contracts import DockerRuntimeClient
 from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.orchestration.approvals.policy import ApprovalPolicyEngine
-from backend.app.runtime.contracts import DockerRuntimeClient
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.storage.storage import ObjectStorage
 

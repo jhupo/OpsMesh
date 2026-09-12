@@ -11,13 +11,13 @@ from backend.app.agents.providers.resolution_service import ModelProviderResolut
 from backend.app.agents.runtime.contracts import AgentRunRequest
 from backend.app.agents.runtime.errors import normalize_agent_error
 from backend.app.core.typing import optional_string, uuid_or_none
+from backend.app.execution.workers.jobs import JobPayload
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.requests.provider_audit import ModelProviderAuditService
 from backend.app.orchestration.requests.request_reviewing import model_provider_fallback_policy
 from backend.app.orchestration.requests.utils import effective_resolved_model_api
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.workers.jobs import JobPayload
 from backend.app.workspaces.models import Workspace
 
 

@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.webhooks.models import WebhookDeliveryAttempt
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.redis_queue import RedisQueue
 
 
 @dataclass(frozen=True)

@@ -25,6 +25,9 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.auth.service import AuthorizationService
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
+from backend.app.execution.workers.dependencies import get_worker_queue
+from backend.app.execution.workers.jobs import JobType
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.execution_loop import (
@@ -35,9 +38,6 @@ from backend.app.teams.operator_actions import TeamOperatorActionService
 from backend.app.teams.workspace_service import (
     WorkspaceTeamService,
 )
-from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.jobs import JobType
-from backend.app.workers.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

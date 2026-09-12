@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.agents.models import AgentProfile
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.service import RunOrchestrationService
@@ -21,7 +22,6 @@ from backend.app.security.redaction import redact_sensitive_payload, redact_text
 from backend.app.storage.artifact_models import Artifact
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.snapshots import build_team_snapshot
-from backend.app.workers.redis_queue import RedisQueue
 
 TRANSFER_PENDING = "pending"
 TRANSFER_ACCEPTED = "accepted"

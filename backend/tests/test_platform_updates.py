@@ -109,8 +109,8 @@ def test_maintenance_holds_new_plans() -> None:
 
 
 def test_worker_admission_does_not_claim_work_during_maintenance() -> None:
-    from backend.app.workers.runner import WorkerRunner
-    from backend.app.workers.runner_models import WorkerRunnerConfig
+    from backend.app.execution.workers.runner import WorkerRunner
+    from backend.app.execution.workers.runner_models import WorkerRunnerConfig
     from backend.tests.test_worker_runner import _queue, _session_factory
 
     factory = _session_factory()

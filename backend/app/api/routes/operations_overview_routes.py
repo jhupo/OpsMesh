@@ -23,15 +23,17 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
-from backend.app.operations.control_plane_service import OperationsControlPlaneService
-from backend.app.operations.operation_capacity_payloads import OperationsCapacityPayloadService
-from backend.app.operations.outcomes import OperationsOutcomeService
-from backend.app.operations.overview_payloads import OperationsOverviewPayloadService
-from backend.app.operations.run_activity import RunActivityPayloadService
-from backend.app.operations.self_hosted_machines import (
+from backend.app.execution.operations.control_plane_service import OperationsControlPlaneService
+from backend.app.execution.operations.operation_capacity_payloads import (
+    OperationsCapacityPayloadService,
+)
+from backend.app.execution.operations.outcomes import OperationsOutcomeService
+from backend.app.execution.operations.overview_payloads import OperationsOverviewPayloadService
+from backend.app.execution.operations.run_activity import RunActivityPayloadService
+from backend.app.execution.operations.self_hosted_machines import (
     OperationsSelfHostedMachineService,
 )
-from backend.app.operations.worker_lifecycle import WorkerLifecyclePayloadService
+from backend.app.execution.operations.worker_lifecycle import WorkerLifecyclePayloadService
 from backend.app.redis.cache import RedisJsonCache
 from backend.app.redis.dependencies import get_cache_service, get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder

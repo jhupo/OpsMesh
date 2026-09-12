@@ -14,11 +14,11 @@ from backend.app.capabilities.mcp.adapters import (
 from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings
+from backend.app.execution.runtime.backend_registry import build_runtime_backend_registry
+from backend.app.execution.runtime.contracts import DockerRuntimeClient
+from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.projects.models import AgentRunProjectIOState
-from backend.app.runtime.backend_registry import build_runtime_backend_registry
-from backend.app.runtime.contracts import DockerRuntimeClient
-from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.models import SecurityEvent
 

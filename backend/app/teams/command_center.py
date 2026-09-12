@@ -3,11 +3,12 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.execution.runtime.lifecycle_control import RuntimeLifecycleControl
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.orchestration.tasks.manager_diagnostics import TaskManagerDiagnosticsService
-from backend.app.runtime.lifecycle_control import RuntimeLifecycleControl
 from backend.app.teams.command_center_action_plan import (
     _merged_action_plan,
     _provider_action_plan,
@@ -30,7 +31,6 @@ from backend.app.teams.execution_overview import TeamExecutionOverviewService
 from backend.app.teams.provider_readiness_service import TeamProviderReadinessService
 from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.teams.scheduling_blocks import scheduled_run_blocking_summary
-from backend.app.workers.redis_queue import RedisQueue
 
 
 class TeamCommandCenterService:

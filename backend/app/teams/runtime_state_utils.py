@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from backend.app.agents.messages.models import AgentMessage
 from backend.app.core.typing import datetime_or_none, int_or_zero
-from backend.app.runtime.models import WorkspaceRuntime
+from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.teams.runtime_constants import (
     TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,
     TEAM_RUNTIME_PAUSED,

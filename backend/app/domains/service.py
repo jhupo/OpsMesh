@@ -19,9 +19,9 @@ from backend.app.domains.models import (
     ReviewComment,
     RevisionRequest,
 )
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.orchestration.tasks.models import Task
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.redis_queue import RedisQueue
 
 T = TypeVar("T")
 

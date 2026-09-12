@@ -15,6 +15,7 @@ from backend.app.agents.providers.resolution import ModelProviderResolutionServi
 from backend.app.api.schemas.capabilities.catalog import EffectiveCapabilityCatalogResponse
 from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalogService
 from backend.app.core.errors import DomainError
+from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.state_resource_usage import merge_usage_max, positive_int_usage
@@ -27,7 +28,6 @@ from backend.app.orchestration.workflows.scheduler_policy import (
     SchedulerPolicyResolver,
     WorkspaceSchedulerPolicy,
 )
-from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import WorkspaceQuota
 

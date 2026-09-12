@@ -20,6 +20,8 @@ from backend.app.capabilities.models import CapabilityResource
 from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
+from backend.app.execution.runtime.contracts import RuntimeCommandResult
+from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.identity.models import User
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.orchestration.runs.authorization_integrity import (
@@ -38,8 +40,6 @@ from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.projects.runtime_io import RunProjectIOService
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.projects.serialization import sha256_json
-from backend.app.runtime.contracts import RuntimeCommandResult
-from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.security.models import SecurityEvent
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import FileAccessEvent, WorkspaceFile

@@ -13,13 +13,13 @@ from backend.app.capabilities.models import McpCredentialReference
 from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
+from backend.app.execution.workers.handlers import WorkerJobHandler
+from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.identity.models import User
 from backend.app.secrets.rotation import HostedSecretReencryptService
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.models import SecurityEvent
 from backend.app.webhooks.models import WebhookSubscription
-from backend.app.workers.handlers import WorkerJobHandler
-from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 OLD_SECRET = "old-credential-secret"

@@ -15,7 +15,7 @@ from backend.app.agents.providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
 )
-from backend.app.runtime.backend_registry import build_runtime_backend_registry
+from backend.app.execution.runtime.backend_registry import build_runtime_backend_registry
 
 
 def test_health_registry_selects_provider_sdk_adapters() -> None:

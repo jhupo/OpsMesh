@@ -17,8 +17,11 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_consolidated_domains_have_one_source_owner() -> None:
     app = ROOT / "backend/app"
     for name in (
-        "runtime",
+        "execution/runtime",
         "storage",
+        "execution/workers",
+        "execution/operations",
+        "execution/self_hosted",
         "observability",
         "agents/runtime/providers",
         "agents/runtime/runtime",
@@ -31,6 +34,10 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         assert (app / name / "__init__.py").is_file(), name
     for name in (
         "runtime_manager",
+        "runtime",
+        "workers",
+        "operations",
+        "self_hosted",
         "runtime/spaces",
         "planning",
         "teams/project_space",
@@ -70,8 +77,8 @@ def test_consolidated_domains_have_one_source_owner() -> None:
 @pytest.mark.parametrize(
     "module",
     [
-        "backend.app.operations.worker_lifecycle",
-        "backend.app.operations.stale_run_recovery",
+        "backend.app.execution.operations.worker_lifecycle",
+        "backend.app.execution.operations.stale_run_recovery",
         "backend.app.teams.execution_loop",
     ],
 )
@@ -203,7 +210,7 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
             "Shared infrastructure cannot depend on the API even indirectly",
         ),
         (
-            "workers/__init__.py",
+        "execution/workers/__init__.py",
             "from backend.app.api.routes import health",
             "HTTP transport is only composed by the API entry point",
         ),

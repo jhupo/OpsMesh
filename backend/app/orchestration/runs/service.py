@@ -5,6 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
 from backend.app.orchestration.runs.eligibility import RunEligibilityService
@@ -31,8 +33,6 @@ from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.snapshots import build_team_snapshot
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.redis_queue import RedisQueue
 
 __all__ = [
     "RunOrchestrationService",

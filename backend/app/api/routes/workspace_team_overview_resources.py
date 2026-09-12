@@ -29,6 +29,8 @@ from backend.app.capabilities.policy_service import TeamCapabilityPolicyService
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
+from backend.app.execution.workers.dependencies import get_worker_queue
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.teams.command_center import TeamCommandCenterService
@@ -42,8 +44,6 @@ from backend.app.teams.workspace_service import (
     TeamUpdateCommand,
     WorkspaceTeamService,
 )
-from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

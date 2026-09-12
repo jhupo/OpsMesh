@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from backend.app.runtime.space_models import (
+from backend.app.execution.runtime.space_models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,

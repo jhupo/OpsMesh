@@ -7,9 +7,9 @@ from backend.app.api.schemas.self_hosted import (
     LocalFileReferenceRequest,
     LocalFileReferenceResponse,
 )
-from backend.app.self_hosted.dependencies import get_authenticated_worker
-from backend.app.self_hosted.service import SelfHostedRuntimeService
-from backend.app.self_hosted.types import AuthenticatedWorker
+from backend.app.execution.self_hosted.dependencies import get_authenticated_worker
+from backend.app.execution.self_hosted.service import SelfHostedRuntimeService
+from backend.app.execution.self_hosted.types import AuthenticatedWorker
 
 router = APIRouter()
 

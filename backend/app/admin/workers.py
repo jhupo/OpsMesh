@@ -10,7 +10,7 @@ from backend.app.admin.base import AdminSessionService
 from backend.app.admin.common import normalized_worker_capacity, worker_node_snapshot
 from backend.app.admin.worker_policy_control import AdminWorkerPolicyControlService
 from backend.app.core.pagination import PageParams
-from backend.app.operations.models import WorkerLease, WorkerNode
+from backend.app.execution.operations.models import WorkerLease, WorkerNode
 
 
 class AdminWorkerService(AdminSessionService):

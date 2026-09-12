@@ -7,11 +7,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.observability.audit_service import AuditService
 from backend.app.teams.models import AgentTeam as _AgentTeamModel
 from backend.app.teams.runtime import TeamRuntimeService
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.redis_queue import RedisQueue
 
 COMPLETED_STEP_STATUSES = {"completed", "cancelled", "skipped"}
 TEAM_EXECUTION_LOOP_WINDOW_SECONDS = 60

@@ -11,6 +11,7 @@ from backend.app.agents.runtime.session_management import (
     PersistentAgentSessionManagementService,
 )
 from backend.app.agents.runtime.session_views import PersistentSessionSummary
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.models import AgentTeam, AgentTeamMember
@@ -34,7 +35,6 @@ from backend.app.teams.operations_console_runtime_payloads import (
 )
 from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.teams.scheduling_blocks import scheduled_run_blocking_summary
-from backend.app.workers.redis_queue import RedisQueue
 
 PROVIDER_RUN_STATUSES = ACTIVE_RUN_STATUSES
 

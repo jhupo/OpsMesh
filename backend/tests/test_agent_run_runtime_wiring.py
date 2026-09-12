@@ -1,13 +1,13 @@
 from uuid import uuid4
 
 from backend.app.core.config import Settings
+from backend.app.execution.workers.job_handlers.agent_run import AgentRunJobHandler
+from backend.app.execution.workers.job_handlers.context import WorkerJobHandlerContext
+from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.orchestration.runs.execution import (
     RunExecutionDependencies,
     RunExecutionService,
 )
-from backend.app.workers.job_handlers.agent_run import AgentRunJobHandler
-from backend.app.workers.job_handlers.context import WorkerJobHandlerContext
-from backend.app.workers.jobs import JobPayload, JobType
 
 
 def test_agent_run_handler_passes_worker_docker_client_to_execution_service(monkeypatch) -> None:
@@ -30,11 +30,11 @@ def test_agent_run_handler_passes_worker_docker_client_to_execution_service(monk
             captured["job"] = job
 
     monkeypatch.setattr(
-        "backend.app.workers.job_handlers.agent_run.RunOrchestrationService",
+        "backend.app.execution.workers.job_handlers.agent_run.RunOrchestrationService",
         _FakeOrchestration,
     )
     monkeypatch.setattr(
-        "backend.app.workers.job_handlers.agent_run.RunExecutionService",
+        "backend.app.execution.workers.job_handlers.agent_run.RunExecutionService",
         _FakeExecution,
     )
     context = WorkerJobHandlerContext(

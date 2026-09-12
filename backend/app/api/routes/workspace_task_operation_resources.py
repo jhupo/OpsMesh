@@ -26,6 +26,8 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.session import get_db_session
+from backend.app.execution.workers.dependencies import get_worker_queue
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.orchestration.tasks.control import TaskControlService
 from backend.app.orchestration.tasks.control_diagnostics import TaskControlDiagnosticsService
 from backend.app.orchestration.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
@@ -37,8 +39,6 @@ from backend.app.orchestration.tasks.manager_diagnostics import TaskManagerDiagn
 from backend.app.orchestration.tasks.observation import TaskObservationService
 from backend.app.orchestration.tasks.operator_actions import TaskOperatorActionService
 from backend.app.orchestration.tasks.timeline import TaskTimelineService
-from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

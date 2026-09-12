@@ -1,7 +1,7 @@
 from uuid import UUID
 
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.redis_queue import RedisQueue
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.redis_queue import RedisQueue
 
 _SUPPORTED_MEMORY_INDEX_SOURCES = frozenset({"task", "workspace_file", "artifact"})
 

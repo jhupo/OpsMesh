@@ -2,6 +2,9 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from backend.app.execution.runtime.space_reservation_release import (
+    RuntimeSpaceReservationReleaseService,
+)
 from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.models import AgentRun
@@ -12,9 +15,6 @@ from backend.app.orchestration.tasks.service import TaskStateService
 from backend.app.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.orchestration.tasks.step_service import TaskStepStateService
 from backend.app.orchestration.tasks.step_status import FINAL_STEP_STATUSES, TaskStepStatus
-from backend.app.runtime.space_reservation_release import (
-    RuntimeSpaceReservationReleaseService,
-)
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 

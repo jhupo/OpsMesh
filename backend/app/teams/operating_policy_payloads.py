@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.app.agents.models import AgentProfile
-from backend.app.runtime.space_models import RuntimeSpace
+from backend.app.execution.runtime.space_models import RuntimeSpace
 from backend.app.security.redaction import (
     redact_sensitive_payload_item,
     redact_text_fragments,

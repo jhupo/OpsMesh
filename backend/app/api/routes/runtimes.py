@@ -18,13 +18,13 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
-from backend.app.runtime.contracts import RuntimeLimits
-from backend.app.runtime.quotas import RuntimeQuotaExceededError
-from backend.app.runtime.safety import RuntimeSafetyError
-from backend.app.runtime.service import RuntimeControlService
-from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.redis_queue import RedisQueue
+from backend.app.execution.runtime.contracts import RuntimeLimits
+from backend.app.execution.runtime.quotas import RuntimeQuotaExceededError
+from backend.app.execution.runtime.safety import RuntimeSafetyError
+from backend.app.execution.runtime.service import RuntimeControlService
+from backend.app.execution.workers.dependencies import get_worker_queue
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.redis_queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["runtimes"])
 

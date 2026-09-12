@@ -7,10 +7,10 @@ from sqlalchemy import select
 
 from backend.app.admin.base import AdminSessionService
 from backend.app.core.pagination import PageParams
-from backend.app.runtime.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
-from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.redis_queue import RedisQueue
+from backend.app.execution.runtime.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
+from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.redis_queue import RedisQueue
 
 
 class AdminRuntimeService(AdminSessionService):

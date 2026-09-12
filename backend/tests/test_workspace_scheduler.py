@@ -12,6 +12,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.agents.models import AgentProfile
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
+from backend.app.execution.runtime.space_models import (
+    RuntimeSpace,
+    RuntimeSpaceQuota,
+    RuntimeSpaceReservation,
+)
+from backend.app.execution.runtime.space_service import RuntimeSpaceService
 from backend.app.identity.models import User
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
@@ -30,12 +36,6 @@ from backend.app.orchestration.workflows.step_scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.runtime.space_models import (
-    RuntimeSpace,
-    RuntimeSpaceQuota,
-    RuntimeSpaceReservation,
-)
-from backend.app.runtime.space_service import RuntimeSpaceService
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import (
     Workspace,

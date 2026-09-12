@@ -23,6 +23,8 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
+from backend.app.execution.workers.dependencies import get_worker_queue
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.orchestration.runs.control import RunControlService
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
@@ -33,8 +35,6 @@ from backend.app.orchestration.tasks.workspace_service import (
 )
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

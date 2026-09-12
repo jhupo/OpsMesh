@@ -6,14 +6,14 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.operations.models import WorkerLease
+from backend.app.execution.operations.models import WorkerLease
+from backend.app.execution.workers.jobs import JobType
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.control import TASK_PAUSED_REASON
 from backend.app.orchestration.tasks.control_state import task_control_state
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
-from backend.app.workers.jobs import JobType
 
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,

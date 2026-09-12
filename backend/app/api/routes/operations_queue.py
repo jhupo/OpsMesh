@@ -21,13 +21,13 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
-from backend.app.operations.dead_letters import DeadLetterQueueService
-from backend.app.operations.queue_governance import (
+from backend.app.execution.operations.dead_letters import DeadLetterQueueService
+from backend.app.execution.operations.queue_governance import (
     QueueGovernanceDiagnosticsService,
     QueueGovernanceReconciliationService,
 )
-from backend.app.operations.queue_insights import QueueInsightsService
-from backend.app.operations.queue_metrics import QueueMetricsService
+from backend.app.execution.operations.queue_insights import QueueInsightsService
+from backend.app.execution.operations.queue_metrics import QueueMetricsService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 

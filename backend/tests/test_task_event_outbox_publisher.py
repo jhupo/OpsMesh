@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
+from backend.app.execution.workers.redis_queue import RedisQueue
+from backend.app.execution.workers.runner import WorkerRunner, WorkerRunnerConfig
 from backend.app.identity.models import User
 from backend.app.orchestration.tasks.event_outbox import (
     TaskEventOutboxPublisher,
@@ -19,8 +21,6 @@ from backend.app.orchestration.tasks.event_outbox import (
 from backend.app.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
 from backend.app.orchestration.tasks.models import Task, TaskEventOutbox
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.workers.redis_queue import RedisQueue
-from backend.app.workers.runner import WorkerRunner, WorkerRunnerConfig
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 

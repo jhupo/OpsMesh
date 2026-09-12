@@ -21,7 +21,7 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
-from backend.app.runtime.space_service import RuntimeSpaceService
+from backend.app.execution.runtime.space_service import RuntimeSpaceService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["runtime-spaces"])
 

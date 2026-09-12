@@ -20,7 +20,7 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
-from backend.app.operations.scheduler import (
+from backend.app.execution.operations.scheduler import (
     SchedulerBacklogService,
     SchedulerBlockedStepService,
     SchedulerControlService,

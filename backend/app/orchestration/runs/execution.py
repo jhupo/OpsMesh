@@ -24,6 +24,13 @@ from backend.app.agents.runtime.errors import (
 from backend.app.agents.runtime.factory import build_agent_runtime_registry
 from backend.app.agents.runtime.state_store import AgentRunStateStore
 from backend.app.core.config import Settings, get_settings
+from backend.app.execution.runtime.contracts import DockerRuntimeClient
+from backend.app.execution.runtime.run_environment import (
+    RunRuntimeEnvironmentService,
+    RuntimeEnvironmentError,
+)
+from backend.app.execution.workers.jobs import JobPayload
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.approvals.agent_tool_interruptions import (
     AgentToolInterruptionService,
@@ -44,14 +51,7 @@ from backend.app.orchestration.workflows.data import resolve_workflow_inputs
 from backend.app.orchestration.workflows.subworkflows import SubworkflowExecutionService
 from backend.app.projects.runtime_io import RunProjectIOService
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
-from backend.app.runtime.contracts import DockerRuntimeClient
-from backend.app.runtime.run_environment import (
-    RunRuntimeEnvironmentService,
-    RuntimeEnvironmentError,
-)
 from backend.app.storage.storage import ObjectStorage
-from backend.app.workers.jobs import JobPayload
-from backend.app.workers.redis_queue import RedisQueue
 
 TERMINAL_RUN_STATUSES = {
     RunStatus.COMPLETED,
@@ -333,7 +333,7 @@ class RunExecutionService:
     def _runtime_timeout_seconds(self, run: AgentRun) -> int | None:
         if run.runtime_id is None:
             return None
-        from backend.app.runtime.models import WorkspaceRuntime
+        from backend.app.execution.runtime.models import WorkspaceRuntime
 
         runtime = self.session.scalar(
             select(WorkspaceRuntime).where(

@@ -15,6 +15,7 @@ from backend.app.agents.runtime.errors import (
 )
 from backend.app.core.config import Settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
+from backend.app.execution.workers.jobs import JobPayload
 from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.requests.provider_audit import ModelProviderAuditService
@@ -22,7 +23,6 @@ from backend.app.orchestration.requests.provider_routing import ModelProviderRou
 from backend.app.orchestration.requests.request_approval import ModelRequestApprovalService
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.workers.jobs import JobPayload
 
 MarkRunFailed = Callable[[AgentRun, Exception], None]
 

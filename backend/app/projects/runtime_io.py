@@ -8,6 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
+from backend.app.execution.runtime.backend_registry import build_runtime_backend_registry
+from backend.app.execution.runtime.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
+from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task
@@ -22,9 +25,6 @@ from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
 from backend.app.projects.runtime_io_state import ProjectIOStateService
 from backend.app.projects.runtime_staging import ProjectInputArchiveBuilder
-from backend.app.runtime.backend_registry import build_runtime_backend_registry
-from backend.app.runtime.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
-from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import FileAccessEvent
 from backend.app.storage.storage import ObjectStorage, create_storage

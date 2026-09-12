@@ -8,7 +8,7 @@ from starlette.responses import PlainTextResponse
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.metrics import metrics_registry
 from backend.app.db.session import get_db_session
-from backend.app.operations.prometheus_metrics import OperationsPrometheusMetricsService
+from backend.app.execution.operations.prometheus_metrics import OperationsPrometheusMetricsService
 from backend.app.redis.dependencies import RedisClient, get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 

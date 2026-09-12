@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.rate_limits.service import FixedWindowRateLimiter
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.webhooks.constants import (
@@ -25,7 +26,6 @@ from backend.app.webhooks.replay import (
 )
 from backend.app.webhooks.signing import WebhookDeliverySigner
 from backend.app.webhooks.utils import _matches_event
-from backend.app.workers.redis_queue import RedisQueue
 
 
 class WebhookDeliveryService:

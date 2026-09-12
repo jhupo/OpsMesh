@@ -40,6 +40,34 @@ from backend.app.capabilities.models import (
     WorkspaceSkillInstall,
 )
 from backend.app.domains.models import DomainItem, DomainProject, ReviewComment, RevisionRequest
+from backend.app.execution.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
+from backend.app.execution.runtime.models import (
+    RuntimeCommand,
+    RuntimeEvent,
+    RuntimeLease,
+    RuntimeTemplate,
+    WorkspaceRuntime,
+)
+from backend.app.execution.runtime.space_models import (
+    RuntimeSpace,
+    RuntimeSpaceBinding,
+    RuntimeSpaceEvent,
+    RuntimeSpaceQuota,
+    RuntimeSpaceReservation,
+)
+from backend.app.execution.self_hosted.models import (
+    LocalFileReference,
+    RuntimeCredential,
+    RuntimeEnrollmentToken,
+    SelfHostedArtifactUpload,
+    SelfHostedJobClaim,
+    SelfHostedMcpJob,
+    SelfHostedWorker,
+)
+from backend.app.execution.workers.scheduled_models import (
+    WorkspaceScheduledJob,
+    WorkspaceScheduledJobEvent,
+)
 from backend.app.identity.models import User, UserAPIToken
 from backend.app.observability.audit_models import AuditEvent, AuditIntegrityCheck
 from backend.app.observability.cost_models import (
@@ -48,7 +76,6 @@ from backend.app.observability.cost_models import (
     WorkspaceCostBudget,
 )
 from backend.app.observability.notification_models import WorkspaceNotification
-from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.orchestration.approvals.models import Approval, PendingToolInvocation
 from backend.app.orchestration.models import (
     OrchestrationDefinition,
@@ -73,38 +100,11 @@ from backend.app.projects.models import (
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
-from backend.app.runtime.models import (
-    RuntimeCommand,
-    RuntimeEvent,
-    RuntimeLease,
-    RuntimeTemplate,
-    WorkspaceRuntime,
-)
-from backend.app.runtime.space_models import (
-    RuntimeSpace,
-    RuntimeSpaceBinding,
-    RuntimeSpaceEvent,
-    RuntimeSpaceQuota,
-    RuntimeSpaceReservation,
-)
 from backend.app.security.models import SecurityEvent
-from backend.app.self_hosted.models import (
-    LocalFileReference,
-    RuntimeCredential,
-    RuntimeEnrollmentToken,
-    SelfHostedArtifactUpload,
-    SelfHostedJobClaim,
-    SelfHostedMcpJob,
-    SelfHostedWorker,
-)
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import FileAccessEvent, WorkspaceFile
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
-from backend.app.workers.scheduled_models import (
-    WorkspaceScheduledJob,
-    WorkspaceScheduledJobEvent,
-)
 from backend.app.workspaces.models import (
     Workspace,
     WorkspaceInvite,

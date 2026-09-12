@@ -18,6 +18,8 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
 from backend.app.db.session import get_db_session
+from backend.app.execution.workers.dependencies import get_worker_queue
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import EgressUrlValidationError
 from backend.app.webhooks.models import WebhookDeliveryAttempt
@@ -27,8 +29,6 @@ from backend.app.webhooks.service import (
     WebhookDeliveryService,
     WebhookSubscriptionService,
 )
-from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.redis_queue import RedisQueue
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/webhook-subscriptions",

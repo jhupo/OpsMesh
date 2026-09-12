@@ -148,7 +148,7 @@ id = "docker-sdk-boundary"
 name = "Docker daemon access stays in its infrastructure adapter"
 type = "protected"
 protected_modules = ["docker"]
-allowed_importers = ["backend.app.runtime.docker_client"]
+allowed_importers = ["backend.app.execution.runtime.docker_client"]
 
 [[tool.importlinter.contracts]]
 id = "s3-sdk-boundary"

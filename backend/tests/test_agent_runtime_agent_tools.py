@@ -20,6 +20,7 @@ from backend.app.agents.runtime.contracts import (
 )
 from backend.app.agents.runtime.providers.openai_agents import OpenAIAgentsRunner
 from backend.app.core.config import Settings
+from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.runs.authorization_snapshot import (
     RunAuthorizationSnapshotService,
@@ -28,7 +29,6 @@ from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.result_payloads import run_output_payload
 from backend.app.orchestration.tasks.models import Task
 from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workers.jobs import JobPayload, JobType
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 

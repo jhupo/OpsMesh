@@ -8,8 +8,8 @@ from backend.app.agents.service import AgentManagementService
 from backend.app.capabilities.schema_validation import reject_embedded_secrets
 from backend.app.core.pagination import PageParams
 from backend.app.db.pagination import page_scalars
+from backend.app.execution.runtime.space_service import RuntimeSpaceService
 from backend.app.observability.audit_service import AuditService
-from backend.app.runtime.space_service import RuntimeSpaceService
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.org_chart import TeamOrgChartBuilder
 

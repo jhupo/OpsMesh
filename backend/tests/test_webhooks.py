@@ -19,6 +19,10 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
+from backend.app.execution.workers.dependencies import get_worker_queue
+from backend.app.execution.workers.handlers import WorkerJobHandler
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.rate_limits.service import FixedWindowRateLimiter
@@ -34,10 +38,6 @@ from backend.app.webhooks.service import (
     WebhookHttpResponse,
     WebhookSubscriptionService,
 )
-from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.handlers import WorkerJobHandler
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
@@ -530,7 +530,7 @@ def test_worker_handler_dispatches_webhook_delivery_job(monkeypatch: pytest.Monk
             )
 
     monkeypatch.setattr(
-        "backend.app.workers.job_handlers.io.WebhookDeliveryService",
+        "backend.app.execution.workers.job_handlers.io.WebhookDeliveryService",
         RecordingDeliveryService,
     )
 

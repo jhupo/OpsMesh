@@ -5,9 +5,9 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.tasks.status import TERMINAL_TASK_STATUSES
-from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime import (
     TEAM_RUNTIME_PAUSED,

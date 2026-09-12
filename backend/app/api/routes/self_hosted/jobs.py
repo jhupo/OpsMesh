@@ -18,16 +18,16 @@ from backend.app.api.schemas.self_hosted import (
     SelfHostedJobResponse,
     SelfHostedProjectContractResponse,
 )
-from backend.app.projects.runtime_io_errors import ProjectRunIOError
-from backend.app.self_hosted.dependencies import get_authenticated_worker
-from backend.app.self_hosted.dispatch import SelfHostedDispatchService
-from backend.app.self_hosted.job_completion import SelfHostedRunCompletionService
-from backend.app.self_hosted.progress import SelfHostedProgressService
-from backend.app.self_hosted.project_files import (
+from backend.app.execution.self_hosted.dependencies import get_authenticated_worker
+from backend.app.execution.self_hosted.dispatch import SelfHostedDispatchService
+from backend.app.execution.self_hosted.job_completion import SelfHostedRunCompletionService
+from backend.app.execution.self_hosted.progress import SelfHostedProgressService
+from backend.app.execution.self_hosted.project_files import (
     SelfHostedProjectContract,
     SelfHostedProjectFileService,
 )
-from backend.app.self_hosted.types import AuthenticatedWorker
+from backend.app.execution.self_hosted.types import AuthenticatedWorker
+from backend.app.projects.runtime_io_errors import ProjectRunIOError
 
 router = APIRouter()
 

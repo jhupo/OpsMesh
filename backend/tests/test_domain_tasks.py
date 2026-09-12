@@ -14,14 +14,14 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.domains.models import RevisionRequest
+from backend.app.execution.workers.dependencies import get_worker_queue
+from backend.app.execution.workers.handlers import WorkerJobHandler
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.orchestration.tasks.models import TaskMessage, TaskStep
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.handlers import WorkerJobHandler
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"

@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.tasks import TaskCorrectionRequest
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.tasks.service import TaskStateService
 from backend.app.orchestration.tasks.status import TaskStatus
 from backend.app.storage.artifact_models import Artifact
-from backend.app.workers.redis_queue import RedisQueue
 
 STEP_STATUS_QUEUED = "queued"
 

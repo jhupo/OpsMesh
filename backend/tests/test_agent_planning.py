@@ -10,6 +10,11 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRunResult, AgentRuntimeStructuredOutput
+from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.execution.workers.handlers import WorkerJobHandler
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.queue_consumer import consume_once
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.observability.cost_models import WorkspaceCostBudget
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.service import RunOrchestrationService
@@ -26,12 +31,7 @@ from backend.app.orchestration.workflows.plan_future_plan_mutation import (
 from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.orchestration.workflows.planning_completion import PlannerCompletionService
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workers.handlers import WorkerJobHandler
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue_consumer import consume_once
-from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workspaces.models import WorkspaceQuota
 from backend.tests.test_worker_run_execution import (
     _build_agent_request,

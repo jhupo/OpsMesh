@@ -9,6 +9,7 @@ from backend.app.agents.runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
+from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.orchestration.models import SubworkflowInvocation
 from backend.app.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.orchestration.runs.execution import RunExecutionDependencies, RunExecutionService
@@ -26,7 +27,6 @@ from backend.app.orchestration.workflows.subworkflows import (
     SubworkflowExecutionError,
     SubworkflowExecutionService,
 )
-from backend.app.workers.jobs import JobPayload, JobType
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 

@@ -20,6 +20,8 @@ from backend.app.capabilities.models import (
 )
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
+from backend.app.execution.runtime.models import WorkspaceRuntime
+from backend.app.execution.runtime.space_models import RuntimeSpace
 from backend.app.identity.models import User
 from backend.app.orchestration.requests.authorization import RunAuthorizationService
 from backend.app.orchestration.runs.authorization_integrity import (
@@ -31,8 +33,6 @@ from backend.app.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationService,
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.runtime.models import WorkspaceRuntime
-from backend.app.runtime.space_models import RuntimeSpace
 from backend.app.security.models import SecurityEvent
 from backend.app.storage.models import WorkspaceFile
 from backend.app.teams.models import AgentTeam

@@ -24,13 +24,13 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
-from backend.app.operations.runtime_cleanup import RuntimeCleanupService
-from backend.app.operations.runtime_leases import RuntimeLeaseOperationsService
-from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsService
-from backend.app.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
-from backend.app.operations.worker_lease_queries import WorkerLeaseQueryService
-from backend.app.operations.worker_node_control import WorkerNodeControlService
-from backend.app.operations.worker_node_repository import WorkerNodeRepository
+from backend.app.execution.operations.runtime_cleanup import RuntimeCleanupService
+from backend.app.execution.operations.runtime_leases import RuntimeLeaseOperationsService
+from backend.app.execution.operations.worker_heartbeats import WorkerHeartbeatOperationsService
+from backend.app.execution.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
+from backend.app.execution.operations.worker_lease_queries import WorkerLeaseQueryService
+from backend.app.execution.operations.worker_node_control import WorkerNodeControlService
+from backend.app.execution.operations.worker_node_repository import WorkerNodeRepository
 from backend.app.security.service import SecurityAuditService
 
 if TYPE_CHECKING:

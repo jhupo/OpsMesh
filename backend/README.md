@@ -21,7 +21,7 @@ uv run uvicorn backend.app.main:create_app --factory --reload --host 0.0.0.0 --p
 Run a worker:
 
 ```bash
-uv run python -m backend.app.workers.cli
+uv run python -m backend.app.execution.workers.cli
 ```
 
 Health check:

@@ -26,8 +26,8 @@ from backend.app.admin.updates.models import (
 )
 from backend.app.admin.updates.service import UpdateService
 from backend.app.db.session import SessionLocal, engine
-from backend.app.operations.models import WorkerLease
-from backend.app.self_hosted.models import SelfHostedJobClaim, SelfHostedMcpJob
+from backend.app.execution.operations.models import WorkerLease
+from backend.app.execution.self_hosted.models import SelfHostedJobClaim, SelfHostedMcpJob
 
 logger = logging.getLogger(__name__)
 

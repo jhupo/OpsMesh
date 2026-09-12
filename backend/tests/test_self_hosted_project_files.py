@@ -20,6 +20,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
+from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.orchestration.runs.models import AgentRun
@@ -33,7 +34,6 @@ from backend.app.projects.models import (
 )
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.projects.serialization import sha256_json
-from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
 from backend.app.storage.storage import LocalStorage

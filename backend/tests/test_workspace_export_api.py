@@ -22,6 +22,10 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
+from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.execution.workers.dependencies import get_worker_queue
+from backend.app.execution.workers.redis_queue import RedisQueue
+from backend.app.execution.workers.runner import WorkerRunner, WorkerRunnerConfig
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
@@ -29,14 +33,10 @@ from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import FileAccessEvent, WorkspaceFile
 from backend.app.storage.storage import LocalStorage
 from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.redis_queue import RedisQueue
-from backend.app.workers.runner import WorkerRunner, WorkerRunnerConfig
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"

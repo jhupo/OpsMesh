@@ -20,30 +20,34 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
+from backend.app.execution.operations.models import WorkerLease, WorkerNode
+from backend.app.execution.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
+from backend.app.execution.runtime.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
+from backend.app.execution.runtime.space_models import (
+    RuntimeSpace,
+    RuntimeSpaceEvent,
+    RuntimeSpaceQuota,
+)
+from backend.app.execution.self_hosted.models import (
+    RuntimeCredential,
+    SelfHostedJobClaim,
+    SelfHostedMcpJob,
+    SelfHostedWorker,
+)
+from backend.app.execution.workers.dependencies import get_worker_queue
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.operations.models import WorkerLease, WorkerNode
-from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
 from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runtime.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
-from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
 from backend.app.security.models import SecurityEvent
-from backend.app.self_hosted.models import (
-    RuntimeCredential,
-    SelfHostedJobClaim,
-    SelfHostedMcpJob,
-    SelfHostedWorker,
-)
 from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.redis_queue import RedisQueue
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"

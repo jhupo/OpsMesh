@@ -30,10 +30,29 @@ from backend.app.auth.permissions import ROLE_PERMISSIONS, WorkspaceAction, Work
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
+from backend.app.execution.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
+from backend.app.execution.runtime.contracts import (
+    DockerRuntimeClient,
+    RuntimeCommandInputFile,
+    RuntimeCommandResult,
+    RuntimeCreateRequest,
+)
+from backend.app.execution.runtime.dependencies import get_docker_runtime_client
+from backend.app.execution.runtime.models import RuntimeTemplate, WorkspaceRuntime
+from backend.app.execution.runtime.space_models import (
+    RuntimeSpace,
+    RuntimeSpaceQuota,
+    RuntimeSpaceReservation,
+)
+from backend.app.execution.workers.dependencies import get_worker_queue
+from backend.app.execution.workers.handlers import WorkerJobHandler
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.queue_consumer import consume_once
+from backend.app.execution.workers.redis_queue import RedisQueue
+from backend.app.execution.workers.scheduled_models import WorkspaceScheduledJob
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
@@ -52,31 +71,12 @@ from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.model_request import ModelRequestReview
-from backend.app.runtime.contracts import (
-    DockerRuntimeClient,
-    RuntimeCommandInputFile,
-    RuntimeCommandResult,
-    RuntimeCreateRequest,
-)
-from backend.app.runtime.dependencies import get_docker_runtime_client
-from backend.app.runtime.models import RuntimeTemplate, WorkspaceRuntime
-from backend.app.runtime.space_models import (
-    RuntimeSpace,
-    RuntimeSpaceQuota,
-    RuntimeSpaceReservation,
-)
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.models import SecurityEvent
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.operations_console import TeamOperationsConsoleService
-from backend.app.workers.dependencies import get_worker_queue
-from backend.app.workers.handlers import WorkerJobHandler
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.queue_consumer import consume_once
-from backend.app.workers.redis_queue import RedisQueue
-from backend.app.workers.scheduled_models import WorkspaceScheduledJob
 from backend.app.workspaces.models import (
     Workspace,
     WorkspaceInvite,

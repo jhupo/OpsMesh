@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from backend.app.runtime.models import WorkspaceRuntime
+from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime_constants import (
     TEAM_RUNTIME_RUNNING,

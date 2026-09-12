@@ -5,6 +5,16 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceReservation
+from backend.app.execution.runtime.space_reservation_attachment import (
+    RuntimeSpaceReservationAttachmentService,
+)
+from backend.app.execution.runtime.space_reservation_capacity import (
+    RuntimeSpaceCapacityReservationService,
+)
+from backend.app.execution.runtime.space_reservation_release import (
+    RuntimeSpaceReservationReleaseService,
+)
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.profile import RunProfileLookup
 from backend.app.orchestration.runs.state_resource_usage import (
@@ -13,16 +23,6 @@ from backend.app.orchestration.runs.state_resource_usage import (
     positive_int_usage,
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceReservation
-from backend.app.runtime.space_reservation_attachment import (
-    RuntimeSpaceReservationAttachmentService,
-)
-from backend.app.runtime.space_reservation_capacity import (
-    RuntimeSpaceCapacityReservationService,
-)
-from backend.app.runtime.space_reservation_release import (
-    RuntimeSpaceReservationReleaseService,
-)
 from backend.app.workspaces.models import WorkspaceReservation
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 

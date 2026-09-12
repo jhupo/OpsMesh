@@ -19,11 +19,11 @@ from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.mcp.unsupported_adapter import UnsupportedMcpToolAdapter
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.runtime.contracts import (
+from backend.app.execution.runtime.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
 )
-from backend.app.runtime.models import RuntimeCommand, WorkspaceRuntime
+from backend.app.execution.runtime.models import RuntimeCommand, WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import EgressUrlPolicy
 

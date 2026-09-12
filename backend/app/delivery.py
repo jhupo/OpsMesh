@@ -52,7 +52,7 @@ def main() -> None:
         cli.run_cmd(config, options)
     else:
         module = (
-            "backend.app.workers.cli"
+            "backend.app.execution.workers.cli"
             if args.command == "worker"
             else "backend.app.admin.updates.daemon"
         )
@@ -70,7 +70,7 @@ def check_runtime(directory: Path) -> None:
         "cryptography",
         "docker",
         "backend.app.main",
-        "backend.app.workers.cli",
+        "backend.app.execution.workers.cli",
         "backend.app.admin.updates.daemon",
     ):
         importlib.import_module(module)

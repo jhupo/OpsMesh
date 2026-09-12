@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.teams.execution_loop_queue_dispatch import (
     TeamExecutionLoopQueueDispatcher,
 )
@@ -21,7 +22,6 @@ from backend.app.teams.execution_loop_runtime_candidates import (
     _team_loop_candidate,
 )
 from backend.app.teams.execution_loop_support import TEAM_EXECUTION_LOOP_WINDOW_SECONDS
-from backend.app.workers.redis_queue import RedisQueue
 
 
 @dataclass(frozen=True)

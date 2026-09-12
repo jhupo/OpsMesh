@@ -9,12 +9,12 @@ from sqlalchemy.orm import Session
 from backend.app.admin.base import AdminRedisService
 from backend.app.admin.common import positive_int, top_counts
 from backend.app.admin.queue_operations import AdminQueueOperationsService
-from backend.app.operations.models import WorkerLease, WorkerNode
+from backend.app.execution.operations.models import WorkerLease, WorkerNode
+from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.security.models import SecurityEvent
 
 

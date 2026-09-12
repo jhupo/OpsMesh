@@ -15,8 +15,8 @@ from backend.app.core.errors import QuotaExceededError
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
+from backend.app.execution.operations.models import WorkerNode
 from backend.app.main import create_app
-from backend.app.operations.models import WorkerNode
 from backend.app.redis.dependencies import get_redis_client
 
 

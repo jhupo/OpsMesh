@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.orchestration.models import (
     OrchestrationDefinition,
     OrchestrationRevision,
@@ -21,7 +22,6 @@ from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.tasks.workspace_service import WorkspaceTaskService
 from backend.app.orchestration.workflows.data import resolve_workflow_inputs
-from backend.app.workers.redis_queue import RedisQueue
 
 
 class SubworkflowExecutionError(ValueError):

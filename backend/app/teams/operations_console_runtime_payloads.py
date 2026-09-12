@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from backend.app.core.typing import dict_list
+from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.teams.operations_console_utils import (
     _datetime_or_none,
@@ -14,8 +16,6 @@ from backend.app.teams.operations_console_utils import (
     _unique_strings,
 )
 from backend.app.teams.runtime import TeamRuntimeState
-from backend.app.workers.jobs import JobPayload, JobType
-from backend.app.workers.redis_queue import RedisQueue
 
 
 def _runtime_payload(

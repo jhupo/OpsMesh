@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.rate_limits.service import FixedWindowRateLimiter
 from backend.app.webhooks.constants import (
     WEBHOOK_REPLAY_COOLDOWN_SECONDS,
@@ -14,7 +15,6 @@ from backend.app.webhooks.constants import (
 from backend.app.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
 from backend.app.webhooks.scheduler import WebhookDeliveryScheduler
 from backend.app.webhooks.utils import _metadata_datetime
-from backend.app.workers.redis_queue import RedisQueue
 
 
 class WebhookDeliveryReplayError(ValueError):
