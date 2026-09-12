@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
-from backend.app.runtime.contracts import RuntimeLimits
+from backend.app.runtime.contracts import RuntimeExecutionMode, RuntimeLimits
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.runtime.service import RuntimeControlService
 from backend.app.workers.jobs import JobPayload, JobType
@@ -33,6 +33,8 @@ class QueuedRuntimeControl:
         limits: RuntimeLimits | None,
         runtime_space_id: UUID | None = None,
         network_disabled: bool = True,
+        execution_mode: RuntimeExecutionMode = "pooled",
+        pool_key: str | None = None,
     ) -> WorkspaceRuntime | None:
         runtime = self._service.queue_runtime_create(
             workspace_id=workspace_id,
@@ -42,6 +44,8 @@ class QueuedRuntimeControl:
             runtime_space_id=runtime_space_id,
             network_disabled=network_disabled,
             requested_by_user_id=self._requested_by_user_id,
+            execution_mode=execution_mode,
+            pool_key=pool_key,
         )
         if runtime is None:
             return None
@@ -55,6 +59,8 @@ class QueuedRuntimeControl:
                 "runtime_space_id": str(runtime_space_id) if runtime_space_id is not None else None,
                 "limits": _runtime_limits_routing(limits),
                 "network_disabled": network_disabled,
+                "execution_mode": runtime.execution_mode,
+                "pool_key": runtime.pool_key,
             },
         )
         return runtime

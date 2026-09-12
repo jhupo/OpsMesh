@@ -5339,6 +5339,12 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     assert created_runtime.status == "starting"
     assert created_runtime.connection_status == "offline"
     assert created_runtime.capabilities["team_runtime"]["team_id"] == str(team.id)
+    create_job = next(
+        job for job in queue.peek(limit=100)
+        if job.resource_id == created_runtime.id and job.routing.get("action") == "create"
+    )
+    assert create_job.routing["execution_mode"] == created_runtime.execution_mode
+    assert create_job.routing["pool_key"] == created_runtime.pool_key
     _consume_runtime_control_jobs(queue, session, docker, client.app.state.settings)
     session.expire_all()
     created_runtime = session.get(WorkspaceRuntime, created_runtime.id)

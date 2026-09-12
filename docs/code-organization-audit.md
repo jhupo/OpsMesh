@@ -78,7 +78,7 @@ modules and mixed-vendor mapper were deleted. The provider-neutral import gate c
 The edge-domain batch passed 60 focused queue/scheduled-job/product-tool/architecture/health tests.
 Workers, teams and tools also pass focused mypy (151 source files).
 
-## Final plan acceptance
+## Directory consolidation acceptance (not file-level completion)
 
 All seven consolidation directions in the original plan now have concrete owners above:
 Agent providers/runtime, physical runtimes, observability, storage/projects, orchestration,
@@ -98,3 +98,28 @@ Final verification includes full app mypy, Ruff, the seven import-linter contrac
 checks, focused planner/runtime/API/provider tests, and the sandbox-manifest boundary regression.
 Live-provider smoke tests remain explicitly skipped without credentials. No full pytest suite,
 release tag, push, or remote publication is part of this directory-consolidation acceptance.
+
+## File-level consolidation follow-up: 2026-09-12
+
+The subsequent file merges were initially reported as complete too early. A cold import of the
+Operations API failed: worker lifecycle buckets imported a helper back from the service, and
+stale-run recovery actions imported their result contract back from the orchestrator. The pure
+worker-routing helper now belongs to the bucket module; the recovery result belongs to the action
+executor that produces it. Neither fix relies on a compatibility alias or deferred runtime import.
+
+The new Teams execution-loop support module initially had no callers and duplicated four old
+modules. Callers now use the consolidated module; the four superseded files are deleted. The
+execution-overview member re-export module is also removed, with callers using the actual owners.
+
+A related integration test found that QueuedRuntimeControl omitted execution_mode and pool_key
+from create-job routing. It now accepts and persists these settings and includes the stored values
+in the job. Worker validation remains strict; no missing-field fallback was added.
+
+Validation for this follow-up: Operations API, team capacity, Runtime manager and existing
+architecture tests passed (71 tests); four additional architecture checks cover fresh-process
+imports and deleted Teams sources. The focused team execution-loop/overview selection passed
+14 tests. App/test/script Ruff and app mypy passed. No full pytest suite or GitHub release run
+was requested. These results cover this batch, not every possible future file consolidation.
+
+Unrelated pre-existing workspace changes remain untouched; a successful commit does not imply a
+clean workspace. The earlier clean-workspace statement was inaccurate.
