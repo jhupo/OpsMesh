@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from backend.app.agents.model_provider_summary import agent_profile_response
+from backend.app.agents.providers.agent_summary import agent_profile_response
 from backend.app.api.schemas.capabilities.marketplace import (
     MarketplaceListingResponse,
     TalentListingReviewResponse,

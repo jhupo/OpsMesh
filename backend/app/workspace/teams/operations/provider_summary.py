@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from backend.app.agents.model_provider_summary import agent_model_provider_summary
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers.agent_summary import agent_model_provider_summary
 from backend.app.agents.providers.health_summary import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,

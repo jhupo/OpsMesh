@@ -396,6 +396,31 @@ def test_api_services_are_nested_by_function() -> None:
         assert not (services / "workspace/imports" / name).exists(), name
 
 
+def test_agent_profile_and_memory_modules_have_stable_owners() -> None:
+    agents = ROOT / "backend/app/agents"
+    root_modules = {
+        path.name
+        for path in agents.iterdir()
+        if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
+    }
+    assert root_modules == {"models.py", "service.py"}
+    assert (agents / "profiles/__init__.py").is_file()
+    assert (agents / "memory/policy.py").is_file()
+    for name in (
+        "lifecycle.py",
+        "payloads.py",
+        "profile_commands.py",
+        "queries.py",
+        "reviews.py",
+        "versions.py",
+        "model_validation.py",
+        "model_provider_summary.py",
+        "memory_policy.py",
+    ):
+        assert not (agents / name).exists(), name
+    assert not (agents / "memory/agent_policy.py").exists()
+
+
 def test_local_application_imports_resolve_without_compatibility_shims() -> None:
     missing = []
     for path in (ROOT / "backend/app").rglob("*.py"):

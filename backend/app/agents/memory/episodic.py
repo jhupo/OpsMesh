@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.agents.memory.configuration import initial_embedding_status
 from backend.app.agents.memory.content import memory_content_fingerprint
 from backend.app.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.agents.memory_policy import EpisodicMemoryPolicy, episodic_memory_policy
+from backend.app.agents.memory.policy import EpisodicMemoryPolicy, episodic_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRunResult
 from backend.app.orchestration.approvals.models import Approval

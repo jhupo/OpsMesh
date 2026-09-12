@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agents.payloads import uuid_or_none
+from backend.app.agents.profiles.payloads import uuid_or_none
 from backend.app.agents.providers.model_api import (
     canonical_model_api,
     default_model_api,

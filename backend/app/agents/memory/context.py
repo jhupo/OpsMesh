@@ -7,12 +7,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.memory.authorization import memory_read_scopes
 from backend.app.agents.memory.embeddings import WorkspaceMemoryQueryEmbeddingService
-from backend.app.agents.memory.search import query_fingerprint
-from backend.app.agents.memory_policy import (
+from backend.app.agents.memory.policy import (
     context_memory_retrieval_policy,
     episodic_memory_policy,
     semantic_memory_policy,
 )
+from backend.app.agents.memory.search import query_fingerprint
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRuntimeResourceGrant
 from backend.app.agents.runtime.token_estimation import (

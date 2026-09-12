@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Resp
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.agents.model_provider_summary import agent_profile_response
+from backend.app.agents.providers.agent_summary import agent_profile_response
 from backend.app.agents.service import AgentManagementService
 from backend.app.api.idempotency import (
     IdempotencyInProgressError,

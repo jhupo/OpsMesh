@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from backend.app.agents.memory_policy import (
+from backend.app.agents.memory.policy import (
     AgentMemoryPolicy,
     normalized_memory_policy,
 )

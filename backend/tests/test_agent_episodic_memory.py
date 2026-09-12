@@ -9,7 +9,7 @@ from sqlalchemy.types import JSON
 
 from backend.app.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.agents.memory_policy import normalized_memory_policy
+from backend.app.agents.memory.policy import normalized_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRunResult
 from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService

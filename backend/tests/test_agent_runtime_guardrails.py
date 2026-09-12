@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 import backend.app.agents.runtime.providers.openai_agents as openai_runtime
 from backend.app.agents.models import AgentProfile
-from backend.app.agents.profile_commands import AgentProfileCommandService
+from backend.app.agents.profiles.commands import AgentProfileCommandService
 from backend.app.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,

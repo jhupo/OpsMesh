@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 from backend.app.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.agents.memory.embeddings import WorkspaceMemoryQueryEmbeddingService
 from backend.app.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.agents.memory.policy import semantic_memory_policy
 from backend.app.agents.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
 from backend.app.agents.memory.working import AgentWorkingMemoryService
-from backend.app.agents.memory_policy import semantic_memory_policy
 from backend.app.capabilities.tools.context import ToolContext
 from backend.app.capabilities.tools.errors import ToolResourceNotFoundError
 from backend.app.capabilities.tools.product_events import ProductToolEventRecorder

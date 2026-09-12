@@ -5,18 +5,18 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.agents.model_validation import AgentModelValidator
 from backend.app.agents.models import AgentProfile
-from backend.app.agents.payloads import (
+from backend.app.agents.profiles.model_validation import AgentModelValidator
+from backend.app.agents.profiles.payloads import (
     AGENT_PROFILE_FIELDS,
     copy_json_value,
     normalize_create_payload,
     normalize_update_payload,
     profile_snapshot,
 )
-from backend.app.agents.reviews import AgentProfileReviewService
+from backend.app.agents.profiles.reviews import AgentProfileReviewService
+from backend.app.agents.profiles.versions import AgentVersionRecorder
 from backend.app.agents.runtime.guardrails import runtime_controls_snapshot
-from backend.app.agents.versions import AgentVersionRecorder
 from backend.app.api.schemas.agents.profiles import (
     AgentProfileCreateRequest,
     AgentProfileUpdateRequest,

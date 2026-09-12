@@ -380,6 +380,7 @@ backend/app/api/routes/{...}/                 Routes grouped by agents, capabili
 backend/app/api/schemas/{...}/                Transport contracts grouped by the same functional domains
 backend/app/api/services/workspace/{...}/     Workspace export, import, lifecycle, and file services
 backend/app/agents/                           Agent profiles, SDK runtime, memory, and providers
+backend/app/agents/{profiles,memory,messages,providers,runtime}/  Agent lifecycle and execution domains
 backend/app/agents/runtime/providers/         OpenAI and Claude SDK adapters
 backend/app/capabilities/                     Skills, MCP, tools, marketplace, and policy
 backend/app/orchestration/                    Requests, runs, approvals, tasks, and workflows

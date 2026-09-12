@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.agents.memory_policy import normalized_memory_policy
+from backend.app.agents.memory.policy import normalized_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.capabilities.marketplace import (
     HireTalentRequest,

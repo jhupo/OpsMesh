@@ -301,8 +301,8 @@ backend/
         self_hosted/ integrations/          # specialized transport boundaries
       schemas/{agents,capabilities,operations,orchestration,platform,workspace}
       services/workspace/{exports,imports,lifecycle}
-    agents/                                 # Agent profiles and nested runtime domains
-      memory/ messages/ providers/ runtime/
+      agents/                                 # Agent profiles and nested runtime domains
+        profiles/ memory/ messages/ providers/ runtime/
     capabilities/                           # Tools, MCP, marketplace, and policy
       mcp/ marketplace/ tools/
     orchestration/                          # Requests, runs, approvals, tasks, workflows

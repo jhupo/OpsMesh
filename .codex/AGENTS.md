@@ -134,7 +134,9 @@ the OpsMesh control plane.
   packages, with only `common.py` at the schema root. Workspace-facing application services are
   grouped under `api/services/workspace/{exports,imports,lifecycle}` rather than using filename
   prefixes in the service root.
-- `backend/app/agents`: agent profiles plus nested SDK runtime, memory, message, and provider domains.
+- `backend/app/agents`: public agent models/services plus nested `profiles`, `memory`, `messages`,
+  `providers`, and SDK `runtime` domains. Profile helpers do not remain as root-level prefixed files;
+  agent memory policies live with the other memory policies.
 - `backend/app/capabilities`: skills, MCP, credentials, policy, diagnostics, marketplace, and tools.
 - `backend/app/orchestration`: requests, runs, approvals, tasks, and workflows.
 - `backend/app/execution`: runtime resources, Docker pools, workers, operations, and self-hosted jobs.

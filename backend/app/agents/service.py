@@ -8,14 +8,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agents.lifecycle import (
+from backend.app.agents.models import AgentProfile, AgentProfileVersion
+from backend.app.agents.profiles.commands import AgentProfileCommandService
+from backend.app.agents.profiles.lifecycle import (
     AGENT_STATUS_ACTIVE,
     AGENT_STATUS_ARCHIVED,
     AgentProfileLifecycleService,
 )
-from backend.app.agents.model_validation import AgentModelValidator
-from backend.app.agents.models import AgentProfile, AgentProfileVersion
-from backend.app.agents.payloads import (
+from backend.app.agents.profiles.model_validation import AgentModelValidator
+from backend.app.agents.profiles.payloads import (
     AGENT_PROFILE_FIELDS,
     copy_json_value,
     datetime_or_none,
@@ -24,9 +25,8 @@ from backend.app.agents.payloads import (
     rollback_reason,
     uuid_or_none,
 )
-from backend.app.agents.profile_commands import AgentProfileCommandService
-from backend.app.agents.queries import AgentProfileQueryService
-from backend.app.agents.versions import AgentVersionRecorder
+from backend.app.agents.profiles.queries import AgentProfileQueryService
+from backend.app.agents.profiles.versions import AgentVersionRecorder
 from backend.app.api.schemas.agents.profiles import (
     AgentProfileCloneRequest,
     AgentProfileCreateRequest,

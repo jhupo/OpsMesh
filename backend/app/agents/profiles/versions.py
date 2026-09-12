@@ -5,9 +5,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.agents.model_validation import AgentModelValidator
 from backend.app.agents.models import AgentProfile, AgentProfileVersion
-from backend.app.agents.payloads import profile_audit_state, profile_snapshot
+from backend.app.agents.profiles.model_validation import AgentModelValidator
+from backend.app.agents.profiles.payloads import profile_audit_state, profile_snapshot
 from backend.app.observability.audit_service import AuditService
 
 

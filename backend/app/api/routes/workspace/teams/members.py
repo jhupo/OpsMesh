@@ -6,8 +6,8 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.agents.messages.models import AgentMessage
-from backend.app.agents.model_provider_summary import agent_profile_response
 from backend.app.agents.models import AgentProfile
+from backend.app.agents.providers.agent_summary import agent_profile_response
 from backend.app.agents.providers.model_api import configured_model_api, require_known_model_api
 from backend.app.agents.runtime.session_management import (
     PersistentAgentSessionManagementService,

@@ -6,8 +6,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import sessionmaker
 
+from backend.app.agents.memory.policy import WorkingMemoryPolicy
 from backend.app.agents.memory.working import AgentWorkingMemoryService, working_memory_context
-from backend.app.agents.memory_policy import WorkingMemoryPolicy
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRuntimeToolResult
 from backend.app.orchestration.runs.models import AgentRun

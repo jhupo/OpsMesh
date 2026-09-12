@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.agents.payloads import AGENT_PROFILE_REVIEW_FIELDS, profile_snapshot
+from backend.app.agents.profiles.payloads import AGENT_PROFILE_REVIEW_FIELDS, profile_snapshot
 from backend.app.platform.common.config import Settings
 from backend.app.workspace.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.workspace.reviews.constants import REVIEW_TYPE_AGENT_PROFILE

@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.memory.context import AgentMemoryContextService
+from backend.app.agents.memory.policy import context_budget_policy, working_memory_policy
 from backend.app.agents.memory.working import AgentWorkingMemoryService, working_memory_context
-from backend.app.agents.memory_policy import context_budget_policy, working_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import (
     AgentRunRequest,
