@@ -20,9 +20,9 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
-from backend.app.operations.scheduler_backlog import SchedulerBacklogService
-from backend.app.operations.scheduler_blocked_steps import SchedulerBlockedStepService
-from backend.app.operations.scheduler_control import SchedulerControlService
+from backend.app.operations.scheduler import SchedulerBacklogService
+from backend.app.operations.scheduler import SchedulerBlockedStepService
+from backend.app.operations.scheduler import SchedulerControlService
 from backend.app.redis.cache import RedisJsonCache
 from backend.app.redis.dependencies import get_cache_service
 

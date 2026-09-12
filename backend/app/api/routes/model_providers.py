@@ -26,7 +26,7 @@ from backend.app.model_providers.credential_commands import (
 from backend.app.model_providers.credential_queries import (
     ModelProviderCredentialQueryService,
 )
-from backend.app.model_providers.health_probes import provider_health_probes
+from backend.app.model_providers.contracts import provider_health_probes
 from backend.app.model_providers.health_service import ModelProviderHealthService
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import EgressUrlValidationError

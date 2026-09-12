@@ -12,11 +12,11 @@ from backend.app.operations.control_plane import control_plane_issues
 from backend.app.operations.operation_capacity_payloads import OperationsCapacityPayloadService
 from backend.app.operations.outcomes import OperationsOutcomeService
 from backend.app.operations.queue_latency import OperationsQueueLatencyService
-from backend.app.operations.scheduler_backlog import SchedulerBacklogService
-from backend.app.operations.self_hosted_machine_payloads import (
+from backend.app.operations.scheduler import SchedulerBacklogService
+from backend.app.operations.self_hosted_machines import (
     OperationsSelfHostedMachineService,
 )
-from backend.app.operations.worker_capacity_summary import OperationsWorkerCapacityService
+from backend.app.operations.worker_capacity import OperationsWorkerCapacityService
 from backend.app.redis.keys import RedisKeyBuilder
 
 

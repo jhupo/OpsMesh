@@ -13,7 +13,7 @@ from backend.app.api.schemas.operation_capacity import (
 from backend.app.operations.queue_latency import OperationsQueueLatencyService
 from backend.app.operations.runtime_provider_capacity import RuntimeProviderCapacityService
 from backend.app.operations.runtime_space_saturation import RuntimeSpaceSaturationService
-from backend.app.operations.worker_capacity_summary import OperationsWorkerCapacityService
+from backend.app.operations.worker_capacity import OperationsWorkerCapacityService
 from backend.app.redis.keys import RedisKeyBuilder
 
 

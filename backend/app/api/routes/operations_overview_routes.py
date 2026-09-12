@@ -27,8 +27,8 @@ from backend.app.operations.control_plane_service import OperationsControlPlaneS
 from backend.app.operations.operation_capacity_payloads import OperationsCapacityPayloadService
 from backend.app.operations.outcomes import OperationsOutcomeService
 from backend.app.operations.overview_payloads import OperationsOverviewPayloadService
-from backend.app.operations.run_activity_payloads import RunActivityPayloadService
-from backend.app.operations.self_hosted_machine_payloads import (
+from backend.app.operations.run_activity import RunActivityPayloadService
+from backend.app.operations.self_hosted_machines import (
     OperationsSelfHostedMachineService,
 )
 from backend.app.operations.worker_lifecycle_payloads import WorkerLifecyclePayloadService
