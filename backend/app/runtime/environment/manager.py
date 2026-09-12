@@ -20,7 +20,6 @@ from backend.app.runtime.environment.lifecycle.cleanup import (
     cleanup_succeeded,
 )
 from backend.app.runtime.environment.lifecycle.events import RuntimeEventLog
-from backend.app.runtime.environment.lifecycle.guards import require_container
 from backend.app.runtime.environment.models import (
     RuntimeCommand,
     RuntimeLease,
@@ -28,6 +27,7 @@ from backend.app.runtime.environment.models import (
     WorkspaceRuntime,
 )
 from backend.app.runtime.environment.policies.quotas import RuntimeQuotaPolicy
+from backend.app.runtime.environment.policies.runtime import require_container
 from backend.app.runtime.environment.pool.leases import (
     RuntimeLeaseStore,
     RuntimeSpaceReservationStore,

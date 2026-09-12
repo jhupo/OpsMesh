@@ -13,7 +13,7 @@ from backend.app.runtime.environment.backends.egress import (
     resolve_egress_policy,
 )
 from backend.app.runtime.environment.contracts import RuntimeLimits
-from backend.app.runtime.environment.models import RuntimeTemplate
+from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceBinding
 
 
@@ -180,6 +180,13 @@ class RuntimePolicyResolver:
                 AgentTeam.status == "active",
             )
         )
+
+
+def require_container(runtime: WorkspaceRuntime) -> None:
+    """Fail closed when an operation requires a managed container."""
+
+    if not runtime.docker_container_id:
+        raise ValueError("Runtime has no Docker container")
 
 
 def as_float(value: object, fallback: float) -> float:

@@ -7,13 +7,26 @@ from sqlalchemy.orm import Session
 
 from backend.app.domains.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.runtime.operations.timeline.models import TimelineEvent, TimelineFilters
-from backend.app.runtime.operations.timeline.team_context import TeamRuntimeTimelineContext
-from backend.app.runtime.operations.timeline.utils import (
+from backend.app.runtime.operations.timeline.models import (
+    TimelineEvent,
+    TimelineFilters,
     apply_time_filters,
     aware_datetime,
-    mcp_governance_message,
 )
+from backend.app.runtime.operations.timeline.team_context import TeamRuntimeTimelineContext
+
+
+def mcp_governance_message(event: AuditEvent) -> str:
+    metadata = event.audit_metadata if isinstance(event.audit_metadata, dict) else {}
+    name = metadata.get("name")
+    target = name if isinstance(name, str) and name else event.target_id
+    if event.action == "capability_governance.mcp_health_check_refreshed":
+        status = metadata.get("health_status")
+        status_text = status if isinstance(status, str) and status else "recorded"
+        return f"MCP health check refreshed for {target}: {status_text}"
+    if event.action == "capability_governance.mcp_server_disabled":
+        return f"MCP server disabled by governance: {target}"
+    return event.action
 
 
 class TeamRuntimeMcpTimelineCollector:

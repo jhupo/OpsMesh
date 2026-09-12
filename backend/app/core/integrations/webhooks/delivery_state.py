@@ -1,15 +1,30 @@
 from datetime import UTC, datetime, timedelta
 
-from backend.app.core.integrations.webhooks.constants import (
-    WEBHOOK_ERROR_MAX_LENGTH,
-    WEBHOOK_RETRY_BASE_DELAY_SECONDS,
-)
 from backend.app.core.integrations.webhooks.http_client import WebhookHttpResponse
 from backend.app.core.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
     WebhookSubscription,
 )
-from backend.app.core.integrations.webhooks.utils import _safe_headers, _snippet, _truncate
+from backend.app.core.integrations.webhooks.policy import (
+    WEBHOOK_ERROR_MAX_LENGTH,
+    WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH,
+    WEBHOOK_RETRY_BASE_DELAY_SECONDS,
+)
+from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
+
+
+def _snippet(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return redact_sensitive_text(value)[:WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH]
+
+
+def _truncate(value: str, max_length: int) -> str:
+    return redact_sensitive_text(value)[:max_length]
+
+
+def _safe_headers(headers: dict[str, str]) -> dict[str, object]:
+    return redact_sensitive_payload(dict(headers))
 
 
 class WebhookDeliveryStateRecorder:

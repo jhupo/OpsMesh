@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.config import Settings
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.workspace.reviews.constants import (
+from backend.app.domains.workspace.reviews.policy import (
     MODEL_REQUEST_REVIEW_SETTINGS_KEY,
     RESOURCE_REVIEW_SETTINGS_KEY,
+    _max_risk,
 )
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.domains.workspace.tenants.models import Workspace
@@ -127,10 +128,3 @@ def _static_model_request_review(
 def _matched_terms(value: str) -> list[str]:
     lowered = value.lower()
     return sorted(term for term in _SENSITIVE_TERMS if term in lowered)
-
-
-def _max_risk(left: str, right: str) -> str:
-    order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
-    left_risk = left if left in order else "medium"
-    right_risk = right if right in order else "medium"
-    return left_risk if order[left_risk] >= order[right_risk] else right_risk

@@ -12,7 +12,7 @@ from backend.app.domains.agents.profiles.payloads import (
     profile_snapshot,
 )
 from backend.app.domains.workspace.reviews.approval_service import ResourceReviewApprovalService
-from backend.app.domains.workspace.reviews.constants import REVIEW_TYPE_AGENT_PROFILE
+from backend.app.domains.workspace.reviews.policy import REVIEW_TYPE_AGENT_PROFILE
 from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
 

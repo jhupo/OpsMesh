@@ -9,9 +9,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
-from backend.app.core.integrations.webhooks.constants import WEBHOOK_URL_POLICY
 from backend.app.core.integrations.webhooks.models import WebhookSubscription
-from backend.app.core.integrations.webhooks.utils import _normalized_event_types
+from backend.app.core.integrations.webhooks.policy import WEBHOOK_URL_POLICY
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.egress import EgressUrlPolicy, validate_egress_url
 
@@ -53,7 +52,6 @@ class WebhookSubscriptionService:
         self._session.commit()
         self._session.refresh(subscription)
         return subscription
-
     def list(
         self,
         *,
@@ -149,3 +147,10 @@ class WebhookSubscriptionService:
         if subscription is None:
             raise ValueError("Webhook subscription not found")
         return subscription
+
+
+def _normalized_event_types(event_types: list[str]) -> list[str]:
+    normalized = sorted({item.strip() for item in event_types if item.strip()})
+    if not normalized:
+        raise ValueError("At least one event type is required")
+    return ["*"] if "*" in normalized else normalized

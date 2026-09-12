@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from backend.app.domains.workspace.reviews.llm import LlmReviewResult
 from backend.app.domains.workspace.reviews.models import ResourceReview
-from backend.app.domains.workspace.reviews.utils import (
+from backend.app.domains.workspace.reviews.policy import (
     _HIGH_RISK_LEVELS,
     _max_risk,
     _normalize_risk,

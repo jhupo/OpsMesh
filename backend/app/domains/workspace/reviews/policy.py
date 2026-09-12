@@ -2,7 +2,24 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.domains.workspace.reviews.constants import DEFAULT_RESOURCE_REVIEW_MODEL
+RESOURCE_STATUS_ACTIVE = "active"
+RESOURCE_STATUS_PENDING_APPROVAL = "pending_approval"
+RESOURCE_STATUS_REJECTED = "rejected"
+
+DEFAULT_RESOURCE_REVIEW_MODEL = "codex-auto-review"
+RESOURCE_REVIEW_SETTINGS_KEY = "resource_review"
+SEMANTIC_REVIEW_SETTINGS_KEY = "semantic_review"
+MODEL_REQUEST_REVIEW_SETTINGS_KEY = "model_request_review"
+PRIVATE_RESOURCE_REVIEW_SETTINGS_KEY = "private_resources"
+PUBLIC_RESOURCE_REVIEW_SETTINGS_KEY = "public_resources"
+
+REVIEW_TYPE_AGENT_PROFILE = "resource.agent_profile"
+REVIEW_TYPE_CAPABILITY = "resource.capability"
+REVIEW_TYPE_SKILL = "resource.skill"
+REVIEW_TYPE_MCP_SERVER = "resource.mcp_server"
+REVIEW_TYPE_MCP_TOOL_ALLOWLIST = "resource.mcp_tool_allowlist"
+REVIEW_TYPE_MCP_CREDENTIAL_REFERENCE = "resource.mcp_credential_reference"
+REVIEW_TYPE_PLUGIN = "resource.plugin"
 
 _HIGH_RISK_LEVELS = {"high", "critical"}
 _REVIEW_RISK_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
@@ -77,9 +94,9 @@ def _walk_mapping(value: dict[str, object], prefix: str) -> list[tuple[str, obje
     return rows
 
 
-def _normalize_risk(value: object) -> str:
+def _normalize_risk(value: object, *, default: str = "low") -> str:
     raw = str(value or "low").lower().strip()
-    return raw if raw in _REVIEW_RISK_ORDER else "low"
+    return raw if raw in _REVIEW_RISK_ORDER else default
 
 
 def _review_model(value: object) -> str:

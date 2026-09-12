@@ -14,7 +14,7 @@ from backend.app.domains.capabilities.models import (
     Skill,
 )
 from backend.app.domains.orchestration.approvals.models import Approval
-from backend.app.domains.workspace.reviews.constants import (
+from backend.app.domains.workspace.reviews.policy import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_REJECTED,
 )

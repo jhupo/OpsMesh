@@ -756,6 +756,38 @@ def test_all_application_modules_are_discoverable_packages() -> None:
     ]
 
 
+def test_generic_utils_modules_are_not_used_as_dumping_grounds() -> None:
+    app = ROOT / "backend/app"
+    assert not list(app.rglob("utils.py"))
+    assert (app / "core/common/values.py").is_file()
+    assert (app / "core/integrations/webhooks/policy.py").is_file()
+    assert not (app / "core/integrations/webhooks/constants.py").exists()
+    assert not (app / "domains/orchestration/requests/utils.py").exists()
+    assert (app / "domains/workspace/reviews/policy.py").is_file()
+    assert not (app / "domains/workspace/reviews/constants.py").exists()
+    assert (app / "runtime/operations/timeline/models.py").is_file()
+    assert not (app / "runtime/operations/timeline/constants.py").exists()
+    assert not (app / "runtime/operations/timeline/utils.py").exists()
+    assert not (app / "runtime/environment/lifecycle/guards.py").exists()
+
+
+def test_application_source_directories_are_not_empty() -> None:
+    app = ROOT / "backend/app"
+    empty = []
+    for directory in app.rglob("*"):
+        if not directory.is_dir() or directory.name == "__pycache__":
+            continue
+        source_files = [path for path in directory.glob("*.py") if path.name != "__init__.py"]
+        child_packages = [
+            path
+            for path in directory.iterdir()
+            if path.is_dir() and path.name != "__pycache__"
+        ]
+        if not source_files and not child_packages:
+            empty.append(str(directory.relative_to(ROOT)))
+    assert not empty, "Empty application source directories: " + ", ".join(empty)
+
+
 @pytest.fixture(scope="module")
 def architecture_tree(tmp_path_factory: pytest.TempPathFactory) -> Path:
     root = tmp_path_factory.mktemp("architecture")

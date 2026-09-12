@@ -23,7 +23,7 @@ from backend.app.domains.capabilities.models import (
 )
 from backend.app.domains.capabilities.resources.schema import reject_embedded_secrets
 from backend.app.domains.workspace.reviews.approval_service import ResourceReviewApprovalService
-from backend.app.domains.workspace.reviews.constants import (
+from backend.app.domains.workspace.reviews.policy import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_CAPABILITY,

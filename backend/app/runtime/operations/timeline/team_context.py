@@ -10,10 +10,23 @@ from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.operations.timeline.utils import (
-    configured_mcp_tools,
-    team_runtime_team_id,
-)
+
+
+def team_runtime_team_id(capabilities: dict[str, object]) -> str | None:
+    team_runtime = capabilities.get("team_runtime")
+    if not isinstance(team_runtime, dict):
+        return None
+    team_id = team_runtime.get("team_id")
+    return team_id if isinstance(team_id, str) else None
+
+
+def configured_mcp_tools(policy: object) -> set[str]:
+    if not isinstance(policy, dict):
+        return set()
+    raw_tools = policy.get("mcp_tools")
+    if not isinstance(raw_tools, list):
+        return set()
+    return {tool for tool in raw_tools if isinstance(tool, str) and tool}
 
 
 class TeamRuntimeTimelineContext:

@@ -5,19 +5,31 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.integrations.webhooks.constants import (
-    WEBHOOK_REPLAY_COOLDOWN_SECONDS,
-    WEBHOOK_REPLAY_WORKSPACE_LIMIT,
-    WEBHOOK_REPLAY_WORKSPACE_WINDOW_SECONDS,
-)
 from backend.app.core.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
     WebhookSubscription,
 )
+from backend.app.core.integrations.webhooks.policy import (
+    WEBHOOK_REPLAY_COOLDOWN_SECONDS,
+    WEBHOOK_REPLAY_WORKSPACE_LIMIT,
+    WEBHOOK_REPLAY_WORKSPACE_WINDOW_SECONDS,
+)
 from backend.app.core.integrations.webhooks.scheduler import WebhookDeliveryScheduler
-from backend.app.core.integrations.webhooks.utils import _metadata_datetime
 from backend.app.core.rate_limits.service import FixedWindowRateLimiter
 from backend.app.runtime.workers.queue.redis import RedisQueue
+
+
+def _metadata_datetime(metadata: dict[str, object], key: str) -> datetime | None:
+    value = metadata.get(key)
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 class WebhookDeliveryReplayError(ValueError):

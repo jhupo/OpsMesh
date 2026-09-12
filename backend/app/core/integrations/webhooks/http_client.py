@@ -6,7 +6,7 @@ from typing import Protocol
 
 import httpx
 
-from backend.app.core.integrations.webhooks.constants import WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH
+from backend.app.core.integrations.webhooks.policy import WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH
 
 
 class WebhookHttpClient(Protocol):

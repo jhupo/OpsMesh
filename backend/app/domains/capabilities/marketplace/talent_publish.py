@@ -17,7 +17,7 @@ from backend.app.domains.capabilities.marketplace.talent_repository import (
     TalentMarketplaceRepository,
 )
 from backend.app.domains.workspace.reviews.approval_service import ResourceReviewApprovalService
-from backend.app.domains.workspace.reviews.constants import (
+from backend.app.domains.workspace.reviews.policy import (
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_AGENT_PROFILE,
 )

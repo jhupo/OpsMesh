@@ -15,8 +15,8 @@ from backend.app.core.security.redaction import (
     redact_text_fragments,
 )
 from backend.app.runtime.operations.timeline.collectors import TeamRuntimeTimelineCollector
-from backend.app.runtime.operations.timeline.models import TimelineFilters
-from backend.app.runtime.operations.timeline.utils import (
+from backend.app.runtime.operations.timeline.models import (
+    TimelineFilters,
     counts,
     matches_filters,
 )

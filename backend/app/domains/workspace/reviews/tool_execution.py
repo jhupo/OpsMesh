@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.config import Settings
 from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.domains.workspace.reviews.policy import _max_risk, _normalize_risk
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
 
 _HIGH_RISK_TERMS = {
@@ -184,7 +185,7 @@ def _static_tool_review(
     context: dict[str, object],
 ) -> ToolExecutionReview:
     reasons: list[str] = []
-    risk_level = _normalize_risk(allowlist_risk_level)
+    risk_level = _normalize_risk(allowlist_risk_level, default="medium")
     if requires_approval:
         reasons.append("tool.policy.requires_approval")
         risk_level = _max_risk(risk_level, "medium")
@@ -285,15 +286,3 @@ def _runtime_command_risk(command: list[str]) -> str:
     if any(symbol in lowered for symbol in {">", ">>", "|", "&&", "||", ";"}):
         return "high"
     return "medium" if command else "high"
-
-
-def _normalize_risk(value: object) -> str:
-    risk = str(value or "low").lower().strip()
-    return risk if risk in {"low", "medium", "high", "critical"} else "medium"
-
-
-def _max_risk(left: str, right: str) -> str:
-    order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
-    left_risk = _normalize_risk(left)
-    right_risk = _normalize_risk(right)
-    return left_risk if order[left_risk] >= order[right_risk] else right_risk

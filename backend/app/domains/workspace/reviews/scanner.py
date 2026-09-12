@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.app.domains.workspace.reviews.models import ResourceReview
-from backend.app.domains.workspace.reviews.utils import (
+from backend.app.domains.workspace.reviews.policy import (
     _DANGEROUS_WORDS,
     _HIGH_RISK_LEVELS,
     _HIGH_RISK_TERMS,

@@ -44,7 +44,7 @@ from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.tasks.status import TaskStatus
-from backend.app.domains.workspace.reviews.constants import (
+from backend.app.domains.workspace.reviews.policy import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     RESOURCE_STATUS_REJECTED,

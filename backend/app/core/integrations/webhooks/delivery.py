@@ -6,10 +6,6 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.integrations.webhooks.constants import (
-    WEBHOOK_DELIVERY_MAX_ATTEMPTS,
-    WEBHOOK_DELIVERY_TIMEOUT_SECONDS,
-)
 from backend.app.core.integrations.webhooks.delivery_state import WebhookDeliveryStateRecorder
 from backend.app.core.integrations.webhooks.http_client import (
     HttpxWebhookHttpClient,
@@ -19,13 +15,16 @@ from backend.app.core.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
     WebhookSubscription,
 )
+from backend.app.core.integrations.webhooks.policy import (
+    WEBHOOK_DELIVERY_MAX_ATTEMPTS,
+    WEBHOOK_DELIVERY_TIMEOUT_SECONDS,
+)
 from backend.app.core.integrations.webhooks.replay import (
     WebhookDeliveryReplayError,
     WebhookDeliveryReplayRateLimitError,
     WebhookDeliveryReplayService,
 )
 from backend.app.core.integrations.webhooks.signing import WebhookDeliverySigner
-from backend.app.core.integrations.webhooks.utils import _matches_event
 from backend.app.core.rate_limits.service import FixedWindowRateLimiter
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.runtime.workers.queue.redis import RedisQueue
@@ -198,3 +197,7 @@ __all__ = [
     "WebhookDeliveryReplayRateLimitError",
     "WebhookDeliveryService",
 ]
+
+
+def _matches_event(event_types: list[str], event_type: str) -> bool:
+    return "*" in event_types or event_type in event_types

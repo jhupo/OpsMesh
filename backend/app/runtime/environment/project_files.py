@@ -4,8 +4,8 @@ from uuid import UUID
 
 from backend.app.domains.workspace.storage.security import validate_runtime_relative_path
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
-from backend.app.runtime.environment.lifecycle.guards import require_container
 from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.environment.policies.runtime import require_container
 
 RUNTIME_WORKSPACE_ROOT = "/workspace"
 PROJECT_FILE_TRANSFER_TIMEOUT_SECONDS = 60

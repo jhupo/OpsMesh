@@ -7,9 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.common.config import Settings
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.workspace.reviews.models import ResourceReview
-from backend.app.domains.workspace.reviews.scanner import ReviewScanner
-from backend.app.domains.workspace.reviews.semantic_runner import SemanticResourceReviewRunner
-from backend.app.domains.workspace.reviews.utils import (
+from backend.app.domains.workspace.reviews.policy import (
     _HIGH_RISK_LEVELS,
     _connection_has_external_url,
     _has_sensitive_keys,
@@ -17,6 +15,8 @@ from backend.app.domains.workspace.reviews.utils import (
     _normalize_risk,
     _policy_mode,
 )
+from backend.app.domains.workspace.reviews.scanner import ReviewScanner
+from backend.app.domains.workspace.reviews.semantic_runner import SemanticResourceReviewRunner
 
 
 class ResourcePolicyReviewBuilder:

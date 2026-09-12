@@ -21,9 +21,6 @@ from backend.app.domains.capabilities.models import (
     McpToolAllowlist,
     WorkspaceSkillInstall,
 )
-from backend.app.domains.orchestration.requests.utils import (
-    expect_optional_uuid,
-)
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import (
     AgentRun,
@@ -35,6 +32,20 @@ from backend.app.domains.orchestration.runs.runtime_authorization import (
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.tasks.operations.ownership import task_owner_can_execute_step
+
+
+def expect_optional_uuid(
+    snapshot: dict[str, object],
+    key: str,
+    expected: UUID | None,
+) -> None:
+    """Validate an optional UUID in an authorization snapshot."""
+    raw_value = snapshot.get(key)
+    if raw_value is None:
+        return
+    parsed = uuid_or_none(raw_value)
+    if parsed != expected:
+        raise ValueError(f"Authorization snapshot {key} mismatch")
 
 
 @dataclass(slots=True)

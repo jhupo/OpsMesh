@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from backend.app.core.integrations.webhooks.constants import (
-    WEBHOOK_REPLAY_COOLDOWN_SECONDS,
-    WEBHOOK_REPLAY_WORKSPACE_LIMIT,
-)
 from backend.app.core.integrations.webhooks.delivery import (
     WebhookDeliveryReplayError,
     WebhookDeliveryReplayRateLimitError,
@@ -13,6 +9,10 @@ from backend.app.core.integrations.webhooks.http_client import (
     HttpxWebhookHttpClient,
     WebhookHttpClient,
     WebhookHttpResponse,
+)
+from backend.app.core.integrations.webhooks.policy import (
+    WEBHOOK_REPLAY_COOLDOWN_SECONDS,
+    WEBHOOK_REPLAY_WORKSPACE_LIMIT,
 )
 from backend.app.core.integrations.webhooks.scheduler import (
     WebhookDeliveryScheduler,

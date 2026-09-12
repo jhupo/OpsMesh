@@ -11,7 +11,7 @@ from backend.app.api.schemas.capabilities.mcp_servers import (
 from backend.app.core.common.values import dict_or_empty, string_or_default
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.capabilities.marketplace.models import MarketplaceListing, TalentListing
-from backend.app.domains.workspace.reviews.constants import (
+from backend.app.domains.workspace.reviews.policy import (
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_AGENT_PROFILE,
     REVIEW_TYPE_MCP_SERVER,

@@ -9,13 +9,19 @@ from backend.app.core.security.redaction import (
     redact_sensitive_payload_item,
     redact_text_fragments,
 )
-from backend.app.runtime.operations.timeline.models import TimelineEvent, TimelineFilters
-from backend.app.runtime.operations.timeline.utils import (
-    queue_job_time,
-    within,
-)
-from backend.app.runtime.workers.contracts import JobType
+from backend.app.runtime.operations.timeline.models import TimelineEvent, TimelineFilters, within
+from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue.redis import RedisQueue
+
+
+def queue_job_time(job: JobPayload) -> datetime:
+    return _aware_datetime(job.last_failed_at or job.created_at)
+
+
+def _aware_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
 
 
 class TeamRuntimeQueueTimelineCollector:

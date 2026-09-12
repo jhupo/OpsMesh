@@ -8,13 +8,12 @@ from backend.app.core.common.config import Settings
 from backend.app.core.common.values import uuid_or_none
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.catalog.model_api import canonical_model_api
+from backend.app.domains.agents.providers.catalog.model_api import (
+    canonical_model_api,
+    model_api_options_for_provider,
+)
 from backend.app.domains.agents.providers.resolution.service import ModelProviderResolutionService
 from backend.app.domains.orchestration.requests.authorization import RunAuthorizationService
-from backend.app.domains.orchestration.requests.utils import (
-    effective_resolved_model_api,
-    model_api_from_settings,
-)
 from backend.app.domains.orchestration.runs.models import AgentRun
 
 
@@ -98,3 +97,28 @@ class RunRequestModelProviderService:
             key_id=self.settings.credential_encryption_key_id,
             previous_secrets=self.settings.credential_encryption_previous_secrets,
         )
+
+
+def model_api_from_settings(settings: dict[str, object] | None) -> str | None:
+    """Return the canonical model API requested by an agent's settings."""
+    if settings is None:
+        return None
+    return canonical_model_api(settings.get("model_api"))
+
+
+def effective_resolved_model_api(
+    *,
+    provider: str | None,
+    resolved_model_api: str | None,
+    requested_model_api: str | None,
+    prefer_requested: bool,
+) -> str | None:
+    """Choose a supported explicit API override, otherwise the resolved API."""
+    requested = canonical_model_api(requested_model_api)
+    if (
+        prefer_requested
+        and requested is not None
+        and requested in model_api_options_for_provider(provider)
+    ):
+        return requested
+    return resolved_model_api or requested

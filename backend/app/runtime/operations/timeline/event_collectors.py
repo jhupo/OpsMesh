@@ -7,9 +7,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.runs.models import RunEvent
 from backend.app.runtime.environment.models import RuntimeEvent
-from backend.app.runtime.operations.timeline.models import TimelineEvent, TimelineFilters
+from backend.app.runtime.operations.timeline.models import (
+    TimelineEvent,
+    TimelineFilters,
+    apply_time_filters,
+    aware_datetime,
+)
 from backend.app.runtime.operations.timeline.team_context import TeamRuntimeTimelineContext
-from backend.app.runtime.operations.timeline.utils import apply_time_filters, aware_datetime
 
 
 class TeamRuntimeEventTimelineCollector:

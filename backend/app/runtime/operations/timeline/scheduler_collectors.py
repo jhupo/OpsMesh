@@ -7,14 +7,16 @@ from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.runtime.operations.timeline.models import TimelineEvent, TimelineFilters
-from backend.app.runtime.operations.timeline.utils import (
-    TEAM_RUNTIME_CAPABILITY_KEY,
+from backend.app.runtime.operations.timeline.models import (
+    TimelineEvent,
+    TimelineFilters,
     apply_time_filters,
     aware_datetime,
     datetime_from_value,
     within,
 )
+
+TEAM_RUNTIME_CAPABILITY_KEY = "team_runtime"
 
 
 class TeamRuntimeSchedulerTimelineCollector:

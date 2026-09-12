@@ -12,11 +12,13 @@ from backend.app.domains.agents.providers.resolution.service import ModelProvide
 from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest
 from backend.app.domains.agents.runtime.execution.errors import normalize_agent_error
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
+from backend.app.domains.orchestration.requests.model_provider import (
+    effective_resolved_model_api,
+)
 from backend.app.domains.orchestration.requests.provider_audit import ModelProviderAuditService
 from backend.app.domains.orchestration.requests.request_reviewing import (
     model_provider_fallback_policy,
 )
-from backend.app.domains.orchestration.requests.utils import effective_resolved_model_api
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.tenants.models import Workspace

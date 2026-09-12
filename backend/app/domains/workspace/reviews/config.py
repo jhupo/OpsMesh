@@ -6,13 +6,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
-from backend.app.domains.workspace.reviews.constants import (
+from backend.app.domains.workspace.reviews.policy import (
+    _PRIVATE_REVIEW_DEFAULTS,
     PRIVATE_RESOURCE_REVIEW_SETTINGS_KEY,
     RESOURCE_REVIEW_SETTINGS_KEY,
     SEMANTIC_REVIEW_SETTINGS_KEY,
-)
-from backend.app.domains.workspace.reviews.utils import (
-    _PRIVATE_REVIEW_DEFAULTS,
     _is_public_visibility,
     _review_model,
     _review_timeout_seconds,
