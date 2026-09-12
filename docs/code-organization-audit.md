@@ -123,3 +123,18 @@ was requested. These results cover this batch, not every possible future file co
 
 Unrelated pre-existing workspace changes remain untouched; a successful commit does not imply a
 clean workspace. The earlier clean-workspace statement was inaccurate.
+
+## File-level consolidation follow-up: 2026-09-12 (continued)
+
+Workers no longer carry a one-file base protocol package: the handler protocol now lives with the
+worker handler registry, and the superseded `workers/job_handlers/base.py` source is deleted.
+The Teams operating-context re-export was removed; callers import the concrete context service.
+Workspace export format ownership now lives in the export schema contract instead of a standalone
+constants module. The API redaction re-export was also removed so application code imports the
+security redaction service directly; this keeps memory and schema code from depending on an API
+compatibility layer. Architecture source-path checks now validate deleted files at their actual
+`backend/app` locations (the earlier check accidentally prefixed all paths with `teams`).
+
+Validation for this follow-up: 16 architecture tests, two focused workspace redaction tests,
+full app Ruff, app mypy (960 files), and a cold import of 959 application modules passed. No
+compatibility aliases or full-suite test run were introduced.
